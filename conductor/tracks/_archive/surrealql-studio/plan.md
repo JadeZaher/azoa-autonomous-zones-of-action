@@ -4,7 +4,7 @@ To be filled in when Wave 2 of [[surrealql-toolkit]] lands. Skeleton:
 
 ## Phase 1 — Metadata + browse
 1. [ ] Embed schema introspector behind `/studio/api/schema`.
-2. [ ] Per-table paginated row view with avatar scoping.
+2. [ ] Per-table paginated row view with user scoping.
 3. [ ] Graph-traversal navigation (FK-resolved neighbors).
 
 ## Phase 2 — Query playground + EXPLAIN

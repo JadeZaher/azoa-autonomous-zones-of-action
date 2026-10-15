@@ -14,11 +14,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Aggregate = "ApiKey (Models/ApiKey.cs)",
         Guardrail = "G6 SCHEMAFULL, G2 UNIQUE-on-key_hash insert-wins lookup")]
     [SurrealNote("Authentication ledger. The handler hashes the inbound X-Api-Key header (SHA-256) and looks up key_hash via the unique index. The raw key never reaches storage. key_prefix is the first 16 chars of the raw key for caller display only.")]
-    [SurrealNote("B3 nullable-collision review: api_key_unique_hash UNIQUE on key_hash is NOT NULL (ASSERT != NONE AND != \"\"), so SurrealDB's NULL-equals-NULL collision semantics are not in play -- correct dedup by construction.")]
+    [SurrealNote("B3 nullable-collision review: api_key_unique_hash UNIQUE on key_hash is NOT NULL (ASSERT != NONE AND != \"\"), so the question of how the index treats absent values never arises here -- every row carries a real hash and dedup is correct by construction. For the record, verified empirically against SurrealDB 3.1.4: a UNIQUE index does NOT collide NONE components (two rows differing only by a NONE both CREATE), and explicit SQL NULL is unreachable under SCHEMAFULL option<T>, which refuses to coerce it. Earlier wording here invoked 'NULL-equals-NULL collision semantics'; that hazard does not exist in this schema. bridge_tx.surql states it correctly. See tests/AZOA.WebAPI.Tests/Kyc/SurrealUniqueIndexNoneSemanticsTests.cs.")]
     [SurrealNote("Soft-delete via revoked_at + is_active. Handlers MUST check both is_active AND revoked_at IS NONE AND (expires_at IS NONE OR expires_at > now) before granting authentication. last_used_at is updated fire-and-forget from the handler -- TouchLastUsedAsync must never throw.")]
     [Slice("identity")]
     [Index("api_key_unique_hash", Fields = new[] { "key_hash" }, Unique = true)]
-    [Index("api_key_by_avatar", Fields = new[] { "avatar_id" })]
+    [Index("api_key_by_user", Fields = new[] { "user_id" })]
     public partial class ApiKey : ISurrealRecord
     {
         public const string SchemaNameConst = "api_key";
@@ -29,9 +29,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [FieldGroup("Owner avatar (Guid('N') hex); indexed for ListByAvatar")]
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [FieldGroup("Owner user (Guid('N') hex); indexed for ListByUser")]
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("Caller-supplied label (free string)")]
         public string Name { get; set; } = string.Empty;

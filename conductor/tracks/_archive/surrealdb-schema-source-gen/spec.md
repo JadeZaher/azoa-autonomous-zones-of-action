@@ -26,7 +26,7 @@ hand-maintained:
 
 - Every `.mermaid` field has a corresponding hand-typed `.cs` property.
   When the schema changes, the developer must remember to update both
-  files. The `Quest`/`QuestRun` split done by [[quest-temporal-fork-model]]
+  files. The `ActionDefinition`/`ActionRun` split done by [[action-temporal-fork-model]]
   needed `[Obsolete]` annotations + a `<NoWarn>CS0618</NoWarn>` block
   precisely because this manual mapping was load-bearing — there was no
   way to compile-time-prove the application matched the schema.
@@ -79,7 +79,7 @@ domain layer from the schema, not maintaining them in parallel.
   parameter pinning the target table. Implicit conversion to untyped
   `RecordId` for callers that don't care about the type parameter.
 - Equality and JSON converter inherit from the base.
-- Generated POCOs use `RecordId<TQuest>` for `quest_id` fields, etc.
+- Generated POCOs use `RecordId<TAction>` for `action_id` fields, etc.
 
 ### 3. `SurrealQuery<T>` (added to `Azoa.SurrealDb.Client.Query`)
 - Typed companion to the existing `SurrealQuery`. `SurrealQuery<TWallet>.From()`

@@ -42,20 +42,12 @@ public class BlockchainConfigurationManager
     }
 
     /// <summary>
-    /// Get the default network for a chain (from global config, defaults to Devnet).
+    /// Get the default network for a chain. Absent config means local dev (Devnet); a
+    /// PRESENT but unrecognised value throws rather than silently pinning to Devnet —
+    /// see <see cref="ChainNetworkResolution"/>.
     /// </summary>
     public ChainNetwork GetDefaultNetwork(string? chainType = null)
-    {
-        var defaultNetwork = _config.GetValue<string>("Blockchain:DefaultNetwork")?
-            .ToLowerInvariant();
-
-        return defaultNetwork switch
-        {
-            "testnet" => ChainNetwork.Testnet,
-            "mainnet" => ChainNetwork.Mainnet,
-            _ => ChainNetwork.Devnet
-        };
-    }
+        => ChainNetworkResolution.FromConfiguration(_config);
 
     /// <summary>
     /// Get all available chain configurations.

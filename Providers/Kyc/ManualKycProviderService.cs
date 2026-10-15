@@ -34,7 +34,7 @@ public sealed class ManualKycProviderService : IKycProviderService
         AcceptsDocumentReferences = true
     };
 
-    public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid avatarId, CancellationToken ct = default)
+    public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid userId, CancellationToken ct = default)
         => Task.FromResult(AZOAResult<KycSessionStartModel>.Success(new KycSessionStartModel
         {
             Provider = Provider,
@@ -57,14 +57,14 @@ public sealed class ManualKycProviderService : IKycProviderService
 
     private const int MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
 
-    public Task<AZOAResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+    public Task<AZOAResult<string>> CreateSessionAsync(Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
     {
-        // The manual provider does not create an external session. The avatar id
+        // The manual provider does not create an external session. The user id
         // is returned as a pseudo-session identifier; the real submission id is
         // owned by the manager.
         return Task.FromResult(new AZOAResult<string>
         {
-            Result  = avatarId.ToString("N"),
+            Result  = userId.ToString("N"),
             Message = "Manual provider — no external session."
         });
     }

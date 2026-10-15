@@ -10,7 +10,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE kyc_control_audit TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS action ON TABLE kyc_control_audit TYPE string
     ASSERT $value != NONE AND $value != "";
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE kyc_control_audit TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE kyc_control_audit TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS provider_key ON TABLE kyc_control_audit TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS previous_provider_key ON TABLE kyc_control_audit TYPE option<string>;
@@ -27,7 +27,7 @@ DEFINE FIELD IF NOT EXISTS previous_assurance_level ON TABLE kyc_control_audit T
 DEFINE FIELD IF NOT EXISTS assurance_level ON TABLE kyc_control_audit TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS previous_trust_revision ON TABLE kyc_control_audit TYPE option<int>;
 DEFINE FIELD IF NOT EXISTS trust_revision ON TABLE kyc_control_audit TYPE option<int>;
-DEFINE FIELD IF NOT EXISTS actor_avatar_id ON TABLE kyc_control_audit TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS actor_user_id ON TABLE kyc_control_audit TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS occurred_at ON TABLE kyc_control_audit TYPE datetime
     DEFAULT time::now()
     READONLY;

@@ -35,11 +35,11 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromBody] NodeGovernanceParametersUpdateRequest request,
         CancellationToken ct)
     {
-        var actorAvatarId = GetAvatarIdFromClaims();
-        if (actorAvatarId is null)
+        var actorUserId = GetUserIdFromClaims();
+        if (actorUserId is null)
             return Unauthorized();
 
-        var result = await _manager.UpdateParametersAsync(request, actorAvatarId.Value, ct);
+        var result = await _manager.UpdateParametersAsync(request, actorUserId.Value, ct);
         if (result.IsError && result.Message.Contains("version conflict", StringComparison.OrdinalIgnoreCase))
             return Conflict(result);
         if (result.IsError) return BadRequest(result);
@@ -61,11 +61,11 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromBody] NodeFeeScheduleUpdateRequest request,
         CancellationToken ct)
     {
-        var actorAvatarId = GetAvatarIdFromClaims();
-        if (actorAvatarId is null)
+        var actorUserId = GetUserIdFromClaims();
+        if (actorUserId is null)
             return Unauthorized();
 
-        var result = await _feeManager.UpdateScheduleAsync(request, actorAvatarId.Value, ct);
+        var result = await _feeManager.UpdateScheduleAsync(request, actorUserId.Value, ct);
         if (result.IsError && result.Message.Contains("version conflict", StringComparison.OrdinalIgnoreCase))
             return Conflict(result);
         if (result.IsError) return BadRequest(result);
@@ -90,11 +90,11 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromBody] NodeTreasuryDestinationUpdateRequest request,
         CancellationToken ct)
     {
-        var actorAvatarId = GetAvatarIdFromClaims();
-        if (actorAvatarId is null)
+        var actorUserId = GetUserIdFromClaims();
+        if (actorUserId is null)
             return Unauthorized();
 
-        var result = await _treasuryManager.UpdateDestinationAsync(request, actorAvatarId.Value, ct);
+        var result = await _treasuryManager.UpdateDestinationAsync(request, actorUserId.Value, ct);
         if (result.IsError && result.Message.Contains("version conflict", StringComparison.OrdinalIgnoreCase))
             return Conflict(result);
         if (result.IsError) return BadRequest(result);
@@ -107,9 +107,9 @@ public sealed class NodeGovernanceController : ControllerBase
         CancellationToken ct = default)
         => Ok(await _treasuryManager.ListAuditAsync(limit, ct));
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
-        var raw = User.FindFirst("AvatarId")?.Value
+        var raw = User.FindFirst("UserId")?.Value
                   ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                   ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(raw, out var id) ? id : null;

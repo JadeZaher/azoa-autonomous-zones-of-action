@@ -12,7 +12,7 @@ Validate the lightweight API with integration tests covering the full request/re
 - Controllers: integration tests for happy path + auth failures
 
 ## Integration Tests
-- `AvatarController` — register, login, CRUD with auth
+- `UserController` — register, login, CRUD with auth
 - `STARODKController` — CRUD with auth
 - Provider switching via header/body
 

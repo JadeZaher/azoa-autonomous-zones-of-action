@@ -26,7 +26,7 @@ public enum GrantOrigin
 }
 
 /// <summary>
-/// A durable, revocable record: the user (<see cref="GrantorAvatarId"/>) authorizes
+/// A durable, revocable record: the user (<see cref="GrantorUserId"/>) authorizes
 /// a tenant (<see cref="TenantId"/>) to drive actions within <see cref="Scopes"/>,
 /// optionally time-boxed (<see cref="ExpiresAt"/>), always revocable
 /// (<see cref="RevokedAt"/>). This is the SOLE authority a tenant has to act for a
@@ -38,14 +38,14 @@ public sealed class ConsentGrant
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>The USER who granted (must own the avatar). The grantor against whom
+    /// <summary>The USER who granted (must own the user). The grantor against whom
     /// the signing seam looks up consent. NEVER a request-body field (AC9 IDOR).</summary>
-    public Guid GrantorAvatarId { get; set; }
+    public Guid GrantorUserId { get; set; }
 
     /// <summary>The tenant principal being authorized.</summary>
     public Guid TenantId { get; set; }
 
-    /// <summary>Granted scopes (e.g. <c>quest:execute</c>, <c>swap:sign</c>). A hard
+    /// <summary>Granted scopes (e.g. <c>action:execute</c>, <c>swap:sign</c>). A hard
     /// ceiling — no request field can widen the effective scope (M3).</summary>
     public List<string> Scopes { get; set; } = new();
 

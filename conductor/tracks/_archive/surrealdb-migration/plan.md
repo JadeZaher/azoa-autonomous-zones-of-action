@@ -13,7 +13,7 @@
 > plus the Idempotency and Saga stores. Tasks 7 and 8b done; 5, 8 partial.
 > The remaining wave-2/wave-3 work is sequenced in
 > [CLOSEOUT-RUNBOOK.md](CLOSEOUT-RUNBOOK.md) (5 parallel-friendly ultrapilot
-> streams: A=Avatar/Holon/STAR adapters, B=ops guardrails, C=service refactor
+> streams: A=User/Holon/STAR adapters, B=ops guardrails, C=service refactor
 > onto IBridgeStore, D=EF deletion, E=cutover gates + sign-off).
 
 ## Tasks
@@ -31,7 +31,7 @@
 3. [x] **Wave-1 done for value tables** (`010_wallet`/`020_bridge_tx`/
    `030_swap_state`/`040_nft_ownership`/`050_operation_log`/
    `060_consumed_vaa_ledger`/`070_idempotency_key_store`). **Schema source for
-   quest tables:** `conductor/tracks/quest-temporal-fork-model/SURREAL-SCHEMA-HINTS.md`
+   action tables:** `conductor/tracks/action-temporal-fork-model/SURREAL-SCHEMA-HINTS.md`
    (consume verbatim — tables, fields, and indexes; do not rederive).
    **Wave-2 follow-up:**
    (a) re-author as `.mermaid` sources ([[surrealdb-client-package]] Phase 6
@@ -42,7 +42,7 @@
    wormhole_emitter_address, wormhole_sequence)` UNIQUE on `bridge_tx`), (d)
    empirically verify **B3 UNIQUE-on-nullable** on running container; document
    in schema README; redesign adapter pattern if NULL collisions found.
-   Quest tables still gated on [[quest-temporal-fork-model]]
+   Action tables still gated on [[action-temporal-fork-model]]
 4. ~~Parameterized SurrealQL query layer + lint gate (G3)~~ **Moved to
    [[surrealdb-client-package]] Phase 3 + Phase 5** (query builder lives in
    `Azoa.SurrealDb.Client`; analyzer SRDB0001 ships from
@@ -53,11 +53,11 @@
    Wallet, NFT, BlockchainOperation, Bridge SurrealDB adapters landed under
    `Providers/Stores/Surreal/` against the generated POCOs at
    `AZOA.WebAPI.Generated.SurrealDb.*`. Wave-2 round 2 (CLOSEOUT-RUNBOOK
-   Stream A, same day): Avatar, Holon, STAR landed with hand-authored
+   Stream A, same day): User, Holon, STAR landed with hand-authored
    090/100/110 `.mermaid` + `.surql` and inline POCOs (mark "replace with
    generated POCO when source-gen catches up"). DI flipped in
-   `Program.cs:244-262` for all 7. **Remaining:** Quest portion still gated
-   on [[quest-temporal-fork-model]]
+   `Program.cs:244-262` for all 7. **Remaining:** Action portion still gated
+   on [[action-temporal-fork-model]]
 6. ~~Single-field conditional state transitions~~ **Dissolved by
    [[surrealdb-client-package]] Phase 3 task 14** — `.UpdateOnly(table, id)
    .Where(field, value).Set(field, value)` is the G2 primitive in the
@@ -98,13 +98,13 @@
     unified outbox table
 
 ### Graph remodel
-9. [x] **Done (2026-05-24, Task 9 close-out).** Three SurrealDB-backed stores landed (`Providers/Stores/Surreal/SurrealQuestStore.cs` 538 LOC, `SurrealQuestRunStore.cs` 322 LOC, `SurrealQuestNodeExecutionStore.cs` 352 LOC) on six schema files (150_quest, 160_quest_node, 170_quest_edge, 190_quest_run, 200_quest_node_execution, 230_quest_graph_edges with `forked_from` + `executes` RELATION tables). G2 single-winner claim primitive at `SurrealQuestNodeExecutionStore.cs:280-307`. Fork write-pairing via BEGIN/COMMIT at `SurrealQuestRunStore.cs:88`. DI flipped at `Program.cs:267-298`. Build clean; unit suite 535/535. 28 integration tests authored (runtime-gated on E1 image fix). See `SIGN-OFF.md` "Post-Stream-E residual close-out -- Task 9 (2026-05-24)". Schema source: `conductor/tracks/quest-temporal-fork-model/SURREAL-SCHEMA-HINTS.md`
-   (consume verbatim). Model quest nodes/edges via `RELATE` edges per that
-   doc (definition `quest`/`quest_node`/`quest_edge`; runtime `quest_run` +
-   `quest_node_execution` with `forked_from` + `executes` edges). Reimplement
-   DAG validation (acyclicity within a single quest definition) using the
+9. [x] **Done (2026-05-24, Task 9 close-out).** Three SurrealDB-backed stores landed (`Providers/Stores/Surreal/SurrealActionStore.cs` 538 LOC, `SurrealActionRunStore.cs` 322 LOC, `SurrealActionNodeExecutionStore.cs` 352 LOC) on six schema files (150_action, 160_action_node, 170_action_edge, 190_action_run, 200_action_node_execution, 230_action_graph_edges with `forked_from` + `executes` RELATION tables). G2 single-winner claim primitive at `SurrealActionNodeExecutionStore.cs:280-307`. Fork write-pairing via BEGIN/COMMIT at `SurrealActionRunStore.cs:88`. DI flipped at `Program.cs:267-298`. Build clean; unit suite 535/535. 28 integration tests authored (runtime-gated on E1 image fix). See `SIGN-OFF.md` "Post-Stream-E residual close-out -- Task 9 (2026-05-24)". Schema source: `conductor/tracks/action-temporal-fork-model/SURREAL-SCHEMA-HINTS.md`
+   (consume verbatim). Model action nodes/edges via `RELATE` edges per that
+   doc (definition `action`/`action_node`/`action_edge`; runtime `action_run` +
+   `action_node_execution` with `forked_from` + `executes` edges). Reimplement
+   DAG validation (acyclicity within a single action definition) using the
    `Azoa.SurrealDb.Client` builder's `.Relate()` + `.Fetch()` helpers or
-   retain the iterative validator. **Gated on [[quest-temporal-fork-model]]
+   retain the iterative validator. **Gated on [[action-temporal-fork-model]]
    hand-off**
 10. [ ] Model holon polyhierarchy via graph edges; port query / propagate /
     compose / move-subtree using the package builder
@@ -162,7 +162,7 @@ A1. [~] **Partial — three of four budgets landed (2026-05-22, CLOSEOUT
     (`--filter "Category!=Perf"`) excludes it; tests use `[SkippableFact]`
     + `Skip.IfNot(_surrealAvailable, ...)` matching the wave-2 store-test
     pattern; namespace isolation via `test{guid}`. **Remaining:** holon
-    traversal budget — blocked on the Avatar/Holon/STAR adapters from
+    traversal budget — blocked on the User/Holon/STAR adapters from
     CLOSEOUT Stream A, follow-up after that lands
 A2. [ ] Document SurrealDB transaction/isolation model for multi-statement
     bridge writes in `Persistence/SurrealDb/Schemas/README.md` (delivered
@@ -190,22 +190,22 @@ A10. [ ] G7 chain-reconciliation as chaos-tested CI gate — insert N ops,
 ### Remove EF (wave-3)
 16. [x] **Done (2026-05-22, CLOSEOUT Stream D).** `Data/` (containing
     `AZOADbContext.cs` + `SeedData.cs`), `Migrations/` (all 5 migration
-    files), every `Providers/Stores/Ef*Store.cs` (Avatar, Wallet, Holon,
-    BlockchainOperation, STAR, Quest, NFT, Bridge, QuestRunStore stub,
-    QuestNodeExecutionStore stub), `Core/Idempotency/IdempotencyStore.cs`
+    files), every `Providers/Stores/Ef*Store.cs` (User, Wallet, Holon,
+    BlockchainOperation, STAR, Action, NFT, Bridge, ActionRunStore stub,
+    ActionNodeExecutionStore stub), `Core/Idempotency/IdempotencyStore.cs`
     (EF impl), and `Services/Sagas/EfSagaStore.cs` deleted. The
     `Npgsql.EntityFrameworkCore.PostgreSQL` + `Microsoft.EntityFrameworkCore.Design`
     package refs dropped from `AZOA.WebAPI.csproj`; the
     `Microsoft.EntityFrameworkCore.InMemory` + `Microsoft.EntityFrameworkCore.Sqlite`
     refs dropped from `AZOA.WebAPI.Tests.csproj`. Pre-cleared by **Stream
-    C2** (ApiKey + QuestTemplate seams + Surreal adapters — closed the
+    C2** (ApiKey + ActionTemplate seams + Surreal adapters — closed the
     pre-flight gate's `AZOADbContext` injection sites) and **Stream D0**
     (test rewiring: 6 EF-bound test files deleted; ReconciliationServiceTests
     + CrossChainBridgeServiceTests rewired onto in-memory FakeBridgeStore +
     FakeIdempotencyStore preserving every test name + assertion verbatim).
-    `IQuestStore` (instantiated-Quest CRUD) sits on a new
-    `InMemoryQuestStore` transition adapter pending the
-    [[quest-temporal-fork-model]] runtime store landing.
+    `IActionStore` (instantiated-Action CRUD) sits on a new
+    `InMemoryActionStore` transition adapter pending the
+    [[action-temporal-fork-model]] runtime store landing.
 17. [x] **Done (2026-05-22, CLOSEOUT Stream D).** The `db.Database.Migrate()
     + SeedData.SeedAsync(db)` block in `Program.cs` deleted along with the
     `using Microsoft.EntityFrameworkCore;` + `using AZOA.WebAPI.Data;`

@@ -349,7 +349,7 @@ function AuditEntry({ entry }: { entry: KycControlAuditResponse }) {
                     />
                     <ReferenceDatum
                         label="Changed by"
-                        value={entry.actorAvatarId}
+                        value={entry.actorUserId}
                         emptyLabel="Actor not recorded"
                     />
                     <AuditDatum

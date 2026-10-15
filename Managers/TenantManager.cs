@@ -9,6 +9,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Consent;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -16,7 +17,7 @@ namespace AZOA.WebAPI.Managers;
 /// Tenant provisioning manager — REARCHITECTED by user-self-sovereignty (2026-06-22).
 ///
 /// <para><b>Custodial onboarding correlation.</b> <see cref="ProvisionChildAsync"/>
-/// binds an unclaimed avatar to the provisioning tenant so the tenant/external-user
+/// binds an unclaimed user to the provisioning tenant so the tenant/external-user
 /// pair is unique and retry-safe. Claiming clears <c>OwnerTenantId</c>, while the
 /// deterministic id remains a create-only correlation so a retry cannot reclaim
 /// or reset the account. It never grants signing authority, which still requires
@@ -30,7 +31,16 @@ namespace AZOA.WebAPI.Managers;
 /// with no covering live grant returns <see cref="TenantAuthorizationError.NotFound"/>
 /// (404, never 403 — the isolation crux).</para>
 ///
-/// <para>The issued child JWT carries the USER's avatar id as subject PLUS an
+/// <para><b>Implied consent at provisioning (W3.6).</b> A custodially onboarded
+/// person cannot log into AZOA to click "allow", so <see cref="ProvisionChildAsync"/>
+/// issues an implied, revocable <see cref="GrantOrigin.Participation"/> grant scoped
+/// to the provisioning tenant (see <see cref="TenantProvisionedGrant"/>). It is a
+/// REAL grant — audited, listed on the person's own consent surface, revocable by
+/// them at any time, and structurally incapable of carrying an outbound
+/// value-signing scope. It is issued ONLY on first create, so re-provisioning never
+/// resurrects a grant the person revoked.</para>
+///
+/// <para>The issued child JWT carries the USER's user id as subject PLUS an
 /// <c>act_as_tenant</c> claim (the tenant id) so a tenant-driven action is
 /// DISTINGUISHABLE from a user-driven one at the signing seam (C1); and its
 /// <c>nbf</c> respects the user's <c>AuthNotBefore</c> watermark so a token minted
@@ -41,23 +51,43 @@ public class TenantManager : ITenantManager
     /// <summary>Short-lived child credential TTL (D2: shorten vs. the 24h login token).</summary>
     private static readonly TimeSpan ChildTokenLifetime = TimeSpan.FromMinutes(15);
 
-    private readonly IAvatarStore _avatarStore;
+    /// <summary>Message suffix stated on the response when no implied grant could be issued.</summary>
+    public const string NoImpliedGrantNotice =
+        " NO implied consent grant was issued, so this tenant holds no authority over the user.";
+
+    private readonly IUserStore _userStore;
     private readonly IConfiguration _config;
     private readonly IConsentGrantStore _consentGrants;
+    private readonly ITenantProvisionedGrantIssuer? _provisionedGrants;
 
+    /// <param name="provisionedGrants">Issues the implied provisioning grant. Optional so
+    /// the manager still constructs without a container; register it explicitly with
+    /// <c>services.AddTenantProvisionedConsentGrants()</c>.</param>
+    /// <param name="consentManager">Fallback source of the issuer. The consent authority is
+    /// already in the container, so an unregistered issuer is BUILT from it here rather than
+    /// left null — the implied grant must not depend on one extra line of wiring landing.
+    /// Only when neither is available does the manager have no issuer, and that absence can
+    /// only fail to grant authority, never confer any; the provisioning response then says
+    /// so explicitly (<see cref="NoImpliedGrantNotice"/>) instead of reading as a clean success.</param>
     public TenantManager(
-        IAvatarStore avatarStore,
+        IUserStore userStore,
         IConfiguration config,
-        IConsentGrantStore consentGrants)
+        IConsentGrantStore consentGrants,
+        ITenantProvisionedGrantIssuer? provisionedGrants = null,
+        IConsentManager? consentManager = null)
     {
-        _avatarStore = avatarStore;
+        _userStore = userStore;
         _config = config;
         _consentGrants = consentGrants;
+        _provisionedGrants = provisionedGrants
+            ?? (consentManager is null
+                ? null
+                : new TenantProvisionedGrantIssuer(consentManager, consentGrants));
     }
 
-    public async Task<AZOAResult<ChildAvatarResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default)
+    public async Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default)
     {
-        var result = new AZOAResult<ChildAvatarResponse>();
+        var result = new AZOAResult<ChildUserResponse>();
 
         if (string.IsNullOrWhiteSpace(model.ExternalUserId)
             || model.ExternalUserId.Trim().Length > 128
@@ -69,41 +99,37 @@ public class TenantManager : ITenantManager
         }
 
         var externalUserId = model.ExternalUserId.Trim();
-        var deterministicId = DeterministicAvatarId(tenantId, externalUserId);
+        var deterministicId = DeterministicUserId(tenantId, externalUserId);
 
-        var existing = await _avatarStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
+        var existing = await _userStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
         if (existing.IsError)
-            return new AZOAResult<ChildAvatarResponse>
+            return new AZOAResult<ChildUserResponse>
             {
                 IsError = true,
                 Message = SafePersistenceMessage(existing.Message)
             };
         if (existing.Result is not null)
-            return new AZOAResult<ChildAvatarResponse>
-            {
-                Result = ToResponse(existing.Result),
-                Message = "Avatar already provisioned for this tenant user."
-            };
+            return await WithImpliedGrantAsync(
+                existing.Result, tenantId, externalUserId,
+                "User already provisioned for this tenant user.", ct);
 
         // Claim severs OwnerTenantId by design. Resolve the immutable deterministic
         // id before create so a post-claim retry returns the original user account
         // and can never overwrite credentials or reattach tenant ownership.
-        var deterministicExisting = await _avatarStore.GetByIdAsync(deterministicId, ct);
+        var deterministicExisting = await _userStore.GetByIdAsync(deterministicId, ct);
         if (!deterministicExisting.IsError && deterministicExisting.Result is not null)
         {
             if (!MatchesCorrelation(deterministicExisting.Result, tenantId, externalUserId, deterministicId))
                 return CorrelationConflict();
 
-            return new AZOAResult<ChildAvatarResponse>
-            {
-                Result = ToResponse(deterministicExisting.Result),
-                Message = "Avatar already provisioned for this tenant user."
-            };
+            return await WithImpliedGrantAsync(
+                deterministicExisting.Result, tenantId, externalUserId,
+                "User already provisioned for this tenant user.", ct);
         }
         if (deterministicExisting.IsError
             && IsPersistenceUnavailable(deterministicExisting.Message))
         {
-            return new AZOAResult<ChildAvatarResponse>
+            return new AZOAResult<ChildUserResponse>
             {
                 IsError = true,
                 Message = SafePersistenceMessage(deterministicExisting.Message)
@@ -112,10 +138,15 @@ public class TenantManager : ITenantManager
 
         var correlationHash = CorrelationHash(tenantId, externalUserId);
         var seed = $"onboard-{Convert.ToHexString(correlationHash.AsSpan(0, 12)).ToLowerInvariant()}";
-        var username = string.IsNullOrWhiteSpace(model.Username) ? seed : model.Username.Trim();
-        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : model.Email.Trim();
+        // OI-11: fold case HERE, not only at self-registration. user_email / user_username
+        // are case-SENSITIVE UNIQUE indexes, so a tenant that provisioned Alice@Example.com
+        // used to leave a row a later alice@example.com did not collide with - two password
+        // hashes for one address, with LoginAsync left to refuse the ambiguity. This writer
+        // now applies the SAME rule as UserManager.RegisterAsync, so the index adjudicates.
+        var username = string.IsNullOrWhiteSpace(model.Username) ? seed : NormalizeIdentityValue(model.Username);
+        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : NormalizeIdentityValue(model.Email);
 
-        var child = new Avatar
+        var child = new User
         {
             Id = deterministicId,
             Username = username,
@@ -135,29 +166,82 @@ public class TenantManager : ITenantManager
                 : model.ExternalRef.Trim(),
         };
 
-        var saved = await _avatarStore.CreateIfAbsentAsync(child, ct);
+        var saved = await _userStore.CreateIfAbsentAsync(child, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
             result.Message = saved.IsError
                 ? SafePersistenceMessage(saved.Message)
-                : "Failed to provision avatar.";
+                : "Failed to provision user.";
             return result;
         }
 
         if (!MatchesCorrelation(saved.Result, tenantId, externalUserId, deterministicId))
             return CorrelationConflict();
 
-        result.Result = ToResponse(saved.Result);
-        result.Message = "Tenant-bound avatar provisioned (claimable by the user).";
+        return await WithImpliedGrantAsync(
+            saved.Result, tenantId, externalUserId,
+            "Tenant-bound user provisioned (claimable by the user).", ct);
+    }
+
+    /// <summary>
+    /// Attaches the implied, revocable provisioning grant (W3.6) to a just-provisioned or
+    /// already-provisioned user, then returns the provisioning result.
+    ///
+    /// <para>Three rules, each a deliberate refusal to hand out authority:</para>
+    /// <list type="number">
+    /// <item>A user whose <c>OwnerTenantId</c> is no longer this tenant has CLAIMED their
+    /// account. Claiming revokes every grant they made; issuing a fresh one here would
+    /// silently re-attach tenant authority to a self-sovereign person, so nothing is
+    /// issued and the response says so.</item>
+    /// <item>With no issuer wired, no grant exists and the tenant can do nothing with the
+    /// user. That is fail-closed, but it is NOT a clean success — the message states it.</item>
+    /// <item>A failed issue is an ERROR, not a quiet partial success: provisioning is
+    /// idempotent, so the caller retries and the issuer (which never re-issues over a prior
+    /// record) heals the gap exactly once.</item>
+    /// </list>
+    /// </summary>
+    private async Task<AZOAResult<ChildUserResponse>> WithImpliedGrantAsync(
+        IUser user,
+        Guid tenantId,
+        string externalUserId,
+        string message,
+        CancellationToken ct)
+    {
+        var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user), Message = message };
+
+        if (user.OwnerTenantId != tenantId)
+        {
+            result.Message = message + " The user has claimed this account; no tenant authority is implied.";
+            return result;
+        }
+
+        if (_provisionedGrants is null)
+        {
+            result.Message = message + NoImpliedGrantNotice;
+            return result;
+        }
+
+        var granted = await _provisionedGrants.IssueOnProvisionAsync(tenantId, user.Id, externalUserId, ct);
+        if (granted.IsError)
+        {
+            result.IsError = true;
+            result.Result = null;
+            result.Message =
+                "TENANT_CONSENT_UNAVAILABLE: The user exists but the implied consent grant could not be " +
+                "issued, so this tenant holds no authority over them. Retry the provisioning call. " +
+                granted.Message;
+            return result;
+        }
+
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<ChildAvatarResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<ChildUserResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default)
     {
-        var result = new AZOAResult<IEnumerable<ChildAvatarResponse>>();
+        var result = new AZOAResult<IEnumerable<ChildUserResponse>>();
 
-        var owned = await _avatarStore.ListByOwnerTenantAsync(tenantId, ct);
+        var owned = await _userStore.ListByOwnerTenantAsync(tenantId, ct);
         if (owned.IsError)
         {
             result.IsError = true;
@@ -165,7 +249,7 @@ public class TenantManager : ITenantManager
             return result;
         }
 
-        var children = owned.Result ?? Enumerable.Empty<IAvatar>();
+        var children = owned.Result ?? Enumerable.Empty<IUser>();
         if (!string.IsNullOrWhiteSpace(externalUserId))
         {
             var filter = externalUserId.Trim();
@@ -177,20 +261,20 @@ public class TenantManager : ITenantManager
         return result;
     }
 
-    public async Task<AZOAResult<ChildAvatarResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
+    public async Task<AZOAResult<ChildUserResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
     {
-        var result = new AZOAResult<ChildAvatarResponse>();
+        var result = new AZOAResult<ChildUserResponse>();
 
         if (string.IsNullOrWhiteSpace(externalUserId))
         {
             // Indistinguishable-from-miss: no leak about what exists.
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No child avatar for that external user id.";
+            result.Message = TenantAuthorizationError.NotFound + "No child user for that external user id.";
             return result;
         }
 
         externalUserId = externalUserId.Trim();
-        var found = await _avatarStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
+        var found = await _userStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
         if (found.IsError)
         {
             result.IsError = true;
@@ -199,10 +283,10 @@ public class TenantManager : ITenantManager
         }
         if (found.Result is null)
         {
-            // A claimed avatar no longer carries OwnerTenantId. Its deterministic
+            // A claimed user no longer carries OwnerTenantId. Its deterministic
             // id remains the immutable, tenant-partitioned correlation key.
-            var deterministicId = DeterministicAvatarId(tenantId, externalUserId);
-            var claimed = await _avatarStore.GetByIdAsync(deterministicId, ct);
+            var deterministicId = DeterministicUserId(tenantId, externalUserId);
+            var claimed = await _userStore.GetByIdAsync(deterministicId, ct);
             if (!claimed.IsError
                 && claimed.Result is not null
                 && MatchesCorrelation(claimed.Result, tenantId, externalUserId, deterministicId))
@@ -220,7 +304,7 @@ public class TenantManager : ITenantManager
             }
 
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No child avatar for that external user id.";
+            result.Message = TenantAuthorizationError.NotFound + "No child user for that external user id.";
             return result;
         }
 
@@ -238,13 +322,13 @@ public class TenantManager : ITenantManager
     {
         var result = new AZOAResult<ChildCredentialResponse>();
 
-        // Load the user avatar. A missing avatar is NOT_FOUND (404) — the isolation
-        // crux: a prober cannot distinguish "no such avatar" from "no grant".
-        var loaded = await _avatarStore.GetByIdAsync(childId, ct);
+        // Load the user. A missing user is NOT_FOUND (404) — the isolation
+        // crux: a prober cannot distinguish "no such user" from "no grant".
+        var loaded = await _userStore.GetByIdAsync(childId, ct);
         if (loaded.IsError || loaded.Result is null)
         {
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            result.Message = TenantAuthorizationError.NotFound + "No such user.";
             return result;
         }
 
@@ -252,7 +336,7 @@ public class TenantManager : ITenantManager
 
         // Server-trusted tenant scopes (M3): the ceiling derived from the
         // authenticated tenant principal, never a request-body field. tenant:provision
-        // is never delegated down (a credential must not provision further avatars).
+        // is never delegated down (a credential must not provision further users).
         var tenantOwn = new HashSet<string>(
             (tenantScopes ?? Enumerable.Empty<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()),
             StringComparer.Ordinal);
@@ -273,7 +357,7 @@ public class TenantManager : ITenantManager
         {
             // Fail closed — a grant-lookup failure denies issuance.
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            result.Message = TenantAuthorizationError.NotFound + "No such user.";
             return result;
         }
 
@@ -286,7 +370,7 @@ public class TenantManager : ITenantManager
         {
             // No covering live grant — the tenant has no authority for this user.
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            result.Message = TenantAuthorizationError.NotFound + "No such user.";
             return result;
         }
 
@@ -303,7 +387,7 @@ public class TenantManager : ITenantManager
         {
             // The grant exists but covers none of the requested/allowed scopes.
             result.IsError = true;
-            result.Message = TenantAuthorizationError.NotFound + "No such avatar.";
+            result.Message = TenantAuthorizationError.NotFound + "No such user.";
             return result;
         }
 
@@ -317,7 +401,7 @@ public class TenantManager : ITenantManager
 
         result.Result = new ChildCredentialResponse
         {
-            AvatarId = user.Id,
+            UserId = user.Id,
             Token = token,
             ExpiresAt = expiresAt,
             Scopes = delegated,
@@ -328,39 +412,48 @@ public class TenantManager : ITenantManager
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static ChildAvatarResponse ToResponse(IAvatar a) => new()
+    private static ChildUserResponse ToResponse(IUser a) => new()
     {
-        AvatarId = a.Id,
+        UserId = a.Id,
         ExternalUserId = a.ExternalUserId ?? string.Empty,
         ExternalRef = a.ExternalRef,
         Username = a.Username,
         Email = a.Email,
     };
 
+    /// <summary>Trimmed, lower-invariant identity value; mirrors UserManager's rule exactly.</summary>
+    /// <remarks>
+    /// Duplicated rather than shared because UserManager keeps its canonicaliser private.
+    /// Both copies must stay byte-identical or the case-SENSITIVE UNIQUE indexes stop folding
+    /// between writers; promoting one shared helper is the follow-up.
+    /// </remarks>
+    private static string NormalizeIdentityValue(string? value)
+        => value?.Trim().ToLowerInvariant() ?? string.Empty;
+
     private static byte[] CorrelationHash(Guid tenantId, string externalUserId)
         => SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-            $"azoa:tenant-avatar:v1:{tenantId:N}:{externalUserId}"));
+            $"azoa:tenant-user:v1:{tenantId:N}:{externalUserId}"));
 
-    private static Guid DeterministicAvatarId(Guid tenantId, string externalUserId)
+    private static Guid DeterministicUserId(Guid tenantId, string externalUserId)
         => new(CorrelationHash(tenantId, externalUserId).AsSpan(0, 16));
 
     private static bool MatchesCorrelation(
-        IAvatar avatar,
+        IUser user,
         Guid tenantId,
         string externalUserId,
         Guid deterministicId)
-        => avatar.Id == deterministicId
-            && string.Equals(avatar.ExternalUserId, externalUserId, StringComparison.Ordinal)
-            && (avatar.OwnerTenantId is null || avatar.OwnerTenantId == tenantId);
+        => user.Id == deterministicId
+            && string.Equals(user.ExternalUserId, externalUserId, StringComparison.Ordinal)
+            && (user.OwnerTenantId is null || user.OwnerTenantId == tenantId);
 
-    private static AZOAResult<ChildAvatarResponse> CorrelationConflict() => new()
+    private static AZOAResult<ChildUserResponse> CorrelationConflict() => new()
     {
         IsError = true,
         Message = "The deterministic tenant identity is already bound to a different account."
     };
 
     private static bool IsPersistenceUnavailable(string? message)
-        => message?.StartsWith("AVATAR_STORE_UNAVAILABLE:", StringComparison.Ordinal) == true;
+        => message?.StartsWith("USER_STORE_UNAVAILABLE:", StringComparison.Ordinal) == true;
 
     private static string SafePersistenceMessage(string? message)
         => IsPersistenceUnavailable(message)
@@ -368,8 +461,8 @@ public class TenantManager : ITenantManager
             : "TENANT_IDENTITY_ERROR: Tenant identity could not be processed.";
 
     /// <summary>
-    /// Minimal symmetric child-token primitive. Subject = the USER's avatar id (so
-    /// downstream per-avatar authorization treats it like the user); one
+    /// Minimal symmetric child-token primitive. Subject = the USER's user id (so
+    /// downstream per-user authorization treats it like the user); one
     /// <c>scope</c> claim per delegated scope. tenant-consent-delegation C1/AC4: a
     /// distinguishing <c>act_as_tenant</c> claim (the tenant id) marks this as
     /// tenant-driven so the signing seam runs the live consent check. AC3b: an
@@ -377,7 +470,7 @@ public class TenantManager : ITenantManager
     /// </summary>
     public const string ActAsTenantClaim = "act_as_tenant";
 
-    private string GenerateChildJwt(Guid userAvatarId, Guid tenantId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
+    private string GenerateChildJwt(Guid userUserId, Guid tenantId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
         var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
@@ -385,8 +478,8 @@ public class TenantManager : ITenantManager
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Sub, userAvatarId.ToString()),
-            new("AvatarId", userAvatarId.ToString()),
+            new(JwtRegisteredClaimNames.Sub, userUserId.ToString()),
+            new("UserId", userUserId.ToString()),
             // C1/AC4: marks the token as tenant-driven; the signing seam reads this
             // to require a live consent grant before any key decrypt.
             new(ActAsTenantClaim, tenantId.ToString()),

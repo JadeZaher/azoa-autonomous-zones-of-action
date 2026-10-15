@@ -171,9 +171,10 @@ Network: ____________________   Date: __________   Operator: ___________________
 Until every box is checked for a network, leave that network's set **absent**
 (fail-closed). Do not "temporarily" insert a partial or unverified set.
 
-The `RequireFullSignatureVerification=false` escape hatch exists for
-devnet/testnet **dry runs only** and MUST NEVER be set where real value moves —
-it skips crypto entirely. It is not a substitute for this procedure.
+There is **no escape hatch**. `RequireFullSignatureVerification` was removed:
+per-signature secp256k1 verification is unconditional, so this procedure is the
+ONLY way to make a network's VAAs verifiable. A network without a verified
+Guardian set simply rejects every VAA.
 
 ---
 
@@ -181,11 +182,13 @@ it skips crypto entirely. It is not a substitute for this procedure.
 
 - **`RESIDUAL-RISK-RUNBOOK.md` §4** — this document IS the ops procedure for the
   "real testnet/mainnet Guardian sets" gate (gate item *a*).
-- **`scripts/passoff.ps1`** — the **code** sign-off gate (build + full unit
-  suite + safety-critical test assertions). It passes the code gate and prints
-  "OPS SIGN-OFF REQUIRED" for the ops/config gates including this one; it does
-  NOT and cannot verify the real Guardian-set values — that is this checklist.
+- **`.github/workflows/ci.yml`** — the **code** sign-off gate (build + unit
+  suite + integration, schema-equivalence and SDK jobs). It supersedes the
+  retired `scripts/passoff.ps1`, which no longer exists in the tree. Like that
+  script, CI does NOT and cannot verify the real Guardian-set values — that is
+  this checklist, and it stays a human ops sign-off.
 - **`Services/Wormhole/Secp256k1VaaSignatureVerifier.cs`** — the implementation
   consuming `Blockchain:Wormhole:GuardianSets` (config-driven, fail-closed).
 - **`Core/Blockchain/Wormhole/WormholeConfig.cs`** — `GuardianSets` binding
-  (`Dictionary<string, List<string>>`) + `RequireFullSignatureVerification`.
+  (`Dictionary<string, List<string>>`). Deliberately carries no verification
+  on/off switch.

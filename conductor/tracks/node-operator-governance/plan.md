@@ -5,7 +5,7 @@ created: 2026-07-10
 status: in_progress
 horizon: alpha-partial
 depends_on:
-  - avatar-dapp-rbac
+  - user-dapp-rbac
   - final-hardening-cutover
 related:
   - federation-v2
@@ -38,7 +38,7 @@ declare its own economy knobs. Needs NO federation substrate.
 
 ### 1.2 Fee schedules (local, on-chain-settling)
 - `NodeFeeSchedule` config record (node-scoped, versioned): per-operation-type
-  `{ flatBaseUnits, bps }` for Mint / Transfer / Swap / QuestComplete / FederationPublish.
+  `{ flatBaseUnits, bps }` for Mint / Transfer / Swap / ActionComplete / FederationPublish.
   Modeled on the fiat-stripe-bridge `TOKENS_PER_CENT` operator-authoritative-rate pattern
   (server-side, never client-supplied).
 - Fee application seam in the value path: at broadcast time the computed fee settles on-chain
@@ -69,16 +69,16 @@ schedule plus append-only audit, value-idempotent retries, expected-version CAS,
 and allocation Mint netting inside the won allocation claim. Transfer quotes are
 fail-closed when nonzero until node-treasury settlement exists. Gross, fee, net,
 and schedule version are persisted into the operation/replay payload; crash
-reconciliation restores the complete allocation result. Swap, QuestComplete,
+reconciliation restores the complete allocation result. Swap, ActionComplete,
 and FederationPublish consumers remain open Phase 1 work; their configured
 entries must not be called enforced until those value paths quote and settle
-them. Direct and quest NFT Mint now fail closed whenever the Mint entry is
+them. Direct and action NFT Mint now fail closed whenever the Mint entry is
 unavailable, malformed, or nonzero; allocation Mint alone uses its server-held,
 version-pinned quote to mint the net amount.
 
 The remaining consumers cannot share Allocation Mint's simple netting rule.
 Raw NFT routes currently persist intent/ownership before broadcast, Swap returns
-a client-signed transaction, QuestComplete may be driven by a durable workflow,
+a client-signed transaction, ActionComplete may be driven by a durable workflow,
 and FederationPublish does not yet have a live cross-node value path. Before
 enabling any nonzero entry, Phase 1 therefore requires a settlement boundary
 with all of the following:
@@ -93,10 +93,10 @@ with all of the following:
 - recovery that never charges twice and never reports the primary action
   complete while a required fee is only a phantom off-chain receivable;
 - manager refactors that win the settlement claim before raw NFT ownership or
-  quest/federation publication side effects.
+  action/federation publication side effects.
 
 Until those invariants exist, nonzero Transfer and every other unsettled
-consumer must continue to fail closed. Local quest definition publication is
+consumer must continue to fail closed. Local action definition publication is
 not `FederationPublish` and must not be charged under that schedule entry.
 
 Settlement prerequisite audit (2026-07-11) found that submitted operations in
@@ -237,7 +237,7 @@ create a settlement, submit an atomic group, or make nonzero Transfer fees
 active.
 
 Direct-mint containment and NFT governance closure (2026-07-17): the public
-and quest `NftManager.MintAsync` path now reads the Mint schedule and rejects
+and action `NftManager.MintAsync` path now reads the Mint schedule and rejects
 unavailable, malformed, or nonzero fees before KYC, Holon persistence, or
 operation creation. Allocation persists NFT metadata directly inside its won
 claim after a validated, version-pinned quote; it does not expose a bypass
@@ -388,7 +388,7 @@ use case). A peer policy with no peers is inert.
   `CertificationProof`) before this node collaborates; below-threshold peer rejected fail-closed.
 
 ### 2.2 Ecosystem incentives (bounded parameters)
-- `NodeIncentiveParameters`: quest-completion bonus, referral incentive, staking-style knob —
+- `NodeIncentiveParameters`: action-completion bonus, referral incentive, staking-style knob —
   read by the existing Tier-2 economic nodes (Grant/Emit/Transfer). NO general rules DSL.
 
 ### 2.3 Cross-node interop enforcement
@@ -398,14 +398,14 @@ use case). A peer policy with no peers is inert.
 
 ### 2.4 Membership/onboarding rules (cross-node reach)
 - Node-local join policy (open / invite / KYC-gated) composing the existing KYC gate +
-  quest-invitations model, extended to the federated case.
+  action-invitations model, extended to the federated case.
 
 **Phase 2 exit:** an operator sets enforced federation rules + peer policies + bounded
 incentive parameters; cross-node collaboration is conformance-required and opt-in-only; no
 local rule is ever imposed on a peer.
 
 ## Prerequisites carried from related tracks
-- avatar-dapp-rbac scope-manager + policy model must be shipped (Phase 1 reuses it).
+- user-dapp-rbac scope-manager + policy model must be shipped (Phase 1 reuses it).
 - final-hardening value engine / `AllocationManager` / `HolonType` registry (Phase 1 fee seam).
 - federation-v2 P0 (gate-result serializer), P1 (versioned HolonType vocab), and its L0/L1
   client must exist before Phase 2 (the conformance threshold + holon-reference policy read them).

@@ -8,7 +8,7 @@ public class SearchRequest
     public SearchableEntityType EntityTypes { get; set; } = SearchableEntityType.All;
     public string? ChainId { get; set; }
     public string? AssetType { get; set; }
-    public Guid? AvatarId { get; set; }
+    public Guid? UserId { get; set; }
     public DateTime? CreatedAfter { get; set; }
     public DateTime? CreatedBefore { get; set; }
     public string SortBy { get; set; } = "CreatedDate";

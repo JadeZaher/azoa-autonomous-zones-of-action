@@ -27,10 +27,10 @@ public class SearchRequestValidator : AbstractValidator<SearchRequest>
                 .MaximumLength(64).WithMessage("AssetType must not exceed 64 characters.");
         });
 
-        When(x => x.AvatarId.HasValue, () =>
+        When(x => x.UserId.HasValue, () =>
         {
-            RuleFor(x => x.AvatarId!.Value)
-                .NotEqual(Guid.Empty).WithMessage("AvatarId must not be an empty GUID.");
+            RuleFor(x => x.UserId!.Value)
+                .NotEqual(Guid.Empty).WithMessage("UserId must not be an empty GUID.");
         });
 
         // Cross-field range sanity: an inverted window (CreatedBefore < CreatedAfter)

@@ -23,7 +23,7 @@ api-safety-hardening         ──┤
 surrealdb-client-package     ──┼──►  surrealdb-migration  ──►  mcp-surface
 surrealdb-schema-source-gen  ──┘            ▲
                                             │
-quest-temporal-fork-model    ───────────────┘  (gates tasks 9, 10, 11)
+action-temporal-fork-model    ───────────────┘  (gates tasks 9, 10, 11)
 ```
 
 - **Upstream (shipped):** [`architecture-decoupling`](../architecture-decoupling)
@@ -34,10 +34,10 @@ quest-temporal-fork-model    ───────────────┘  (
   `Azoa.SurrealDb.Client` + analyzer + Mermaid→`.surql` source-gen),
   [`surrealdb-schema-source-gen`](../surrealdb-schema-source-gen)
   (POCO source-gen).
-- **Upstream (in-flight):** [`quest-temporal-fork-model`](../quest-temporal-fork-model)
-  — owns the runtime/definition split (`Quest`/`QuestNode` vs.
-  `QuestRun`/`QuestNodeExecution`). Gates [`plan.md`](plan.md) tasks
-  9, 10, 11 and the `IQuestStore` portion of task 5.
+- **Upstream (in-flight):** [`action-temporal-fork-model`](../action-temporal-fork-model)
+  — owns the runtime/definition split (`ActionDefinition`/`ActionNode` vs.
+  `ActionRun`/`ActionNodeExecution`). Gates [`plan.md`](plan.md) tasks
+  9, 10, 11 and the `IActionStore` portion of task 5.
 - **Downstream (blocked):** [`mcp-surface`](../mcp-surface) — blocked on
   this track's completion.
 
@@ -69,13 +69,13 @@ seam only, services still on DbContext), 8b, A7 (test-skip pattern).
 
 | # | Bucket | Tasks |
 |---|---|---|
-| Wave-2 finish | task 5 completion + task 8 full | Avatar/Holon/STAR adapters; refactor `ReconciliationService` + `CrossChainBridgeService` onto `IBridgeStore` |
+| Wave-2 finish | task 5 completion + task 8 full | User/Holon/STAR adapters; refactor `ReconciliationService` + `CrossChainBridgeService` onto `IBridgeStore` |
 | Ops guardrails | 12, 13, 15, A1 | durability self-check (B1), backup/restore drill, OTEL on `ISurrealExecutor`, perf budgets |
-| Quest graph (gated) | 9, 10, 11 | quest DAG via `RELATE`, holon polyhierarchy edges, single `ExecutionOrder` — blocked on `quest-temporal-fork-model` |
+| Action graph (gated) | 9, 10, 11 | action DAG via `RELATE`, holon polyhierarchy edges, single `ExecutionOrder` — blocked on `action-temporal-fork-model` |
 | Wave-3 EF removal | 16, 17, 18 | delete `AZOADbContext`/`Migrations/`/`Ef*Store.cs`/Npgsql packages |
 | Cutover gates | 19–23, 25–27 | G1 crash, G2 idempotency, G7 reconciliation drill, G5 restore drill, G3 injection suite, harness port, sign-off |
 
-This runbook closes everything **except** the quest-graph tasks (which
+This runbook closes everything **except** the action-graph tasks (which
 sequence after the gating track) and the package-pin housekeeping (A4,
 A5 — already done implicitly by `surrealdb-client-package`).
 
@@ -132,11 +132,11 @@ Open three Claude Code instances in the repo and paste one prompt per
 window. They touch disjoint file sets; you can launch all three within
 ~30 seconds.
 
-### Stream A — finish [`plan.md`](plan.md) task 5 (Avatar / Holon / STAR adapters)
+### Stream A — finish [`plan.md`](plan.md) task 5 (User / Holon / STAR adapters)
 
 **Scope.** Author the three missing `.mermaid`/`.surql` schemas, build
-their adapters mirroring the wave-2 pattern, and flip DI. Quest portion
-stays gated on `quest-temporal-fork-model` — skip it.
+their adapters mirroring the wave-2 pattern, and flip DI. Action portion
+stays gated on `action-temporal-fork-model` — skip it.
 
 **Prompt:**
 
@@ -144,8 +144,8 @@ stays gated on `quest-temporal-fork-model` — skip it.
 /ultrapilot
 
 Goal: close wave-2 task 5 (conductor/tracks/surrealdb-migration/plan.md)
-for the Avatar, Holon, STAR aggregates. Quest stays gated on
-quest-temporal-fork-model — SKIP it.
+for the User, Holon, STAR aggregates. Action stays gated on
+action-temporal-fork-model — SKIP it.
 
 Pattern to mirror exactly: the just-landed wave-2 stores at
 Providers/Stores/Surreal/SurrealWalletStore.cs (simple aggregate) and
@@ -158,14 +158,14 @@ acceptable per SurrealBridgeStore.cs:BuildConditionalUpdateSql).
 Decomposition (use haiku for explore, sonnet for the 3 workers):
 
   W1 (sonnet, isolated):
-    - Persistence/SurrealDb/Schemas/source/090_avatar.mermaid (SCHEMAFULL,
+    - Persistence/SurrealDb/Schemas/source/090_user.mermaid (SCHEMAFULL,
       mirror 010_wallet.mermaid annotations style)
-    - Persistence/SurrealDb/Schemas/090_avatar.surql (hand-author)
-    - Providers/Stores/Surreal/SurrealAvatarStore.cs
-    - tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/SurrealAvatarStoreTests.cs
+    - Persistence/SurrealDb/Schemas/090_user.surql (hand-author)
+    - Providers/Stores/Surreal/SurrealUserStore.cs
+    - tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/SurrealUserStoreTests.cs
     Inline POCO inside the store (no source-gen pass this round; mark
     "replace with generated POCO when source-gen catches up"). Field
-    shape from Models/Avatar.cs.
+    shape from Models/User.cs.
 
   W2 (sonnet, isolated):
     - Persistence/SurrealDb/Schemas/source/100_holon.mermaid
@@ -188,9 +188,9 @@ All tests use [SkippableFact] + Skip.IfNot(await SkipIfSurrealDbUnavailableAsync
 (NOT the early-return pattern).
 
 Sequential coordinator pass (you, sonnet):
-  - Flip the 3 Program.cs:247-254 EF lines for Avatar/Holon/STAR to the
-    new Surreal counterparts (keep Quest on EF — gated on
-    quest-temporal-fork-model).
+  - Flip the 3 Program.cs:247-254 EF lines for User/Holon/STAR to the
+    new Surreal counterparts (keep Action on EF — gated on
+    action-temporal-fork-model).
   - dotnet build AZOA.WebAPI.csproj — assert 0 errors, ≤17 warnings.
 
 Closing pass (opus, ONE invocation):
@@ -200,7 +200,7 @@ Closing pass (opus, ONE invocation):
   silent DateTime-Kind drift.
   If findings, spawn ONE executor-high to fix them; re-build.
 
-Done = build green + plan.md task 5 boxes ticked for Avatar/Holon/STAR.
+Done = build green + plan.md task 5 boxes ticked for User/Holon/STAR.
 ```
 
 ### Stream B — ops guardrails ([`plan.md`](plan.md) tasks 12, 13, 15, A1)
@@ -346,12 +346,12 @@ wave-3") to remove that note.
 
 > **Sequencing (amended 2026-05-22).** Stream C2 first, then Stream D.
 > Stream C2 was inserted after a failed Stream D dry-run: the pre-flight
-> grep surfaced three production code sites (`Services/Quest/QuestInstantiator.cs`,
+> grep surfaced three production code sites (`Services/Actions/ActionInstantiator.cs`,
 > `Core/ApiKeyAuthenticationHandler.cs`, `Controllers/ApiKeyController.cs`)
 > that still inject `AZOADbContext` and were never in Stream C's scope.
 > Stream D's W1 deletion list would have broken the build at those call
 > sites. C2 closes that gap by shipping the missing `IApiKeyStore` and
-> `IQuestTemplateStore` seams + Surreal adapters, then flipping the
+> `IActionTemplateStore` seams + Surreal adapters, then flipping the
 > three callers. The Stream D pre-flight gate now passes cleanly.
 
 ### Stream C2 — pre-D gap closure ([`plan.md`](plan.md) task 8 follow-up)
@@ -362,11 +362,11 @@ pure ctor swap from `AZOADbContext` to the new store interface, plus
 the Surreal-backed adapter mirroring the wave-2 pattern.
 
 **Why now (not deferred).** Stream D can't proceed until every
-production injection site is gone, and `quest-temporal-fork-model` is
-weeks out. Quest TEMPLATE lookups are read-only catalog data
-(`QuestTemplate` / `QuestNodeTemplate` definitions) — definition-side,
-not the runtime `quest_run` / `quest_node_execution` split that
-`quest-temporal-fork-model` owns — so there's no track collision.
+production injection site is gone, and `action-temporal-fork-model` is
+weeks out. Action TEMPLATE lookups are read-only catalog data
+(`ActionTemplate` / `ActionNodeTemplate` definitions) — definition-side,
+not the runtime `action_run` / `action_node_execution` split that
+`action-temporal-fork-model` owns — so there's no track collision.
 
 **Prompt:**
 
@@ -399,7 +399,7 @@ Decomposition (sonnet, 2 isolated workers):
                                                 is itself singleton)
       - Controllers/ApiKeyController.cs        (ctor-inject IApiKeyStore)
 
-    Schema (table api_key, SCHEMAFULL): id (string), avatar_id (string,
+    Schema (table api_key, SCHEMAFULL): id (string), user_id (string,
     indexed), name (string), key_hash (string, UNIQUE), key_prefix
     (string), created_date (datetime), expires_at (option<datetime>),
     last_used_at (option<datetime>), revoked_at (option<datetime>),
@@ -408,11 +408,11 @@ Decomposition (sonnet, 2 isolated workers):
     IApiKeyStore surface (minimal — match exactly what the two callers
     need, nothing more):
       - Task<ApiKey?> GetByHashAsync(string keyHash, CancellationToken ct)
-      - Task<IReadOnlyList<ApiKey>> ListByAvatarAsync(Guid avatarId, CancellationToken ct)
-      - Task<ApiKey?> GetByIdForAvatarAsync(Guid id, Guid avatarId, CancellationToken ct)
+      - Task<IReadOnlyList<ApiKey>> ListByUserAsync(Guid userId, CancellationToken ct)
+      - Task<ApiKey?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken ct)
       - Task CreateAsync(ApiKey apiKey, CancellationToken ct)
-      - Task<bool> RevokeAsync(Guid id, Guid avatarId, DateTime revokedAt, CancellationToken ct)
-      - Task<bool> DeleteAsync(Guid id, Guid avatarId, CancellationToken ct)
+      - Task<bool> RevokeAsync(Guid id, Guid userId, DateTime revokedAt, CancellationToken ct)
+      - Task<bool> DeleteAsync(Guid id, Guid userId, CancellationToken ct)
       - Task TouchLastUsedAsync(Guid id, DateTime lastUsedAt, CancellationToken ct)
         (fire-and-forget from the handler — must not throw)
 
@@ -420,58 +420,58 @@ Decomposition (sonnet, 2 isolated workers):
     (same pattern as SurrealSagaStore.ToSurrealId). UNIQUE on key_hash
     via a DEFINE INDEX api_key_unique_hash.
 
-  W2 (sonnet) — QuestTemplate catalog:
+  W2 (sonnet) — ActionTemplate catalog:
     OWNED FILES (additive):
-      - Persistence/SurrealDb/Schemas/source/130_quest_template.mermaid
-      - Persistence/SurrealDb/Schemas/130_quest_template.surql
-      - Persistence/SurrealDb/Schemas/source/140_quest_node_template.mermaid
-      - Persistence/SurrealDb/Schemas/140_quest_node_template.surql
-      - Interfaces/Stores/IQuestTemplateStore.cs
-      - Providers/Stores/Surreal/SurrealQuestTemplateStore.cs
-      - tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/SurrealQuestTemplateStoreTests.cs
+      - Persistence/SurrealDb/Schemas/source/130_action_template.mermaid
+      - Persistence/SurrealDb/Schemas/130_action_template.surql
+      - Persistence/SurrealDb/Schemas/source/140_action_node_template.mermaid
+      - Persistence/SurrealDb/Schemas/140_action_node_template.surql
+      - Interfaces/Stores/IActionTemplateStore.cs
+      - Providers/Stores/Surreal/SurrealActionTemplateStore.cs
+      - tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/SurrealActionTemplateStoreTests.cs
     OWNED FILES (flip — drop AZOADbContext):
-      - Services/Quest/QuestInstantiator.cs
-      - tests/AZOA.WebAPI.Tests/Quest/QuestInstantiatorTests.cs (replace
-        DbContext fixture with IQuestTemplateStore mock)
+      - Services/Actions/ActionInstantiator.cs
+      - tests/AZOA.WebAPI.Tests/Actions/ActionInstantiatorTests.cs (replace
+        DbContext fixture with IActionTemplateStore mock)
 
-    Schema (table quest_template, SCHEMAFULL): id, name, description
-    (option<string>), author_avatar_id, parameters (string — JSON
+    Schema (table action_template, SCHEMAFULL): id, name, description
+    (option<string>), author_user_id, parameters (string — JSON
     schema), version, is_public (bool), tags (array<string>).
     Nodes + Edges embed as FLEXIBLE typed arrays of objects on the
-    parent template row (no separate quest_template_node /
-    quest_template_edge tables — they are never queried independently;
+    parent template row (no separate action_template_node /
+    action_template_edge tables — they are never queried independently;
     keep the lookup O(1) per template).
-    Schema (table quest_node_template, SCHEMAFULL): id, name, node_type
+    Schema (table action_node_template, SCHEMAFULL): id, name, node_type
     (string, ASSERT INSIDE enum), description, default_config (string),
     config_schema (string), input_schema (string), output_schema
-    (string), version, author_avatar_id, is_public, tags (array<string>).
+    (string), version, author_user_id, is_public, tags (array<string>).
 
-    IQuestTemplateStore surface:
-      - Task<QuestTemplate?> GetTemplateAsync(Guid templateId, CancellationToken ct)
+    IActionTemplateStore surface:
+      - Task<ActionTemplate?> GetTemplateAsync(Guid templateId, CancellationToken ct)
         (returns template WITH Nodes + Edges populated — single-row read)
-      - Task<QuestNodeTemplate?> GetNodeTemplateAsync(Guid nodeTemplateId, CancellationToken ct)
+      - Task<ActionNodeTemplate?> GetNodeTemplateAsync(Guid nodeTemplateId, CancellationToken ct)
 
-    QuestInstantiator flip: replace
-      `_dbContext.QuestTemplates.FindAsync(templateId)` with
+    ActionInstantiator flip: replace
+      `_dbContext.ActionTemplates.FindAsync(templateId)` with
       `_templateStore.GetTemplateAsync(templateId, ct)`, and
-      `_dbContext.QuestNodeTemplates.FindAsync(...)` with
+      `_dbContext.ActionNodeTemplates.FindAsync(...)` with
       `_templateStore.GetNodeTemplateAsync(...)`. Add CancellationToken
       to InstantiateAsync's signature (additive — callers update).
 
-    Unit-test flip: QuestInstantiatorTests' test fixture currently
+    Unit-test flip: ActionInstantiatorTests' test fixture currently
     constructs an in-memory AZOADbContext (SqliteTestContext). Replace
-    with a `Mock<IQuestTemplateStore>` that returns pre-built templates
+    with a `Mock<IActionTemplateStore>` that returns pre-built templates
     on the matching ids. Existing assertions stay identical — they
-    operate on the produced Quest, not the data source.
+    operate on the produced action, not the data source.
 
 Sequential coordinator pass (sonnet, ONE invocation):
   - Wire DI in Program.cs (2 new lines, scoped lifetime):
       builder.Services.AddScoped<IApiKeyStore,
           AZOA.WebAPI.Providers.Stores.Surreal.SurrealApiKeyStore>();
-      builder.Services.AddScoped<IQuestTemplateStore,
-          AZOA.WebAPI.Providers.Stores.Surreal.SurrealQuestTemplateStore>();
+      builder.Services.AddScoped<IActionTemplateStore,
+          AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionTemplateStore>();
   - dotnet build AZOA.WebAPI.csproj   → 0 errors
-  - dotnet test AZOA.WebAPI.Tests --filter "FullyQualifiedName~ApiKey|FullyQualifiedName~Quest"
+  - dotnet test AZOA.WebAPI.Tests --filter "FullyQualifiedName~ApiKey|FullyQualifiedName~Actions"
       → all green
   - Re-run the Stream D pre-flight gate. Production-code gate must be
     empty (XML-doc comment stragglers in
@@ -486,11 +486,11 @@ Closing pass (opus, ONE invocation):
   oh-my-claudecode:code-reviewer with model=opus on the Stream C2 diff.
   Focus: UNIQUE-on-key_hash correctness (no NULL collision risk — B3),
   IApiKeyStore.TouchLastUsedAsync must not throw (fire-and-forget
-  contract), QuestInstantiator behaviour parity (same exception messages,
-  same Quest output shape), no leaked Microsoft.EntityFrameworkCore using
+  contract), ActionInstantiator behaviour parity (same exception messages,
+  same action output shape), no leaked Microsoft.EntityFrameworkCore using
   directives in the new files. One executor-high fix pass if findings.
 
-Done = ApiKey + Quest callers all AZOADbContext-free, Stream D
+Done = ApiKey + Action callers all AZOADbContext-free, Stream D
 pre-flight gate clears, build + test green.
 ```
 
@@ -647,23 +647,23 @@ Decomposition (sonnet, 3 isolated workers):
   W1 (deletions):
     - rm -r Data/                            (AZOADbContext.cs + SeedData.cs)
     - rm -r Migrations/                      (entire directory)
-    - rm Providers/Stores/EfAvatarStore.cs
+    - rm Providers/Stores/EfUserStore.cs
     - rm Providers/Stores/EfWalletStore.cs
     - rm Providers/Stores/EfHolonStore.cs
     - rm Providers/Stores/EfBlockchainOperationStore.cs
     - rm Providers/Stores/EfStarStore.cs
-    - rm Providers/Stores/EfQuestStore.cs
+    - rm Providers/Stores/EfActionStore.cs
     - rm Providers/Stores/EfNftStore.cs
     - rm Providers/Stores/EfBridgeStore.cs
-    - rm Providers/Stores/EfQuestRunStore.cs       (obsolete stub)
-    - rm Providers/Stores/EfQuestNodeExecutionStore.cs (obsolete stub)
-    - rm Providers/Stores/InMemoryQuestRunStore.cs   (replace with Surreal — gated)
-    - rm Providers/Stores/InMemoryQuestNodeExecutionStore.cs (gated)
+    - rm Providers/Stores/EfActionRunStore.cs       (obsolete stub)
+    - rm Providers/Stores/EfActionNodeExecutionStore.cs (obsolete stub)
+    - rm Providers/Stores/InMemoryActionRunStore.cs   (replace with Surreal — gated)
+    - rm Providers/Stores/InMemoryActionNodeExecutionStore.cs (gated)
     - rm Core/Idempotency/IdempotencyStore.cs        (EF impl)
     - rm Services/Sagas/EfSagaStore.cs
 
-    NOTE: if quest-temporal-fork-model hasn't shipped a SurrealQuestRunStore
-    yet, KEEP the InMemoryQuestRunStore + InMemoryQuestNodeExecutionStore
+    NOTE: if action-temporal-fork-model hasn't shipped a SurrealActionRunStore
+    yet, KEEP the InMemoryActionRunStore + InMemoryActionNodeExecutionStore
     files; just confirm no EF residue.
 
   W2 (csproj + config):

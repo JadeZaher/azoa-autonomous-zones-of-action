@@ -19,18 +19,18 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// Lookups:
 ///   - <see cref="GetByHashAsync"/> uses the UNIQUE <c>api_key_unique_hash</c>
 ///     index; cryptographically O(1).
-///   - <see cref="ListByAvatarAsync"/> uses the <c>api_key_by_avatar</c>
+///   - <see cref="ListByUserAsync"/> uses the <c>api_key_by_user</c>
 ///     index with an ORDER BY created_date DESC.
-///   - <see cref="GetByIdForAvatarAsync"/> is a single record-id SELECT with a
-///     post-read avatar check (avoids two round-trips when the row exists).
+///   - <see cref="GetByIdForUserAsync"/> is a single record-id SELECT with a
+///     post-read user check (avoids two round-trips when the row exists).
 ///
 /// Mutations:
 ///   - <see cref="CreateAsync"/> uses CREATE; UNIQUE collision on key_hash
 ///     surfaces a SurrealDB ERR which we rethrow as
 ///     <see cref="InvalidOperationException"/>.
 ///   - <see cref="RevokeAsync"/> is a single-field-pair UPDATE scoped to the
-///     owning avatar (no cross-account writes).
-///   - <see cref="DeleteAsync"/> is a DELETE scoped to the owning avatar.
+///     owning user (no cross-account writes).
+///   - <see cref="DeleteAsync"/> is a DELETE scoped to the owning user.
 ///   - <see cref="TouchLastUsedAsync"/> swallows every failure (contract: must
 ///     not throw — see interface XML doc); errors are silently dropped so the
 ///     handler's fire-and-forget pattern is honoured.
@@ -58,11 +58,11 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         return rows.Count == 0 ? null : ToDomain(rows[0]);
     }
 
-    public async Task<IReadOnlyList<ApiKey>> ListByAvatarAsync(Guid avatarId, CancellationToken ct)
+    public async Task<IReadOnlyList<ApiKey>> ListByUserAsync(Guid userId, CancellationToken ct)
     {
         var q = SurrealQuery
-            .Of("SELECT * FROM api_key WHERE avatar_id = $_avatar ORDER BY created_date DESC")
-            .WithParam("_avatar", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)));
+            .Of("SELECT * FROM api_key WHERE user_id = $_user ORDER BY created_date DESC")
+            .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)));
 
         var rows = await _executor.QueryAsync<ApiKeyPoco>(q, ct);
         var result = new List<ApiKey>(rows.Count);
@@ -70,7 +70,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         return result;
     }
 
-    public async Task<ApiKey?> GetByIdForAvatarAsync(Guid id, Guid avatarId, CancellationToken ct)
+    public async Task<ApiKey?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken ct)
     {
         var surrealId = SurrealId.ToSurrealId(id);
         var q = SurrealQuery
@@ -82,11 +82,11 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         if (rows.Count == 0) return null;
 
         var poco = rows[0];
-        var avatarHex = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+        var userHex = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
         // Scoped to owner — surface as "not found" rather than "forbidden" so
-        // a cross-avatar probe cannot distinguish "no such key" from
+        // a cross-user probe cannot distinguish "no such key" from
         // "exists but belongs to someone else".
-        return string.Equals(poco.AvatarId, avatarHex, StringComparison.OrdinalIgnoreCase)
+        return string.Equals(poco.UserId, userHex, StringComparison.OrdinalIgnoreCase)
             ? ToDomain(poco)
             : null;
     }
@@ -145,17 +145,17 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         }
     }
 
-    public async Task<bool> RevokeAsync(Guid id, Guid avatarId, DateTime revokedAt, CancellationToken ct)
+    public async Task<bool> RevokeAsync(Guid id, Guid userId, DateTime revokedAt, CancellationToken ct)
     {
         var surrealId = SurrealId.ToSurrealId(id);
-        var avatarHex = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+        var userHex = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
         var revokedUtc = DateTime.SpecifyKind(revokedAt, DateTimeKind.Utc);
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET is_active = false, revoked_at = $_revoked WHERE avatar_id = $_avatar RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET is_active = false, revoked_at = $_revoked WHERE user_id = $_user RETURN AFTER")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId)
-            .WithParam("_avatar", SurrealRecordParam.OfLink(avatarHex))
+            .WithParam("_user", SurrealRecordParam.OfLink(userHex))
             .WithParam("_revoked", revokedUtc);
 
         var response = await _executor.ExecuteAsync(q, ct);
@@ -163,16 +163,16 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         return response[0].AffectedCount() == 1;
     }
 
-    public async Task<bool> DeleteAsync(Guid id, Guid avatarId, CancellationToken ct)
+    public async Task<bool> DeleteAsync(Guid id, Guid userId, CancellationToken ct)
     {
         var surrealId = SurrealId.ToSurrealId(id);
-        var avatarHex = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+        var userHex = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
 
         var q = SurrealQuery
-            .Of("DELETE type::record($_t, $_id) WHERE avatar_id = $_avatar RETURN BEFORE")
+            .Of("DELETE type::record($_t, $_id) WHERE user_id = $_user RETURN BEFORE")
             .WithParam("_t", Table)
             .WithParam("_id", surrealId)
-            .WithParam("_avatar", SurrealRecordParam.OfLink(avatarHex));
+            .WithParam("_user", SurrealRecordParam.OfLink(userHex));
 
         var response = await _executor.ExecuteAsync(q, ct);
         response.EnsureAllOk();
@@ -213,7 +213,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     private static ApiKeyPoco FromDomain(ApiKey k) => new()
     {
         Id             = SurrealId.ToSurrealId(k.Id),
-        AvatarId       = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(k.AvatarId)) ?? string.Empty,
+        UserId       = SurrealLink.ToLink("user", SurrealId.ToSurrealId(k.UserId)) ?? string.Empty,
         Name           = k.Name ?? string.Empty,
         KeyHash        = k.KeyHash ?? string.Empty,
         KeyPrefix      = k.KeyPrefix ?? string.Empty,
@@ -238,7 +238,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
     private static ApiKey ToDomain(ApiKeyPoco p) => new()
     {
         Id             = SurrealId.FromSurrealId(p.Id),
-        AvatarId       = SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        UserId       = SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!),
         Name           = p.Name ?? string.Empty,
         KeyHash        = p.KeyHash ?? string.Empty,
         KeyPrefix      = p.KeyPrefix ?? string.Empty,
@@ -279,7 +279,7 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]              public string Id          { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]       public string AvatarId    { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("user_id")]       public string UserId    { get; set; } = string.Empty;
         [JsonPropertyName("name")]            public string? Name       { get; set; }
         [JsonPropertyName("key_hash")]        public string KeyHash     { get; set; } = string.Empty;
         [JsonPropertyName("key_prefix")]      public string? KeyPrefix  { get; set; }

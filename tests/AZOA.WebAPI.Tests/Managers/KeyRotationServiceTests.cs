@@ -62,7 +62,7 @@ public class KeyRotationServiceTests
 
         private static IWallet Clone(IWallet w) => new Wallet
         {
-            Id = w.Id, AvatarId = w.AvatarId, ChainType = w.ChainType, Address = w.Address,
+            Id = w.Id, UserId = w.UserId, ChainType = w.ChainType, Address = w.Address,
             PublicKey = w.PublicKey, Label = w.Label, IsDefault = w.IsDefault, WalletType = w.WalletType,
             EncryptedPrivateKey = w.EncryptedPrivateKey, EncryptedSeedPhrase = w.EncryptedSeedPhrase,
             CreatedDate = w.CreatedDate,
@@ -83,9 +83,9 @@ public class KeyRotationServiceTests
                 ? new AZOAResult<IWallet> { Result = Clone(w) }
                 : new AZOAResult<IWallet> { IsError = true, Message = "Wallet not found." });
 
-        public Task<AZOAResult<IEnumerable<IWallet>>> GetByAvatarAsync(Guid avatarId, CancellationToken ct = default)
+        public Task<AZOAResult<IEnumerable<IWallet>>> GetByUserAsync(Guid userId, CancellationToken ct = default)
             => Task.FromResult(new AZOAResult<IEnumerable<IWallet>>
-            { Result = _rows.Values.Where(w => w.AvatarId == avatarId).Select(Clone).ToList() });
+            { Result = _rows.Values.Where(w => w.UserId == userId).Select(Clone).ToList() });
 
         /// <summary>Corrupts this wallet's stored ciphertext on the Nth GetAllAsync call
         /// (<see cref="CorruptOnGetAllCall"/>), so the post-rotation readability sweep sees
@@ -157,7 +157,7 @@ public class KeyRotationServiceTests
         => new()
         {
             Id = Guid.NewGuid(),
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             ChainType = "Solana",
             Address = "ADDR",
             WalletType = WalletType.Platform,
@@ -276,7 +276,7 @@ public class KeyRotationServiceTests
     {
         var store = new FakeWalletStore(new IWallet[]
         {
-            new Wallet { Id = Guid.NewGuid(), AvatarId = Guid.NewGuid(), WalletType = WalletType.External },
+            new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), WalletType = WalletType.External },
         });
         var report = await NewService(store).RotateAllAsync(KeyNew);
         report.IsError.Should().BeFalse();

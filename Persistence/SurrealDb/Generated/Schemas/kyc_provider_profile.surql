@@ -23,7 +23,7 @@ DEFINE FIELD IF NOT EXISTS version ON TABLE kyc_provider_profile TYPE int
     DEFAULT 1;
 DEFINE FIELD IF NOT EXISTS trust_revision ON TABLE kyc_provider_profile TYPE int
     DEFAULT 1;
-DEFINE FIELD IF NOT EXISTS updated_by_avatar_id ON TABLE kyc_provider_profile TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS updated_by_user_id ON TABLE kyc_provider_profile TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE kyc_provider_profile TYPE datetime
     DEFAULT time::now()
     READONLY;

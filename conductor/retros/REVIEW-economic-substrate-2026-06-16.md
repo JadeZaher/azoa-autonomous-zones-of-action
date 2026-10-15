@@ -1,8 +1,8 @@
-# Review — orchestration gaps + Holon/Quest as ArdaNova's economic substrate
+# Review — orchestration gaps + Holon/Action as ArdaNova's economic substrate
 
 > Read-only architectural review (2026-06-16) following the ardanova-provider-port
 > ship. Three lanes: (A) orchestration-gap audit of the 7 shipped commits, (B) Holon
-> as economic-object substrate, (C) Quest as economic-workflow substrate. The locked
+> as economic-object substrate, (C) Action as economic-workflow substrate. The locked
 > constraint holds throughout: **the economic/token domain stays in ArdaNova; AZOA
 > exposes mechanism-only primitives.** This doc is the recommendation; nothing here is
 > implemented yet.
@@ -26,9 +26,9 @@ IDOR-guarded per-user resolver, `KeyCustodyService.cs:73-115`) is DI-registered 
 is signed with the platform key → sender mismatch → chain rejects, or moves the platform's
 asset. The custody track's entire security property is bypassed at runtime.
 **Fix:** inject `IKeyCustodyService` into the provider; route user-wallet ops through
-`WithSigningKeyAsync(walletId, avatarId, …)` and platform/ASA-admin ops through
-`WithPlatformSigningKeyAsync(true, …)`. Requires threading `avatarId` into the provider
-call surface (`IBlockchainProvider.*Async` have no avatar param today). Until then, **block
+`WithSigningKeyAsync(walletId, userId, …)` and platform/ASA-admin ops through
+`WithPlatformSigningKeyAsync(true, …)`. Requires threading `userId` into the provider
+call surface (`IBlockchainProvider.*Async` have no user param today). Until then, **block
 per-user custodial transfers** rather than silently mis-sign them.
 
 ### 🔴 C2 — Allocation marks idempotency Completed though nothing goes on-chain
@@ -102,7 +102,7 @@ reconciliation's conservative "only act on positive chain signal" stance.
 
 ### Recommended remediation order
 C2 first (it unblocks H1/H2/H4 and makes allocations real), then C1 (custody wiring +
-avatar threading — the larger architectural change), then H3 (one-line choke-point gate),
+user threading — the larger architectural change), then H3 (one-line choke-point gate),
 then M1/M2 (reconciliation + saga robustness). C1+C2 are the only two that *gate real value
 flow* and should land before any fiat points at the allocation endpoint — consistent with
 keeping B6 (mainnet) gated.
@@ -127,7 +127,7 @@ Already sufficient:
   + `peer_holon_ids` (lateral: token↔vesting-schedule), edited via `InteractAsync`
   (`POST /{id}/interact`), traversed via `GetChildren/Peers/Ancestors/Descendants` + the
   single-call `holon_traverse` MCP tool.
-- **Membership credentials with access levels** — first-class already via `AvatarNFT` +
+- **Membership credentials with access levels** — first-class already via `UserNFT` +
   `HolonNFTBinding` (role + permission-level + permissions map) + `VerifyHolonAccessAsync`.
 - **Subtree rollup** — `HOLON_COMPOSE` (`ComposeAsync` → counts/asset-types/metadata-key
   frequency, no extra storage).
@@ -142,7 +142,7 @@ Missing primitives (the build is small):
    `asset_id`/`tx_hash`/`holon_id` columns to `OperationLog` (copy the existing
    `source_holon_id` `record<holon>` link pattern). Schema regen required (G6 SCHEMAFULL).
 2. **Queryable metadata (optional).** `HolonQueryRequest` + `SurrealHolonStore.QueryAsync`
-   filter only typed columns (`avatar_id`, `asset_type`, `chain_id`, `parent_holon_id`,
+   filter only typed columns (`user_id`, `asset_type`, `chain_id`, `parent_holon_id`,
    `is_active`); no `WHERE metadata.x = y`. If ArdaNova needs server-side "all allocations
    where metadata.status=vested", add metadata-key filters + a SurrealQL clause (additive,
    low-risk). Otherwise fetch by `asset_type` and filter client-side.
@@ -156,14 +156,14 @@ Hazards: `PropagateAsync`/`CloneAsync` write reserved metadata keys (`propagated
 
 ---
 
-## Part C — Quest as the economic-workflow substrate
+## Part C — Action as the economic-workflow substrate
 
 **Verdict: the DAG/composition/handler-SPI layer is an excellent fit; the execution model
 and handler library are not — yet.** Two new handler types + one real engine change.
 
-How it works today: a Quest is a generic DAG of typed nodes; each node has an opaque JSON
-`Config`. Definition/runtime split (`Quest`/`QuestNode` vs `QuestRun`/`QuestNodeExecution`).
-One handler per `QuestNodeType` (`IQuestNodeHandler` + registry, exactly-one invariant). Every
+How it works today: an action is a generic DAG of typed nodes; each node has an opaque JSON
+`Config`. Definition/runtime split (`ActionDefinition`/`ActionNode` vs `ActionRun`/`ActionNodeExecution`).
+One handler per `ActionNodeType` (`IActionNodeHandler` + registry, exactly-one invariant). Every
 handler is the same shape: deserialize `Config` → call one AZOA manager → serialize result.
 `ComposeOutputs` passes one node's output downstream. Fork lineage via `ParentRunId` +
 copy-completed-history. **Templates + `{{param}}` substitution** is exactly the "tenant supplies
@@ -176,9 +176,9 @@ exactly-once claim (G2) + serialized outputs + `ComposeOutputs` data-flow;
 fork/lineage audit trail.
 
 Three gaps:
-1. **No predicate/gate evaluation.** `QuestEdge.Condition` is a `string?` that is stored and
+1. **No predicate/gate evaluation.** `ActionEdge.Condition` is a `string?` that is stored and
    round-tripped but **never parsed/evaluated** — used only as a presence flag for failed-
-   predecessor skipping (`QuestManager.cs:266`). `ConditionNodeHandler` is a **no-op pass-
+   predecessor skipping (`ActionManager.cs:266`). `ConditionNodeHandler` is a **no-op pass-
    through** (the schema comment claiming it evaluates expressions is inaccurate). **Build a
    real `GateCheck` handler** that evaluates a tenant-supplied predicate (balance≥X,
    KYC==approved, external signal) and returns Fail to gate downstream — the existing
@@ -189,7 +189,7 @@ Three gaps:
    outputs or call back to ArdaNova — they must NOT compute economics (keeps the domain in
    the tenant). The deserialize→act→serialize shape supports a "callback/emit" handler.
 3. **No suspendable/durable runs (the hard one).** `ExecuteAsync` runs the **entire DAG
-   synchronously in one HTTP call** (`QuestManager.cs:198, 251-376`) — it cannot pause at
+   synchronously in one HTTP call** (`ActionManager.cs:198, 251-376`) — it cannot pause at
    "on gate-1-met → unlock next" or "vest over steps" awaiting an external signal/time. To
    express vesting/wait-for-settlement you need either a node that *suspends* the run + a
    per-node "advance run from node N" resume API (the existing `MarkRunCompleted/Failed`
@@ -198,7 +198,7 @@ Three gaps:
    the natural home** — and note this is the SAME suspendable/durable engine that Part-A M2
    (multi-step allocation compensation) wants.
 
-Also: `CheckDependenciesAsync` exists but `ExecuteAsync` ignores it — cross-quest gating
+Also: `CheckDependenciesAsync` exists but `ExecuteAsync` ignores it — cross-action gating
 isn't enforced if you rely on it.
 
 ---
@@ -208,7 +208,7 @@ isn't enforced if you rely on it.
 AZOA provides three composable mechanism layers; ArdaNova supplies all economics:
 - **Holon** = the economic *objects* (typed by `asset_type`, semantics in `metadata`, linked
   in a graph, linked to real ASAs once the Holon↔asset primitive lands).
-- **Quest** = the economic *workflows* (tenant-composed DAGs of generic `GateCheck` +
+- **Action** = the economic *workflows* (tenant-composed DAGs of generic `GateCheck` +
   `Allocate`/emit nodes, parameterized via templates, gated on predicates — once the gate
   handler + suspendable engine land).
 - **Allocation/signing/custody** = the value *movement* (once C1+C2 wire it to the real
@@ -216,7 +216,7 @@ AZOA provides three composable mechanism layers; ArdaNova supplies all economics
 
 The single highest-leverage build that unlocks the most: a **durable/suspendable execution
 engine** — it is simultaneously the fix for Part-A M2 (allocation compensation), the enabler
-for Quest vesting/gating (Part C #3), and the home for multi-step economic flows. The
+for action vesting/gating (Part C #3), and the home for multi-step economic flows. The
 `durable-saga-orchestration` pending track should absorb it. Second: the **Holon↔ASA typed
 link** (Part B #1) — small, unblocks "economic object = real on-chain asset." Third: close
 the **value-path wiring** (C1/C2/H3) so allocations actually settle and are KYC-gated at the

@@ -28,15 +28,15 @@ public class BlockchainOperationManagerExtendedTests
 
         _algoProvider = new Mock<IBlockchainProvider>();
         _algoProvider.Setup(p => p.ChainType).Returns("Algorand");
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_tx" });
-        _algoProvider.Setup(p => p.BurnAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.BurnAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_burn" });
         _algoProvider.Setup(p => p.ExchangeAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_ex" });
         _algoProvider.Setup(p => p.SwapAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<decimal>(), It.IsAny<decimal>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_swap" });
-        _algoProvider.Setup(p => p.TransferAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.TransferAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_xfer" });
         _algoProvider.Setup(p => p.DeployContractAsync(It.IsAny<byte[]>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object>?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_deploy" });
@@ -194,7 +194,7 @@ public class BlockchainOperationManagerExtendedTests
     [Fact]
     public async Task ExecuteAsync_WithProviderFailure_ShouldSetFailedStatus()
     {
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { IsError = true, Message = "Insufficient funds" });
 
         var op = new BlockchainOperation
@@ -226,7 +226,7 @@ public class BlockchainOperationManagerExtendedTests
     [Fact]
     public async Task ExecuteAsync_WithUnexpectedProviderException_ShouldBubbleForCentralLogging()
     {
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ThrowsAsync(new InvalidOperationException("boom"));
 
         var op = new BlockchainOperation
@@ -319,7 +319,7 @@ public class BlockchainOperationManagerExtendedTests
     {
         _algoProvider.Setup(p => p.MintAsync(
                 It.IsAny<string>(),
-                It.IsAny<ulong>(),
+                It.IsAny<RailAmount>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<SigningContext?>(),

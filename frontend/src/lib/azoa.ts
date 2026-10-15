@@ -31,8 +31,8 @@ import type {
   SdkError,
 } from 'azoa-sdk'
 
-/** Placeholder type for avatar API responses (not exported by SDK) */
-export type AvatarResponse = {
+/** Placeholder type for user API responses (not exported by SDK) */
+export type UserResponse = {
   id: string
   username: string
   email: string

@@ -13,7 +13,7 @@
 {"id":"fe_login_page","description":"Login page reachable","method":"GET","path":"http://localhost:3000/login","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
 {"id":"fe_register_page","description":"Register page reachable","method":"GET","path":"http://localhost:3000/register","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
 {"id":"fe_overview","description":"Overview page reachable (Next.js may redirect to /login when unauth)","method":"GET","path":"http://localhost:3000/overview","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
-{"id":"fe_avatars","description":"Avatars page reachable","method":"GET","path":"http://localhost:3000/avatars","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
+{"id":"fe_users","description":"Users page reachable","method":"GET","path":"http://localhost:3000/users","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
 {"id":"fe_wallets","description":"Wallets page reachable","method":"GET","path":"http://localhost:3000/wallets","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
 {"id":"fe_holons","description":"Holons page reachable","method":"GET","path":"http://localhost:3000/holons","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}
 {"id":"fe_api_keys","description":"API keys management page reachable","method":"GET","path":"http://localhost:3000/api-keys","headers":{"Accept":"text/html"},"expectedStatusRange":"2xx"}

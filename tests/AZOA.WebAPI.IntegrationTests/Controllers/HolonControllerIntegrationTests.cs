@@ -19,7 +19,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task Create_ShouldReturnHolonWithAvatarId()
+    public async Task Create_ShouldReturnHolonWithUserId()
     {
         var model = new HolonBuilder().WithName("TestHolon").BuildCreateModel();
 
@@ -54,8 +54,8 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Query_WithFilters_ShouldReturnFilteredResults()
     {
-        await SeedHolonAsync(h => h.WithName("Alpha").ForAvatar(Guid.NewGuid()));
-        await SeedHolonAsync(h => h.WithName("Beta").ForAvatar(Guid.NewGuid()));
+        await SeedHolonAsync(h => h.WithName("Alpha").ForUser(Guid.NewGuid()));
+        await SeedHolonAsync(h => h.WithName("Beta").ForUser(Guid.NewGuid()));
 
         var response = await Client.GetAsync("api/holon?Name=Alpha");
 
@@ -144,7 +144,7 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
     public async Task Mint_ShouldCreateBlockchainOperation()
     {
         var holon = await SeedHolonAsync();
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId)));
+        var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)));
         var request = new MintRequest
         {
             WalletId = wallet.Id,
@@ -166,8 +166,8 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
     {
         var holon = await SeedHolonAsync();
         var target = await SeedHolonAsync();
-        var wallet = await SeedWalletAsync(w => w.ForAvatar(Guid.Parse(TestAuthHandler.DefaultAvatarId)));
-        var request = new ExchangeRequest
+        var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)));
+        var request = new HolonExchangeRequest
         {
             WalletId = wallet.Id,
             TargetHolonId = target.Id,

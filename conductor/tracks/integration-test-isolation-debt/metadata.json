@@ -1,6 +1,12 @@
 {
   "id": "integration-test-isolation-debt",
-  "status": "active",
+  "status": "in_progress",
   "created": "2026-07-06",
-  "description": "Turn the repaired, namespace-isolated SurrealDB integration suite into a required CI gate; archive only after a complete post-fix run and repository CI both pass."
+  "description": "Turn the repaired, namespace-isolated SurrealDB integration suite into a required CI gate; archive only after a complete post-fix run and repository CI both pass.",
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "status was the non-canonical value `active`, normalized to `in_progress`. The track is genuinely underway: plan.md has 9 of 12 boxes ticked, with the CI-only failure diagnosis and the archive gate outstanding. Catalog row moved from Pending to In flight to match.",
+    "plan_progress": "9/12 complete"
+  }
 }

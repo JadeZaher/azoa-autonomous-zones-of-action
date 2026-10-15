@@ -30,6 +30,10 @@ namespace AZOA.WebAPI.Managers;
 ///    the crypto-free join-driven standing grant — MUST exclude every
 ///    value-signing scope (<see cref="AzoaScopes.ValueSigningScopes"/>); a value
 ///    action requires a deliberate <c>UserExplicit</c>, user-authenticated grant.
+///    It MUST, symmetrically, include
+///    <see cref="AzoaScopes.ParticipationInboundCreditFloor"/> (OI-23) — being paid is
+///    not spending, and a person who can never click "allow" must still be creditable
+///    from the moment they exist.
 ///
 /// Every grant and revoke writes an immutable audit row (AC10/L1) independent of
 /// the best-effort webhook: a failed audit write is surfaced as an error result
@@ -50,7 +54,7 @@ public class ConsentManager : IConsentManager
     }
 
     public async Task<AZOAResult<ConsentGrant>> GrantAsync(
-        Guid grantorAvatarId,
+        Guid grantorUserId,
         Guid tenantId,
         IEnumerable<string> scopes,
         GrantOrigin origin,
@@ -108,7 +112,7 @@ public class ConsentManager : IConsentManager
 
         var grant = new ConsentGrant
         {
-            GrantorAvatarId = grantorAvatarId,
+            GrantorUserId = grantorUserId,
             TenantId = tenantId,
             Scopes = normalizedScopes,
             GrantedAt = DateTime.UtcNow,
@@ -138,7 +142,7 @@ public class ConsentManager : IConsentManager
             ConsentAuditAction.Granted,
             persisted.Id,
             persisted.TenantId,
-            persisted.GrantorAvatarId,
+            persisted.GrantorUserId,
             string.Join(",", persisted.Scopes),
             persisted.Origin == GrantOrigin.Participation
                 ? $"origin=Participation; ref={persisted.ParticipationRef}"
@@ -164,7 +168,7 @@ public class ConsentManager : IConsentManager
     }
 
     public Task<AZOAResult<ConsentGrant>> GrantParticipationAsync(
-        Guid grantorAvatarId,
+        Guid grantorUserId,
         Guid tenantId,
         string participationRef,
         IEnumerable<string> scopes,
@@ -175,15 +179,38 @@ public class ConsentManager : IConsentManager
         // alone can never reach here with a grantor it has no user-authenticated
         // assertion for.
         => GrantAsync(
-            grantorAvatarId,
+            grantorUserId,
             tenantId,
-            scopes,
+            WithInboundCreditFloor(scopes),
             GrantOrigin.Participation,
             participationRef,
             expiresAt: null,
             ct);
 
-    public async Task<AZOAResult<bool>> RevokeAsync(Guid grantorAvatarId, Guid grantId, CancellationToken ct = default)
+    /// <summary>
+    /// OI-23 — the requested scopes plus
+    /// <see cref="AzoaScopes.ParticipationInboundCreditFloor"/>, the inbound-credit
+    /// capabilities every participation grant carries.
+    ///
+    /// <para>It is applied HERE, where the grant row is written, rather than in each
+    /// caller's scope list. A custodially onboarded person holds no AZOA credential, so
+    /// the implied participation grant is the ONLY grant they will ever have; if being
+    /// credited needed a scope some caller forgot to name, that person is 403'd out of
+    /// the product on the default allocation kind. Every door into the participation
+    /// path — the tenant-provisioning issuer, the join flow, anything added later —
+    /// inherits the floor because they all end up on this one line.</para>
+    ///
+    /// <para>The floor is a CREDIT, never a spend: <c>units:issue</c> draws the node's
+    /// own reserve and signs with the platform key. And it is not exempt from H4 — the
+    /// union below flows through <see cref="GrantAsync"/>'s value-scope rejection, so a
+    /// value-signing scope added to the floor would refuse EVERY participation grant
+    /// rather than quietly widening one.</para>
+    /// </summary>
+    private static IEnumerable<string> WithInboundCreditFloor(IEnumerable<string> scopes)
+        => (scopes ?? Enumerable.Empty<string>())
+            .Concat(AzoaScopes.ParticipationInboundCreditFloor);
+
+    public async Task<AZOAResult<bool>> RevokeAsync(Guid grantorUserId, Guid grantId, CancellationToken ct = default)
     {
         var result = new AZOAResult<bool>();
 
@@ -193,7 +220,7 @@ public class ConsentManager : IConsentManager
         // are reported IDENTICALLY as NOT_FOUND — a cross-user probe must be
         // indistinguishable from "no such grant", never Forbidden.
         if (loaded.IsError || loaded.Result is null
-            || loaded.Result.GrantorAvatarId != grantorAvatarId)
+            || loaded.Result.GrantorUserId != grantorUserId)
         {
             result.IsError = true;
             result.Message = TenantAuthorizationError.NotFound + "No such consent grant.";
@@ -222,7 +249,7 @@ public class ConsentManager : IConsentManager
                 ConsentAuditAction.Revoked,
                 grant.Id,
                 grant.TenantId,
-                grant.GrantorAvatarId,
+                grant.GrantorUserId,
                 string.Join(",", grant.Scopes),
                 "revoked by user",
                 ct);
@@ -242,15 +269,15 @@ public class ConsentManager : IConsentManager
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<ConsentGrant>>> ListForUserAsync(Guid grantorAvatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<ConsentGrant>>> ListForUserAsync(Guid grantorUserId, CancellationToken ct = default)
     {
         // Store query is grantor-scoped — a cross-user probe yields an empty list,
         // never another user's grants (AC1).
-        var listed = await _grants.ListByGrantorAsync(grantorAvatarId, ct);
+        var listed = await _grants.ListByGrantorAsync(grantorUserId, ct);
         return Project(listed);
     }
 
-    public async Task<AZOAResult<ConsentGrant>> GetForUserAsync(Guid grantorAvatarId, Guid grantId, CancellationToken ct = default)
+    public async Task<AZOAResult<ConsentGrant>> GetForUserAsync(Guid grantorUserId, Guid grantId, CancellationToken ct = default)
     {
         var result = new AZOAResult<ConsentGrant>();
 
@@ -258,7 +285,7 @@ public class ConsentManager : IConsentManager
 
         // Same indistinguishable-from-miss rule as RevokeAsync (AC9).
         if (loaded.IsError || loaded.Result is null
-            || loaded.Result.GrantorAvatarId != grantorAvatarId)
+            || loaded.Result.GrantorUserId != grantorUserId)
         {
             result.IsError = true;
             result.Message = TenantAuthorizationError.NotFound + "No such consent grant.";
@@ -326,7 +353,7 @@ public class ConsentManager : IConsentManager
                 ConsentAuditAction.Revoked,
                 saved.Result.Id,
                 saved.Result.TenantId,
-                saved.Result.GrantorAvatarId,
+                saved.Result.GrantorUserId,
                 string.Join(",", saved.Result.Scopes),
                 $"offboard revoke; ref={participationRef.Trim()}",
                 ct);
@@ -368,7 +395,7 @@ public class ConsentManager : IConsentManager
         ConsentAuditAction action,
         Guid grantId,
         Guid tenantId,
-        Guid avatarId,
+        Guid userId,
         string scope,
         string? detail,
         CancellationToken ct)
@@ -378,7 +405,7 @@ public class ConsentManager : IConsentManager
             Action = action,
             GrantId = grantId,
             TenantId = tenantId,
-            AvatarId = avatarId,
+            UserId = userId,
             Scope = scope,
             Detail = detail,
             OccurredAt = DateTime.UtcNow,

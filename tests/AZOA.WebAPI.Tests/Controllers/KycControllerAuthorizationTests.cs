@@ -41,19 +41,19 @@ public sealed class KycControllerAuthorizationTests
     [Fact]
     public async Task Summary_ApiKeyWithKycRead_ReturnsOnlyMinimalProjection()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var manager = new Mock<IKycManager>();
-        manager.Setup(service => service.GetStatusAsync(avatarId, It.IsAny<CancellationToken>()))
+        manager.Setup(service => service.GetStatusAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmissionModel>.Success(new KycSubmissionModel
             {
-                AvatarId = avatarId,
+                UserId = userId,
                 ProviderKey = "provider-internal",
                 ProviderSessionId = "provider-session-secret-reference",
                 ReviewerId = Guid.NewGuid().ToString(),
                 Status = KycStatus.APPROVED,
                 SubmittedAt = DateTime.UtcNow,
             }));
-        var controller = BuildController(manager.Object, ApiKeyPrincipal(AzoaScopes.KycRead, avatarId));
+        var controller = BuildController(manager.Object, ApiKeyPrincipal(AzoaScopes.KycRead, userId));
 
         var response = await controller.GetStatusSummary(CancellationToken.None);
 
@@ -73,10 +73,10 @@ public sealed class KycControllerAuthorizationTests
             },
         };
 
-    private static ClaimsPrincipal ApiKeyPrincipal(string scope, Guid? avatarId = null)
+    private static ClaimsPrincipal ApiKeyPrincipal(string scope, Guid? userId = null)
         => new(new ClaimsIdentity(
         [
-            new Claim(ClaimTypes.NameIdentifier, (avatarId ?? Guid.NewGuid()).ToString()),
+            new Claim(ClaimTypes.NameIdentifier, (userId ?? Guid.NewGuid()).ToString()),
             new Claim("AuthMethod", "ApiKey"),
             new Claim("scope", scope),
         ], "test"));

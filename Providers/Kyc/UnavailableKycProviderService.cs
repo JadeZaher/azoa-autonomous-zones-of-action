@@ -25,11 +25,11 @@ public sealed class UnavailableKycProviderService : IKycProviderService
         UnavailableReason = Message
     };
 
-    public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid avatarId, CancellationToken ct = default)
+    public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid userId, CancellationToken ct = default)
         => Unavailable<KycSessionStartModel>();
 
     public Task<AZOAResult<string>> CreateSessionAsync(
-        Guid avatarId,
+        Guid userId,
         IReadOnlyList<KycDocumentModel> documents,
         CancellationToken ct = default)
         => Unavailable<string>();

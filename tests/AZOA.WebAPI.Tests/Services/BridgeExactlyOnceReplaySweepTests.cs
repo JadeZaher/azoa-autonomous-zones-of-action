@@ -15,6 +15,8 @@ using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Services.Reconciliation;
 using AZOA.WebAPI.Tests.TestSupport;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.Services;
 
@@ -26,7 +28,7 @@ namespace AZOA.WebAPI.Tests.Services;
 /// through <see cref="CrossChainBridgeService"/> AND the
 /// <see cref="ReconciliationService"/> sweep over ONE shared
 /// <see cref="FakeBridgeStore"/> + <see cref="FakeIdempotencyStore"/> — the
-/// integrated proof that the kill switch, VAA replay ledger, avatar-scoped
+/// integrated proof that the kill switch, VAA replay ledger, user-scoped
 /// idempotency, atomic status guards, and reconciliation compose into an
 /// exactly-once system: no replayed VAA / duplicate idempotency key ever
 /// double-mints or double-releases, and a crash-resume never re-broadcasts.
@@ -45,14 +47,14 @@ public sealed class BridgeExactlyOnceReplaySweepTests
     public async Task Trusted_DuplicateClientKey_ExactlyOneLockAndMint()
     {
         using var h = new SweepHarness();
-        var avatar = Guid.NewGuid();
+        var user = Guid.NewGuid();
 
-        // Both calls carry the SAME client idempotency key + same avatar.
+        // Both calls carry the SAME client idempotency key + same user.
         var first = await h.Bridge().InitiateBridgeAsync(
-            "Algorand", "Solana", "tok1", "recipient", avatar, amount: 1,
+            "Algorand", "Solana", "tok1", "recipient", user, amount: 1,
             mode: BridgeMode.Trusted, clientIdempotencyKey: "dup-key");
         var second = await h.Bridge().InitiateBridgeAsync(
-            "Algorand", "Solana", "tok1", "recipient", avatar, amount: 1,
+            "Algorand", "Solana", "tok1", "recipient", user, amount: 1,
             mode: BridgeMode.Trusted, clientIdempotencyKey: "dup-key");
 
         first.IsError.Should().BeFalse();
@@ -140,10 +142,10 @@ public sealed class BridgeExactlyOnceReplaySweepTests
     public async Task KillSwitch_Off_RefusesRealValueOnEveryPath_ZeroOnChain()
     {
         using var h = new SweepHarness(realValueEnabled: false);
-        var avatar = Guid.NewGuid();
+        var user = Guid.NewGuid();
 
         var init = await h.Bridge().InitiateBridgeAsync(
-            "Algorand", "Solana", "tok1", "recipient", avatar, 1, BridgeMode.Trusted);
+            "Algorand", "Solana", "tok1", "recipient", user, 1, BridgeMode.Trusted);
         init.IsError.Should().BeTrue("kill switch off must refuse a real-value initiate");
         init.Message.Should().Contain("disabled");
 
@@ -197,6 +199,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
         public readonly FakeBridgeStore BridgeStore = new();
         public readonly FakeIdempotencyStore Idempotency = new();
         public readonly Mock<IWormholeAdapter> WormholeMock = new();
+        public readonly BridgeLegMocks Legs;
         private readonly Mock<IBlockchainProviderFactory> _factory = new();
         private readonly Mock<IBlockchainProvider> _provider = new();
         private readonly int _staleSeconds;
@@ -211,24 +214,24 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             _staleSeconds = staleSeconds;
             _realValue = realValueEnabled;
 
-            _provider.Setup(p => p.SupportsBridging).Returns(true);
+            Legs = _provider.WithBridgeLegs();
             _provider.Setup(p => p.ChainType).Returns("Algorand");
             _factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
                 .Returns(_provider.Object);
             _factory.Setup(f => f.GetDefaultProvider()).Returns(_provider.Object);
 
             // Trusted-flow chain primitives count invocations (exactly-once proof).
-            _provider.Setup(p => p.LockForBridgeAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(),
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            Legs.Source.Setup(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
                     Interlocked.Increment(ref LockCalls);
-                    return Task.FromResult(new AZOAResult<string> { IsError = false, Result = "lock-tx" });
+                    return Task.FromResult(new AZOAResult<BridgeLock>
+                    {
+                        IsError = false,
+                        Result = new BridgeLock("lock-tx", PendingConfirmation: false, "confirmed"),
+                    });
                 });
-            _provider.Setup(p => p.MintWrappedAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            Legs.Target.Setup(leg => leg.MintWrappedAsync(It.IsAny<BridgeMintRequest>(), It.IsAny<CancellationToken>()))
                 .Returns(() =>
                 {
                     Interlocked.Increment(ref MintCalls);
@@ -258,7 +261,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             config.BridgeVaults["Algorand"].VaultAddress = "test-algorand-bridge-vault";
             return new CrossChainBridgeService(
                 _factory.Object,
-                WormholeMock.Object,
+                new WormholeProtocol(WormholeMock.Object, NullLogger<WormholeProtocol>.Instance),
                 Options.Create(config),
                 BridgeStore,
                 Idempotency,
@@ -292,7 +295,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             var id = $"wh_bridge_{Guid.NewGuid():N}";
             BridgeStore.SeedBridge(new BridgeTransactionResult
             {
-                Id = id, AvatarId = Guid.NewGuid(),
+                Id = id, UserId = Guid.NewGuid(),
                 SourceChain = "Algorand", TargetChain = "Solana",
                 SourceTokenId = "tok1", TargetAddress = "recipient",
                 Amount = 1, Mode = BridgeMode.Wormhole,
@@ -311,7 +314,7 @@ public sealed class BridgeExactlyOnceReplaySweepTests
             var row = new BridgeTransactionResult
             {
                 Id = $"wh_bridge_{Guid.NewGuid():N}",
-                AvatarId = Guid.NewGuid(),
+                UserId = Guid.NewGuid(),
                 SourceChain = "Algorand", TargetChain = "Solana",
                 SourceTokenId = "tok1", TargetAddress = "recipient",
                 Amount = 1, Mode = BridgeMode.Wormhole,

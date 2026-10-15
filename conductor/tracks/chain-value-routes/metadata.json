@@ -1,6 +1,35 @@
 {
   "id": "chain-value-routes",
+  "description": "Bring the fail-closed Solana/Wormhole/Ethereum value routes live + close custody/signature residuals (ConnectWalletAsync challenge, RewrapAsync byte[], Metaplex convert-or-delete).",
+  "type": "feature",
+  "created_at": "2026-07-06T00:00:00Z",
   "status": "pending",
-  "created": "2026-07-06",
-  "description": "Bring the fail-closed Solana/Wormhole/Ethereum value routes live + close custody/signature residuals (ConnectWalletAsync challenge, RewrapAsync byte[], soulbound revoke, Metaplex convert-or-delete)."
+  "horizon": "post-launch",
+  "phase": "Two of seven scope items are closed; the two live value routes (Solana pipeline, Wormhole sequence parsing) and three residuals remain. See plan.md for the per-item evidence.",
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "closed_items": {
+      "3_eth_secp256k1_keygen": "SHIPPED at Services/Signing/WalletKeyService.cs:158-170; the code comment cites this track as 'chain-value-routes H1'. Was still advertised as pending in tracks.md and in the spec.",
+      "6_soulbound_clawback_revoke": "The revoke operation landed (Managers/CredentialManager.cs:174) but is inert: D19 authorizes to the issuer while the only mint path makes issuer = caller = holder. OWNERSHIP MOVED to credential-third-party-issuance_20260906 - do not re-open here."
+    },
+    "partially_closed": {
+      "7_metaplex": "SolanaProvider.cs:661,672 now fail closed instead of returning a synthetic id, which removes the danger. The methods still have no caller, so implement-or-delete stays open."
+    },
+    "still_open": [
+      "1 - Solana bridge lock/burn/settle lifecycle (plain SPL is real; the bridge layer is not)",
+      "2 - Wormhole emitter-sequence derivation (CrossChainBridgeService.cs:169 fail-closed stub)",
+      "4 - ConnectWalletAsync challenge verification (WalletManager.cs:466-470 reads the signature and ignores it)",
+      "5 - RewrapAsync cold-path byte[] (KeyCustodyService.cs:358, caveat at :376)"
+    ]
+  },
+  "blocks": [],
+  "depends_on": [
+    "final-hardening-cutover"
+  ],
+  "related": [
+    "provider-boundary-conformance_20260727",
+    "credential-third-party-issuance_20260906",
+    "ardanova-azoa-production-readiness_20260727"
+  ]
 }

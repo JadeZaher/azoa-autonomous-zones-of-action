@@ -16,12 +16,12 @@ superseded-date: 2026-07-05
 
 > **⚠️ SUPERSEDED — 2026-07-05.** This ADR's core premise ("the saga module
 > has zero registered consumer pre-launch") is **stale**. The durable
-> **quest workflow engine** (`durable-workflow-engine`) shipped as a real saga
-> consumer: `QuestManager.StartWorkflowRunAsync` enqueues the entry node as a
-> saga step under `QuestWorkflowSaga.Name`, and dispatch happens ONLY in
+> **action workflow engine** (`durable-workflow-engine`) shipped as a real saga
+> consumer: `ActionManager.StartWorkflowRunAsync` enqueues the entry node as a
+> saga step under `ActionWorkflowSaga.Name`, and dispatch happens ONLY in
 > `SagaProcessorHostedService`. With `Sagas:Enabled=false` that service
 > early-returns, so a durable run activates, enqueues its entry node, and
-> **never executes** — an inert engine (see `[[durable-quests-inert-sagas-disabled]]`).
+> **never executes** — an inert engine (see `[[durable-actions-inert-sagas-disabled]]`).
 >
 > **New decision (Phase A1):** `SagaOptions.Enabled` now defaults to **`true`**,
 > `appsettings.json` ships `"Sagas": { "Enabled": true }`, and

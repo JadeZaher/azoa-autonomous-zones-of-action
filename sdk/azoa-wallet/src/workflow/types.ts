@@ -1,26 +1,26 @@
 /**
  * Workflow run-driver DTOs — the TypeScript mirror of the durable-workflow-engine
- * run surface on `QuestController` (`durable-workflow-engine` track). These are
- * additive to the existing quest types in `api/client.ts`; nothing here changes
+ * run surface on `ActionController` (`durable-workflow-engine` track). These are
+ * additive to the existing action types in `api/client.ts`; nothing here changes
  * the shape of an existing public symbol.
  *
  * Wire contract confirmed against the shipped controllers/models:
- * - `Models/Quest/QuestRunStatus.cs`  → {@link WorkflowRunStatus}
- * - `Models/Quest/QuestRun.cs`        → {@link WorkflowRunResult}
- * - `Models/Quest/QuestExecutionState.cs` + `QuestNodeExecution.cs`
+ * - `Models/Actions/ActionRunStatus.cs`  → {@link WorkflowRunStatus}
+ * - `Models/Actions/ActionRun.cs`        → {@link WorkflowRunResult}
+ * - `Models/Actions/ActionExecutionState.cs` + `ActionNodeExecution.cs`
  *                                      → {@link WorkflowExecutionState} / {@link WorkflowNodeExecution}
- * - `Models/Requests/QuestRequests.cs` (`QuestAdvanceRequest` / `QuestSignalRequest`)
+ * - `Models/Requests/ActionRequests.cs` (`ActionAdvanceRequest` / `ActionSignalRequest`)
  *                                      → {@link AdvanceParams} / {@link SignalParams}
  */
 
 /**
  * Lifecycle position of a single durable {@link WorkflowRunResult}.
  *
- * Mirrors the C# `QuestRunStatus` enum 1:1 (member-for-member). The four
+ * Mirrors the C# `ActionRunStatus` enum 1:1 (member-for-member). The four
  * non-terminal awaiting states — `Suspended` / `AwaitingSignal` / `AwaitingTimer` /
  * `AwaitingReconciliation` — are what the run driver's `.onSuspend(cb)` reacts to;
  * the terminal set is `Succeeded` / `Failed` / `Forked` / `Cancelled`
- * (`QuestRunStatusExtensions.IsTerminal`).
+ * (`ActionRunStatusExtensions.IsTerminal`).
  */
 export type WorkflowRunStatus =
   /** Run created; no node has been claimed yet. */
@@ -76,16 +76,16 @@ export function isTerminal(status: WorkflowRunStatus): boolean {
 }
 
 /**
- * One execution attempt of a quest definition — the `GET /api/quest/runs/{runId}`
- * read shape. Mirrors `Models/Quest/QuestRun.cs`.
+ * One execution attempt of an action definition — the `GET /api/action/runs/{runId}`
+ * read shape. Mirrors `Models/Actions/ActionRun.cs`.
  */
 export interface WorkflowRunResult {
-  /** Run identity, unique across all runs of all quests. */
+  /** Run identity, unique across all runs of all actions. */
   id: string;
-  /** Quest definition this run executes. */
-  questId: string;
-  /** Avatar that initiated this run. */
-  avatarId: string;
+  /** Action definition this run executes. */
+  actionId: string;
+  /** User that initiated this run. */
+  userId: string;
   /** Current lifecycle position. */
   status: WorkflowRunStatus;
   /** Wall-clock ISO time the run row was created. */
@@ -104,8 +104,8 @@ export interface WorkflowRunResult {
 
 /**
  * Per-(run, node) execution record — an element of {@link WorkflowExecutionState}.
- * Mirrors `Models/Quest/QuestNodeExecution.cs`. Note: per-node `state` reuses the
- * existing `QuestNodeState` union from `api/client.ts` (`Pending`/`Running`/…),
+ * Mirrors `Models/Actions/ActionNodeExecution.cs`. Note: per-node `state` reuses the
+ * existing `ActionNodeState` union from `api/client.ts` (`Pending`/`Running`/…),
  * NOT {@link WorkflowRunStatus} (a run-only concept).
  */
 export interface WorkflowNodeExecution {
@@ -113,7 +113,7 @@ export interface WorkflowNodeExecution {
   id: string;
   /** Owning run. */
   runId: string;
-  /** Quest definition node this execution corresponds to. */
+  /** Action definition node this execution corresponds to. */
   nodeId: string;
   /** Current per-node lifecycle position. */
   state: "Pending" | "Running" | "Succeeded" | "Failed" | "Skipped";
@@ -128,12 +128,12 @@ export interface WorkflowNodeExecution {
 }
 
 /**
- * Richer per-node run projection — the `GET /api/quest/runs/{runId}/execution-state`
- * read shape. Mirrors `Models/Quest/QuestExecutionState.cs`.
+ * Richer per-node run projection — the `GET /api/action/runs/{runId}/execution-state`
+ * read shape. Mirrors `Models/Actions/ActionExecutionState.cs`.
  */
 export interface WorkflowExecutionState {
   runId: string;
-  questId: string;
+  actionId: string;
   status: WorkflowRunStatus;
   startedAt: string;
   endedAt?: string;
@@ -145,8 +145,8 @@ export interface WorkflowExecutionState {
 }
 
 /**
- * Body of `POST /api/quest/runs/{runId}/advance` — the `.step(nodeId)` primitive.
- * Mirrors `QuestAdvanceRequest { Guid FromNodeId }`.
+ * Body of `POST /api/action/runs/{runId}/advance` — the `.step(nodeId)` primitive.
+ * Mirrors `ActionAdvanceRequest { Guid FromNodeId }`.
  */
 export interface AdvanceParams {
   /** The node to resume FROM; the engine advances into its successor(s). A UUID. */
@@ -154,8 +154,8 @@ export interface AdvanceParams {
 }
 
 /**
- * Body of `POST /api/quest/runs/{runId}/signal` — un-parks a gated node.
- * Mirrors `QuestSignalRequest { string GateId; string? Payload }`.
+ * Body of `POST /api/action/runs/{runId}/signal` — un-parks a gated node.
+ * Mirrors `ActionSignalRequest { string GateId; string? Payload }`.
  *
  * NOTE (contract-confirmed relaxation of plan D6): the backend types `GateId`
  * as a plain non-empty STRING (not necessarily a UUID), and `Payload` as a
@@ -172,13 +172,13 @@ export interface SignalParams {
 /**
  * Parameters for `.start(...)` on a {@link import("./run.js").WorkflowRunHandle}.
  *
- * `actor` is a plain avatar id (NO brand leak — never a tenant/ArdaNova type). When
+ * `actor` is a plain user id (NO brand leak — never a tenant/ArdaNova type). When
  * the handle was opened `fromTemplate`, `params` are the `{{param}}` substitution
  * values for instantiation. Amounts inside `params` are always strings.
  */
 export interface StartRunParams {
   /**
-   * Avatar this run targets. Optional: when `.forActor(childAvatarId)` was set on
+   * User this run targets. Optional: when `.forActor(childUserId)` was set on
    * the handle that is used; otherwise the run executes under the active session
    * token / API-key principal.
    */
@@ -188,17 +188,17 @@ export interface StartRunParams {
 }
 
 /**
- * A short-lived child-scoped credential — the `POST /api/tenant/avatars/{id}/credential`
+ * A short-lived child-scoped credential — the `POST /api/tenant/users/{id}/credential`
  * response. Mirrors `Models/Requests/TenantRequests.cs` `ChildCredentialResponse`.
  *
- * `token` is the child JWT (subject = the child avatar id) the run driver threads
+ * `token` is the child JWT (subject = the child user id) the run driver threads
  * as a per-run `Authorization: Bearer` override; `expiresAt` drives the lazy
  * re-acquisition. NO ArdaNova / tenant concept leaks past this internal shape.
  */
 export interface ChildCredentialResult {
-  /** The child avatar this credential acts as. */
-  avatarId: string;
-  /** The short-lived child JWT. Subject is the child avatar id. */
+  /** The child user this credential acts as. */
+  userId: string;
+  /** The short-lived child JWT. Subject is the child user id. */
   token: string;
   /** ISO timestamp at which the credential expires. */
   expiresAt: string;
@@ -208,8 +208,8 @@ export interface ChildCredentialResult {
 
 /**
  * Outcome of a reconciliation re-probe over a run parked in
- * `AwaitingReconciliation` — the `POST /api/quest/runs/{runId}/reconcile` response.
- * Mirrors `Models/Quest/QuestReconciliationResult.cs`. NEVER re-broadcasts; a
+ * `AwaitingReconciliation` — the `POST /api/action/runs/{runId}/reconcile` response.
+ * Mirrors `Models/Actions/ActionReconciliationResult.cs`. NEVER re-broadcasts; a
  * Confirmed tx reconciles to success (no re-mint), a FailedOnChain node is released
  * to retry/compensation, and an indeterminate node stays parked.
  */

@@ -35,24 +35,24 @@ export function useBalance(chain: string, address: string | null, tokenId?: stri
 
 // ─── usePortfolio ───
 
-export function usePortfolio(avatarId: string | null) {
+export function usePortfolio(userId: string | null) {
   const { networkKey } = useNetwork()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!avatarId) return
+    if (!userId) return
     setLoading(true)
     setError(null)
-    const result = await azoa.portfolio.getAll(avatarId)
+    const result = await azoa.portfolio.getAll(userId)
     if (isOk(result)) {
       setPortfolio(result.value)
     } else {
       setError(result.error.message)
     }
     setLoading(false)
-  }, [avatarId, networkKey])
+  }, [userId, networkKey])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -63,7 +63,7 @@ export function usePortfolio(avatarId: string | null) {
 
 export function useHolons(filters?: {
   name?: string
-  avatarId?: string
+  userId?: string
   chainId?: string
   assetType?: string
   isActive?: boolean
@@ -86,7 +86,7 @@ export function useHolons(filters?: {
       setError(result.error.message)
     }
     setLoading(false)
-  }, [filters?.name, filters?.avatarId, filters?.chainId, filters?.assetType, filters?.isActive])
+  }, [filters?.name, filters?.userId, filters?.chainId, filters?.assetType, filters?.isActive])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -120,23 +120,23 @@ export function useChainInfo(chain: string) {
 
 // ─── useWallets ───
 
-export function useWallets(avatarId: string | null) {
+export function useWallets(userId: string | null) {
   const [wallets, setWallets] = useState<Array<{ id: string; chainType: string; address: string; label?: string; isDefault: boolean }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!avatarId) return
+    if (!userId) return
     setLoading(true)
     setError(null)
-    const result = await azoa.api.listWallets({ avatarId })
+    const result = await azoa.api.listWallets({ userId })
     if (isOk(result)) {
       setWallets(result.value)
     } else {
       setError(result.error.message)
     }
     setLoading(false)
-  }, [avatarId])
+  }, [userId])
 
   useEffect(() => { refresh() }, [refresh])
 

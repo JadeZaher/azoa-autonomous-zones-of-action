@@ -10,7 +10,7 @@ public sealed class AzoaScopesGovernanceTests
     {
         AzoaScopes.NodeGovern.Should().Be("node:govern");
         AzoaScopes.IsApiKeyIssuableScope(AzoaScopes.NodeGovern).Should().BeFalse();
-        AzoaScopes.IsIssuableByAvatar(AzoaScopes.NodeGovern).Should().BeFalse();
+        AzoaScopes.IsIssuableByUser(AzoaScopes.NodeGovern).Should().BeFalse();
         AzoaScopes.IssuableCapabilityScopes.Should().NotContain(AzoaScopes.NodeGovern);
         AzoaScopes.IssuableScopeCatalog().Should().NotContain(s => s.Scope == AzoaScopes.NodeGovern);
     }

@@ -1,4 +1,4 @@
-// <hero-dag> — WebGL quest-DAG simulation: agents traverse a living graph.
+// <hero-dag> — WebGL action-DAG simulation: agents traverse a living graph.
 (function(){
 if (customElements.get('hero-dag')) return;
 function hex(c, fb){ if(!c) return fb; c=c.replace('#',''); if(c.length===3) c=c.split('').map(x=>x+x).join('');

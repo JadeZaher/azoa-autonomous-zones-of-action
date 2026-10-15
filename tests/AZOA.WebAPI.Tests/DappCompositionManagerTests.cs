@@ -6,37 +6,37 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
-using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores;
-using QuestDef = AZOA.WebAPI.Models.Quest.Quest;
-using QuestNodeDef = AZOA.WebAPI.Models.Quest.QuestNode;
-using QuestRunDef = AZOA.WebAPI.Models.Quest.QuestRun;
-using QuestDependencyDef = AZOA.WebAPI.Models.Quest.QuestDependency;
+using ActionDef = AZOA.WebAPI.Models.Actions.ActionDefinition;
+using ActionNodeDef = AZOA.WebAPI.Models.Actions.ActionNode;
+using ActionRunDef = AZOA.WebAPI.Models.Actions.ActionRun;
+using ActionDependencyDef = AZOA.WebAPI.Models.Actions.ActionDependency;
 
 namespace AZOA.WebAPI.Tests;
 
 /// <summary>
 /// Manager-level tests for the dapp-composition slice. Covers the 5
 /// composition validation rules from spec.md, status-machine guardrails
-/// (delete in non-Draft, deploy without Generate, etc.), and avatar
+/// (delete in non-Draft, deploy without Generate, etc.), and user
 /// scoping.
 /// </summary>
 public class DappCompositionManagerTests
 {
     private readonly InMemoryDappSeriesStore _seriesStore = new();
-    private readonly Mock<IQuestStore> _questStore = new();
-    private readonly Mock<IQuestRunStore> _runStore = new();
+    private readonly Mock<IActionStore> _actionStore = new();
+    private readonly Mock<IActionRunStore> _runStore = new();
     private readonly Mock<IHolonStore> _holonStore = new();
-    private readonly Mock<ISTARManager> _starManager = new();
+    private readonly Mock<IActionGraphBundleManager> _bundleManager = new();
     private readonly DappCompositionManager _manager;
-    private readonly Guid _avatarId = Guid.NewGuid();
+    private readonly Guid _userId = Guid.NewGuid();
 
     public DappCompositionManagerTests()
     {
         _manager = new DappCompositionManager(
-            _seriesStore, _questStore.Object, _runStore.Object, _holonStore.Object, _starManager.Object);
+            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _bundleManager.Object);
     }
 
     // ── Series CRUD ──────────────────────────────────────────────────────────
@@ -44,69 +44,69 @@ public class DappCompositionManagerTests
     [Fact]
     public async Task CreateAsync_ShouldStartInDraftStatus()
     {
-        var result = await _manager.CreateAsync(_avatarId,
+        var result = await _manager.CreateAsync(_userId,
             new DappSeriesCreateModel { Name = "My dApp" });
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(DappSeries.StatusKind.Draft);
-        result.Result.AvatarIdGuid.Should().Be(_avatarId);
+        result.Result.UserIdGuid.Should().Be(_userId);
         result.Result.Name.Should().Be("My dApp");
     }
 
     [Fact]
     public async Task CreateAsync_RejectsEmptyName()
     {
-        var result = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "" });
+        var result = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "" });
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("Name");
     }
 
     [Fact]
-    public async Task GetAsync_RejectsCrossAvatarAccess()
+    public async Task GetAsync_RejectsCrossUserAccess()
     {
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Owned" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Owned" });
         var seriesId = create.Result!.IdGuid;
 
-        var otherAvatar = Guid.NewGuid();
-        var get = await _manager.GetAsync(seriesId, otherAvatar);
+        var otherUser = Guid.NewGuid();
+        var get = await _manager.GetAsync(seriesId, otherUser);
 
         get.IsError.Should().BeTrue();
         get.Message.Should().Contain("Forbidden");
     }
 
     [Fact]
-    public async Task ListAsync_ReturnsOnlyTheCallingAvatarsSeries()
+    public async Task ListAsync_ReturnsOnlyTheCallingUsersSeries()
     {
-        var otherAvatar = Guid.NewGuid();
-        var mine = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Mine" });
-        await _manager.CreateAsync(otherAvatar, new DappSeriesCreateModel { Name = "Theirs" });
+        var otherUser = Guid.NewGuid();
+        var mine = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Mine" });
+        await _manager.CreateAsync(otherUser, new DappSeriesCreateModel { Name = "Theirs" });
 
-        var list = await _manager.ListAsync(_avatarId);
+        var list = await _manager.ListAsync(_userId);
 
         list.IsError.Should().BeFalse();
         list.Result.Should().ContainSingle(s => s.IdGuid == mine.Result!.IdGuid);
-        list.Result.Should().NotContain(s => s.AvatarIdGuid == otherAvatar);
+        list.Result.Should().NotContain(s => s.UserIdGuid == otherUser);
     }
 
     [Fact]
     public async Task DeleteAsync_BlocksDeletionOfReadySeries()
     {
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Promote" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Promote" });
         var seriesId = create.Result!.IdGuid;
         create.Result.Status = DappSeries.StatusKind.Ready;
         await _seriesStore.UpsertSeriesAsync(create.Result);
 
-        var del = await _manager.DeleteAsync(seriesId, _avatarId);
+        var del = await _manager.DeleteAsync(seriesId, _userId);
 
         del.IsError.Should().BeTrue();
         del.Message.Should().Contain("archive");
     }
 
     [Fact]
-    public async Task UpdateAsync_RejectsCrossAvatarWrites()
+    public async Task UpdateAsync_RejectsCrossUserWrites()
     {
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Owned" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Owned" });
         var seriesId = create.Result!.IdGuid;
 
         var result = await _manager.UpdateAsync(seriesId, Guid.NewGuid(), new DappSeriesUpdateModel
@@ -118,67 +118,67 @@ public class DappCompositionManagerTests
         result.Message.Should().Contain("Forbidden");
     }
 
-    // ── Validator 1: All Quests Completed ─────────────────────────────────────
+    // ── Validator 1: All Actions Completed ─────────────────────────────────────
 
     [Fact]
     public async Task Validate_FailsWhenLatestRunIsNotSucceeded()
     {
-        var (seriesId, questId) = await SetupSeriesWithOneQuest();
-        SetupLatestRunStatus(questId, QuestRunStatus.Failed);
+        var (seriesId, actionId) = await SetupSeriesWithOneAction();
+        SetupLatestRunStatus(actionId, ActionRunStatus.Failed);
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
-        report.Result!.AllQuestsCompleted.Should().BeFalse();
+        report.Result!.AllActionsCompleted.Should().BeFalse();
         report.Result.Diagnostics.Should().Contain(d => d.Contains("Failed"));
     }
 
     [Fact]
-    public async Task Validate_FailsWhenQuestHasNoRunsAtAll()
+    public async Task Validate_FailsWhenActionHasNoRunsAtAll()
     {
-        var (seriesId, questId) = await SetupSeriesWithOneQuest();
-        _runStore.Setup(s => s.GetByQuestIdAsync(questId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IEnumerable<QuestRunDef>> { Result = Array.Empty<QuestRunDef>() });
+        var (seriesId, actionId) = await SetupSeriesWithOneAction();
+        _runStore.Setup(s => s.GetByActionIdAsync(actionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<ActionRunDef>> { Result = Array.Empty<ActionRunDef>() });
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
-        report.Result!.AllQuestsCompleted.Should().BeFalse();
+        report.Result!.AllActionsCompleted.Should().BeFalse();
         report.Result.Diagnostics.Should().Contain(d => d.Contains("never been executed"));
     }
 
     [Fact]
-    public async Task Validate_PassesAllQuestsCompletedWhenLatestRunSucceeded()
+    public async Task Validate_PassesAllActionsCompletedWhenLatestRunSucceeded()
     {
-        var (seriesId, questId) = await SetupSeriesWithOneQuest();
-        SetupLatestRunStatus(questId, QuestRunStatus.Succeeded);
+        var (seriesId, actionId) = await SetupSeriesWithOneAction();
+        SetupLatestRunStatus(actionId, ActionRunStatus.Succeeded);
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
-        report.Result!.AllQuestsCompleted.Should().BeTrue();
+        report.Result!.AllActionsCompleted.Should().BeTrue();
     }
 
     // ── Validator 2: Chain Completeness ───────────────────────────────────────
 
     [Fact]
-    public async Task Validate_FailsWhenSecondQuestHasNoPriorDependency()
+    public async Task Validate_FailsWhenSecondActionHasNoPriorDependency()
     {
-        var (seriesId, questA, questB) = await SetupTwoQuestSeriesWithoutDependency();
-        SetupLatestRunStatus(questA, QuestRunStatus.Succeeded);
-        SetupLatestRunStatus(questB, QuestRunStatus.Succeeded);
+        var (seriesId, actionA, actionB) = await SetupTwoActionSeriesWithoutDependency();
+        SetupLatestRunStatus(actionA, ActionRunStatus.Succeeded);
+        SetupLatestRunStatus(actionB, ActionRunStatus.Succeeded);
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
         report.Result!.ChainCompleteness.Should().BeFalse();
-        report.Result.Diagnostics.Should().Contain(d => d.Contains("no QuestDependency"));
+        report.Result.Diagnostics.Should().Contain(d => d.Contains("no ActionDependency"));
     }
 
     [Fact]
-    public async Task Validate_PassesChainWhenSecondQuestDependsOnFirst()
+    public async Task Validate_PassesChainWhenSecondActionDependsOnFirst()
     {
-        var (seriesId, questA, questB) = await SetupTwoQuestSeriesWithDependency();
-        SetupLatestRunStatus(questA, QuestRunStatus.Succeeded);
-        SetupLatestRunStatus(questB, QuestRunStatus.Succeeded);
+        var (seriesId, actionA, actionB) = await SetupTwoActionSeriesWithDependency();
+        SetupLatestRunStatus(actionA, ActionRunStatus.Succeeded);
+        SetupLatestRunStatus(actionB, ActionRunStatus.Succeeded);
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
         report.Result!.ChainCompleteness.Should().BeTrue();
     }
@@ -186,23 +186,23 @@ public class DappCompositionManagerTests
     // ── Validator 4: No Circular Dependencies ─────────────────────────────────
 
     [Fact]
-    public async Task Validate_FailsWhenEarlyQuestDependsOnLaterQuest()
+    public async Task Validate_FailsWhenEarlyActionDependsOnLaterAction()
     {
-        // questA is order 1, questB is order 2 -- but questA.Dependencies points
-        // to questB. That's a circular dep in series order.
-        var questA = Guid.NewGuid();
-        var questB = Guid.NewGuid();
-        SetupQuestDef(questA, dependsOn: new[] { questB });
-        SetupQuestDef(questB);
+        // actionA is order 1, actionB is order 2 -- but actionA.Dependencies points
+        // to actionB. That's a circular dep in series order.
+        var actionA = Guid.NewGuid();
+        var actionB = Guid.NewGuid();
+        SetupActionDef(actionA, dependsOn: new[] { actionB });
+        SetupActionDef(actionB);
 
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Cycle" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Cycle" });
         var seriesId = create.Result!.IdGuid;
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questA, Order = 1 });
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questB, Order = 2 });
-        SetupLatestRunStatus(questA, QuestRunStatus.Succeeded);
-        SetupLatestRunStatus(questB, QuestRunStatus.Succeeded);
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionA, Order = 1 });
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionB, Order = 2 });
+        SetupLatestRunStatus(actionA, ActionRunStatus.Succeeded);
+        SetupLatestRunStatus(actionB, ActionRunStatus.Succeeded);
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
         report.Result!.NoCircularDependencies.Should().BeFalse();
         report.Result.Diagnostics.Should().Contain(d => d.Contains("appears later"));
@@ -214,22 +214,22 @@ public class DappCompositionManagerTests
     public async Task Validate_FailsWhenReferencedHolonDoesNotExist()
     {
         var orphanHolon = Guid.NewGuid();
-        var questId = Guid.NewGuid();
-        SetupQuestDef(questId, nodes: new[]
+        var actionId = Guid.NewGuid();
+        SetupActionDef(actionId, nodes: new[]
         {
-            new QuestNodeDef { Id = Guid.NewGuid(), QuestId = questId,
+            new ActionNodeDef { Id = Guid.NewGuid(), ActionId = actionId,
                 Config = JsonSerializer.Serialize(new { holonId = orphanHolon.ToString() }) }
         });
 
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Holon ref" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Holon ref" });
         var seriesId = create.Result!.IdGuid;
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questId, Order = 1 });
-        SetupLatestRunStatus(questId, QuestRunStatus.Succeeded);
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionId, Order = 1 });
+        SetupLatestRunStatus(actionId, ActionRunStatus.Succeeded);
 
         _holonStore.Setup(s => s.GetByIdAsync(orphanHolon, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IHolon> { IsError = true, Message = "not found" });
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
         report.Result!.HolonBindingsResolved.Should().BeFalse();
         report.Result.Diagnostics.Should().Contain(d => d.Contains(orphanHolon.ToString()));
@@ -246,14 +246,14 @@ public class DappCompositionManagerTests
         // HolonBindingsResolved would incorrectly be true. After the fix, the
         // array elements are also scanned and the missing holon is caught.
         var missingHolonId = Guid.NewGuid();
-        var questId = Guid.NewGuid();
-        SetupQuestDef(questId, nodes: new[]
+        var actionId = Guid.NewGuid();
+        SetupActionDef(actionId, nodes: new[]
         {
-            new QuestNodeDef
+            new ActionNodeDef
             {
                 Id = Guid.NewGuid(),
-                QuestId = questId,
-                NodeType = QuestNodeType.GateCheck,
+                ActionId = actionId,
+                NodeType = ActionNodeType.GateCheck,
                 // Simulate GateCheckNodeConfig serialised: array-valued "holons" key.
                 Config = JsonSerializer.Serialize(new
                 {
@@ -264,15 +264,15 @@ public class DappCompositionManagerTests
             },
         });
 
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "GateCheck array holon" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "GateCheck array holon" });
         var seriesId = create.Result!.IdGuid;
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questId, Order = 1 });
-        SetupLatestRunStatus(questId, QuestRunStatus.Succeeded);
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionId, Order = 1 });
+        SetupLatestRunStatus(actionId, ActionRunStatus.Succeeded);
 
         _holonStore.Setup(s => s.GetByIdAsync(missingHolonId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IHolon> { IsError = true, Message = "not found" });
 
-        var report = await _manager.ValidateAsync(seriesId, _avatarId);
+        var report = await _manager.ValidateAsync(seriesId, _userId);
 
         report.Result!.HolonBindingsResolved.Should().BeFalse(
             "a Guid inside a *holon*-named array property must be treated as a holon reference (FR-5 / AC-5)");
@@ -286,10 +286,10 @@ public class DappCompositionManagerTests
     [Fact]
     public async Task DeployAsync_RejectsWhenSeriesIsNotReady()
     {
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "X" });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "X" });
         var seriesId = create.Result!.IdGuid;
 
-        var deploy = await _manager.DeployAsync(seriesId, _avatarId);
+        var deploy = await _manager.DeployAsync(seriesId, _userId);
 
         deploy.IsError.Should().BeTrue();
         deploy.Message.Should().Contain("Ready");
@@ -297,72 +297,72 @@ public class DappCompositionManagerTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void SetupQuestDef(
-        Guid questId,
+    private void SetupActionDef(
+        Guid actionId,
         IEnumerable<Guid>? dependsOn = null,
-        IEnumerable<QuestNodeDef>? nodes = null)
+        IEnumerable<ActionNodeDef>? nodes = null)
     {
-        var quest = new QuestDef
+        var action = new ActionDef
         {
-            Id = questId,
-            Name = $"Quest {questId:N}",
-            AvatarId = _avatarId,
-            Nodes = nodes?.ToList() ?? new List<QuestNodeDef>(),
+            Id = actionId,
+            Name = $"Action {actionId:N}",
+            UserId = _userId,
+            Nodes = nodes?.ToList() ?? new List<ActionNodeDef>(),
             Dependencies = (dependsOn ?? Array.Empty<Guid>())
-                .Select(d => new QuestDependencyDef { Id = Guid.NewGuid(), QuestId = questId, DependsOnQuestId = d })
+                .Select(d => new ActionDependencyDef { Id = Guid.NewGuid(), ActionId = actionId, DependsOnActionId = d })
                 .ToList(),
         };
-        _questStore.Setup(s => s.GetQuestAsync(questId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<QuestDef> { Result = quest });
+        _actionStore.Setup(s => s.GetActionAsync(actionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<ActionDef> { Result = action });
     }
 
-    private void SetupLatestRunStatus(Guid questId, QuestRunStatus status)
+    private void SetupLatestRunStatus(Guid actionId, ActionRunStatus status)
     {
-        var run = new QuestRunDef
+        var run = new ActionRunDef
         {
             Id = Guid.NewGuid(),
-            QuestId = questId,
-            AvatarId = _avatarId,
+            ActionId = actionId,
+            UserId = _userId,
             Status = status,
             StartedAt = DateTime.UtcNow,
         };
-        _runStore.Setup(s => s.GetByQuestIdAsync(questId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IEnumerable<QuestRunDef>> { Result = new[] { run } });
+        _runStore.Setup(s => s.GetByActionIdAsync(actionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IEnumerable<ActionRunDef>> { Result = new[] { run } });
     }
 
-    private async Task<(Guid seriesId, Guid questId)> SetupSeriesWithOneQuest()
+    private async Task<(Guid seriesId, Guid actionId)> SetupSeriesWithOneAction()
     {
-        var questId = Guid.NewGuid();
-        SetupQuestDef(questId);
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "One quest" });
+        var actionId = Guid.NewGuid();
+        SetupActionDef(actionId);
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "One action" });
         var seriesId = create.Result!.IdGuid;
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questId, Order = 1 });
-        return (seriesId, questId);
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionId, Order = 1 });
+        return (seriesId, actionId);
     }
 
-    private async Task<(Guid, Guid, Guid)> SetupTwoQuestSeriesWithoutDependency()
+    private async Task<(Guid, Guid, Guid)> SetupTwoActionSeriesWithoutDependency()
     {
-        var questA = Guid.NewGuid();
-        var questB = Guid.NewGuid();
-        SetupQuestDef(questA);
-        SetupQuestDef(questB); // No dependency on questA -- this is the failure case.
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Two-no-dep" });
+        var actionA = Guid.NewGuid();
+        var actionB = Guid.NewGuid();
+        SetupActionDef(actionA);
+        SetupActionDef(actionB); // No dependency on actionA -- this is the failure case.
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Two-no-dep" });
         var seriesId = create.Result!.IdGuid;
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questA, Order = 1 });
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questB, Order = 2 });
-        return (seriesId, questA, questB);
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionA, Order = 1 });
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionB, Order = 2 });
+        return (seriesId, actionA, actionB);
     }
 
-    private async Task<(Guid, Guid, Guid)> SetupTwoQuestSeriesWithDependency()
+    private async Task<(Guid, Guid, Guid)> SetupTwoActionSeriesWithDependency()
     {
-        var questA = Guid.NewGuid();
-        var questB = Guid.NewGuid();
-        SetupQuestDef(questA);
-        SetupQuestDef(questB, dependsOn: new[] { questA });
-        var create = await _manager.CreateAsync(_avatarId, new DappSeriesCreateModel { Name = "Two-with-dep" });
+        var actionA = Guid.NewGuid();
+        var actionB = Guid.NewGuid();
+        SetupActionDef(actionA);
+        SetupActionDef(actionB, dependsOn: new[] { actionA });
+        var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "Two-with-dep" });
         var seriesId = create.Result!.IdGuid;
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questA, Order = 1 });
-        await _manager.AddQuestAsync(seriesId, _avatarId, new DappSeriesAddQuestModel { QuestId = questB, Order = 2 });
-        return (seriesId, questA, questB);
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionA, Order = 1 });
+        await _manager.AddActionAsync(seriesId, _userId, new DappSeriesAddActionModel { ActionId = actionB, Order = 2 });
+        return (seriesId, actionA, actionB);
     }
 }

@@ -46,8 +46,8 @@ public sealed class ActionableAuthorizationResultHandler : IAuthorizationMiddlew
             context.Response.ContentType = "application/json";
             var missingScope = RequiredScope(context);
             var message = missingScope is AzoaScopes.DappDevelop or AzoaScopes.DappManage
-                ? $"This API key lacks the '{missingScope}' scope or owning-avatar role required "
-                  + "for this dApp operation. Rotate the key after updating the avatar role."
+                ? $"This API key lacks the '{missingScope}' scope or owning-user role required "
+                  + "for this dApp operation. Rotate the key after updating the user role."
                 : $"This API key cannot satisfy the '{missingScope}' policy. Use a JWT identity "
                   + "that carries the required capability.";
             await context.Response.WriteAsJsonAsync(new

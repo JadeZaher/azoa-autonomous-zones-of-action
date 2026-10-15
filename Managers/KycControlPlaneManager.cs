@@ -18,6 +18,15 @@ namespace AZOA.WebAPI.Managers;
 public sealed class KycControlPlaneManager : IKycControlPlaneManager
 {
     private const int MaxAuditCursorLength = 256;
+
+    /// <summary>Risk-policy stamp on a screening row a human decided, not the scoring engine.</summary>
+    public const string ManualReviewPolicyVersion = "azoa-manual-review-v1";
+
+    private const int MaxReviewReasonLength = 2000;
+    private const int MaxScreeningIdLength = 128;
+
+    /// <summary>Machine-readable refusal when a non-operator principal reaches the review desk.</summary>
+    public const string OperatorOnlyReason = "AML_REVIEW_IS_NODE_OPERATOR_ONLY";
     private static readonly IReadOnlySet<string> AuditActions = new HashSet<string>(StringComparer.Ordinal)
     {
         "profile.trust-change",
@@ -29,10 +38,16 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     private readonly IKycProviderRegistry _registry;
     private readonly IKycManager _kyc;
     private readonly IApiKeyStore _apiKeys;
-    private readonly IAvatarStore _avatars;
+    private readonly IUserStore _users;
     private readonly IAdminBootstrapStateStore _operatorState;
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
+
+    /// <summary>AML screening ledger; absent means the review desk REFUSES, never that the queue is empty.</summary>
+    private readonly IKycScreeningStore? _screening;
+
+    /// <summary>Carries the operator reason for an AML decision, which the screening row has no column for.</summary>
+    private readonly ILogger<KycControlPlaneManager>? _logger;
 
     public KycControlPlaneManager(
         IKycControlStore control,
@@ -40,20 +55,24 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         IKycProviderRegistry registry,
         IKycManager kyc,
         IApiKeyStore apiKeys,
-        IAvatarStore avatars,
+        IUserStore users,
         IAdminBootstrapStateStore operatorState,
         IHostEnvironment environment,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IKycScreeningStore? screening = null,
+        ILogger<KycControlPlaneManager>? logger = null)
     {
         _control = control;
         _kycStore = kycStore;
         _registry = registry;
         _kyc = kyc;
         _apiKeys = apiKeys;
-        _avatars = avatars;
+        _users = users;
         _operatorState = operatorState;
         _environment = environment;
         _configuration = configuration;
+        _screening = screening;
+        _logger = logger;
     }
 
     public Task<AZOAResult<IReadOnlyList<KycProviderProfileResponse>>> ListProfilesAsync(
@@ -63,7 +82,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     public async Task<AZOAResult<KycProviderProfileResponse>> UpdateProfileAsync(
         string providerKey,
         UpdateKycProviderProfileRequest request,
-        Guid operatorAvatarId,
+        Guid operatorUserId,
         CancellationToken ct = default)
     {
         providerKey = KycProviderRegistry.NormalizeProviderKey(providerKey);
@@ -118,7 +137,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             TrustRevision = current is null
                 ? 1
                 : current.TrustRevision + (trustChanged ? 1 : 0),
-            UpdatedByAvatarId = SurrealId.ToSurrealId(operatorAvatarId),
+            UpdatedByUserId = SurrealId.ToSurrealId(operatorUserId),
             CreatedAt = current?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -144,7 +163,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             AssuranceLevel = profile.AssuranceLevel,
             PreviousTrustRevision = current?.TrustRevision,
             TrustRevision = profile.TrustRevision,
-            ActorAvatarId = SurrealId.ToSurrealId(operatorAvatarId),
+            ActorUserId = SurrealId.ToSurrealId(operatorUserId),
             OccurredAt = now,
         };
         var saved = await _control.SaveProfileAsync(
@@ -167,6 +186,11 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             return CopyFailure<bool, IReadOnlyList<TenantKycProviderChoiceResponse>>(authority);
         if (!authority.Result)
             return Forbidden<IReadOnlyList<TenantKycProviderChoiceResponse>>("TENANT_CONFIGURATION_FORBIDDEN");
+        // The read mirrors the write gate: a tenant the operator has not admitted to
+        // the override allow-list is never shown a provider menu it cannot act on.
+        if (!TenantKycProviderOverridePolicy.IsAllowedForTenant(_configuration, tenantId))
+            return AZOAResult<IReadOnlyList<TenantKycProviderChoiceResponse>>.Success(
+                Array.Empty<TenantKycProviderChoiceResponse>());
         return await _registry.ListTenantChoicesAsync(ct);
     }
 
@@ -192,7 +216,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     public async Task<AZOAResult<TenantKycSelectionResponse>> SelectTenantProviderAsync(
         Guid tenantId,
         SelectTenantKycProviderRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         bool requireTenantAuthority,
         CancellationToken ct = default)
     {
@@ -203,12 +227,22 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             return requireTenantAuthority
                 ? Forbidden<TenantKycSelectionResponse>("TENANT_CONFIGURATION_FORBIDDEN")
                 : NotFound<TenantKycSelectionResponse>("Tenant not found.");
-        var tenant = await _avatars.GetByIdAsync(tenantId, ct);
+        // D48: the KYC provider IS the compliance policy, so a tenant may only
+        // repoint its own provider when the OPERATOR has admitted that tenant to the
+        // node-config allow-list. requireTenantAuthority == false is the operator's
+        // own route (NodeOperatorController), which is the custodian and not gated.
+        if (requireTenantAuthority
+            && !TenantKycProviderOverridePolicy.IsAllowedForTenant(_configuration, tenantId))
+        {
+            return Forbidden<TenantKycSelectionResponse>(
+                TenantKycProviderOverridePolicy.ForbiddenReason);
+        }
+        var tenant = await _users.GetByIdAsync(tenantId, ct);
         if (tenant.IsError)
             return string.Equals(tenant.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
                 ? NotFound<TenantKycSelectionResponse>("Tenant not found.")
                 : DependencyUnavailable<TenantKycSelectionResponse>();
-        if (tenant.Result is null || !tenant.Result.IsActive || tenantId == NodeOperatorIdentity.AvatarId)
+        if (tenant.Result is null || !tenant.Result.IsActive || tenantId == NodeOperatorIdentity.UserId)
         {
             return NotFound<TenantKycSelectionResponse>("Tenant not found.");
         }
@@ -249,7 +283,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             TenantId = SurrealId.ToSurrealId(tenantId),
             ProviderKey = providerKey,
             SelectionVersion = (current?.SelectionVersion ?? 0) + 1,
-            UpdatedByAvatarId = SurrealId.ToSurrealId(actorAvatarId),
+            UpdatedByUserId = SurrealId.ToSurrealId(actorUserId),
             CreatedAt = current?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -261,7 +295,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             ProviderKey = providerKey,
             PreviousProviderKey = current?.ProviderKey,
             Version = selection.SelectionVersion,
-            ActorAvatarId = SurrealId.ToSurrealId(actorAvatarId),
+            ActorUserId = SurrealId.ToSurrealId(actorUserId),
             OccurredAt = now,
         };
         var saved = await _control.SaveSelectionAsync(
@@ -282,24 +316,24 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
     {
         if (limit is < 1 or > 100 || (search?.Length ?? 0) > 100 || !TryDecodeCursor(cursor, out var offset))
             return Invalid<CursorPage<OperatorTenantKycSummaryResponse>>("Invalid pagination request.");
-        var avatars = await _avatars.ListTenantPrincipalsPageAsync(offset, limit + 1, search, ct);
-        if (avatars.IsError || avatars.Result is null)
+        var users = await _users.ListTenantPrincipalsPageAsync(offset, limit + 1, search, ct);
+        if (users.IsError || users.Result is null)
             return DependencyUnavailable<CursorPage<OperatorTenantKycSummaryResponse>>();
 
-        var selected = avatars.Result.Take(limit).ToList();
+        var selected = users.Result.Take(limit).ToList();
         var items = new List<OperatorTenantKycSummaryResponse>(selected.Count);
-        foreach (var avatar in selected)
+        foreach (var user in selected)
         {
-            var selection = await _control.GetSelectionAsync(avatar.Id, ct);
+            var selection = await _control.GetSelectionAsync(user.Id, ct);
             if (selection.IsError)
                 return CopyFailure<TenantKycProviderSelection?, CursorPage<OperatorTenantKycSummaryResponse>>(selection);
-            var response = await ToSelectionResponseAsync(avatar.Id, selection.Result, ct);
+            var response = await ToSelectionResponseAsync(user.Id, selection.Result, ct);
             if (response.IsError || response.Result is null)
                 return CopyFailure<TenantKycSelectionResponse, CursorPage<OperatorTenantKycSummaryResponse>>(response);
             items.Add(new OperatorTenantKycSummaryResponse
             {
                 TenantId = response.Result.TenantId,
-                Username = avatar.Username,
+                Username = user.Username,
                 ProviderKey = response.Result.ProviderKey,
                 ProviderDisplayName = response.Result.ProviderDisplayName,
                 SelectionVersion = response.Result.SelectionVersion,
@@ -313,7 +347,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return AZOAResult<CursorPage<OperatorTenantKycSummaryResponse>>.Success(new CursorPage<OperatorTenantKycSummaryResponse>
         {
             Items = items,
-            NextCursor = avatars.Result.Count > limit ? EncodeCursor(offset + limit) : null,
+            NextCursor = users.Result.Count > limit ? EncodeCursor(offset + limit) : null,
         });
     }
 
@@ -344,14 +378,14 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return AZOAResult<CursorPage<OperatorKycSubmissionQueueItem>>.Success(new CursorPage<OperatorKycSubmissionQueueItem>
         {
             Items = items,
-            NextCursor = rows.Result.Count > limit ? EncodeCursor(offset + limit) : null,
+            NextCursor = rows.Result!.Count > limit ? EncodeCursor(offset + limit) : null,
         });
     }
 
     public async Task<AZOAResult<OperatorKycSubmissionQueueItem>> DecideAsync(
         Guid submissionId,
         OperatorKycDecisionRequest request,
-        Guid operatorAvatarId,
+        Guid operatorUserId,
         CancellationToken ct = default)
     {
         var loaded = await _kycStore.GetSubmissionByIdAsync(submissionId, ct);
@@ -373,8 +407,8 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
 
         AZOAResult<KycSubmissionModel> result = decision switch
         {
-            "approve" => await _kyc.ApproveAsync(submissionId, operatorAvatarId, request.Notes, ct),
-            "reject" => await _kyc.RejectAsync(submissionId, operatorAvatarId, request.Notes, request.Reason, ct),
+            "approve" => await _kyc.ApproveAsync(submissionId, operatorUserId, request.Notes, ct),
+            "reject" => await _kyc.RejectAsync(submissionId, operatorUserId, request.Notes, request.Reason, ct),
             _ => Invalid<KycSubmissionModel>("Decision must be approve or reject."),
         };
         if (result.IsError || result.Result is null)
@@ -390,15 +424,208 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return await ToQueueItemAsync(refreshed.Result, ct);
     }
 
+    /// <summary>
+    /// The people a human still owes an AML decision: an identity approval that is
+    /// APPROVED and unexpired, and an AML verdict that is not clear.
+    ///
+    /// <para>It is built from the APPROVED submission page rather than from the
+    /// screening ledger because that ledger has no "everyone flagged" read, and because
+    /// someone whose identity approval expired is closed for a different reason and is
+    /// not waiting on this desk.</para>
+    /// </summary>
+    public async Task<AZOAResult<CursorPage<AmlManualReviewItem>>> ListAmlReviewsAsync(
+        int limit,
+        string? cursor,
+        Guid operatorUserId,
+        CancellationToken ct = default)
+    {
+        if (!IsNodeOperator(operatorUserId))
+            return Forbidden<CursorPage<AmlManualReviewItem>>(OperatorOnlyReason);
+        if (limit is < 1 or > 100 || !TryDecodeCursor(cursor, out var offset))
+            return Invalid<CursorPage<AmlManualReviewItem>>("Invalid pagination request.");
+        if (_screening is null)
+        {
+            // An empty page would read as "nobody is waiting". Nobody is LISTENING.
+            return DependencyUnavailable<CursorPage<AmlManualReviewItem>>(
+                "The AML screening ledger is unavailable, so the review queue cannot be read.");
+        }
+
+        var rows = await _kycStore.GetEffectiveOperatorPageAsync("approved", offset, limit + 1, ct);
+        if (rows.IsError || rows.Result is null)
+            return CopyFailure<IReadOnlyList<KycSubmission>, CursorPage<AmlManualReviewItem>>(rows);
+
+        var now = DateTimeOffset.UtcNow;
+        var sla = KycAmlClearance.ResolveManualReviewSla(_configuration);
+        var contact = KycAmlClearance.ResolveManualReviewContact(_configuration);
+        var notice = KycAmlClearance.ResolveUnderReviewReason(_configuration);
+        var seen = new HashSet<(Guid Subject, Guid? Tenant)>();
+        var items = new List<AmlManualReviewItem>();
+        foreach (var submission in rows.Result.Take(limit))
+        {
+            if (EffectiveStatus(submission, now) != KycStatus.APPROVED)
+                continue;
+            if (!Guid.TryParse(submission.UserId, out var subjectUserId) || subjectUserId == Guid.Empty)
+                continue;
+            var tenantId = Guid.TryParse(submission.TenantId, out var parsedTenant) && parsedTenant != Guid.Empty
+                ? parsedTenant
+                : (Guid?)null;
+            if (!seen.Add((subjectUserId, tenantId)))
+                continue;
+
+            var latest = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct);
+            if (latest.IsError)
+            {
+                // One unreadable verdict must not silently shrink the queue: a person
+                // dropped from this list is a person nobody knows to decide about.
+                return CopyFailure<KycScreeningResult, CursorPage<AmlManualReviewItem>>(latest);
+            }
+            if (KycAmlClearance.IsClear(latest.Result))
+                continue;
+            items.Add(ToAmlReviewItem(subjectUserId, tenantId, latest.Result, sla, now, contact, notice));
+        }
+
+        return AZOAResult<CursorPage<AmlManualReviewItem>>.Success(new CursorPage<AmlManualReviewItem>
+        {
+            Items = items,
+            // The cursor advances by SUBMISSIONS scanned, not by items returned: a page
+            // can be short because the people on it were clear and still have a next.
+            NextCursor = rows.Result.Count > limit ? EncodeCursor(offset + limit) : null,
+        });
+    }
+
+    /// <summary>
+    /// Records an operator's AML decision as a NEW screening row that supersedes the one
+    /// they read, by <c>screened_at</c>. Nothing is edited in place, so the evidence that
+    /// was decided over stays readable beside the decision.
+    ///
+    /// <para>Clearing re-opens both value gates for this person, so it is allowed only
+    /// where a screening row exists AND is not already clear. Someone never screened
+    /// cannot be cleared by hand: an invented NO_HIT is a clean verdict nobody produced.</para>
+    ///
+    /// <para>The reason is required and bounded and is written to the operator log.
+    /// <c>kyc_screening_result</c> has no column for it, and this manager has no seam
+    /// that appends a standalone control-audit row.</para>
+    /// </summary>
+    public async Task<AZOAResult<AmlManualReviewItem>> DecideAmlReviewAsync(
+        Guid subjectUserId,
+        AmlManualReviewDecisionRequest request,
+        Guid operatorUserId,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IsNodeOperator(operatorUserId))
+            return Forbidden<AmlManualReviewItem>(OperatorOnlyReason);
+        if (subjectUserId == Guid.Empty || subjectUserId == NodeOperatorIdentity.UserId)
+            return NotFound<AmlManualReviewItem>("No compliance review is open for this person.");
+        if (_screening is null)
+        {
+            return DependencyUnavailable<AmlManualReviewItem>(
+                "The AML screening ledger is unavailable, so no decision can be recorded.");
+        }
+
+        var decision = request.Decision?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (decision is not (AmlManualReviewDecisionRequest.Clear or AmlManualReviewDecisionRequest.Deny))
+            return Invalid<AmlManualReviewItem>("A compliance decision must be clear or deny.");
+        if (!IsSafe(request.Reason, MaxReviewReasonLength))
+            return Invalid<AmlManualReviewItem>("A bounded reason is required with every compliance decision.");
+        var expectedScreeningId = request.ExpectedScreeningId?.Trim() ?? string.Empty;
+        if (expectedScreeningId.Length is 0 or > MaxScreeningIdLength)
+            return Invalid<AmlManualReviewItem>("The screening row being superseded must be named.");
+
+        var tenantId = request.TenantId is { } candidate && candidate != Guid.Empty
+            ? candidate
+            : (Guid?)null;
+        var latest = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct);
+        if (latest.IsError)
+            return CopyFailure<KycScreeningResult, AmlManualReviewItem>(latest);
+        var current = latest.Result;
+        if (current is null)
+        {
+            return OperationNotAllowed<AmlManualReviewItem>(
+                "This person has never been screened, so there is no verdict to supersede. "
+                + "Screen them before recording a decision.");
+        }
+        if (KycAmlClearance.IsClear(current))
+            return OperationNotAllowed<AmlManualReviewItem>("No compliance review is open for this person.");
+        if (!string.Equals(BareScreeningId(current), expectedScreeningId, StringComparison.Ordinal))
+        {
+            return Conflict<AmlManualReviewItem>(
+                "A newer screening arrived while this review was open. "
+                + "Reload the queue and read the current one before deciding.");
+        }
+
+        // The superseding row must sort AFTER the row it supersedes or the value gates
+        // keep reading the old verdict and the decision is nominal.
+        var decidedAt = DateTimeOffset.UtcNow;
+        if (decidedAt <= current.ScreenedAt)
+            decidedAt = current.ScreenedAt.AddTicks(1);
+        var cleared = string.Equals(decision, AmlManualReviewDecisionRequest.Clear, StringComparison.Ordinal);
+        var superseding = new KycScreeningResult
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            SubjectUserId = subjectUserId.ToString("N"),
+            TenantId = tenantId?.ToString("N"),
+            // The query shape is deliberately NOT copied: a decision is not a new search,
+            // and duplicating a name and a date of birth spreads retained PII (D25).
+            ScoreThreshold = current.ScoreThreshold,
+            Decision = cleared ? KycScreeningDecision.NO_HIT : KycScreeningDecision.HIT,
+            TopScore = current.TopScore,
+            HitCount = current.HitCount,
+            Topics = current.Topics,
+            PersonIds = current.PersonIds,
+            MonitorId = current.MonitorId,
+            PolicyVersion = ManualReviewPolicyVersion,
+            // A human read the list, however complete it was, and answered for it. The
+            // row they answered over keeps its own truncation flag.
+            ResultsTruncated = false,
+            RetentionExpiresAt = current.RetentionExpiresAt,
+            ScreenedAt = decidedAt,
+            CreatedDate = decidedAt,
+            ModifiedDate = decidedAt,
+        };
+        var saved = await _screening.SaveResultAsync(superseding, ct);
+        if (saved.IsError)
+            return CopyFailure<KycScreeningResult, AmlManualReviewItem>(saved);
+
+        _logger?.LogInformation(
+            "AML manual review decided by operator {OperatorUserId}: subject {SubjectUserId}, tenant {TenantId}, "
+            + "decision {Decision}, superseded screening {SupersededScreeningId} with {SupersedingScreeningId}. "
+            + "Reason: {Reason}",
+            operatorUserId,
+            subjectUserId,
+            tenantId,
+            cleared ? AmlManualReviewDecisionRequest.Clear : AmlManualReviewDecisionRequest.Deny,
+            expectedScreeningId,
+            superseding.Id,
+            request.Reason.Trim());
+
+        var refreshed = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct);
+        if (refreshed.IsError)
+            return CopyFailure<KycScreeningResult, AmlManualReviewItem>(refreshed);
+        if (refreshed.Result is null)
+        {
+            return DependencyUnavailable<AmlManualReviewItem>(
+                "The compliance decision was saved but could not be reloaded.");
+        }
+        return AZOAResult<AmlManualReviewItem>.Success(ToAmlReviewItem(
+            subjectUserId,
+            tenantId,
+            refreshed.Result,
+            KycAmlClearance.ResolveManualReviewSla(_configuration),
+            DateTimeOffset.UtcNow,
+            KycAmlClearance.ResolveManualReviewContact(_configuration),
+            KycAmlClearance.ResolveUnderReviewReason(_configuration)));
+    }
+
     public async Task<AZOAResult<NodeOperatorOverviewResponse>> GetOverviewAsync(CancellationToken ct = default)
     {
         var profiles = await _registry.ListProfilesAsync(ct);
         var pending = await _kycStore.CountEffectiveStatusAsync("pending", ct);
         var selections = await _control.CountSelectionsAsync(ct);
         var state = await _operatorState.GetAsync(ct);
-        var avatar = await _avatars.GetByIdAsync(NodeOperatorIdentity.AvatarId, ct);
+        var user = await _users.GetByIdAsync(NodeOperatorIdentity.UserId, ct);
         var persistenceReady = !profiles.IsError && !pending.IsError && !selections.IsError
-            && !state.IsError && !avatar.IsError && avatar.Result is not null;
+            && !state.IsError && !user.IsError && user.Result is not null;
         return AZOAResult<NodeOperatorOverviewResponse>.Success(new NodeOperatorOverviewResponse
         {
             Node = new NodeRuntimeSummary
@@ -410,7 +637,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             },
             Operator = new NodeOperatorIdentitySummary
             {
-                Username = avatar.Result?.Username ?? string.Empty,
+                Username = user.Result?.Username ?? string.Empty,
                 CredentialRevision = state.Result?.CredentialRevision ?? 0,
                 ActivatedAt = state.Result?.ActivatedAt ?? default,
                 CredentialUpdatedAt = state.Result?.CredentialUpdatedAt ?? state.Result?.ActivatedAt ?? default,
@@ -437,7 +664,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         if (limit is < 1 or > 100
             || !TryDecodeAuditCursor(cursor, out var before)
             || tenantId == Guid.Empty
-            || tenantId == NodeOperatorIdentity.AvatarId)
+            || tenantId == NodeOperatorIdentity.UserId)
         {
             return Invalid<CursorPage<KycControlAuditResponse>>("Invalid audit pagination or tenant filter.");
         }
@@ -476,19 +703,19 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
 
     private async Task<AZOAResult<bool>> HasCurrentTenantAuthorityAsync(Guid tenantId, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.AvatarId)
+        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.UserId)
             return AZOAResult<bool>.Success(false);
-        var avatar = await _avatars.GetByIdAsync(tenantId, ct);
-        if (avatar.IsError)
-            return string.Equals(avatar.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
+        var user = await _users.GetByIdAsync(tenantId, ct);
+        if (user.IsError)
+            return string.Equals(user.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
                 ? AZOAResult<bool>.Success(false)
                 : DependencyUnavailable<bool>();
-        if (avatar.Result is null || !avatar.Result.IsActive)
+        if (user.Result is null || !user.Result.IsActive)
             return AZOAResult<bool>.Success(false);
         IReadOnlyList<AZOA.WebAPI.Models.ApiKey> keys;
         try
         {
-            keys = await _apiKeys.ListByAvatarAsync(tenantId, ct);
+            keys = await _apiKeys.ListByUserAsync(tenantId, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -559,7 +786,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         return AZOAResult<OperatorKycSubmissionQueueItem>.Success(new OperatorKycSubmissionQueueItem
         {
             Id = Guid.TryParse(submission.Id, out var id) ? id : Guid.Empty,
-            AvatarId = Guid.TryParse(submission.AvatarId, out var avatarId) ? avatarId : Guid.Empty,
+            UserId = Guid.TryParse(submission.UserId, out var userId) ? userId : Guid.Empty,
             TenantId = Guid.TryParse(submission.TenantId, out var tenantId) ? tenantId : null,
             ProviderKey = submission.ProviderKey,
             Status = status,
@@ -611,6 +838,52 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
                 ? KycStatus.EXPIRED
                 : submission.Status;
 
+    /// <summary>
+    /// The AML review desk is node-operator-only, and this is where that is decided.
+    /// Both methods hang off an interface a TENANT controller also injects
+    /// (<c>TenantKycConfigurationController</c>), so a route-level policy alone would
+    /// leave the next caller inheriting nothing.
+    /// </summary>
+    private static bool IsNodeOperator(Guid actorUserId)
+        => actorUserId != Guid.Empty && actorUserId == NodeOperatorIdentity.UserId;
+
+    /// <summary>Bare record id of a screening row; the token a decision must name to supersede it.</summary>
+    private static string BareScreeningId(KycScreeningResult result)
+        => string.IsNullOrWhiteSpace(result.Id) ? string.Empty : SurrealRecordGuid.BareId(result.Id);
+
+    /// <summary>Projects one subject's current AML standing for the operator review desk.</summary>
+    private static AmlManualReviewItem ToAmlReviewItem(
+        Guid subjectUserId,
+        Guid? tenantId,
+        KycScreeningResult? result,
+        TimeSpan sla,
+        DateTimeOffset now,
+        string? contact,
+        string notice)
+    {
+        var reviewDueAt = KycAmlClearance.ReviewDueAt(result, sla);
+        return new AmlManualReviewItem
+        {
+            UserId = subjectUserId,
+            TenantId = tenantId,
+            ScreeningId = result is null ? null : BareScreeningId(result),
+            Decision = result is null ? AmlManualReviewItem.NotScreened : result.Decision.ToString(),
+            TopScore = result?.TopScore ?? 0,
+            HitCount = result?.HitCount ?? 0,
+            Topics = result?.Topics ?? Array.Empty<string>(),
+            ResultsTruncated = result?.ResultsTruncated ?? false,
+            ScreenedAt = result?.ScreenedAt,
+            ReviewDueAt = reviewDueAt,
+            Overdue = KycAmlClearance.IsOverdue(reviewDueAt, now),
+            PolicyVersion = result?.PolicyVersion ?? string.Empty,
+            // A decision needs a row to supersede AND a question still open. This is the
+            // same pair DecideAmlReviewAsync enforces; the flag only mirrors it.
+            DecisionAllowed = result is not null && KycAmlClearance.RequiresManualReview(result),
+            ReviewContact = contact,
+            SubjectNotice = notice,
+        };
+    }
+
     private static KycControlAuditResponse ToAuditResponse(KycControlAudit audit) => new()
     {
         Id = Guid.TryParse(audit.Id, out var id) ? id : Guid.Empty,
@@ -631,7 +904,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         AssuranceLevel = audit.AssuranceLevel,
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
-        ActorAvatarId = Guid.TryParse(audit.ActorAvatarId, out var actorId) ? actorId : Guid.Empty,
+        ActorUserId = Guid.TryParse(audit.ActorUserId, out var actorId) ? actorId : Guid.Empty,
         OccurredAt = audit.OccurredAt,
     };
 
@@ -743,5 +1016,56 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         {
             return false;
         }
+    }
+}
+
+/// <summary>
+/// D48 node-config gate for the per-tenant KYC provider override
+/// (<c>PUT /api/tenant/kyc/provider</c>). OFF for every tenant by default.
+/// </summary>
+/// <remarks>
+/// The provider a tenant verifies through IS that tenant's compliance policy, so
+/// letting a tenant repoint it at will is tenant-chosen policy on a node that
+/// custodies someone else's real users. Both keys must agree before a tenant may
+/// choose: the node-wide switch AND that tenant's id on the allow-list. Operator
+/// routes are unaffected - the operator is the custodian. See
+/// <c>docs/NODE-HOST.md</c> section 8.5.
+/// </remarks>
+public static class TenantKycProviderOverridePolicy
+{
+    /// <summary>Node-wide master switch; absent or false disables every tenant override.</summary>
+    public const string EnabledKey = "Kyc:TenantProviderOverride:Enabled";
+
+    /// <summary>Array of tenant ids the operator has admitted to the override.</summary>
+    public const string AllowedTenantIdsKey = "Kyc:TenantProviderOverride:AllowedTenantIds";
+
+    /// <summary>Wildcard entry admitting every tenant; deliberately explicit and auditable.</summary>
+    public const string AllowAllTenantsEntry = "*";
+
+    /// <summary>Machine-readable refusal surfaced to the tenant.</summary>
+    public const string ForbiddenReason = "TENANT_PROVIDER_OVERRIDE_NOT_ENABLED";
+
+    /// <summary>True only when the node switch is on AND this tenant is allow-listed.</summary>
+    public static bool IsAllowedForTenant(IConfiguration? configuration, Guid tenantId)
+    {
+        if (configuration is null || tenantId == Guid.Empty)
+            return false;
+        // Parsed rather than bound: an unparseable switch reads as OFF, never as ON.
+        if (!bool.TryParse(configuration[EnabledKey], out var enabled) || !enabled)
+            return false;
+
+        var allowed = false;
+        foreach (var entry in configuration.GetSection(AllowedTenantIdsKey).GetChildren())
+        {
+            var value = entry.Value?.Trim();
+            if (string.IsNullOrEmpty(value))
+                continue;
+            if (string.Equals(value, AllowAllTenantsEntry, StringComparison.Ordinal))
+                return true;
+            if (Guid.TryParse(value, out var parsed) && parsed == tenantId)
+                allowed = true;
+        }
+
+        return allowed;
     }
 }

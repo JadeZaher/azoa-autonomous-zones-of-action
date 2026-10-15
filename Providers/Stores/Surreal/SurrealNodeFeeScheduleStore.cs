@@ -39,7 +39,7 @@ public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
     {
         // raw: schedule CAS and immutable audit append share one transaction.
         var upsertSchedule = SurrealQuery
-                .Of("UPSERT type::record($_st, $_sid) SET mint_flat_base_units = type::string($_mint_flat), mint_bps = $_mint_bps, transfer_flat_base_units = type::string($_transfer_flat), transfer_bps = $_transfer_bps, swap_flat_base_units = type::string($_swap_flat), swap_bps = $_swap_bps, quest_complete_flat_base_units = type::string($_quest_flat), quest_complete_bps = $_quest_bps, federation_publish_flat_base_units = type::string($_federation_flat), federation_publish_bps = $_federation_bps, version = $_version, updated_by_avatar_id = $_actor, updated_at = $_updated_at RETURN AFTER")
+                .Of("UPSERT type::record($_st, $_sid) SET mint_flat_base_units = type::string($_mint_flat), mint_bps = $_mint_bps, transfer_flat_base_units = type::string($_transfer_flat), transfer_bps = $_transfer_bps, swap_flat_base_units = type::string($_swap_flat), swap_bps = $_swap_bps, action_complete_flat_base_units = type::string($_action_flat), action_complete_bps = $_action_bps, federation_publish_flat_base_units = type::string($_federation_flat), federation_publish_bps = $_federation_bps, version = $_version, updated_by_user_id = $_actor, updated_at = $_updated_at RETURN AFTER")
                 .WithParam("_st", ScheduleTable)
                 .WithParam("_sid", NodeFeeSchedule.LocalId)
                 .WithParam("_mint_flat", schedule.MintFlatBaseUnits)
@@ -48,12 +48,12 @@ public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
                 .WithParam("_transfer_bps", schedule.TransferBps)
                 .WithParam("_swap_flat", schedule.SwapFlatBaseUnits)
                 .WithParam("_swap_bps", schedule.SwapBps)
-                .WithParam("_quest_flat", schedule.QuestCompleteFlatBaseUnits)
-                .WithParam("_quest_bps", schedule.QuestCompleteBps)
+                .WithParam("_action_flat", schedule.ActionCompleteFlatBaseUnits)
+                .WithParam("_action_bps", schedule.ActionCompleteBps)
                 .WithParam("_federation_flat", schedule.FederationPublishFlatBaseUnits)
                 .WithParam("_federation_bps", schedule.FederationPublishBps)
                 .WithParam("_version", schedule.Version)
-                .WithParam("_actor", SurrealRecordParam.OfLink(schedule.UpdatedByAvatarId))
+                .WithParam("_actor", SurrealRecordParam.OfLink(schedule.UpdatedByUserId))
                 .WithParam("_updated_at", schedule.UpdatedAt);
 
         var readVersion = SurrealQuery

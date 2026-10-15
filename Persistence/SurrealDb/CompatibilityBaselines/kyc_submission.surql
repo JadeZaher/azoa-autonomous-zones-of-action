@@ -2,7 +2,7 @@
 -- Table: kyc_submission
 -- Aggregate: KycSubmission (generic identity-verification module)
 -- Guardrail: G6 SCHEMAFULL
--- Note: Provider-agnostic KYC ledger keyed to Avatar. The gate (IKycGateService) reads the most-recent APPROVED submission for an avatar rather than a denormalized level on the avatar table, so the shared avatar schema is untouched.
+-- Note: Provider-agnostic KYC ledger keyed to User. The gate (IKycGateService) reads the most-recent APPROVED submission for a user rather than a denormalized level on the user table, so the shared user schema is untouched.
 -- Note: status / provider persist as string enum names (JsonStringEnumConverter) to keep rows human-legible. The active-submission guard queries status IN (PENDING, IN_REVIEW).
 -- ============================================================
 
@@ -19,8 +19,8 @@ DEFINE TABLE IF NOT EXISTS kyc_submission SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS id ON TABLE kyc_submission TYPE string
     ASSERT $value != NONE AND $value != "";
 
--- Owner avatar (Guid('N') hex record link); indexed for owner lookups
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE kyc_submission TYPE option<record<avatar>>;
+-- Owner user (Guid('N') hex record link); indexed for owner lookups
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE kyc_submission TYPE option<record<user>>;
 
 -- Verification provider that owns this submission
 DEFINE FIELD IF NOT EXISTS provider ON TABLE kyc_submission TYPE string
@@ -35,7 +35,7 @@ DEFINE FIELD IF NOT EXISTS reviewer_id ON TABLE kyc_submission TYPE option<strin
 DEFINE FIELD IF NOT EXISTS review_notes ON TABLE kyc_submission TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS rejection_reason ON TABLE kyc_submission TYPE option<string>;
 
--- Provider session linkage (manual provider stamps the avatar id as a pseudo-session)
+-- Provider session linkage (manual provider stamps the user id as a pseudo-session)
 DEFINE FIELD IF NOT EXISTS provider_session_id ON TABLE kyc_submission TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS provider_result ON TABLE kyc_submission TYPE option<string>;
 
@@ -49,9 +49,9 @@ DEFINE FIELD IF NOT EXISTS modified_date ON TABLE kyc_submission TYPE option<dat
 
 -- ── Indexes ──────────────────────────────────────────────────
 
-DEFINE INDEX IF NOT EXISTS kyc_submission_avatar_id
+DEFINE INDEX IF NOT EXISTS kyc_submission_user_id
     ON TABLE kyc_submission
-    FIELDS avatar_id;
+    FIELDS user_id;
 
 DEFINE INDEX IF NOT EXISTS kyc_submission_status
     ON TABLE kyc_submission

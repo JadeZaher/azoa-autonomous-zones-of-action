@@ -72,7 +72,18 @@ export interface ChainProvider {
   readonly displayName: string;
   /** Whether this provider supports DEX swaps */
   readonly supportsDex: boolean;
-  /** Whether this provider supports cross-chain bridging */
+  /**
+   * Whether this provider IMPLEMENTS chain-specific bridge transaction
+   * building at all. This is a static, compile-time declaration of
+   * participation — NOT a live availability check, and not necessarily
+   * symmetric (a chain proven only as a bridge SOURCE reports the same `true`
+   * as one proven as a TARGET; the .NET side expresses that asymmetry through
+   * which module a provider implements — `IBridgeSourceLeg`/`IBridgeTargetLeg`
+   * in `Providers/Blockchain/Base/BaseBlockchainProvider.cs` — never a boolean
+   * a provider could set `true` by mistake). For the real, backend-verified
+   * answer for one route, call `AzoaClient.checkBridgeCapability(chainId)`,
+   * which probes the live `GET /api/bridge/routes` registry.
+   */
   readonly supportsBridging: boolean;
 
   // ─── Queries (read-only, no signing needed) ───

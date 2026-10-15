@@ -25,10 +25,10 @@ status: in_progress
    idempotency recovery; raw mutation literals are 77;
    further waves only lower it. Typed key reads also lower the Holon store's
    raw-query ceiling 6 → 4.
-5. Migrate remaining stores in independent batches: identity, quest/workflow,
+5. Migrate remaining stores in independent batches: identity, action/workflow,
    governance, value/bridge, then residual utilities. Keep multi-table atomic
    transactions raw until the package can model them without extra round trips.
-   Before mechanical migration, close the known split-write windows in Quest
+   Before mechanical migration, close the known split-write windows in ActionDefinition
    aggregate upsert/delete and API-key create-plus-scope update. Saga
    compensation and forward continuation are lease-guarded transactions with
    rollback, stale-worker, and single-successor coverage.

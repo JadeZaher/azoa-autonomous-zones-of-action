@@ -1,12 +1,12 @@
 # Search API — Specification
 
 ## Goal
-Provide a unified, cross-entity search endpoint that queries Avatars, Holons, Wallets, BlockchainOperations, and STARODKs through a single interface with pagination, filtering, and faceted results.
+Provide a unified, cross-entity search endpoint that queries Users, Holons, Wallets, BlockchainOperations, and STARODKs through a single interface with pagination, filtering, and faceted results.
 
 ## Motivation
 As the AZOA ecosystem grows, consumers need to discover assets across entity boundaries:
-- "Find all NFTs (Holons) owned by avatar X"
-- "Find wallets on Solana chain for avatar Y"
+- "Find all NFTs (Holons) owned by user X"
+- "Find wallets on Solana chain for user Y"
 - "Find blockchain operations of type 'Mint' in the last 24h"
 - Full-text search across Names, Descriptions, and Metadata
 
@@ -45,12 +45,12 @@ Because `IAZOAStorageProvider` does not expose a native full-text search, the `S
 public enum SearchableEntityType
 {
     None = 0,
-    Avatar = 1,
+    User = 1,
     Holon = 2,
     Wallet = 4,
     BlockchainOperation = 8,
     STARODK = 16,
-    All = Avatar | Holon | Wallet | BlockchainOperation | STARODK
+    All = User | Holon | Wallet | BlockchainOperation | STARODK
 }
 ```
 
@@ -78,7 +78,7 @@ public class SearchRequest
     public SearchableEntityType EntityTypes { get; set; } = SearchableEntityType.All;
     public string? ChainId { get; set; }                        // Filter wallets/Holons by chain
     public string? AssetType { get; set; }                      // Filter Holons by asset type (e.g. "NFT")
-    public Guid? AvatarId { get; set; }                         // Scope to a specific avatar
+    public Guid? UserId { get; set; }                         // Scope to a specific user
     public DateTime? CreatedAfter { get; set; }
     public DateTime? CreatedBefore { get; set; }
     public string SortBy { get; set; } = "CreatedDate";         // CreatedDate, Name, Relevance
@@ -131,13 +131,13 @@ public class SearchFacet
 1. **Activate provider** via `ProviderContext`
 2. **Determine entity sets to load** from `EntityTypes` flag
 3. **Load data**:
-   - Avatars: `LoadAllAvatarsAsync`
+   - Users: `LoadAllUsersAsync`
    - Holons: `LoadAllHolonsAsync`
-   - Wallets: `LoadWalletsByAvatarAsync` (if AvatarId provided) or all wallets (requires provider extension)
-   - BlockchainOperations: `LoadBlockchainOperationsByAvatarAsync` (if AvatarId provided) or all ops (requires provider extension)
+   - Wallets: `LoadWalletsByUserAsync` (if UserId provided) or all wallets (requires provider extension)
+   - BlockchainOperations: `LoadBlockchainOperationsByUserAsync` (if UserId provided) or all ops (requires provider extension)
    - STARODKs: `LoadAllSTARODKsAsync`
 4. **Filter by query** (case-insensitive contains on Name, Description, Username, Email, Address, Metadata values)
-5. **Apply structured filters**: ChainId, AssetType, AvatarId, date range
+5. **Apply structured filters**: ChainId, AssetType, UserId, date range
 6. **Sort** by `SortBy` field
 7. **Paginate** using Skip/Take
 8. **Build facets** from total counts per entity type before pagination
@@ -149,11 +149,11 @@ To support search without loading *everything* into memory, add these methods to
 Task<AZOAResult<IEnumerable<IWallet>>> LoadAllWalletsAsync(CancellationToken ct = default);
 Task<AZOAResult<IEnumerable<IBlockchainOperation>>> LoadAllBlockchainOperationsAsync(CancellationToken ct = default);
 ```
-> These are optional for v1; if not implemented, the SearchManager can skip those entity types or load via existing avatar-scoped methods when AvatarId is provided.
+> These are optional for v1; if not implemented, the SearchManager can skip those entity types or load via existing user-scoped methods when UserId is provided.
 
 ## Business Rules
 1. **Empty query**: Returns all entities matching structured filters (e.g. all Holons with AssetType="NFT").
-2. **AvatarId scope**: When provided, only load avatar-scoped entities (Wallets, BlockchainOperations) for that avatar. Cross-avatar search is admin-only (future track).
+2. **UserId scope**: When provided, only load user-scoped entities (Wallets, BlockchainOperations) for that user. Cross-user search is admin-only (future track).
 3. **Pagination limits**: `PageSize` clamped between 1 and 100.
 4. **Relevance sorting**: v1 uses `CreatedDate` as proxy for relevance. Future v2 can implement scoring.
 5. **Highlight**: v1 returns the first matching field value as Highlight string.
@@ -165,7 +165,7 @@ Task<AZOAResult<IEnumerable<IBlockchainOperation>>> LoadAllBlockchainOperationsA
 - [ ] Pagination works correctly (TotalCount, TotalPages, Page, PageSize)
 - [ ] Facets return accurate counts per entity type
 - [ ] Query filtering is case-insensitive and searches Name, Description, Metadata values
-- [ ] Structured filters (ChainId, AssetType, AvatarId, date range) work
+- [ ] Structured filters (ChainId, AssetType, UserId, date range) work
 - [ ] PageSize clamped to [1, 100]
 - [ ] Unit + integration tests cover search, filters, pagination, facets
 - [ ] Stryker mutation score for new code ≥ 50 %

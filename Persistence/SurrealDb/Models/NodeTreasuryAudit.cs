@@ -15,7 +15,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("Immutable audit trail for chain/network treasury routing changes. The store exposes no update or delete path.")]
     [Slice("identity")]
     [Index("node_treasury_audit_occurred", Fields = new[] { "occurred_at" })]
-    [Index("node_treasury_audit_actor", Fields = new[] { "actor_avatar_id" })]
+    [Index("node_treasury_audit_actor", Fields = new[] { "actor_user_id" })]
     [Index("node_treasury_audit_chain_network", Fields = new[] { "chain", "network" })]
     public partial class NodeTreasuryAudit : ISurrealRecord
     {
@@ -31,8 +31,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string Action { get; set; } = string.Empty;
 
         [Column(Order = 3)]
-        [References(typeof(Avatar))]
-        public string ActorAvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string ActorUserId { get; set; } = string.Empty;
 
         [Column(Order = 4)]
         [Required(NotEmpty = true)]

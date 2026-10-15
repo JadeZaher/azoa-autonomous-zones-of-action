@@ -32,10 +32,10 @@ public sealed class VeriffKycProviderService : IKycProviderService
         UnavailableReason = NotImplementedMessage
     };
 
-    public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid avatarId, CancellationToken ct = default)
+    public Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid userId, CancellationToken ct = default)
         => Task.FromResult(AZOAResult<KycSessionStartModel>.Failure(NotImplementedMessage));
 
-    public Task<AZOAResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
+    public Task<AZOAResult<string>> CreateSessionAsync(Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default)
         => Task.FromResult(AZOAResult<string>.Failure(NotImplementedMessage));
 
     public Task<AZOAResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default)

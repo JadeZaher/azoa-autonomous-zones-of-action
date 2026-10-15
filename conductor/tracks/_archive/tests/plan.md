@@ -6,7 +6,7 @@
 2. `[x]` Add xUnit, Moq, FluentAssertions packages
 3. `[x]` Install Stryker.NET for mutation testing
 4. `[x]` Write `ProviderContext` unit tests
-5. `[x]` Write `AvatarManager` unit tests
+5. `[x]` Write `UserManager` unit tests
 6. `[x]` Write `HolonManager` unit tests
 7. `[x]` Write `BlockchainOperationManager` unit tests
 8. `[x]` Write `AlgorandProvider` + `SolanaProvider` unit tests

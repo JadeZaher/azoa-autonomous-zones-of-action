@@ -7,6 +7,7 @@ import { useAzoaAuth } from "@/lib/azoa-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { OAuthProviderButtons } from "@/lib/oauth-buttons";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
@@ -134,9 +135,15 @@ export default function LoginPage() {
                 </Button>
             </form>
 
+            {/*
+              Federated sign-in. Renders nothing at all when the node has no
+              provider credentials, so the old "password sign-in only" notice is
+              now only true when it is actually true.
+            */}
+            <OAuthProviderButtons returnTo={returnTo} />
+
             <p className="border-y border-border py-3 text-center text-xs text-muted-foreground">
-                This node currently supports password sign-in only. Account
-                recovery and federated sign-in are not configured.
+                Account recovery is not configured on this node.
             </p>
 
             <p className="text-center text-sm text-muted-foreground">

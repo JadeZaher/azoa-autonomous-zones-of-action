@@ -12,8 +12,8 @@ today.
 Ship a **standalone, hand-written .NET client** for the AZOA WebAPI that a C#
 consumer references as a NuGet package and uses to call AZOA over HTTP, mirroring
 the public surface of the TS SDK: **auth/session, wallet, holons, portfolio, NFT
-(+ AvatarNFT bindings), swap, blockchain-operation/bridge/search reads, STAR ODK,
-quest CRUD, and the workflow template-authoring + fluent run-driver surface.** The
+(+ UserNFT bindings), swap, blockchain-operation/bridge/search reads, STAR ODK,
+action CRUD, and the workflow template-authoring + fluent run-driver surface.** The
 two SDKs are **separate hand-written clients that both speak HTTP** to the same
 WebAPI; they share no runtime.
 
@@ -24,7 +24,7 @@ ArdaNova types and no economic semantics** — it is a generic AZOA client, the
 same NO-brand-leak rule the TS SDK and the workflow tracks follow.
 
 The headline of the workflow surface — the TS thenable
-`quest(id).start().step(b).step(c)` (`sdk/azoa-wallet/src/workflow/run.ts:54-340`)
+`action(id).start().step(b).step(c)` (`sdk/azoa-wallet/src/workflow/run.ts:54-340`)
 — is mirrored as an idiomatic C# **async run handle** (see plan DP5).
 
 ## Background — the surface this track mirrors (file:line evidence)
@@ -60,7 +60,7 @@ an `Idempotency-Key` rides `extraHeaders` (`:879-893`, `:1270-1274`); a per-call
 ### The TS → C# parity matrix (the core of this spec)
 
 Enumerated by reading `sdk/azoa-wallet/src/api/client.ts` (the typed HTTP client,
-**77** public methods), the `WorkflowClient` + `quest()` driver
+**77** public methods), the `WorkflowClient` + `action()` driver
 (`sdk/azoa-wallet/src/workflow/client.ts`, `.../run.ts`), and the facade
 sub-clients (`auth-provider.ts`, `session.ts`, `portfolio.ts`, `holon-query.ts`).
 C# names use PascalCase + the `…Async` suffix (idiomatic). Each row is a TS public
@@ -77,13 +77,13 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 | `session.restore` (`session.ts:65`) | `Session.RestoreAsync()` |
 | `session.createRefreshCallback` (`session.ts:120`) | internal to the auth `DelegatingHandler` (DP4) |
 
-#### Avatar reads/writes → `azoa.Avatars`
+#### User reads/writes → `azoa.Users`
 | TS method | C# method |
 |---|---|
-| `getAvatar` (`client.ts:639`) | `Avatars.GetAsync(avatarId)` |
-| `getAllAvatars` (`client.ts:644`) | `Avatars.ListAsync()` |
-| `updateAvatar` (`client.ts:648`) | `Avatars.UpdateAsync(avatarId, model)` |
-| `deleteAvatar` (`client.ts:656`) | `Avatars.DeleteAsync(avatarId)` |
+| `getUser` (`client.ts:639`) | `Users.GetAsync(userId)` |
+| `getAllUsers` (`client.ts:644`) | `Users.ListAsync()` |
+| `updateUser` (`client.ts:648`) | `Users.UpdateAsync(userId, model)` |
+| `deleteUser` (`client.ts:656`) | `Users.DeleteAsync(userId)` |
 
 #### Wallet facade → `azoa.Wallets`
 | TS method | C# method |
@@ -99,7 +99,7 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 #### Portfolio aggregation → `azoa.Portfolio`
 | TS method | C# method |
 |---|---|
-| `portfolio.getAll` (`portfolio.ts:44`) | `Portfolio.GetAllAsync(avatarId)` |
+| `portfolio.getAll` (`portfolio.ts:44`) | `Portfolio.GetAllAsync(userId)` |
 | `portfolio.getChainBalance` (`portfolio.ts:93`) | `Portfolio.GetChainBalanceAsync(...)` — server-portfolio variant only (DP6: no client chain provider) |
 
 #### Holon query builder → `azoa.Holons`
@@ -122,28 +122,28 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 | `burnNft` (`client.ts:695`) | `Nfts.BurnAsync(nftId, params)` |
 | `getNftMetadata` (`client.ts:701`) | `Nfts.GetMetadataAsync(nftId)` |
 
-#### AvatarNFT + bindings → `azoa.AvatarNfts`
+#### UserNFT + bindings → `azoa.UserNfts`
 | TS method | C# method |
 |---|---|
-| `mintAvatarNFT` (`client.ts:897`) | `AvatarNfts.MintAsync(params)` |
-| `getAvatarNFT` (`client.ts:901`) | `AvatarNfts.GetAsync(id)` |
-| `getAvatarNFTByToken` (`client.ts:906`) | `AvatarNfts.GetByTokenAsync(chainType, contract, tokenId)` |
-| `listAvatarNFTs` (`client.ts:910`) | `AvatarNfts.ListAsync(avatarId)` |
-| `transferAvatarNFT` (`client.ts:915`) | `AvatarNfts.TransferAsync(id, recipient)` |
-| `burnAvatarNFT` (`client.ts:920`) | `AvatarNfts.BurnAsync(id)` |
-| `bindHolonToNFT` (`client.ts:925`) | `AvatarNfts.BindHolonAsync(...)` |
-| `listNFTHolonBindings` (`client.ts:931`) | `AvatarNfts.ListHolonBindingsAsync(id)` |
-| `updateHolonBinding` (`client.ts:936`) | `AvatarNfts.UpdateHolonBindingAsync(...)` |
-| `removeHolonBinding` (`client.ts:941`) | `AvatarNfts.RemoveHolonBindingAsync(id)` |
-| `bindWalletToNFT` (`client.ts:946`) | `AvatarNfts.BindWalletAsync(...)` |
-| `listNFTWalletBindings` (`client.ts:952`) | `AvatarNfts.ListWalletBindingsAsync(id)` |
-| `updateWalletBinding` (`client.ts:957`) | `AvatarNfts.UpdateWalletBindingAsync(...)` |
-| `removeWalletBinding` (`client.ts:962`) | `AvatarNfts.RemoveWalletBindingAsync(id)` |
-| `getAvatarNFTComposite` (`client.ts:967`) | `AvatarNfts.GetCompositeAsync(id)` |
-| `listAvatarNFTComposites` (`client.ts:972`) | `AvatarNfts.ListCompositesAsync(avatarId)` |
-| `verifyNFTOwnership` (`client.ts:977`) | `AvatarNfts.VerifyOwnershipAsync(...)` |
-| `verifyHolonAccess` (`client.ts:981`) | `AvatarNfts.VerifyHolonAccessAsync(...)` |
-| `verifyWalletAccess` (`client.ts:985`) | `AvatarNfts.VerifyWalletAccessAsync(...)` |
+| `mintUserNFT` (`client.ts:897`) | `UserNfts.MintAsync(params)` |
+| `getUserNFT` (`client.ts:901`) | `UserNfts.GetAsync(id)` |
+| `getUserNFTByToken` (`client.ts:906`) | `UserNfts.GetByTokenAsync(chainType, contract, tokenId)` |
+| `listUserNFTs` (`client.ts:910`) | `UserNfts.ListAsync(userId)` |
+| `transferUserNFT` (`client.ts:915`) | `UserNfts.TransferAsync(id, recipient)` |
+| `burnUserNFT` (`client.ts:920`) | `UserNfts.BurnAsync(id)` |
+| `bindHolonToNFT` (`client.ts:925`) | `UserNfts.BindHolonAsync(...)` |
+| `listNFTHolonBindings` (`client.ts:931`) | `UserNfts.ListHolonBindingsAsync(id)` |
+| `updateHolonBinding` (`client.ts:936`) | `UserNfts.UpdateHolonBindingAsync(...)` |
+| `removeHolonBinding` (`client.ts:941`) | `UserNfts.RemoveHolonBindingAsync(id)` |
+| `bindWalletToNFT` (`client.ts:946`) | `UserNfts.BindWalletAsync(...)` |
+| `listNFTWalletBindings` (`client.ts:952`) | `UserNfts.ListWalletBindingsAsync(id)` |
+| `updateWalletBinding` (`client.ts:957`) | `UserNfts.UpdateWalletBindingAsync(...)` |
+| `removeWalletBinding` (`client.ts:962`) | `UserNfts.RemoveWalletBindingAsync(id)` |
+| `getUserNFTComposite` (`client.ts:967`) | `UserNfts.GetCompositeAsync(id)` |
+| `listUserNFTComposites` (`client.ts:972`) | `UserNfts.ListCompositesAsync(userId)` |
+| `verifyNFTOwnership` (`client.ts:977`) | `UserNfts.VerifyOwnershipAsync(...)` |
+| `verifyHolonAccess` (`client.ts:981`) | `UserNfts.VerifyHolonAccessAsync(...)` |
+| `verifyWalletAccess` (`client.ts:985`) | `UserNfts.VerifyWalletAccessAsync(...)` |
 
 #### Swap → `azoa.Swap`
 | TS method | C# method |
@@ -169,7 +169,7 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 | `search` (`client.ts:747`) | `Search.QueryAsync(params)` |
 | `getSearchFacets` (`client.ts:752`) | `Search.GetFacetsAsync()` |
 | `getBlockchainOperation` (`client.ts:800`) | `Operations.GetAsync(operationId)` |
-| `getBlockchainOperationsByAvatar` (`client.ts:805`) | `Operations.ListByAvatarAsync(avatarId)` |
+| `getBlockchainOperationsByUser` (`client.ts:805`) | `Operations.ListByUserAsync(userId)` |
 
 #### STAR ODK → `azoa.Starodk`
 | TS method | C# method |
@@ -182,41 +182,41 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 | `generateSTARDapp` (`client.ts:847`) | `Starodk.GenerateDappAsync(id, params)` |
 | `deploySTARODK` (`client.ts:852`) | `Starodk.DeployAsync(id)` |
 
-#### Quest CRUD + execution → `azoa.Quests`
+#### Action CRUD + execution → `azoa.Actions`
 | TS method | C# method |
 |---|---|
-| `createQuest` (`client.ts:992`) | `Quests.CreateAsync(params)` |
-| `getQuest` (`client.ts:997`) | `Quests.GetAsync(questId)` |
-| `listQuestsByAvatar` (`client.ts:1003`) | `Quests.ListByAvatarAsync(avatarId)` |
-| `updateQuest` (`client.ts:1009`) | `Quests.UpdateAsync(questId, params)` |
-| `deleteQuest` (`client.ts:1015`) | `Quests.DeleteAsync(questId)` |
-| `validateQuestDag` (`client.ts:1021`) | `Quests.ValidateDagAsync(questId)` |
-| `executeQuest` (`client.ts:1027`) | `Quests.ExecuteAsync(questId)` |
-| `executeQuestNode` (`client.ts:1033`) | `Quests.ExecuteNodeAsync(questId, nodeId)` |
-| `createQuestNodeTemplate` (`client.ts:1066`) | `Quests.CreateNodeTemplateAsync(params)` |
-| `listQuestNodeTemplates` (`client.ts:1071`) | `Quests.ListNodeTemplatesAsync()` |
+| `createAction` (`client.ts:992`) | `Actions.CreateAsync(params)` |
+| `getAction` (`client.ts:997`) | `Actions.GetAsync(actionId)` |
+| `listActionsByUser` (`client.ts:1003`) | `Actions.ListByUserAsync(userId)` |
+| `updateAction` (`client.ts:1009`) | `Actions.UpdateAsync(actionId, params)` |
+| `deleteAction` (`client.ts:1015`) | `Actions.DeleteAsync(actionId)` |
+| `validateActionDag` (`client.ts:1021`) | `Actions.ValidateDagAsync(actionId)` |
+| `executeAction` (`client.ts:1027`) | `Actions.ExecuteAsync(actionId)` |
+| `executeActionNode` (`client.ts:1033`) | `Actions.ExecuteNodeAsync(actionId, nodeId)` |
+| `createActionNodeTemplate` (`client.ts:1066`) | `Actions.CreateNodeTemplateAsync(params)` |
+| `listActionNodeTemplates` (`client.ts:1071`) | `Actions.ListNodeTemplatesAsync()` |
 
 #### Workflow — template authoring + durable run reads/writes → `azoa.Workflow`
 | TS method (`workflow/client.ts`) | C# method |
 |---|---|
-| `createTemplate` (`:51`) / `createQuestTemplate` (`client.ts:1042`) | `Workflow.CreateTemplateAsync(params)` |
-| `getTemplate` (`:58`) / `getQuestTemplate` (`client.ts:1047`) | `Workflow.GetTemplateAsync(templateId)` |
-| `listTemplates` (`:64`) / `listQuestTemplates` (`client.ts:1053`) | `Workflow.ListTemplatesAsync()` |
-| `instantiate` (`:73`) / `instantiateQuestTemplate` (`client.ts:1058`) | `Workflow.InstantiateAsync(templateId, params)` |
+| `createTemplate` (`:51`) / `createActionTemplate` (`client.ts:1042`) | `Workflow.CreateTemplateAsync(params)` |
+| `getTemplate` (`:58`) / `getActionTemplate` (`client.ts:1047`) | `Workflow.GetTemplateAsync(templateId)` |
+| `listTemplates` (`:64`) / `listActionTemplates` (`client.ts:1053`) | `Workflow.ListTemplatesAsync()` |
+| `instantiate` (`:73`) / `instantiateActionTemplate` (`client.ts:1058`) | `Workflow.InstantiateAsync(templateId, params)` |
 | `getRunStatus` (`:88`) | `Workflow.GetRunStatusAsync(runId)` |
 | `getExecutionState` (`:100`) | `Workflow.GetExecutionStateAsync(runId)` |
-| `startWorkflow` (`:117`) | `Workflow.StartWorkflowAsync(questId)` |
+| `startWorkflow` (`:117`) | `Workflow.StartWorkflowAsync(actionId)` |
 | `advance` (`:131`) | `Workflow.AdvanceAsync(runId, fromNodeId, opts?)` |
 | `signal` (`:153`) | `Workflow.SignalAsync(runId, gateId, payload?, opts?)` |
-| `issueChildCredential` (`:182`) | `Workflow.IssueChildCredentialAsync(childAvatarId, scopes?)` |
+| `issueChildCredential` (`:182`) | `Workflow.IssueChildCredentialAsync(childUserId, scopes?)` |
 
-#### Workflow — fluent run driver (the headline) → `azoa.Workflow.Quest(...)`
+#### Workflow — fluent run driver (the headline) → `azoa.Workflow.ActionDefinition(...)`
 | TS (`workflow/run.ts`) | C# (DP5 — idiomatic async handle) |
 |---|---|
-| `quest(questId)` (`:361`) | `Workflow.Quest(questId)` → `WorkflowRunHandle` |
-| `quest.fromTemplate(id)` (`:366`) | `Workflow.QuestFromTemplate(templateId)` |
-| `quest.run(runId)` (`:371`) | `Workflow.QuestRun(runId)` |
-| `.forActor(childAvatarId)` (`:94`) | `handle.ForActor(childAvatarId)` (returns handle) |
+| `action(actionId)` (`:361`) | `Workflow.ActionDefinition(actionId)` → `WorkflowRunHandle` |
+| `action.fromTemplate(id)` (`:366`) | `Workflow.ActionFromTemplate(templateId)` |
+| `action.run(runId)` (`:371`) | `Workflow.ActionRun(runId)` |
+| `.forActor(childUserId)` (`:94`) | `handle.ForActor(childUserId)` (returns handle) |
 | `.start({actor, params})` (`:117`) | `await handle.StartAsync(StartRunParams)` |
 | `.step(nodeId, {idempotencyKey})` (`:150`) | `await handle.StepAsync(nodeId, opts?)` |
 | `.signal(gateId, payload, {idempotencyKey})` (`:168`) | `await handle.SignalAsync(gateId, payload?, opts?)` |
@@ -247,36 +247,36 @@ the **wrong layer** for a server-side .NET client.
 `LogoutAsync` mirroring `AzoaAuthProvider` (`auth-provider.ts:41-127`), plus a
 session token store mirroring `SessionManager` (`session.ts:44-168`) with a
 pluggable `ISessionStore` (the C# analog of `SessionStorage`). JWT is decoded for
-the avatar id subject the same way (`session.ts:135-167`) — but using
+the user id subject the same way (`session.ts:135-167`) — but using
 `System.IdentityModel.Tokens.Jwt`-free hand-decoding to keep zero extra deps
 (plan task) OR a tiny base64url decode (DP7 — no Buffer-equivalent constraint
 needed in C#, but stay dependency-light).
-**Acceptance:** `LoginAsync` returns the token + avatar id; the token is stored
+**Acceptance:** `LoginAsync` returns the token + user id; the token is stored
 and threaded as `Authorization: Bearer` on subsequent calls via the auth handler
 (FR-8); `LogoutAsync` clears it.
 **Priority:** P0
 
-### FR-2: Wallet, holons, portfolio, avatar facades
+### FR-2: Wallet, holons, portfolio, user facades
 **Description:** Mirror `Wallets` (`client.ts:758-794`), the fluent `Holons`
 builder (`holon-query.ts:49-185`), `Portfolio.GetAllAsync` (server-side wallet
 list + per-wallet portfolio read — NOT the client-chain-provider balance path,
-DP6), and `Avatars` (`client.ts:639-657`).
+DP6), and `Users` (`client.ts:639-657`).
 **Acceptance:** every read/write maps to the matrix row's path + method + body;
 the fluent holon builder resets its accumulated params after `ExecuteAsync`
 (mirror `holon-query.ts:113-114`).
 **Priority:** P0
 
-### FR-3: NFT + AvatarNFT + bindings facades
+### FR-3: NFT + UserNFT + bindings facades
 **Description:** Mirror the full NFT surface (`client.ts:664-701`) and the
-AvatarNFT + holon/wallet binding + verification surface (`client.ts:897-985`).
+UserNFT + holon/wallet binding + verification surface (`client.ts:897-985`).
 **Acceptance:** all 25 matrix rows present; binding/verify bodies match.
 **Priority:** P0
 
-### FR-4: Swap + bridge + search + operations + STAR ODK + quest CRUD facades
+### FR-4: Swap + bridge + search + operations + STAR ODK + action CRUD facades
 **Description:** Mirror swap (`client.ts:863-893`, with idempotency-key on
 execute), bridge (bare-object responses — DP2's `RequestBareAsync` path,
 `client.ts:709-740`), search/operations reads, STAR ODK CRUD (IDOR-safe upsert on
-`UpdateAsync`, `client.ts:837`), and quest CRUD + execution
+`UpdateAsync`, `client.ts:837`), and action CRUD + execution
 (`client.ts:992-1071`).
 **Acceptance:** bare-object endpoints round-trip through the bare path; swap
 execute sets `Idempotency-Key`; STAR ODK update sends the IDOR-safe model.
@@ -296,21 +296,21 @@ per-call `Authorization` override both ride an `extraHeaders` analog
 **Priority:** P0
 
 ### FR-6: Fluent workflow run driver (the headline)
-**Description:** `Workflow.Quest(questId)` / `QuestFromTemplate(templateId)` /
-`QuestRun(runId)` open a `WorkflowRunHandle` whose `StartAsync` / `StepAsync` /
+**Description:** `Workflow.ActionDefinition(actionId)` / `ActionFromTemplate(templateId)` /
+`ActionRun(runId)` open a `WorkflowRunHandle` whose `StartAsync` / `StepAsync` /
 `SignalAsync` / `StatusAsync` map onto the durable-run endpoints, with
-`ForActor(childAvatarId)` threading a lazily-acquired child credential. The
+`ForActor(childUserId)` threading a lazily-acquired child credential. The
 ergonomics are the **idiomatic C# explicit-await-per-call** handle (DP5), not the
 TS thenable.
 **Acceptance:**
-- `var h = azoa.Workflow.Quest(questId); await h.StartAsync(...); await
+- `var h = azoa.Workflow.ActionDefinition(actionId); await h.StartAsync(...); await
   h.StepAsync(nodeB); await h.StepAsync(nodeC);` issues, in order,
-  `POST /api/quest/{questId}/start-workflow`,
-  `POST /api/quest/runs/{runId}/advance {fromNodeId:nodeB}`, then `{fromNodeId:nodeC}`.
+  `POST /api/action/{actionId}/start-workflow`,
+  `POST /api/action/runs/{runId}/advance {fromNodeId:nodeB}`, then `{fromNodeId:nodeC}`.
 - The hybrid model: `StartAsync` then `SignalAsync(gateId, payload)` issues
   `start-workflow → signal {gateId, payload}`.
-- `ForActor(childAvatarId)` lazily issues `POST
-  /api/tenant/avatars/{childAvatarId}/credential` on the first advancement, caches
+- `ForActor(childUserId)` lazily issues `POST
+  /api/tenant/users/{childUserId}/credential` on the first advancement, caches
   the child JWT for the handle, re-acquires near expiry (deduped — the C#
   `SemaphoreSlim` analog of `_refreshInFlight`,
   `sdk/azoa-wallet/src/api/client.ts:1291-1306`), and threads it as a per-call
@@ -318,8 +318,8 @@ TS thenable.
 - `StatusAsync` maps the run-status read; `OnSuspend` fires when a call leaves the
   run in `Suspended` / `AwaitingSignal` / `AwaitingTimer`
   (`sdk/azoa-wallet/src/workflow/types.ts:24-67`).
-- Every interpolated id (`runId` / `nodeId` / `templateId` / `questId` /
-  `childAvatarId`) is validated by the C# `assertUuid` analog (a `Guid.TryParse`
+- Every interpolated id (`runId` / `nodeId` / `templateId` / `actionId` /
+  `childUserId`) is validated by the C# `assertUuid` analog (a `Guid.TryParse`
   guard — house rules); `gateId` is guarded as a non-empty string (contract:
   `gateId` is a free string, `sdk/azoa-wallet/src/workflow/types.ts:147-161`).
 **Priority:** P0
@@ -366,7 +366,7 @@ C# analog of the TS `vi.stubGlobal("fetch")` harness,
 `sdk/azoa-wallet/tests/workflow/run-driver.test.ts:18-19`) asserting ordered
 calls + headers + URL/method/body.
 **Acceptance:**
-- **Ordered-call:** `Quest(a).StartAsync(); StepAsync(b); StepAsync(c)` records,
+- **Ordered-call:** `ActionDefinition(a).StartAsync(); StepAsync(b); StepAsync(c)` records,
   in order, `start-workflow`, `advance {fromNodeId:b}`, `advance {fromNodeId:c}`
   (mirror `run-driver.test.ts:83-90`).
 - **Hybrid:** `StartAsync → SignalAsync {gateId, payload}`.
@@ -404,7 +404,7 @@ wire amount as `decimal` / `long` / `double`.
 
 ### NFR-5: No brand leak
 **Zero** ArdaNova types, names, or economic concepts in the SDK source. The SDK
-is a generic AZOA client. `ForActor` takes a plain `Guid`/string avatar id; the
+is a generic AZOA client. `ForActor` takes a plain `Guid`/string user id; the
 tenant-credential mechanics are an internal auth detail. (Same rule as
 `workflow-sdk` NFR-4.)
 
@@ -466,7 +466,7 @@ deferred follow-up, NOT built in this track.
 - **`workflow-sdk` (TS)** ✓ shipped — the reference for the workflow
   template-authoring + run-driver + `forActor` surface
   (`sdk/azoa-wallet/src/workflow/`).
-- **`durable-workflow-engine` / `quest-api` / `tenant-onboarding`** ✓ shipped —
+- **`durable-workflow-engine` / `action-api` / `tenant-onboarding`** ✓ shipped —
   the run-advancement, run-read, and child-credential endpoints the workflow
   facade calls.
 - **`packages/Azoa.SurrealDb.Client`** — referenced ONLY as the **csproj

@@ -60,7 +60,7 @@ namespace). `ExecuteSurrealSqlRawAsync` was already on the correct text/plain pa
 That is correct for plain columns but **wrong for three shapes**, so G5 seeds inject
 those as SurrealQL literals via `object::extend($body, { ... })` (scalars stay in `$body`):
 
-- **`record<T>` link fields** (e.g. `wallet.avatar_id`, `api_key.avatar_id`,
+- **`record<T>` link fields** (e.g. `wallet.user_id`, `api_key.user_id`,
   `consumed_vaa_ledger.bridge_transaction_id`): a bare string won't coerce. Use
   `field: type::record('T', $idParam)`. Note SurrealDB 3.x is `type::record`, NOT
   `type::thing` (which was removed).
@@ -74,7 +74,7 @@ those as SurrealQL literals via `object::extend($body, { ... })` (scalars stay i
   query records by their `<table>:hex` link form (see `Mcp/AGENTS.md §record-id-binding`).
 
 Also: only seed fields that EXIST in the generated schema (SCHEMAFULL rejects unknown
-fields — e.g. `avatar` has no `karma`/`level`). `record<T>` links do NOT require the
+fields — e.g. `user` has no `karma`/`level`). `record<T>` links do NOT require the
 target row to pre-exist, so seed order is unconstrained.
 
 `RunPwsh` resolves `pwsh` (7+) first, falling back to `powershell.exe` (5.1) when pwsh

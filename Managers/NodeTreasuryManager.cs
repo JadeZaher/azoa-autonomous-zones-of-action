@@ -61,13 +61,13 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
     /// <inheritdoc/>
     public async Task<AZOAResult<NodeTreasuryDestinationResponse>> UpdateDestinationAsync(
         NodeTreasuryDestinationUpdateRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         CancellationToken ct = default)
     {
         if (request is null)
             return AZOAResult<NodeTreasuryDestinationResponse>.Failure("Node treasury destination update is required.");
-        if (actorAvatarId == Guid.Empty)
-            return AZOAResult<NodeTreasuryDestinationResponse>.Failure("Actor avatar id is required.");
+        if (actorUserId == Guid.Empty)
+            return AZOAResult<NodeTreasuryDestinationResponse>.Failure("Actor user id is required.");
         if (string.IsNullOrWhiteSpace(request.Chain))
             return AZOAResult<NodeTreasuryDestinationResponse>.Failure("Chain is required.");
         if (!request.Network.HasValue || !Enum.IsDefined(request.Network.Value))
@@ -112,7 +112,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
         }
 
         var now = DateTimeOffset.UtcNow;
-        var actorLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(actorAvatarId))
+        var actorLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(actorUserId))
             ?? string.Empty;
         var networkName = network.ToString();
         var next = new NodeTreasuryDestination
@@ -122,7 +122,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
             Network = networkName,
             Address = address,
             Version = currentVersion + 1,
-            UpdatedByAvatarId = actorLink,
+            UpdatedByUserId = actorLink,
             CreatedAt = previous?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -130,7 +130,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
         {
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = "DestinationUpdated",
-            ActorAvatarId = actorLink,
+            ActorUserId = actorLink,
             Chain = next.Chain,
             Network = next.Network,
             PreviousVersion = currentVersion,
@@ -243,7 +243,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
             Network = ParseNetwork(row.Network),
             Address = row.Address,
             Version = row.Version,
-            UpdatedByAvatarId = SurrealRecordGuid.ParseOptional(row.UpdatedByAvatarId),
+            UpdatedByUserId = SurrealRecordGuid.ParseOptional(row.UpdatedByUserId),
             CreatedAt = row.CreatedAt == default ? null : row.CreatedAt,
             UpdatedAt = row.UpdatedAt == default ? null : row.UpdatedAt,
         };
@@ -253,7 +253,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
         {
             Id = SurrealRecordGuid.Parse(row.Id),
             Action = row.Action,
-            ActorAvatarId = SurrealRecordGuid.ParseOptional(row.ActorAvatarId) ?? Guid.Empty,
+            ActorUserId = SurrealRecordGuid.ParseOptional(row.ActorUserId) ?? Guid.Empty,
             Chain = row.Chain,
             Network = ParseNetwork(row.Network),
             PreviousVersion = row.PreviousVersion,

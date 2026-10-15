@@ -167,7 +167,7 @@ public class AmountIdempotencyKeyTests
         var provider = new Mock<IBlockchainProvider>();
         provider.Setup(p => p.ChainType).Returns("Algorand");
         provider.Setup(p => p.MintAsync(
-                    It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                    It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(),
                     It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() =>
                 {

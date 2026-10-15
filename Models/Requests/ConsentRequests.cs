@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
-/// Body for <c>POST /api/avatar/consent</c> (tenant-consent-delegation §1). The
+/// Body for <c>POST /api/user/consent</c> (tenant-consent-delegation §1). The
 /// user authorizes <see cref="TenantId"/> for <see cref="Scopes"/>. There is
 /// intentionally NO grantor field — the grantor is ALWAYS the authenticated
 /// user, sourced from the token's subject claim (AC9 IDOR); any grantor in a
@@ -16,7 +16,7 @@ public class GrantConsentRequest
     /// <summary>The tenant the user is authorizing.</summary>
     public Guid TenantId { get; set; }
 
-    /// <summary>The scopes the user grants the tenant (e.g. <c>quest:execute</c>,
+    /// <summary>The scopes the user grants the tenant (e.g. <c>action:execute</c>,
     /// <c>swap:sign</c>). A hard ceiling — no later request can widen it (M3).</summary>
     public List<string> Scopes { get; set; } = new();
 

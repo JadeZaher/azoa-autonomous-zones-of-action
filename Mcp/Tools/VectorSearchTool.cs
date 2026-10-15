@@ -10,7 +10,7 @@ namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
 /// MCP tool that performs HNSW cosine-similarity semantic search over
-/// <c>holon</c> or <c>quest</c> embeddings, scoped to the calling avatar.
+/// <c>holon</c> or <c>action</c> embeddings, scoped to the calling user.
 ///
 /// <para>
 /// Requires a registered <see cref="IEmbeddingProvider"/> in the DI container.
@@ -24,7 +24,7 @@ public sealed class VectorSearchTool : IMcpTool
     // ── Allowed tables (allowlist enforced before any DB call) ───────────────
 
     private static readonly HashSet<string> AllowedTables =
-        new(StringComparer.OrdinalIgnoreCase) { "holon", "quest" };
+        new(StringComparer.OrdinalIgnoreCase) { "holon", "action" };
 
     // ── Input schema (parsed once; property getter returns the cached element)
 
@@ -34,7 +34,7 @@ public sealed class VectorSearchTool : IMcpTool
           "type": "object",
           "properties": {
             "query_text": { "type": "string", "minLength": 1, "maxLength": 4096 },
-            "table":      { "type": "string", "enum": ["holon", "quest"], "default": "holon" },
+            "table":      { "type": "string", "enum": ["holon", "action"], "default": "holon" },
             "k":          { "type": "integer", "default": 10, "minimum": 1, "maximum": 100 }
           },
           "required": ["query_text"]
@@ -59,20 +59,20 @@ public sealed class VectorSearchTool : IMcpTool
     private const string HolonSearchSql =
         "SELECT id, name, vector::similarity::cosine(embedding, $q) AS score " +
         "FROM holon " +
-        "WHERE avatar_id = $avatar_id AND embedding IS NOT NONE " +
+        "WHERE user_id = $user_id AND embedding IS NOT NONE " +
         "ORDER BY score DESC LIMIT $k";
 
-    private const string QuestSearchSql =
+    private const string ActionSearchSql =
         "SELECT id, name, vector::similarity::cosine(embedding, $q) AS score " +
-        "FROM quest " +
-        "WHERE avatar_id = $avatar_id AND embedding IS NOT NONE " +
+        "FROM action " +
+        "WHERE user_id = $user_id AND embedding IS NOT NONE " +
         "ORDER BY score DESC LIMIT $k";
 
     // ── IMcpTool ──────────────────────────────────────────────────────────────
 
     public string Name        => "vector_search";
     public string Description =>
-        "HNSW semantic search over holon or quest embeddings. Returns top-k matches by cosine similarity.";
+        "HNSW semantic search over holon or action embeddings. Returns top-k matches by cosine similarity.";
     public JsonElement InputSchema => _inputSchema;
 
     public async Task<JsonElement> ExecuteAsync(
@@ -114,14 +114,14 @@ public sealed class VectorSearchTool : IMcpTool
             var embedder = context.Services.GetRequiredService<IEmbeddingProvider>();
             var embedding = await embedder.EmbedAsync(queryText, ct);
 
-            // AvatarId from context (privilege gate); bind the avatar:hex link form
+            // UserId from context (privilege gate); bind the user:hex link form
             // via the shared helper. See Mcp/AGENTS.md §record-id-binding.
-            var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId))!;
+            var userIdStr = SurrealLink.ToLink("user", SurrealId.ToSurrealId(context.UserId))!;
 
             // ── Build the table-specific query ─────────────────────────────
             var sql = string.Equals(table, "holon", StringComparison.OrdinalIgnoreCase)
                 ? HolonSearchSql
-                : QuestSearchSql;
+                : ActionSearchSql;
 
             SurrealQuery query;
             try
@@ -129,7 +129,7 @@ public sealed class VectorSearchTool : IMcpTool
                 query = SurrealQuery
                     .Of(sql)
                     .WithParam("q", embedding)
-                    .WithParam("avatar_id", SurrealRecordParam.OfLink(avatarIdStr))
+                    .WithParam("user_id", SurrealRecordParam.OfLink(userIdStr))
                     .WithParam("k", k);
             }
             catch (Exception ex)

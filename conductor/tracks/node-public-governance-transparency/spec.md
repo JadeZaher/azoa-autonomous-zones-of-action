@@ -25,7 +25,7 @@ Transparency is permanently free even when the node later enables paid egress.
   allowlists, fee schedules, and configured chain/network treasury destinations.
 - Separate anonymous audit endpoints expose newest-first governance, fee, and
   treasury pages through an exclusive `(occurred_at,id)` cursor.
-- Public DTOs never forward raw stored JSON, actor avatar ids, internal record
+- Public DTOs never forward raw stored JSON, actor user ids, internal record
   ids, secrets, exception detail, or private operator evidence. Actor continuity
   is omitted until a stable node-scoped HMAC key and privacy review exist.
 - Opaque cursors are Data-Protection protected, purpose/version bound, size

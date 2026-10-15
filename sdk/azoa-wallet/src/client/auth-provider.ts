@@ -5,7 +5,7 @@ import type { SessionManager } from "./session.js";
 import { AzoaApiClient } from "../api/client.js";
 
 /**
- * OAuth-compatible auth provider using AZOA avatars as the identity source.
+ * OAuth-compatible auth provider using AZOA users as the identity source.
  *
  * Enables external apps to use AZOA as their authentication backend:
  * ```ts
@@ -29,7 +29,7 @@ export interface AuthProviderConfig {
 }
 
 export interface AuthProfile {
-  avatarId: string;
+  userId: string;
   username: string;
   email: string;
   title?: string;
@@ -52,49 +52,49 @@ export class AzoaAuthProvider {
     return this.session.isAuthenticated;
   }
 
-  get avatarId(): string | null {
-    return this.session.avatarId;
+  get userId(): string | null {
+    return this.session.userId;
   }
 
   /** Login with email/password. Returns the session state. */
-  async login(email: string, password: string): Promise<Result<{ avatarId: string; token: string }, SdkError>> {
+  async login(email: string, password: string): Promise<Result<{ userId: string; token: string }, SdkError>> {
     const result = await this.session.login(this.api, email, password);
     if (!result.ok) return result;
 
     const state = result.value;
-    if (!state.token || !state.avatarId) {
-      return err(new SdkError(SdkErrorCode.API_ERROR, "Login succeeded but no token/avatarId returned"));
+    if (!state.token || !state.userId) {
+      return err(new SdkError(SdkErrorCode.API_ERROR, "Login succeeded but no token/userId returned"));
     }
 
-    return ok({ avatarId: state.avatarId, token: state.token });
+    return ok({ userId: state.userId, token: state.token });
   }
 
-  /** Register a new avatar account. */
+  /** Register a new user account. */
   async register(params: {
     email: string;
     password: string;
     username: string;
     firstName?: string;
     lastName?: string;
-  }): Promise<Result<{ avatarId: string; token: string }, SdkError>> {
+  }): Promise<Result<{ userId: string; token: string }, SdkError>> {
     const result = await this.session.register(this.api, params);
     if (!result.ok) return result;
 
     const session = result.value.session;
-    if (!session.token || !session.avatarId) {
+    if (!session.token || !session.userId) {
       return err(new SdkError(SdkErrorCode.API_ERROR, "Registration succeeded but session is incomplete"));
     }
 
-    return ok({ avatarId: session.avatarId, token: session.token });
+    return ok({ userId: session.userId, token: session.token });
   }
 
-  /** Get the authenticated avatar's profile. */
+  /** Get the authenticated user's profile. */
   async getProfile(): Promise<Result<AuthProfile, SdkError>> {
-    if (!this.session.avatarId) {
+    if (!this.session.userId) {
       return err(new SdkError(SdkErrorCode.API_ERROR, "Not authenticated. Call login() first."));
     }
 
-    const result = await this.api.getAvatar(this.session.avatarId);
+    const result = await this.api.getUser(this.session.userId);
     if (!result.ok) {
       const status = result.error.status;
       if (status === 401 || status === 403 || status === 404) {
@@ -103,15 +103,15 @@ export class AzoaAuthProvider {
       return result;
     }
 
-    const avatar = result.value;
+    const user = result.value;
     return ok({
-      avatarId: avatar.id,
-      username: avatar.username,
-      email: avatar.email,
-      title: avatar.title,
-      firstName: avatar.firstName,
-      lastName: avatar.lastName,
-      isActive: avatar.isActive,
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      title: user.title,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      isActive: user.isActive,
     });
   }
 
@@ -127,7 +127,7 @@ export class AzoaAuthProvider {
 
   /**
    * Server-side "logout everywhere": invalidates every live JWT for this
-   * avatar (bumps its AuthNotBefore watermark), then clears the local
+   * user (bumps its AuthNotBefore watermark), then clears the local
    * session. Use this over {@link logout} for a "log out of all devices"
    * action or when the token may have leaked.
    */

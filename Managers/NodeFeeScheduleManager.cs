@@ -41,13 +41,13 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
     /// <inheritdoc/>
     public async Task<AZOAResult<NodeFeeScheduleResponse>> UpdateScheduleAsync(
         NodeFeeScheduleUpdateRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         CancellationToken ct = default)
     {
         if (request is null)
             return AZOAResult<NodeFeeScheduleResponse>.Failure("Node fee schedule update is required.");
-        if (actorAvatarId == Guid.Empty)
-            return AZOAResult<NodeFeeScheduleResponse>.Failure("Actor avatar id is required.");
+        if (actorUserId == Guid.Empty)
+            return AZOAResult<NodeFeeScheduleResponse>.Failure("Actor user id is required.");
 
         var current = await _store.GetScheduleAsync(ct);
         if (current.IsError)
@@ -59,7 +59,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         if (request.ExpectedVersion < 0)
             errors.Add("ExpectedVersion cannot be negative.");
         var now = DateTimeOffset.UtcNow;
-        var actorLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(actorAvatarId)) ?? string.Empty;
+        var actorLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(actorUserId)) ?? string.Empty;
 
         var next = new NodeFeeSchedule
         {
@@ -70,12 +70,12 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
             TransferBps = ResolveBps("Transfer.Bps", request.Transfer, baseSchedule.TransferBps, errors),
             SwapFlatBaseUnits = ResolveFlat("Swap.FlatBaseUnits", request.Swap, baseSchedule.SwapFlatBaseUnits, errors),
             SwapBps = ResolveBps("Swap.Bps", request.Swap, baseSchedule.SwapBps, errors),
-            QuestCompleteFlatBaseUnits = ResolveFlat("QuestComplete.FlatBaseUnits", request.QuestComplete, baseSchedule.QuestCompleteFlatBaseUnits, errors),
-            QuestCompleteBps = ResolveBps("QuestComplete.Bps", request.QuestComplete, baseSchedule.QuestCompleteBps, errors),
+            ActionCompleteFlatBaseUnits = ResolveFlat("ActionComplete.FlatBaseUnits", request.ActionComplete, baseSchedule.ActionCompleteFlatBaseUnits, errors),
+            ActionCompleteBps = ResolveBps("ActionComplete.Bps", request.ActionComplete, baseSchedule.ActionCompleteBps, errors),
             FederationPublishFlatBaseUnits = ResolveFlat("FederationPublish.FlatBaseUnits", request.FederationPublish, baseSchedule.FederationPublishFlatBaseUnits, errors),
             FederationPublishBps = ResolveBps("FederationPublish.Bps", request.FederationPublish, baseSchedule.FederationPublishBps, errors),
             Version = (previous?.Version ?? 0) + 1,
-            UpdatedByAvatarId = actorLink,
+            UpdatedByUserId = actorLink,
             CreatedAt = previous?.CreatedAt ?? now,
             UpdatedAt = now,
         };
@@ -83,6 +83,10 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         if (errors.Count > 0)
             return AZOAResult<NodeFeeScheduleResponse>.Failure(string.Join(" ", errors));
 
+        // A stale ExpectedVersion whose merged values equal the current schedule is a
+        // deliberate idempotent retry, not a conflict — hence the no-op short-circuit
+        // ahead of the version check. Pinned by
+        // NodeFeeScheduleManagerTests.UpdateScheduleAsync_IdenticalRetry_ReturnsCurrentWithoutNewAudit.
         if (SameFeeValues(next, baseSchedule))
         {
             return new AZOAResult<NodeFeeScheduleResponse>
@@ -103,7 +107,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         {
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = "ScheduleUpdated",
-            ActorAvatarId = actorLink,
+            ActorUserId = actorLink,
             PreviousVersion = previous?.Version ?? 0,
             NewVersion = next.Version,
             PreviousScheduleJson = previous is null ? null : JsonSerializer.Serialize(ToResponse(previous), JsonOptions),
@@ -235,8 +239,8 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
            && left.TransferBps == right.TransferBps
            && left.SwapFlatBaseUnits == right.SwapFlatBaseUnits
            && left.SwapBps == right.SwapBps
-           && left.QuestCompleteFlatBaseUnits == right.QuestCompleteFlatBaseUnits
-           && left.QuestCompleteBps == right.QuestCompleteBps
+           && left.ActionCompleteFlatBaseUnits == right.ActionCompleteFlatBaseUnits
+           && left.ActionCompleteBps == right.ActionCompleteBps
            && left.FederationPublishFlatBaseUnits == right.FederationPublishFlatBaseUnits
            && left.FederationPublishBps == right.FederationPublishBps;
 
@@ -258,10 +262,10 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
                 FlatBaseUnits = schedule.SwapFlatBaseUnits,
                 Bps = schedule.SwapBps,
             },
-            NodeFeeOperation.QuestComplete => new NodeFeeScheduleEntryResponse
+            NodeFeeOperation.ActionComplete => new NodeFeeScheduleEntryResponse
             {
-                FlatBaseUnits = schedule.QuestCompleteFlatBaseUnits,
-                Bps = schedule.QuestCompleteBps,
+                FlatBaseUnits = schedule.ActionCompleteFlatBaseUnits,
+                Bps = schedule.ActionCompleteBps,
             },
             NodeFeeOperation.FederationPublish => new NodeFeeScheduleEntryResponse
             {
@@ -276,10 +280,10 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         Mint = EntryFor(row, NodeFeeOperation.Mint),
         Transfer = EntryFor(row, NodeFeeOperation.Transfer),
         Swap = EntryFor(row, NodeFeeOperation.Swap),
-        QuestComplete = EntryFor(row, NodeFeeOperation.QuestComplete),
+        ActionComplete = EntryFor(row, NodeFeeOperation.ActionComplete),
         FederationPublish = EntryFor(row, NodeFeeOperation.FederationPublish),
         Version = row.Version,
-        UpdatedByAvatarId = SurrealRecordGuid.ParseOptional(row.UpdatedByAvatarId),
+        UpdatedByUserId = SurrealRecordGuid.ParseOptional(row.UpdatedByUserId),
         CreatedAt = row.CreatedAt == default ? null : row.CreatedAt,
         UpdatedAt = row.UpdatedAt == default ? null : row.UpdatedAt,
     };
@@ -288,7 +292,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
     {
         Id = SurrealRecordGuid.Parse(row.Id),
         Action = row.Action,
-        ActorAvatarId = SurrealRecordGuid.ParseOptional(row.ActorAvatarId) ?? Guid.Empty,
+        ActorUserId = SurrealRecordGuid.ParseOptional(row.ActorUserId) ?? Guid.Empty,
         PreviousVersion = row.PreviousVersion,
         NewVersion = row.NewVersion,
         PreviousScheduleJson = row.PreviousScheduleJson,

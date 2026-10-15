@@ -290,7 +290,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
                 .WithParam("_table", KycControlAudit.SchemaNameConst)
                 .WithParam("_has_tenant", tenantId.HasValue)
                 .WithParam("_tenant", tenantId.HasValue
-                    ? SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId.Value))
+                    ? SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId.Value))
                     : null)
                 .WithParam("_provider", providerKey ?? string.Empty)
                 .WithParam("_action", action ?? string.Empty)
@@ -327,7 +327,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         AssuranceLevel = profile.AssuranceLevel,
         Version = profile.Version,
         TrustRevision = profile.TrustRevision,
-        UpdatedByAvatarId = SurrealLink.ToLink("avatar", profile.UpdatedByAvatarId),
+        UpdatedByUserId = SurrealLink.ToLink("user", profile.UpdatedByUserId),
         CreatedAt = profile.CreatedAt,
         UpdatedAt = profile.UpdatedAt,
     };
@@ -335,10 +335,10 @@ public sealed class SurrealKycControlStore : IKycControlStore
     private static TenantKycProviderSelection ToStorage(TenantKycProviderSelection selection) => new()
     {
         Id = selection.Id,
-        TenantId = SurrealLink.ToLink("avatar", selection.TenantId),
+        TenantId = SurrealLink.ToLink("user", selection.TenantId),
         ProviderKey = selection.ProviderKey,
         SelectionVersion = selection.SelectionVersion,
-        UpdatedByAvatarId = SurrealLink.ToLink("avatar", selection.UpdatedByAvatarId),
+        UpdatedByUserId = SurrealLink.ToLink("user", selection.UpdatedByUserId),
         CreatedAt = selection.CreatedAt,
         UpdatedAt = selection.UpdatedAt,
     };
@@ -349,7 +349,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         TenantId = SurrealLink.FromLink(selection.TenantId),
         ProviderKey = selection.ProviderKey,
         SelectionVersion = selection.SelectionVersion,
-        UpdatedByAvatarId = SurrealLink.FromLink(selection.UpdatedByAvatarId),
+        UpdatedByUserId = SurrealLink.FromLink(selection.UpdatedByUserId),
         CreatedAt = selection.CreatedAt,
         UpdatedAt = selection.UpdatedAt,
     };
@@ -360,7 +360,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         Action = audit.Action,
         TenantId = string.IsNullOrWhiteSpace(audit.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", audit.TenantId),
+            : SurrealLink.ToLink("user", audit.TenantId),
         ProviderKey = audit.ProviderKey,
         PreviousProviderKey = audit.PreviousProviderKey,
         Version = audit.Version,
@@ -376,7 +376,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         AssuranceLevel = audit.AssuranceLevel,
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
-        ActorAvatarId = SurrealLink.ToLink("avatar", audit.ActorAvatarId),
+        ActorUserId = SurrealLink.ToLink("user", audit.ActorUserId),
         OccurredAt = audit.OccurredAt,
     };
 
@@ -402,7 +402,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         AssuranceLevel = audit.AssuranceLevel,
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
-        ActorAvatarId = SurrealLink.FromLink(audit.ActorAvatarId),
+        ActorUserId = SurrealLink.FromLink(audit.ActorUserId),
         OccurredAt = audit.OccurredAt,
     };
 }

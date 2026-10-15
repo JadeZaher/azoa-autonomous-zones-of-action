@@ -1,0 +1,134 @@
+---
+type: Ledger
+title: Production gotchas ledger
+tags: [ledger, ardanova-production-readiness-waves_20260907]
+timestamp: 2026-09-07T00:00:00Z
+---
+
+# Gotchas that will bite in production
+
+Every entry was cited to a file by an adversarial reviewer. Severity is the reviewer's.
+
+- **[HIGH]** CustodyMode=Disabled does not disable custody: AllocationManager.EnsureWalletAsync generates config-KEK wallets on any tenant allocation regardless of mode or environment; CustodyMode is read only by TenantCustodialAccountManager
+  - where: oasis-sleek/Managers/AllocationManager.cs:215-236; Managers/TenantCustodialAccountManager.cs:79-94
+  - fix: CustodyPolicy consulted by WalletManager.GenerateWalletAsync + Production boot guard (W8.2)
+- **[HIGH]** RealValueReadinessHealthCheck prints 'custody … configured' without reading CustodyMode, KEK strength, or the rotation-marker path — a Railway deploy with RealValueEnabled=true, CustodyMode=Disabled and a 12-char KEK passes
+  - where: oasis-sleek/Observability/RealValueReadinessHealthCheck.cs:36-70,128-165
+  - fix: Add the three failures; rename the healthy message until custody is checked (W8.2)
+- **[HIGH]** D36's 'sign-without-export' seam does not exist: IPlatformKeyDerivation.TryDerive returns raw key bytes; per-user keys are AES-GCM under SHA256(config string) with no KDF/salt/envelope; an HSM cannot plug in without changing the interface
+  - where: oasis-sleek/Services/Custody/IPlatformKeyDerivation.cs:100; Services/Signing/WalletKeyService.cs:25-32; KeyCustodyService.cs:257-305
+  - fix: ISigningKeyHandle + per-wallet DEK envelope (W8.1); fix D36 wording (W0.3)
+- **[HIGH]** KEK loss is unrecoverable: custodial keypairs store no seed phrase, AZOA keeps no balance ledger, and no backup/escrow drill is documented; a leaked KEK + DB read exposes every custodial key at once
+  - where: oasis-sleek/Managers/WalletManager.cs:414-428; Services/Custody/FilePendingRotationKeyStore.cs
+  - fix: KEK in a secret manager with a sealed second copy; envelope DEKs; recovery drill in NODE-HOST.md (W8.1, W8.5)
+- **[HIGH]** On live Algorand a fresh custodial wallet can never receive an ASA: provider refuses un-opted-in recipients ('the account must sign its own opt-in'), OptInAsync has zero callers, nothing funds the 0.1 ALGO min balance, and the error string (ASA id, address, 'opt-in') flows back to ArdaNova; Simulated mode hides all of it
+  - where: oasis-sleek/Providers/Blockchain/Algorand/AlgorandProvider.cs:1012-1020,1205-1223; Managers/AllocationManager.cs:215-236
+  - fix: CustodialRecipientPreparer (fund + sign opt-in + transfer as a group) and consumer-safe error mapping (W9.2)
+- **[HIGH]** Consent for tenant-provisioned child users: ConsentController is FirstPartyLogin-only, TenantConsentController is GET/DELETE, ProvisionChildAsync creates no grant — so either users must log into AZOA to consent, or tenant-key allocations on child users bypass the consent check entirely (which branch fires is unverified)
+  - where: oasis-sleek/Services/Custody/KeyCustodyService.cs:115-128,176-190; Managers/TenantManager.cs:58-125,267-291; Controllers/ConsentController.cs:22-39
+  - fix: Implied revocable grant at provisioning + refusal test (W8.3)
+- **[HIGH]** Chargebacks and refunds are silently discarded: charge.refunded / charge.dispute.* hit `default: break` then MarkCompleted; no REVERSED/DISPUTED intent state; no reversal settlement kind; AZOA has no fungible clawback; SDK stripe orchestrator ignores every event but checkout.session.completed
+  - where: ardanova StripeWebhookController.cs:104-155; FundingIntentStatus.cs; EconomicSettlementKind.cs; oasis-sleek/sdk/azoa-wallet/src/orchestration/stripe.ts:159-160
+  - fix: Reversal pipeline + hold window (W4.1); decide clawback policy (Q5)
+- **[HIGH]** AllocationKind.Mint creates a brand-new ASA per allocation (CreateAsaCoreAsync), so both the funding settlement and every task reward would produce an unrelated asset; the funding settlement additionally sends assetCode 'USD' in cents
+  - where: oasis-sleek/Managers/AllocationManager.cs:240-292; Providers/Blockchain/Algorand/AlgorandProvider.cs:490-511; ardanova FundingIntentService.cs:408-428; AzoaAllocationService.cs:62-67
+  - fix: IssueUnits kind from the ASA reserve; settle in token units (W9.2, W9.4)
+- **[HIGH]** ArdaNova's fungible-mint wire model does not match AZOA: sends totalSupply (string), AZOA binds Total (ulong) + Decimals; unknown field ignored -> Total=0 -> 'zero total' rejection; Decimals never sent so assetScale is ignored; response txHash/operationId fields do not exist
+  - where: ardanova AzoaBackedAlgorandService.cs:144-186,340-367; oasis-sleek/Models/Requests/FungibleMintRequest.cs:29-56
+  - fix: Rename + add decimals + OpenAPI contract test (W9.1)
+- **[HIGH]** ARDA has no genesis: nothing writes isPlatformToken=true or ardaCirculatingSupply>0, so GetArdaBalanceAsync, GetArdaValueAsync, CalculateConversionAsync, GetSwapPreviewAsync and RequestPayout all fail; the invest page's 'ARDA equivalent' rows can never render
+  - where: ardanova TokenBalanceService.cs:54-86,119; TreasuryService.cs:257; ExchangeService.cs:55-59
+  - fix: ARDA internal-only; collapse ExchangeService to token -> USD (Q4, W4.2)
+- **[HIGH]** PostsController is live on Railway with no [Authorize], authorId/userId from body/query, and GetFeedAsync returns PRIVATE and PROJECT_MEMBERS posts to GET /api/posts; not in the in-flight hardening set
+  - where: ardanova PostsController.cs:8-97; PostService.cs:39-49
+  - fix: Delete or actor-bind + visibility predicate before any UI touches it (W2.5)
+- **[HIGH]** Every DRAFT project — including the wizard's partial-failure recovery drafts — is public on /projects because the listing passes no status and the repository filters only when one is supplied; nothing ever moves a project to PUBLISHED
+  - where: ardanova projects/page.tsx:168-173; project.ts:294-301; ProjectRepository.cs:37-41; ProjectServices.cs:185
+  - fix: Default status != DRAFT for non-members; Publish button (W2.1, W2.2)
+- **[HIGH]** Identomat is not enabled by default and requires a HUMAN first-party AZOA login as the ArdaNova tenant user to select it (PUT /api/tenant/kyc/provider is RecentFirstPartyLogin); the trust profile is empty; nothing records who holds that credential
+  - where: oasis-sleek/appsettings.json:136-138,198-203; Controllers/TenantKycConfigurationController.cs:12-13,39-40
+  - fix: Operator runbook + secret-store entry (W1.4)
+- **[HIGH]** GovernanceService.CastVoteAsync stores voterId and weight straight from the request body; only the 501 gate prevents vote-weight injection and voting as someone else; PASSED is never assigned; quorum compares a ballot count to a percentage; 'close' posts to /cancel
+  - where: ardanova GovernanceServices.cs:188-224,287,317; projects.ts:695-702; ProjectsController.cs:929-931
+  - fix: Actor-bound voter/weight, resolution states, quorum semantics (W6.1)
+- **[HIGH]** AZOA proposal owner can PUT /api/holon/{id} and rewrite options, status, opensAt/closesAt, uniquenessScope, electorateTenant after ballots are cast; rewriting scope silently drops recorded claims from the count while tallyHash still looks valid; no test covers proposal rewrites
+  - where: oasis-sleek/Managers/HolonManager.cs:140-166; Services/Governance/ConsumerGovernanceHolonTypes.cs:129-158
+  - fix: Freeze metadata after first claim or snapshot the question onto claim rows + attack tests (W6.2)
+- **[HIGH]** ArdaNova's live vote gate requires an ACTIVE MembershipCredential that every grant route/router returns 501 for, and GrantAsync demands KYC PRO; members see vote buttons and 'CREDENTIAL_REQUIRED … separate authorized workflow'
+  - where: ardanova ProjectsController.cs:915-928; MembershipCredentialsController.cs:83-89; CredentialUtilityController.cs:20-50; MembershipCredentialServices.cs:164-166
+  - fix: Un-501 grant behind owner auth (W5.4); disable the form until then (W6.1)
+- **[HIGH]** AcceptBidAsync reserves nothing against supply, so an owner can accept unlimited bids against the same contributor pool; escrow status FUNDED is never set so DisputeAsync is unreachable; ReleaseDialog would have a human type a 'Chain hash or operation ID'
+  - where: ardanova TaskCommerceService.cs:130-167; TaskEscrowServices.cs:60-135; components/escrow/release-dialog.tsx:36-61
+  - fix: Reservation at accept (W5.2); delete tx-hash entry (W5.3)
+- **[HIGH]** The in-flight ~81-file hardening set is uncommitted and IAzoaValueEligibilityService is untracked but referenced by seven tracked files; `git commit -a` produces a non-building tree (ArdaNova RUNBOOK §3 warning still stands)
+  - where: ardanova git status; conductor/RUNBOOK.md §3
+  - fix: Land it deliberately as W0.5 before any other ArdaNova item
+- **[MEDIUM]** Key rotation has a planned signing outage between re-wrap and process restart (every custodial sign fails with AuthenticationTagMismatch); the pending-rotation marker defaults to ContentRoot on Railway's ephemeral disk; per-chain platform mnemonics are never rotated
+  - where: oasis-sleek/Services/Custody/KeyRotationService.cs:60-128; FilePendingRotationKeyStore.cs:40-43; appsettings.json:75-88
+  - fix: Previous-key window in WalletKeyService (W8.1); marker boot guard + volume (W8.2); platform-key rotation runbook (W8.5)
+- **[MEDIUM]** Runs parked in AwaitingReconciliation are never re-probed: ReconciliationHostedService sweeps ops/bridges only; the only re-probe is a manual operator endpoint
+  - where: oasis-sleek/Services/Actions/Workflow/ActionNodeStepHandler.cs:494-522; Services/Reconciliation/*; Controllers/ActionController.cs:282-310
+  - fix: Hosted sweep calls ReconcileAllParkedRunsAsync with a hard-stuck alert (W8.4)
+- **[MEDIUM]** Stripe SuccessUrl is one static config value while the return page is keyed by slug in sessionStorage; no Stripe section exists in appsettings so RequiredUrl throws AFTER the DRAFT intent row is committed, burning the idempotency key for that (amount, config) tuple
+  - where: ardanova StripeCheckoutGateway.cs:22-33,71-74; FundingIntentService.cs:139-163
+  - fix: Per-intent URLs, startup validation, create the row after config resolves (W3.1, W3.2)
+- **[MEDIUM]** AZOA silently shaves a node fee off the 'already-decided' amount (ArdaNova never reads Gross/Fee/Net back), and any Transfer fee > 0 hard-denies the allocation — ArdaNova's refund path uses Transfer. Latent while the schedule is version 0
+  - where: oasis-sleek/Managers/AllocationManager.cs:133-140,415-447; ardanova AzoaAllocationService.cs:103-127
+  - fix: Quote the fee before terms lock and persist it from the receipt; remove the Transfer fee denial for treasury-settled tenants (W9.2, W9.4)
+- **[MEDIUM]** D16 latent trap: TryReadRailAmount parses Burn/Transfer amounts as NativeChainAsset even when SourceTokenId is an ASA — the first real rate source stamps N project-token units as N microAlgos; Swap/Exchange ops are never stamped
+  - where: oasis-sleek/Managers/BlockchainOperationManager.cs:642-666
+  - fix: Use ValueDimension.ChainAsset(SourceTokenId); TenantDeclared rate source (W8.5)
+- **[MEDIUM]** Money math is double/int with silent truncation: (long)ardaAmount, (int)preview.ArdaAmount, (int)((usd/valuationBase)*totalSupply), treasury split in double; SwapService uses decimal — two numeric models for the same rate
+  - where: ardanova ExchangeService.cs:98-105; PayoutService.cs:120-128; StripeService.cs:195-199; TreasuryService.cs:30-52
+  - fix: Fixed-scale migration before any rate endpoint is user-visible (W4.2)
+- **[MEDIUM]** SDK Tinyman adapter defaults assetIn/assetOut decimals to 6 on the execute path (project tokens have assetScale 0..18); buildPaymentTx treats amount as decimal ALGO via Math.round(Number()*1e6) while buildAsaTransferTx treats it as base units via Number() — both lose precision above 2^53; supportsBridging hard-coded true while backend bridge is fail-closed
+  - where: oasis-sleek/sdk/azoa-wallet/src/dex/tinyman.ts:167-173,267-276; src/algorand/provider.ts:104,466-506; src/solana/provider.ts:52
+  - fix: Resolve decimals from indexer; BigInt base-unit strings; capability probe (W9.5)
+- **[MEDIUM]** Simulated defaults (Algorand:Provider=Simulated, Azoa:Mode=Simulated, SimulatedAlgorandService fabricates asset ids) make create-config -> allocate -> distribute -> balance look like a working economy in every local demo while none of the real paths are exercised
+  - where: ardanova ArdaNova.API/appsettings.json:10,18; SimulatedAlgorandService.cs:22,92-98
+  - fix: Startup banner + health field 'economy: simulated/disabled'; QA checklists point at it (W3.3)
+- **[MEDIUM]** Wizard overwrites description with the solution text, so the detail page shows the solution twice and server-side search (title/description/tags) never matches the problem statement; client-side filter does, so results differ by path
+  - where: ardanova create/page.tsx:614; ProjectRepository.cs:31-35; projects/page.tsx:120-125
+  - fix: Summary field + extend SearchAsync (W2.1, W2.4)
+- **[MEDIUM]** UserManager.RegisterAsync uniqueness checks are O(n) GetAllAsync scans and racy (two concurrent registers with the same email both pass); the dead AzoaAvatarService would post users' real emails and username = email local-part to the shared node and collide on 'john'
+  - where: oasis-sleek/Managers/UserManager.cs:29-54; ardanova AzoaAvatarService.cs:47-58
+  - fix: Delete AzoaAvatarService (W0.5); unique index before any public self-register
+- **[MEDIUM]** KYC approval may expire on Kyc:SubmissionExpiryDays (30) — if the approval ExpiresAt derives from it, every user re-runs Identomat monthly and ProjectVerificationLevel silently demotes PRO -> VERIFIED; legacy KycService.cs:186 is a second writer of verificationLevel
+  - where: oasis-sleek/appsettings.json Kyc.SubmissionExpiryDays; Managers/KycManager.cs ApproveAsync; ardanova KycService.cs:186
+  - fix: Verify the stamp, add ApprovalValidityDays, remove the legacy writer (W1.4, W1.6)
+- **[MEDIUM]** AML non-clearance is deliberately silent with no recourse: any decision other than NO_HIT keeps the gate closed; ArdaNova can only show Pending/Rejected; no operator queue surfaced; false-positive name matches strand legitimate sponsors indefinitely
+  - where: oasis-sleek/Services/Kyc/KycHostedSessionOutcomeHandler.cs:87-105,128; KycScreeningRiskPolicy.cs:9-14
+  - fix: UnderReview state + SLA + watched operator queue (W1.5, W1.6)
+- **[MEDIUM]** Identomat /begin sends no return URL and returns ExpiresAt=null; the user comes back to a tab showing the old status until they click 'I'm done'; AZOA never notifies ArdaNova of the verdict
+  - where: oasis-sleek/Providers/Kyc/IdentomatKycProviderService.cs:266-320; ardanova settings/verification/page.tsx:381-418
+  - fix: Check for a redirect parameter; re-poll on window focus (W1.4, W1.2)
+- **[MEDIUM]** AzoaValueEligibilityService swallows exceptions as Forbidden, so an AZOA outage reads as 'Complete your account setup'; it also demands WalletReady + WalletAddress for card-only actions (D9's fiat-only persona cannot exist)
+  - where: ardanova AzoaValueEligibilityService.cs:27-55
+  - fix: Rail-aware readiness + unavailable vs not-ready (W1.1)
+- **[MEDIUM]** Project owner readiness lapse between checkout and webhook parks captured money on Retry with no refund branch; the outbox retries forever (300s cap, no ceiling, no alert); an unverified worker's settlement likewise retries silently
+  - where: ardanova FundingIntentService.cs:101-106,216-230; EconomicOutboxDispatchService.cs:130-165,220-231
+  - fix: Hold state + auto-refund + attempt ceiling + alert (W4.3)
+- **[MEDIUM]** KYC identity bindings are written under the KYC call's tenant scope but the uniqueness gate looks them up under the run's ActingTenantId — a verified ArdaNova user executing a vote with a plain user JWT (node scope) can be refused as NoVerifiedIdentity (plausible, not confirmed)
+  - where: oasis-sleek/Services/Kyc/PersonUniquenessGate.cs:303-335; KycIdentityBindingService.cs:99-173
+  - fix: Pin the scope resolution or run votes under a tenant-driven credential; test it before any AZOA governance adapter
+- **[MEDIUM]** D19 clawback: the platform sets the ASA clawback address on assets it creates; if that includes equity/reward ASAs the operator can seize any holder's balance — 'real ownership' becomes conditional (branch not verified)
+  - where: oasis-sleek/Managers/FungibleTokenManager.cs:147-157; RUNBOOK D19
+  - fix: Decide with Q5; clawback only on soulbound + hold-window assets
+- **[MEDIUM]** Investors endpoint has no [Authorize] and the DTO carries StripePaymentIntentId to non-admins; InvestorTable shows every backer's user id and USD to any signed-in user
+  - where: ardanova ProjectTokensController.cs:141-146; TokenomicsDtos.cs:235-248; investor-table.tsx:56-80
+  - fix: Authorize + strip + aggregate (W4.2, W4.4)
+- **[MEDIUM]** Tax at receipt: equity tokens for work are likely income at fair value on receipt in most jurisdictions; ArdaNova has zero tax code and workers cannot yet sell — the audience meets this as a letter, not a screen
+  - where: grep 'tax|1099' over ardanova -> 0 hits; PayoutService.cs:93-97 has the rate but never stamps it
+  - fix: Restricted-until-liquid rewards (holderClass) so the taxable event defers to payout, confirmed with counsel (W5.5)
+- **[LOW]** User.azoaAvatarId is a UNIQUE index and StableReferenceError refuses a different avatar/wallet id forever; a node rebuild/re-namespace (routine in dev) Conflict-locks every user until the column is nulled by hand
+  - where: ardanova User.cs:11,67-71; AzoaCustodialAccountService.cs StableReferenceError
+  - fix: Audited operator 'unbind' action (W1.6)
+- **[LOW]** Sybil protection is opt-in per operation (D3) and only GovernanceVoteNodeHandler opts in; any per-person cap ArdaNova adds as a Postgres count is multiplied by re-verification under a second avatar
+  - where: grep IPersonUniquenessGate -> GovernanceVoteNodeHandler.cs and PersonUniquenessGate.cs only
+  - fix: Express per-person limits as AZOA uniqueness requirements, never DB counts (checklist item in eligibility service)
+- **[LOW]** azoa-sdk 0.3.0 is unpublished while ArdaNova pins ^0.3.0 — CI red by construction; the SDK is bypassed on every ArdaNova vertical (hand-rolled .NET clients; browser layer dormant) so the 'SDK and .NET always mirrored' rule is not holding
+  - where: oasis-sleek/sdk/azoa-wallet/package.json:3; ardanova-client/package.json:61; Infrastructure/Azoa/AGENTS.md:1-16
+  - fix: Publish or drop the pin (W0.4); decide generated clients (W9.5)
+- **[LOW]** KYB: projects may be co-ops or companies and no vendor path screens an entity (Identomat has no company endpoint, D24)
+  - where: oasis-sleek/conductor/RUNBOOK.md:233-252
+  - fix: Natural-person founders for now; Stripe Connect business verification when entities pay out (ratify decision)

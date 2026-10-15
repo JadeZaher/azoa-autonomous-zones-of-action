@@ -15,7 +15,7 @@ public interface IAllocationReceiptManager
     /// <summary>
     /// Returns the caller's secret-free allocation receipt. The manager derives
     /// the internal ledger key locally and verifies any matching opaque operation
-    /// against its persisted initiator API key and avatar. A valid failed or
+    /// against its persisted initiator API key and user. A valid failed or
     /// in-progress ledger remains readable when no operation was persisted.
     /// Missing ledger bindings, foreign operations, and initiator mismatches must
     /// all return the same not-found-shaped result.

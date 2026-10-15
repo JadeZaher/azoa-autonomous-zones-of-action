@@ -56,7 +56,7 @@ public sealed class SeedAdminHostedService : IHostedService
     {
         using var scope = _scopeFactory.CreateScope();
         var stateStore = scope.ServiceProvider.GetRequiredService<IAdminBootstrapStateStore>();
-        var avatarStore = scope.ServiceProvider.GetRequiredService<IAvatarStore>();
+        var userStore = scope.ServiceProvider.GetRequiredService<IUserStore>();
         var stateResult = await stateStore.GetAsync(ct);
         if (stateResult.IsError)
             throw new InvalidOperationException("Node operator binding could not be loaded.");
@@ -71,7 +71,7 @@ public sealed class SeedAdminHostedService : IHostedService
         {
             if (stateResult.Result?.CredentialRevision > 0)
             {
-                await AssertBoundOperatorAsync(stateResult.Result, avatarStore, ct);
+                await AssertBoundOperatorAsync(stateResult.Result, userStore, ct);
                 _logger.LogInformation(
                     "Durable node operator binding is active at credential revision {CredentialRevision}.",
                     stateResult.Result.CredentialRevision);
@@ -95,7 +95,7 @@ public sealed class SeedAdminHostedService : IHostedService
         var state = stateResult.Result;
         if (state is null)
         {
-            await SeedFirstOperatorAsync(username, stateStore, avatarStore, ct);
+            await SeedFirstOperatorAsync(username, stateStore, userStore, ct);
             return;
         }
 
@@ -105,13 +105,13 @@ public sealed class SeedAdminHostedService : IHostedService
                 "A legacy admin bootstrap binding already exists. Reset or explicitly migrate that binding before enabling NodeOperator credentials.");
         }
 
-        var avatar = await AssertBoundOperatorAsync(state, avatarStore, ct);
+        var user = await AssertBoundOperatorAsync(state, userStore, ct);
         if (_operator.CredentialRevision < state.CredentialRevision)
             FailSeed("NodeOperator credential revision rollback was refused.");
         if (_operator.CredentialRevision == state.CredentialRevision)
         {
-            if (!string.Equals(avatar.Username, username, StringComparison.Ordinal)
-                || !NodeOperatorIdentity.VerifyPassword(_operator.Password, avatar.PasswordHash))
+            if (!string.Equals(user.Username, username, StringComparison.Ordinal)
+                || !NodeOperatorIdentity.VerifyPassword(_operator.Password, user.PasswordHash))
             {
                 FailSeed("NodeOperator credentials differ without a revision increase.");
             }
@@ -124,7 +124,7 @@ public sealed class SeedAdminHostedService : IHostedService
 
         var changedAt = DateTimeOffset.UtcNow;
         var rotated = await stateStore.RotateCredentialsAsync(
-            NodeOperatorIdentity.AvatarId,
+            NodeOperatorIdentity.UserId,
             username,
             BCrypt.Net.BCrypt.HashPassword(_operator.Password, workFactor: 12),
             state.CredentialRevision,
@@ -142,12 +142,12 @@ public sealed class SeedAdminHostedService : IHostedService
     private async Task SeedFirstOperatorAsync(
         string username,
         IAdminBootstrapStateStore stateStore,
-        IAvatarStore avatarStore,
+        IUserStore userStore,
         CancellationToken ct)
     {
-        var avatar = new AZOA.WebAPI.Models.Avatar
+        var user = new AZOA.WebAPI.Models.User
         {
-            Id = NodeOperatorIdentity.AvatarId,
+            Id = NodeOperatorIdentity.UserId,
             Username = username,
             Email = NodeOperatorIdentity.ReservedEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(_operator.Password, workFactor: 12),
@@ -157,9 +157,9 @@ public sealed class SeedAdminHostedService : IHostedService
             DappRole = AzoaDappRoles.User,
             AuthNotBefore = DateTime.UtcNow,
         };
-        var created = await avatarStore.CreateIfAbsentAsync(avatar, ct);
+        var created = await userStore.CreateIfAbsentAsync(user, ct);
         if (created.IsError || created.Result is null
-            || created.Result.Id != NodeOperatorIdentity.AvatarId
+            || created.Result.Id != NodeOperatorIdentity.UserId
             || !string.Equals(created.Result.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(created.Result.Username, username, StringComparison.Ordinal)
             || !NodeOperatorIdentity.VerifyPassword(_operator.Password, created.Result.PasswordHash))
@@ -171,7 +171,7 @@ public sealed class SeedAdminHostedService : IHostedService
         var binding = await stateStore.BindOnceAsync(new AdminBootstrapState
         {
             Id = AdminBootstrapState.LocalId,
-            AvatarId = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(NodeOperatorIdentity.AvatarId)),
+            UserId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId)),
             CredentialRevision = _operator.CredentialRevision,
             SessionRevision = 1,
             CredentialUpdatedAt = now,
@@ -179,7 +179,7 @@ public sealed class SeedAdminHostedService : IHostedService
         }, ct);
         if (binding.IsError || binding.Result is null
             || binding.Result.CredentialRevision != _operator.CredentialRevision
-            || !string.Equals(binding.Result.AvatarId, avatar.AvatarLink(), StringComparison.Ordinal))
+            || !string.Equals(binding.Result.UserId, user.UserLink(), StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Reserved node operator binding could not be created safely.");
         }
@@ -189,30 +189,30 @@ public sealed class SeedAdminHostedService : IHostedService
             binding.Result.CredentialRevision);
     }
 
-    private static async Task<AZOA.WebAPI.Interfaces.IAvatar> AssertBoundOperatorAsync(
+    private static async Task<AZOA.WebAPI.Interfaces.IUser> AssertBoundOperatorAsync(
         AdminBootstrapState state,
-        IAvatarStore avatarStore,
+        IUserStore userStore,
         CancellationToken ct)
     {
-        var expectedLink = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(NodeOperatorIdentity.AvatarId));
-        if (!string.Equals(state.AvatarId, expectedLink, StringComparison.Ordinal))
+        var expectedLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId));
+        if (!string.Equals(state.UserId, expectedLink, StringComparison.Ordinal))
             throw new InvalidOperationException("The durable node operator binding does not reference the reserved operator identity.");
 
-        var avatar = await avatarStore.GetByIdAsync(NodeOperatorIdentity.AvatarId, ct);
-        if (avatar.IsError || avatar.Result is null
-            || !avatar.Result.IsActive
-            || !string.Equals(avatar.Result.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase)
-            || !NodeOperatorIdentity.IsValidUsername(avatar.Result.Username)
+        var user = await userStore.GetByIdAsync(NodeOperatorIdentity.UserId, ct);
+        if (user.IsError || user.Result is null
+            || !user.Result.IsActive
+            || !string.Equals(user.Result.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase)
+            || !NodeOperatorIdentity.IsValidUsername(user.Result.Username)
             || !string.Equals(
-                avatar.Result.Username,
-                NodeOperatorIdentity.NormalizeUsername(avatar.Result.Username),
+                user.Result.Username,
+                NodeOperatorIdentity.NormalizeUsername(user.Result.Username),
                 StringComparison.Ordinal)
-            || !NodeOperatorIdentity.IsStructurallyValidPasswordHash(avatar.Result.PasswordHash))
+            || !NodeOperatorIdentity.IsStructurallyValidPasswordHash(user.Result.PasswordHash))
         {
             throw new InvalidOperationException("The durable node operator identity is missing or inactive.");
         }
 
-        return avatar.Result;
+        return user.Result;
     }
 
     private void FailSeed(string message)
@@ -223,8 +223,8 @@ public sealed class SeedAdminHostedService : IHostedService
     }
 }
 
-file static class NodeOperatorAvatarExtensions
+file static class NodeOperatorUserExtensions
 {
-    public static string AvatarLink(this AZOA.WebAPI.Interfaces.IAvatar avatar)
-        => SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatar.Id));
+    public static string UserLink(this AZOA.WebAPI.Interfaces.IUser user)
+        => SurrealLink.ToLink("user", SurrealId.ToSurrealId(user.Id));
 }

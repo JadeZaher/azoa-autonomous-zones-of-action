@@ -59,9 +59,9 @@ public sealed class WebhookOptions
     public const string HttpClientName = "consent-webhook";
 
     /// <summary>The named <see cref="System.Net.Http.IHttpClientFactory"/> client used
-    /// for GENERIC quest.emit webhook delivery POSTs (final-hardening F3). Registered
+    /// for GENERIC action.emit webhook delivery POSTs (final-hardening F3). Registered
     /// with the SAME SSRF-guarded, no-auto-redirect primary handler as
-    /// <see cref="HttpClientName"/> so the quest path inherits the identical outbound
+    /// <see cref="HttpClientName"/> so the action path inherits the identical outbound
     /// SSRF posture.</summary>
-    public const string QuestHttpClientName = "quest-webhook";
+    public const string ActionHttpClientName = "action-webhook";
 }

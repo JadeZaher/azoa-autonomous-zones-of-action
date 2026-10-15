@@ -12,8 +12,8 @@ public sealed class AllocationReceiptRequest
     /// <summary>The authenticated API-key record id.</summary>
     public Guid ApiKeyId { get; init; }
 
-    /// <summary>The authenticated avatar that owns the API key.</summary>
-    public Guid CallerAvatarId { get; init; }
+    /// <summary>The authenticated user that owns the API key.</summary>
+    public Guid CallerUserId { get; init; }
 
     /// <summary>The required client-supplied <c>Idempotency-Key</c> header.</summary>
     public string ClientIdempotencyKey { get; init; } = string.Empty;

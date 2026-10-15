@@ -33,7 +33,7 @@ public sealed class NodeTreasuryManagerTests
         result.Result.Network.Should().Be(ChainNetwork.Testnet);
         result.Result.Address.Should().Be("TREASURY-1");
         result.Result.Version.Should().Be(1);
-        result.Result.UpdatedByAvatarId.Should().Be(actor);
+        result.Result.UpdatedByUserId.Should().Be(actor);
         store.SavedDestination.Should().NotBeNull();
         store.ExpectedVersion.Should().BeNull();
         store.Audits.Should().ContainSingle();

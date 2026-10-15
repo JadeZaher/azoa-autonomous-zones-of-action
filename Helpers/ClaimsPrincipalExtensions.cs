@@ -62,7 +62,7 @@ public static class ClaimsPrincipalExtensions
 
     public static bool CanSelfIssueApiKeyScope(this ClaimsPrincipal principal, string scope)
     {
-        if (!AZOA.WebAPI.Core.AzoaScopes.IsIssuableByAvatar(scope))
+        if (!AZOA.WebAPI.Core.AzoaScopes.IsIssuableByUser(scope))
             return false;
 
         return scope switch

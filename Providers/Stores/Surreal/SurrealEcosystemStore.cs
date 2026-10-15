@@ -40,25 +40,25 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
 
     // ── Ecosystem root ────────────────────────────────────────────────────────
 
-    public async Task<AZOAResult<Ecosystem>> GetByStarOdkAsync(Guid starOdkId, CancellationToken ct = default)
+    public async Task<AZOAResult<Ecosystem>> GetByActionGraphBundleAsync(Guid actionGraphBundleId, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE star_odk_id = $_star LIMIT 1")
+                .Of("SELECT * FROM type::table($_t) WHERE action_graph_bundle_id = $_bundle LIMIT 1")
                 .WithParam("_t", EcosystemTable)
-                .WithParam("_star", SurrealRecordParam.Of("star_odk", SurrealId.ToSurrealId(starOdkId)));
+                .WithParam("_bundle", SurrealRecordParam.Of("action_graph_bundle", SurrealId.ToSurrealId(actionGraphBundleId)));
             var row = await _executor.QuerySingleAsync<EcosystemPoco>(q, ct);
             return new AZOAResult<Ecosystem>
             {
                 IsError = false,
-                Message = row == null ? "No ecosystem for STAR ODK." : "Success",
+                Message = row == null ? "No ecosystem for action graph bundle." : "Success",
                 Result = row == null ? null : ToDecorated(row),
             };
         }
         catch (Exception ex)
         {
-            return new AZOAResult<Ecosystem>().CaptureException(ex, $"SurrealEcosystemStore.GetByStarOdkAsync failed: {ex.Message}");
+            return new AZOAResult<Ecosystem>().CaptureException(ex, $"SurrealEcosystemStore.GetByActionGraphBundleAsync failed: {ex.Message}");
         }
     }
 
@@ -167,8 +167,8 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         Id = string.IsNullOrEmpty(e.Id) ? SurrealId.ToSurrealId(Guid.NewGuid()) : e.Id,
         Name = e.Name,
         Description = e.Description,
-        StarOdkId = SurrealLink.ToLink("star_odk", e.StarOdkId) ?? string.Empty,
-        AvatarId = SurrealLink.ToLink("avatar", e.AvatarId) ?? string.Empty,
+        ActionGraphBundleId = SurrealLink.ToLink("action_graph_bundle", e.ActionGraphBundleId) ?? string.Empty,
+        UserId = SurrealLink.ToLink("user", e.UserId) ?? string.Empty,
         TargetChain = e.TargetChain,
         CreatedDate = e.CreatedDate == default ? DateTimeOffset.UtcNow : e.CreatedDate,
         ModifiedDate = e.ModifiedDate,
@@ -179,8 +179,8 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         Id = SurrealLink.FromLink(p.Id) ?? p.Id,
         Name = p.Name,
         Description = p.Description,
-        StarOdkId = SurrealLink.FromLink(p.StarOdkId) ?? p.StarOdkId,
-        AvatarId = SurrealLink.FromLink(p.AvatarId) ?? p.AvatarId,
+        ActionGraphBundleId = SurrealLink.FromLink(p.ActionGraphBundleId) ?? p.ActionGraphBundleId,
+        UserId = SurrealLink.FromLink(p.UserId) ?? p.UserId,
         TargetChain = p.TargetChain,
         CreatedDate = p.CreatedDate,
         ModifiedDate = p.ModifiedDate,
@@ -217,8 +217,8 @@ public sealed class SurrealEcosystemStore : IEcosystemStore
         [JsonPropertyName("id")]            public string Id { get; set; } = string.Empty;
         [JsonPropertyName("name")]          public string Name { get; set; } = string.Empty;
         [JsonPropertyName("description")]   public string? Description { get; set; }
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.StarOdk))] [JsonPropertyName("star_odk_id")]   public string StarOdkId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]     public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.ActionGraphBundle))] [JsonPropertyName("action_graph_bundle_id")]   public string ActionGraphBundleId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("user_id")]     public string UserId { get; set; } = string.Empty;
         [JsonPropertyName("target_chain")]  public string? TargetChain { get; set; }
         [JsonPropertyName("created_date")]  public DateTimeOffset CreatedDate { get; set; }
         [JsonPropertyName("modified_date")] public DateTimeOffset? ModifiedDate { get; set; }

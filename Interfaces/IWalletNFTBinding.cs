@@ -4,7 +4,7 @@ public interface IWalletNFTBinding
 {
     Guid Id { get; set; }
     Guid WalletId { get; set; }
-    Guid AvatarNFTId { get; set; }
+    Guid UserNFTId { get; set; }
     string BindingType { get; set; }
     string? AccessLevel { get; set; }
     Dictionary<string, string> AccessPermissions { get; set; }

@@ -5,7 +5,6 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
-using AlgoAccount = Algorand.Algod.Model.Account;
 
 namespace AZOA.WebAPI.Services.Custody;
 
@@ -30,12 +29,18 @@ namespace AZOA.WebAPI.Services.Custody;
 /// Security invariants enforced here: ownership is checked on every per-user
 /// resolve (IDOR guard) <b>before</b> any decrypt; only <see cref="WalletType.Platform"/>
 /// wallets are signable; the cleartext key exists only as a local <see cref="byte"/>
-/// array inside <see cref="WithSigningKeyAsync{T}"/> /
-/// <see cref="WithPlatformSigningKeyAsync{T}"/> and is wiped via
+/// array inside the resolvers and is wiped via
 /// <see cref="CryptographicOperations.ZeroMemory(Span{byte})"/> in a <c>finally</c>
 /// (even when the <c>sign</c> delegate throws); the resolver returns only the
 /// signer's result, never the key; and no key, seed phrase, or decrypted buffer is
 /// ever logged.
+/// </para>
+/// <para>
+/// The <b>platform</b> door is per-chain: each chain declares its own config secret and
+/// its own derivation rule (<see cref="PlatformKeyDerivationRegistry"/>), and a chain
+/// with no registered rule fails closed naming that chain. There is no shared default
+/// derivation to fall through to — see <c>Services/Custody/AGENTS.md</c>
+/// §platform-key-derivation.
 /// </para>
 /// </summary>
 public sealed class KeyCustodyService : IKeyCustodyService
@@ -44,36 +49,66 @@ public sealed class KeyCustodyService : IKeyCustodyService
     private readonly WalletKeyService _keyService;
     private readonly IConfiguration _config;
     private readonly ITenantConsentGate _consentGate;
+    private readonly PlatformKeyDerivationRegistry _derivations;
 
     /// <summary>
     /// Reserved sentinel id for the platform pseudo-wallet. It is deliberately NOT a
-    /// persisted wallet row: the platform key is config-sourced
-    /// (<see cref="PlatformMnemonicConfigPath"/>), which keeps a value-bearing
-    /// platform key out of the per-user wallet table. Callers resolve the platform
-    /// key via <see cref="WithPlatformSigningKeyAsync{T}"/>, not by passing this id
-    /// to <see cref="WithSigningKeyAsync{T}"/>.
+    /// persisted wallet row: the platform key is config-sourced, per chain
+    /// (<see cref="IPlatformKeyDerivation.PlatformKeyConfigPath"/>), which keeps a
+    /// value-bearing platform key out of the per-user wallet table. Callers resolve the
+    /// platform key via <see cref="WithPlatformSigningKeyAsync{T}(string, bool, SigningContext, Func{byte[], Task{T}})"/>,
+    /// not by passing this id to <see cref="WithSigningKeyAsync{T}(Guid, Guid, Func{byte[], Task{T}})"/>.
     /// </summary>
     public static readonly Guid PlatformWalletId = new("00000000-0000-0000-0000-0000000a1f0d");
 
     /// <summary>
-    /// Config path for the platform signing mnemonic. Aligned with the interim
-    /// resolver the signing-core track shipped
-    /// (<c>AlgorandProvider.ResolveInterimKeyMaterial</c>, retired deploy registry B2) and
-    /// the faucet precedent (<c>Core/AlgorandFaucet.cs:45</c>), so the platform key
-    /// supply is single-sourced.
+    /// Config path for the <b>Algorand</b> platform signing mnemonic. Aligned with the
+    /// no-custody-wired fallback
+    /// (<c>AlgorandProvider.SignWithFallbackPlatformKeyAsync</c>) and the faucet
+    /// precedent (<c>Providers/Blockchain/Algorand/AlgorandFaucet.cs:46</c>), so the
+    /// platform key supply is single-sourced.
+    /// <para>
+    /// This is one chain's path, NOT the platform path. Every chain declares its own
+    /// (<see cref="IPlatformKeyDerivation.PlatformKeyConfigPath"/>); resolve a chain's
+    /// path through <see cref="PlatformKeyDerivationRegistry"/> rather than reusing this
+    /// constant for non-Algorand work.
+    /// </para>
     /// </summary>
-    public const string PlatformMnemonicConfigPath = "AZOA:Algorand:PlatformMnemonic";
+    public const string PlatformMnemonicConfigPath = AlgorandPlatformKeyDerivation.ConfigPath;
+
+    /// <summary>
+    /// Chain the chain-LESS platform overloads resolve against. Those overloads predate
+    /// per-chain derivation and their only production callers were Algorand paths, so
+    /// pinning them keeps historical behaviour byte-identical. It is a pinned legacy
+    /// contract, NOT a fallback: a caller that names a chain gets that chain's key or a
+    /// fail-closed error, and never lands here. New callers must use the chain-explicit
+    /// overload or stamp <see cref="SigningContext.ChainType"/>.
+    /// </summary>
+    public const string LegacyPlatformChainType = "Algorand";
 
     public KeyCustodyService(
         IWalletStore walletStore,
         WalletKeyService keyService,
         IConfiguration config,
         ITenantConsentGate consentGate)
+        : this(walletStore, keyService, config, consentGate, PlatformKeyDerivationRegistry.Default)
+    {
+    }
+
+    /// <summary>Derivation-injecting overload; the registry is stateless, so DI normally
+    /// selects the shorter constructor and this one exists for tests.</summary>
+    public KeyCustodyService(
+        IWalletStore walletStore,
+        WalletKeyService keyService,
+        IConfiguration config,
+        ITenantConsentGate consentGate,
+        PlatformKeyDerivationRegistry derivations)
     {
         _walletStore = walletStore;
         _keyService = keyService;
         _config = config;
         _consentGate = consentGate ?? throw new ArgumentNullException(nameof(consentGate));
+        _derivations = derivations ?? throw new ArgumentNullException(nameof(derivations));
     }
 
     /// <inheritdoc />
@@ -84,16 +119,16 @@ public sealed class KeyCustodyService : IKeyCustodyService
         // tenant-consent-delegation C1/AC4: LIVE consent check BEFORE any decrypt.
         // No-op allow for a user-driven context; fail-closed for a tenant-driven one
         // with no covering grant — even though the ownership IDOR check below would
-        // pass (wallet.AvatarId == ctx.AvatarId). This is THE single chokepoint.
+        // pass (wallet.UserId == ctx.UserId). This is THE single chokepoint.
         var gate = await _consentGate.EnsureAllowedAsync(ctx);
         if (gate.IsError)
             return new AZOAResult<T> { IsError = true, Message = gate.Message };
 
-        return await WithSigningKeyAsync(ctx.WalletId, ctx.AvatarId, sign);
+        return await WithSigningKeyAsync(ctx.WalletId, ctx.UserId, sign);
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)
+    public async Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid userId, Func<byte[], Task<T>> sign)
     {
         ArgumentNullException.ThrowIfNull(sign);
         var result = new AZOAResult<T>();
@@ -109,12 +144,12 @@ public sealed class KeyCustodyService : IKeyCustodyService
 
         var wallet = walletResult.Result;
 
-        // 2. IDOR guard — caller-supplied avatar identity is the authority (STARODK
+        // 2. IDOR guard — caller-supplied user identity is the authority (ActionGraphBundle
         //    precedent). Returns BEFORE any decrypt (mirror :313-314).
-        if (wallet.AvatarId != avatarId)
+        if (wallet.UserId != userId)
         {
             result.IsError = true;
-            result.Message = "Wallet not owned by this avatar.";
+            result.Message = "Wallet not owned by this user.";
             return result;
         }
 
@@ -151,17 +186,65 @@ public sealed class KeyCustodyService : IKeyCustodyService
         if (gate.IsError)
             return new AZOAResult<T> { IsError = true, Message = gate.Message };
 
-        return await WithPlatformSigningKeyAsync(isPlatformContext, sign);
+        return await ResolvePlatformKeyAsync(ChainTypeFor(ctx), isPlatformContext, sign);
     }
 
     /// <inheritdoc />
+    public async Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(
+        string chainType, bool isPlatformContext, SigningContext ctx, Func<byte[], Task<T>> sign)
+    {
+        ArgumentNullException.ThrowIfNull(sign);
+
+        var gate = await _consentGate.EnsureAllowedAsync(ctx);
+        if (gate.IsError)
+            return new AZOAResult<T> { IsError = true, Message = gate.Message };
+
+        return await ResolvePlatformKeyAsync(chainType, isPlatformContext, sign);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// OI-72. This overload carries no <see cref="SigningContext"/>, so unlike its three
+    /// siblings it reached the platform key with no consent check at all. It is operator-only
+    /// BY CONSTRUCTION - with no context it cannot express an acting tenant, a grantor or a
+    /// scope - and a grep of the tree at 195c266 found NO production caller: every value path
+    /// (AlgorandProvider:2471, EthereumProvider:1611, SolanaProvider:989,
+    /// PlatformReserveService:137/203, ProjectTreasuryService:176/427) already uses a
+    /// ctx-carrying sibling. Rather than leave one door with a different rule, it now runs
+    /// the SAME live gate against an explicit operator context, so the seam is uniform in
+    /// code and not merely in this comment.
+    /// </remarks>
     public async Task<AZOAResult<T>> WithPlatformSigningKeyAsync<T>(bool isPlatformContext, Func<byte[], Task<T>> sign)
     {
         ArgumentNullException.ThrowIfNull(sign);
+
+        var gate = await _consentGate.EnsureAllowedAsync(OperatorOnlyContext);
+        if (gate.IsError)
+            return new AZOAResult<T> { IsError = true, Message = gate.Message };
+
+        return await ResolvePlatformKeyAsync(LegacyPlatformChainType, isPlatformContext, sign);
+    }
+
+    /// <summary>
+    /// The operator context the context-less platform overload is pinned to (OI-72): no
+    /// acting tenant, no grantor, no scope, so that door can never carry tenant authority.
+    /// </summary>
+    public static SigningContext OperatorOnlyContext { get; } =
+        SigningContext.PlatformFor(LegacyPlatformChainType);
+
+    /// <summary>
+    /// The chain-aware platform door. Authority → chain → that chain's derivation →
+    /// that chain's config secret → derive → sign → zero. Every step that cannot be
+    /// satisfied returns an error result; none of them falls back to another chain,
+    /// and none of them puts a secret or a key byte in the message.
+    /// </summary>
+    private async Task<AZOAResult<T>> ResolvePlatformKeyAsync<T>(
+        string? chainType, bool isPlatformContext, Func<byte[], Task<T>> sign)
+    {
         var result = new AZOAResult<T>();
 
         // Platform-authority guard (decisions table option (c)): the platform
-        // pseudo-wallet has no AvatarId to compare, so authority is the caller's
+        // pseudo-wallet has no UserId to compare, so authority is the caller's
         // explicit assertion. Only platform-authority managers pass `true`; there is
         // deliberately no controller surface for this path. A non-platform caller
         // returns an error and performs NO decrypt.
@@ -172,23 +255,65 @@ public sealed class KeyCustodyService : IKeyCustodyService
             return result;
         }
 
-        var mnemonic = _config.GetValue<string>(PlatformMnemonicConfigPath);
-        if (string.IsNullOrWhiteSpace(mnemonic))
+        if (string.IsNullOrWhiteSpace(chainType))
         {
             result.IsError = true;
-            result.Message = "No platform signing key configured.";
+            result.Message =
+                "No chain was named for the platform signing key. Refusing to guess one: a key derived by "
+                + "another chain's rule signs for an account the caller never named.";
             return result;
         }
 
-        // Derive the raw private-key bytes the signer expects — the SAME
-        // representation WalletKeyService persists (Algorand2 ClearTextPrivateKey),
-        // mirroring AlgorandProvider.ResolveInterimKeyMaterial (:798-799). Copied
-        // into a buffer this method owns so it can be zeroed independently of the
-        // Account's internal keypair. The signer cannot tell this from a user-key
-        // resolve — same byte[] surface, same zeroing contract.
-        byte[] key = (byte[])new AlgoAccount(mnemonic.Trim()).KeyPair.ClearTextPrivateKey.Clone();
+        if (!_derivations.TryGet(chainType, out var derivation))
+        {
+            // THE fail-closed case. Naming the chain (never a value) is what makes this
+            // actionable; falling through to a registered chain's derivation would hand
+            // the signer a wrong-shaped or wrong-account key.
+            result.IsError = true;
+            result.Message =
+                $"No platform signing key derivation is registered for chain '{chainType.Trim()}'. "
+                + $"Chains with a platform key door: {_derivations.RegisteredChainTypesDisplay}. "
+                + "Refusing to derive this chain's key by another chain's rule.";
+            return result;
+        }
+
+        var configured = _config.GetValue<string>(derivation.PlatformKeyConfigPath);
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            result.IsError = true;
+            result.Message =
+                $"No platform signing key configured for chain '{derivation.ChainType}' "
+                + $"(set '{derivation.PlatformKeyConfigPath}').";
+            return result;
+        }
+
+        // Derive the raw key bytes this chain's signer expects — the SAME representation
+        // WalletKeyService persists for that chain (Algorand2 ClearTextPrivateKey, Solnet's
+        // 64-byte secret, a raw secp256k1 scalar). The derivation owns a buffer this method
+        // can zero independently of any SDK-internal keypair, and it is total: a malformed
+        // secret yields `false`, never a partial key and never an exception carrying the
+        // secret. The signer cannot tell this from a user-key resolve — same byte[]
+        // surface, same zeroing contract.
+        if (!derivation.TryDerive(configured, out var key))
+        {
+            result.IsError = true;
+            result.Message =
+                $"The configured platform signing key for chain '{derivation.ChainType}' could not be derived: "
+                + $"'{derivation.PlatformKeyConfigPath}' must be a valid {derivation.SecretDescription}.";
+            return result;
+        }
+
         try
         {
+            if (key.Length != derivation.KeyLength)
+            {
+                result.IsError = true;
+                result.Message =
+                    $"The platform signing key derived for chain '{derivation.ChainType}' is {key.Length} bytes, "
+                    + $"not the expected {derivation.KeyLength}. Refusing to sign with a mismatched key.";
+                return result;
+            }
+
             result.Result = await sign(key);
             return result;
         }
@@ -202,8 +327,15 @@ public sealed class KeyCustodyService : IKeyCustodyService
         }
     }
 
+    /// <summary>
+    /// Chain for a context-carrying platform resolve: the stamped chain when the caller
+    /// supplied one, else the pinned legacy chain. Never inspects config to guess.
+    /// </summary>
+    private static string ChainTypeFor(SigningContext ctx) =>
+        string.IsNullOrWhiteSpace(ctx.ChainType) ? LegacyPlatformChainType : ctx.ChainType;
+
     /// <inheritdoc />
-    public async Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)
+    public async Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid userId)
     {
         // Ownership/eligibility predicate — NO decrypt. Same guards as the resolver,
         // surfaced as a pre-flight so callers can check without touching key bytes.
@@ -219,10 +351,10 @@ public sealed class KeyCustodyService : IKeyCustodyService
 
         var wallet = walletResult.Result;
 
-        if (wallet.AvatarId != avatarId)
+        if (wallet.UserId != userId)
         {
             result.IsError = true;
-            result.Message = "Wallet not owned by this avatar.";
+            result.Message = "Wallet not owned by this user.";
             return result;
         }
 
@@ -241,7 +373,7 @@ public sealed class KeyCustodyService : IKeyCustodyService
         }
 
         result.Result = true;
-        result.Message = "Wallet is signable by this avatar.";
+        result.Message = "Wallet is signable by this user.";
         return result;
     }
 

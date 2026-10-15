@@ -4,6 +4,7 @@ graph LR
     %% Regenerate with: dotnet run --project packages/SurrealForge.Schema -- flowcharts
 
     %% Nodes in this slice
+    action_webhook_event["action_webhook_event: Node"]:::nodeClass
     bridge_tx["bridge_tx: Node"]:::nodeClass
     consent_webhook_event["consent_webhook_event: Node"]:::nodeClass
     consumed_vaa_ledger["consumed_vaa_ledger: Node"]:::nodeClass
@@ -11,42 +12,41 @@ graph LR
     node_fee_atomic_group["node_fee_atomic_group: Node"]:::nodeClass
     node_fee_settlement["node_fee_settlement: Node"]:::nodeClass
     operation_log["operation_log: Node"]:::nodeClass
-    quest_webhook_event["quest_webhook_event: Node"]:::nodeClass
     saga_steps["saga_steps: Node"]:::nodeClass
     webhook_registration["webhook_registration: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
+    action["action: Node (external)"]:::externalNode
+    action_node["action_node: Node (external)"]:::externalNode
+    action_run["action_run: Node (external)"]:::externalNode
     api_key["api_key: Node (external)"]:::externalNode
-    avatar["avatar: Node (external)"]:::externalNode
     consent_grant["consent_grant: Node (external)"]:::externalNode
     holon["holon: Node (external)"]:::externalNode
-    quest["quest: Node (external)"]:::externalNode
-    quest_node["quest_node: Node (external)"]:::externalNode
-    quest_run["quest_run: Node (external)"]:::externalNode
+    user["user: Node (external)"]:::externalNode
     wallet["wallet: Node (external)"]:::externalNode
 
     %% Edges (outbound from this slice)
-    bridge_tx -- "avatar_id [N:1]" --> avatar
-    consent_webhook_event -- "avatar_id [N:1]" --> avatar
-    consent_webhook_event -- "tenant_id [N:1]" --> avatar
+    action_webhook_event -- "action_id [N:1]" --> action
+    action_webhook_event -- "node_id [N:1]" --> action_node
+    action_webhook_event -- "run_id [N:1]" --> action_run
+    action_webhook_event -- "tenant_id [N:1]" --> user
+    bridge_tx -- "user_id [N:1]" --> user
     consent_webhook_event -- "grant_id [N:1]" --> consent_grant
+    consent_webhook_event -- "tenant_id [N:1]" --> user
+    consent_webhook_event -- "user_id [N:1]" --> user
     consumed_vaa_ledger -- "bridge_transaction_id [N:0..1]" --> bridge_tx
     node_fee_atomic_group -- "settlement_id [N:1]" --> node_fee_settlement
     node_fee_settlement -- "fee_operation_id [N:0..1]" --> operation_log
     node_fee_settlement -- "primary_operation_id [N:0..1]" --> operation_log
     operation_log -- "initiator_api_key_id [N:0..1]" --> api_key
-    operation_log -- "acting_tenant_id [N:0..1]" --> avatar
-    operation_log -- "avatar_id [N:0..1]" --> avatar
-    operation_log -- "initiator_avatar_id [N:0..1]" --> avatar
     operation_log -- "holon_id [N:0..1]" --> holon
     operation_log -- "source_holon_id [N:0..1]" --> holon
     operation_log -- "target_holon_id [N:0..1]" --> holon
+    operation_log -- "acting_tenant_id [N:0..1]" --> user
+    operation_log -- "initiator_user_id [N:0..1]" --> user
+    operation_log -- "user_id [N:0..1]" --> user
     operation_log -- "wallet_id [N:0..1]" --> wallet
-    quest_webhook_event -- "tenant_id [N:1]" --> avatar
-    quest_webhook_event -- "quest_id [N:1]" --> quest
-    quest_webhook_event -- "node_id [N:1]" --> quest_node
-    quest_webhook_event -- "run_id [N:1]" --> quest_run
-    webhook_registration -- "tenant_id [N:1]" --> avatar
+    webhook_registration -- "tenant_id [N:1]" --> user
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
     classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

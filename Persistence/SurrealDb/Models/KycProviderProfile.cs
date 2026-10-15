@@ -39,8 +39,8 @@ public partial class KycProviderProfile : ISurrealRecord
     [Default("1")]
     public long TrustRevision { get; set; } = 1;
 
-    [References(typeof(Avatar))]
-    public string UpdatedByAvatarId { get; set; } = string.Empty;
+    [References(typeof(User))]
+    public string UpdatedByUserId { get; set; } = string.Empty;
 
     [Default("time::now()"), ReadOnly]
     public DateTimeOffset CreatedAt { get; set; }

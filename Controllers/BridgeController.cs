@@ -49,7 +49,7 @@ public class BridgeController : ControllerBase
         [FromBody] BridgeInitiateRequest request,
         CancellationToken ct)
     {
-        if (!TryGetAvatarId(out var avatarId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
 
         // Amount is a precision-safe string on the wire and is parsed once into
@@ -58,14 +58,14 @@ public class BridgeController : ControllerBase
                 System.Globalization.CultureInfo.InvariantCulture, out var amount) || amount == 0)
             return BadRequest(new { error = "Amount must be a positive unsigned 64-bit integer." });
 
-        // Optional client Idempotency-Key — avatar-namespaced by the service so a
-        // retried initiate collapses to one chain effect without cross-avatar collisions.
+        // Optional client Idempotency-Key — user-namespaced by the service so a
+        // retried initiate collapses to one chain effect without cross-user collisions.
         // Absent ⇒ null ⇒ service uses its deterministic content key (safe).
         var idempotencyKey = ReadIdempotencyKey();
 
         var result = await _bridgeService.InitiateBridgeAsync(
             request.SourceChain, request.TargetChain, request.TokenId,
-            request.RecipientAddress, avatarId, amount,
+            request.RecipientAddress, userId, amount,
             request.Mode, ct, idempotencyKey);
 
         if (result.IsError)
@@ -84,9 +84,9 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> FetchVAA(string id, CancellationToken ct)
     {
-        if (!TryGetAvatarId(out var avatarId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
-        var result = await _bridgeService.FetchVAAAsync(id, ct, avatarId);
+        var result = await _bridgeService.FetchVAAAsync(id, ct, userId);
         if (result.IsError)
         {
             if (result.Message.Contains("not found"))
@@ -109,10 +109,10 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> RedeemWithVAA(string id, CancellationToken ct)
     {
-        if (!TryGetAvatarId(out var avatarId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
         var idempotencyKey = ReadIdempotencyKey();
-        var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey, avatarId);
+        var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey, userId);
         if (result.IsError)
         {
             if (result.Message.Contains("not found"))
@@ -134,10 +134,10 @@ public class BridgeController : ControllerBase
         [FromBody] BridgeReverseRequest request,
         CancellationToken ct)
     {
-        if (!TryGetAvatarId(out var avatarId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
         var idempotencyKey = ReadIdempotencyKey();
-        var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey, avatarId);
+        var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey, userId);
         if (result.IsError)
             return BadRequest(result.ToErrorPayload());
 
@@ -151,9 +151,9 @@ public class BridgeController : ControllerBase
     [ProducesResponseType(typeof(BridgeTransactionResult), 200)]
     public async Task<IActionResult> GetBridgeStatus(string id, CancellationToken ct)
     {
-        if (!TryGetAvatarId(out var avatarId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
-        var result = await _bridgeService.GetBridgeStatusAsync(id, ct, avatarId);
+        var result = await _bridgeService.GetBridgeStatusAsync(id, ct, userId);
         if (result.IsError)
             return NotFound(result.ToErrorPayload());
 
@@ -161,15 +161,15 @@ public class BridgeController : ControllerBase
     }
 
     /// <summary>
-    /// Get bridge history for the authenticated avatar.
+    /// Get bridge history for the authenticated user.
     /// </summary>
     [HttpGet("history")]
     [ProducesResponseType(typeof(IEnumerable<BridgeTransactionResult>), 200)]
     public async Task<IActionResult> GetHistory(CancellationToken ct)
     {
-        if (!TryGetAvatarId(out var avatarId))
+        if (!TryGetUserId(out var userId))
             return Unauthorized();
-        var result = await _bridgeService.GetBridgeHistoryAsync(avatarId, ct);
+        var result = await _bridgeService.GetBridgeHistoryAsync(userId, ct);
         if (result.IsError)
             return BadRequest(result.ToErrorPayload());
 
@@ -193,13 +193,13 @@ public class BridgeController : ControllerBase
         return null;
     }
 
-    private bool TryGetAvatarId(out Guid avatarId)
+    private bool TryGetUserId(out Guid userId)
     {
-        var avatarClaim = User.FindFirst("avatarId")?.Value;
-        if (!string.IsNullOrWhiteSpace(avatarClaim))
-            return Guid.TryParse(avatarClaim, out avatarId) && avatarId != Guid.Empty;
+        var userClaim = User.FindFirst("userId")?.Value;
+        if (!string.IsNullOrWhiteSpace(userClaim))
+            return Guid.TryParse(userClaim, out userId) && userId != Guid.Empty;
 
-        return AzoaClaims.TryGetSubjectId(User, out avatarId) && avatarId != Guid.Empty;
+        return AzoaClaims.TryGetSubjectId(User, out userId) && userId != Guid.Empty;
     }
 }
 

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using System.Security.Claims;
 using AZOA.WebAPI.Controllers;
@@ -10,6 +10,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+
+using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Tests.Controllers;
 
@@ -35,15 +37,16 @@ public sealed class AllocationControllerTests
             It.IsAny<Guid>(),
             It.IsAny<string?>(),
             It.IsAny<string>(),
-            It.IsAny<Guid?>()), Times.Never);
+            It.IsAny<Guid?>(),
+            It.IsAny<ReserveDrawAuthority?>()), Times.Never);
     }
 
     [Fact]
-    public async Task Allocate_ApiKeyPrincipalUsesTheAuthenticatedAvatarClaim()
+    public async Task Allocate_ApiKeyPrincipalUsesTheAuthenticatedUserClaim()
     {
         var manager = new Mock<IAllocationManager>();
         var apiKeyId = Guid.NewGuid();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         Guid? capturedCaller = null;
         manager.Setup(candidate => candidate.AllocateAsync(
                 It.IsAny<Guid>(),
@@ -51,21 +54,22 @@ public sealed class AllocationControllerTests
                 It.IsAny<Guid>(),
                 It.IsAny<string?>(),
                 It.IsAny<string>(),
-                It.IsAny<Guid?>()))
-            .Callback<Guid, AllocationRequest, Guid, string?, string, Guid?>(
-                (_, _, caller, _, _, _) => capturedCaller = caller)
+                It.IsAny<Guid?>(),
+                It.IsAny<ReserveDrawAuthority?>()))
+            .Callback<Guid, AllocationRequest, Guid, string?, string, Guid?, ReserveDrawAuthority?>(
+                (_, _, caller, _, _, _, _) => capturedCaller = caller)
             .ReturnsAsync(AZOAResult<AllocationResult>.Success(new AllocationResult()));
         var controller = CreateController(
             manager.Object,
             authMethod: "ApiKey",
             new Claim("ApiKeyId", apiKeyId.ToString()),
-            new Claim("AvatarId", avatarId.ToString()),
+            new Claim("UserId", userId.ToString()),
             new Claim("scope", AzoaScopes.NftMint));
 
         var result = await controller.Allocate(Guid.NewGuid(), new AllocationRequest());
 
         result.Result.Should().BeOfType<OkObjectResult>();
-        capturedCaller.Should().Be(avatarId);
+        capturedCaller.Should().Be(userId);
     }
 
     private static AllocationController CreateController(
@@ -81,7 +85,11 @@ public sealed class AllocationControllerTests
             allClaims.Add(new Claim("AuthMethod", authMethod));
         allClaims.AddRange(claims);
 
-        return new AllocationController(manager)
+        // W3.6 added an edge consent check: with no gate the controller REFUSES (503)
+        // rather than waving the allocation through, so these principal-shape tests have
+        // to supply a gate that says yes. What the gate itself does under a real grant is
+        // covered by AllocationConsentGateTests, not here.
+        return new AllocationController(manager, PermissiveConsentGate())
         {
             ControllerContext = new ControllerContext
             {
@@ -91,5 +99,14 @@ public sealed class AllocationControllerTests
                 },
             },
         };
+    }
+
+    private static ITenantConsentGate PermissiveConsentGate()
+    {
+        var gate = new Mock<ITenantConsentGate>();
+        gate.Setup(candidate => candidate.EnsureAllowedAsync(
+                It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { Result = true });
+        return gate.Object;
     }
 }

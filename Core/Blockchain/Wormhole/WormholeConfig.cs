@@ -85,16 +85,9 @@ public class WormholeConfig
     /// <summary>Minimum Guardian signatures required for VAA acceptance.</summary>
     public int MinGuardianSignatures { get; set; } = 13;
 
-    /// <summary>
-    /// When true (default), VAA acceptance REQUIRES real per-signature
-    /// secp256k1 verification via a wired <c>IVaaSignatureVerifier</c>. If no
-    /// verifier is registered, <c>VerifyVAAAsync</c> FAILS CLOSED — it refuses
-    /// to treat any VAA as trusted rather than silently skipping the
-    /// cryptographic check. Set to false ONLY in trusted dev/test environments
-    /// where structural + quorum validation is explicitly accepted as
-    /// sufficient. NEVER set false where real value can move.
-    /// </summary>
-    public bool RequireFullSignatureVerification { get; set; } = true;
+    // NOTE: there is deliberately NO RequireFullSignatureVerification switch.
+    // Per-signature secp256k1 verification is unconditional — see
+    // Providers/Blockchain/AGENTS.md §bridge "Verification path".
 
     /// <summary>
     /// Known size of the active Guardian set, when available. When set

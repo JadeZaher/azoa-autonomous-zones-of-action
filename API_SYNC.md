@@ -15,16 +15,92 @@ fungible-token, and bridge responses likewise do not return raw idempotency
 keys; use the request header to correlate a caller-owned request and the
 allocation receipt endpoint for allocation status.
 
+## SDK 0.3.1 — Waves 3-4 parity (W4.7)
+
+Adds typed coverage for the Wave 3-4 value-rail surfaces that had shipped
+backend-first with no SDK method: Hold (`HoldController`), fiat on-ramp
+checkout (`FiatCheckoutController`), and the two Admin/Operator-scoped read
+surfaces (`PlatformTokenController`, `ProjectTreasuryController`). See the
+new rows below. `AllocationRequest.kind` gains `"IssueUnits"` plus
+`partition`/`purpose`/`expectedFeeScheduleVersion`/`previewOnly` (D47 — the
+tenant-facing default allocation path; `Mint` stays retired-for-tenants).
+
+**Breaking, pre-launch (no external consumer depended on it):** the SDK's
+`./orchestration` subpath export — a standalone Stripe checkout-and-mint
+orchestrator that duplicated `FiatCheckoutController` + `AllocationController`
+client-side and held its own Stripe secret key — is removed. `stripe` is no
+longer a dependency of this package. A consumer that wants its own
+orchestration bridge builds it externally against `azoa.api.startFiatCheckout`
++ `azoa.api.allocate`; the backend's own fiat rail (`FiatCheckoutController` →
+`FiatRailProvider` → a registered `IFiatSettlementHandler`) is the
+supported path for this node's own on-ramp.
+
+**Hygiene fixes (no behavior change under existing tests):**
+- `TinymanAdapter` no longer defaults an unknown ASA's decimals to `6`; it
+  resolves them from a configured indexer (`TinymanConfig.indexer`) and fails
+  closed (an `SdkError`, never a guess) when neither the caller nor an
+  indexer can supply them. Native ALGO (asset id 0) still resolves to 6
+  directly — a protocol constant, not a default.
+- `AlgorandProvider.buildTransfer`'s ALGO→microAlgo and ASA base-unit
+  conversion no longer goes through `Number(...) * 10**decimals` floating
+  math; both parse the decimal amount string exactly via `BigInt` and only
+  convert to a `number` when the exact result is a safe integer, throwing an
+  `INVALID_INPUT` `SdkError` otherwise. Output is unchanged for every amount
+  the existing behavior computed correctly (e.g. `"1.5"` ALGO → `1500000`).
+- `ChainProvider.supportsBridging` is now documented as a static
+  participation declaration, not a live availability check — see
+  `AzoaClient.checkBridgeCapability(chainId)`, a new method that asks the
+  backend's `GET /api/bridge/routes` registry whether a chain is currently an
+  enabled source or target on any route.
+
+## SDK 0.4.0 — final value-rail parity (W10.3)
+
+Adds typed coverage for the remaining consumer-facing value-rail surfaces and
+the public transparency reads that had shipped backend-first with no SDK
+method: sponsorship `Exchange` (`ExchangeController`), the fiat off-ramp
+cash-out flow (`FiatPayoutController` — availability, payout-account status
+and setup, start, history), and the anonymous public reads on
+`NodeTransparencyController` (current snapshot, the three audit trails, and
+the signed history checkpoint). See the new rows below.
+
+`FiatReversalView` and its `FiatReversalKind` / `FiatReversalStatus` /
+`FiatReversalRecoveryPath` types are also added, **types only** — mirrors of
+`FiatReversalOperatorController`'s wire shape so an operator console can
+import a typed shape instead of hand-rolling one locally (the admin
+`fiat-reversals` frontend page previously declared its own copy). No SDK
+*method* wraps that controller: it is gated by the hardened JWT `Operator`
+policy with no API-key path at all, unlike `PlatformTokenController` /
+`ProjectTreasuryController` in 0.3.1, which stayed Operator-scoped but kept a
+bearer-JWT path an SDK caller can actually reach. The same reasoning holds
+`FiatPayoutOperatorController`'s operator board (advance/return/park/restart
+a cash-out) out of the SDK; only the tenant-facing `FiatPayoutController` gets
+methods here.
+
+**ArdaNova .NET clients — not re-opened.** W4.7 already decided this (see
+"Decision: ArdaNova's .NET clients are NOT generated from this SDK" below);
+that decision was not deferred and W10.3 does not re-litigate it. The answer
+stands: hand-maintain ArdaNova's HTTP clients against this document, or
+generate them from AZOA's own OpenAPI document in a future track — never from
+this TypeScript SDK's source.
+
+**Publish owed.** This SDK bump (0.3.1 → 0.4.0) was made source-only; running
+`tsup` and `npm publish` needs a live build/publish step this track does not
+perform (concurrent agents were editing the same tree). Build and publish
+`azoa-sdk@0.4.0` to npm before any consumer takes a dependency on the methods
+below.
+
 ## Method Mapping Table
 
 | Controller | Endpoint | HTTP | SDK Method | SDK File | Status |
 |---|---|---|---|---|---|
-| **Avatar** | /api/avatar/register | POST | `register` | client.ts | OK |
-| | /api/avatar/login | POST | `login` | client.ts | OK |
-| | /api/avatar/{id} | GET | `getAvatar` | client.ts | OK |
-| | /api/avatar | GET | `getAllAvatars` | client.ts | OK |
-| | /api/avatar/{id} | PUT | `updateAvatar` | client.ts | OK |
-| | /api/avatar/{id} | DELETE | `deleteAvatar` | client.ts | OK |
+| **User** | /api/user/register | POST | `register` | client.ts | OK |
+| | /api/user/login | POST | `login` | client.ts | OK |
+| | /api/user/{id} | GET | `getUser` | client.ts | OK |
+| | /api/user | GET | `getAllUsers` | client.ts | OK |
+| | /api/user/{id} | PUT | `updateUser` | client.ts | OK |
+| | /api/user/{id} | DELETE | `deleteUser` | client.ts | OK |
+| | /api/user/logout | POST | `logoutEverywhere` | client.ts | OK |
+| | /api/user/{id}/dapp-role | PUT | `assignDappRole` | client.ts | OK |
 | **Wallet** | /api/wallet/{id} | GET | `getWallet` | client.ts | OK |
 | | /api/wallet | GET | `listWallets` | client.ts | OK |
 | | /api/wallet | POST | `createWallet` | client.ts | OK |
@@ -32,16 +108,28 @@ allocation receipt endpoint for allocation status.
 | | /api/wallet/{id} | DELETE | `deleteWallet` | client.ts | OK |
 | | /api/wallet/{id}/set-default | POST | `setDefaultWallet` | client.ts | OK |
 | | /api/wallet/{id}/portfolio | GET | `getWalletPortfolio` | client.ts | OK |
-| | /api/wallet/generate | POST | `generateWallet` | client.ts | OK |
-| | /api/wallet/connect | POST | `connectWallet` | client.ts | OK |
-| | /api/wallet/{id}/export | POST | `exportWallet` | client.ts | OK |
-| | /api/wallet/{id}/topup | POST | `topupWallet` | client.ts | OK |
-| | /api/wallet/types | GET | `getWalletsByType` | client.ts | OK |
-| **Holon** | /api/holon/{id} | GET | `getHolon` | holon-query.ts | OK |
-| | /api/holon | GET | `queryHolons` | holon-query.ts | OK |
-| | /api/holon | POST | `createHolon` | client.ts | OK |
-| | /api/holon/{id} | PUT | `updateHolon` | client.ts | OK |
-| | /api/holon/{id}/compose | GET | `getComposite` | holon-query.ts | OK |
+| | /api/wallet/generate | POST | — | — | **SDK gap** (`generateWallet` no longer in the SDK) |
+| | /api/wallet/connect | POST | — | — | **SDK gap** (`connectWallet` no longer in the SDK) |
+| | /api/wallet/{id}/export | POST | — | — | **SDK gap** (`exportWallet` no longer in the SDK) |
+| | /api/wallet/{id}/topup | POST | — | — | **SDK gap** (`topupWallet` no longer in the SDK) |
+| | /api/wallet/types | GET | — | — | **SDK gap** (`getWalletsByType` no longer in the SDK) |
+| | (no endpoint) | — | `rotateWalletKeys` | client.ts | see KeyRotation — `POST /api/admin/key-rotation/rotate` |
+| **Holon** | /api/holon/{id} | GET | `holons.get` | holon-query.ts | OK |
+| | /api/holon | GET | `holons.execute` (fluent builder) | holon-query.ts | OK |
+| | /api/holon | POST | `holons.create` | holon-query.ts | OK |
+| | /api/holon/{id} | PUT | `holons.update` | holon-query.ts | OK |
+| | /api/holon/{id} | DELETE | `holons.delete` | holon-query.ts | OK |
+| | /api/holon/{id}/compose | GET | `holons.getComposite` | holon-query.ts | OK |
+| | /api/holon/{id}/children | GET | `holons.getChildren` | holon-query.ts | OK |
+| | /api/holon/{id}/peers | GET | `holons.getPeers` | holon-query.ts | OK |
+| | /api/holon/{id}/ancestors | GET | `holons.getAncestors` | holon-query.ts | OK |
+| | /api/holon/{id}/descendants | GET | `holons.getDescendants` | holon-query.ts | OK |
+| | /api/holon/{id}/clone | POST | `holons.clone` | holon-query.ts | OK |
+| | /api/holon/{id}/interact | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/mint | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/exchange | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/propagate | POST | — | — | **SDK gap** |
+| | /api/holon/{id}/move | POST | — | — | **SDK gap** |
 | **NFT** | /api/nft/{id} | GET | `getNft` | client.ts | OK |
 | | /api/nft | GET | `listNfts` | client.ts | OK |
 | | /api/nft/mint | POST | `mintNft` | client.ts | OK (safe operation projection) |
@@ -49,10 +137,10 @@ allocation receipt endpoint for allocation status.
 | | /api/nft/{id}/burn | POST | `burnNft` | client.ts | OK (safe operation projection) |
 | | /api/nft/fungible-mint | POST | `fungibleMint` | client.ts | OK (safe response) |
 | | /api/nft/{id}/metadata | GET | `getNftMetadata` | client.ts | OK |
-| **AvatarNFT** | /api/avatarnft | POST | `mintAvatarNFT` | client.ts | OK |
-| | /api/avatarnft/{id} | GET | `getAvatarNFT` | client.ts | OK |
-| | /api/avatarnft/{id}/transfer | POST | `transferAvatarNFT` | client.ts | OK |
-| | /api/avatarnft/{id}/burn | POST | `burnAvatarNFT` | client.ts | OK |
+| **UserNFT** | /api/usernft | POST | `mintUserNFT` | client.ts | OK |
+| | /api/usernft/{id} | GET | `getUserNFT` | client.ts | OK |
+| | /api/usernft/{id}/transfer | POST | `transferUserNFT` | client.ts | OK |
+| | /api/usernft/{id}/burn | POST | `burnUserNFT` | client.ts | OK |
 | **Bridge** | /api/bridge/routes | GET | `getBridgeRoutes` | client.ts | OK |
 | | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK (safe response) |
@@ -60,68 +148,146 @@ allocation receipt endpoint for allocation status.
 | | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK (safe response) |
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
+| **Exchange** | /api/exchange/{userId} | POST | `exchange` | client.ts | OK — requires an API-key principal carrying the exchange-signing scope, exactly like `allocate`; idempotencyKey is REQUIRED (not optional, unlike allocate) |
+| | /api/exchange/receipt/{idempotencyKey} | GET | `getExchangeReceipt` | client.ts | OK |
+| **Hold** | /api/holds | POST | `openHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId} | GET | `getHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId}/release | POST | `releaseHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId}/refund | POST | `refundHold` | client.ts | OK |
+| | /api/holds/{chain}/{holdId}/release-into-hold | POST | `releaseHoldIntoHold` | client.ts | OK |
+| | /api/holds/mine | GET | `listMyHolds` | client.ts | OK |
+| **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
+| | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
+| | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
+| **Fiat payout (off-ramp / cash-out)** | /api/fiat/payouts/{userId}/availability | GET | `getCashOutAvailability` | client.ts | OK |
+| | /api/fiat/payouts/{userId}/account | GET | `getPayoutAccountStatus` | client.ts | OK |
+| | /api/fiat/payouts/{userId}/account | POST | `beginPayoutAccountSetup` | client.ts | OK |
+| | /api/fiat/payouts/{userId} | POST | `startCashOut` | client.ts | OK |
+| | /api/fiat/payouts/{userId} | GET | `listCashOutHistory` | client.ts | OK |
+| **FiatPayoutOperator** (Admin/Operator, JWT-only) | /api/admin/fiat-payouts | GET | — | — | Deliberate SDK gap — operator board with no API-key path; not part of this SDK's scope |
+| | /api/admin/fiat-payouts/{id} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-payouts/accounts/{userId} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-payouts/{id}/advance \| /return \| /park \| /restart | POST | — | — | Deliberate SDK gap — same as above |
+| **FiatReversalOperator** (Admin/Operator, JWT-only) | /api/admin/fiat-reversals | GET | — | — | Deliberate SDK gap for the METHOD (operator board, no API-key path); `FiatReversalView` TYPE is exported (0.4.0) for a console to type its own `request()` calls |
+| | /api/admin/fiat-reversals/{id} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-reversals/accounts/{userId} | GET | — | — | Deliberate SDK gap — same as above |
+| | /api/admin/fiat-reversals/{id}/recover \| /settle \| /restart \| /clear-flag | POST | — | — | Deliberate SDK gap — same as above |
+| **NodeTransparency** (public, anonymous) | /api/node-transparency/current | GET | `getNodeTransparencySnapshot` | client.ts | OK |
+| | /api/node-transparency/audit/governance | GET | `listNodeGovernanceAudit` | client.ts | OK |
+| | /api/node-transparency/audit/fees | GET | `listNodeFeeAudit` | client.ts | OK |
+| | /api/node-transparency/audit/treasury | GET | `listNodeTreasuryAudit` | client.ts | OK |
+| | /api/node-transparency/audit/checkpoint | GET | `getNodeTransparencyHistoryCheckpoint` | client.ts | OK |
+| **PlatformToken** (Admin/Operator) | /api/admin/platform-token | GET | `getPlatformTokenState` | client.ts | OK |
+| | /api/admin/platform-token/genesis | POST | — | — | Deliberate SDK gap — the one-time mint additionally requires a fresh `RecentNodeOperatorSession` (non-API-key node-operator login) this SDK's bearer/API-key config cannot express; run genesis through the operator console, not this SDK. |
+| **ProjectTreasury** (Admin/Operator) | /api/admin/project-treasuries | GET | `getProjectTreasury` | client.ts | OK |
+| | /api/admin/project-treasuries/tenant/{tenantId} | GET | `listProjectTreasuriesByTenant` | client.ts | OK |
+| | /api/admin/project-treasuries/resolve | POST | — | — | **SDK gap** — operator-only account provisioning; not part of this track's read-surface scope. |
+| | /api/admin/project-treasuries/close | POST | — | — | **SDK gap** — operator-only account retirement; not part of this track's read-surface scope. |
 | **Tenant custodial account** | /api/tenant/custodial-accounts/capabilities | GET | `getTenantCustodialCapabilities` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject} | PUT | `ensureTenantCustodialAccount` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject} | GET | `getTenantCustodialAccount` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/session | POST | `beginTenantKyc` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/submissions | POST | `submitTenantKyc` | client.ts | OK |
 | **BlockchainOperation** | /api/blockchainoperation/{id} | GET | `getBlockchainOperation` | client.ts | OK (safe projection) |
-| | /api/blockchainoperation/avatar/{avatarId} | GET | `getBlockchainOperationsByAvatar` | client.ts | OK (safe projection) |
+| | /api/blockchainoperation/user/{userId} | GET | `getBlockchainOperationsByUser` | client.ts | OK (safe projection) |
 | **Allocation receipt** | /api/allocation/receipt | GET | — | — | SDK gap (API-key caller surface; .NET SDK track) |
 | | /api/allocation/receipt/reconcile | POST | — | — | SDK gap (API-key caller surface; .NET SDK track) |
-| **STARODK** | /api/starodk/{id} | GET | `getSTARODK` | client.ts | OK |
-| | /api/starodk | GET | `listSTARODK` | client.ts | OK |
-| | /api/starodk | POST | `createSTARODK` | client.ts | OK |
-| | /api/starodk/{id} | PUT | `updateSTARODK` | client.ts | OK |
-| | /api/starodk/{id} | DELETE | `deleteSTARODK` | client.ts | OK |
-| | /api/starodk/{id}/generate-dapp | POST | `generateSTARDapp` | client.ts | OK |
-| | /api/starodk/{id}/deploy | POST | `deploySTARODK` | client.ts | OK |
-| **Quest** | /api/quest | POST | `createQuest` | client.ts | OK |
-| | /api/quest/{id} | GET | `getQuest` | client.ts | OK |
-| | /api/quest/avatar/{avatarId} | GET | `listQuestsByAvatar` | client.ts | OK |
-| | /api/quest/{id} | PUT | `updateQuest` | client.ts | OK |
-| | /api/quest/{id} | DELETE | `deleteQuest` | client.ts | OK |
-| | /api/quest/{id}/validate | POST | `validateQuestDag` | client.ts | OK |
-| | /api/quest/{id}/publish | POST | `publishQuest` | client.ts | OK |
-| | /api/quest/{id}/unpublish | POST | `unpublishQuest` | client.ts | OK |
-| | /api/quest/{id}/execute | POST | `executeQuest` | client.ts | OK |
-| | /api/quest/{id}/nodes/{nodeId}/execute | POST | `executeQuestNode` | client.ts | OK |
-| | /api/quest/templates | POST | `createQuestTemplate` | client.ts | OK |
-| | /api/quest/templates/{id} | GET | `getQuestTemplate` | client.ts | OK |
-| | /api/quest/templates | GET | `listQuestTemplates` | client.ts | OK |
-| | /api/quest/templates/{id}/instantiate | POST | `instantiateQuestTemplate` | client.ts | OK |
-| | /api/quest/node-templates | POST | `createQuestNodeTemplate` | client.ts | OK |
-| | /api/quest/node-templates | GET | `listQuestNodeTemplates` | client.ts | OK |
-| | /api/quest/{questId}/nodes | GET | — | — | **SDK gap** |
-| | /api/quest/{questId}/nodes | POST | — | — | **SDK gap** |
-| | /api/quest/{questId}/nodes/{nodeId} | PUT | — | — | **SDK gap** |
-| | /api/quest/{questId}/nodes/{nodeId} | DELETE | — | — | **SDK gap** |
-| | /api/quest/{questId}/edges | POST | — | — | **SDK gap** |
-| | /api/quest/{questId}/edges/{edgeId} | DELETE | — | — | **SDK gap** |
-| | /api/quest/{questId}/topological-order | GET | — | — | **SDK gap** |
-| | /api/quest/{questId}/dependencies | POST | — | — | **SDK gap** |
-| | /api/quest/{questId}/dependencies/{depId} | DELETE | — | — | **SDK gap** |
-| | /api/quest/{questId}/dependency-status | GET | — | — | **SDK gap** |
-| | /api/quest/runs/{runId} | GET | — | — | **SDK gap** |
-| | /api/quest/{questId}/runs | GET | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/execution-state | GET | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/complete | POST | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/fork | POST | — | — | **SDK gap** |
-| | /api/quest/runs/{runId}/mark-failed | POST | — | — | **SDK gap** |
+| **ActionGraphBundle** | /api/actiongraphbundle/{id} | GET | `getActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle | GET | `listActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle | POST | `createActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle/{id} | PUT | `updateActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle/{id} | DELETE | `deleteActionGraphBundle` | client.ts | OK |
+| | /api/actiongraphbundle/{id}/generate | POST | `generateActionGraphBundleDapp` | client.ts | OK |
+| | /api/actiongraphbundle/{id}/ecosystem | GET | — | — | **SDK gap** |
+| | /api/actiongraphbundle/{id}/ecosystem/dapp-series | POST | — | — | **SDK gap** |
+| | /api/actiongraphbundle/{id}/deploy | POST | `deployActionGraphBundle` | client.ts | OK |
+| **Action** | /api/action | POST | `createAction` | client.ts | OK |
+| | /api/action/{id} | GET | `getAction` | client.ts | OK |
+| | /api/action/user/{userId} | GET | `listActionsByUser` | client.ts | OK |
+| | /api/action/{id} | PUT | `updateAction` | client.ts | OK |
+| | /api/action/{id} | DELETE | `deleteAction` | client.ts | OK |
+| | /api/action/{id}/validate | POST | `validateActionDag` | client.ts | OK |
+| | /api/action/{id}/publish | POST | `publishAction` | client.ts | OK |
+| | /api/action/{id}/unpublish | POST | `unpublishAction` | client.ts | OK |
+| | /api/action/{id}/execute | POST | `executeAction` | client.ts | OK |
+| | /api/action/{id}/nodes/{nodeId}/execute | POST | `executeActionNode` | client.ts | OK |
+| | /api/action/templates | POST | `createActionTemplate` | client.ts | OK |
+| | /api/action/templates/{id} | GET | `getActionTemplate` | client.ts | OK |
+| | /api/action/templates | GET | `listActionTemplates` | client.ts | OK |
+| | /api/action/templates/{id}/instantiate | POST | `instantiateActionTemplate` | client.ts | OK |
+| | /api/action/node-templates | POST | `createActionNodeTemplate` | client.ts | OK |
+| | /api/action/node-templates | GET | `listActionNodeTemplates` | client.ts | OK |
+| | /api/action/{actionId}/nodes | GET | — | — | **SDK gap** |
+| | /api/action/{actionId}/nodes | POST | — | — | **SDK gap** |
+| | /api/action/{actionId}/nodes/{nodeId} | PUT | — | — | **SDK gap** |
+| | /api/action/{actionId}/nodes/{nodeId} | DELETE | — | — | **SDK gap** |
+| | /api/action/{actionId}/edges | POST | — | — | **SDK gap** |
+| | /api/action/{actionId}/edges/{edgeId} | DELETE | — | — | **SDK gap** |
+| | /api/action/{actionId}/topological-order | GET | — | — | **SDK gap** |
+| | /api/action/{actionId}/dependencies | POST | — | — | **SDK gap** |
+| | /api/action/{actionId}/dependencies/{depId} | DELETE | — | — | **SDK gap** |
+| | /api/action/{actionId}/dependency-status | GET | — | — | **SDK gap** |
+| | /api/action/runs/{runId} | GET | — | — | **SDK gap** |
+| | /api/action/{actionId}/runs | GET | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/execution-state | GET | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/complete | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/fork | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/mark-failed | POST | — | — | **SDK gap** |
+| | /api/action/public | GET | `listPublicActions` | client.ts | OK |
+| | /api/action/{id}/preview | GET | — | — | **SDK gap** |
+| | /api/action/{id}/start-workflow | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/advance | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/signal | POST | — | — | **SDK gap** |
+| | /api/action/runs/{runId}/reconcile | POST | — | — | **SDK gap** |
+| | /api/action/runs/reconcile-sweep | POST | — | — | **SDK gap** |
+| | /api/action/{id}/run-access | PUT | `setActionRunAccess` | client.ts | OK |
+| | /api/action/{id}/invite | POST | `inviteUser` | client.ts | OK |
+| | /api/action/{id}/invite/{userId} | DELETE | `revokeInvite` | client.ts | OK |
+| | /api/action/{id}/access-requests | POST | `requestActionAccess` | client.ts | OK |
+| | /api/action/{id}/access-requests | GET | `listAccessRequests` | client.ts | OK |
+| | /api/action/access-requests/{requestId}/decision | POST | `decideAccessRequest` | client.ts | OK |
+| | /api/action/access-requests/{requestId}/withdraw | POST | `withdrawAccessRequest` | client.ts | OK |
+| | /api/action/access-requests/mine | GET | `listMyAccessRequests` | client.ts | OK |
 | **Search** | /api/search | POST | `search` | client.ts | OK |
 | | /api/search/facets | GET | `getSearchFacets` | client.ts | OK |
 | **ApiKey** | /api/apikey | POST | `createApiKey` | client.ts | OK |
 | | /api/apikey | GET | `listApiKeys` | client.ts | OK |
 | | /api/apikey/{id}/revoke | POST | `revokeApiKey` | client.ts | OK |
 | | /api/apikey/{id} | DELETE | `deleteApiKey` | client.ts | OK |
-| **DappComposition** | /api/dappcomposition/{id} | GET | `getDappComposition` | client.ts | OK |
-| **DappSeries** | /api/dappseries/{id} | GET | `getDappSeries` | client.ts | OK |
-| | /api/dappseries | GET | `queryDappSeries` | client.ts | OK |
-| | /api/dappseries | POST | `createDappSeries` | client.ts | OK |
-| | /api/dappseries/{id} | PUT | `updateDappSeries` | client.ts | OK |
+| | /api/apikey/{id}/rotate | POST | `rotateApiKey` | client.ts | OK |
+| | /api/apikey/scopes | GET | `listIssuableScopes`, `listSelfIssuableApiKeyScopes` | client.ts | OK |
+| | /api/apikey/tenant | POST | — | — | **SDK gap** (tenant-scoped key issuance) |
+| **DappComposition** | /api/dapp-series/{id}/compose | POST | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/validate | GET | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/manifest | GET | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/generate | POST | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/deploy | POST | — | — | **SDK gap** |
+| | /api/dapp-series/{id}/status | GET | — | — | **SDK gap** |
+| **DappSeries** | /api/dapp-series/{id} | GET | `getDappSeries` | client.ts | OK |
+| | /api/dapp-series | GET | `listDappSeries` | client.ts | OK |
+| | /api/dapp-series | POST | `createDappSeries` | client.ts | OK |
+| | /api/dapp-series/{id} | PUT | `updateDappSeries` | client.ts | OK |
+| | /api/dapp-series/{id} | DELETE | `deleteDappSeries` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions | GET | `listSeriesActions` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions | POST | `addSeriesAction` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions/{actionId} | DELETE | `removeSeriesAction` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions/{actionId}/order | PUT | `reorderSeriesAction` | client.ts | OK |
+| | /api/dapp-series/{seriesId}/actions/{actionId}/mappings | PUT | `updateSeriesMappings` | client.ts | OK |
 | **Swap** | /api/swap/quote | GET | `getSwapQuote` | client.ts | OK |
 | | /api/swap/execute | POST | `executeSwap` | client.ts | OK |
-| **Network** | /api/network | GET | `getNetworkInfo` | client.ts | OK |
+| **Network** | /api/network | GET | — | — | **SDK gap** (`getNetworkInfo` no longer in the SDK) |
+| **Credential** | /api/credential/issue/{recipientUserId} | POST | — | — | **SDK gap** — backend two-party mint route (D41) has no typed SDK method yet |
+| | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |
+| **Analytics** | /api/analytics/transactions | GET | `getAnalyticsTransactions` | client.ts | OK |
+| | /api/analytics/positions | GET | `getAnalyticsPositions` | client.ts | OK |
+| **Allocation** | /api/allocation/{userId} | POST | `allocate` | client.ts | OK — `AllocationRequest.kind` covers `Mint` (retired-for-tenants) \| `Transfer` \| `IssueUnits` (D47 default), plus `partition`/`purpose`/`expectedFeeScheduleVersion`/`previewOnly` |
+| **HolonTypeRegistry** | /api/holon-types | GET/POST | `listHolonTypes`, `registerHolonType` | client.ts | OK |
+| | /api/holon-types/{assetType} | GET/DELETE | `getHolonType`, `deleteHolonType` | client.ts | OK |
+| | /api/holon-types/{assetType}/deactivate | POST | `deactivateHolonType` | client.ts | OK |
+| **SagaOperator** | /api/admin/sagas/dead-letters | GET | `listSagaDeadLetters` | client.ts | OK |
+| | /api/admin/sagas/{id}/requeue | POST | `requeueSagaStep` | client.ts | OK |
+| | /api/admin/sagas/{id}/cancel | POST | `cancelSagaStep` | client.ts | OK |
+| **KeyRotation** | /api/admin/key-rotation/rotate | POST | `rotateWalletKeys` | client.ts | OK |
 
 ## Known Drift (Snapshot 2026-06-11)
 
@@ -129,7 +295,7 @@ allocation receipt endpoint for allocation status.
 
 ~~1. **`GET /api/nft` (list all NFTs)**~~ — `listNfts()` added to SDK. Resolved.
 
-~~2. **`PUT /api/starodk/{id}` (update STARODK)**~~ — `updateSTARODK()` added to SDK. Resolved.
+~~2. **`PUT /api/actiongraphbundle/{id}` (update the bundle)**~~ — `updateActionGraphBundle()` added to SDK. Resolved.
 
 ~~3. **`GET /api/swap/quote`**~~ — `getSwapQuote()` added to SDK; backend endpoint is `GET /api/swap/quote`. Resolved.
 
@@ -137,13 +303,21 @@ allocation receipt endpoint for allocation status.
 
 ### Open Drift
 
-5. **`GET /api/blockchainoperation` (list all)** — Only `getByAvatar` and `getById` exist; no list-all method.
+5. **`GET /api/blockchainoperation` (list all)** — Only `getByUser` and `getById` exist; no list-all method.
 
-6. **`DELETE /api/quest/templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
+6. **`DELETE /api/action/templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
 
-7. **`DELETE /api/quest/node-templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
+7. **`DELETE /api/action/node-templates/{id}`** — Create and list exist; delete is missing from both controller and SDK.
 
-8. **Quest sub-resource endpoints (nodes, edges, dependencies, runs) — 16 new controller routes** — Shipped in `quest-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the Quest section above.
+8. **Action sub-resource endpoints (nodes, edges, dependencies, runs) — 16 controller routes** — Shipped in `action-api` phase-F. No SDK methods exist yet. See the SDK gap rows in the Action section above.
+
+9. **Wallet lifecycle methods regressed out of the SDK** — `generateWallet`, `connectWallet`, `exportWallet`, `topupWallet` and `getWalletsByType` are documented history but no longer exist in `sdk/azoa-wallet/src`. The five controller endpoints are still live, so this is an SDK gap, not a removed surface. Decide whether to restore the methods or retire the routes.
+
+10. **`getNetworkInfo` regressed out of the SDK** — `GET /api/network` is live with no typed method.
+
+11. **Durable-run control surface has no SDK** — `start-workflow`, `advance`, `signal`, `reconcile` and `reconcile-sweep` on `ActionRun` are reachable only through `azoa.api.request(...)`.
+
+12. **Whole controllers with no mapping rows** — `Backfill` (`/api/admin/backfill`), `Consent` (`/api/user/consent`), `ExternalAuth` (`/auth/oauth`), `Kyc` (`/api/kyc`), `KycCallback` (`/api/kyc/callback`), `NodeGovernance` (`/api/node-governance`), `NodeOperator` (`/api/operator`), `NodeOperatorSession` (`/api/operator/session`), `TenantConsent` (`/api/tenant/consent`), `TenantKycConfiguration` (`/api/tenant/kyc`), `WalletAuth` (`/api/user`, wallet-challenge login) and the non-custodial half of `Tenant` (`/api/tenant`). Several are deliberately operator- or webhook-only surfaces that no browser SDK should call; the rest are genuine gaps. Classify each before the next SDK minor. (`NodeTransparency` was resolved in 0.4.0 — see the Method Mapping Table; `FiatPayoutOperator` and `FiatReversalOperator` are now explicitly rows above, deliberately without methods, rather than missing controllers.)
 
 ## How to Keep This Current
 
@@ -160,9 +334,56 @@ allocation receipt endpoint for allocation status.
 
 **CI does not validate this document.** It is a manual gate at PR-review. The author of a PR touching controllers or the SDK is responsible for syncing this table before merge.
 
-**Last reconciled:** 2026-07-18 (tenant custody/KYC SDK contract and bridge route corrections)
+**Last reconciled:** 2026-09-07 — re-derived from `Controllers/*.cs` route attributes and the
+`sdk/azoa-wallet/src` method surface after the Avatar→User / Quest→Action rename and the Phase 5
+landing. Route-level corrections made in this pass: the dapp surface is `/api/dapp-series`, never
+`/api/dappseries` or `/api/dappcomposition`; holon CRUD lives on `HolonQueryBuilder`
+(`holons.get` / `.execute` / `.create` / `.update` / `.delete`), not on `client.ts`; holon types key
+on `{assetType}`, not `{id}`; key rotation is `POST /api/admin/key-rotation/rotate`.
 
-**Note:** The quests page (`frontend/src/app/(dashboard)/quests/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK quest methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishQuest`/`unpublishQuest`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing quest sub-resource SDK gap (row 8 in "Open Drift" above).
+**Updated 2026-09-08 (W4.7, `azoa-sdk` 0.3.1):** added the Hold, Fiat checkout, PlatformToken and
+ProjectTreasury rows above (all previously undocumented SDK gaps); the SDK's `./orchestration`
+subpath export and its `stripe` dependency are removed — see the "SDK 0.3.1" section above.
+
+**Updated 2026-09-08 (W10.3, `azoa-sdk` 0.4.0):** added the Exchange, Fiat payout (off-ramp),
+NodeTransparency rows and the FiatPayoutOperator/FiatReversalOperator "deliberate gap" rows above
+— see the "SDK 0.4.0" section above. `FiatReversalView` ships as a type only, no SDK method.
+
+⚠ **Credential caveat — corrected 2026-09-07.** The vacuous issuer-equals-holder mint path this
+caveat used to describe is **fixed**: `POST /api/credential/issue/{recipientUserId}` (added by
+`credential-third-party-issuance_20260906`, D41) mints two-party, with the issuer of record
+stamped from the authenticated caller and `current_owner` written at mint, so `POST
+/api/credential/{assetId}/revoke` and `revokeCredential` are now backed by a real, reachable
+authorization check. **The route is still present-but-inert for a different reason:**
+`ActionNodeType.CredentialRevoke` remains in `Services/Actions/NotEnabledActionNodeTypes.cs`
+until the track's non-negotiable `/security-review` closes (a value + key-authority path). Do not
+document either route as a working end-to-end capability until that gate lifts. The new `issue`
+route also has no typed SDK method yet (see the SDK-gap row above) — add one before any
+frontend/consumer surface tries to use it.
+
+**Note:** The actions page (`frontend/src/app/(dashboard)/actions/page.tsx`) uses `azoa.api.request(...)` directly rather than the typed SDK action methods. The publish/unpublish calls on the page are therefore direct HTTP calls, not `publishAction`/`unpublishAction`. The typed SDK methods exist for external SDK consumers. This gap is tracked as part of the existing action sub-resource SDK gap (row 8 in "Open Drift" above).
+
+## Decision: ArdaNova's .NET clients are NOT generated from this SDK
+
+Asked by W4.7 (`ardanova-production-readiness-waves_20260907`), reaffirmed by
+W10.3 (same track, later wave) — this decision was made, not deferred, so
+W10.3 did not re-open it. **No.** This
+SDK (`azoa-sdk`) is a TypeScript package built for browser/Node/React Native
+consumers with client-side signing; ArdaNova is a separate .NET repository
+(`c:/Users/atooz/Documents/Escherbridge/ardanova`) consuming Azoa over plain
+HTTP. There is no TypeScript→.NET code-generation step in this toolchain, and
+building one only for a single internal partner would be new infrastructure
+this track's scope does not cover.
+
+ArdaNova's typed HTTP clients should instead be either hand-maintained against
+this document (the pattern already in effect — see
+`conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md`) or, if drift between the
+two repos keeps recurring, generated from an OpenAPI/Swagger document emitted
+by the AZOA WebAPI itself (ASP.NET already produces one at the controller
+level) via a standard `.NET` OpenAPI client generator — never from this TS
+SDK's source. That is future work, not part of this track; the near-term
+mitigation is keeping this table current at PR-review time as the existing
+"How to Keep This Current" section already asks.
 
 ## Next integration track
 

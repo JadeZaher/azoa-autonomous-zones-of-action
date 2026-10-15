@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("Immutable audit trail for local node-governance policy changes. The store exposes no update/delete path.")]
     [Slice("identity")]
     [Index("node_governance_audit_occurred", Fields = new[] { "occurred_at" })]
-    [Index("node_governance_audit_actor", Fields = new[] { "actor_avatar_id" })]
+    [Index("node_governance_audit_actor", Fields = new[] { "actor_user_id" })]
     public partial class NodeGovernanceAudit : ISurrealRecord
     {
         public const string SchemaNameConst = "node_governance_audit";
@@ -32,8 +32,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string Action { get; set; } = string.Empty;
 
         [Column(Order = 3)]
-        [References(typeof(Avatar))]
-        public string ActorAvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string ActorUserId { get; set; } = string.Empty;
 
         [Column(Order = 4)]
         public long PreviousVersion { get; set; }

@@ -227,7 +227,7 @@ public class HolonControllerTests
         _blockchainManager.Setup(m => m.BuildAndExecuteAsync(It.IsAny<Func<BlockchainOperationBuilder, IBlockchainOperation>>(), It.IsAny<AZOARequest?>()))
                           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
-        var result = await _controller.Exchange(Guid.NewGuid(), new ExchangeRequest { WalletId = Guid.NewGuid(), TargetHolonId = Guid.NewGuid(), ExchangeRate = "1:1" }, null);
+        var result = await _controller.Exchange(Guid.NewGuid(), new HolonExchangeRequest { WalletId = Guid.NewGuid(), TargetHolonId = Guid.NewGuid(), ExchangeRate = "1:1" }, null);
 
         result.Result.Should().BeOfType<OkObjectResult>();
     }
@@ -238,7 +238,7 @@ public class HolonControllerTests
         _blockchainManager.Setup(m => m.BuildAndExecuteAsync(It.IsAny<Func<BlockchainOperationBuilder, IBlockchainOperation>>(), It.IsAny<AZOARequest?>()))
                           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { IsError = true });
 
-        var result = await _controller.Exchange(Guid.NewGuid(), new ExchangeRequest(), null);
+        var result = await _controller.Exchange(Guid.NewGuid(), new HolonExchangeRequest(), null);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }

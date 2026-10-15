@@ -37,7 +37,7 @@ The AZOA frontend is now **complete and ready for production deployment**. All m
 - ✅ **WalletManager** - Multi-wallet support and balance display
 - ✅ **TransactionHistory** - Complete transaction tracking
 - ✅ **TestInterface** - Comprehensive testing suite
-- ✅ **AvatarNFTDashboard** - NFT creation and management
+- ✅ **UserNFTDashboard** - NFT creation and management
 
 ### **Technical Implementation**
 - ✅ **Next.js 16.2.10** - React framework with TypeScript

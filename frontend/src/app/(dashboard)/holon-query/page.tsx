@@ -27,7 +27,7 @@ import { ErrorBanner } from '@/components/shared/error-banner'
 // Query fields mirror HolonQueryParams (sdk/azoa-wallet/src/client/holon-query.ts), which mirrors .NET HolonQueryRequest.
 interface QueryState {
   name: string
-  avatarId: string
+  userId: string
   providerName: string
   chainId: string
   assetType: string
@@ -39,7 +39,7 @@ interface QueryState {
 
 const DEFAULT_QUERY: QueryState = {
   name: '',
-  avatarId: '',
+  userId: '',
   providerName: '',
   chainId: 'any',
   assetType: '',
@@ -72,7 +72,7 @@ function QueryBuilderForm({ query, onChange, onSubmit, loading }: {
       <CardContent>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="space-y-1.5"><Label className="text-xs">Name</Label><Input placeholder="Contains…" value={query.name} onChange={e => set('name')(e.target.value)} onKeyDown={e => e.key === 'Enter' && onSubmit()} /></div>
-          <div className="space-y-1.5"><Label className="text-xs">Avatar ID</Label><Input placeholder="owner uuid" value={query.avatarId} onChange={e => set('avatarId')(e.target.value)} onKeyDown={e => e.key === 'Enter' && onSubmit()} /></div>
+          <div className="space-y-1.5"><Label className="text-xs">User ID</Label><Input placeholder="owner uuid" value={query.userId} onChange={e => set('userId')(e.target.value)} onKeyDown={e => e.key === 'Enter' && onSubmit()} /></div>
           <div className="space-y-1.5"><Label className="text-xs">Provider</Label><Input placeholder="e.g. InMemory" value={query.providerName} onChange={e => set('providerName')(e.target.value)} onKeyDown={e => e.key === 'Enter' && onSubmit()} /></div>
           <div className="space-y-1.5"><Label className="text-xs">Chain</Label>
             <Select value={query.chainId} onValueChange={v => set('chainId')(v ?? 'any')}>
@@ -114,7 +114,7 @@ function DetailPanel({ holon }: { holon: HolonResult }) {
               <span className="text-muted-foreground">Provider</span><span>{holon.providerName || '—'}</span>
               <span className="text-muted-foreground">Asset Type</span><span>{holon.assetType || '—'}</span>
               <span className="text-muted-foreground">Parent</span><span className="truncate font-mono">{holon.parentHolonId || '—'}</span>
-              <span className="text-muted-foreground">Avatar</span><span className="truncate font-mono">{holon.avatarId || '—'}</span>
+              <span className="text-muted-foreground">User</span><span className="truncate font-mono">{holon.userId || '—'}</span>
               <span className="text-muted-foreground">Status</span><span><Badge variant={holon.isActive ? 'default' : 'secondary'} className="text-[10px]">{holon.isActive ? 'Active' : 'Inactive'}</Badge></span>
               <span className="text-muted-foreground">Created</span><span>{holon.createdDate ? new Date(holon.createdDate).toLocaleDateString() : '—'}</span>
             </div>
@@ -151,7 +151,7 @@ export default function HolonQueryPage() {
     setLoading(true); setError(null); setSelected(null)
     const params: Record<string, unknown> = {}
     if (query.name) params.name = query.name
-    if (query.avatarId) params.avatarId = query.avatarId
+    if (query.userId) params.userId = query.userId
     if (query.providerName) params.providerName = query.providerName
     if (query.chainId !== 'any') params.chainId = query.chainId
     if (query.assetType) params.assetType = query.assetType

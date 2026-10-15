@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 ///
 /// Covers all three aggregate types:
 /// <list type="bullet">
-///   <item><see cref="AvatarNFT"/> via <c>nft_ownership</c> table</item>
+///   <item><see cref="UserNFT"/> via <c>nft_ownership</c> table</item>
 ///   <item><see cref="HolonNFTBinding"/> via <c>holon_nft_binding</c> table</item>
 ///   <item><see cref="WalletNFTBinding"/> via <c>wallet_nft_binding</c> table</item>
 /// </list>
@@ -65,11 +65,11 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         finally { _connection.Dispose(); }
     }
 
-    // ── AvatarNFT Tests ───────────────────────────────────────────────────────
+    // ── UserNFT Tests ───────────────────────────────────────────────────────
 
-    /// <summary>Test 1: Upsert creates an AvatarNFT; GetById retrieves it with identical fields.</summary>
+    /// <summary>Test 1: Upsert creates a UserNFT; GetById retrieves it with identical fields.</summary>
     [SkippableFact]
-    public async Task UpsertAvatarNFT_ThenGetById_RoundTrips()
+    public async Task UpsertUserNFT_ThenGetById_RoundTrips()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
@@ -77,36 +77,36 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
                           "0x1234567890abcdef1234567890abcdef12345678",
                           "42");
 
-        var upsertResult = await _store.UpsertAvatarNFTAsync(nft);
+        var upsertResult = await _store.UpsertUserNFTAsync(nft);
 
         upsertResult.IsError.Should().BeFalse();
         upsertResult.Message.Should().Be("Saved.");
         upsertResult.Result.Should().NotBeNull();
 
-        var getResult = await _store.GetAvatarNFTByIdAsync(nft.Id);
+        var getResult = await _store.GetUserNFTByIdAsync(nft.Id);
 
         getResult.IsError.Should().BeFalse();
         getResult.Message.Should().Be("Success");
         getResult.Result.Should().NotBeNull();
         getResult.Result!.Id.Should().Be(nft.Id);
-        getResult.Result.AvatarId.Should().Be(nft.AvatarId);
+        getResult.Result.UserId.Should().Be(nft.UserId);
         getResult.Result.ChainType.Should().Be("Ethereum");
         getResult.Result.NFTContractAddress.Should().Be(nft.NFTContractAddress);
         getResult.Result.TokenId.Should().Be("42");
     }
 
-    /// <summary>Test 2: GetAvatarNFTByTokenId uses composite (chain, contract, tokenId) lookup.</summary>
+    /// <summary>Test 2: GetUserNFTByTokenId uses composite (chain, contract, tokenId) lookup.</summary>
     [SkippableFact]
-    public async Task GetAvatarNFTByTokenId_CompositeKey_ReturnsCorrectNft()
+    public async Task GetUserNFTByTokenId_CompositeKey_ReturnsCorrectNft()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var contract = $"0x{Guid.NewGuid():N}";
         var nft      = MakeNft(Guid.NewGuid(), "Ethereum", contract, "999");
 
-        await _store.UpsertAvatarNFTAsync(nft);
+        await _store.UpsertUserNFTAsync(nft);
 
-        var result = await _store.GetAvatarNFTByTokenIdAsync("Ethereum", contract, "999");
+        var result = await _store.GetUserNFTByTokenIdAsync("Ethereum", contract, "999");
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
@@ -114,13 +114,13 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         result.Result!.Id.Should().Be(nft.Id);
     }
 
-    /// <summary>Test 3: GetAvatarNFTByTokenId with unknown composite key returns not-found.</summary>
+    /// <summary>Test 3: GetUserNFTByTokenId with unknown composite key returns not-found.</summary>
     [SkippableFact]
-    public async Task GetAvatarNFTByTokenId_NotFound_ReturnsError()
+    public async Task GetUserNFTByTokenId_NotFound_ReturnsError()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var result = await _store.GetAvatarNFTByTokenIdAsync(
+        var result = await _store.GetUserNFTByTokenIdAsync(
             "Algorand", "NONEXISTENT_CONTRACT", "0");
 
         result.IsError.Should().BeTrue();
@@ -128,71 +128,71 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         result.Result.Should().BeNull();
     }
 
-    /// <summary>Test 4: GetAvatarNFTsByAvatar returns only NFTs owned by that avatar.</summary>
+    /// <summary>Test 4: GetUserNFTsByUser returns only NFTs owned by that user.</summary>
     [SkippableFact]
-    public async Task GetAvatarNFTsByAvatar_FiltersCorrectly()
+    public async Task GetUserNFTsByUser_FiltersCorrectly()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var targetAvatar = Guid.NewGuid();
-        var otherAvatar  = Guid.NewGuid();
+        var targetUser = Guid.NewGuid();
+        var otherUser  = Guid.NewGuid();
 
-        var nft1 = MakeNft(targetAvatar, "Solana",   $"sol_{Guid.NewGuid():N}", "1");
-        var nft2 = MakeNft(targetAvatar, "Ethereum", $"eth_{Guid.NewGuid():N}", "2");
-        var nft3 = MakeNft(otherAvatar,  "Solana",   $"sol_{Guid.NewGuid():N}", "3");
+        var nft1 = MakeNft(targetUser, "Solana",   $"sol_{Guid.NewGuid():N}", "1");
+        var nft2 = MakeNft(targetUser, "Ethereum", $"eth_{Guid.NewGuid():N}", "2");
+        var nft3 = MakeNft(otherUser,  "Solana",   $"sol_{Guid.NewGuid():N}", "3");
 
-        await _store.UpsertAvatarNFTAsync(nft1);
-        await _store.UpsertAvatarNFTAsync(nft2);
-        await _store.UpsertAvatarNFTAsync(nft3);
+        await _store.UpsertUserNFTAsync(nft1);
+        await _store.UpsertUserNFTAsync(nft2);
+        await _store.UpsertUserNFTAsync(nft3);
 
-        var result = await _store.GetAvatarNFTsByAvatarAsync(targetAvatar);
+        var result = await _store.GetUserNFTsByUserAsync(targetUser);
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
         var list = result.Result!.ToList();
         list.Should().HaveCount(2);
-        list.All(n => n.AvatarId == targetAvatar).Should().BeTrue();
+        list.All(n => n.UserId == targetUser).Should().BeTrue();
     }
 
-    /// <summary>Test 5: DeleteAvatarNFT removes the record; subsequent GetById returns not-found.</summary>
+    /// <summary>Test 5: DeleteUserNFT removes the record; subsequent GetById returns not-found.</summary>
     [SkippableFact]
-    public async Task DeleteAvatarNFT_RemovesRecord()
+    public async Task DeleteUserNFT_RemovesRecord()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var nft = MakeNft(Guid.NewGuid(), "Ethereum",
                           $"0x{Guid.NewGuid():N}", "77");
 
-        await _store.UpsertAvatarNFTAsync(nft);
+        await _store.UpsertUserNFTAsync(nft);
 
-        var deleteResult = await _store.DeleteAvatarNFTAsync(nft.Id);
+        var deleteResult = await _store.DeleteUserNFTAsync(nft.Id);
 
         deleteResult.IsError.Should().BeFalse();
         deleteResult.Result.Should().BeTrue();
         deleteResult.Message.Should().Be("Deleted.");
 
-        var getResult = await _store.GetAvatarNFTByIdAsync(nft.Id);
+        var getResult = await _store.GetUserNFTByIdAsync(nft.Id);
         getResult.IsError.Should().BeTrue();
         getResult.Message.Should().Be("NFT not found.");
     }
 
-    /// <summary>Test 6: Upsert (update path) overwrites existing AvatarNFT record.</summary>
+    /// <summary>Test 6: Upsert (update path) overwrites existing UserNFT record.</summary>
     [SkippableFact]
-    public async Task UpsertAvatarNFT_UpdatePath_OverwritesExistingRecord()
+    public async Task UpsertUserNFT_UpdatePath_OverwritesExistingRecord()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var contract = $"0x{Guid.NewGuid():N}";
 
-        var original = MakeNft(avatarId, "Ethereum", contract, "100");
+        var original = MakeNft(userId, "Ethereum", contract, "100");
         original.Name = "Original Name";
-        await _store.UpsertAvatarNFTAsync(original);
+        await _store.UpsertUserNFTAsync(original);
 
-        var updated = new AvatarNFT
+        var updated = new UserNFT
         {
             Id                 = original.Id,
-            AvatarId           = avatarId,
+            UserId           = userId,
             ChainType          = "Ethereum",
             NFTContractAddress = contract,
             TokenId            = "100",
@@ -204,11 +204,11 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
             MintedDate         = DateTime.UtcNow
         };
 
-        var upsertResult = await _store.UpsertAvatarNFTAsync(updated);
+        var upsertResult = await _store.UpsertUserNFTAsync(updated);
 
         upsertResult.IsError.Should().BeFalse();
 
-        var getResult = await _store.GetAvatarNFTByIdAsync(original.Id);
+        var getResult = await _store.GetUserNFTByIdAsync(original.Id);
         getResult.Result!.Name.Should().Be("Updated Name");
         getResult.Result.MetadataURI.Should().Be("ipfs://updated");
     }
@@ -227,7 +227,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         {
             Id          = Guid.NewGuid(),
             HolonId     = holonId,
-            AvatarNFTId = nftId,
+            UserNFTId = nftId,
             Role        = "owner",
             IsActive    = true,
             CreatedDate = DateTime.UtcNow
@@ -244,13 +244,13 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         getResult.Result.Should().NotBeNull();
         getResult.Result!.Id.Should().Be(binding.Id);
         getResult.Result.HolonId.Should().Be(holonId);
-        getResult.Result.AvatarNFTId.Should().Be(nftId);
+        getResult.Result.UserNFTId.Should().Be(nftId);
         getResult.Result.Role.Should().Be("owner");
     }
 
-    /// <summary>Test 8: GetHolonNFTBindingsByAvatarNFT filters by AvatarNFTId.</summary>
+    /// <summary>Test 8: GetHolonNFTBindingsByUserNFT filters by UserNFTId.</summary>
     [SkippableFact]
-    public async Task GetHolonNFTBindingsByAvatarNFT_FiltersCorrectly()
+    public async Task GetHolonNFTBindingsByUserNFT_FiltersCorrectly()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
@@ -259,17 +259,17 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
         var b1 = new HolonNFTBinding
         {
-            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), AvatarNFTId = targetNftId,
+            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), UserNFTId = targetNftId,
             Role = "owner", CreatedDate = DateTime.UtcNow, IsActive = true
         };
         var b2 = new HolonNFTBinding
         {
-            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), AvatarNFTId = targetNftId,
+            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), UserNFTId = targetNftId,
             Role = "delegate", CreatedDate = DateTime.UtcNow, IsActive = true
         };
         var b3 = new HolonNFTBinding
         {
-            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), AvatarNFTId = otherNftId,
+            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), UserNFTId = otherNftId,
             Role = "owner", CreatedDate = DateTime.UtcNow, IsActive = true
         };
 
@@ -277,13 +277,13 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         await _store.UpsertHolonNFTBindingAsync(b2);
         await _store.UpsertHolonNFTBindingAsync(b3);
 
-        var result = await _store.GetHolonNFTBindingsByAvatarNFTAsync(targetNftId);
+        var result = await _store.GetHolonNFTBindingsByUserNFTAsync(targetNftId);
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
         var list = result.Result!.ToList();
         list.Should().HaveCount(2);
-        list.All(b => b.AvatarNFTId == targetNftId).Should().BeTrue();
+        list.All(b => b.UserNFTId == targetNftId).Should().BeTrue();
     }
 
     /// <summary>Test 9: DeleteHolonNFTBinding removes the record.</summary>
@@ -294,7 +294,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
         var binding = new HolonNFTBinding
         {
-            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), AvatarNFTId = Guid.NewGuid(),
+            Id = Guid.NewGuid(), HolonId = Guid.NewGuid(), UserNFTId = Guid.NewGuid(),
             Role = "operator", CreatedDate = DateTime.UtcNow, IsActive = true
         };
         await _store.UpsertHolonNFTBindingAsync(binding);
@@ -323,7 +323,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         {
             Id          = Guid.NewGuid(),
             WalletId    = walletId,
-            AvatarNFTId = nftId,
+            UserNFTId = nftId,
             BindingType = "primary",
             AccessLevel = "full",
             IsActive    = true,
@@ -341,14 +341,14 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         getResult.Result.Should().NotBeNull();
         getResult.Result!.Id.Should().Be(binding.Id);
         getResult.Result.WalletId.Should().Be(walletId);
-        getResult.Result.AvatarNFTId.Should().Be(nftId);
+        getResult.Result.UserNFTId.Should().Be(nftId);
         getResult.Result.BindingType.Should().Be("primary");
         getResult.Result.AccessLevel.Should().Be("full");
     }
 
-    /// <summary>Test 11: GetWalletNFTBindingsByAvatarNFT filters by AvatarNFTId.</summary>
+    /// <summary>Test 11: GetWalletNFTBindingsByUserNFT filters by UserNFTId.</summary>
     [SkippableFact]
-    public async Task GetWalletNFTBindingsByAvatarNFT_FiltersCorrectly()
+    public async Task GetWalletNFTBindingsByUserNFT_FiltersCorrectly()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
@@ -357,17 +357,17 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
         var b1 = new WalletNFTBinding
         {
-            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), AvatarNFTId = targetNftId,
+            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), UserNFTId = targetNftId,
             BindingType = "primary", IsActive = true, CreatedDate = DateTime.UtcNow
         };
         var b2 = new WalletNFTBinding
         {
-            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), AvatarNFTId = targetNftId,
+            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), UserNFTId = targetNftId,
             BindingType = "secondary", IsActive = true, CreatedDate = DateTime.UtcNow
         };
         var b3 = new WalletNFTBinding
         {
-            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), AvatarNFTId = otherNftId,
+            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), UserNFTId = otherNftId,
             BindingType = "primary", IsActive = true, CreatedDate = DateTime.UtcNow
         };
 
@@ -375,13 +375,13 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
         await _store.UpsertWalletNFTBindingAsync(b2);
         await _store.UpsertWalletNFTBindingAsync(b3);
 
-        var result = await _store.GetWalletNFTBindingsByAvatarNFTAsync(targetNftId);
+        var result = await _store.GetWalletNFTBindingsByUserNFTAsync(targetNftId);
 
         result.IsError.Should().BeFalse();
         result.Message.Should().Be("Success");
         var list = result.Result!.ToList();
         list.Should().HaveCount(2);
-        list.All(b => b.AvatarNFTId == targetNftId).Should().BeTrue();
+        list.All(b => b.UserNFTId == targetNftId).Should().BeTrue();
     }
 
     /// <summary>Test 12: DeleteWalletNFTBinding removes the record.</summary>
@@ -392,7 +392,7 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
 
         var binding = new WalletNFTBinding
         {
-            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), AvatarNFTId = Guid.NewGuid(),
+            Id = Guid.NewGuid(), WalletId = Guid.NewGuid(), UserNFTId = Guid.NewGuid(),
             BindingType = "authorized", IsActive = true, CreatedDate = DateTime.UtcNow
         };
         await _store.UpsertWalletNFTBindingAsync(binding);
@@ -421,15 +421,15 @@ public sealed class SurrealNftStoreTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Builds a minimal AvatarNFT for testing. The ID is derived from
-    /// <paramref name="avatarId"/> unless an explicit ID is needed —
-    /// callers always pass avatarId as first arg.
+    /// Builds a minimal UserNFT for testing. The ID is derived from
+    /// <paramref name="userId"/> unless an explicit ID is needed —
+    /// callers always pass userId as first arg.
     /// </summary>
-    private static AvatarNFT MakeNft(Guid avatarId, string chain, string contract, string tokenId)
+    private static UserNFT MakeNft(Guid userId, string chain, string contract, string tokenId)
         => new()
         {
             Id                 = Guid.NewGuid(),
-            AvatarId           = avatarId,
+            UserId           = userId,
             ChainType          = chain,
             NFTContractAddress = contract,
             TokenId            = tokenId,

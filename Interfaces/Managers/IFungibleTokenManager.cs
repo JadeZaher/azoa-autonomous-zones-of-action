@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 ///   <item>KYC gate (<see cref="IKycGateService.RequireVerifiedAsync"/>) —
 ///   fail-closed before any value-bearing side effect.</item>
 ///   <item>Provision-if-absent (<c>IWalletManager.GenerateWalletAsync</c> /
-///   <c>IWalletStore.GetByAvatarAsync</c>) — never duplicates a wallet.</item>
+///   <c>IWalletStore.GetByUserAsync</c>) — never duplicates a wallet.</item>
 ///   <item>Token launch via the Algorand ASA capability module
 ///   (<c>IAlgorandASAModule.CreateASAAsync</c>) deduped via
 ///   <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/>.</item>
@@ -30,22 +30,22 @@ public interface IFungibleTokenManager
     /// Idempotent, KYC-gated wallet-provision + fungible-token (ASA) launch.
     ///
     /// Idempotency: a client key wins; absent ⇒ a deterministic content key over
-    /// (<paramref name="avatarId"/>, name, unit, total, decimals, chain) — NEVER a
+    /// (<paramref name="userId"/>, name, unit, total, decimals, chain) — NEVER a
     /// random per-request key. The key is partitioned by <paramref name="apiKeyId"/>
     /// so two tenants reusing the same human-friendly key never collide. A duplicate
     /// call under the same (apiKeyId, key) returns the ORIGINAL result and creates
     /// NO second token.
     ///
-    /// Fail-closed KYC: when the target avatar is not APPROVED the call is rejected
+    /// Fail-closed KYC: when the target user is not APPROVED the call is rejected
     /// and no value-bearing side effect runs.
     ///
-    /// IDOR: the launch always targets <paramref name="avatarId"/> (resolved from
+    /// IDOR: the launch always targets <paramref name="userId"/> (resolved from
     /// the authenticated principal / run context). Any owner id on the request body
     /// is ignored.
     /// </summary>
-    /// <param name="avatarId">The authorised target avatar (route/run context).</param>
+    /// <param name="userId">The authorised target user (route/run context).</param>
     /// <param name="request">Token descriptor (name, unit, total, decimals, chain).</param>
-    /// <param name="callerAvatarId">
+    /// <param name="callerUserId">
     /// The authenticated caller. Recorded for diagnostics; it does not widen
     /// authority beyond the API-key scope.
     /// </param>
@@ -60,9 +60,9 @@ public interface IFungibleTokenManager
     /// consent check runs before key decrypt. Null = user-driven / platform-internal.
     /// </param>
     Task<AZOAResult<FungibleTokenResult>> CreateAsync(
-        Guid avatarId,
+        Guid userId,
         FungibleTokenCreateRequest request,
-        Guid callerAvatarId,
+        Guid callerUserId,
         string? clientIdempotencyKey,
         string apiKeyId,
         Guid? actingTenantId = null);

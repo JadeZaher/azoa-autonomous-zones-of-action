@@ -10,7 +10,7 @@ public static class TenantCustodialOperationError
     public const string KycSessionInProgress = "KYC_SESSION_IN_PROGRESS: ";
 }
 
-/// <summary>Tenant-scoped orchestration over the existing avatar, wallet, and KYC aggregates.</summary>
+/// <summary>Tenant-scoped orchestration over the existing user, wallet, and KYC aggregates.</summary>
 public interface ITenantCustodialAccountManager
 {
     TenantCustodialCapabilitiesResponse GetCapabilities();

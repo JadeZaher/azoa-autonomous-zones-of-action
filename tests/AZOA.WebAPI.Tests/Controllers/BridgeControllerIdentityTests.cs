@@ -25,12 +25,12 @@ public sealed class BridgeControllerIdentityTests
     }
 
     [Fact]
-    public async Task GetHistory_MalformedAvatarClaim_DoesNotFallBackToSubject()
+    public async Task GetHistory_MalformedUserClaim_DoesNotFallBackToSubject()
     {
         var service = new Mock<ICrossChainBridgeService>();
         var controller = CreateController(
             service,
-            new Claim("avatarId", "malformed"),
+            new Claim("userId", "malformed"),
             new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()));
 
         var result = await controller.GetHistory(CancellationToken.None);
@@ -43,21 +43,21 @@ public sealed class BridgeControllerIdentityTests
     [Fact]
     public async Task GetHistory_ValidGuidSubject_UsesExactAuthenticatedIdentity()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var service = new Mock<ICrossChainBridgeService>();
         service.Setup(candidate => candidate.GetBridgeHistoryAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<IEnumerable<BridgeTransactionResult>>.Success(
                 Array.Empty<BridgeTransactionResult>()));
         var controller = CreateController(
             service,
-            new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()));
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
 
         var result = await controller.GetHistory(CancellationToken.None);
 
         result.Should().BeOfType<OkObjectResult>();
         service.Verify(candidate => candidate.GetBridgeHistoryAsync(
-            avatarId, It.IsAny<CancellationToken>()), Times.Once);
+            userId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static BridgeController CreateController(

@@ -32,13 +32,13 @@ public interface ICrossChainBridgeService
 {
     Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, CancellationToken ct = default);
+        string recipientAddress, Guid userId, CancellationToken ct = default);
 
     Task<AZOAResult<BridgeTransactionResult>> CompleteBridgeAsync(
         string bridgeTransactionId, CancellationToken ct = default);
 
     Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
-        Guid avatarId, CancellationToken ct = default);
+        Guid userId, CancellationToken ct = default);
 
     Task<AZOAResult<BridgeRouteInfo>> GetSupportedRoutesAsync(CancellationToken ct = default);
 }

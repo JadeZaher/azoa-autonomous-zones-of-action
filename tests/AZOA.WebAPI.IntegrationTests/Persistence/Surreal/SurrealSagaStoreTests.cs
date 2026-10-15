@@ -545,7 +545,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
-            "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+            "action-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
         var claimed = await ClaimAsync(enq.Id);
 
         var parked = await _store.ParkStepAsync(
@@ -577,7 +577,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
-            "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+            "action-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
         var claimed = await ClaimAsync(enq.Id);
         await _store.ParkStepAsync(
             enq.Id, claimed.ClaimedAt!.Value, "phase-met",
@@ -611,7 +611,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
-            "quest-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+            "action-workflow", "gateNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
         var claimed = await ClaimAsync(enq.Id);
         await _store.ParkStepAsync(
             enq.Id, claimed.ClaimedAt!.Value, "phase-met",
@@ -636,7 +636,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
 
         var corr = UniqueCorrelation();
         var enq = await _store.EnqueueAsync(
-            "quest-workflow", "waitNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
+            "action-workflow", "waitNode", corr, UniqueIdempotency(), "{}", false, CancellationToken.None);
         var claimed = await ClaimAsync(enq.Id);
 
         var resumeAt = DateTime.UtcNow.AddSeconds(30);

@@ -19,7 +19,7 @@ public partial class TenantKycProviderSelection : ISurrealRecord
     [Id, Required(NotEmpty = true)]
     public string Id { get; set; } = string.Empty;
 
-    [References(typeof(Avatar))]
+    [References(typeof(User))]
     public string TenantId { get; set; } = string.Empty;
 
     [Required(NotEmpty = true)]
@@ -28,8 +28,8 @@ public partial class TenantKycProviderSelection : ISurrealRecord
     [Default("1")]
     public long SelectionVersion { get; set; } = 1;
 
-    [References(typeof(Avatar))]
-    public string UpdatedByAvatarId { get; set; } = string.Empty;
+    [References(typeof(User))]
+    public string UpdatedByUserId { get; set; } = string.Empty;
 
     [Default("time::now()"), ReadOnly]
     public DateTimeOffset CreatedAt { get; set; }

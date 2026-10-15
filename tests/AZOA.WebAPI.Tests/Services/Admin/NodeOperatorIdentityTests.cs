@@ -10,7 +10,7 @@ public sealed class NodeOperatorIdentityTests
     [Fact]
     public void ReservedIdentity_IsStableAndOutsideOrdinaryEmailSpace()
     {
-        NodeOperatorIdentity.AvatarId.Should().Be(Guid.Parse("a20a0000-0000-4000-8000-000000000001"));
+        NodeOperatorIdentity.UserId.Should().Be(Guid.Parse("a20a0000-0000-4000-8000-000000000001"));
         NodeOperatorIdentity.ReservedEmail.Should().Be("node-operator@azoa.invalid");
     }
 

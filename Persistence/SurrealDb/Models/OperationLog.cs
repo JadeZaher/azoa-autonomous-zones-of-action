@@ -15,10 +15,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Aggregate = "BlockchainOperation (Models/BlockchainOperation.cs)",
         Guardrail = "G6 SCHEMAFULL, G2 idempotency unique index")]
     [SurrealNote("Status values from OperationStatus constants; Parameters is Dictionary<string,string> stored as object.")]
-    [SurrealNote("B3 review: operation_log_idempotency_key UNIQUE on option<string>. NULL rows do NOT collide -- adapter MUST supply a non-NULL key on the claim path; api-safety-hardening §4 validator enforces this end-to-end.")]
+    [SurrealNote("B3 review: operation_log_idempotency_key UNIQUE on option<string>. NONE rows do NOT collide (verified on SurrealDB 3.1.4) -- adapter MUST supply a non-NONE key on the claim path; api-safety-hardening §4 validator enforces this end-to-end.")]
+    [SurrealNote("D13: amount is a STRING of decimal base units, not a number. The domain type is RailAmount (BigInteger base units), so a numeric column would re-impose the 64-bit ceiling the widening removed -- an ordinary wei-denominated Ethereum amount does not fit in i64. Written via RailAmount.ToBaseUnitString(), read via RailAmount.TryParse.")]
+    [SurrealNote("W3.3: an allocation's caller-supplied Purpose, and an issuance's ReserveAddress / ReservePartition / AllocationKind, live as keys INSIDE the FLEXIBLE parameters object -- deliberately, not as columns. SurrealBlockchainOperationStore.ToRow is the only writer of this table and it maps the whole parameters bag; it does not map arbitrary new columns, so a dedicated purpose column would be schema that nothing ever fills. Add one only together with the ToRow mapping.")]
+    [SurrealNote("D16: value_currency_code / value_minor_units / value_rate / value_rate_as_of / value_rate_source are the fiat value stamped at settlement. They move as a group: all five NONE means the operation was never priced, which is deliberately distinguishable from value_rate = \"0\" (a real quote of zero). A partial stamp is not a stamp and reads back as unpriced. No rate source exists in this codebase yet -- IValueRateSource is the seam, and until something implements it every row is legitimately unstamped. Never backfill these from a later price: the point of storing the rate and its timestamp is that the figure stays auditable and re-derivable from what was actually known at settlement.")]
     [Slice("bridge")]
     [Index("operation_log_idempotency_key", Fields = new[] { "idempotency_key" }, Unique = true)]
-    [Index("operation_log_avatar_created", Fields = new[] { "avatar_id", "created_date" })]
+    [Index("operation_log_user_created", Fields = new[] { "user_id", "created_date" })]
     [Index("operation_log_status", Fields = new[] { "status" })]
     public partial class OperationLog : ISurrealRecord
     {
@@ -46,8 +49,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [References(typeof(Avatar), Optional = true)]
-        public string? AvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? UserId { get; set; }
 
         [References(typeof(Wallet), Optional = true)]
         public string? WalletId { get; set; }
@@ -66,7 +69,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         // (TokenUri, Amount, AssetType, WalletAddress, TxHash, ...). A bare
         // SCHEMAFULL option<object> rejects any undeclared sub-field with
         // "Found field 'parameters.X', but no such field exists" — FLEXIBLE lets
-        // the object carry arbitrary keys. Mirrors Quest.Metadata.
+        // the object carry arbitrary keys. Mirrors ActionDefinition.Metadata.
         [Column(Flexible = true)]
         [FieldGroup("Opaque parameters bag (Dictionary<string,string>)")]
         public JsonElement? Parameters { get; set; }
@@ -74,7 +77,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("IMintOperation fields")]
         public string? TokenUri { get; set; }
 
-        public long? Amount { get; set; }
+        // D13: decimal base units as a string -- see the table note.
+        [Assert("$value = NONE OR string::matches($value, \"^[0-9]+$\")")]
+        public string? Amount { get; set; }
 
         public string? AssetType { get; set; }
 
@@ -95,8 +100,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? IdempotencyKey { get; set; }
 
         [FieldGroup("Allocation receipt initiator context")]
-        [References(typeof(Avatar), Optional = true)]
-        public string? InitiatorAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? InitiatorUserId { get; set; }
 
         [References(typeof(ApiKey), Optional = true)]
         public string? InitiatorApiKeyId { get; set; }
@@ -108,7 +113,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         // The tenant that DROVE this value op via a child credential (null =
         // user-driven / platform-internal). Carried on the durable row so the signing
         // seam's live consent check survives the async saga-worker hop.
-        [References(typeof(Avatar), Optional = true)]
+        [References(typeof(User), Optional = true)]
         public string? ActingTenantId { get; set; }
 
         public string? SigningScope { get; set; }
@@ -118,6 +123,25 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public DateTimeOffset CreatedDate { get; set; }
 
         public DateTimeOffset? CompletedDate { get; set; }
+
+        [FieldGroup("D16 fiat value at transaction time (all-NONE = never priced; see the table note)")]
+        // ISO-4217 code. Carried as data so a second currency is a value change, not a schema break (D15).
+        [Assert("$value = NONE OR string::matches($value, \"^[A-Z]{3}$\")")]
+        public string? ValueCurrencyCode { get; set; }
+
+        // The stamped value in the currency's minor unit (USD cents), decimal string.
+        [Assert("$value = NONE OR string::matches($value, \"^[0-9]+$\")")]
+        public string? ValueMinorUnits { get; set; }
+
+        // Minor units per one base unit, as an invariant decimal string. "0" is a real
+        // quoted rate; NONE is "no rate source could price this".
+        [Assert("$value = NONE OR string::matches($value, \"^[0-9]+(\\\\.[0-9]+)?$\")")]
+        public string? ValueRate { get; set; }
+
+        // When the applied rate was OBSERVED, which is not necessarily when it was applied.
+        public DateTimeOffset? ValueRateAsOf { get; set; }
+
+        public string? ValueRateSource { get; set; }
 
         [FieldGroup("Holon-asset link (economic-primitive-nodes)")]
         public string? AssetId { get; set; }

@@ -17,12 +17,12 @@ namespace AZOA.WebAPI.Controllers;
 public class ApiKeyController : ControllerBase
 {
     private readonly IApiKeyStore _store;
-    private readonly IAvatarStore _avatars;
+    private readonly IUserStore _users;
 
-    public ApiKeyController(IApiKeyStore store, IAvatarStore avatars)
+    public ApiKeyController(IApiKeyStore store, IUserStore users)
     {
         _store = store;
-        _avatars = avatars;
+        _users = users;
     }
 
     /// <summary>Operator-only issuance of one fixed-scope tenant integration key.</summary>
@@ -32,9 +32,9 @@ public class ApiKeyController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<IActionResult> CreateTenantKey([FromBody] CreateTenantApiKeyRequest request)
     {
-        if (request.TenantAvatarId == Guid.Empty)
-            return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure("TenantAvatarId is required."));
-        if (request.TenantAvatarId == NodeOperatorIdentity.AvatarId)
+        if (request.TenantUserId == Guid.Empty)
+            return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure("TenantUserId is required."));
+        if (request.TenantUserId == NodeOperatorIdentity.UserId)
             return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure(
                 "The reserved node operator identity cannot own API keys."));
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100)
@@ -46,22 +46,22 @@ public class ApiKeyController : ControllerBase
             return BadRequest(AZOAResult<CreateApiKeyResponse>.Failure(
                 "ExpiresInDays must be between 1 and 365."));
 
-        var tenant = await _avatars.GetByIdAsync(
-            request.TenantAvatarId,
+        var tenant = await _users.GetByIdAsync(
+            request.TenantUserId,
             HttpContext.RequestAborted);
-        if (tenant.Message.StartsWith("AVATAR_STORE_UNAVAILABLE:", StringComparison.Ordinal))
+        if (tenant.Message.StartsWith("USER_STORE_UNAVAILABLE:", StringComparison.Ordinal))
             return StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
-                AZOAResult<CreateApiKeyResponse>.Failure("Tenant avatar could not be verified."));
+                AZOAResult<CreateApiKeyResponse>.Failure("Tenant user could not be verified."));
         if (tenant.IsError || tenant.Result is null)
-            return NotFound(AZOAResult<CreateApiKeyResponse>.Failure("Tenant avatar not found."));
+            return NotFound(AZOAResult<CreateApiKeyResponse>.Failure("Tenant user not found."));
 
         const string tenantScopes =
             $"{AzoaScopes.TenantProvision},{AzoaScopes.WalletManage},{AzoaScopes.KycRead},{AzoaScopes.KycSubmit}";
         var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
         var apiKey = new ApiKey
         {
-            AvatarId = request.TenantAvatarId,
+            UserId = request.TenantUserId,
             Name = request.Name.Trim(),
             KeyHash = ApiKeyAuthenticationHandler.HashKey(rawKey),
             KeyPrefix = rawKey[..16],
@@ -87,9 +87,9 @@ public class ApiKeyController : ControllerBase
         }, "Tenant API key created. Store it securely; it will not be shown again."));
     }
 
-    private Guid GetAvatarId()
+    private Guid GetUserId()
     {
-        var claim = User.FindFirst("AvatarId")?.Value
+        var claim = User.FindFirst("UserId")?.Value
                  ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;
         return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
@@ -101,9 +101,9 @@ public class ApiKeyController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateApiKeyRequest request)
     {
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
-            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
         if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100)
             return BadRequest(AZOAResult<object>.Failure(
@@ -140,7 +140,7 @@ public class ApiKeyController : ControllerBase
 
         var apiKey = new ApiKey
         {
-            AvatarId = avatarId,
+            UserId = userId,
             Name = request.Name.Trim(),
             KeyHash = keyHash,
             KeyPrefix = rawKey[..16],
@@ -172,9 +172,9 @@ public class ApiKeyController : ControllerBase
     }
 
     /// <summary>
-    /// List the scopes an avatar may self-issue on a new key, each with a human
+    /// List the scopes a user may self-issue on a new key, each with a human
     /// description. Drives the key-creation UI's scope checkboxes. Any authenticated
-    /// avatar may read this — it exposes only the public scope vocabulary.
+    /// user may read this — it exposes only the public scope vocabulary.
     /// </summary>
     [HttpGet("scopes")]
     public IActionResult IssuableScopes()
@@ -193,16 +193,16 @@ public class ApiKeyController : ControllerBase
     }
 
     /// <summary>
-    /// List all API keys for the authenticated avatar (keys are never shown, only prefixes).
+    /// List all API keys for the authenticated user (keys are never shown, only prefixes).
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List()
     {
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
-            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
-        var owned = await _store.ListByAvatarAsync(avatarId, HttpContext.RequestAborted);
+        var owned = await _store.ListByUserAsync(userId, HttpContext.RequestAborted);
 
         var keys = owned.Select(k => new ApiKeyInfo
         {
@@ -227,11 +227,11 @@ public class ApiKeyController : ControllerBase
     [HttpPost("{id:guid}/revoke")]
     public async Task<IActionResult> Revoke(Guid id)
     {
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
-            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
-        var ok = await _store.RevokeAsync(id, avatarId, DateTime.UtcNow, HttpContext.RequestAborted);
+        var ok = await _store.RevokeAsync(id, userId, DateTime.UtcNow, HttpContext.RequestAborted);
         if (!ok)
             return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
@@ -241,17 +241,17 @@ public class ApiKeyController : ControllerBase
     /// <summary>
     /// Rotate an API key: mint a NEW key inheriting the old key's name, scopes, and
     /// expiry window, revoke the old key, and return the new raw key ONCE (same shape
-    /// as Create). Scoped to (id, authenticated avatar) — an avatar may only rotate
+    /// as Create). Scoped to (id, authenticated user) — a user may only rotate
     /// its OWN key.
     /// </summary>
     [HttpPost("{id:guid}/rotate")]
     public async Task<IActionResult> Rotate(Guid id)
     {
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
-            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
-        var existing = await _store.GetByIdForAvatarAsync(id, avatarId, HttpContext.RequestAborted);
+        var existing = await _store.GetByIdForUserAsync(id, userId, HttpContext.RequestAborted);
         if (existing is null)
             return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
@@ -266,7 +266,7 @@ public class ApiKeyController : ControllerBase
 
         var apiKey = new ApiKey
         {
-            AvatarId = avatarId,
+            UserId = userId,
             Name = existing.Name,
             KeyHash = keyHash,
             KeyPrefix = rawKey[..16],
@@ -276,7 +276,7 @@ public class ApiKeyController : ControllerBase
         };
 
         await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
-        await _store.RevokeAsync(id, avatarId, DateTime.UtcNow, HttpContext.RequestAborted);
+        await _store.RevokeAsync(id, userId, DateTime.UtcNow, HttpContext.RequestAborted);
 
         return Ok(new AZOAResult<CreateApiKeyResponse>
         {
@@ -302,11 +302,11 @@ public class ApiKeyController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var avatarId = GetAvatarId();
-        if (avatarId == Guid.Empty)
-            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Avatar not authenticated." });
+        var userId = GetUserId();
+        if (userId == Guid.Empty)
+            return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
-        var ok = await _store.DeleteAsync(id, avatarId, HttpContext.RequestAborted);
+        var ok = await _store.DeleteAsync(id, userId, HttpContext.RequestAborted);
         if (!ok)
             return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
@@ -324,10 +324,10 @@ public class CreateApiKeyRequest
     public string? AllowedOrigins { get; set; }
 }
 
-/// <summary>Operator request that binds a fixed-scope key to an existing avatar.</summary>
+/// <summary>Operator request that binds a fixed-scope key to an existing user.</summary>
 public sealed class CreateTenantApiKeyRequest
 {
-    public Guid TenantAvatarId { get; set; }
+    public Guid TenantUserId { get; set; }
     public string Name { get; set; } = string.Empty;
     public int? ExpiresInDays { get; set; }
 }

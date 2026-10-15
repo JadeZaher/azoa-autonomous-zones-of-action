@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.Core.Surreal;
 /// <para>
 /// That matters because a <c>TYPE record&lt;…&gt;</c> column now genuinely holds
 /// a record link, and in SurrealQL a record link is never equal to a string:
-/// <c>WHERE avatar_id = $_avatar</c> with a text parameter matches <b>nothing</b>
+/// <c>WHERE user_id = $_user</c> with a text parameter matches <b>nothing</b>
 /// and returns an empty set with no error. Under the pre-1.0.0 JSON transport
 /// the same comparison worked, because the column held a string too.
 /// </para>

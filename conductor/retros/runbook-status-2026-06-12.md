@@ -119,18 +119,18 @@
   updated. Both also superseded by the C#-first pivot.
 - **`295d67c`** — `mcp-surface` track closed. Read-only MCP server at
   `/mcp` (ModelContextProtocol.AspNetCore 1.3.0) behind JWT+ApiKey
-  multi-scheme. 5 tools (quest reachability, holon traversal, NFT graph,
-  avatar-scoped read, HNSW vector search). +5 unit tests (540/540 green),
+  multi-scheme. 5 tools (action reachability, holon traversal, NFT graph,
+  user-scoped read, HNSW vector search). +5 unit tests (540/540 green),
   13 integration tests gated on E1. Write tools deferred; runtime evidence
   + F9–F12 latent-item review pending E1 image fix.
 - **`24a7403`** — `surrealdb-migration` Phase D (wave-2 commit). 3
-  SurrealQuest stores (1595 LOC) + 6 `.surql` schemas
+  SurrealAction stores (1595 LOC) + 6 `.surql` schemas
   (150/160/170/190/200/230) + 28 integration tests. G2 single-winner
   claim primitive + fork write-pairing via BEGIN/COMMIT. DI flipped at
   Program.cs:267-298. Task 9 closed.
 - **`8f1eee1`** — RUNBOOK.md + tracks.md consolidation.
 - **`d318bcb`** — `CONVENTION.md` partial-class extension pattern.
-- **`92ede75`** — 8 source-gen'd POCOs for quest + dapp-composition;
+- **`92ede75`** — 8 source-gen'd POCOs for action + dapp-composition;
   dapp-composition slice end-to-end.
 
 ### Working tree (as of snapshot)
@@ -170,8 +170,8 @@ byte-equivalent `.surql` output before mechanically migrating the rest.
 
 - **Phase C trigger** — generator multi-table parsing + FK emission lands
   after Phase B is validated (see §4.3 below). Recommended order: Phase B →
-  Phase C → Phase E (Quest cutover) so the generator settles on the new
-  authoring layout before the Quest aggregate moves to source-gen'd POCOs.
+  Phase C → Phase E (ActionDefinition cutover) so the generator settles on the new
+  authoring layout before the ActionDefinition aggregate moves to source-gen'd POCOs.
 - ~~**Environment E1 unblocker**~~ — **RESOLVED 2026-06-12.** Swapped the
   start URI to `rocksdb:///data/db` in `docker-compose.dev.yml` +
   `podman-compose.yml` (note: `podman-compose.yml` was deleted 2026-06-12).
@@ -206,14 +206,14 @@ live at:
 
 | Slice | Entities |
 |---|---|
-| `quest` | quest, quest_node, quest_edge, quest_dependency, quest_run, quest_node_execution |
-| `quest_templates` | quest_template, quest_node_template |
-| `dapp_composition` | dapp_series, dapp_series_quest |
+| `action` | action, action_node, action_edge, action_dependency, action_run, action_node_execution |
+| `action_templates` | action_template, action_node_template |
+| `dapp_composition` | dapp_series, dapp_series_action |
 | `bridge` | bridge_tx, saga_steps, consumed_vaa_ledger, idempotency_key_store, operation_log |
 | `wallet_nft` | wallet, nft_ownership, swap_state |
-| `identity` | avatar, api_key, holon, star_odk |
+| `identity` | user, api_key, holon, star_odk |
 
-Cross-slice references (e.g. `dapp_series_quest.quest_id` → `quest`) appear
+Cross-slice references (e.g. `dapp_series_action.action_id` → `action`) appear
 as dashed-blue ghost nodes in per-slice flowcharts and as full edges in the
 master diagram.
 
@@ -278,26 +278,26 @@ original goal of showing relationship arrows across the full domain model.
                              │ (2) generator on new layout
                              ▼
         ┌─────────────────────────────────────────────┐
-        │   Phase E — Quest aggregate cutover           │
-        │   Partial-class extensions for Quest,         │
-        │   QuestNode, QuestEdge, QuestDependency,      │
-        │   QuestRun, QuestNodeExecution                │
-        │   Delete hand-written Models/Quest/*.cs       │
+        │   Phase E — ActionDefinition aggregate cutover│
+        │   Partial-class extensions for ActionDefinition,│
+        │   ActionNode, ActionEdge, ActionDependency,   │
+        │   ActionRun, ActionNodeExecution              │
+        │   Delete hand-written Models/Actions/*.cs     │
         │   Rewire wave-2 stores + 34 handlers +        │
-        │   755-line QuestManager + tests               │
+        │   755-line ActionManager + tests              │
         │   ~7-9h                                       │
         └────────────────────┬───────────────────────┘
                              │ (3) cutover complete
                              ▼
         ┌─────────────────────────────────────────────┐
-        │   Phase F — quest-api endpoint gaps           │
+        │   Phase F — action-api endpoint gaps          │
         │   ✓ Shipped 2026-06-11 (autopilot)            │
         │   14 endpoints + 14 manager methods landed    │
         │   on the post-fork-model runtime (NOT the     │
         │   post-cutover surface — see "Why this order" │
-        │   note below). 4 obsolete Quest-status        │
-        │   endpoints reframed onto QuestRun per ADR     │
-        │   §2.2; see tracks/quest-api/SIGN-OFF.md       │
+        │   note below). 4 obsolete Action-status       │
+        │   endpoints reframed onto ActionRun per ADR   │
+        │   §2.2; see tracks/action-api/SIGN-OFF.md     │
         └────────────────────┬───────────────────────┘
                              │ (4) endpoints close
                              ▼
@@ -314,18 +314,18 @@ original goal of showing relationship arrows across the full domain model.
 
 1. Phase B before C so we ratify the visual layout before paying
    generator-rewrite cost on the wrong shape.
-2. Phase C before E so the Quest cutover targets the final generator
+2. Phase C before E so the ActionDefinition cutover targets the final generator
    surface, not a moving one.
 3. Phase E before F so the new endpoints sit on the post-cutover surface
    (saves ~3h of duplicate rework). **Empirically falsified 2026-06-11**:
    Phase F shipped under autopilot ahead of Phase E with zero measurable
    rework cost — the 14 new endpoints sit on the same hand-written
-   `Models.Quest.*` namespace as the pre-existing 16, and will migrate
+   `Models.Actions.*` namespace as the pre-existing 16, and will migrate
    together when Phase E lands (one import-site namespace swap per
    store/manager/controller file). Phase E remains real work but is no
    longer a precondition for downstream tracks.
-4. dapp-composition integration tests after the Quest cutover so the real
-   Surreal-backed Quest pipeline can drive an end-to-end compose →
+4. dapp-composition integration tests after the ActionDefinition cutover so the real
+   Surreal-backed action pipeline can drive an end-to-end compose →
    generate → deploy test.
 
 ---
@@ -337,9 +337,9 @@ original goal of showing relationship arrows across the full domain model.
 | A. Runbook + tracks consolidation | RUNBOOK.md, tracks.md prune | 1-2h | ✓ Shipped 2026-05-23 (`8f1eee1`) |
 | B. Mermaid aggregate slices (visualization-only) | Annotate 24 source `.mermaid` files with `@surreal.slice` + Mermaid relationship lines. Add `azoa-surreal aggregates` subcommand that emits 6 `docs/aggregates/*.mermaid` + `docs/domain.generated.mermaid`. Generator POCO/.surql output unchanged. | 2-3h | ✓ Shipped 2026-05-27 (`137992c`) |
 | C. C#-first schema authoring (redesigned again) | Invert the Roslyn source-gen: schema source = decorated C# POCOs (attributes for shape, partial classes for validation). Generator emits `.surql` + `docs/schema.dbml` + state-machine code + guardrail runbook. Mermaid sources retire once byte-equivalent `.surql` is proven on the prototype slice. | TBD — sized after prototype slice | **NEXT (prototype `wallet_nft` slice first)** |
-| D. Wave-2 commit + integration | Commit the 3 SurrealQuest stores + tests + `230_quest_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
-| E. Quest aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + QuestManager + tests. Aliases vanish. | 7-9h | **READY 2026-06-11** — runtime stable post-quest-api; partial-class swap is now a focused refactor (no longer gating Phases F/G) |
-| F. quest-api endpoint gaps | 14 new endpoints + 14 new manager methods (4 spec endpoints reframed onto `QuestRun` per ADR §2.2; see `tracks/quest-api/SIGN-OFF.md`) | 2-3h actual | ✓ Shipped 2026-06-11 (autopilot) |
+| D. Wave-2 commit + integration | Commit the 3 SurrealAction stores + tests + `230_action_graph_edges.*`. | 1h | ✓ Shipped 2026-05-27 (`24a7403`) |
+| E. ActionDefinition aggregate cutover to generated POCOs | Partial-class extensions + delete hand-written + rewire wave-2 stores + 34 handlers + ActionManager + tests. Aliases vanish. | 7-9h | **READY 2026-06-11** — runtime stable post-action-api; partial-class swap is now a focused refactor (no longer gating Phases F/G) |
+| F. action-api endpoint gaps | 14 new endpoints + 14 new manager methods (4 spec endpoints reframed onto `ActionRun` per ADR §2.2; see `tracks/action-api/SIGN-OFF.md`) | 2-3h actual | ✓ Shipped 2026-06-11 (autopilot) |
 | G. dapp-composition close-out | Integration tests against the dev-up SurrealDB + Swagger smoke | 1-2h | After F |
 | H. Frontend demo harness `frontend-demo-harness` track | shadcn/ui demo harness, 6 phases | 8-10 days | Independent; can start any time |
 | I. `durable-saga-orchestration` Tier 1 | Reusable durable-saga + transactional-outbox module | TBD | After surrealdb-migration (done) |
@@ -351,7 +351,7 @@ original goal of showing relationship arrows across the full domain model.
 ## 7. Open questions / pending decisions (as of snapshot)
 
 1. **Aggregate boundary for the slice files** — §4.1 proposes 6 slices.
-   Edge case: `dapp_series_quest` references `quest` (different slice). Two
+   Edge case: `dapp_series_action` references `action` (different slice). Two
    answers: (a) declare cross-slice relationships in the slice that *owns*
    the FK side, (b) require a master slice for cross-aggregate joins.
    Default to (a) until we hit pain.
@@ -377,7 +377,7 @@ original goal of showing relationship arrows across the full domain model.
 | "Where is the schema package / emitters?" | `packages/Azoa.SurrealDb.Schema/` — `Generator/AttributeSchemaScanner.cs`, `Generator/SurqlEmitter.cs`, `Generator/MermaidFlowchartEmitter.cs` |
 | "What does the API surface look like?" | `PROVIDERS.md` (root) |
 | "What invariants does the bridge enforce?" | `conductor/tracks/api-safety-hardening/RESIDUAL-RISK-RUNBOOK.md` |
-| "What's the quest temporal model?" | `conductor/tracks/quest-temporal-fork-model/ADR.md` |
-| "How are quest tables intended to live in SurrealDB?" | `conductor/tracks/quest-temporal-fork-model/SURREAL-SCHEMA-HINTS.md` |
+| "What's the action temporal model?" | `conductor/tracks/action-temporal-fork-model/ADR.md` |
+| "How are action tables intended to live in SurrealDB?" | `conductor/tracks/action-temporal-fork-model/SURREAL-SCHEMA-HINTS.md` |
 | "What's the MCP surface look like?" | `conductor/tracks/mcp-surface/CATALOG.md` |
 | "Which track is which?" | `conductor/tracks.md` |

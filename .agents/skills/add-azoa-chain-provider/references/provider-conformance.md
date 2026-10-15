@@ -105,8 +105,11 @@ a transaction hash, or an operation ID.
 
 ## Bridge gate
 
-Keep `SupportsBridging=false` until tests prove all four real provider
-transactions: lock, wrapped mint, wrapped burn, and release.
+Implement `IBridgeSourceLeg` only once tests prove a real lock and release, and
+`IBridgeTargetLeg` only once tests prove a real wrapped mint and burn. Each leg is
+gated independently: shipping one and not the other is the honest state for a
+chain that is a proven source but not a target. A chain that implements neither
+has nothing to call, which IS the fail-closed refusal.
 
 Also prove:
 

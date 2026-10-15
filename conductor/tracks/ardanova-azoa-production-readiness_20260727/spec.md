@@ -70,7 +70,7 @@ financially launch-ready.
 
 Acceptance criteria:
 
-1. The self-register, self-run avatar model and shared/managed AZOA node decision
+1. The self-register, self-run user model and shared/managed AZOA node decision
    in `conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md` is either reaffirmed or
    deliberately superseded by one versioned decision.
 2. Conflicting tenant-custodial examples are relabeled as a generic alternate

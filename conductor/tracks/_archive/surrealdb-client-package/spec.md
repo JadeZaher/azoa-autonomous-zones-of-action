@@ -144,9 +144,9 @@ boundary so each of the above stops being someone else's bug.
 - Requires [[api-safety-hardening]] (G2 idempotency semantics must survive
   the engine-layer swap).
 - **Blocks** [[surrealdb-migration]] wave-2 adapter tasks (5, 6, 7, 8, 8a,
-  8b). Quest-schema work in [[surrealdb-migration]] tasks 3 (quest portion),
-  9, 10 is independently gated on [[quest-temporal-fork-model]].
-- Independent of [[quest-temporal-fork-model]] — they can ship in parallel.
+  8b). Action-schema work in [[surrealdb-migration]] tasks 3 (action portion),
+  9, 10 is independently gated on [[action-temporal-fork-model]].
+- Independent of [[action-temporal-fork-model]] — they can ship in parallel.
 
 ## What this track absorbs from elsewhere
 

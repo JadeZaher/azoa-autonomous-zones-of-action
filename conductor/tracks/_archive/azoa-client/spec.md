@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build a higher-level AzoaClient in the SDK that wraps AzoaApiClient + AzoaWallet to provide holon querying, avatar-based OAuth integration for external apps, session management, and cross-chain portfolio aggregation.
+Build a higher-level AzoaClient in the SDK that wraps AzoaApiClient + AzoaWallet to provide holon querying, user-based OAuth integration for external apps, session management, and cross-chain portfolio aggregation.
 
 ## Background
 
@@ -13,7 +13,7 @@ The current SDK has two separate clients:
 External app developers need a unified client that:
 1. Manages authentication sessions (JWT lifecycle)
 2. Provides a fluent API for querying holons (the primary data structure)
-3. Exposes the AZOA avatar system as an OAuth-compatible identity provider
+3. Exposes the AZOA user system as an OAuth-compatible identity provider
 4. Aggregates wallet balances across chains for portfolio views
 
 ## Requirements
@@ -30,17 +30,17 @@ const azoa = new AzoaClient({
 - Single entry point for all AZOA operations
 
 ### FR-2: Session Manager
-- Login/register via avatar API
+- Login/register via user API
 - JWT storage via pluggable adapter (localStorage, AsyncStorage, SecureStore)
 - Auto-refresh before expiry
 - `onSessionChange` callback for UI frameworks
-- `azoa.session.isAuthenticated` / `azoa.session.avatarId`
+- `azoa.session.isAuthenticated` / `azoa.session.userId`
 
 ### FR-3: Holon Query Builder
 ```typescript
 const holons = await azoa.holons
   .where({ assetType: "NFT", chainId: "algorand" })
-  .ownedBy(avatarId)
+  .ownedBy(userId)
   .sortBy("createdDate", "desc")
   .page(1, 20)
   .execute();
@@ -49,7 +49,7 @@ const holons = await azoa.holons
 - Maps to HolonQueryRequest on the backend
 - Supports tree traversal: `.children()`, `.ancestors()`, `.descendants()`
 
-### FR-4: Avatar OAuth Adapter
+### FR-4: User OAuth Adapter
 ```typescript
 // In an external app's auth flow:
 const authProvider = azoa.createAuthProvider({
@@ -64,7 +64,7 @@ const loginUrl = authProvider.getLoginUrl();
 const session = await authProvider.handleCallback(code);
 ```
 - OAuth 2.0 compatible flow (authorization code or implicit)
-- Scope-based access to avatar profile, wallets, holons
+- Scope-based access to user profile, wallets, holons
 - Works as an identity provider for third-party apps
 
 ### FR-5: Portfolio Aggregator
@@ -72,7 +72,7 @@ const session = await authProvider.handleCallback(code);
 const portfolio = await azoa.portfolio.getAll();
 // Returns: { total: "$1,234", chains: [{ chain: "algorand", balance: "100 ALGO", ... }] }
 ```
-- Queries all wallets for the authenticated avatar
+- Queries all wallets for the authenticated user
 - Calls wallet.getBalance for each chain
 - Aggregates with fiat conversion (optional price feed)
 

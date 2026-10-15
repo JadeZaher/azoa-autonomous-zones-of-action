@@ -15,10 +15,10 @@ engine** — this guide supersedes the Postgres/EF sections in `GO-TO-PROD.md` a
 An AZOA node is two cooperating processes:
 
 - **The WebAPI** — the .NET 10 ASP.NET Core host (`AZOA.WebAPI.dll`). It serves the
-  AZOA protocol (identity, quests, holons, swaps, STAR, bridge) over HTTP with
+  AZOA protocol (identity, actions, holons, swaps, action graph bundles, bridge) over HTTP with
   dual auth (JWT + `X-Api-Key`).
 - **A SurrealDB instance it owns** — the sole data engine. The node reads and
-  writes durable state (quests, idempotency claims, VAA replay ledger, bridge
+  writes durable state (actions, idempotency claims, VAA replay ledger, bridge
   rows) here. **Balances are read from the chain, never stored** — the source of
   truth for value is the chain confirmation / settlement callback, not a row in
   SurrealDB.
@@ -139,6 +139,11 @@ family so schema-owner authority cannot enter the API process.
 | `NodeOperator__CredentialRevision` | yes on first boot | Positive monotonic integer. Increment for every username/password rotation; rollback is refused. |
 | `NodeOperator__SessionMinutes` | optional | Dedicated operator-session lifetime, 5–30 minutes (default 20). |
 | `AZOA__WalletEncryptionKey` | yes (**SECRET**) | At-rest key for platform wallet generation. No default — `WalletKeyService` throws without it. |
+| `Registration__Enabled` | yes (prod) | Node-wide switch for the anonymous `POST /api/user/register`. `false` refuses it on any host. |
+| `Registration__AllowPublicSelfServiceInProduction` | yes (prod) | Production-only acknowledgement. Absent or `false` refuses anonymous registration in Production **even when `Registration__Enabled` is true** — see §8.10. |
+| `Kyc__Provider` | yes (prod) | Node identity provider. Base ships `identomat`. A Production host **refuses to boot** on `manual`/`mock`/`unavailable`/unknown (`KycRuntimeSafety.GuardProductionProviderIsReal`). |
+| `Kyc__ApprovalValidityDays` | optional | How long a granted approval stays current; default `365`, clamped 1–3650. Distinct from `Kyc__SubmissionExpiryDays` (how long an unfinished attempt may sit). |
+| `CustodialAccounts__CustodyMode` | yes for wallets | `Disabled`, `DevelopmentOnly`, or the production mode the node recognises — see §8.2. |
 | `PORT` | injected | On Railway the entrypoint binds `ASPNETCORE_URLS=http://0.0.0.0:$PORT` (falls back to 5000). Do not also pin `ASPNETCORE_URLS`. |
 
 Only the separate schema job receives `SURREALFORGE_*` (`_URL`, `_NS`, `_DB`,
@@ -181,8 +186,9 @@ What each network implies for the **Wormhole bridge trust root**:
 - **Testnet / Mainnet** — the Guardian set is **NOT shipped** (absent ⇒
   fail-closed: every VAA rejected). You MUST populate and independently verify
   the real Guardian set per **`GUARDIAN-SET-SETUP.md`** before Wormhole value can
-  flow. `RealValueEnabled` / `RequireFullSignatureVerification` and the launch
-  gates in `GO-TO-PROD.md` §1 govern when real cross-chain value is allowed.
+  flow. `RealValueEnabled` and the launch gates in `GO-TO-PROD.md` §1 govern
+  when real cross-chain value is allowed; signature verification itself is
+  unconditional and has no config key.
 
 The faucet (`Blockchain:Faucet:Algorand:Mnemonic`) is a **secret**, testnet-only.
 
@@ -205,13 +211,13 @@ but an operator MUST know which is which before flipping anything on:
 including Algorand, is rejected rather than silently no-op'd. Wormhole requests
 remain hard-blocked even if the global switch is accidentally enabled.
 
-**Forward-compat residual (record before you make quests shareable).** Value-node
-actor derivation currently reads the **quest definition** owner (`quest.AvatarId`).
-That is correct only while a run's actor equals the quest owner. **If quests ever
-become shareable/public** (a run driven by someone other than the quest author),
-the value-node actor MUST switch from `quest.AvatarId` to the **run** owner
-(`run.AvatarId`) so value acts as the run's driver, not the template's author.
-This is a launch-safe residual today (quests are not shareable) — flag it for the
+**Forward-compat residual (record before you make actions shareable).** Value-node
+actor derivation currently reads the **action definition** owner (`action.UserId`).
+That is correct only while a run's actor equals the action owner. **If actions ever
+become shareable/public** (a run driven by someone other than the action author),
+the value-node actor MUST switch from `action.UserId` to the **run** owner
+(`run.UserId`) so value acts as the run's driver, not the template's author.
+This is a launch-safe residual today (actions are not shareable) — flag it for the
 change that makes them so.
 
 ---
@@ -311,12 +317,35 @@ the `SurrealDb__*` reality of this guide, not its legacy Postgres DSN).
 ### 8.2 Choose your key custody (recommended for real value)
 
 The tenant custodial-account capability treats the current AES-GCM key derived
-from `AZOA__WalletEncryptionKey` as **development-only**. It reports ready only
-with `CustodialAccounts__CustodyMode=DevelopmentOnly`, a `Development` host, and
-`Blockchain__Mode=Simulated`. It stores no recovery seed phrase for these
-bootstrap wallets. A live/non-development node fails wallet provisioning
-closed, while deterministic identity creation and an available KYC provider
-remain usable as independent readiness dimensions.
+from `AZOA__WalletEncryptionKey` as **development-only**. It stores no recovery
+seed phrase for these bootstrap wallets. Deterministic identity creation and an
+available KYC provider remain usable as independent readiness dimensions, so a
+node with custody off still verifies people.
+
+`CustodialAccounts__CustodyMode` is the operator's declaration of which custody
+the node is running, and the node recognises exactly three answers:
+
+| Value | Meaning | Preconditions |
+|---|---|---|
+| `Disabled` | No wallet provisioning. | none |
+| `DevelopmentOnly` | Local E2E only; never a live network. | `Development` host **and** `Blockchain__Mode=Simulated` |
+| `Platform` (alias `Node`) | The production mode: the node itself custodies tenant wallet material under the operator's KEK. | `AZOA__WalletEncryptionKey` present (≥32 bytes, already boot-validated) **and** `Blockchain__Mode` **not** `Simulated` |
+
+`Platform` is the value to set on a real deployment. The predicate lives in
+`Services/Custody/CustodyModeResolver.cs` and every wallet-creating path resolves
+through it, so `walletReady` and the `unavailableReason` a tenant sees are one
+answer rather than three re-derivations. An unrecognised mode, a missing KEK, or
+`Blockchain__Mode=Simulated` on a Production host each keep custody closed and
+say which of the three it was.
+
+`Platform` is the *enabling* half only: it lets wallet provisioning succeed off a
+developer's laptop. It does **not** satisfy the KMS/HSM recommendation below, and
+it does not add float caps or a Production boot guard. Read the next two
+paragraphs before you set it on a node that will hold real value.
+
+**Verify:** with `CustodyMode=Platform` and the KEK set, `walletReady` is true and
+`unavailableReason` is empty; clear the KEK and the reason names the KEK, not a
+generic failure.
 
 For production custody, implement and provision a **KMS/HSM-backed key store**.
 The code exposes a custody seam
@@ -377,12 +406,32 @@ threshold.
 
 ### 8.5 Select KYC deliberately
 
-Base/production configuration uses `Kyc__Provider=unavailable` and a bounded
-`Kyc__SubmissionExpiryDays=30`. Development explicitly selects `manual`, the
-only implemented provider, with a 30-minute session TTL. It accepts validated
-credential-free HTTPS document references and requires an Azoa operator to
-approve/reject them. An explicit production `manual` override still fails
-closed until private upload, scanning, retention, and review operations exist.
+**Identomat is the node default.** Base configuration ships
+`Kyc__Provider=identomat`; the adapter reports UNAVAILABLE with the exact missing
+key NAMES until the `Kyc__Identomat__*` secrets are supplied at deploy time, so
+naming it selects the policy without pretending it is configured. A Production
+host **refuses to boot** when `Kyc__Provider` resolves to `manual`, `mock`,
+`unavailable`, or an unknown value: a misconfigured node must fail at start, not
+fail closed on every sponsor's verification. Development overrides the default to
+`manual`, which accepts validated credential-free HTTPS document references and
+requires an operator to approve/reject them; manual approval is explicitly
+non-authoritative and never satisfies a value-operation gate.
+
+**Two expiry clocks, not one.** `Kyc__SubmissionExpiryDays` (default 30) bounds
+how long an UNFINISHED attempt may sit before it is abandoned.
+`Kyc__ApprovalValidityDays` (default 365, clamped 1–3650) is how long a granted
+APPROVAL stays current. They were the same number, which meant every verified
+sponsor was pushed back through identity check a month after being approved. Set
+the approval clock to your regulator's re-verification interval — twelve months
+is the shipped default.
+
+**Where the applicant lands when they finish.** Identomat's `/begin` has no
+top-level redirect parameter at all; the only documented one is the per-session
+`general.returnUrl` override. Set `Kyc__Identomat__ReturnUrl` to a **public HTTPS**
+URL on your product and the adapter forwards it as that override. Loopback,
+private address space, and credential-bearing URLs are refused and nothing is
+sent — the applicant then stays on the vendor page and your app resumes from the
+callback plus its own polling, exactly as it does today when the key is unset.
 
 The node control plane stores multiple secret-free provider profiles and a
 versioned selection per tenant. A profile key is bound to its installed adapter
@@ -399,13 +448,31 @@ browsers cannot silently overwrite one another. Trust-bearing changes advance
 `trustRevision`; submissions and approvals remain bound to the tenant
 selection, provider, policy, and assurance provenance that produced them.
 
-Provider selection is not sufficient to authorize KYC. Configure the reviewed
-trust profile explicitly:
+**The tenant provider override is OFF by default.** The provider a tenant
+verifies through IS that tenant's compliance policy, so a tenant-selectable
+override that ships enabled is tenant-chosen policy on a node that custodies
+someone else's real users. `PUT /api/tenant/kyc/provider` refuses with
+`TENANT_PROVIDER_OVERRIDE_NOT_ENABLED`, and `GET /api/tenant/kyc/providers`
+returns an empty menu, unless **both** of these agree:
 
 ```text
-Kyc__ApprovalPolicy__PolicyVersion=<operator-controlled-version>
-Kyc__ApprovalPolicy__AssuranceLevel=<reviewed-assurance-label>
-Kyc__ApprovalPolicy__TrustedProviderKeys__0=<active-provider-key>
+Kyc__TenantProviderOverride__Enabled=true
+Kyc__TenantProviderOverride__AllowedTenantIds__0=<tenant-user-id>
+```
+
+Add one indexed entry per admitted tenant. `*` as an entry admits every tenant
+and should be a deliberate, audited choice, not a shortcut. The operator's own
+route, `PUT /api/nodeoperator/tenants/{tenantId}/kyc-provider`, is never gated by
+this — the operator is the custodian, and repointing a tenant is their call.
+
+Provider selection is not sufficient to authorize KYC. The reviewed trust profile
+is node configuration; base ships it populated for Identomat and Development
+overrides it for `manual`:
+
+```text
+Kyc__ApprovalPolicy__PolicyVersion=identomat-hosted-v1
+Kyc__ApprovalPolicy__AssuranceLevel=document-and-liveness
+Kyc__ApprovalPolicy__TrustedProviderKeys__0=identomat
 Kyc__ApprovalPolicy__AllowManualInDevelopment=false
 ```
 
@@ -416,7 +483,8 @@ valid only for a Development host with `Blockchain__Mode=Simulated` and
 non-authoritative and cannot satisfy a value-operation KYC gate. Approvals
 without a future expiry or the current versioned provenance envelope are denied.
 
-External options are explicit but unavailable until reviewed integrations land:
+Other provider options are explicit but unavailable until reviewed integrations
+land:
 
 - `Kyc__Provider=veriff` selects the fail-closed Veriff adapter stub.
 - `Kyc__Provider=hosted` selects the generic hosted-provider scaffold. Its keys
@@ -425,43 +493,48 @@ External options are explicit but unavailable until reviewed integrations land:
   `Kyc__Hosted__SessionPath`, and `Kyc__Hosted__StatusPath`.
 - Any other value is unknown and fails closed; it never falls back to manual.
 
-Both external choices report unavailable even when their config is complete.
+`veriff` and `hosted` report unavailable even when their config is complete.
 They are extension contracts, not working integrations. Do not enable one until
 it has durable idempotent attempts, persisted hosted sessions, raw-body webhook
-signature verification, event replay protection, attempt/avatar mapping, and
-CAS terminal status. Full contract: `TENANT-CUSTODIAL-ONBOARDING.md`.
+signature verification, event replay protection, attempt/user mapping, and
+CAS terminal status — the bar `identomat` already meets. Full contract:
+`TENANT-CUSTODIAL-ONBOARDING.md`.
 
-**Note:** the **mint path is KYC-gated** — an unverified avatar is rejected at
+**Note:** the **mint path is KYC-gated** — an unverified user is rejected at
 the single mint choke point with no asset created, whether it arrives via the
 allocation door or a raw mint call. Whether wallet-generation should also be
 gated pre-KYC (a zero-balance wallet before verification) is a deployment policy
 decision you make; by default wallet provisioning is allowed pre-KYC.
 
-**Verify:** an unverified, expired, indefinite, or stale-policy avatar is denied
+**Verify:** an unverified, expired, indefinite, or stale-policy user is denied
 at mint (403); `manual` reports available only in Development; production
 manual, `veriff`, `hosted`, and unknown values report unavailable and do not
-create a submission.
+create a submission; a freshly approved submission's `expiresAt` is
+`Kyc__ApprovalValidityDays` out, not `Kyc__SubmissionExpiryDays`; and a tenant
+that is not on `Kyc__TenantProviderOverride__AllowedTenantIds` gets
+`TENANT_PROVIDER_OVERRIDE_NOT_ENABLED` from `PUT /api/tenant/kyc/provider` and an
+empty list from `GET /api/tenant/kyc/providers`.
 
 ### 8.6 Onboard the first tenant
 
 The provisioning surface (`api/tenant`) and the step-by-step onboarding runbook
 already exist. As the operator you actually execute them for your first tenant:
 
-- Register the first tenant avatar.
+- Register the first tenant user.
 - Mint its **tenant-scoped API key** with `tenant:provision`, `wallet:manage`,
   `kyc:read`, and `kyc:submit` by calling JWT-Operator-only
-  `POST /api/apikey/tenant` with the existing tenant avatar id, a name, and a
+  `POST /api/apikey/tenant` with the existing tenant user id, a name, and a
   1–365 day expiry. The raw key is returned once with no-store headers; store it
   as a tenant-side secret. The endpoint accepts no arbitrary scopes or origins.
 - Call the create-only `PUT /api/tenant/custodial-accounts/{externalSubject}`
   with a stable `Idempotency-Key`, then persist only the returned public ids and
-  readiness fields. A claimed avatar is resolved, never overwritten.
+  readiness fields. A claimed user is resolved, never overwritten.
 
 Follow the generic onboarding steps: register tenant → mint tenant-scoped key →
 provision children → issue child credential → resolve by external id.
 
 **Verify:** the tenant's key authenticates, and an external user id resolves to
-the expected avatar.
+the expected user.
 
 ### 8.7 Provision Guardian sets and run the Railway deploy
 
@@ -503,11 +576,11 @@ deliberately introduced brand string.
 
 ### 8.9 Seed and operate the reserved node authority
 
-Node authority no longer promotes an ordinary avatar. The API owns one reserved
+Node authority no longer promotes an ordinary user. The API owns one reserved
 identity (`a20a0000-0000-4000-8000-000000000001`,
 `node-operator@azoa.invalid`) and binds it durably on first launch. Its token is
 dedicated to node operations, API-key-forbidden, and never enters ordinary
-avatar or tenant login.
+user or tenant login.
 
 Set this complete triplet on the API before the first Production boot:
 
@@ -539,8 +612,9 @@ Use the console in this order:
    names. The console never reads secret values.
 3. Enable and version only a `READY` provider profile. `trustRevision` advances
    when trust-bearing policy changes, making older approval provenance stale.
-4. Let each authenticated tenant choose from the ready catalog at `/kyc`, or
-   manage assignments from `/operator/tenants`.
+4. Assign each tenant's provider from `/operator/tenants`. Tenant self-service
+   at `/kyc` is refused unless you admitted that tenant to
+   `Kyc__TenantProviderOverride__AllowedTenantIds` (§8.5).
 5. Work `/operator/reviews` only when the API reports
    `humanReviewAllowed=true`. Manual review is Development simulation, not an
    external-provider override.
@@ -561,10 +635,139 @@ compatibility check only. Do not configure them for a new node. Production
 still refuses a half-configured legacy pair so an old deployment error cannot
 remain silent.
 
-**Verify:** the reserved credentials reach `/operator`; an ordinary avatar JWT
+**Verify:** the reserved credentials reach `/operator`; an ordinary user JWT
 and an `X-Api-Key` do not. Rotation succeeds only with a higher revision, global
 revocation signs out all browsers, and ordinary sign-out leaves other browsers
 active.
+
+### 8.10 Close public self-registration
+
+`POST /api/user/register` is `[AllowAnonymous]`. On a node that custodies another
+product's real people, "nobody self-registers here" has to be a control rather
+than a habit, so two keys guard it and Production needs both:
+
+```text
+Registration__Enabled=true
+Registration__AllowPublicSelfServiceInProduction=false
+```
+
+Resolution order, enforced identically at the controller and at
+`UserManager.RegisterAsync` so a non-HTTP caller inherits the same answer:
+
+- `Registration__Enabled=false` → refused on any host, any environment.
+- Not Production → allowed (this is what lets local and integration hosts seed
+  users).
+- Production → refused unless `Registration__AllowPublicSelfServiceInProduction`
+  is **explicitly** `true`. Base `appsettings.json` ships it `false`, so a node
+  that inherits the file verbatim never opens anonymous account creation by
+  accident.
+
+Refusal is `403` with a message that states a NODE fact
+("Public self-registration is disabled on this node") and never a user fact, so
+the endpoint cannot be used to probe whether an account exists.
+
+Accounts on a closed node arrive the operator's way instead: register the tenant
+principal yourself (§8.6), mint its tenant-scoped key, and let the tenant
+provision its own child users through `PUT /api/tenant/custodial-accounts/...`.
+
+Uniqueness is adjudicated by the `user_username` and `user_email` UNIQUE indexes
+(`Persistence/SurrealDb/Generated/Schemas/user.surql`) rather than by a read of
+every user before the write. Two simultaneous registrations for one email now
+lose at the index; before, both passed the scan.
+
+**The case rule is now uniform on the write side.** Those indexes are
+case-**sensitive** — they compare the stored bytes — so folding has to happen in every
+writer or not at all. All three fold: self-registration (`UserManager.RegisterAsync`),
+profile update (`UserManager.UpdateAsync`) and tenant provisioning
+(`TenantManager.ProvisionChildAsync`) each store the value trimmed and lower-invariant.
+A tenant that provisions `Alice@Example.com` therefore lands on the same stored bytes as
+a self-registration of `alice@example.com`, and the second one loses at the index instead
+of becoming a second account for one address.
+
+The login path still holds a line behind that, for rows written before the writers folded:
+`UserManager.LoginAsync` resolves the **exact** row first, accepts a lone case-insensitive
+match, and resolves **nothing** when two rows fold together — it never lets row order decide
+which of two password hashes an address authenticates against. Nothing this node writes
+today can create that ambiguity; the branch exists for data that predates the fix.
+
+A registration the store refuses returns one message —
+*"This account could not be created. The email or username may already be in
+use."* — and performs **no** read. It does not name the field that collided:
+doing so needed a scan of every user, on an anonymous endpoint, which both
+restored the O(n) cost this section removed and told a stranger whether an
+address is registered. If you want the field-level message back, the fix is a
+targeted indexed lookup on `IUserStore`, not a scan.
+
+**Verify:** with `ASPNETCORE_ENVIRONMENT=Production` and the acknowledgement
+absent, `POST /api/user/register` returns `403` and creates no row; setting
+`Registration__Enabled=false` returns the same `403` in every environment; a
+profile update to `Alice@Example.COM` reads back as `alice@example.com`; and a
+refused registration returns the single message above without the node reading
+the user table.
+
+### 8.11 The platform reserve
+
+The reserve is the operator-owned custodial account that every unit a sponsor or
+a worker ever receives comes **from**. It holds the platform unit and every
+project asset, it is the manager / reserve / freeze / clawback authority stamped
+on assets this node creates, and it pays the chain fees (§8.4 is the same
+account).
+
+**It has no secret of its own.** The reserve key *is* the per-chain platform key
+you provisioned in §8.2 (`AZOA__Algorand__PlatformMnemonic` and friends), resolved
+through `IKeyCustodyService`. The address is derived **inside** the custody door,
+as a by-product of proving the node can sign as the reserve — so a chain whose
+platform key is missing or malformed resolves **no reserve address at all**,
+rather than one that looks fundable and can never spend.
+
+```text
+Reserve__Chains__0=Algorand
+Reserve__FungibleMintTarget=PlatformReserve
+Reserve__ExpectedAddresses__Algorand=<the address you verified>
+Reserve__SeparateFeePayerAccount=false
+```
+
+- **`Chains`** — the chains the reserve may operate on. A reserve operation on a
+  chain absent from a **non-empty** list is refused before any key is touched, so
+  a node cannot quietly start holding value on a chain nobody approved. An empty
+  list means "no restriction" and is the unconfigured default.
+- **`FungibleMintTarget`** — where a fungible asset this node creates is minted.
+  `PlatformReserve` (the default) makes the reserve the creator and the holder of
+  all four ASA authorities, and opens the asset's reserve ledger row.
+  `CallerWallet` is the legacy shape and **cannot broadcast on Algorand**: an
+  ASA-create is signed with the platform key, so a create whose sender is a
+  caller's custodial wallet has a sender the signature does not match. Do not use
+  it outside a simulated chain.
+- **`ExpectedAddresses`** — the load-bearing operator assertion. Fill this in per
+  environment once you have read the derived address and verified it against the
+  chain. From then on a mismatch between the configured key and the declared
+  address fails **every** reserve operation on that chain closed, which is how a
+  swapped or mistyped mnemonic is caught at first use instead of after value has
+  moved to an account nobody expected.
+- **`SeparateFeePayerAccount`** — reserved. There is no separate fee-payer key;
+  the reserve pays fees. Leave it `false`.
+
+**Named partitions — the node-side oversubscription check.** For each asset the
+reserve holds, the node keeps one `platform_reserve_ledger` row carrying named
+partitions (`contributor`, `investor`, and anything a tenant declares) with
+`declared` / `issued` / `held` / `returned` counters. Every draw is checked
+against `issued + held - returned <= declared` and refused when it would
+oversubscribe. This lives on the node — not only in a tenant's database — because
+sponsor exchanges and contributor holds draw from the **same** reserve: a
+partition policed in one caller's database can be overdrawn by the other caller.
+
+Two consequences worth knowing before you operate this:
+
+- A partition that was never **declared** cannot be drawn from. That is
+  deliberate: auto-creating a partition on first draw would let a caller invent
+  unlimited availability by naming one nobody declared.
+- An asset whose ledger row failed to open is inert, not dangerous. The create
+  returns `Code = RESERVE_LEDGER_UNREGISTERED` with the asset id, and every draw
+  against it is refused until the row is registered.
+
+**Verify:** with the platform mnemonic set, a reserve read resolves an address and
+it matches `Reserve__ExpectedAddresses__<Chain>`; with the mnemonic blank, the
+same read fails with an error naming the chain and no address is returned.
 
 ---
 

@@ -20,22 +20,22 @@ graph TD
     Client["Client (SDK / Next.js Frontend)"]:::clientFill
     
     subgraph IdentityLayer["Identity Layer"]
-        Avatar["Avatar (Self-Sovereign Identity)"]
+        User["User (Self-Sovereign Identity)"]
         Consent["Consent Grant & Audit Trail"]
         Custody["KeyCustodyService & TenantConsentGate"]
     end
     IdentityLayer:::layerFill
 
-    subgraph WorkflowLayer["Quest & Saga Engine"]
-        QuestDAG["Quest DAG & Publisher"]
-        SagaRunner["Saga Engine (QuestNodeStepHandler)"]
-        Executions["Step-wise Runs (QuestRun)"]
+    subgraph WorkflowLayer["Action & Saga Engine"]
+        ActionDAG["Action DAG & Publisher"]
+        SagaRunner["Saga Engine (ActionNodeStepHandler)"]
+        Executions["Step-wise Runs (ActionRun)"]
     end
     WorkflowLayer:::layerFill
 
-    subgraph CompositionLayer["STAR Dapp Layer"]
+    subgraph CompositionLayer["Action Graph Bundle Dapp Layer"]
         DappSeries["DappSeries Scaffolder"]
-        EcoTree["STAR-ODK Ecosystem Tree"]
+        EcoTree["Action Graph Bundle Ecosystem Tree"]
     end
     CompositionLayer:::layerFill
 
@@ -50,7 +50,7 @@ graph TD
 
     Client -->|API Key / JWT Bearer| IdentityLayer
     IdentityLayer -->|Consent Check| WorkflowLayer
-    WorkflowLayer -->|Quests composition| CompositionLayer
+    WorkflowLayer -->|Actions composition| CompositionLayer
     WorkflowLayer -->|Durable execution| ProviderLayer
     
     IdentityLayer -->|C#-first POCOs| Surreal
@@ -60,17 +60,17 @@ graph TD
 ```
 
 ### Core Layers
-1. **Identity (Self-Sovereign Auth)**: Users own their avatars, authenticating via cryptographic challenge-signatures from external wallets (ED25519/Secp256k1). Access is managed through explicit, revocable `ConsentGrant` scopes rather than hard-coded tenant roles.
-2. **Quests (Durable Workflows)**: Structured, idempotent state machines represented as Directed Acyclic Graphs (DAGs). Execution is managed stepwise by a background saga engine that reconciles against real-world chains before advancing.
-3. **Dapps (STAR Composition)**: A composition layer allowing developers to bundle, sequence, and configure quests into unified `DappSeries` deployments.
-4. **Bridges & Adapters**: Standardized interfaces (`IBlockchainProvider`, `DexAdapter`) connecting quests to decentralized finance (DeFi) rails like Algorand, Solana, and Wormhole.
+1. **Identity (Self-Sovereign Auth)**: Users own their identities, authenticating via cryptographic challenge-signatures from external wallets (ED25519/Secp256k1). Access is managed through explicit, revocable `ConsentGrant` scopes rather than hard-coded tenant roles.
+2. **Actions (Durable Workflows)**: Structured, idempotent state machines represented as Directed Acyclic Graphs (DAGs). Execution is managed stepwise by a background saga engine that reconciles against real-world chains before advancing.
+3. **Dapps (action graph bundle composition)**: A composition layer allowing developers to bundle, sequence, and configure actions into unified `DappSeries` deployments.
+4. **Bridges & Adapters**: Standardized interfaces (`IBlockchainProvider`, `DexAdapter`) connecting actions to decentralized finance (DeFi) rails like Algorand, Solana, and Wormhole.
 
 ---
 
 ## 2. Core Subsystem Workflows
 
 ### 2.1 Identity, Authentication, and Revocable Consent
-AZOA avoids custodial identity. End-user avatars are self-sovereign; tenants can only act on behalf of an avatar if a valid `ConsentGrant` is present.
+AZOA avoids custodial identity. End-user identities are self-sovereign; tenants can only act on behalf of a user if a valid `ConsentGrant` is present.
 
 ```mermaid
 sequenceDiagram
@@ -83,14 +83,14 @@ sequenceDiagram
 
     User->>Tenant: Request Action
     Tenant->>API: POST /api/bridge/lock (Act on User's Behalf)
-    API->>Gate: EvaluateRequest(tenantId, avatarId, scope)
+    API->>Gate: EvaluateRequest(tenantId, userId, scope)
     Gate->>API: Check Active ConsentGrant
     alt Consent Absent or Revoked
         Gate-->>API: Reject (403 Forbidden)
         API-->>Tenant: Fail-Closed Error
     else Consent Live
         Gate-->>API: Allow Action
-        API->>Custody: DecryptSigningKey(avatarId)
+        API->>Custody: DecryptSigningKey(userId)
         Custody-->>API: Decrypted Key Material
         API->>API: Sign & Broadcast Tx
         API->>API: Log Immutable Consent Audit Trail
@@ -106,8 +106,8 @@ sequenceDiagram
 
 ---
 
-### 2.2 Quest Dag Publishing and Semantic Validation
-Before a quest can transition from `Draft` to `Active` (which makes it startable by users), it must pass the `QuestDagExecutabilityValidator` publishing gate.
+### 2.2 Action Dag Publishing and Semantic Validation
+Before an action can transition from `Draft` to `Active` (which makes it startable by users), it must pass the `ActionDagExecutabilityValidator` publishing gate.
 
 ```mermaid
 graph TD
@@ -115,9 +115,9 @@ graph TD
     classDef successFill fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
     classDef failFill fill:#ffebee,stroke:#f44336,stroke-width:2px;
 
-    Draft["Quest (Draft)"] --> PublishRequest["Publish Request"]
+    Draft["Action (Draft)"] --> PublishRequest["Publish Request"]
     
-    subgraph Validation["QuestDagExecutabilityValidator"]
+    subgraph Validation["ActionDagExecutabilityValidator"]
         V1["1. Unique Node Names"]:::stepFill
         V2["2. Dominator-based Ancestor Check"]:::stepFill
         V3["3. Output Binding ($from) Resolution"]:::stepFill
@@ -125,25 +125,25 @@ graph TD
     end
     
     PublishRequest --> Validation
-    Validation -->|All Passed| Active["Quest (Active)"]:::successFill
+    Validation -->|All Passed| Active["Action (Active)"]:::successFill
     Validation -->|Any Failed| Reject["Reject Publish (400 Bad Request)"]:::failFill
 ```
 
 1. **Dominator-Based Validation**: The validator checks all `$from` output bindings (e.g. `run.NodeA.Field`). It uses dominator-tree analysis to guarantee that `NodeA` is a guaranteed ancestor along control flow paths.
 2. **Control-Edge Skip Cascades**: If a conditional check (such as a Gate Check) fails, the "skipped" status cascades down control chains to prevent downstream payout nodes from executing.
-3. **Immutability Gating**: Once a quest is `Active`, its structure (nodes, edges, dependencies) is immutable. Updates require publishing a new version or unpublishing when no runs are active.
+3. **Immutability Gating**: Once an action is `Active`, its structure (nodes, edges, dependencies) is immutable. Updates require publishing a new version or unpublishing when no runs are active.
 
 ---
 
 ### 2.3 Step-wise Saga Execution and State Recovery
-Saga execution is stepwise and managed through the `QuestNodeStepHandler` dispatch loop.
+Saga execution is stepwise and managed through the `ActionNodeStepHandler` dispatch loop.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Engine as Saga Engine (Background)
     participant DB as SurrealDB Store
-    participant Handler as QuestNodeStepHandler
+    participant Handler as ActionNodeStepHandler
     participant Chain as Blockchain RPC
 
     Engine->>DB: Query Runnable Steps (Status: Pending)
@@ -173,7 +173,7 @@ sequenceDiagram
 
 ## 3. Database Conventions (SurrealDB)
 
-AZOA uses **SurrealDB** as its sole data engine, operating with RockDB-backed G1 durability (RocksDB syncs its WAL per commit). Persistence logic is managed through the C#-first package suite `SurrealForge`.
+AZOA uses **SurrealDB** as its sole data engine, operating with RocksDB-backed G1 durability (RocksDB syncs its WAL per commit). Persistence logic is managed through the C#-first package suite `SurrealForge`.
 
 ### 3.1 C#-First Schema Definition
 We define the database schema directly inside C# POCOs under `Persistence/SurrealDb/Models/`. Hand-authoring `.surql` schema files is strictly prohibited.
@@ -191,9 +191,9 @@ public partial class Wallet : ISurrealRecord
     public string Id { get; set; } = "";
 
     [Column(Order = 2, Type = "string")]
-    [References(typeof(Avatar), Optional = false)]
-    [JsonPropertyName("avatar_id")]
-    public string AvatarId { get; set; } = "";
+    [References(typeof(User), Optional = false)]
+    [JsonPropertyName("user_id")]
+    public string UserId { get; set; } = "";
 
     [Column(Order = 3, Type = "string")]
     [JsonPropertyName("address")]
@@ -208,7 +208,7 @@ public partial class Wallet : ISurrealRecord
 
 - **Attribute Mapping**:
   - `[SurrealTable]`: Defines table name, schema-full status, and index fields.
-  - `[Column]`: Configures schema types (`string`, `record<avatar>`, `option<int>`).
+  - `[Column]`: Configures schema types (`string`, `record<user>`, `option<int>`).
   - `[References]`: Sets up schema foreign keys, mapped during DDL generation.
   - `[Inside]`: Restricts values to a closed-set enum.
 - **Extensions**: Sibling partial classes (`Wallet.Extensions.cs`) host non-persisted accessors (like `Guid` parsing helpers) and domain predicates.
@@ -236,7 +236,7 @@ graph TD
     Context -->|No| Typed
 ```
 
-- **Record Lookup Requirement**: When performing record lookups by string/Guid, always use `SELECT * FROM type::record($_t, $_id)` or the `SelectById(table, id)` helper. Thing vs string equality comparisons fail silently in SurrealDB 1.5.x.
+- **Record Lookup Requirement**: When performing record lookups by string/Guid, always use `SELECT * FROM type::record($_t, $_id)` or the `SelectById(table, id)` helper. Thing vs string equality comparisons fail silently. (The tree runs SurrealDB 3.1.4 — see `docker-compose.dev.yml`; the guidance predates the 3.x cutover but the record-lookup rule is unchanged.)
 
 ---
 
@@ -246,11 +246,11 @@ graph TD
 AZOA organizes files strictly by role rather than domain:
 
 - `/Controllers`: HTTP endpoints (JWT/API-Key validated).
-- `/Managers`: Business orchestrators (Quest execution loops, dApp composition).
+- `/Managers`: Business orchestrators (action execution loops, dApp composition).
 - `/Services/<domain>`: Emitters, adapters, blockchain network clients, and background workers.
 - `/Core`: Primitives (enums, values, system-wide constants, exceptions, custom auth handlers).
 - `/Persistence`: Database models, generated schemas, and SurrealDB setups.
-- `/Providers`: Store implementations, blockchain providers (`Algorand`, `Solana`), and DEX adapters.
+- `/Providers`: Store implementations, blockchain providers (`Algorand`, `Solana`, `Ethereum`, `Simulated`), the value-rail factory, and DEX adapters.
 - `/Helpers`: Reusable static utility classes.
 - `/Interfaces`: Pure interface definitions.
 

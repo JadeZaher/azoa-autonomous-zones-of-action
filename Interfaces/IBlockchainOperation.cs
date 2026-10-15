@@ -1,9 +1,11 @@
+using AZOA.WebAPI.Core;
+
 namespace AZOA.WebAPI.Interfaces;
 
 public interface IBlockchainOperation
 {
     Guid Id { get; set; }
-    Guid? AvatarId { get; set; }
+    Guid? UserId { get; set; }
     Guid? WalletId { get; set; }
 
     /// <summary>
@@ -13,10 +15,10 @@ public interface IBlockchainOperation
     string? IdempotencyKey { get; set; }
 
     /// <summary>
-    /// Authenticated avatar that initiated the operation, distinct from a target
-    /// avatar that may receive value.
+    /// Authenticated user that initiated the operation, distinct from a target
+    /// user that may receive value.
     /// </summary>
-    Guid? InitiatorAvatarId { get; set; }
+    Guid? InitiatorUserId { get; set; }
 
     /// <summary>
     /// Authenticated API-key record that initiated the operation. This is an ID
@@ -36,4 +38,12 @@ public interface IBlockchainOperation
     Dictionary<string, string> Parameters { get; set; }
     DateTime CreatedDate { get; set; }
     DateTime? CompletedDate { get; set; }
+
+    /// <summary>
+    /// D16: the fiat value of this operation at the moment it settled, or <c>null</c> when
+    /// no rate source could price it. Stamped once, on the write that records the terminal
+    /// outcome; never recomputed on read.
+    /// See <c>Persistence/SurrealDb/Models/AGENTS.md</c> §value-stamp.
+    /// </summary>
+    ValueStamp? ValueStamp { get; set; }
 }

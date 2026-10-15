@@ -11,6 +11,10 @@
 > operator procedure. This file remains for its still-valid exactly-once
 > *reasoning* (idempotency claim → replay ledger → atomic transition → terminal
 > write) — the pattern is unchanged, only the storage engine underneath it.
+> **Also retired: `scripts/passoff.ps1` / `scripts/passoff-architecture.ps1`.**
+> They are gone from the tree. Every mention below records a gate that ran at
+> the time; none is an instruction. The current code gate is
+> `.github/workflows/ci.yml`.
 
 **Audience:** Operators/SREs running the AZOA cross-chain bridge API pre-launch.  
 **Scope:** Stuck/failed bridge transactions, idempotency record interpretation, reconciliation.  
@@ -35,7 +39,7 @@
 - `ReplayedVaa_IsRejected_NoSecondMint` (unit test, SQLite): a redeem that completes successfully marks the VAA digest consumed. A second redeem of the same VAA fails on the unique constraint of `ConsumedVaas.Digest`, never reaches the on-chain call.
 
 ### Server-Side Broadcast Idempotency
-**Mechanism:** `BlockchainOperationManager.ExecuteAsync` + `AlgorandFaucet.DispenseAsync` (`Managers/BlockchainOperationManager.cs`, `Core/AlgorandFaucet.cs:33–79`)
+**Mechanism:** `BlockchainOperationManager.ExecuteAsync` + `AlgorandFaucet.DispenseAsync` (`Managers/BlockchainOperationManager.cs`, `Providers/Blockchain/Algorand/AlgorandFaucet.cs`)
 
 **Safety:**
 - Idempotency key is deterministic and content-addressed: `OperationIdGenerator.Generate(chain, operationType, walletAddress, params)` (`Core/OperationIdGenerator.cs`). No `DateTime.Ticks` — identical params always yield identical keys.
@@ -47,7 +51,7 @@
 
 **Safety:**
 - Enforces VAA structure, version, ascending-unique guardian indices, Byzantine quorum.
-- **secp256k1 ecrecover IS implemented (2026-05-17)**: `Secp256k1VaaSignatureVerifier` (SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2; reuses the existing managed `Keccak256`) is registered in DI. With `RequireFullSignatureVerification=true` (default), each Guardian signature is cryptographically recovered and matched against the config-driven Guardian set. The fail-closed property is preserved: if the verifier is NOT registered (or the Guardian set is empty/unconfigured), no VAA can be trusted. Crypto path proven by unit tests; live-network validation + real testnet/mainnet Guardian sets remain an ops/config gate (see §2 / §4).
+- **secp256k1 ecrecover IS implemented (2026-05-17)**: `Secp256k1VaaSignatureVerifier` (SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2; reuses the existing managed `Keccak256`) is registered in DI. Per-signature verification is UNCONDITIONAL (the `RequireFullSignatureVerification` escape hatch was removed): each Guardian signature is cryptographically recovered and matched against the config-driven Guardian set. The fail-closed property is preserved: if the verifier is NOT registered (or the Guardian set is empty/unconfigured), no VAA can be trusted. Crypto path proven by unit tests; live-network validation + real testnet/mainnet Guardian sets remain an ops/config gate (see §2 / §4).
 
 ### Reconciliation (Chain-Source-of-Truth Re-derivation)
 **Mechanism:** `Services/Reconciliation/ReconciliationService.cs` + `ReconciliationHostedService` (hosted background sweep)
@@ -67,10 +71,10 @@
 
 ### Rate Limiting
 **Mechanism:** ASP.NET built-in rate limiter (no external NuGet), configured in `appsettings.json:RateLimiting`.
-- **Global policy:** 120 requests/60s per partition key (IP, API key, avatar ID — most specific wins).
+- **Global policy:** 120 requests/60s per partition key (IP, API key, user ID — most specific wins).
 - **Financial policy** (`[EnableRateLimiting("financial")]`): 10 requests/60s on swap-execute, wallet-topup, bridge-initiate/redeem/reverse.
 - Rejection: 429 Too Many Requests + `Retry-After` header.
-- Partitioning: `apikey:{sha256(X-Api-Key)}` (hashed so the secret never lands in state) → `avatar:{sub}` → `ip:{remoteIp}`.
+- Partitioning: `apikey:{sha256(X-Api-Key)}` (hashed so the secret never lands in state) → `user:{sub}` → `ip:{remoteIp}`.
 
 ### InMemoryStorageProvider Removed from Production
 **Status:** Deleted from DI registration (`Program.cs`). `EfStorageProvider` is now the sole `IAZOAStorageProvider`. InMemoryStorageProvider class still exists for integration tests to register explicitly; never used in production.
@@ -224,10 +228,9 @@ no-verifier ⇒ fail-closed path is unchanged and still tested).
    network — that is an ops validation step.
 
 **Mitigation / posture:**
-- The fail-closed escape hatch still exists: `RequireFullSignatureVerification`
-  default stays `true`; setting it `false` (devnet/testnet only, NEVER where
-  real value moves) skips crypto entirely. With the verifier now registered and
-  the default `true`, genuine verification runs.
+- The escape hatch is GONE: `RequireFullSignatureVerification` was removed, so
+  no configuration can skip crypto. With the verifier registered, genuine
+  verification always runs; without it, every VAA is rejected.
 - Do NOT enable Wormhole value flow on testnet/mainnet until items 1–2 above are
   completed and signed off by ops.
 
@@ -319,7 +322,7 @@ Then re-apply with `dotnet ef database update`.
 **Query non-terminal records (last 24 hours, showing age):**
 ```sql
 SELECT 
-  Id, AvatarId, SourceChain, TargetChain, Status,
+  Id, UserId, SourceChain, TargetChain, Status,
   now() - CreatedAt as age,
   LockTxHash, RedemptionTxHash, MintTxHash, ErrorMessage
 FROM BridgeTransactions
@@ -418,16 +421,26 @@ WHERE BridgeTransactionId = '<bridge_id>';
 - Configured in `appsettings.json`: `Reconciliation:IntervalSeconds` (default 300 = 5 minutes).
 - Hosted service `ReconciliationHostedService` runs in the background, calling `ReconciliationService.ReconcileBridgeAsync` and `ReconcileOperationsAsync` on each tick.
 
-**Manual trigger (if an API endpoint is exposed):**
-```bash
-# Trigger full bridge reconciliation sweep
-curl -X POST https://your-api.com/api/reconciliation/bridges \
-  -H "Authorization: Bearer <jwt>" \
-  -H "Content-Type: application/json"
+**Manual trigger.** ⚠ Corrected 2026-09-07: **neither endpoint below ever existed.**
+There is no `/api/reconciliation/*` controller and no `POST /api/bridge/{id}/reconcile`.
+Bridge reconciliation is reachable only through the background
+`ReconciliationHostedService` tick — to force one, restart the API or shorten
+`Reconciliation:IntervalSeconds`.
 
-# Reconcile a specific bridge transaction (if endpoint exists)
-curl -X POST https://your-api.com/api/bridge/<bridge_id>/reconcile \
+The reconcile routes that DO exist are on other aggregates and will not sweep a bridge:
+
+```bash
+# Reconcile one durable action run against chain truth
+curl -X POST https://your-api.com/api/action/runs/<run_id>/reconcile \
   -H "Authorization: Bearer <jwt>"
+
+# Sweep every reconcilable action run
+curl -X POST https://your-api.com/api/action/runs/reconcile-sweep \
+  -H "Authorization: Bearer <jwt>"
+
+# Observation-only allocation receipt reconciliation
+curl -X POST https://your-api.com/api/allocation/receipt/reconcile \
+  -H "X-Api-Key: <key>" -H "Content-Type: application/json"
 ```
 
 **Check reconciliation logs:**
@@ -603,7 +616,7 @@ SELECT Id, ErrorMessage FROM BridgeTransactions WHERE Status = 'Failed' AND Erro
 
 | Task | Status | Owner | Notes |
 |------|--------|-------|-------|
-| ✓ Idempotency store (IIdempotencyStore impl) | DONE | Wave 1 | `Core/Idempotency/IdempotencyStore.cs` |
+| ✓ Idempotency store (IIdempotencyStore impl) | DONE | Wave 1 | `Core/Idempotency/SurrealIdempotencyStore.cs` (interface `Interfaces/IIdempotencyStore.cs`) |
 | ✓ Consumed-VAA ledger (ConsumedVaaRecord + unique digest) | DONE | Wave 1 | `Models/ConsumedVaaRecord.cs`, unique on Digest |
 | ✓ Atomic bridge state transitions (WHERE Status=expected) | DONE | Wave 1 | `RedeemWithVAAAsync`, `ExecuteUpdateAsync` |
 | ✓ Bridge integration tests (concurrent redeem, replay rejection) | DONE | Wave 1 | Unit tests passing (SQLite, real constraints) |
@@ -615,7 +628,7 @@ SELECT Id, ErrorMessage FROM BridgeTransactions WHERE Status = 'Failed' AND Erro
 | ✓ Rate limiting + per-API-key metering | DONE | Wave 3 | In-memory fixed-window; partitioned by API key hash |
 | ✓ InMemoryStorageProvider removed from production DI | DONE | Wave 3 | `EfStorageProvider` sole IAZOAStorageProvider |
 | ✓ secp256k1 ecrecover in IVaaSignatureVerifier | DONE (code) | YOU | `Services/Wormhole/Secp256k1VaaSignatureVerifier.cs` — SEC1 §4.1.6 recovery on secp256k1 via vetted Bouncy Castle 2.6.2 (`BouncyCastle.Cryptography`, alias `BCCrypto2`); reuses existing managed `Keccak256`. Crypto path proven by 17 unit tests (synthetic Guardian set, real keypair, double-keccak digest). |
-| ✓ Implement + register IVaaSignatureVerifier | DONE (code) | YOU | Registered `AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>()` in `Program.cs`. Guardian sets are config-driven (`Blockchain:Wormhole:GuardianSets`, per-network). `RequireFullSignatureVerification` default stays `true`; fail-closed-without-verifier path unchanged & still tested. **Pending ops gate (a):** populate + independently verify real mainnet/testnet Guardian sets per **`GUARDIAN-SET-SETUP.md`** (this track) + validate against the live Wormhole Guardian network (config/ops, not a code gap). Base `appsettings.json` ships NO testnet/mainnet set (absent ⇒ fail-closed; placeholder removed — do not re-add). **Code sign-off gate: `scripts/passoff.ps1`** (build 0 errors + full unit suite + safety-critical assertions; prints "OPS SIGN-OFF REQUIRED" for ops gates a–c). |
+| ✓ Implement + register IVaaSignatureVerifier | DONE (code) | YOU | Registered `AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>()` in `Program.cs`. Guardian sets are config-driven (`Blockchain:Wormhole:GuardianSets`, per-network). `RequireFullSignatureVerification` was later REMOVED — verification is unconditional; the fail-closed-without-verifier path is unchanged & still tested. **Pending ops gate (a):** populate + independently verify real mainnet/testnet Guardian sets per **`GUARDIAN-SET-SETUP.md`** (this track) + validate against the live Wormhole Guardian network (config/ops, not a code gap). Base `appsettings.json` ships NO testnet/mainnet set (absent ⇒ fail-closed; placeholder removed — do not re-add). **Code sign-off gate: `scripts/passoff.ps1`** (build 0 errors + full unit suite + safety-critical assertions; prints "OPS SIGN-OFF REQUIRED" for ops gates a–c). |
 | **VERIFY** | **MANUAL** | **QA/Ops** | **EF migration baseline: no pre-existing BridgeTransactions table** |
 | **FUTURE** | **DEFERRED** | **Wave 4+** | Tri-state provider method (Confirmed/Dropped/Pending) for reconciliation |
 | **FUTURE** | **DEFERRED** | **Wave 4+** | Distributed rate-limit store (Redis) for multi-instance scale-out |
@@ -661,9 +674,9 @@ Network switching follows the existing config pattern: the base
 `appsettings.json` holds mainnet/testnet (empty placeholders);
 `appsettings.Development.json` overrides with the devnet set.
 
-**For testnet without signature verification:** the escape hatch still exists —
-temporarily set `Blockchain:Wormhole:RequireFullSignatureVerification=false`
-(NOT for production / never where real value moves).
+**For testnet without signature verification:** not possible. The escape hatch
+was removed — supply a verified Guardian set for the network, or every VAA is
+rejected.
 
 ---
 
@@ -860,7 +873,7 @@ ON CONFLICT, IDbContextFactory) consciously deferred (each sits on the
 safety spine — not low-risk; non-launch-blocking).
 
 **Tier-1 `architecture-decoupling` COMPLETE.** Persistence god interface +
-`IQuestRepository` + `ProviderContext`/selection/decorator infra deleted behind
+`IActionRepository` + `ProviderContext`/selection/decorator infra deleted behind
 8 per-aggregate `I*Store` interfaces (EF adapters interim; SurrealDB swaps them
 behind this one seam). **Exactly-once safety surface is UNCHANGED:**
 `CrossChainBridgeService` and `ReconciliationService` were deliberately kept on
@@ -886,7 +899,7 @@ god-iface-refs + warnings≤17 + live `/health` 200) is GREEN.
    EF CRUD/query-filter coverage; not replaced (manager tests mock the stores).
    Mitigated: the `Ef*Store` bodies are *proven verbatim lifts* of the deleted
    provider (diff-verified) ⇒ no logic regression. Add SQLite-backed
-   `Ef*StoreTests` (esp. `EfQuestStore.UpsertQuestAsync` child-collection sync,
+   `Ef*StoreTests` (esp. `EfActionStore.UpsertActionAsync` child-collection sync,
    `EfHolonStore.QueryAsync` filters) in the SurrealDB/integration rebuild.
 2. **L1** — `ProviderHealthMonitorHealthCheck` is vestigial: the decorator that
    recorded scores was deleted, so it always reports Healthy("No provider data

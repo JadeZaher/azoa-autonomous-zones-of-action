@@ -20,7 +20,7 @@ function maskToken(token: string | null): string {
 }
 
 export default function SettingsPage() {
-  const { avatarId, isAuthenticated, user, logout } = useAzoaAuth()
+  const { userId, isAuthenticated, user, logout } = useAzoaAuth()
   const { logoutEverywhere } = useAzoa()
   const [logoutEverywhereError, setLogoutEverywhereError] = useState<string | null>(null)
   const [token, setToken] = useState<string | null>(null)
@@ -49,7 +49,7 @@ export default function SettingsPage() {
   }
 
   const chainNames = azoa.wallet.chains
-  const sessionState = { avatarId, isAuthenticated, user, tokenMasked: maskToken(token) }
+  const sessionState = { userId, isAuthenticated, user, tokenMasked: maskToken(token) }
   const apiBaseUrl = azoa.getApiUrl()
   const rpcUrls: Record<string, string> = {
     algorand: process.env.NEXT_PUBLIC_ALGO_RPC ?? 'https://testnet-api.algonode.cloud',
@@ -68,7 +68,7 @@ export default function SettingsPage() {
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-muted-foreground">Auth</span><Badge variant={isAuthenticated ? 'default' : 'secondary'} className="text-[10px]">{isAuthenticated ? 'Active' : 'None'}</Badge></div>
           <Separator />
-          <div className="flex justify-between"><span className="text-muted-foreground">Avatar ID</span><span className="font-mono text-xs">{avatarId ?? '—'}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">User ID</span><span className="font-mono text-xs">{userId ?? '—'}</span></div>
           <Separator />
           <div className="flex justify-between items-center"><span className="text-muted-foreground">Token</span><span className="font-mono text-[11px] max-w-[55%] break-all text-right">{maskToken(token)}</span></div>
         </CardContent>

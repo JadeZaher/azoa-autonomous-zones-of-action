@@ -22,18 +22,18 @@ public class DappSeriesController : ControllerBase
     public async Task<ActionResult<AZOAResult<IEnumerable<DappSeries>>>> List(
         [FromQuery] DappSeries.StatusKind? status, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<IEnumerable<DappSeries>>("Invalid token."));
-        var result = await _manager.ListAsync(avatarId.Value, status, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<IEnumerable<DappSeries>>("Invalid token."));
+        var result = await _manager.ListAsync(userId.Value, status, ct);
         return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<DappSeries>>> Get(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
-        var result = await _manager.GetAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
+        var result = await _manager.GetAsync(id, userId.Value, ct);
         if (result.IsError || result.Result is null) return NotFound(result);
         return Ok(result);
     }
@@ -43,9 +43,9 @@ public class DappSeriesController : ControllerBase
     public async Task<ActionResult<AZOAResult<DappSeries>>> Create(
         [FromBody] DappSeriesCreateModel model, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
-        var result = await _manager.CreateAsync(avatarId.Value, model, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
+        var result = await _manager.CreateAsync(userId.Value, model, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -55,9 +55,9 @@ public class DappSeriesController : ControllerBase
     public async Task<ActionResult<AZOAResult<DappSeries>>> Update(
         Guid id, [FromBody] DappSeriesUpdateModel model, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
-        var result = await _manager.UpdateAsync(id, avatarId.Value, model, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeries>("Invalid token."));
+        var result = await _manager.UpdateAsync(id, userId.Value, model, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -66,74 +66,74 @@ public class DappSeriesController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
-        var result = await _manager.DeleteAsync(id, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
+        var result = await _manager.DeleteAsync(id, userId.Value, ct);
         if (result.IsError || !result.Result) return BadRequest(new AZOAResponse { IsError = true, Message = result.Message });
         return Ok(new AZOAResponse { Message = "DappSeries deleted." });
     }
 
-    // ── Series Quest Management ──────────────────────────────────────────────
+    // ── Series Action Management ────────────────────────────────────────────────────────
 
-    [HttpGet("{seriesId:guid}/quests")]
-    public async Task<ActionResult<AZOAResult<IEnumerable<DappSeriesQuest>>>> ListQuests(
+    [HttpGet("{seriesId:guid}/actions")]
+    public async Task<ActionResult<AZOAResult<IEnumerable<DappSeriesAction>>>> ListActions(
         Guid seriesId, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<IEnumerable<DappSeriesQuest>>("Invalid token."));
-        var result = await _manager.ListQuestsAsync(seriesId, avatarId.Value, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<IEnumerable<DappSeriesAction>>("Invalid token."));
+        var result = await _manager.ListActionsAsync(seriesId, userId.Value, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
-    [HttpPost("{seriesId:guid}/quests")]
+    [HttpPost("{seriesId:guid}/actions")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> AddQuest(
-        Guid seriesId, [FromBody] DappSeriesAddQuestModel model, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappSeriesAction>>> AddAction(
+        Guid seriesId, [FromBody] DappSeriesAddActionModel model, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeriesQuest>("Invalid token."));
-        var result = await _manager.AddQuestAsync(seriesId, avatarId.Value, model, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeriesAction>("Invalid token."));
+        var result = await _manager.AddActionAsync(seriesId, userId.Value, model, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
-    [HttpDelete("{seriesId:guid}/quests/{questId:guid}")]
+    [HttpDelete("{seriesId:guid}/actions/{actionId:guid}")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResponse>> RemoveQuest(Guid seriesId, Guid questId, CancellationToken ct)
+    public async Task<ActionResult<AZOAResponse>> RemoveAction(Guid seriesId, Guid actionId, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
-        var result = await _manager.RemoveQuestAsync(seriesId, avatarId.Value, questId, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(new AZOAResponse { IsError = true, Message = "Invalid token." });
+        var result = await _manager.RemoveActionAsync(seriesId, userId.Value, actionId, ct);
         if (result.IsError || !result.Result) return BadRequest(new AZOAResponse { IsError = true, Message = result.Message });
-        return Ok(new AZOAResponse { Message = "Quest removed from series." });
+        return Ok(new AZOAResponse { Message = "Action removed from series." });
     }
 
-    [HttpPut("{seriesId:guid}/quests/{questId:guid}/order")]
+    [HttpPut("{seriesId:guid}/actions/{actionId:guid}/order")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> ReorderQuest(
-        Guid seriesId, Guid questId, [FromBody] DappSeriesReorderQuestModel model, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappSeriesAction>>> ReorderAction(
+        Guid seriesId, Guid actionId, [FromBody] DappSeriesReorderActionModel model, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeriesQuest>("Invalid token."));
-        var result = await _manager.ReorderQuestAsync(seriesId, avatarId.Value, questId, model.NewOrder, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeriesAction>("Invalid token."));
+        var result = await _manager.ReorderActionAsync(seriesId, userId.Value, actionId, model.NewOrder, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
-    [HttpPut("{seriesId:guid}/quests/{questId:guid}/mappings")]
+    [HttpPut("{seriesId:guid}/actions/{actionId:guid}/mappings")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<DappSeriesQuest>>> UpdateMappings(
-        Guid seriesId, Guid questId, [FromBody] DappSeriesUpdateMappingsModel model, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DappSeriesAction>>> UpdateMappings(
+        Guid seriesId, Guid actionId, [FromBody] DappSeriesUpdateMappingsModel model, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId is null) return Unauthorized(Fail<DappSeriesQuest>("Invalid token."));
-        var result = await _manager.UpdateMappingsAsync(seriesId, avatarId.Value, questId, model.InputMappings, ct);
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized(Fail<DappSeriesAction>("Invalid token."));
+        var result = await _manager.UpdateMappingsAsync(seriesId, userId.Value, actionId, model.InputMappings, ct);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;

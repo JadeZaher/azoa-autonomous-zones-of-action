@@ -1,0 +1,48 @@
+# ═══════════════════════════════════════════════════════════════
+# ActionGraphBundleController Comprehensive QA
+# Covers: create, get, getall, generate, deploy, delete, auth
+# ═══════════════════════════════════════════════════════════════
+{"_suiteVars":{"suitePrefix":"actiongraphbundlecontroller_qa"}}
+
+# ─── Seed User ───
+{"id":"seed_user","description":"Register user for action graph bundle tests","method":"POST","path":"/api/user/register","headers":{"Content-Type":"application/json"},"body":{"username":"{{suitePrefix}}_bundleqa","email":"{{suitePrefix}}_bundle@qa.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"bundleUser"}
+{"id":"login_user","description":"Login as action graph bundle test user","method":"POST","path":"/api/user/login","headers":{"Content-Type":"application/json"},"body":{"email":"{{suitePrefix}}_bundle@qa.azoa","password":"TestPass123!"},"expectedStatus":200,"extract":{"token":"result"},"saveAs":"bundleAuth"}
+
+# ─── Create ODKs ───
+{"id":"create_odk_basic","description":"Create basic action graph bundle","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"name":"BasicODK","description":"Basic ODK for QA","publicKey":"0xTESTPUBKEY123","userId":"{{bundleUser.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"odkBasic"}
+{"id":"create_odk_advanced","description":"Create advanced action graph bundle with all fields","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"name":"AdvancedODK","description":"Advanced ODK with binding","publicKey":"0xADVANCEDPUBKEY456","userId":"{{bundleUser.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"odkAdvanced"}
+{"id":"create_odk_unicode","description":"Create ODK with Unicode name","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"name":"ODK_测试","description":"Unicode test ODK","publicKey":"0xUNICODE789","userId":"{{bundleUser.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"odkUnicode"}
+
+# ─── Get Tests ───
+{"id":"get_odk_by_id","description":"Get ODK by ID","method":"GET","path":"/api/actiongraphbundle/{{odkBasic.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+{"id":"get_nonexistent_odk","description":"Get non-existent ODK","method":"GET","path":"/api/actiongraphbundle/00000000-0000-0000-0000-000000000000","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":404}
+{"id":"get_all_odks","description":"List all ODKs","method":"GET","path":"/api/actiongraphbundle","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+
+# ─── Generate Tests ───
+{"id":"generate_odk_algorand","description":"Generate dApp for Algorand","method":"POST","path":"/api/actiongraphbundle/{{odkBasic.id}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"targetChain":"Algorand","boundHolonIds":[],"config":{"theme":"dark","debug":true}},"expectedStatus":200}
+{"id":"generate_odk_solana","description":"Generate dApp for Solana","method":"POST","path":"/api/actiongraphbundle/{{odkAdvanced.id}}/generate","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"targetChain":"Solana","boundHolonIds":[],"config":{"theme":"light","rpc":"devnet"}},"expectedStatus":200}
+
+# ─── Deploy Tests ───
+{"id":"deploy_odk_basic","description":"Deploy generated ODK","method":"POST","path":"/api/actiongraphbundle/{{odkBasic.id}}/deploy","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+{"id":"deploy_odk_advanced","description":"Deploy advanced ODK","method":"POST","path":"/api/actiongraphbundle/{{odkAdvanced.id}}/deploy","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+
+# ─── Update via CreateOrUpdate (upsert) ───
+{"id":"update_odk_via_upsert","description":"Update existing ODK via CreateOrUpdate","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"name":"BasicODK","description":"Updated description via upsert","publicKey":"0xUPDATEDPUBKEY999","userId":"{{bundleUser.id}}"},"expectedStatus":200}
+
+# ─── Auth Tests ───
+{"id":"get_odk_unauthorized","description":"Get ODK without auth","method":"GET","path":"/api/actiongraphbundle/{{odkBasic.id}}","headers":{},"expectedStatus":401}
+{"id":"create_odk_unauthorized","description":"Create ODK without auth","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json"},"body":{"name":"UnauthODK","description":"Should fail"},"expectedStatus":401}
+{"id":"delete_odk_unauthorized","description":"Delete ODK without auth","method":"DELETE","path":"/api/actiongraphbundle/{{odkBasic.id}}","headers":{},"expectedStatus":401}
+{"id":"generate_odk_unauthorized","description":"Generate without auth","method":"POST","path":"/api/actiongraphbundle/{{odkBasic.id}}/generate","headers":{"Content-Type":"application/json"},"body":{"targetChain":"Algorand"},"expectedStatus":401}
+
+# ─── Deploy before generate should fail ───
+{"id":"create_fresh_odk","description":"Create fresh ODK for deploy-before-generate test","method":"POST","path":"/api/actiongraphbundle","headers":{"Content-Type":"application/json","Authorization":"Bearer {{bundleAuth.token}}"},"body":{"name":"FreshODK","description":"No generation yet","publicKey":"0xFRESH","userId":"{{bundleUser.id}}"},"expectedStatus":200,"extract":{"id":"result.id"},"saveAs":"odkFresh"}
+{"id":"deploy_before_generate","description":"Deploy ODK that was never generated should fail","method":"POST","path":"/api/actiongraphbundle/{{odkFresh.id}}/deploy","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":400}
+
+# ─── Cleanup ───
+{"id":"delete_odk_basic","description":"Delete basic ODK","method":"DELETE","path":"/api/actiongraphbundle/{{odkBasic.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+{"id":"delete_odk_advanced","description":"Delete advanced ODK","method":"DELETE","path":"/api/actiongraphbundle/{{odkAdvanced.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+{"id":"delete_odk_unicode","description":"Delete unicode ODK","method":"DELETE","path":"/api/actiongraphbundle/{{odkUnicode.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+{"id":"delete_odk_fresh","description":"Delete fresh ODK","method":"DELETE","path":"/api/actiongraphbundle/{{odkFresh.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}
+{"id":"verify_deleted_odk","description":"Verify deleted ODK returns 404","method":"GET","path":"/api/actiongraphbundle/{{odkBasic.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":404}
+{"id":"cleanup_user","description":"Delete test user","method":"DELETE","path":"/api/user/{{bundleUser.id}}","headers":{"Authorization":"Bearer {{bundleAuth.token}}"},"expectedStatus":200}

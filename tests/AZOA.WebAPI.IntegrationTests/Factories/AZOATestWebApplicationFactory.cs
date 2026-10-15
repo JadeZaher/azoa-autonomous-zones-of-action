@@ -121,7 +121,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
             // reconfigures the options delegate without clearing the existing
             // SchemeMap, so ApiKeyAuthenticationHandler survives and can be exercised.
             //
-            // avatar-dapp-rbac AC3 (keystone): the default scheme is a FORWARDING
+            // user-dapp-rbac AC3 (keystone): the default scheme is a FORWARDING
             // policy scheme so an X-Api-Key request routes to the REAL
             // ApiKeyAuthenticationHandler (which re-reads the owner's CURRENT DappRole),
             // while every other request routes to TestAuthHandler (the JWT-equivalent
@@ -188,59 +188,59 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Create an HTTP client authenticated as a specific avatar id. Used by
-    /// IDOR / multi-tenant integration tests that need to act as Avatar A in
-    /// one request and Avatar B in the next.
+    /// Create an HTTP client authenticated as a specific user id. Used by
+    /// IDOR / multi-tenant integration tests that need to act as User A in
+    /// one request and User B in the next.
     /// </summary>
-    public HttpClient CreateAuthenticatedClientForAvatar(Guid avatarId, string? dappRole = AzoaDappRoles.Manager)
+    public HttpClient CreateAuthenticatedClientForUser(Guid userId, string? dappRole = AzoaDappRoles.Manager)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
-        client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.ToString());
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeaderName, userId.ToString());
         if (!string.IsNullOrWhiteSpace(dappRole))
             client.DefaultRequestHeaders.Add(TestAuthHandler.DappRoleHeaderName, dappRole);
         return client;
     }
 
     /// <summary>
-    /// avatar-dapp-rbac: an operator-authenticated client (JWT-equivalent scheme with
+    /// user-dapp-rbac: an operator-authenticated client (JWT-equivalent scheme with
     /// operator:admin + role=Admin stamped). Defaults to the canonical node operator
-    /// identity; callers may supply an avatar id for policy-only coverage.
+    /// identity; callers may supply a user id for policy-only coverage.
     /// </summary>
-    public HttpClient CreateOperatorClient(Guid? avatarId = null)
+    public HttpClient CreateOperatorClient(Guid? userId = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
         client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorHeaderName, "true");
         client.DefaultRequestHeaders.Add(
-            TestAuthHandler.AvatarHeaderName,
-            (avatarId ?? AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.AvatarId).ToString());
+            TestAuthHandler.UserHeaderName,
+            (userId ?? AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId).ToString());
         return client;
     }
 
-    public HttpClient CreateOperatorOnlyClient(Guid? avatarId = null)
+    public HttpClient CreateOperatorOnlyClient(Guid? userId = null)
     {
-        var client = CreateOperatorClient(avatarId);
+        var client = CreateOperatorClient(userId);
         client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorOnlyHeaderName, "true");
         return client;
     }
 
-    public HttpClient CreateNodeGovernClient(Guid? avatarId = null)
+    public HttpClient CreateNodeGovernClient(Guid? userId = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.AuthHeaderName, "true");
         client.DefaultRequestHeaders.Add(TestAuthHandler.OperatorHeaderName, "true");
         client.DefaultRequestHeaders.Add(TestAuthHandler.NodeGovernHeaderName, "true");
-        if (avatarId.HasValue)
-            client.DefaultRequestHeaders.Add(TestAuthHandler.AvatarHeaderName, avatarId.Value.ToString());
+        if (userId.HasValue)
+            client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeaderName, userId.Value.ToString());
         return client;
     }
 
     /// <summary>
-    /// avatar-dapp-rbac AC3 (keystone): an HTTP client that authenticates via the REAL
+    /// user-dapp-rbac AC3 (keystone): an HTTP client that authenticates via the REAL
     /// ApiKeyAuthenticationHandler using a genuinely-minted raw key (X-Api-Key header, no
     /// X-Test-Auth). The forwarding policy scheme routes it to the real handler, which
-    /// re-reads the owner avatar's CURRENT DappRole — so a key minted while the owner was
+    /// re-reads the owner user's CURRENT DappRole — so a key minted while the owner was
     /// a developer is correctly denied after the owner is demoted.
     /// </summary>
     public HttpClient CreateApiKeyClient(string rawKey)

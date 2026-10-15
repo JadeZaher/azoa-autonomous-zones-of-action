@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models;
 
@@ -7,9 +8,9 @@ public class BlockchainOperationBuilder
 {
     private readonly BlockchainOperation _operation = new();
 
-    public BlockchainOperationBuilder ForAvatar(Guid avatarId)
+    public BlockchainOperationBuilder ForUser(Guid userId)
     {
-        _operation.AvatarId = avatarId;
+        _operation.UserId = userId;
         return this;
     }
 
@@ -31,14 +32,20 @@ public class BlockchainOperationBuilder
         return this;
     }
 
-    public BlockchainOperationBuilder Mint(string tokenUri, ulong amount, string assetType)
+    /// <summary>
+    /// D13: takes a <see cref="RailAmount"/> so the builder is not the layer that
+    /// re-introduces the 64-bit cap the typed field no longer has. A <c>ulong</c> caller
+    /// still compiles unchanged (implicit widening) and produces the identical
+    /// <c>Parameters["Amount"]</c> string, so no idempotency key moves.
+    /// </summary>
+    public BlockchainOperationBuilder Mint(string tokenUri, RailAmount amount, string assetType)
     {
         _operation.OperationType = "Mint";
         _operation.TokenUri = tokenUri;
         _operation.Amount = amount;
         _operation.AssetType = assetType;
         _operation.Parameters["TokenUri"] = tokenUri;
-        _operation.Parameters["Amount"] = amount.ToString();
+        _operation.Parameters["Amount"] = amount.ToBaseUnitString();
         _operation.Parameters["AssetType"] = assetType;
         return this;
     }

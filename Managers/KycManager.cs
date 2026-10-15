@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using SurrealForge.Client;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting;
+using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -15,11 +17,11 @@ using AZOA.WebAPI.Settings;
 namespace AZOA.WebAPI.Managers;
 
 /// <summary>
-/// Provider-agnostic KYC manager. Avatar-scoped, returns
+/// Provider-agnostic KYC manager. User-scoped, returns
 /// <see cref="AZOAResult{T}"/>, and flags authorisation failures with the
 /// <see cref="KycAuthorizationError"/> message-prefix discriminator so the
 /// controller can translate to 403/404. The submission ledger is the sole
-/// verification authority; no avatar projection is updated.
+/// verification authority; no user projection is updated.
 /// </summary>
 public sealed class KycManager : IKycManager
 {
@@ -28,18 +30,21 @@ public sealed class KycManager : IKycManager
     private readonly IKycProviderRegistry? _registry;
     private readonly KycSettings _settings;
     private readonly IHostEnvironment _environment;
+    private readonly IConfiguration? _configuration;
 
     public KycManager(
         IKycStore store,
         IKycProviderService provider,
         IOptions<KycSettings> settings,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IConfiguration? configuration = null)
     {
         _store = store;
         _provider = provider;
         _registry = null;
         _settings = settings.Value;
         _environment = environment;
+        _configuration = configuration;
     }
 
     [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
@@ -48,13 +53,15 @@ public sealed class KycManager : IKycManager
         IKycProviderService provider,
         IKycProviderRegistry registry,
         IOptions<KycSettings> settings,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        IConfiguration? configuration = null)
     {
         _store = store;
         _provider = provider;
         _registry = registry;
         _settings = settings.Value;
         _environment = environment;
+        _configuration = configuration;
     }
 
     public KycProviderCapabilitiesModel GetCapabilities()
@@ -100,23 +107,23 @@ public sealed class KycManager : IKycManager
     }
 
     public Task<AZOAResult<KycSessionStartModel>> BeginAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default)
-        => BeginCoreAsync(avatarId, null, ct);
+        => BeginCoreAsync(userId, null, ct);
 
     public Task<AZOAResult<KycSessionStartModel>> BeginAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
-        => BeginCoreAsync(avatarId, tenantId, ct);
+        => BeginCoreAsync(userId, tenantId, ct);
 
     private async Task<AZOAResult<KycSessionStartModel>> BeginCoreAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
     {
-        if (avatarId == Guid.Empty)
-            return AZOAResult<KycSessionStartModel>.Failure("An authenticated avatar is required.");
+        if (userId == Guid.Empty)
+            return AZOAResult<KycSessionStartModel>.Failure("An authenticated user is required.");
 
         var authority = await ResolveAuthorityAsync(tenantId, ct);
         if (authority.IsError || authority.Result is null)
@@ -136,7 +143,7 @@ public sealed class KycManager : IKycManager
         }
 
         var now = DateTimeOffset.UtcNow;
-        var active = await GetActiveAsync(avatarId, tenantId, ct);
+        var active = await GetActiveAsync(userId, tenantId, ct);
         if (active.IsError)
             return Error<KycSessionStartModel>(active.Message, active.Exception, active.Code);
         if (active.Result is not null
@@ -154,7 +161,7 @@ public sealed class KycManager : IKycManager
                 return Error<KycSessionStartModel>(expired.Message, expired.Exception, expired.Code);
         }
 
-        var latest = await GetLatestAsync(avatarId, tenantId, ct);
+        var latest = await GetLatestAsync(userId, tenantId, ct);
         if (latest.IsError)
             return Error<KycSessionStartModel>(latest.Message, latest.Exception, latest.Code);
         if (latest.Result is not null
@@ -165,17 +172,40 @@ public sealed class KycManager : IKycManager
                 "KYC_ALREADY_APPROVED: This identity already has an active approval.");
         }
 
-        // Hosted providers stay unavailable until they can claim a durable
-        // attempt before their external create call. The available manual flow
-        // has no external side effect, so concurrent starts safely converge on
-        // the store's single-active-submission transaction.
-        if (capabilities.HostedVerification)
+        // A hosted provider stays refused unless it implements the durable
+        // admission seam (IHostedSessionProvider / HostedSessionFlow, D11). This
+        // gates on the SEAM being used, not merely on the HostedVerification flag:
+        // GenericHostedKycProviderService and VeriffKycProviderService both report
+        // HostedVerification=true while remaining fail-closed stubs that do not
+        // implement IHostedSessionProvider, so they stay refused here regardless of
+        // whatever their own Available value happens to be. IdentomatKycProviderService
+        // implements the seam and internally routes its BeginSessionAsync through
+        // IHostedSessionFlow.BeginAsync, which claims durable admission (keyed by a
+        // stable per-(user, tenant) admission key) BEFORE touching the vendor -
+        // see Services/HostedSessions/AGENTS.md. That is what makes it safe for two
+        // concurrent begins to converge on one provider session instead of two: the
+        // manual flow has no external side effect, and any seam-implementing hosted
+        // provider claims its own durable row before any external side effect.
+        if (capabilities.HostedVerification && resolution.Provider is not IHostedSessionProvider)
         {
             return Error<KycSessionStartModel>(
                 "KYC provider is unavailable until durable hosted-session admission is installed.");
         }
 
-        var started = await resolution.Provider.BeginSessionAsync(avatarId, ct);
+        // Ordering note (why this call site does not itself persist-before-call):
+        // for a provider gated above, the durable-admission-before-external-call
+        // invariant that Providers/Kyc/AGENTS.md requires ("persist the hosted
+        // session before returning a redirect") is enforced INSIDE this call by
+        // HostedSessionFlow.BeginAsync, not by statement order here. By the time
+        // BeginSessionAsync returns, a hosted provider has already durably claimed
+        // its hosted_session row (and, on success, attached the vendor's session id
+        // to it) - the KycSubmission this method persists afterward is a downstream
+        // ledger projection with no external side effect of its own, so writing it
+        // after the provider call is safe rather than a repeat of the ordering bug.
+        // Routing every hosted provider through HostedSessionFlow (enforced by the
+        // IHostedSessionProvider gate above) is therefore the enforced path that
+        // makes the original ordering trap structurally impossible to hit again.
+        var started = await resolution.Provider.BeginSessionAsync(userId, ct);
         if (started.IsError || started.Result is null)
             return Error<KycSessionStartModel>(started.Message, started.Exception, started.Code);
         if (started.Result.Provider != profile.Provider
@@ -195,7 +225,7 @@ public sealed class KycManager : IKycManager
         var attempt = new KycSubmission
         {
             Id = SurrealId.ToSurrealId(attemptId),
-            AvatarId = SurrealId.ToSurrealId(avatarId),
+            UserId = SurrealId.ToSurrealId(userId),
             TenantId = tenantId.HasValue ? SurrealId.ToSurrealId(tenantId.Value) : null,
             ProviderSelectionVersion = resolution.SelectionVersion,
             ProviderTrustRevision = resolution.TrustRevision,
@@ -216,7 +246,7 @@ public sealed class KycManager : IKycManager
         var created = await _store.CreateSubmissionAsync(attempt, Array.Empty<KycDocument>(), ct);
         if (created.IsError || created.Result is null)
         {
-            var concurrent = await GetActiveAsync(avatarId, tenantId, ct);
+            var concurrent = await GetActiveAsync(userId, tenantId, ct);
             if (!concurrent.IsError
                 && concurrent.Result is not null
                 && !IsExpired(concurrent.Result, DateTimeOffset.UtcNow)
@@ -233,25 +263,25 @@ public sealed class KycManager : IKycManager
 
     public Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
         SubmitKycModel model,
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default)
-        => SubmitCoreAsync(model, avatarId, null, ct);
+        => SubmitCoreAsync(model, userId, null, ct);
 
     public Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
         SubmitKycModel model,
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
-        => SubmitCoreAsync(model, avatarId, tenantId, ct);
+        => SubmitCoreAsync(model, userId, tenantId, ct);
 
     private async Task<AZOAResult<KycSubmissionModel>> SubmitCoreAsync(
         SubmitKycModel model,
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
     {
-        if (avatarId == Guid.Empty)
-            return Error<KycSubmissionModel>("An authenticated avatar is required.");
+        if (userId == Guid.Empty)
+            return Error<KycSubmissionModel>("An authenticated user is required.");
         if (model?.Documents is null)
             return Error<KycSubmissionModel>("A document reference list is required.");
         if (model.Documents.Count > KycDocumentRequestLimits.MaxDocuments)
@@ -284,7 +314,7 @@ public sealed class KycManager : IKycManager
             return Error<KycSubmissionModel>($"KYC_POLICY_UNAVAILABLE: {policyFailure}");
         }
 
-        var active = await GetActiveAsync(avatarId, tenantId, ct);
+        var active = await GetActiveAsync(userId, tenantId, ct);
         if (active.IsError)
             return Error<KycSubmissionModel>(active.Message, active.Exception, active.Code);
         if (active.Result is not null)
@@ -354,7 +384,7 @@ public sealed class KycManager : IKycManager
         // Establish provider availability before writing an active submission. A
         // configured-but-unavailable hosted adapter must not leave a zombie row.
         var docModels = documents.Select(ToDocumentModel).ToList();
-        var session = await resolution.Provider.CreateSessionAsync(avatarId, docModels, ct);
+        var session = await resolution.Provider.CreateSessionAsync(userId, docModels, ct);
         if (session.IsError || string.IsNullOrWhiteSpace(session.Result))
             return Error<KycSubmissionModel>(
                 session.Message ?? "KYC provider did not create a session.",
@@ -364,7 +394,7 @@ public sealed class KycManager : IKycManager
         var submission = new KycSubmission
         {
             Id                = SurrealId.ToSurrealId(submissionId),
-            AvatarId          = SurrealId.ToSurrealId(avatarId),
+            UserId          = SurrealId.ToSurrealId(userId),
             TenantId          = tenantId.HasValue ? SurrealId.ToSurrealId(tenantId.Value) : null,
             ProviderSelectionVersion = resolution.SelectionVersion,
             ProviderTrustRevision = resolution.TrustRevision,
@@ -395,42 +425,42 @@ public sealed class KycManager : IKycManager
     }
 
     public Task<AZOAResult<KycSubmissionModel>> GetStatusAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default)
-        => GetStatusCoreAsync(avatarId, null, ct);
+        => GetStatusCoreAsync(userId, null, ct);
 
     public Task<AZOAResult<KycSubmissionModel>> GetStatusAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default)
-        => GetStatusCoreAsync(avatarId, tenantId, ct);
+        => GetStatusCoreAsync(userId, tenantId, ct);
 
     private async Task<AZOAResult<KycSubmissionModel>> GetStatusCoreAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
     {
-        var latest = await GetLatestAsync(avatarId, tenantId, ct);
+        var latest = await GetLatestAsync(userId, tenantId, ct);
         if (latest.IsError)
             return Error<KycSubmissionModel>(latest.Message, latest.Exception, latest.Code);
         if (latest.Result is null)
-            return Error<KycSubmissionModel>($"{KycAuthorizationError.NotFound}No KYC submission found for this avatar.");
+            return Error<KycSubmissionModel>($"{KycAuthorizationError.NotFound}No KYC submission found for this user.");
 
         return await WithDocuments(latest.Result, tenantId, ct);
     }
 
-    public async Task<AZOAResult<KycSubmissionModel>> GetByIdAsync(Guid submissionId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> GetByIdAsync(Guid submissionId, Guid userId, CancellationToken ct = default)
     {
-        var loaded = await LoadOwned(submissionId, avatarId, ct);
+        var loaded = await LoadOwned(submissionId, userId, ct);
         if (loaded.IsError || loaded.Result is null)
             return Error<KycSubmissionModel>(loaded.Message, loaded.Exception, loaded.Code);
 
         return await WithDocuments(loaded.Result, null, ct);
     }
 
-    public async Task<AZOAResult<IEnumerable<KycDocumentModel>>> ListDocumentsAsync(Guid submissionId, Guid avatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<KycDocumentModel>>> ListDocumentsAsync(Guid submissionId, Guid userId, CancellationToken ct = default)
     {
-        var loaded = await LoadOwned(submissionId, avatarId, ct);
+        var loaded = await LoadOwned(submissionId, userId, ct);
         if (loaded.IsError || loaded.Result is null)
             return Error<IEnumerable<KycDocumentModel>>(loaded.Message, loaded.Exception, loaded.Code);
 
@@ -466,7 +496,7 @@ public sealed class KycManager : IKycManager
         return Ok<IEnumerable<KycSubmissionModel>>(models);
     }
 
-    public async Task<AZOAResult<KycSubmissionModel>> ApproveAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> ApproveAsync(Guid submissionId, Guid reviewerUserId, string? notes, CancellationToken ct = default)
     {
         var loaded = await _store.GetSubmissionByIdAsync(submissionId, ct);
         if (loaded.IsError)
@@ -518,9 +548,14 @@ public sealed class KycManager : IKycManager
 
         var now = DateTimeOffset.UtcNow;
         submission.Status       = KycStatus.APPROVED;
-        submission.ReviewerId   = SurrealId.ToSurrealId(reviewerAvatarId);
+        submission.ReviewerId   = SurrealId.ToSurrealId(reviewerUserId);
         submission.ReviewNotes  = notes;
         submission.ReviewedAt   = now;
+        // An APPROVAL lives on Kyc:ApprovalValidityDays, never on the far shorter
+        // Kyc:SubmissionExpiryDays the PENDING attempt was stamped with. Without
+        // this restamp the approval inherits the attempt's expiry and every
+        // verified sponsor is forced back through identity check a month later.
+        submission.ExpiresAt    = KycApprovalValidity.ResolveExpiry(_configuration, now);
         submission.ModifiedDate = now;
 
         var saved = await _store.TryReviewAsync(submission, ct);
@@ -535,7 +570,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(saved.Result, tenantId, ct);
     }
 
-    public async Task<AZOAResult<KycSubmissionModel>> RejectAsync(Guid submissionId, Guid reviewerAvatarId, string? notes, string? rejectionReason, CancellationToken ct = default)
+    public async Task<AZOAResult<KycSubmissionModel>> RejectAsync(Guid submissionId, Guid reviewerUserId, string? notes, string? rejectionReason, CancellationToken ct = default)
     {
         var loaded = await _store.GetSubmissionByIdAsync(submissionId, ct);
         if (loaded.IsError)
@@ -576,7 +611,7 @@ public sealed class KycManager : IKycManager
 
         var now = DateTimeOffset.UtcNow;
         submission.Status          = KycStatus.REJECTED;
-        submission.ReviewerId      = SurrealId.ToSurrealId(reviewerAvatarId);
+        submission.ReviewerId      = SurrealId.ToSurrealId(reviewerUserId);
         submission.ReviewNotes     = notes;
         submission.RejectionReason = rejectionReason;
         submission.ReviewedAt      = now;
@@ -597,12 +632,12 @@ public sealed class KycManager : IKycManager
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Loads a submission by id and asserts the authenticated avatar owns it.
+    /// Loads a submission by id and asserts the authenticated user owns it.
     /// Returns <see cref="KycAuthorizationError.NotFound"/> when the id is unknown
     /// and <see cref="KycAuthorizationError.Forbidden"/> when it is owned by a
-    /// different avatar (the IDOR hardening vs the unscoped source).
+    /// different user (the IDOR hardening vs the unscoped source).
     /// </summary>
-    private async Task<AZOAResult<KycSubmission>> LoadOwned(Guid submissionId, Guid avatarId, CancellationToken ct)
+    private async Task<AZOAResult<KycSubmission>> LoadOwned(Guid submissionId, Guid userId, CancellationToken ct)
     {
         var loaded = await _store.GetSubmissionByIdAsync(submissionId, ct);
         if (loaded.IsError)
@@ -610,16 +645,16 @@ public sealed class KycManager : IKycManager
         if (loaded.Result is null)
             return Error<KycSubmission>($"{KycAuthorizationError.NotFound}KYC submission not found.");
 
-        if (!OwnedBy(loaded.Result, avatarId)
+        if (!OwnedBy(loaded.Result, userId)
             || !string.IsNullOrWhiteSpace(loaded.Result.TenantId))
             return Error<KycSubmission>($"{KycAuthorizationError.Forbidden}{KycAuthorizationError.VerificationRequiredMessage}");
 
         return Ok(loaded.Result);
     }
 
-    private static bool OwnedBy(KycSubmission submission, Guid avatarId)
-        => Guid.TryParse(submission.AvatarId, out var owner)
-           && owner == avatarId;
+    private static bool OwnedBy(KycSubmission submission, Guid userId)
+        => Guid.TryParse(submission.UserId, out var owner)
+           && owner == userId;
 
     private async Task<AZOAResult<KycSubmissionModel>> WithDocuments(
         KycSubmission submission,
@@ -701,20 +736,20 @@ public sealed class KycManager : IKycManager
     }
 
     private Task<AZOAResult<KycSubmission>> GetLatestAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
         => tenantId.HasValue || _registry is not null
-            ? _store.GetLatestSubmissionAsync(avatarId, tenantId, ct)
-            : _store.GetLatestSubmissionByAvatarAsync(avatarId, ct);
+            ? _store.GetLatestSubmissionAsync(userId, tenantId, ct)
+            : _store.GetLatestSubmissionByUserAsync(userId, ct);
 
     private Task<AZOAResult<KycSubmission>> GetActiveAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct)
         => tenantId.HasValue || _registry is not null
-            ? _store.GetActiveSubmissionAsync(avatarId, tenantId, ct)
-            : _store.GetActiveSubmissionByAvatarAsync(avatarId, ct);
+            ? _store.GetActiveSubmissionAsync(userId, tenantId, ct)
+            : _store.GetActiveSubmissionByUserAsync(userId, ct);
 
     private static bool MatchesAuthority(
         KycSubmission submission,
@@ -747,7 +782,7 @@ public sealed class KycManager : IKycManager
     private static KycSubmissionModel ToSubmissionModel(KycSubmission s) => new()
     {
         Id                = Guid.TryParse(s.Id, out var id) ? id : Guid.Empty,
-        AvatarId          = Guid.TryParse(s.AvatarId, out var aid) ? aid : Guid.Empty,
+        UserId          = Guid.TryParse(s.UserId, out var aid) ? aid : Guid.Empty,
         TenantId          = Guid.TryParse(s.TenantId, out var tenantId) ? tenantId : null,
         ProviderSelectionVersion = s.ProviderSelectionVersion,
         ProviderTrustRevision = s.ProviderTrustRevision,
@@ -822,4 +857,44 @@ public sealed class KycManager : IKycManager
         if (ex is not null) r.Exception = ex;
         return r;
     }
+}
+
+/// <summary>
+/// The single source of truth for how long a KYC APPROVAL stays current, split
+/// from <c>Kyc:SubmissionExpiryDays</c> (how long an unfinished ATTEMPT may sit).
+/// </summary>
+/// <remarks>
+/// Read through <see cref="IConfiguration"/> rather than <c>KycSettings</c> so
+/// every seam that terminalizes a submission - the manual reviewer path here and
+/// the hosted-provider outcome handler - resolves one number from one key. See
+/// <c>docs/NODE-HOST.md</c> section 8.5.
+/// </remarks>
+public static class KycApprovalValidity
+{
+    /// <summary>Configuration key holding the approval lifetime in days.</summary>
+    public const string ConfigurationKey = "Kyc:ApprovalValidityDays";
+
+    /// <summary>Twelve months: the shortest lifetime that is not re-verification theatre.</summary>
+    public const int DefaultDays = 365;
+
+    public const int MinimumDays = 1;
+    public const int MaximumDays = 3650;
+
+    /// <summary>Clamped approval lifetime; an absent or unparseable value falls back to twelve months.</summary>
+    /// <remarks>
+    /// Parsed rather than bound: an operator typo must not throw on the approval
+    /// path, and a nonsense value must fall back to the safe default instead of
+    /// silently becoming zero (an approval that expires the instant it is granted).
+    /// </remarks>
+    public static int ResolveDays(IConfiguration? configuration)
+    {
+        var configured = configuration?[ConfigurationKey];
+        return int.TryParse(configured, out var days) && days > 0
+            ? Math.Clamp(days, MinimumDays, MaximumDays)
+            : DefaultDays;
+    }
+
+    /// <summary>Absolute expiry to stamp on a submission at the moment it is approved.</summary>
+    public static DateTimeOffset ResolveExpiry(IConfiguration? configuration, DateTimeOffset approvedAt)
+        => approvedAt.AddDays(ResolveDays(configuration));
 }

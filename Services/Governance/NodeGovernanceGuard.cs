@@ -1,6 +1,8 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Governance;
@@ -9,18 +11,21 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
 {
     private readonly NodeGovernanceOptions _options;
     private readonly INodeGovernanceStore? _store;
+    private readonly ILogger<NodeGovernanceGuard>? _logger;
 
     public static INodeGovernanceGuard Unrestricted { get; } = new AllowAllNodeGovernanceGuard();
 
     public NodeGovernanceGuard(
         IOptions<NodeGovernanceOptions> options,
-        INodeGovernanceStore? store = null)
+        INodeGovernanceStore? store = null,
+        ILogger<NodeGovernanceGuard>? logger = null)
     {
         _options = options.Value;
         _store = store;
+        _logger = logger;
     }
 
-    public async Task<AZOAResult<bool>> EnsureAllowedAsync(
+    public async Task<NodeGovernanceDecision> EnsureAllowedAsync(
         string? chainType,
         string? assetType,
         string action,
@@ -28,32 +33,32 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
     {
         var parameters = await ResolveParametersAsync(ct);
         if (parameters.IsError || parameters.Result is null)
-            return Deny(parameters.Message);
+            return Unavailable(parameters.Message, action);
 
         var chain = EnsureListed(parameters.Result.AllowedChains, "chain", chainType, action);
-        if (chain.IsError) return chain;
+        if (chain.IsRefused) return chain;
         return EnsureListed(parameters.Result.AllowedAssetTypes, "asset type", assetType, action);
     }
 
-    public async Task<AZOAResult<bool>> EnsureChainAllowedAsync(
+    public async Task<NodeGovernanceDecision> EnsureChainAllowedAsync(
         string? chainType,
         string action,
         CancellationToken ct = default)
     {
         var parameters = await ResolveParametersAsync(ct);
         return parameters.IsError || parameters.Result is null
-            ? Deny(parameters.Message)
+            ? Unavailable(parameters.Message, action)
             : EnsureListed(parameters.Result.AllowedChains, "chain", chainType, action);
     }
 
-    public async Task<AZOAResult<bool>> EnsureAssetTypeAllowedAsync(
+    public async Task<NodeGovernanceDecision> EnsureAssetTypeAllowedAsync(
         string? assetType,
         string action,
         CancellationToken ct = default)
     {
         var parameters = await ResolveParametersAsync(ct);
         return parameters.IsError || parameters.Result is null
-            ? Deny(parameters.Message)
+            ? Unavailable(parameters.Message, action)
             : EnsureListed(parameters.Result.AllowedAssetTypes, "asset type", assetType, action);
     }
 
@@ -86,14 +91,14 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
         };
     }
 
-    private static AZOAResult<bool> EnsureListed(
+    private NodeGovernanceDecision EnsureListed(
         IReadOnlyList<string>? configuredList,
         string dimension,
         string? value,
         string action)
     {
         if (configuredList is null)
-            return Allow();
+            return NodeGovernanceDecision.Allowed;
 
         var allowed = configuredList
             .Where(v => !string.IsNullOrWhiteSpace(v))
@@ -105,15 +110,17 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
         {
             return Deny(
                 $"Node governance requires {ArticleFor(dimension)} {dimension} for '{action}' because " +
-                $"{ArticleFor(dimension)} {dimension} allowlist is configured.");
+                $"{ArticleFor(dimension)} {dimension} allowlist is configured.",
+                action);
         }
 
         if (allowed.Contains(requested, StringComparer.OrdinalIgnoreCase))
-            return Allow();
+            return NodeGovernanceDecision.Allowed;
 
         return Deny(
             $"Node governance disallows {action} on {dimension} '{requested}'. " +
-            $"Allowed {dimension}s: {Describe(allowed)}.");
+            $"Allowed {dimension}s: {Describe(allowed)}.",
+            action);
     }
 
     private static string Describe(string[] allowed)
@@ -122,32 +129,51 @@ public sealed class NodeGovernanceGuard : INodeGovernanceGuard
     private static string ArticleFor(string phrase)
         => phrase.StartsWith("a", StringComparison.OrdinalIgnoreCase) ? "an" : "a";
 
-    private static AZOAResult<bool> Allow()
-        => new() { Result = true };
+    /// <summary>
+    /// A POLICY refusal. The operator wording - which names the action, the dimension and the
+    /// allowlist - is written to THIS log and then dropped: it is what an operator reading the
+    /// log needs and what a member must never be shown. What the caller receives has already
+    /// been through <see cref="ConsumerSafeErrors"/>, so no door can forget to scrub it.
+    /// </summary>
+    private NodeGovernanceDecision Deny(string operatorDetail, string action)
+    {
+        _logger?.LogWarning(
+            "Node governance refused {Action} as {Code}: {OperatorDetail}",
+            action, ConsumerSafeErrorCodes.NotPermitted, operatorDetail);
 
-    private static AZOAResult<bool> Deny(string message)
-        => new() { IsError = true, Result = false, Message = message };
+        return NodeGovernanceDecision.RefusePolicy(operatorDetail);
+    }
+
+    /// <summary>The governance parameters could not be read - a dependency failure, not a policy one.</summary>
+    private NodeGovernanceDecision Unavailable(string operatorDetail, string action)
+    {
+        _logger?.LogWarning(
+            "Node governance could not be read for {Action} as {Code}: {OperatorDetail}",
+            action, ConsumerSafeErrorCodes.RailUnavailable, operatorDetail);
+
+        return NodeGovernanceDecision.Unavailable(operatorDetail);
+    }
 
     private sealed class AllowAllNodeGovernanceGuard : INodeGovernanceGuard
     {
-        public Task<AZOAResult<bool>> EnsureAllowedAsync(
+        public Task<NodeGovernanceDecision> EnsureAllowedAsync(
             string? chainType,
             string? assetType,
             string action,
             CancellationToken ct = default)
-            => Task.FromResult(Allow());
+            => Task.FromResult(NodeGovernanceDecision.Allowed);
 
-        public Task<AZOAResult<bool>> EnsureChainAllowedAsync(
+        public Task<NodeGovernanceDecision> EnsureChainAllowedAsync(
             string? chainType,
             string action,
             CancellationToken ct = default)
-            => Task.FromResult(Allow());
+            => Task.FromResult(NodeGovernanceDecision.Allowed);
 
-        public Task<AZOAResult<bool>> EnsureAssetTypeAllowedAsync(
+        public Task<NodeGovernanceDecision> EnsureAssetTypeAllowedAsync(
             string? assetType,
             string action,
             CancellationToken ct = default)
-            => Task.FromResult(Allow());
+            => Task.FromResult(NodeGovernanceDecision.Allowed);
     }
 
     private sealed record EffectiveParameters(

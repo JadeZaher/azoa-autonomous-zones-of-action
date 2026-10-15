@@ -2,12 +2,12 @@ using AZOA.WebAPI.Models.Ecosystem;
 
 namespace AZOA.WebAPI.Models.Requests;
 
-/// <summary>Attach a DappSeries (or nested STARODK) as a node in a STARODK's
-/// ecosystem tree. The owner is always the authenticated avatar — no owner id
-/// is accepted on the body (IDOR-resistant, STARODK precedent).</summary>
+/// <summary>Attach a DappSeries (or nested ActionGraphBundle) as a node in an ActionGraphBundle's
+/// ecosystem tree. The owner is always the authenticated user — no owner id
+/// is accepted on the body (IDOR-resistant, ActionGraphBundle precedent).</summary>
 public class AddDappSeriesRequest
 {
-    /// <summary>Guid of the DappSeries (or STARODK when <see cref="RefKind"/> is StarOdk) to attach.</summary>
+    /// <summary>Guid of the DappSeries (or ActionGraphBundle when <see cref="RefKind"/> is ActionGraphBundle) to attach.</summary>
     public Guid RefId { get; set; }
 
     /// <summary>What the node references. Defaults to a DappSeries.</summary>
@@ -20,7 +20,7 @@ public class AddDappSeriesRequest
     public string? Label { get; set; }
 
     /// <summary>Optional ecosystem name/target chain used only when the ecosystem
-    /// does not yet exist for this STARODK (first attach lazily creates it).</summary>
+    /// does not yet exist for this ActionGraphBundle (first attach lazily creates it).</summary>
     public string? EcosystemName { get; set; }
     public string? TargetChain { get; set; }
 }

@@ -15,7 +15,7 @@ activation_gate: >-
   peers to allow or deny is spec theater. Do NOT build Phase 2 surfaces before the
   Commons substrate exists to enforce them.
 depends_on:
-  - avatar-dapp-rbac               # the scope-manager + policy model this scope plugs into
+  - user-dapp-rbac               # the scope-manager + policy model this scope plugs into
   - final-hardening-cutover        # value engine, allocation seam, HolonType registry, MCP surface
 related:
   - federation-v2                  # federation RULES are governed here; the substrate lives there
@@ -56,7 +56,7 @@ the crux of this spec (§The interop constraint).
 Rationale for the name:
 
 - **`node:` prefix, not `operator:`** — deliberately NOT colonised under `operator:` so it is
-  never confused with `operator:admin`. `operator:admin` is destructive cross-avatar INFRA
+  never confused with `operator:admin`. `operator:admin` is destructive cross-user INFRA
   (key rotation, backfill). `node:govern` is ECONOMIC governance of the node's own ecosystem.
   Two different axes; two different prefixes keep the vocabulary honest.
 - **`:govern` verb** — it governs *parameters and rules*, not the platform. It is not
@@ -68,13 +68,13 @@ Rationale for the name:
 
 | Scope | Axis | What it gates | Auth model |
 |---|---|---|---|
-| `operator:admin` | **platform infra admin** | destructive cross-avatar surfaces (key rotation, data backfill) | JWT-only; on the `ApiKeyForbiddenScopes` denylist; never key-issuable |
-| `dapp:manage` / `dapp:develop` | **DApp economy authoring** | author/edit/compose/deploy holons, quests, dapp-series | self-issuable capability scopes, bounded by owning avatar's role |
+| `operator:admin` | **platform infra admin** | destructive cross-user surfaces (key rotation, data backfill) | JWT-only; on the `ApiKeyForbiddenScopes` denylist; never key-issuable |
+| `dapp:manage` / `dapp:develop` | **DApp economy authoring** | author/edit/compose/deploy holons, actions, dapp-series | self-issuable capability scopes, bounded by owning user's role |
 | **`node:govern`** (this track) | **node ECONOMIC governance** | fee schedules, federation rules, ecosystem-incentive params, economy knobs | **JWT-only** (see below); NOT on the value path, so it is not on the S6 operation-scope map |
 
 `node:govern` sits **between** the two: broader than `dapp:manage` (it governs the whole
 node economy, not one DApp author's holons) but narrower and non-destructive relative to
-`operator:admin` (it never touches another avatar's keys, never runs a backfill, never
+`operator:admin` (it never touches another user's keys, never runs a backfill, never
 decrypts a user's key — it only sets *parameters* the value engine later reads).
 
 ### JWT-only, and who grants it
@@ -108,14 +108,14 @@ one scope would foreclose that; two scopes cost nothing and preserve the option.
 ## Capabilities it gates (the surface — spec, not all endpoints exist yet)
 
 All four surfaces are **parameter/config surfaces**, not engines. `node:govern` writes a
-node-scoped configuration record; the existing value engine, quest engine, and (later)
+node-scoped configuration record; the existing value engine, action engine, and (later)
 federation client *read* those parameters. This keeps the track small and honors the
 "governance-parameter surface, not a full rules engine — MVP scope" constraint.
 
 ### 1. Fee schedules  *(alpha-cheap; Phase 1)*
 
 The operator sets/adjusts the fees the node charges for economic actions: **mint, transfer,
-swap, quest completion, federation publication.** This is a `NodeFeeSchedule` config record
+swap, action completion, federation publication.** This is a `NodeFeeSchedule` config record
 (node-scoped, versioned), NOT a per-request input.
 
 - **Shape** mirrors the fiat-stripe-bridge precedent. The `TOKENS_PER_CENT` price schedule
@@ -124,9 +124,9 @@ swap, quest completion, federation publication.** This is a `NodeFeeSchedule` co
   client-supplied.** `NodeFeeSchedule` is the on-node analogue — the operator's authoritative
   rate table for economic actions, read at action time, never overridable by the caller.
 - **Fee model (opinionated MVP):** a flat + basis-points table keyed by operation type, e.g.
-  `{ "Mint": { flatBaseUnits, bps }, "Transfer": {...}, "Swap": {...}, "QuestComplete": {...},
+  `{ "Mint": { flatBaseUnits, bps }, "Transfer": {...}, "Swap": {...}, "ActionComplete": {...},
   "FederationPublish": {...} }`. `bps` (basis points of the moved value) covers value-scaled
-  actions; `flatBaseUnits` covers fixed actions (mint of a supply-1 NFT, a quest completion).
+  actions; `flatBaseUnits` covers fixed actions (mint of a supply-1 NFT, an action completion).
 - **Where fees accrue — CRITICAL, honors [[data-engine-decision]].** The chain is the neutral
   settlement source of truth; **AZOA never holds a stored off-chain balance.** So a fee is NOT a
   ledger row AZOA debits. A fee is one of:
@@ -157,7 +157,7 @@ This is **where "set the federation rules" lives.** federation-v2 defines the th
 surface (submit holon, submit conformance, host cell); `node:govern` is the authority that
 decides **the RULES those functions apply**:
 
-- **Which holons/quests/templates this node will federate** — a federation allow/deny policy
+- **Which holons/actions/templates this node will federate** — a federation allow/deny policy
   (per-type, per-tag, or explicit list) that the L1 "submit a holon for federation" function
   consults before publishing a `HolonReference` to the Commons. Default = private/local
   (federation-v2's default); `node:govern` is where an operator opts a class of holons in.
@@ -176,13 +176,13 @@ hard-gated on federation-v2 because a peer policy with no peers is inert.
 
 Operator-defined reward/incentive **parameters** — NOT a rules engine (explicit MVP boundary):
 
-- quest-completion bonuses (an extra grant on `MarkRunCompletedAsync`),
+- action-completion bonuses (an extra grant on `MarkRunCompletedAsync`),
 - referral incentives (a grant keyed to a referral attribution),
 - staking-style rules (a parameterised hold-to-earn knob).
 
-Kept as a `NodeIncentiveParameters` config record read by the existing economic-primitive quest
+Kept as a `NodeIncentiveParameters` config record read by the existing economic-primitive action
 nodes (Grant/Emit/Transfer). We do NOT build a general rules DSL; we expose a bounded parameter
-set the existing Tier-2 nodes consume. The alpha-cheap subset (a flat quest-completion bonus
+set the existing Tier-2 nodes consume. The alpha-cheap subset (a flat action-completion bonus
 parameter) *could* fold into Phase 1 if a concrete need appears, but is scoped to Phase 2 by
 default to keep the alpha slice tight.
 
@@ -192,8 +192,8 @@ The knobs that define the node's economy:
 
 - **which chains** the node's economy operates on (an allowlist over the provider set),
 - **which asset types** are allowed (an allowlist over the `HolonType` / `AssetType` vocabulary),
-- **membership/onboarding rules** — the node's local policy for how avatars join its economy
-  (open / invite / KYC-gated), composing the existing KYC gate + the quest-invitations model.
+- **membership/onboarding rules** — the node's local policy for how users join its economy
+  (open / invite / KYC-gated), composing the existing KYC gate + the action-invitations model.
 
 The chain-allowlist and asset-type-allowlist are **node-local, enforceable today** (they gate
 which provider/holon-type an action may use) and belong in the **Phase 1** alpha slice as a
@@ -240,7 +240,7 @@ be imposed on a peer, and a peer can never be dragged into an economy it didn't 
 
 ## Relationship to existing tracks
 
-- **avatar-dapp-rbac (depends_on).** That track just shipped the scope-manager + policy model
+- **user-dapp-rbac (depends_on).** That track just shipped the scope-manager + policy model
   (`DappDevelop`/`DappManage` policies, role-bounded self-issuance, JWT-stamps-allowed-scopes).
   `node:govern` plugs into the SAME machinery: a new `NodeGovern` authorization policy, a new
   constant on `AzoaScopes`, membership on `ApiKeyForbiddenScopes` (JWT-only), and JWT issuance
@@ -267,7 +267,7 @@ be imposed on a peer, and a peer can never be dragged into an economy it didn't 
 3. On a single-operator sovereign node, the node-operator identity implicitly carries
    `node:govern` (stamped by the JWT issuer alongside the admin identity).
 4. **Fee schedule (Phase 1):** an operator can set a versioned `NodeFeeSchedule`; a subsequent
-   mint/transfer/swap/quest-completion applies the configured fee; the fee settles on-chain to
+   mint/transfer/swap/action-completion applies the configured fee; the fee settles on-chain to
    the node treasury (or as a fee-adjusted allocation), never as an off-chain balance; a
    redelivered idempotent request never double-charges; changes are audited and non-retroactive
    to in-flight claims.
@@ -282,11 +282,11 @@ be imposed on a peer, and a peer can never be dragged into an economy it didn't 
    peer-conformance-threshold config records exist and are read by the federation-v2 client;
    a peer below the conformance threshold is not collaborated with fail-closed; mutual opt-in is
    enforced (A publishing does not obligate B).
-8. **Ecosystem incentives (Phase 2):** a bounded `NodeIncentiveParameters` set (quest-completion
+8. **Ecosystem incentives (Phase 2):** a bounded `NodeIncentiveParameters` set (action-completion
    bonus, referral, staking-style) is read by the existing Tier-2 economic nodes; no general
    rules DSL is introduced.
 9. Every governance write is audited in an immutable trail; no governance surface touches another
-   avatar's keys, runs a backfill, or decrypts a user key (it is not `operator:admin`).
+   user's keys, runs a backfill, or decrypts a user key (it is not `operator:admin`).
 
 ## Explicit non-goals
 

@@ -100,7 +100,7 @@ export interface OperatorTenantKycSummaryResponse extends TenantKycSelectionResp
 
 export interface OperatorKycSubmissionQueueItem {
     id: string;
-    avatarId: string;
+    userId: string;
     tenantId?: string | null;
     providerKey: string;
     status: string;
@@ -134,7 +134,7 @@ export interface KycControlAuditResponse {
     assuranceLevel?: string | null;
     previousTrustRevision?: number | null;
     trustRevision?: number | null;
-    actorAvatarId: string;
+    actorUserId: string;
     occurredAt: string;
 }
 
@@ -147,6 +147,42 @@ export interface OperatorKycDecisionRequest {
     decision: "approve" | "reject";
     notes?: string;
     reason?: string;
+}
+
+/**
+ * A payment the provider confirmed as cleared. OI-27: any status but Issued or Reversed is
+ * somebody who paid and holds nothing for it. Mirrors `OnRampLotView` on the node
+ * (`Services/Fiat/OnRamp/OnRampLotOperatorController.cs`); only the fields the board shows are
+ * declared here, because a contract that restates every server field drifts on the ones nobody
+ * reads.
+ */
+export interface OperatorOnRampLot {
+    id: string;
+    intentId: string;
+    status: string;
+    statusReason?: string | null;
+    /** Cleared and still uncredited — the person is out of pocket. */
+    chargedAndUncredited: boolean;
+    /** Parked where the node will never move it on its own. */
+    needsAPersonToMoveIt: boolean;
+    fiatMinorUnits: number;
+    currencyCode: string;
+    createdAt: string;
+}
+
+/**
+ * A payment-rail delivery nothing finished. OI-65: `providerWasToldToStopRetrying` is the one
+ * that needs a person — this node answered 202 and the provider will not deliver it again.
+ * Mirrors `FiatEventView` (`Services/Fiat/FiatEventOperatorController.cs`).
+ */
+export interface OperatorFiatEvent {
+    id: string;
+    providerEventId: string;
+    eventType: string;
+    status: string;
+    providerWasToldToStopRetrying: boolean;
+    attemptCount: number;
+    lastError?: string | null;
 }
 
 export interface OperatorResponse<T> {

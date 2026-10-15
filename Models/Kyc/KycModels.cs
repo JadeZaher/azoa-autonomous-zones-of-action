@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
-// AZOA-side KYC DTOs. Ownership is keyed to Avatar (Guid) throughout — the
-// authenticated avatar is authoritative; any AvatarId on a request body is
-// ignored by the manager (IDOR defence-in-depth, the STARODK precedent).
+// AZOA-side KYC DTOs. Ownership is keyed to User (Guid) throughout — the
+// authenticated user is authoritative; any UserId on a request body is
+// ignored by the manager (IDOR defence-in-depth, the ActionGraphBundle precedent).
 
 #nullable enable
 
@@ -43,14 +43,14 @@ public sealed class SubmitKycDocumentModel
 }
 
 /// <summary>
-/// Request body for <c>POST /api/kyc/submit</c>. <see cref="AvatarId"/> is
+/// Request body for <c>POST /api/kyc/submit</c>. <see cref="UserId"/> is
 /// accepted for shape-compatibility but IGNORED by the manager — the
-/// authenticated avatar is always used.
+/// authenticated user is always used.
 /// </summary>
 public sealed class SubmitKycModel
 {
-    /// <summary>IGNORED by the manager. The authenticated avatar is authoritative.</summary>
-    public Guid? AvatarId { get; set; }
+    /// <summary>IGNORED by the manager. The authenticated user is authoritative.</summary>
+    public Guid? UserId { get; set; }
 
     [MaxLength(KycDocumentRequestLimits.MaxDocuments)]
     public List<SubmitKycDocumentModel> Documents { get; set; } = new();
@@ -74,7 +74,7 @@ public sealed class KycDocumentModel
 public sealed class KycSubmissionModel
 {
     public Guid Id { get; set; }
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
     public Guid? TenantId { get; set; }
     public long ProviderSelectionVersion { get; set; }
     public long ProviderTrustRevision { get; set; }

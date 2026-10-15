@@ -15,15 +15,15 @@ namespace AZOA.WebAPI.Mcp;
 /// wraps each registered <see cref="IMcpTool"/> as an <see cref="McpServerTool"/>
 /// so they become reachable over the live <c>/mcp</c> transport.
 ///
-/// Per-request avatar scoping: the SDK tool handler resolves the request-scoped
-/// <see cref="IServiceProvider"/>, lifts the AvatarId that
+/// Per-request user scoping: the SDK tool handler resolves the request-scoped
+/// <see cref="IServiceProvider"/>, lifts the UserId that
 /// <see cref="McpAuthMiddleware"/> stashed in <c>HttpContext.Items</c>, and builds
 /// a <see cref="ToolCallContext"/> — identical to the context the integration
 /// tests construct by hand.
 /// </summary>
 public static class McpToolBridge
 {
-    private const string AvatarItemKey = "mcp.avatar_id";
+    private const string UserItemKey = "mcp.user_id";
 
     /// <summary>
     /// Build an <see cref="McpServerTool"/> for a single <see cref="IMcpTool"/>.
@@ -43,7 +43,7 @@ public static class McpToolBridge
             var args = ArgumentsToJsonElement(ctx.Params?.Arguments);
 
             // Resolve the request scope so tool execution uses request-scoped
-            // services (ISurrealExecutor, IQuestManager, etc.).
+            // services (ISurrealExecutor, IActionManager, etc.).
             var http = ctx.Services?.GetService<IHttpContextAccessor>()?.HttpContext;
             var requestServices = http?.RequestServices ?? ctx.Services ?? appServices;
             if (requestServices is null)
@@ -51,17 +51,17 @@ public static class McpToolBridge
                 return ErrorResult("mcp_unavailable: no service provider in scope.");
             }
 
-            // AvatarId is mandatory — McpAuthMiddleware already rejected (401)
+            // UserId is mandatory — McpAuthMiddleware already rejected (401)
             // any request without one, but guard defensively.
             if (http?.Items is null ||
-                !http.Items.TryGetValue(AvatarItemKey, out var raw) ||
-                raw is not Guid avatarId)
+                !http.Items.TryGetValue(UserItemKey, out var raw) ||
+                raw is not Guid userId)
             {
-                return ErrorResult("mcp_unauthorized: missing avatar scope.");
+                return ErrorResult("mcp_unauthorized: missing user scope.");
             }
 
             var executor = requestServices.GetRequiredService<ISurrealExecutor>();
-            var toolContext = new ToolCallContext(avatarId, executor, requestServices);
+            var toolContext = new ToolCallContext(userId, executor, requestServices);
 
             var result = await tool.ExecuteAsync(toolContext, args, ct);
             return JsonResult(result);

@@ -13,10 +13,10 @@ public class HolonQueryRequestValidator : AbstractValidator<HolonQueryRequest>
                 .MaximumLength(256).WithMessage("Name must not exceed 256 characters.");
         });
 
-        When(x => x.AvatarId.HasValue, () =>
+        When(x => x.UserId.HasValue, () =>
         {
-            RuleFor(x => x.AvatarId!.Value)
-                .NotEqual(Guid.Empty).WithMessage("AvatarId must not be an empty GUID.");
+            RuleFor(x => x.UserId!.Value)
+                .NotEqual(Guid.Empty).WithMessage("UserId must not be an empty GUID.");
         });
 
         When(x => x.ProviderName != null, () =>

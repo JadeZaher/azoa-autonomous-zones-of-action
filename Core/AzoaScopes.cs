@@ -16,21 +16,21 @@ namespace AZOA.WebAPI.Core;
 /// </summary>
 public static class AzoaScopes
 {
-    /// <summary>May create/list child avatars and issue child credentials.</summary>
+    /// <summary>May create/list child users and issue child credentials.</summary>
     public const string TenantProvision = "tenant:provision";
 
-    /// <summary>A child credential may create/manage wallets for its avatar.</summary>
+    /// <summary>A child credential may create/manage wallets for its user.</summary>
     public const string WalletManage = "wallet:manage";
 
-    /// <summary>May read the avatar's minimal authoritative KYC status projection.</summary>
+    /// <summary>May read the user's minimal authoritative KYC status projection.</summary>
     public const string KycRead = "kyc:read";
 
-    /// <summary>May begin and submit KYC verification for a tenant-correlated avatar.</summary>
+    /// <summary>May begin and submit KYC verification for a tenant-correlated user.</summary>
     public const string KycSubmit = "kyc:submit";
 
     /// <summary>
     /// security-review HIGH-2: the operator/admin capability that gates the
-    /// destructive cross-avatar admin surfaces (key rotation, data backfill). It is
+    /// destructive cross-user admin surfaces (key rotation, data backfill). It is
     /// deliberately NOT in the API-key-issuable scope vocabulary a tenant/child key
     /// can carry (see <see cref="IsApiKeyIssuableScope"/>): the two admin endpoints
     /// require a JWT-authenticated identity that carries this claim, so an X-Api-Key
@@ -43,12 +43,25 @@ public static class AzoaScopes
     /// <summary>May govern node-local economic parameters; JWT-only, never API-key issuable.</summary>
     public const string NodeGovern = "node:govern";
 
-    /// <summary>A child credential may mint/transfer NFTs for its avatar.</summary>
+    /// <summary>A child credential may mint/transfer NFTs for its user.</summary>
     public const string NftMint = "nft:mint";
 
     /// <summary>
+    /// OI-73: a BURN destroys an asset the holder already has, so it gets its own scope
+    /// rather than riding on <see cref="NftMint"/>. The tenant-provisioned implied grant
+    /// carries <c>nft:mint</c> (an inbound credit), and while <c>Burn</c> shared that entry
+    /// in the operation-scope map the same grant would have authorised a tenant-driven
+    /// burn. It is deliberately absent from the self-issuable vocabulary: no credential can
+    /// carry it today, so a tenant-driven burn fails closed at the dispatch seam until a
+    /// deliberate item decides who may hold it. It also sits in
+    /// <see cref="ValueSigningScopes"/>, so it can never arrive through a no-UX
+    /// <c>Participation</c> grant.
+    /// </summary>
+    public const string NftBurn = "nft:burn";
+
+    /// <summary>
     /// Coarse dApp-developer capability: an API key carrying this scope may perform
-    /// the authoring/edit surfaces across the owner's holons, quests and dapp-series
+    /// the authoring/edit surfaces across the owner's holons, actions and dapp-series
     /// (the write actions gated by the <c>DappDevelop</c> authorization policy).
     /// Ownership is still enforced by each manager; this scope only decides whether a
     /// scoped key is permitted to reach the write paths at all.
@@ -79,11 +92,31 @@ public static class AzoaScopes
     /// <summary>Tenant may drive a fungible-token (ASA) create that signs.</summary>
     public const string TokenCreateSign = "token:create:sign";
 
+    /// <summary>
+    /// D19: may revoke a soulbound credential — an on-chain ASA clawback signed by the
+    /// asset's clawback authority. Held by the credential's ISSUER, never its holder;
+    /// the issuer check itself lives in <c>CredentialManager</c>, and this scope only
+    /// decides whether a scoped credential may reach the revoke path at all.
+    /// </summary>
+    public const string CredentialRevokeSign = "credential:revoke:sign";
+
     // ── tenant-consent-delegation: non-value participation scopes ──────────────
 
-    /// <summary>Tenant may execute quests for the user (non-value; safe in a
+    /// <summary>Tenant may execute actions for the user (non-value; safe in a
     /// Participation standing grant).</summary>
-    public const string QuestExecute = "quest:execute";
+    public const string ActionExecute = "action:execute";
+
+    /// <summary>
+    /// D47 issuance (OI-23): a tenant may have units CREDITED into this person's account
+    /// out of the platform reserve. It is INBOUND — the draw comes from the node's own
+    /// reserve and is signed with the PLATFORM key, so it spends nothing the person holds.
+    /// That is why it is deliberately NOT a member of <see cref="ValueSigningScopes"/> and
+    /// why it sits in <see cref="ParticipationInboundCreditFloor"/>: a custodially
+    /// onboarded person holds no AZOA credential and can never click "allow", so if being
+    /// paid required an outbound value-SPENDING scope they could never be paid at all.
+    /// <see cref="TransferSign"/> keeps meaning what it means — money leaving an account.
+    /// </summary>
+    public const string UnitsIssue = "units:issue";
 
     /// <summary>
     /// The value-signing scopes a tenant must NOT obtain via a no-UX Participation
@@ -94,6 +127,38 @@ public static class AzoaScopes
         new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
         {
             SwapSign, TransferSign, GrantSign, TokenCreateSign,
+            // A revoke moves a real asset off a user's account with the platform's
+            // clawback key. Like TokenCreateSign it is platform-SIGNED but may be
+            // tenant-DRIVEN, so it must never arrive through a no-UX Participation grant.
+            CredentialRevokeSign,
+            // OI-73. A burn destroys an asset the holder already has -- strictly more
+            // destructive than a transfer -- so it belongs here for the same reason
+            // CredentialRevokeSign does: a standing, no-UX grant must never reach it.
+            NftBurn,
+        };
+
+    /// <summary>
+    /// OI-23: the inbound-credit scopes EVERY <c>GrantOrigin.Participation</c> grant carries,
+    /// stated as a positive signal rather than inferred from absence in
+    /// <see cref="ValueSigningScopes"/>. <c>ConsentManager.GrantParticipationAsync</c> unions
+    /// this set into the scopes of every participation grant it WRITES, which is the point at
+    /// which the grant row exists — so the tenant-provisioning issuer, the join flow and any
+    /// later participation caller all inherit it without each having to remember to list it.
+    ///
+    /// <para>It carries <see cref="UnitsIssue"/> and nothing else. <see cref="NftMint"/> is
+    /// also inbound, but it signs every <c>Mint</c> this node performs, which is wider than
+    /// a credit, so the tenant-provisioned implied grant names it explicitly rather than
+    /// every participation grant inheriting it. Until OI-73 it signed a <c>Burn</c> too;
+    /// that entry now demands <see cref="NftBurn"/> instead.</para>
+    ///
+    /// <para>The H4 exclusion in <c>ConsentManager.GrantAsync</c> runs over the UNION, so a
+    /// value-signing scope smuggled in here would refuse every participation grant outright
+    /// rather than quietly widening one — fail-closed by construction, not by review.</para>
+    /// </summary>
+    public static readonly System.Collections.Generic.IReadOnlySet<string> ParticipationInboundCreditFloor =
+        new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+        {
+            UnitsIssue,
         };
 
     // ── security-review S6: scope ↔ operation-type consistency ─────────────────
@@ -107,6 +172,15 @@ public static class AzoaScopes
     // mismatch is a programming error and must never reach a key decrypt).
 
     /// <summary>
+    /// The operation type an <c>AllocationKind.IssueUnits</c> draw declares. Its OWN key,
+    /// never <c>Transfer</c>: both move units, but a transfer spends the signer's holdings
+    /// while an issuance credits the recipient out of the reserve. Sharing the key would let
+    /// <see cref="UnitsIssue"/> sign an ordinary outbound transfer — exactly the mislabelling
+    /// this map exists to refuse.
+    /// </summary>
+    public const string IssueUnitsOperationType = "IssueUnits";
+
+    /// <summary>
     /// The scopes each blockchain operation type may legitimately sign under. Keyed by
     /// <c>IBlockchainOperation.OperationType</c> (ordinal). An operation type absent
     /// from this map has no permitted tenant-driven signing scope (deny).
@@ -115,11 +189,25 @@ public static class AzoaScopes
         new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IReadOnlySet<string>>(StringComparer.Ordinal)
         {
             ["Mint"]                  = Set(NftMint, GrantSign),
-            ["Burn"]                  = Set(NftMint),
+            // OI-73. A burn signs under nft:burn and nothing else. nft:mint used to sit
+            // here, which meant the nft:mint in the tenant-provisioned implied grant would
+            // have authorised a tenant-driven BURN as well as the inbound credit it is
+            // there for. No credential can carry nft:burn today (it is not self-issuable
+            // and no grant path adds it), so a tenant-driven burn is refused at the
+            // dispatch seam rather than signed under a capability nobody granted.
+            ["Burn"]                  = Set(NftBurn),
             ["Transfer"]              = Set(TransferSign),
+            // An issuance is a reserve-funded CREDIT, so it signs under units:issue only —
+            // and units:issue is absent from every other entry, so it can sign nothing else.
+            [IssueUnitsOperationType]  = Set(UnitsIssue),
             ["Swap"]                  = Set(SwapSign),
             ["Exchange"]              = Set(SwapSign),
             ["fungible_token_create"] = Set(TokenCreateSign),
+            // D19 soulbound revocation. Deliberately its OWN scope rather than reusing
+            // TransferSign: a clawback moves an asset the signer does not hold, so a
+            // user who consented to "sign my transfers" must not thereby consent to
+            // having a credential taken from them.
+            ["CredentialRevoke"]      = Set(CredentialRevokeSign),
         };
 
     private static System.Collections.Generic.IReadOnlySet<string> Set(params string[] scopes)
@@ -129,7 +217,7 @@ public static class AzoaScopes
     /// security-review HIGH-2 defense-in-depth: scopes an API key must NEVER be able to
     /// emit as a claim, regardless of what its stored <c>ApiKey.Scopes</c> CSV contains.
     /// The <see cref="Operator"/> capability is the only such scope today — it authorizes
-    /// destructive cross-avatar admin operations and must originate ONLY from a real
+    /// destructive cross-user admin operations and must originate ONLY from a real
     /// admin's JWT. <c>ApiKeyAuthenticationHandler</c> filters these out at claim-emit
     /// time so a forged/misconfigured key CSV can never satisfy the <c>Operator</c> policy.
     /// </summary>
@@ -151,7 +239,7 @@ public static class AzoaScopes
     /// <summary>
     /// The coarse capability scopes a caller may deliberately attach to their OWN new
     /// API key (the dapp-developer surface). This is a strict subset of the broader
-    /// self-issuance allow-list (<see cref="IsIssuableByAvatar"/>); it names only the
+    /// self-issuance allow-list (<see cref="IsIssuableByUser"/>); it names only the
     /// capability-style scopes as opposed to the fine-grained value/participation ones.
     /// </summary>
     public static readonly System.Collections.Generic.IReadOnlySet<string> IssuableCapabilityScopes =
@@ -169,12 +257,13 @@ public static class AzoaScopes
     ///   • <see cref="DappDevelop"/> and <see cref="DappManage"/> — role-bound dApp capabilities.
     ///   • The value/participation signing scopes that are ALREADY intended to be
     ///     key-carried by a tenant/child credential: wallet:manage, nft:mint,
-    ///     quest:execute, swap:sign, transfer:sign, grant:sign, token:create:sign.
+    ///     action:execute, units:issue, swap:sign, transfer:sign, grant:sign,
+    ///     token:create:sign, credential:revoke:sign.
     ///   • EXCLUDES <see cref="Operator"/> — admin authority never originates from a key
     ///     (also stripped at claim-emit time; see <see cref="ApiKeyForbiddenScopes"/>).
     ///   • EXCLUDES <see cref="TenantProvision"/> — closing a prior gap where it was
     ///     self-issuable purely by omission. Tenant provisioning must be granted by the
-    ///     platform, not self-asserted on a plain avatar's key.
+    ///     platform, not self-asserted on a plain user's key.
     /// Any scope NOT in this set is rejected at issuance.
     /// </summary>
     private static readonly System.Collections.Generic.IReadOnlySet<string> SelfIssuableScopes =
@@ -186,11 +275,13 @@ public static class AzoaScopes
             KycRead,
             KycSubmit,
             NftMint,
-            QuestExecute,
+            ActionExecute,
+            UnitsIssue,
             SwapSign,
             TransferSign,
             GrantSign,
             TokenCreateSign,
+            CredentialRevokeSign,
         };
 
     private static readonly System.Collections.Generic.IReadOnlySet<string> RoleBoundDappScopes =
@@ -204,7 +295,7 @@ public static class AzoaScopes
     /// True iff <paramref name="scope"/> is part of the self-issued API-key vocabulary.
     /// Caller-specific role filtering is applied by <c>CanSelfIssueApiKeyScope</c>.
     /// </summary>
-    public static bool IsIssuableByAvatar(string? scope)
+    public static bool IsIssuableByUser(string? scope)
         => !string.IsNullOrWhiteSpace(scope) && SelfIssuableScopes.Contains(scope);
 
     public static bool IsRoleBoundDappScope(string? scope)
@@ -214,17 +305,19 @@ public static class AzoaScopes
     private static readonly System.Collections.Generic.IReadOnlyDictionary<string, string> ScopeDescriptions =
         new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [DappDevelop]     = "Author/edit holons, quests, and dApp-series (the dApp-developer write surface).",
+            [DappDevelop]     = "Author/edit holons, actions, and dApp-series (the dApp-developer write surface).",
             [DappManage]      = "Manage DApp lifecycle actions such as compose, generate, deploy, and membership.",
             [WalletManage]    = "Create and manage wallets.",
             [KycRead]         = "Read a minimal authoritative KYC status.",
             [KycSubmit]       = "Begin and submit identity verification.",
-            [NftMint]         = "Mint, transfer, and burn NFTs.",
-            [QuestExecute]    = "Execute quests (non-value participation).",
-            [SwapSign]        = "Sign a token swap with the avatar's key.",
-            [TransferSign]    = "Sign a value transfer with the avatar's key.",
+            [NftMint]         = "Mint and transfer NFTs, and burn your own.",
+            [ActionExecute]    = "Execute actions (non-value participation).",
+            [UnitsIssue]      = "Have units credited into an account from the platform reserve.",
+            [SwapSign]        = "Sign a token swap with the user's key.",
+            [TransferSign]    = "Sign a value transfer with the user's key.",
             [GrantSign]       = "Sign a grant/mint-to-actor.",
             [TokenCreateSign] = "Sign a fungible-token (ASA) create.",
+            [CredentialRevokeSign] = "Revoke a soulbound credential you issued (on-chain clawback).",
         };
 
     /// <summary>

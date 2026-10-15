@@ -66,7 +66,7 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
         var bridge = new BridgeTransactionResult
         {
             Id             = bridgeId,
-            AvatarId       = Guid.NewGuid(),
+            UserId       = Guid.NewGuid(),
             SourceChain    = "Solana",
             TargetChain    = "Algorand",
             SourceTokenId  = "SOL:native",
@@ -236,6 +236,24 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             module = null;
             return false;
         }
+
+        // ── IValueRailProviderFactory (D9) ────────────────────────────────────
+        public IValueRailProvider GetRailProvider(string railId, RailEnvironment environment)
+            => _provider;
+
+        public bool TryGetRailProvider(
+            string railId, RailEnvironment environment,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IValueRailProvider? provider)
+        {
+            provider = _provider;
+            return true;
+        }
+
+        public IReadOnlyCollection<string> RegisteredRailIds => new[] { _provider.RailId };
+
+        public string DefaultRailId => _provider.RailId;
+
+        public ChainNetwork DefaultNetwork => ChainNetwork.Devnet;
     }
 
     /// <summary>
@@ -262,10 +280,17 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
         // ── IBlockchainProvider — identity ────────────────────────────────────
         public string ChainType       => "Algorand";
         public ChainNetwork ActiveNetwork => ChainNetwork.Devnet;
-        public bool SupportsBridging  => false;
         public bool SupportsFaucet    => false;
 
+        // ── IValueRailProvider — identity (D9) ────────────────────────────────
+        public string RailId => ChainType;
+        public RailEnvironment ActiveEnvironment => RailEnvironment.ForChain(ActiveNetwork);
+        public SettlementProfile SettlementProfile { get; } =
+            SettlementProfile.IrreversibleOnce("the transaction is confirmed on chain");
+
         public void Initialize(BlockchainNetworkConfig config, ChainNetwork network) { }
+
+        public void InitializeRail(ValueRailBinding binding) { }
 
         public bool TryGetModule<T>(out T? module) where T : class, IBlockchainProviderModule
         {
@@ -323,29 +348,19 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             MutationNotExpected<bool>(nameof(ValidateAddressAsync));
 
         public Task<AZOAResult<string>> MintAsync(
-            string tokenUri, ulong amount, string assetType,
+            string tokenUri, RailAmount amount, string assetType,
             string walletAddress, SigningContext? signingContext = null,
             CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(MintAsync));
 
-        public Task<AZOAResult<string>> MintWrappedAsync(
-            string sourceChain, string sourceTokenId, string tokenUri,
-            ulong amount, string recipientAddress, CancellationToken ct = default) =>
-            MutationNotExpected<string>(nameof(MintWrappedAsync));
-
         public Task<AZOAResult<string>> BurnAsync(
-            string tokenId, ulong amount, string walletAddress,
+            string tokenId, RailAmount amount, string walletAddress,
             SigningContext? signingContext = null, CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(BurnAsync));
 
-        public Task<AZOAResult<string>> BurnWrappedAsync(
-            string tokenId, ulong amount, string sourceChain,
-            string sourceRecipient, string walletAddress, CancellationToken ct = default) =>
-            MutationNotExpected<string>(nameof(BurnWrappedAsync));
-
         public Task<AZOAResult<string>> TransferAsync(
             string tokenId, string fromAddress, string toAddress,
-            ulong amount, SigningContext? signingContext = null,
+            RailAmount amount, SigningContext? signingContext = null,
             CancellationToken ct = default) =>
             MutationNotExpected<string>(nameof(TransferAsync));
 
@@ -382,17 +397,11 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             CancellationToken ct = default) =>
             MutationNotExpected<Dictionary<string, object>>(nameof(GetChainInfoAsync));
 
-        public Task<AZOAResult<string>> LockForBridgeAsync(
-            string tokenId, string vaultAddress, ulong amount,
-            string targetChain, string targetRecipient, CancellationToken ct = default) =>
-            MutationNotExpected<string>(nameof(LockForBridgeAsync));
-
-        public Task<AZOAResult<string>> ReleaseFromBridgeAsync(
-            string tokenId, string vaultAddress, ulong amount,
-            string recipientAddress, CancellationToken ct = default) =>
-            MutationNotExpected<string>(nameof(ReleaseFromBridgeAsync));
-
-        // VerifyBridgeProofAsync removed from IBlockchainProvider (B2) — no stub needed.
+        // The bridge primitives are NOT on IBlockchainProvider: lock/release live on
+        // IBridgeSourceLeg and wrapped mint/burn on IBridgeTargetLeg. This stub implements
+        // neither module, so TryGetModule returns false and there is no bridge method here
+        // that reconciliation could call — the strongest possible form of the no-mutation
+        // invariant this drill exists to prove. VerifyBridgeProofAsync was removed in B2.
 
         public Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
             string toAddress, decimal amount, string? idempotencyKey = null,

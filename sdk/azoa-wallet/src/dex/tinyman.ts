@@ -20,6 +20,14 @@ export interface TinymanConfig {
   network?: "mainnet" | "testnet";
   /** algod client configuration. Required for transaction building. */
   algod?: AlgodClientConfig;
+  /**
+   * Indexer configuration, used ONLY to resolve an ASA's real `decimals` when
+   * the caller does not supply `assetInDecimals`/`assetOutDecimals`. Native
+   * ALGO (asset id 0) needs no indexer lookup — its decimals are a fixed
+   * protocol constant. Without this configured, an ASA leg with unknown
+   * decimals fails closed rather than guessing.
+   */
+  indexer?: AlgodClientConfig;
 }
 
 // ─── Internal type shims for the Tinyman JS SDK ───────────────────────────────
@@ -101,6 +109,101 @@ function encodeTransactionGroup(
   });
 }
 
+// ─── Decimals resolution ───────────────────────────────────────────────────────
+
+/** Native ALGO's fixed protocol decimals (asset id 0 is not a real ASA — never a "default"). */
+const ALGO_DECIMALS = 6;
+
+/**
+ * Resolves one ASA's real `decimals` from the configured indexer. Native ALGO
+ * (`assetId === 0`) needs no lookup. Fails closed — never guesses — when the
+ * asset is a real ASA and no indexer is configured, or the lookup fails: a
+ * wrong decimals guess silently misprices every swap quote and transaction
+ * built through it.
+ */
+async function resolveAssetDecimals(
+  assetId: number,
+  indexer: AlgodClientConfig | undefined
+): Promise<Result<number, SdkError>> {
+  if (assetId === 0) return ok(ALGO_DECIMALS);
+
+  if (!indexer) {
+    return err(
+      new SdkError(
+        SdkErrorCode.UNSUPPORTED_OPERATION,
+        `Cannot resolve decimals for ASA ${assetId}: no assetInDecimals/assetOutDecimals was ` +
+          "supplied and no `indexer` is configured on TinymanConfig. Pass decimals explicitly or " +
+          "configure an indexer.",
+        { chain: "algorand" }
+      )
+    );
+  }
+
+  try {
+    const headers: Record<string, string> = {};
+    if (indexer.token) headers["X-Indexer-API-Token"] = indexer.token;
+    const resp = await fetch(`${indexer.url}/v2/assets/${assetId}`, { headers });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => `HTTP ${resp.status}`);
+      return err(
+        new SdkError(
+          SdkErrorCode.NETWORK_ERROR,
+          `Indexer rejected the asset lookup for ASA ${assetId}: ${text}`,
+          { chain: "algorand" }
+        )
+      );
+    }
+
+    const data = (await resp.json()) as { asset?: { params?: { decimals?: number } } };
+    const decimals = data.asset?.params?.decimals;
+    if (typeof decimals !== "number") {
+      return err(
+        new SdkError(
+          SdkErrorCode.NETWORK_ERROR,
+          `Indexer response for ASA ${assetId} carried no decimals field`,
+          { chain: "algorand" }
+        )
+      );
+    }
+
+    return ok(decimals);
+  } catch (e) {
+    return err(
+      new SdkError(SdkErrorCode.NETWORK_ERROR, `Indexer asset lookup failed for ASA ${assetId}: ${e}`, {
+        chain: "algorand",
+        cause: e instanceof Error ? e : undefined,
+      })
+    );
+  }
+}
+
+/**
+ * Resolves both swap legs' decimals: a caller-supplied value wins outright for
+ * that leg; anything missing is resolved via {@link resolveAssetDecimals} —
+ * both legs in parallel, since one leg's lookup never needs to wait on the
+ * other's.
+ */
+async function resolveLegDecimals(
+  assetInId: number,
+  assetOutId: number,
+  assetInDecimals: number | undefined,
+  assetOutDecimals: number | undefined,
+  indexer: AlgodClientConfig | undefined
+): Promise<Result<{ assetIn: number; assetOut: number }, SdkError>> {
+  const [inResult, outResult] = await Promise.all([
+    assetInDecimals !== undefined
+      ? Promise.resolve(ok(assetInDecimals))
+      : resolveAssetDecimals(assetInId, indexer),
+    assetOutDecimals !== undefined
+      ? Promise.resolve(ok(assetOutDecimals))
+      : resolveAssetDecimals(assetOutId, indexer),
+  ]);
+  if (!inResult.ok) return inResult;
+  if (!outResult.ok) return outResult;
+  return ok({ assetIn: inResult.value, assetOut: outResult.value });
+}
+
 // ─── Adapter ─────────────────────────────────────────────────────────────────
 
 export class TinymanAdapter implements DexAdapter {
@@ -109,10 +212,12 @@ export class TinymanAdapter implements DexAdapter {
 
   private readonly network: "mainnet" | "testnet";
   private readonly algodConfig: AlgodClientConfig | undefined;
+  private readonly indexerConfig: AlgodClientConfig | undefined;
 
   constructor(config?: TinymanConfig) {
     this.network = config?.network ?? "mainnet";
     this.algodConfig = config?.algod;
+    this.indexerConfig = config?.indexer;
   }
 
   // ─── getQuote ─────────────────────────────────────────────────────────────
@@ -164,13 +269,19 @@ export class TinymanAdapter implements DexAdapter {
         );
       }
 
-      // Resolve decimals: caller-provided wins; otherwise default to 6 (ALGO).
-      // TODO: indexer ASA lookup for decimals when caller does not supply them
-      // — Tinyman quotes for non-6-decimal ASAs will be inaccurate without it.
-      const decimals = {
-        assetIn: params.assetInDecimals ?? 6,
-        assetOut: params.assetOutDecimals ?? 6,
-      };
+      // Resolve decimals: caller-provided wins; otherwise resolved from the
+      // indexer (native ALGO needs no lookup — its decimals are a fixed
+      // protocol constant). Fails closed rather than guessing 6 for an
+      // arbitrary ASA, which would silently misprice the quote.
+      const decimalsResult = await resolveLegDecimals(
+        assetInId,
+        assetOutId,
+        params.assetInDecimals,
+        params.assetOutDecimals,
+        this.indexerConfig
+      );
+      if (!decimalsResult.ok) return decimalsResult;
+      const decimals = decimalsResult.value;
 
       // getQuote(type, pool, assetIn, decimals)
       const quote = Swap.v2.getQuote(
@@ -262,13 +373,18 @@ export class TinymanAdapter implements DexAdapter {
         );
       }
 
-      // Re-derive the quote if raw is not present or is stale.
-      // Decimals come from the quote (caller-supplied or echoed defaults).
-      // TODO: indexer ASA lookup for decimals if quote does not carry them.
-      const decimals = {
-        assetIn: quote.assetInDecimals ?? 6,
-        assetOut: quote.assetOutDecimals ?? 6,
-      };
+      // Re-derive the quote if raw is not present or is stale. Decimals come
+      // from the quote when it carried them (caller-supplied or resolved by
+      // getQuote); otherwise resolved fresh here the same fail-closed way.
+      const decimalsResult = await resolveLegDecimals(
+        assetInId,
+        assetOutId,
+        quote.assetInDecimals,
+        quote.assetOutDecimals,
+        this.indexerConfig
+      );
+      if (!decimalsResult.ok) return decimalsResult;
+      const decimals = decimalsResult.value;
       const sdkQuote = quote.raw ?? Swap.v2.getQuote(
         SwapType.FixedInput,
         poolData,

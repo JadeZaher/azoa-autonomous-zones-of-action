@@ -15,7 +15,7 @@ DEFINE TABLE IF NOT EXISTS swap_state SCHEMAFULL;
 
 DEFINE FIELD IF NOT EXISTS id ON TABLE swap_state TYPE string
     ASSERT $value != NONE AND $value != "";
-DEFINE FIELD IF NOT EXISTS avatar_id ON TABLE swap_state TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS user_id ON TABLE swap_state TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS chain ON TABLE swap_state TYPE string
     ASSERT $value != NONE AND $value != "";
 
@@ -61,9 +61,9 @@ DEFINE INDEX IF NOT EXISTS swap_state_idempotency_key
     FIELDS idempotency_key
     UNIQUE;
 
-DEFINE INDEX IF NOT EXISTS swap_state_avatar_id
+DEFINE INDEX IF NOT EXISTS swap_state_user_id
     ON TABLE swap_state
-    FIELDS avatar_id;
+    FIELDS user_id;
 
 DEFINE INDEX IF NOT EXISTS swap_state_status
     ON TABLE swap_state

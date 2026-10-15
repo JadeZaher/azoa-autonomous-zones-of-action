@@ -27,7 +27,7 @@ public sealed class ApiKeyControllerTenantIssuanceTests
     public async Task Create_RejectsLegacyUnscopedKey()
     {
         var keys = new Mock<IApiKeyStore>();
-        var controller = new ApiKeyController(keys.Object, Mock.Of<IAvatarStore>())
+        var controller = new ApiKeyController(keys.Object, Mock.Of<IUserStore>())
         {
             ControllerContext = new ControllerContext
             {
@@ -56,7 +56,7 @@ public sealed class ApiKeyControllerTenantIssuanceTests
     }
 
     [Fact]
-    public async Task CreateTenantKey_BindsExistingAvatarToFixedNonValueScopes()
+    public async Task CreateTenantKey_BindsExistingUserToFixedNonValueScopes()
     {
         var tenantId = Guid.NewGuid();
         ApiKey? persisted = null;
@@ -64,10 +64,10 @@ public sealed class ApiKeyControllerTenantIssuanceTests
         keys.Setup(store => store.CreateAsync(It.IsAny<ApiKey>(), It.IsAny<CancellationToken>()))
             .Callback((ApiKey key, CancellationToken _) => persisted = key)
             .Returns(Task.CompletedTask);
-        var avatars = new Mock<IAvatarStore>();
-        avatars.Setup(store => store.GetByIdAsync(tenantId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<IAvatar>.Success(new Avatar { Id = tenantId }));
-        var controller = new ApiKeyController(keys.Object, avatars.Object)
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Success(new User { Id = tenantId }));
+        var controller = new ApiKeyController(keys.Object, users.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -77,7 +77,7 @@ public sealed class ApiKeyControllerTenantIssuanceTests
 
         var action = await controller.CreateTenantKey(new CreateTenantApiKeyRequest
         {
-            TenantAvatarId = tenantId,
+            TenantUserId = tenantId,
             Name = "Arda integration",
             ExpiresInDays = 30
         });
@@ -86,7 +86,7 @@ public sealed class ApiKeyControllerTenantIssuanceTests
         var envelope = ok.Value.Should()
             .BeOfType<AZOAResult<CreateApiKeyResponse>>().Subject;
         persisted.Should().NotBeNull();
-        persisted!.AvatarId.Should().Be(tenantId);
+        persisted!.UserId.Should().Be(tenantId);
         persisted.Scopes.Should().Be(
             "tenant:provision,wallet:manage,kyc:read,kyc:submit");
         persisted.Scopes.Should().NotContain(AzoaScopes.NftMint);
@@ -112,11 +112,11 @@ public sealed class ApiKeyControllerTenantIssuanceTests
     {
         var tenantId = Guid.NewGuid();
         var keys = new Mock<IApiKeyStore>();
-        var avatars = new Mock<IAvatarStore>();
-        avatars.Setup(store => store.GetByIdAsync(tenantId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<IAvatar>.Failure(
-                "AVATAR_STORE_UNAVAILABLE: Identity persistence is temporarily unavailable."));
-        var controller = new ApiKeyController(keys.Object, avatars.Object)
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Failure(
+                "USER_STORE_UNAVAILABLE: Identity persistence is temporarily unavailable."));
+        var controller = new ApiKeyController(keys.Object, users.Object)
         {
             ControllerContext = new ControllerContext
             {
@@ -126,7 +126,7 @@ public sealed class ApiKeyControllerTenantIssuanceTests
 
         var action = await controller.CreateTenantKey(new CreateTenantApiKeyRequest
         {
-            TenantAvatarId = tenantId,
+            TenantUserId = tenantId,
             Name = "Arda integration"
         });
 

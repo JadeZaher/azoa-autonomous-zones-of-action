@@ -10,10 +10,10 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("hnsw_holon_embedding")]
-    [SurrealNote("HNSW vector index definitions for holon and quest tables.")]
+    [SurrealNote("HNSW vector index definitions for holon and action tables.")]
     [SurrealNote("DIMENSION 384 -- MiniLM-style sentence embedding size; matches IEmbeddingProvider.EmbedAsync return length.")]
     [SurrealNote("DIST COSINE -- cosine similarity is the standard distance metric for normalised sentence embeddings. Euclidean (DIST EUCLIDEAN) would require L2-normalised vectors and is not equivalent for dot-product models.")]
-    [SurrealNote("No entity body here -- these are pure index declarations. Table and field DDL lives in 100_holon.surql / 150_quest.surql. This file mirrors the documentation-only pattern of 230_quest_graph_edges.mermaid.")]
+    [SurrealNote("No entity body here -- these are pure index declarations. Table and field DDL lives in 100_holon.surql / 150_action.surql. This file mirrors the documentation-only pattern of 230_action_graph_edges.mermaid.")]
     [SurrealNote("Rows with embedding IS NONE are excluded from the HNSW index automatically. VectorSearchTool's WHERE embedding IS NOT NONE predicate keeps the query plan honest on fresh namespaces without indexes.")]
     [Slice("_skip")]
     [VirtualTable]

@@ -8,7 +8,7 @@ Part A (C1, C2, H1–H4, M1).
 
 Remediation order (from the review's recommendation, `REVIEW…:103-108`): **C2
 first** (it makes allocations real and unblocks H1/H2/H4), **then C1** (custody
-wiring + the larger avatar-threading change), **then H3** (one-line choke-point
+wiring + the larger user-threading change), **then H3** (one-line choke-point
 gate), **then M1**. H4 rides along with C2's amount wiring; H1 rides along with
 C2's op-row write.
 
@@ -16,10 +16,10 @@ C2's op-row write.
 
 | # | Decision required | Recommendation |
 |---|-------------------|----------------|
-| D1 — **How `avatarId` + owning `walletId` reach the provider** (C1). The provider call surface `IBlockchainProvider.TransferAsync/MintAsync/BurnAsync` (`Interfaces/IBlockchainProvider.cs:23-41`) has no avatar param. Options: **(a)** add `Guid avatarId, Guid walletId` params to each method; **(b)** add a single `SigningContext` value object (`{ AvatarId, WalletId, IsPlatform }`) param; **(c)** keep the signature and resolve `walletAddress → wallet → avatar` *inside* the provider. | **(b) A `SigningContext` object.** One additive param per value-moving method keeps the surface small and future-proof (a `IsPlatform` flag selects `WithPlatformSigningKeyAsync` for ASA-admin ops without a magic address). (a) explodes every signature and every call site; (c) hides an IDOR-relevant lookup inside the provider and couples it to a store it shouldn't own. The context is built once in `BlockchainOperationManager.Execute*Async` (`Managers/BlockchainOperationManager.cs:311-357`) from the op row's `AvatarId`/`WalletId`, which are already populated by `NftManager` (`NftManager.cs:62, 80-81`). `[ decision ]` |
+| D1 — **How `userId` + owning `walletId` reach the provider** (C1). The provider call surface `IBlockchainProvider.TransferAsync/MintAsync/BurnAsync` (`Interfaces/IBlockchainProvider.cs:23-41`) has no user param. Options: **(a)** add `Guid userId, Guid walletId` params to each method; **(b)** add a single `SigningContext` value object (`{ UserId, WalletId, IsPlatform }`) param; **(c)** keep the signature and resolve `walletAddress → wallet → user` *inside* the provider. | **(b) A `SigningContext` object.** One additive param per value-moving method keeps the surface small and future-proof (a `IsPlatform` flag selects `WithPlatformSigningKeyAsync` for ASA-admin ops without a magic address). (a) explodes every signature and every call site; (c) hides an IDOR-relevant lookup inside the provider and couples it to a store it shouldn't own. The context is built once in `BlockchainOperationManager.Execute*Async` (`Managers/BlockchainOperationManager.cs:311-357`) from the op row's `UserId`/`WalletId`, which are already populated by `NftManager` (`NftManager.cs:62, 80-81`). `[ decision ]` |
 | D2 — **Where the broadcast happens for allocation** (C2). Options: **(a)** `AllocationManager` builds the op and calls `IBlockchainOperationManager.ExecuteAsync` directly (`BlockchainOperationManager.cs:28`), bypassing `NftManager`'s upsert-only path; **(b)** make `NftManager.MintAsync/TransferAsync` themselves broadcast (call `ExecuteAsync` internally) so every NFT caller broadcasts. | **(a) `AllocationManager` calls `ExecuteAsync`.** `NftManager` is also the raw `POST /api/nft/mint` surface and some callers legitimately want the "record intent, sign client-side" path (`AwaitingSignature`, settled correctly at `BlockchainOperationManager.cs:265-272`). Forcing every NFT mint to broadcast server-side (b) would change that contract. `AllocationManager` is the *value-bearing* seam — it builds an `IMintOperation`/`ITransferOperation` (so the typed `Execute*Async` dispatch at `:311-357` fires) and calls `ExecuteAsync`, which records the `TxHash`. `NftManager` keeps owning the Holon upsert + KYC gate (D3). `[ decision ]` |
 | D3 — **KYC gate placement** (H3). Options: **(a)** gate inside `NftManager.MintAsync` (`Managers/NftManager.cs:53`); **(b)** gate in `NftController.Mint` (`Controllers/NftController.cs:42-52`). | **(a) Gate in the manager.** Single choke point: both the allocation door and the raw controller door pass through `NftManager.MintAsync`, so the gate is inherited by construction — mirrors the custody/decrypt single-choke-point philosophy. A controller gate (b) would have to be duplicated on every future mint entry point and is easy to forget. `NftManager` gains an `IKycGateService` dependency (already DI-registered, `Managers/KycGateService.cs`). `[ decision ]` |
-| D4 — **`AllocationManager.MintAsync` double-gate after H3.** Once the gate moves into `NftManager` (D3), `AllocationManager.cs:82`'s `RequireVerifiedAsync` becomes redundant. Options: **(a)** keep it (defence-in-depth, fail-fast before provisioning); **(b)** remove it. | **(a) Keep it.** It fails closed *before* wallet provisioning (`AllocationManager.cs:89-95`), so a rejected avatar produces zero side effect under a won claim — strictly better than discovering the rejection one layer down after a wallet is generated. Two idempotent gate calls are cheap. `[ decision ]` |
+| D4 — **`AllocationManager.MintAsync` double-gate after H3.** Once the gate moves into `NftManager` (D3), `AllocationManager.cs:82`'s `RequireVerifiedAsync` becomes redundant. Options: **(a)** keep it (defence-in-depth, fail-fast before provisioning); **(b)** remove it. | **(a) Keep it.** It fails closed *before* wallet provisioning (`AllocationManager.cs:89-95`), so a rejected user produces zero side effect under a won claim — strictly better than discovering the rejection one layer down after a wallet is generated. Two idempotent gate calls are cheap. `[ decision ]` |
 | D5 — **`ulong` vs `string`/`BigInteger` for the provider amount** (H4). | **`ulong`.** Algorand ASA `AssetAmount` is `ulong` native (the cast already exists at `AlgorandProvider.cs:224`); widening the interface to `ulong` removes the truncation with zero new types. `AllocationRequest.Amount` (string) is parsed via `ulong.TryParse` with an explicit overflow/negative rejection. A `BigInteger` surface would over-engineer beyond what any current chain accepts. `[ decision ]` |
 
 ## Phase 0 — Confirm seams (no code)
@@ -27,9 +27,9 @@ C2's op-row write.
 - [ ] Confirm `IKeyCustodyService` is DI-registered and injectable into a
   provider (`Managers/KeyCustodyService.cs`; check `Program.cs` registration).
   Record the exact interface symbol + method signatures
-  (`WithSigningKeyAsync(Guid walletId, Guid avatarId, Func<byte[], Task<T>>)`
+  (`WithSigningKeyAsync(Guid walletId, Guid userId, Func<byte[], Task<T>>)`
   `:73`, `WithPlatformSigningKeyAsync(bool, Func<byte[], Task<T>>)` `:118`).
-- [ ] Confirm `BlockchainOperation` carries `AvatarId` + `WalletId` (it is set in
+- [ ] Confirm `BlockchainOperation` carries `UserId` + `WalletId` (it is set in
   `NftManager.cs:62, 80-81`) so the `SigningContext` (D1) can be built in
   `BlockchainOperationManager.Execute*Async` without a new lookup.
 - [ ] Confirm `IMintOperation` / `ITransferOperation` exist and what
@@ -92,10 +92,10 @@ C2's op-row write.
 ## Phase 3 — C1: route signing through custody + thread the context
 
 - [ ] **D1 surface.** Add a `SigningContext` value object
-  (`{ Guid AvatarId, Guid WalletId, bool IsPlatform }`) and thread it into the
+  (`{ Guid UserId, Guid WalletId, bool IsPlatform }`) and thread it into the
   value-moving `IBlockchainProvider` methods (`IBlockchainProvider.cs:23-41`).
   Build it once in `BlockchainOperationManager.Execute*Async`
-  (`Managers/BlockchainOperationManager.cs:311-357`) from `operation.AvatarId` /
+  (`Managers/BlockchainOperationManager.cs:311-357`) from `operation.UserId` /
   `operation.WalletId` (set at `NftManager.cs:62, 80-81`); set
   `IsPlatform = true` for ASA-admin ops (create, destroy/burn, clawback, opt-in
   of the platform account).
@@ -103,7 +103,7 @@ C2's op-row write.
   `ResolveInterimKeyMaterial(signerAddress)` (`AlgorandProvider.cs:654, 785-800`)
   with custody-routed signing in `BuildSignSubmitCoreAsync`
   (`:610-695`, sign step at `:649-666`):
-  - user-wallet op → `WithSigningKeyAsync(ctx.WalletId, ctx.AvatarId, sign)`
+  - user-wallet op → `WithSigningKeyAsync(ctx.WalletId, ctx.UserId, sign)`
     (`KeyCustodyService.cs:73-115`) — its IDOR guard (`:91-96`) and
     platform-wallet-type guard (`:99-104`) now run on the real value path;
   - `ctx.IsPlatform` op → `WithPlatformSigningKeyAsync(true, sign)`
@@ -120,7 +120,7 @@ C2's op-row write.
 ## Phase 4 — H3: KYC gate at the single choke point
 
 - [ ] Inject `IKycGateService` into `NftManager` and add
-  `await _kycGate.RequireVerifiedAsync(avatarId)` at the top of
+  `await _kycGate.RequireVerifiedAsync(userId)` at the top of
   `NftManager.MintAsync` (`Managers/NftManager.cs:53`), **before** the Holon
   upsert (`:73`) and op build (`:78`). On a `KYC_FORBIDDEN:`-prefixed error,
   return the error so `NftController.Mint` (`NftController.cs:50`) surfaces it
@@ -151,8 +151,8 @@ C2's op-row write.
 
 - [ ] **C1 — per-user signing.** Drive a per-user custodial `TransferAsync` and
   assert the signature came from the **user's** key (custody resolver invoked
-  with the user's `walletId`/`avatarId`), not the platform key. Assert a
-  non-owning `avatarId` is rejected by the IDOR guard
+  with the user's `walletId`/`userId`), not the platform key. Assert a
+  non-owning `userId` is rejected by the IDOR guard
   (`KeyCustodyService.cs:91-96`) with no signing side effect. (Mock Algod HTTP +
   a custody/signer test double per `signing-core-keystone`'s mock pattern.)
 - [ ] **C2 + H1 — crash-replay exactly-once.** Simulate a crash between broadcast
@@ -162,7 +162,7 @@ C2's op-row write.
   the persisted `op.Parameters["IdempotencyKey"]` (H1) and the second call replays
   the original `AllocationResult`.
 - [ ] **H3 — KYC at the raw door.** `NftManager.MintAsync` (and through it
-  `POST /api/nft/mint`) for an unverified avatar is rejected with **no** Holon
+  `POST /api/nft/mint`) for an unverified user is rejected with **no** Holon
   upsert and **no** `BlockchainOperation` created (Moq: `_holonStore.UpsertAsync`
   / `_blockchainOperationStore.UpsertAsync` never invoked).
 - [ ] **H4 — no truncation.** An `AllocationRequest.Amount` above `int.MaxValue`

@@ -2,7 +2,7 @@ import type { Result } from "../core/result.js";
 import { ok } from "../core/result.js";
 import type { SdkError } from "../core/errors.js";
 import { AzoaApiClient } from "../api/client.js";
-import type { AvatarResponse } from "../api/client.js";
+import type { UserResponse } from "../api/client.js";
 
 /**
  * Pluggable storage backend for session tokens.
@@ -27,44 +27,44 @@ export class MemorySessionStorage implements SessionStorage {
 
 export interface SessionState {
   token: string | null;
-  avatarId: string | null;
+  userId: string | null;
   isAuthenticated: boolean;
 }
 
 export interface SessionManagerConfig {
   storage?: SessionStorage;
   tokenKey?: string;
-  avatarIdKey?: string;
+  userIdKey?: string;
   onSessionChange?: (state: SessionState) => void;
 }
 
 const DEFAULT_TOKEN_KEY = "azoa_token";
-const DEFAULT_AVATAR_KEY = "azoa_avatar_id";
+const DEFAULT_USER_KEY = "azoa_user_id";
 
 export class SessionManager {
   private readonly storage: SessionStorage;
   private readonly tokenKey: string;
-  private readonly avatarIdKey: string;
+  private readonly userIdKey: string;
   private readonly onChange?: (state: SessionState) => void;
 
   private _token: string | null = null;
-  private _avatarId: string | null = null;
+  private _userId: string | null = null;
 
   constructor(config?: SessionManagerConfig) {
     this.storage = config?.storage ?? new MemorySessionStorage();
     this.tokenKey = config?.tokenKey ?? DEFAULT_TOKEN_KEY;
-    this.avatarIdKey = config?.avatarIdKey ?? DEFAULT_AVATAR_KEY;
+    this.userIdKey = config?.userIdKey ?? DEFAULT_USER_KEY;
     this.onChange = config?.onSessionChange;
   }
 
   get token(): string | null { return this._token; }
-  get avatarId(): string | null { return this._avatarId; }
+  get userId(): string | null { return this._userId; }
   get isAuthenticated(): boolean { return this._token != null; }
 
   /** Restore session from storage (call on app start). */
   async restore(): Promise<SessionState> {
     this._token = await this.storage.get(this.tokenKey);
-    this._avatarId = await this.storage.get(this.avatarIdKey);
+    this._userId = await this.storage.get(this.userIdKey);
     const state = this.state();
     this.onChange?.(state);
     return state;
@@ -80,13 +80,13 @@ export class SessionManager {
     if (!result.ok) return result;
 
     const token = result.value;
-    const avatarId = this.extractAvatarIdFromJwt(token);
+    const userId = this.extractUserIdFromJwt(token);
 
     this._token = token;
-    this._avatarId = avatarId;
+    this._userId = userId;
 
     await this.storage.set(this.tokenKey, token);
-    if (avatarId) await this.storage.set(this.avatarIdKey, avatarId);
+    if (userId) await this.storage.set(this.userIdKey, userId);
 
     const state = this.state();
     this.onChange?.(state);
@@ -97,22 +97,22 @@ export class SessionManager {
   async register(
     api: AzoaApiClient,
     params: { email: string; password: string; username: string }
-  ): Promise<Result<{ avatar: AvatarResponse; session: SessionState }, SdkError>> {
+  ): Promise<Result<{ user: UserResponse; session: SessionState }, SdkError>> {
     const regResult = await api.register(params);
     if (!regResult.ok) return regResult;
 
     const loginResult = await this.login(api, params.email, params.password);
     if (!loginResult.ok) return loginResult;
 
-    return ok({ avatar: regResult.value, session: loginResult.value });
+    return ok({ user: regResult.value, session: loginResult.value });
   }
 
   /** Clear session. */
   async logout(): Promise<void> {
     this._token = null;
-    this._avatarId = null;
+    this._userId = null;
     await this.storage.remove(this.tokenKey);
-    await this.storage.remove(this.avatarIdKey);
+    await this.storage.remove(this.userIdKey);
     this.onChange?.(this.state());
   }
 
@@ -127,12 +127,12 @@ export class SessionManager {
   private state(): SessionState {
     return {
       token: this._token,
-      avatarId: this._avatarId,
+      userId: this._userId,
       isAuthenticated: this._token != null,
     };
   }
 
-  private extractAvatarIdFromJwt(token: string): string | null {
+  private extractUserIdFromJwt(token: string): string | null {
     try {
       const parts = token.split(".");
       if (parts.length !== 3) return null;

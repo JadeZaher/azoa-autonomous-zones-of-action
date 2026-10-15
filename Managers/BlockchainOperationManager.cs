@@ -20,15 +20,28 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     private readonly IBlockchainOperationStore _blockchainOperationStore;
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly IIdempotencyStore _idempotencyStore;
+    private readonly IValueRateSource _valueRateSource;
+    private readonly ILogger<BlockchainOperationManager>? _logger;
 
+    /// <param name="valueRateSource">D16 seam. Optional: a node that has not called
+    /// <c>AddValueRateSources</c> (<c>Services/Analytics/AnalyticsRegistration</c>) falls
+    /// back to the source that never quotes, and every operation is written explicitly
+    /// unpriced rather than mispriced. See <c>Persistence/SurrealDb/Models/AGENTS.md</c>
+    /// §value-stamp and <c>Services/Analytics/AGENTS.md</c> §declared-rate-source.</param>
+    /// <param name="logger">Optional so the many hand-constructed instances in tests stay
+    /// two-line; the container supplies a real one.</param>
     public BlockchainOperationManager(
         IBlockchainOperationStore blockchainOperationStore,
         IBlockchainProviderFactory chainFactory,
-        IIdempotencyStore idempotencyStore)
+        IIdempotencyStore idempotencyStore,
+        IValueRateSource? valueRateSource = null,
+        ILogger<BlockchainOperationManager>? logger = null)
     {
         _blockchainOperationStore = blockchainOperationStore;
         _chainFactory = chainFactory;
         _idempotencyStore = idempotencyStore;
+        _valueRateSource = valueRateSource ?? UnpricedValueRateSource.Instance;
+        _logger = logger;
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
@@ -121,6 +134,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                     await ExecuteSwapAsync(operation, chainProvider);
                     break;
                 case "Transfer":
+                case AzoaScopes.IssueUnitsOperationType:
                     await ExecuteTransferAsync(operation, chainProvider);
                     break;
                 case "DeployContract":
@@ -141,6 +155,10 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 operation.Status = OperationStatus.Completed;
                 operation.CompletedDate = DateTime.UtcNow;
             }
+
+            // D16: freeze the fiat value BEFORE the write that records the outcome, so the
+            // rate that was true at settlement is on the row rather than reconstructed later.
+            await StampValueAtSettlementAsync(operation, chainType);
 
             var saved = await _blockchainOperationStore.UpsertAsync(operation, default);
 
@@ -192,7 +210,14 @@ public class BlockchainOperationManager : IBlockchainOperationManager
             {
                 "mint",
                 (operation as IMintOperation)?.TokenUri ?? p.GetValueOrDefault("TokenUri", string.Empty),
-                (operation as IMintOperation)?.Amount.ToString() ?? p.GetValueOrDefault("Amount", string.Empty),
+                // MUST stay the bare decimal digits the retired `ulong.ToString()` produced.
+                // RailAmount.ToString() renders "<digits> <dimension>", which would re-hash
+                // every in-flight key and silently disarm replay protection on operations
+                // already claimed under the old spelling. ToBaseUnitString() is byte-identical
+                // to ulong.ToString() over the whole 64-bit range — both emit plain invariant
+                // digits with no sign, separators or suffix. Pinned by
+                // Managers/IdempotencyKeyStabilityGoldenTests.
+                (operation as IMintOperation)?.Amount.ToBaseUnitString() ?? p.GetValueOrDefault("Amount", string.Empty),
                 (operation as IMintOperation)?.AssetType ?? p.GetValueOrDefault("AssetType", string.Empty),
             },
             "Burn" => new object[]
@@ -207,6 +232,13 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 p.GetValueOrDefault("SourceTokenId", (operation as IExchangeOperation)?.SourceHolonId?.ToString() ?? string.Empty),
                 p.GetValueOrDefault("TargetTokenId", (operation as IExchangeOperation)?.TargetHolonId?.ToString() ?? string.Empty),
                 (operation as IExchangeOperation)?.ExchangeRate ?? string.Empty,
+                // OI-63: the SIZE is part of the identity of an exchange. Without it two
+                // exchanges of different sizes at one rate between one pair of assets collapse
+                // onto a single key, and the second one REPLAYS the first's result instead of
+                // executing — a sponsorship that silently did not happen. Appended after the
+                // rate so the three components that were already here keep their positions.
+                // Pinned by Managers/IdempotencyKeyStabilityGoldenTests.
+                ExchangedAmountComponent(operation),
             },
             "Swap" => new object[]
             {
@@ -216,7 +248,10 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 p.GetValueOrDefault("AmountIn", string.Empty),
                 p.GetValueOrDefault("MinAmountOut", string.Empty),
             },
-            "Transfer" => new object[]
+            // IssueUnits shares the transfer SHAPE deliberately: it is the same three
+            // value-bearing fields, so it must not fall through to the type-only default
+            // arm, which would collapse every issuance onto one key and REPLAY the first.
+            "Transfer" or AzoaScopes.IssueUnitsOperationType => new object[]
             {
                 "transfer",
                 p.GetValueOrDefault("SourceTokenId", (operation as ITransferOperation)?.SourceHolonId?.ToString() ?? string.Empty),
@@ -249,6 +284,22 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         opParams = [.. opParams, "network", network.ToString()];
 
         return OperationIdGenerator.Generate(chainType, operation.OperationType, walletAddress, opParams);
+    }
+
+    /// <summary>The size of an exchange as the key must see it: the leg the initiator gave up.</summary>
+    /// <remarks>
+    /// Reads the parameter first because that is what the exchange writer records (see
+    /// <c>ReserveExchangeManager</c>'s operation row), and falls back to the typed
+    /// <see cref="RailAmount"/> the same row carries so the two projections cannot disagree —
+    /// both render bare invariant base-unit digits, which is why either spelling hashes alike.
+    /// </remarks>
+    private static string ExchangedAmountComponent(IBlockchainOperation operation)
+    {
+        var declared = operation.Parameters.GetValueOrDefault("Amount", string.Empty);
+        if (!string.IsNullOrWhiteSpace(declared))
+            return declared;
+
+        return operation is IMintOperation typed ? typed.Amount.ToBaseUnitString() : string.Empty;
     }
 
     /// <summary>
@@ -404,27 +455,30 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         return await ExecuteAsync(operation, request);
     }
 
-    public async Task<AZOAResult<IBlockchainOperation>> GetAsync(Guid id, Guid? avatarId = null, AZOARequest? request = null)
+    public async Task<AZOAResult<IBlockchainOperation>> GetAsync(Guid id, Guid? userId = null, AZOARequest? request = null)
     {
         var result = await _blockchainOperationStore.GetByIdAsync(id, default);
         if (result.IsError || result.Result == null) return result;
-        if (avatarId.HasValue && result.Result.AvatarId != avatarId.Value)
-            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different avatar." };
+        if (userId.HasValue && result.Result.UserId != userId.Value)
+            return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different user." };
         return result;
     }
 
-    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(Guid avatarId, AZOARequest? request = null)
+    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByUserAsync(Guid userId, AZOARequest? request = null)
     {
-        return await _blockchainOperationStore.GetByAvatarAsync(avatarId, default);
+        return await _blockchainOperationStore.GetByUserAsync(userId, default);
     }
 
     private async Task ExecuteMintAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
     {
         if (operation is not IMintOperation mint) return;
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
-        // D5: the typed ulong Amount field is the single source of truth for the
-        // mint value — same field the idempotency key is derived from. No
-        // Parameters["Amount"] side-channel, no int clamp.
+        // D5: the typed Amount field is the single source of truth for the mint value —
+        // same field the idempotency key is derived from. No Parameters["Amount"]
+        // side-channel, no int clamp.
+        // D13/D15: the field, the operation row and the operation_log.amount column are
+        // all RailAmount/BigInteger-wide now, so this path carries whatever the provider
+        // surface accepts; the last narrowing left is each chain SDK's own edge.
         var amount = mint.Amount;
         // Mint = ASA-create — a platform/ASA-admin op (the platform is the asset
         // manager/reserve/freeze/clawback). tenant-consent-delegation AC4b: a Grant /
@@ -432,18 +486,18 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         // acting tenant so the seam runs the live consent check before decrypt.
         var result = await chainProvider.MintAsync(
             mint.TokenUri ?? string.Empty, amount, mint.AssetType ?? string.Empty, walletAddress,
-            BuildSigningContext(operation, platformOp: true));
+            BuildSigningContext(operation, chainProvider.ChainType, platformOp: true));
         ApplyChainResult(operation, result, OperationStatus.Minted);
     }
 
     private async Task ExecuteBurnAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
     {
         var tokenId = operation.Parameters.GetValueOrDefault("TokenId", string.Empty);
-        var amount = ReadUlongAmount(operation, fallback: 0UL);
+        var amount = ReadRailAmount(operation, fallback: 0);
         var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
         // Burn = AssetDestroy — a platform/ASA-admin op signed by the asset manager.
         var result = await chainProvider.BurnAsync(tokenId, amount, walletAddress,
-            BuildSigningContext(operation, platformOp: true));
+            BuildSigningContext(operation, chainProvider.ChainType, platformOp: true));
         ApplyChainResult(operation, result, OperationStatus.Burned);
     }
 
@@ -475,12 +529,12 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         var sourceTokenId = operation.Parameters.GetValueOrDefault("SourceTokenId", transfer.SourceHolonId?.ToString() ?? string.Empty);
         // value-path-wiring H4: amount defaults to 1 (single-asset move) when no
         // explicit Amount parameter is present, preserving the prior contract.
-        var amount = ReadUlongAmount(operation, fallback: 1UL);
+        var amount = ReadRailAmount(operation, fallback: 1);
         // value-path-wiring C1: a transfer FROM a user's custodial wallet must sign
         // with the USER's key — build a per-user SigningContext from the op row so
         // the custody IDOR guard runs on the real value path. A platform-owned move
-        // (no owning wallet/avatar on the row) signs with the platform key.
-        var signingContext = BuildSigningContext(operation);
+        // (no owning wallet/user on the row) signs with the platform key.
+        var signingContext = BuildSigningContext(operation, chainProvider.ChainType);
         var result = await chainProvider.TransferAsync(
             sourceTokenId, walletAddress, transfer.RecipientAddress ?? string.Empty, amount, signingContext);
         ApplyChainResult(operation, result, OperationStatus.Transferred);
@@ -488,7 +542,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
 
     /// <summary>
     /// value-path-wiring C1/D1: build the signer-resolution context from the op
-    /// row. When the op carries an owning avatar + wallet, the move is a per-user
+    /// row. When the op carries an owning user + wallet, the move is a per-user
     /// custodial op and must sign with that user's key (custody IDOR-guarded);
     /// otherwise it is a platform-authority move signed by the platform key.
     /// <para>
@@ -497,26 +551,36 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     /// op via a child credential), stamp the acting tenant + signing scope + grantor
     /// onto the context so the custody seam runs the LIVE consent check before any
     /// decrypt — on BOTH the platform and the user signing path. The grantor is the
-    /// op's owning avatar (the on-whose-behalf user); for a platform op with no
-    /// owning avatar a tenant-driven sign with no resolvable grantor is denied at the
+    /// op's owning user (the on-whose-behalf user); for a platform op with no
+    /// owning user a tenant-driven sign with no resolvable grantor is denied at the
     /// gate (fail-closed).
     /// </para>
     /// </summary>
+    /// <param name="chainType">The chain this op will settle on. Stamped onto EVERY
+    /// context built here (custody option 4) so the chain-aware platform door derives
+    /// THAT chain's key. Doing it once, at the single place the context is built, makes
+    /// every provider correct with no provider edits and leaves none able to drift: an
+    /// unstamped context silently takes the door's Algorand-pinned legacy path, which
+    /// fails closed for every other chain. Irrelevant to a per-user op — those keys come
+    /// from the wallet record, which is already chain-correct — but harmless there.</param>
     /// <param name="platformOp">When true, the base context is the platform key
     /// (Mint/Burn = ASA-admin) rather than a per-user resolve.</param>
-    private static SigningContext BuildSigningContext(IBlockchainOperation operation, bool platformOp = false)
+    private static SigningContext BuildSigningContext(
+        IBlockchainOperation operation, string chainType, bool platformOp = false)
     {
         SigningContext baseCtx;
         if (!platformOp
-            && operation.AvatarId is { } avatarId && avatarId != Guid.Empty
+            && operation.UserId is { } userId && userId != Guid.Empty
             && operation.WalletId is { } walletId && walletId != Guid.Empty)
         {
-            baseCtx = SigningContext.ForUser(avatarId, walletId);
+            baseCtx = SigningContext.ForUser(userId, walletId);
         }
         else
         {
             baseCtx = SigningContext.Platform;
         }
+
+        baseCtx = baseCtx.ForChain(chainType);
 
         // No acting tenant ⇒ user-driven / platform-internal; no grant required.
         if (operation.ActingTenantId is not { } tenantId || tenantId == Guid.Empty)
@@ -532,21 +596,253 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 $"'{operation.OperationType}'; refusing to build a tenant-driven signing context.");
 
         // Tenant-driven: thread the acting tenant + scope + grantor to the seam.
-        // The grantor is the op's owning avatar (the user on whose behalf the tenant
+        // The grantor is the op's owning user (the user on whose behalf the tenant
         // acts) — present on both user-key and platform-signed-on-behalf ops.
-        var grantor = operation.AvatarId is { } a && a != Guid.Empty ? a : Guid.Empty;
+        var grantor = operation.UserId is { } a && a != Guid.Empty ? a : Guid.Empty;
         return baseCtx.ActingAs(tenantId, operation.SigningScope ?? string.Empty, grantor);
     }
 
     /// <summary>
-    /// value-path-wiring H4: read the value amount as <see cref="ulong"/> from the
-    /// op's <c>Amount</c> parameter (arbitrary-precision string), falling back to
-    /// the supplied value when the parameter is absent or unparseable.
+    /// D16: stamps the operation with its fiat value at settlement, or leaves it
+    /// explicitly unstamped when nothing can price it.
     /// </summary>
-    private static ulong ReadUlongAmount(IBlockchainOperation operation, ulong fallback)
+    /// <remarks>
+    /// Three ways an operation ends up unpriced, all of them legitimate and all of them
+    /// recorded as "no stamp at all" rather than a zero: the row records no quantity to
+    /// price (DeployContract/CallContract move none, and a Burn/Transfer/Exchange/Swap whose
+    /// amount parameter is absent or unreadable refuses rather than defaults), nothing was
+    /// broadcast (Failed / AwaitingSignature / unrecognised type), or no rate source could
+    /// quote. The third is the normal case on a node whose consumer has declared no rates,
+    /// and it must stay visibly absent: a defaulted or invented rate on a value record is
+    /// worse than a missing one, and the analytics surface reads a null stamp as "never
+    /// priced" while a stamped <c>"0"</c> rate means a source genuinely quoted zero.
+    /// <para>A rate source that throws is treated exactly like one that declines. The
+    /// chain effect has already happened by this point; letting a price lookup fail the
+    /// operation would turn an oracle outage into a settled-but-Failed row, and
+    /// substituting a guess would put a fabricated number on a financial record.</para>
+    /// </remarks>
+    private async Task StampValueAtSettlementAsync(IBlockchainOperation operation, string chainType)
+    {
+        if (operation.ValueStamp is not null)
+            return;
+        if (!HasBroadcastForValueStamp(operation.Status))
+            return;
+        if (!TryResolveStampableAmount(operation, out var amount))
+            return;
+
+        ValueRateQuote? quote;
+        try
+        {
+            quote = await _valueRateSource.TryQuoteAsync(
+                amount.Dimension, chainType, DateTimeOffset.UtcNow, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(
+                ex,
+                "Value rate source failed for operation {OperationId} ({OperationType} on {ChainType}); "
+                + "recording the operation unpriced rather than stamping a guessed value.",
+                operation.Id, operation.OperationType, chainType);
+            return;
+        }
+
+        if (quote is null)
+            return;
+
+        operation.ValueStamp = ValueStamp.From(amount, quote);
+    }
+
+    /// <summary>True only for statuses that mean a transaction actually went to the chain.</summary>
+    private static bool HasBroadcastForValueStamp(string status) =>
+        status is not (OperationStatus.Failed
+            or OperationStatus.AwaitingSignature
+            or OperationStatus.Unknown
+            or OperationStatus.Pending);
+
+    /// <summary>
+    /// The quantity this operation moved AND the asset that quantity is counted in, when the
+    /// row records both. DeployContract/CallContract move no quantity and are never stamped.
+    /// </summary>
+    /// <remarks>
+    /// Every branch dimensions the amount with the SAME asset the execution path hands the
+    /// provider, because a stamp whose dimension does not name its asset is the D16 trap:
+    /// <see cref="ValueDimension.NativeChainAsset"/> means "whatever asset this call itself
+    /// named", so a rate source handed that on a project-token move would price N project
+    /// units at the chain's native rate — N micro-Algos on a sponsor's statement. Naming the
+    /// asset here is what lets a source price it correctly, or refuse it.
+    /// <para>Swap and Exchange stamp the leg they GIVE UP (<c>AmountIn</c> in <c>TokenIn</c>,
+    /// <c>Amount</c> in <c>SourceTokenId</c>): it is the consideration the initiator paid, it
+    /// is the only leg whose quantity the row records, and it is dimensioned so no source can
+    /// mistake it for the other side. The received leg is NOT stamped and must never be
+    /// inferred from this figure.</para>
+    /// <para>Burn/Transfer/Exchange/Swap take NO amount fallback: the execution paths may
+    /// default a missing amount (a transfer of one asset), but a value stamp computed against
+    /// a defaulted quantity is a fabricated figure on a financial record. D16 is explicit that
+    /// an absent value must read back as unpriced, never as a real number, so an unreadable
+    /// amount refuses the stamp instead.</para>
+    /// </remarks>
+    private static bool TryResolveStampableAmount(IBlockchainOperation operation, out RailAmount amount)
+    {
+        if (StampableAmountReaders.TryGetValue(operation.OperationType ?? string.Empty, out var read))
+            return read(operation, out amount);
+
+        amount = RailAmount.Zero;
+        return false;
+    }
+
+    /// <summary>Reads the one quantity a stampable operation moved, dimensioned in its own asset.</summary>
+    private delegate bool StampableAmountReader(IBlockchainOperation operation, out RailAmount amount);
+
+    /// <summary>
+    /// The write side of the value stamp, as a TABLE keyed by operation type rather than a switch.
+    /// </summary>
+    /// <remarks>
+    /// A switch could grow a <c>case "Foo":</c> that no test could enumerate, and that is exactly
+    /// how the read side came to answer <c>"pricing": "Priced"</c> beside <c>"isStampable": false</c>
+    /// twice: the write side learned a type and the shared set never did. A table's keys ARE
+    /// enumerable, so <see cref="BuildStampableAmountReaders"/> below can — and does — refuse to
+    /// build unless they are exactly <see cref="ValueStampOperationTypes.All"/>. There is now no
+    /// way to teach the write side a type without declaring it in the one set the read side reads.
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, StampableAmountReader> StampableAmountReaders =
+        BuildStampableAmountReaders();
+
+    /// <summary>
+    /// Builds the reader table and holds it to <see cref="ValueStampOperationTypes.All"/> in BOTH
+    /// directions. A declared type with no reader, or a reader for an undeclared type, refuses to
+    /// initialise rather than shipping a surface that contradicts itself about one row.
+    /// </summary>
+    private static IReadOnlyDictionary<string, StampableAmountReader> BuildStampableAmountReaders()
+    {
+        var readers = new Dictionary<string, StampableAmountReader>(StringComparer.Ordinal)
+        {
+            [ValueStampOperationTypes.Mint] = ReadMintedAmount,
+            [ValueStampOperationTypes.Burn] = ReadBurnedAmount,
+            [ValueStampOperationTypes.Transfer] = ReadTransferredAmount,
+            [ValueStampOperationTypes.IssueUnits] = ReadTransferredAmount,
+            [ValueStampOperationTypes.Exchange] = ReadExchangedAmount,
+            [ValueStampOperationTypes.Swap] = ReadSwappedAmount,
+        };
+
+        var declaredWithoutReader = ValueStampOperationTypes.All.Except(readers.Keys, StringComparer.Ordinal).ToArray();
+        var readerWithoutDeclaration = readers.Keys.Except(ValueStampOperationTypes.All, StringComparer.Ordinal).ToArray();
+
+        if (declaredWithoutReader.Length > 0 || readerWithoutDeclaration.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "The value stamp write side and "
+                + $"{nameof(ValueStampOperationTypes)}.{nameof(ValueStampOperationTypes.All)} disagree. "
+                + $"Declared with no reader: [{string.Join(", ", declaredWithoutReader)}]. "
+                + $"Read here but not declared: [{string.Join(", ", readerWithoutDeclaration)}]. "
+                + "A type present on one side only reads back as priced-and-unstampable at once, "
+                + "which is a contradiction on a financial surface.");
+        }
+
+        return readers;
+    }
+
+    /// <summary>
+    /// The typed field already carries the count; name the asset when the row does, and otherwise
+    /// leave the caller's own dimension untouched. A row typed Mint that is not an
+    /// <see cref="IMintOperation"/> carries no count to stamp.
+    /// </summary>
+    private static bool ReadMintedAmount(IBlockchainOperation operation, out RailAmount amount)
+    {
+        if (operation is not IMintOperation mint)
+        {
+            amount = RailAmount.Zero;
+            return false;
+        }
+
+        amount = NameAsset(mint.Amount, MintedAssetId(operation));
+        return true;
+    }
+
+    private static bool ReadBurnedAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(
+            operation, "Amount", operation.Parameters.GetValueOrDefault("TokenId", string.Empty), out amount);
+
+    /// <summary>Shared by Transfer and IssueUnits: the same SHAPE, and not the same direction.</summary>
+    private static bool ReadTransferredAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(operation, "Amount", TransferredAssetId(operation), out amount);
+
+    private static bool ReadExchangedAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(operation, "Amount", ExchangedAssetId(operation), out amount);
+
+    private static bool ReadSwappedAmount(IBlockchainOperation operation, out RailAmount amount) =>
+        TryReadRailAmount(
+            operation, "AmountIn", operation.Parameters.GetValueOrDefault("TokenIn", string.Empty), out amount);
+
+    /// <summary>The asset a mint issued, when the row names one; blank otherwise (an ASA-create names none yet).</summary>
+    private static string MintedAssetId(IBlockchainOperation operation) =>
+        FirstNonBlankParameter(operation, "AssetId", "TokenId");
+
+    /// <summary>The asset a transfer moved — resolved exactly as <see cref="ExecuteTransferAsync"/> resolves it.</summary>
+    private static string TransferredAssetId(IBlockchainOperation operation) =>
+        operation.Parameters.GetValueOrDefault(
+            "SourceTokenId", (operation as ITransferOperation)?.SourceHolonId?.ToString() ?? string.Empty);
+
+    /// <summary>The asset an exchange gave up — resolved exactly as <see cref="ExecuteExchangeAsync"/> resolves it.</summary>
+    private static string ExchangedAssetId(IBlockchainOperation operation) =>
+        operation.Parameters.GetValueOrDefault(
+            "SourceTokenId", (operation as IExchangeOperation)?.SourceHolonId?.ToString() ?? string.Empty);
+
+    /// <summary>The first of <paramref name="parameterNames"/> the row actually carries, or blank.</summary>
+    private static string FirstNonBlankParameter(IBlockchainOperation operation, params string[] parameterNames)
+    {
+        foreach (var name in parameterNames)
+        {
+            var value = operation.Parameters.GetValueOrDefault(name, string.Empty);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Re-labels <paramref name="amount"/> with the asset the row names, when it names one and
+    /// the amount does not already carry its own. An amount whose dimension was set
+    /// deliberately keeps it: naming it a second time, differently, would be the manager
+    /// overruling the caller's own statement of what moved.
+    /// </summary>
+    private static RailAmount NameAsset(RailAmount amount, string assetId) =>
+        string.IsNullOrWhiteSpace(assetId) || amount.Dimension.Code.Length > 0
+            ? amount
+            : amount.WithDimension(ValueDimension.ChainAsset(assetId));
+
+    /// <summary>
+    /// The named base-unit parameter as a <see cref="RailAmount"/> counted in
+    /// <paramref name="assetId"/>, or <c>false</c> when the parameter is absent or
+    /// unparseable. The refusing twin of <see cref="ReadRailAmount"/>, for the value-stamp
+    /// path where a defaulted count would become a real-looking fiat figure — and the one
+    /// place the stamped dimension is chosen, which is why it takes the asset explicitly
+    /// instead of defaulting to <see cref="ValueDimension.NativeChainAsset"/>.
+    /// </summary>
+    private static bool TryReadRailAmount(
+        IBlockchainOperation operation,
+        string parameterName,
+        string assetId,
+        out RailAmount amount) =>
+        RailAmount.TryParse(
+            operation.Parameters.GetValueOrDefault(parameterName, string.Empty),
+            ValueDimension.ChainAsset(assetId),
+            out amount);
+
+    /// <summary>
+    /// Reads the value amount from the op's <c>Amount</c> parameter — a canonical
+    /// decimal base-unit string — falling back to the supplied count when the parameter
+    /// is absent or unparseable.
+    /// <para>D13/D15: parsed straight into a <see cref="RailAmount"/>, so this path is
+    /// NOT capped at <see cref="ulong.MaxValue"/>. The parameter was always a string;
+    /// only the former ulong parse imposed the ceiling.</para>
+    /// </summary>
+    private static RailAmount ReadRailAmount(IBlockchainOperation operation, int fallback)
     {
         var raw = operation.Parameters.GetValueOrDefault("Amount", string.Empty);
-        return ulong.TryParse(raw, out var parsed) ? parsed : fallback;
+        return RailAmount.TryParse(raw, ValueDimension.NativeChainAsset, out var parsed)
+            ? parsed
+            : RailAmount.OfChainAsset(fallback);
     }
 
     private async Task ExecuteDeployContractAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)

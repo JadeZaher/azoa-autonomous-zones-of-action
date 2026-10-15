@@ -57,7 +57,7 @@ public class McpAuthScopingTests
     // ── test cases ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task MissingAvatarClaim_Returns401()
+    public async Task MissingUserClaim_Returns401()
     {
         var (mw, nextCalled) = BuildMiddleware();
         var ctx = McpContext(EmptyPrincipal());
@@ -66,11 +66,11 @@ public class McpAuthScopingTests
 
         ctx.Response.StatusCode.Should().Be(401);
         nextCalled[0].Should().BeFalse("next must not be called when auth fails");
-        ctx.Items.ContainsKey("mcp.avatar_id").Should().BeFalse();
+        ctx.Items.ContainsKey("mcp.user_id").Should().BeFalse();
     }
 
     [Fact]
-    public async Task MalformedAvatarClaim_Returns401()
+    public async Task MalformedUserClaim_Returns401()
     {
         var (mw, nextCalled) = BuildMiddleware();
         // Claim value is present but not a valid Guid.
@@ -81,51 +81,51 @@ public class McpAuthScopingTests
 
         ctx.Response.StatusCode.Should().Be(401);
         nextCalled[0].Should().BeFalse();
-        ctx.Items.ContainsKey("mcp.avatar_id").Should().BeFalse();
+        ctx.Items.ContainsKey("mcp.user_id").Should().BeFalse();
     }
 
     [Fact]
-    public async Task ValidJwtAvatarClaim_StashesAvatarIdOnHttpContext()
+    public async Task ValidJwtUserClaim_StashesUserIdOnHttpContext()
     {
         // JWT scheme populates ClaimTypes.NameIdentifier (ASP.NET's default
         // mapping of the "sub" JWT claim). TestAuthHandler does the same.
         var (mw, nextCalled) = BuildMiddleware();
-        var avatarId = Guid.NewGuid();
-        var user = PrincipalWith(new Claim(ClaimTypes.NameIdentifier, avatarId.ToString()));
+        var userId = Guid.NewGuid();
+        var user = PrincipalWith(new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
         var ctx = McpContext(user);
 
         await mw.InvokeAsync(ctx);
 
         ctx.Response.StatusCode.Should().Be(200, "successful middleware should not change status");
         nextCalled[0].Should().BeTrue();
-        ctx.Items["mcp.avatar_id"].Should().Be(avatarId);
+        ctx.Items["mcp.user_id"].Should().Be(userId);
     }
 
     [Fact]
-    public async Task ValidApiKeyAvatarClaim_StashesAvatarIdOnHttpContext()
+    public async Task ValidApiKeyUserClaim_StashesUserIdOnHttpContext()
     {
-        // ApiKeyAuthenticationHandler emits three copies of the AvatarId claim.
-        // Here we simulate the "AvatarId" custom claim to verify the third
+        // ApiKeyAuthenticationHandler emits three copies of the UserId claim.
+        // Here we simulate the "UserId" custom claim to verify the third
         // fallback branch in the middleware's resolution chain.
         var (mw, nextCalled) = BuildMiddleware();
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         // Deliberately omit ClaimTypes.NameIdentifier and "sub" so the middleware
-        // must fall through to the "AvatarId" custom claim.
-        var user = PrincipalWith(new Claim("AvatarId", avatarId.ToString()));
+        // must fall through to the "UserId" custom claim.
+        var user = PrincipalWith(new Claim("UserId", userId.ToString()));
         var ctx = McpContext(user);
 
         await mw.InvokeAsync(ctx);
 
         ctx.Response.StatusCode.Should().Be(200);
         nextCalled[0].Should().BeTrue();
-        ctx.Items["mcp.avatar_id"].Should().Be(avatarId);
+        ctx.Items["mcp.user_id"].Should().Be(userId);
     }
 
     [Fact]
     public async Task NonMcpPath_PassesThrough()
     {
         // A request to /api/holon (or any path outside /mcp) must not be
-        // touched by this middleware even if the user has no avatar claim.
+        // touched by this middleware even if the user has no user claim.
         var (mw, nextCalled) = BuildMiddleware();
         var ctx = NonMcpContext("/api/holon");
         // No user claims at all — would fail if the /mcp check were absent.
@@ -136,6 +136,6 @@ public class McpAuthScopingTests
         // Default status code for a context where nothing set it is 200.
         ctx.Response.StatusCode.Should().Be(200);
         nextCalled[0].Should().BeTrue("non-MCP paths must pass through unconditionally");
-        ctx.Items.ContainsKey("mcp.avatar_id").Should().BeFalse();
+        ctx.Items.ContainsKey("mcp.user_id").Should().BeFalse();
     }
 }

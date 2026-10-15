@@ -266,6 +266,70 @@ public class BlockchainProviderFactorySelectionTests
         act.Should().NotThrow();
     }
 
+    // Phase 0 capability-honesty: config that advertises (enables) a chain with no
+    // registered provider must fail loud at boot, not lazily via
+    // BlockchainProviderNotFoundException the first time someone requests it.
+    [Fact]
+    public void GuardAgainstUnregisteredEnabledChains_ConfigEnablesUnregisteredChain_Throws()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:Chains:0:ChainType"] = "Algorand",
+                ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:1:ChainType"] = "Ethereum",
+                ["Blockchain:Chains:1:Devnet:IsEnabled"] = "true",
+            })
+            .Build();
+
+        var act = () => BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains(
+            config, new[] { "Algorand", "Solana", "Simulated" });
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*no registered provider*Ethereum*");
+    }
+
+    [Fact]
+    public void GuardAgainstUnregisteredEnabledChains_DisabledUnregisteredChain_DoesNotThrow()
+    {
+        // A chain that is present but fully disabled (planned, not yet built) must not
+        // trip the guard — only ENABLED-but-unregistered chains are the false capability.
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Blockchain:Chains:0:ChainType"] = "Solana",
+                ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
+                ["Blockchain:Chains:1:ChainType"] = "Ethereum",
+                ["Blockchain:Chains:1:Devnet:IsEnabled"] = "false",
+                ["Blockchain:Chains:1:Testnet:IsEnabled"] = "false",
+                ["Blockchain:Chains:1:Mainnet:IsEnabled"] = "false",
+            })
+            .Build();
+
+        var act = () => BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains(
+            config, new[] { "Solana", "Simulated" });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void GuardAgainstUnregisteredEnabledChains_ShippedConfig_OnlyEnablesRegisteredChains_DoesNotThrow()
+    {
+        // Guards the real appsettings.json directly — this is what actually boots, and
+        // this test fails if Ethereum (or any future chain) is ever re-enabled in config
+        // without a matching provider registration.
+        var config = new ConfigurationBuilder()
+            .AddJsonFile("appsettings.json", optional: false)
+            .Build();
+
+        // Keep this list identical to `registeredBlockchainChainTypes` in Program.cs —
+        // the guard is only as honest as the list it is handed.
+        var act = () => BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains(
+            config, new[] { "Algorand", "Solana", "Ethereum", "Simulated" });
+
+        act.Should().NotThrow();
+    }
+
     private static IConfiguration ConfigWithTwoSolanaNetworks()
         => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

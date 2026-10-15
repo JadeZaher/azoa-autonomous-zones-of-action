@@ -4,11 +4,13 @@ using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Observability;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Custody;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Moq;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Observability;
 
@@ -124,12 +126,51 @@ public sealed class RealValueReadinessHealthCheckTests
         result.Description.Should().Contain("Manual KYC simulation cannot authorize real-value operations");
     }
 
+    [Fact]
+    public async Task EnabledRealValue_WithoutACustodyMode_IsUnhealthy()
+    {
+        // The healthy message claims custody is configured. Before this probe consumed the
+        // resolver, a node with RealValueEnabled=true and no custody mode reported ready
+        // while every wallet provisioning attempt failed closed one layer down.
+        var values = CompleteRealValueConfiguration();
+        values.Remove(CustodyModeResolver.CustodyModeConfigurationPath);
+
+        var check = new RealValueReadinessHealthCheck(
+            BuildConfiguration(values),
+            ReadyProviderFactory().Object,
+            ReadyKycProvider().Object,
+            HostEnvironment(Environments.Production));
+
+        var result = await check.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain(CustodyModeResolver.CustodyDisabledReason);
+    }
+
+    [Fact]
+    public async Task EnabledRealValue_WithAnUnusableWalletEncryptionKey_IsUnhealthy()
+    {
+        var values = CompleteRealValueConfiguration();
+        values[CustodyModeResolver.WalletEncryptionKeyConfigurationPath] = "too-short";
+
+        var check = new RealValueReadinessHealthCheck(
+            BuildConfiguration(values),
+            ReadyProviderFactory().Object,
+            ReadyKycProvider().Object,
+            HostEnvironment(Environments.Production));
+
+        var result = await check.CheckHealthAsync(new HealthCheckContext());
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain(CustodyModeResolver.WalletEncryptionKeyUnusableReason);
+    }
+
     private static Mock<IBlockchainProviderFactory> ReadyProviderFactory()
     {
         var provider = new Mock<IBlockchainProvider>();
         provider.SetupGet(item => item.ChainType).Returns("Algorand");
         provider.SetupGet(item => item.ActiveNetwork).Returns(ChainNetwork.Testnet);
-        provider.SetupGet(item => item.SupportsBridging).Returns(true);
+        provider.WithBridgeLegs();
 
         var factory = new Mock<IBlockchainProviderFactory>();
         factory.Setup(item => item.GetProvider("Algorand", ChainNetwork.Testnet))
@@ -169,6 +210,8 @@ public sealed class RealValueReadinessHealthCheckTests
         ["Kyc:ApprovalPolicy:PolicyVersion"] = "production-v1",
         ["Kyc:ApprovalPolicy:AssuranceLevel"] = "substantial",
         ["Kyc:ApprovalPolicy:TrustedProviderKeys:0"] = "veriff",
+        ["CustodialAccounts:CustodyMode"] = CustodyModeResolver.PlatformMode,
+        ["AZOA:WalletEncryptionKey"] = "0123456789abcdef0123456789abcdef",
     };
 
     private static IConfiguration BuildConfiguration(Dictionary<string, string?> values) =>

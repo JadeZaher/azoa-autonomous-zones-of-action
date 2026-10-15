@@ -71,13 +71,13 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<ConsentGrant>>> ListByGrantorAsync(Guid grantorAvatarId, CancellationToken ct = default)
+    public async Task<AZOAResult<IEnumerable<ConsentGrant>>> ListByGrantorAsync(Guid grantorUserId, CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM consent_grant WHERE grantor_avatar_id = $_grantor ORDER BY granted_at DESC")
-                .WithParam("_grantor", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(grantorAvatarId)));
+                .Of("SELECT * FROM consent_grant WHERE grantor_user_id = $_grantor ORDER BY granted_at DESC")
+                .WithParam("_grantor", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(grantorUserId)));
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return Ok(rows);
         }
@@ -93,7 +93,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_grant WHERE tenant_id = $_tenant ORDER BY granted_at DESC")
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return Ok(rows);
         }
@@ -104,7 +104,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
     }
 
     public async Task<AZOAResult<ConsentGrant>> FindCoveringGrantAsync(
-        Guid grantorAvatarId, Guid tenantId, string scope, DateTime now, CancellationToken ct = default)
+        Guid grantorUserId, Guid tenantId, string scope, DateTime now, CancellationToken ct = default)
     {
         try
         {
@@ -116,12 +116,12 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
             var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
             var q = SurrealQuery
                 .Of(@"SELECT * FROM consent_grant
-                      WHERE grantor_avatar_id = $_grantor
+                      WHERE grantor_user_id = $_grantor
                         AND tenant_id = $_tenant
                         AND revoked_at = NONE
                         AND (expires_at = NONE OR expires_at > $_now)")
-                .WithParam("_grantor", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(grantorAvatarId)))
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)))
+                .WithParam("_grantor", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(grantorUserId)))
+                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)))
                 .WithParam("_now", nowUtc);
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             var covering = rows.Select(ToDomain).FirstOrDefault(g => g.Covers(scope, now));
@@ -142,7 +142,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
             // tenant's own grants only — no cross-tenant ref collision, no loose match.
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_grant WHERE tenant_id = $_tenant AND participation_ref = $_ref")
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)))
+                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)))
                 .WithParam("_ref", participationRef);
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return Ok(rows);
@@ -153,7 +153,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         }
     }
 
-    public async Task<AZOAResult<int>> RevokeAllByGrantorAsync(Guid grantorAvatarId, DateTime now, CancellationToken ct = default)
+    public async Task<AZOAResult<int>> RevokeAllByGrantorAsync(Guid grantorUserId, DateTime now, CancellationToken ct = default)
     {
         try
         {
@@ -165,10 +165,10 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
             var q = SurrealQuery
                 .Of(@"UPDATE consent_grant
                       SET revoked_at = $_now
-                      WHERE grantor_avatar_id = $_grantor
+                      WHERE grantor_user_id = $_grantor
                         AND revoked_at = NONE
                       RETURN BEFORE")
-                .WithParam("_grantor", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(grantorAvatarId)))
+                .WithParam("_grantor", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(grantorUserId)))
                 .WithParam("_now", nowUtc);
             var rows = await _executor.QueryAsync<ConsentGrantPoco>(q, ct);
             return new AZOAResult<int> { Result = rows.Count, Message = "Revoked." };
@@ -188,8 +188,8 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
     private static ConsentGrantPoco FromDomain(ConsentGrant g) => new()
     {
         Id               = SurrealId.ToSurrealId(g.Id),
-        GrantorAvatarId  = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(g.GrantorAvatarId)) ?? string.Empty,
-        TenantId         = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(g.TenantId)) ?? string.Empty,
+        GrantorUserId  = SurrealLink.ToLink("user", SurrealId.ToSurrealId(g.GrantorUserId)) ?? string.Empty,
+        TenantId         = SurrealLink.ToLink("user", SurrealId.ToSurrealId(g.TenantId)) ?? string.Empty,
         Scopes           = string.Join(',', g.Scopes),
         Origin           = g.Origin.ToString(),
         ParticipationRef = g.ParticipationRef,
@@ -201,7 +201,7 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
     private static ConsentGrant ToDomain(ConsentGrantPoco p) => new()
     {
         Id               = SurrealId.FromSurrealId(p.Id),
-        GrantorAvatarId  = SurrealId.FromSurrealId(SurrealLink.FromLink(p.GrantorAvatarId)!),
+        GrantorUserId  = SurrealId.FromSurrealId(SurrealLink.FromLink(p.GrantorUserId)!),
         TenantId         = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         Scopes           = string.IsNullOrWhiteSpace(p.Scopes)
                            ? new List<string>()
@@ -220,8 +220,8 @@ public sealed class SurrealConsentGrantStore : IConsentGrantStore
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]                 public string Id { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("grantor_avatar_id")]  public string GrantorAvatarId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]          public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("grantor_user_id")]  public string GrantorUserId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("tenant_id")]          public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("scopes")]             public string Scopes { get; set; } = string.Empty;
         [JsonPropertyName("origin")]             public string Origin { get; set; } = "UserExplicit";
         [JsonPropertyName("participation_ref")]  public string? ParticipationRef { get; set; }

@@ -30,11 +30,11 @@ public class WalletController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IWallet> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.GetAsync(id, avatarId.Value, request);
+        var result = await _walletManager.GetAsync(id, userId.Value, request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -42,11 +42,11 @@ public class WalletController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<IWallet>>>> Query([FromQuery] WalletQueryRequest query, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IEnumerable<IWallet>> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.QueryAsync(query, avatarId.Value, request);
+        var result = await _walletManager.QueryAsync(query, userId.Value, request);
         return Ok(result);
     }
 
@@ -54,11 +54,11 @@ public class WalletController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Create([FromBody] WalletCreateModel model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IWallet> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.CreateAsync(model, avatarId.Value, request);
+        var result = await _walletManager.CreateAsync(model, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -67,11 +67,11 @@ public class WalletController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Update(Guid id, [FromBody] WalletUpdateModel model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IWallet> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.UpdateAsync(id, model, avatarId.Value, request);
+        var result = await _walletManager.UpdateAsync(id, model, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -80,11 +80,11 @@ public class WalletController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<bool> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.DeleteAsync(id, avatarId.Value, request);
+        var result = await _walletManager.DeleteAsync(id, userId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new AZOAResponse { Message = "Wallet deleted." });
     }
@@ -93,11 +93,11 @@ public class WalletController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<bool>>> SetDefault(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<bool> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.SetDefaultAsync(avatarId.Value, id, request);
+        var result = await _walletManager.SetDefaultAsync(userId.Value, id, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -105,11 +105,11 @@ public class WalletController : ControllerBase
     [HttpGet("{id:guid}/portfolio")]
     public async Task<ActionResult<AZOAResult<PortfolioResult>>> GetPortfolio(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<PortfolioResult> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.GetPortfolioAsync(id, avatarId.Value, request);
+        var result = await _walletManager.GetPortfolioAsync(id, userId.Value, request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -120,11 +120,11 @@ public class WalletController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Generate([FromBody] WalletGenerateRequest model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IWallet> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.GenerateWalletAsync(model, avatarId.Value, request);
+        var result = await _walletManager.GenerateWalletAsync(model, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -135,11 +135,11 @@ public class WalletController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IWallet>>> Connect([FromBody] WalletConnectRequest model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IWallet> { IsError = true, Message = "Invalid token." });
 
-        var result = await _walletManager.ConnectWalletAsync(model, avatarId.Value, request);
+        var result = await _walletManager.ConnectWalletAsync(model, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -151,8 +151,8 @@ public class WalletController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<WalletExportResult>>> Export(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<WalletExportResult> { IsError = true, Message = "Invalid token." });
 
         // See Controllers/AGENTS.md § tenant credential and recovery boundaries.
@@ -169,21 +169,21 @@ public class WalletController : ControllerBase
         Response.Headers.CacheControl = "no-store";
         Response.Headers.Pragma = "no-cache";
         _logger.LogWarning(
-            "Sensitive wallet recovery requested by avatar {AvatarId} for wallet {WalletId}.",
-            avatarId.Value,
+            "Sensitive wallet recovery requested by user {UserId} for wallet {WalletId}.",
+            userId.Value,
             id);
-        var result = await _walletManager.ExportWalletAsync(id, avatarId.Value, request);
+        var result = await _walletManager.ExportWalletAsync(id, userId.Value, request);
         if (result.IsError)
         {
             _logger.LogWarning(
-                "Sensitive wallet recovery failed for avatar {AvatarId} and wallet {WalletId}.",
-                avatarId.Value,
+                "Sensitive wallet recovery failed for user {UserId} and wallet {WalletId}.",
+                userId.Value,
                 id);
             return BadRequest(result);
         }
         _logger.LogInformation(
-            "Sensitive wallet recovery completed for avatar {AvatarId} and wallet {WalletId}.",
-            avatarId.Value,
+            "Sensitive wallet recovery completed for user {UserId} and wallet {WalletId}.",
+            userId.Value,
             id);
         return Ok(result);
     }
@@ -194,8 +194,8 @@ public class WalletController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<object>>> TopUp(Guid id, [FromBody] WalletTopUpRequest? model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Invalid token." });
 
         if (!User.HasSigningScope(AzoaScopes.WalletManage))
@@ -211,7 +211,7 @@ public class WalletController : ControllerBase
         // absence is still safe; NO random per-request key is generated here.
         var idempotencyKey = ReadIdempotencyKey();
 
-        var result = await _walletManager.TopUpAsync(id, model?.Amount, avatarId.Value, request, idempotencyKey);
+        var result = await _walletManager.TopUpAsync(id, model?.Amount, userId.Value, request, idempotencyKey);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -237,11 +237,11 @@ public class WalletController : ControllerBase
     [HttpGet("types")]
     public async Task<ActionResult<AZOAResult<object>>> GetByType([FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "Invalid token." });
 
-        var allResult = await _walletManager.QueryAsync(new WalletQueryRequest { AvatarId = avatarId }, avatarId.Value, request);
+        var allResult = await _walletManager.QueryAsync(new WalletQueryRequest { UserId = userId }, userId.Value, request);
         if (allResult.IsError || allResult.Result == null)
             return Ok(new AZOAResult<object> { Result = new { external = new List<IWallet>(), platform = new List<IWallet>() } });
 
@@ -256,7 +256,7 @@ public class WalletController : ControllerBase
         });
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;

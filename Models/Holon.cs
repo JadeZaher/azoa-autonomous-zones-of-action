@@ -11,7 +11,7 @@ public class Holon : IHolon, INft
     public Guid? ParentHolonId { get; set; }
     public Holon? ParentHolon { get; set; }
     public List<Holon> SubHolons { get; set; } = new();
-    public Guid? AvatarId { get; set; }
+    public Guid? UserId { get; set; }
     public string ProviderName { get; set; } = string.Empty;
     public string? ChainId { get; set; }
     public string? AssetType { get; set; }
@@ -22,6 +22,6 @@ public class Holon : IHolon, INft
     public DateTime? ModifiedDate { get; set; }
     public bool IsActive { get; set; } = true;
     public Guid? SourceHolonId { get; set; }
-    public Guid? OriginAvatarId { get; set; }
+    public Guid? OriginUserId { get; set; }
     public bool IsPublic { get; set; } = false;
 }

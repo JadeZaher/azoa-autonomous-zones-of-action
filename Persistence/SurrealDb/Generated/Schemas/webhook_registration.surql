@@ -14,7 +14,7 @@ DEFINE FIELD IF NOT EXISTS id ON TABLE webhook_registration TYPE string
     ASSERT $value != NONE AND $value != "";
 
 -- Owning tenant — unique, one active registration per tenant for v1
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE webhook_registration TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE webhook_registration TYPE record<user>;
 
 -- Receiver endpoint — https-only + public-IP, SSRF-guarded at delivery time
 DEFINE FIELD IF NOT EXISTS url ON TABLE webhook_registration TYPE string

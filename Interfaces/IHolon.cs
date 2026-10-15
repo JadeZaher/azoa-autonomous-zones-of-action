@@ -6,7 +6,7 @@ public interface IHolon
     string Name { get; set; }
     string Description { get; set; }
     Guid? ParentHolonId { get; set; }
-    Guid? AvatarId { get; set; }
+    Guid? UserId { get; set; }
     string ProviderName { get; set; }
     string? ChainId { get; set; }
     string? AssetType { get; set; }
@@ -17,7 +17,7 @@ public interface IHolon
     DateTime? ModifiedDate { get; set; }
     bool IsActive { get; set; }
     Guid? SourceHolonId { get; set; }
-    Guid? OriginAvatarId { get; set; }
-    /// <summary>Owner opt-in: makes this holon readable/clonable cross-avatar as a marketplace template.</summary>
+    Guid? OriginUserId { get; set; }
+    /// <summary>Owner opt-in: makes this holon readable/clonable cross-user as a marketplace template.</summary>
     bool IsPublic { get; set; }
 }

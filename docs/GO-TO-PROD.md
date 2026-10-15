@@ -2,14 +2,18 @@
 
 > ⚠️ **DEPRECATED — dated 2026-05-18, predates the SurrealDB cutover and the
 > Phase-A saga-default flip.** `docs/NODE-HOST.md` is the authoritative
-> operator guide for current data-engine setup and production readiness. Two
+> operator guide for current data-engine setup and production readiness. Three
 > corrections this doc gets wrong as written:
 > 1. **`Sagas:Enabled=true` is the deliberate default**, with a boot guard,
 >    not `Enabled=false` (gate 7 and the §2/§4 references below describe the
->    old, superseded premise — the durable-quest saga consumer now exists and
->    runs by default; see [[durable-quests-inert-sagas-disabled]]).
+>    old, superseded premise — the durable-action saga consumer now exists and
+>    runs by default; see [[durable-actions-inert-sagas-disabled]]).
 > 2. **The G1 durability gate is live and green on SurrealDB 3.1.4** —
 >    re-verified during `final-hardening-cutover`.
+> 3. **`scripts/passoff.ps1` and `scripts/passoff-architecture.ps1` no longer
+>    exist.** Every reference to them below is a record of a gate that ran at
+>    the time, not an instruction. The current code gate is
+>    `.github/workflows/ci.yml`.
 > These corrections exist because two independent auditors were misled by this
 > stale doc. Read [NODE-HOST.md](NODE-HOST.md) instead for anything
 > operational; this file is retained for historical safety-gate reasoning only.
@@ -40,7 +44,7 @@ Code gate **GREEN**: prod build 0 errors / 17 baseline warnings; unit suite gree
 **§4 cleanup items 1–4: LANDED** (commit `1b25f50`, "api-safety-hardening §4
 pre-launch cleanup"; unit suite 567/567 at that point). **Tier-1
 `architecture-decoupling` track: COMPLETE** — per-aggregate persistence seam (god
-`IAZOAStorageProvider` + `IQuestRepository` deleted), 34-handler `QuestManager`
+`IAZOAStorageProvider` + `IActionRepository` deleted), 34-handler `ActionManager`
 registry, `ExecutionOrder` dedup, bounded `IMemoryCache`, OpenTelemetry + live
 `/health`; independent review **APPROVE-WITH-SIMPLIFICATIONS** (0 CRITICAL/HIGH);
 unit suite **532/532** (count dropped from 567 only because ~35 tests that
@@ -65,7 +69,7 @@ engineering. Tracked engineering debt deferred to `surrealdb-migration`: §5
 | 3 | Live-network VAA validation on devnet/testnet against the real Guardian network (a real VAA verifies; a tampered one is rejected) | manual e2e | Ops+Eng |
 | 4 | All secrets supplied from the secret store (NOT appsettings) — see §2 | deploy config audit | Ops |
 | 5 | Target DB provisioned, empty, migrated cleanly (greenfield: start empty) | `db.Database.Migrate()` boot OR gated job; verify tables/indexes | Ops |
-| 6 | `Reconciliation:Enabled=true`, `RateLimiting:Enabled=true`, `Blockchain:Wormhole:RequireFullSignatureVerification=true` | config audit | Ops |
+| 6 | `Reconciliation:Enabled=true`, `RateLimiting:Enabled=true` (Guardian-signature verification is unconditional — no config key) | config audit | Ops |
 | 7 | `Sagas:Enabled=false` (no consumer until durable-saga Phase 2) | config audit | Eng |
 | 8 | Review pre-launch simplifications §4 items 1–4 landed | ✅ LANDED — commit `1b25f50` | Eng |
 | 9 | One SRE has read the RESIDUAL-RISK-RUNBOOK and signed off | sign-off line | Ops |
@@ -86,7 +90,7 @@ not a bug.
 **REQUIRED non-secret config:**
 - `Jwt:Issuer`, `Jwt:Audience`.
 - `Blockchain:Wormhole:GuardianRpcUrl` — Guardian/Wormholescan RPC for the target network.
-- `Blockchain:Wormhole:RequireFullSignatureVerification` = `true` (default; never `false` outside devnet/testnet).
+- Guardian-signature verification has **no config key** — `RequireFullSignatureVerification` was REMOVED. Per-signature secp256k1 verification is unconditional; an unregistered `IVaaSignatureVerifier` or an absent Guardian set fails closed.
 - `Blockchain:Wormhole:GuardianSets` — `{ "<setIndex>": ["0x..20-byte..", ...] }`, list position = guardian index. **Per environment file.** devnet shipped+verified (`appsettings.Development.json`, index 0). **testnet + mainnet (index 4, 19 guardians) are NOT shipped — populate+verify per GUARDIAN-SET-SETUP.md. Absent ⇒ fail-closed (intended).**
 - `Blockchain:*` chain/network endpoints per the network architecture (devnet/testnet/mainnet switch).
 - `RateLimiting` — `Enabled`, `Global{PermitLimit,WindowSeconds,QueueLimit}`, `Financial{...}`. Defaults conservative; tune for expected load.

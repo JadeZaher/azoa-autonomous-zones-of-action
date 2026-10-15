@@ -1,14 +1,14 @@
-export { AzoaApiClient, DAPP_ROLES } from "./client.js";
+export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
 export type {
   AzoaApiConfig,
-  AvatarResponse,
+  UserResponse,
   TenantKycStatus,
   TenantCustodialAccountStatus,
   TenantCustodialCapabilities,
   TenantKycSession,
   TenantKycDocumentReference,
   TenantKycSubmission,
-  // avatar-dapp-rbac: assignable DApp role allowlist
+  // user-dapp-rbac: assignable DApp role allowlist
   DappRole,
   NftResult,
   NftMetadata,
@@ -19,6 +19,61 @@ export type {
   // Allocation types (Fiat Stripe Bridge)
   AllocationRequest,
   AllocationResult,
+  // Exchange types (ExchangeController, W5.1/D50)
+  ExchangeDirection,
+  DeclaredExchangeRate,
+  ExchangeParams,
+  ExchangeReceiptState,
+  ExchangeReceipt,
+  // Hold types (HoldController, D14 / W3.4)
+  HoldState,
+  HoldOpenParams,
+  HoldSettlementParams,
+  HoldChainParams,
+  HoldView,
+  // Fiat on-ramp checkout types (FiatCheckoutController)
+  FiatCheckoutStatus,
+  FiatSettlementState,
+  FiatCheckoutPurpose,
+  HostedSessionCapabilities,
+  FiatCheckoutStartParams,
+  FiatCheckoutIntent,
+  // Fiat off-ramp / cash-out types (FiatPayoutController)
+  CashOutQuote,
+  PayoutAccountStatus,
+  CashOutStartParams,
+  CashOutView,
+  // Platform token reserve/genesis read (PlatformTokenController)
+  PlatformTokenDefinition,
+  PlatformTokenSupply,
+  PlatformTokenState,
+  // Project treasury reads (ProjectTreasuryController)
+  ProjectTreasuryAccount,
+  ProjectTreasuryAsset,
+  ProjectTreasuryLedger,
+  ProjectTreasuryView,
+  // Node transparency reads (NodeTransparencyController) — public, anonymous
+  NodeChainNetwork,
+  NodeFeeScheduleEntry,
+  NodeFeeSchedule,
+  NodeGovernanceParameters,
+  NodeTreasuryDestination,
+  NodeTransparencySnapshot,
+  NodeTransparencyPage,
+  NodeGovernanceAuditEntry,
+  NodeFeeAuditEntry,
+  NodeTreasuryAuditEntry,
+  NodePublicKey,
+  NodePreviousKeyContinuity,
+  NodeDescriptor,
+  NodeTransparencyHistoryCheckpoint,
+  NodeTransparencyHistoryEntry,
+  NodeTransparencyHistoryDocument,
+  // Fiat reversal types (FiatReversalOperatorController) — types only, no SDK methods
+  FiatReversalKind,
+  FiatReversalStatus,
+  FiatReversalRecoveryPath,
+  FiatReversalView,
   // Fungible mint (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,
@@ -42,38 +97,38 @@ export type {
   NftHolding,
   // BlockchainOperation types
   BlockchainOperationResult,
-  // STARODK types
-  STARODKResult,
-  STARODKCreateParams,
-  STARDappGenerationParams,
-  // AvatarNFT types
-  AvatarNFTResult,
-  AvatarNFTMintParams,
+  // ActionGraphBundle types
+  ActionGraphBundleResult,
+  ActionGraphBundleCreateParams,
+  ActionGraphBundleDappGenerationParams,
+  // UserNFT types
+  UserNFTResult,
+  UserNFTMintParams,
   HolonNFTBindingResult,
   WalletNFTBindingResult,
-  // Quest types
-  QuestStatus,
-  QuestNodeState,
-  QuestEdgeType,
-  QuestNodeType,
-  QuestResult,
-  QuestCreateParams,
-  QuestUpdateParams,
-  QuestNodeResult,
-  QuestEdgeResult,
-  QuestDependencyResult,
-  QuestTemplateResult,
-  QuestTemplateCreateParams,
-  QuestNodeTemplateResult,
-  QuestNodeTemplateCreateParams,
-  QuestNodeCreateParams,
-  QuestEdgeCreateParams,
-  // Quest invitations + request/approval types (quest-invitations-approval)
-  QuestRunAccess,
-  QuestAccessRequestStatus,
-  QuestAccessRequest,
+  // Action types
+  ActionStatus,
+  ActionNodeState,
+  ActionEdgeType,
+  ActionNodeType,
+  ActionResult,
+  ActionCreateParams,
+  ActionUpdateParams,
+  ActionNodeResult,
+  ActionEdgeResult,
+  ActionDependencyResult,
+  ActionTemplateResult,
+  ActionTemplateCreateParams,
+  ActionNodeTemplateResult,
+  ActionNodeTemplateCreateParams,
+  ActionNodeCreateParams,
+  ActionEdgeCreateParams,
+  // Action invitations + request/approval types (action-invitations-approval)
+  ActionRunAccess,
+  ActionAccessRequestStatus,
+  ActionAccessRequest,
   SetRunAccessRequest,
-  InviteAvatarRequest,
+  InviteUserRequest,
   RequestAccessBody,
   DecideAccessRequestBody,
   // ApiKey types
@@ -89,8 +144,8 @@ export type {
   DappSeriesResult,
   DappSeriesCreateParams,
   DappSeriesUpdateParams,
-  DappSeriesQuestResult,
-  DappSeriesAddQuestParams,
+  DappSeriesActionResult,
+  DappSeriesAddActionParams,
   // Holon AssetType registry types (final-hardening F5)
   HolonTypeResult,
   HolonTypeRegisterParams,
@@ -103,6 +158,20 @@ export type {
   // Wallet wrapping-key rotation (final-hardening B5)
   KeyRotationReport,
   KeyRotationParams,
+  // Credential revocation (CredentialController, D19) — parity only; rail not enabled server-side
+  CredentialRevokeParams,
+  CredentialRevokeStatus,
+  CredentialRevokeResult,
+  // Analytics read surface (AnalyticsController, D16)
+  AnalyticsQueryParams,
+  PricingStatus,
+  QuantityStatus,
+  ValueStampResponse,
+  TransactionHistoryEntry,
+  TransactionHistoryPage,
+  FiatValueResponse,
+  PositionSummary,
+  PositionsResponse,
 } from "./client.js";
 export { resolveApiPath, API_PATHS } from "./api-version.js";
 export type { ApiVersionConfig, ApiController } from "./api-version.js";

@@ -9,27 +9,27 @@ namespace AZOA.WebAPI.Managers;
 
 public class SearchManager : ISearchManager
 {
-    private readonly IAvatarStore _avatarStore;
+    private readonly IUserStore _userStore;
     private readonly IHolonStore _holonStore;
     private readonly IWalletStore _walletStore;
     private readonly IBlockchainOperationStore _blockchainOperationStore;
-    private readonly ISTARStore _starStore;
+    private readonly IActionGraphBundleStore _bundleStore;
 
     public SearchManager(
-        IAvatarStore avatarStore,
+        IUserStore userStore,
         IHolonStore holonStore,
         IWalletStore walletStore,
         IBlockchainOperationStore blockchainOperationStore,
-        ISTARStore starStore)
+        IActionGraphBundleStore bundleStore)
     {
-        _avatarStore = avatarStore;
+        _userStore = userStore;
         _holonStore = holonStore;
         _walletStore = walletStore;
         _blockchainOperationStore = blockchainOperationStore;
-        _starStore = starStore;
+        _bundleStore = bundleStore;
     }
 
-    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, Guid? callerAvatarId, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, Guid? callerUserId, AZOARequest? providerRequest = null)
     {
         // Clamp page size
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -38,30 +38,30 @@ public class SearchManager : ISearchManager
         var facets = new List<SearchFacet>();
         var query = request.Query?.ToLowerInvariant() ?? string.Empty;
 
-        // Cross-tenant isolation: the caller may NOT enumerate another avatar's
-        // private data. Sensitive entity types are force-scoped to callerAvatarId
-        // and the caller-supplied request.AvatarId is IGNORED for them. Avatars are
-        // the one intentionally-public type (already PII-free — see Avatar section).
-        // A null callerAvatarId fails closed (no sensitive rows returned at all).
-        // Holon/STARODK additionally surface IsPublic rows via the owner-or-public
+        // Cross-tenant isolation: the caller may NOT enumerate another user's
+        // private data. Sensitive entity types are force-scoped to callerUserId
+        // and the caller-supplied request.UserId is IGNORED for them. Users are
+        // the one intentionally-public type (already PII-free — see User section).
+        // A null callerUserId fails closed (no sensitive rows returned at all).
+        // Holon/ActionGraphBundle additionally surface IsPublic rows via the owner-or-public
         // predicate below so the marketplace stays discoverable.
 
-        // ─── Search Avatars ───
-        if (request.EntityTypes.HasFlag(SearchableEntityType.Avatar))
+        // ─── Search Users ───
+        if (request.EntityTypes.HasFlag(SearchableEntityType.User))
         {
-            var avatars = await _avatarStore.GetAllAsync(default);
-            if (!avatars.IsError && avatars.Result != null)
+            var users = await _userStore.GetAllAsync(default);
+            if (!users.IsError && users.Result != null)
             {
-                var filtered = avatars.Result.Where(a => MatchesAvatar(a, query, request));
-                facets.Add(new SearchFacet { EntityType = SearchableEntityType.Avatar, Count = filtered.Count(), Label = "Avatars" });
+                var filtered = users.Result.Where(a => MatchesUser(a, query, request));
+                facets.Add(new SearchFacet { EntityType = SearchableEntityType.User, Count = filtered.Count(), Label = "Users" });
                 hits.AddRange(filtered.Select(a => new SearchHit
                 {
                     Id = a.Id,
-                    EntityType = SearchableEntityType.Avatar,
+                    EntityType = SearchableEntityType.User,
                     Title = a.Username,
                     Description = a.Title ?? string.Empty,
                     // Marketplace search is public — no PII (email/real name) may
-                    // appear in results, and MatchesAvatar no longer matches on email
+                    // appear in results, and MatchesUser no longer matches on email
                     // either (hardening review M1: was an account-enumeration oracle).
                     Highlight = FindHighlight(a.Username, a.Title ?? string.Empty, query),
                     Fields = new Dictionary<string, object>
@@ -80,7 +80,7 @@ public class SearchManager : ISearchManager
             if (!holons.IsError && holons.Result != null)
             {
                 var filtered = holons.Result
-                    .Where(h => callerAvatarId.HasValue && h.AvatarId == callerAvatarId.Value || h.IsPublic)
+                    .Where(h => callerUserId.HasValue && h.UserId == callerUserId.Value || h.IsPublic)
                     .Where(h => MatchesHolon(h, query, request));
                 facets.Add(new SearchFacet { EntityType = SearchableEntityType.Holon, Count = filtered.Count(), Label = "Holons" });
                 hits.AddRange(filtered.Select(h => new SearchHit
@@ -103,9 +103,9 @@ public class SearchManager : ISearchManager
         }
 
         // ─── Search Wallets (H-2: sensitive — ALWAYS caller-scoped; never GetAllAsync) ───
-        if (request.EntityTypes.HasFlag(SearchableEntityType.Wallet) && callerAvatarId.HasValue)
+        if (request.EntityTypes.HasFlag(SearchableEntityType.Wallet) && callerUserId.HasValue)
         {
-            var walletsResult = await _walletStore.GetByAvatarAsync(callerAvatarId.Value, default);
+            var walletsResult = await _walletStore.GetByUserAsync(callerUserId.Value, default);
 
             if (!walletsResult.IsError && walletsResult.Result != null)
             {
@@ -122,17 +122,17 @@ public class SearchManager : ISearchManager
                     {
                         ["ChainType"] = w.ChainType,
                         ["IsDefault"] = w.IsDefault,
-                        ["AvatarId"] = w.AvatarId
+                        ["UserId"] = w.UserId
                     },
                     CreatedDate = w.CreatedDate
                 }));
             }
         }
 
-        // ─── Search Blockchain Operations (H-2: sensitive — ALWAYS caller-scoped; the all-avatars iteration is removed) ───
-        if (request.EntityTypes.HasFlag(SearchableEntityType.BlockchainOperation) && callerAvatarId.HasValue)
+        // ─── Search Blockchain Operations (H-2: sensitive — ALWAYS caller-scoped; the all-users iteration is removed) ───
+        if (request.EntityTypes.HasFlag(SearchableEntityType.BlockchainOperation) && callerUserId.HasValue)
         {
-            var opsResult = await _blockchainOperationStore.GetByAvatarAsync(callerAvatarId.Value, default);
+            var opsResult = await _blockchainOperationStore.GetByUserAsync(callerUserId.Value, default);
             IEnumerable<IBlockchainOperation> ops = opsResult.Result ?? Enumerable.Empty<IBlockchainOperation>();
 
             var filteredOps = ops.Where(o => MatchesBlockchainOp(o, query, request));
@@ -153,20 +153,20 @@ public class SearchManager : ISearchManager
             }));
         }
 
-        // ─── Search STARODKs ───
-        if (request.EntityTypes.HasFlag(SearchableEntityType.STARODK))
+        // ─── Search ActionGraphBundles ───
+        if (request.EntityTypes.HasFlag(SearchableEntityType.ActionGraphBundle))
         {
-            var stars = await _starStore.GetAllAsync(default);
-            if (!stars.IsError && stars.Result != null)
+            var bundles = await _bundleStore.GetAllAsync(default);
+            if (!bundles.IsError && bundles.Result != null)
             {
-                var filtered = stars.Result
-                    .Where(s => callerAvatarId.HasValue && s.AvatarId == callerAvatarId.Value || s.IsPublic)
-                    .Where(s => MatchesSTARODK(s, query, request));
-                facets.Add(new SearchFacet { EntityType = SearchableEntityType.STARODK, Count = filtered.Count(), Label = "STAR ODKs" });
+                var filtered = bundles.Result
+                    .Where(s => callerUserId.HasValue && s.UserId == callerUserId.Value || s.IsPublic)
+                    .Where(s => MatchesActionGraphBundle(s, query, request));
+                facets.Add(new SearchFacet { EntityType = SearchableEntityType.ActionGraphBundle, Count = filtered.Count(), Label = "action graph bundles" });
                 hits.AddRange(filtered.Select(s => new SearchHit
                 {
                     Id = s.Id,
-                    EntityType = SearchableEntityType.STARODK,
+                    EntityType = SearchableEntityType.ActionGraphBundle,
                     Title = s.Name,
                     Description = s.Description,
                     Highlight = FindHighlight(s.Name, s.Description, query),
@@ -212,40 +212,40 @@ public class SearchManager : ISearchManager
         };
     }
 
-    public async Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(Guid? callerAvatarId, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<List<SearchFacet>>> GetFacetsAsync(Guid? callerUserId, AZOARequest? providerRequest = null)
     {
         var facets = new List<SearchFacet>();
 
-        // Avatars are the one public type — global count is fine.
-        var avatars = await _avatarStore.GetAllAsync(default);
-        if (!avatars.IsError && avatars.Result != null)
-            facets.Add(new SearchFacet { EntityType = SearchableEntityType.Avatar, Count = avatars.Result.Count(), Label = "Avatars" });
+        // Users are the one public type — global count is fine.
+        var users = await _userStore.GetAllAsync(default);
+        if (!users.IsError && users.Result != null)
+            facets.Add(new SearchFacet { EntityType = SearchableEntityType.User, Count = users.Result.Count(), Label = "Users" });
 
-        // Holon/STARODK counts: caller-owned OR public (mirror SearchAsync scoping — no global leak).
+        // Holon/ActionGraphBundle counts: caller-owned OR public (mirror SearchAsync scoping — no global leak).
         var holons = await _holonStore.QueryAsync(null, default);
         if (!holons.IsError && holons.Result != null)
             facets.Add(new SearchFacet { EntityType = SearchableEntityType.Holon, Label = "Holons",
-                Count = holons.Result.Count(h => callerAvatarId.HasValue && h.AvatarId == callerAvatarId.Value || h.IsPublic) });
+                Count = holons.Result.Count(h => callerUserId.HasValue && h.UserId == callerUserId.Value || h.IsPublic) });
 
         // Wallets: strictly the caller's own (never public).
-        if (callerAvatarId.HasValue)
+        if (callerUserId.HasValue)
         {
-            var wallets = await _walletStore.GetByAvatarAsync(callerAvatarId.Value, default);
+            var wallets = await _walletStore.GetByUserAsync(callerUserId.Value, default);
             if (!wallets.IsError && wallets.Result != null)
                 facets.Add(new SearchFacet { EntityType = SearchableEntityType.Wallet, Count = wallets.Result.Count(), Label = "Wallets" });
         }
 
-        var stars = await _starStore.GetAllAsync(default);
-        if (!stars.IsError && stars.Result != null)
-            facets.Add(new SearchFacet { EntityType = SearchableEntityType.STARODK, Label = "STAR ODKs",
-                Count = stars.Result.Count(s => callerAvatarId.HasValue && s.AvatarId == callerAvatarId.Value || s.IsPublic) });
+        var bundles = await _bundleStore.GetAllAsync(default);
+        if (!bundles.IsError && bundles.Result != null)
+            facets.Add(new SearchFacet { EntityType = SearchableEntityType.ActionGraphBundle, Label = "action graph bundles",
+                Count = bundles.Result.Count(s => callerUserId.HasValue && s.UserId == callerUserId.Value || s.IsPublic) });
 
         return new AZOAResult<List<SearchFacet>> { Result = facets, Message = "Facets computed." };
     }
 
     // ─── Matching helpers ───
 
-    private bool MatchesAvatar(IAvatar a, string query, SearchRequest request)
+    private bool MatchesUser(IUser a, string query, SearchRequest request)
     {
         if (!string.IsNullOrEmpty(query))
         {
@@ -255,7 +255,7 @@ public class SearchManager : ISearchManager
             if (!ContainsText(a.Username, query) && !ContainsText(a.Title ?? string.Empty, query))
                 return false;
         }
-        if (request.AvatarId.HasValue && a.Id != request.AvatarId.Value) return false;
+        if (request.UserId.HasValue && a.Id != request.UserId.Value) return false;
         if (request.CreatedAfter.HasValue && a.CreatedDate < request.CreatedAfter.Value) return false;
         if (request.CreatedBefore.HasValue && a.CreatedDate > request.CreatedBefore.Value) return false;
         return true;
@@ -270,7 +270,7 @@ public class SearchManager : ISearchManager
         }
         if (!string.IsNullOrEmpty(request.ChainId) && !h.ChainId?.Equals(request.ChainId, StringComparison.OrdinalIgnoreCase) == true) return false;
         if (!string.IsNullOrEmpty(request.AssetType) && !h.AssetType?.Equals(request.AssetType, StringComparison.OrdinalIgnoreCase) == true) return false;
-        if (request.AvatarId.HasValue && h.AvatarId != request.AvatarId.Value) return false;
+        if (request.UserId.HasValue && h.UserId != request.UserId.Value) return false;
         if (request.CreatedAfter.HasValue && h.CreatedDate < request.CreatedAfter.Value) return false;
         if (request.CreatedBefore.HasValue && h.CreatedDate > request.CreatedBefore.Value) return false;
         return true;
@@ -284,7 +284,7 @@ public class SearchManager : ISearchManager
                 return false;
         }
         if (!string.IsNullOrEmpty(request.ChainId) && !w.ChainType.Equals(request.ChainId, StringComparison.OrdinalIgnoreCase)) return false;
-        if (request.AvatarId.HasValue && w.AvatarId != request.AvatarId.Value) return false;
+        if (request.UserId.HasValue && w.UserId != request.UserId.Value) return false;
         if (request.CreatedAfter.HasValue && w.CreatedDate < request.CreatedAfter.Value) return false;
         if (request.CreatedBefore.HasValue && w.CreatedDate > request.CreatedBefore.Value) return false;
         return true;
@@ -297,13 +297,13 @@ public class SearchManager : ISearchManager
             if (!ContainsText(o.OperationType, query) && !ContainsText(o.Status, query))
                 return false;
         }
-        if (request.AvatarId.HasValue && o.AvatarId != request.AvatarId.Value) return false;
+        if (request.UserId.HasValue && o.UserId != request.UserId.Value) return false;
         if (request.CreatedAfter.HasValue && o.CreatedDate < request.CreatedAfter.Value) return false;
         if (request.CreatedBefore.HasValue && o.CreatedDate > request.CreatedBefore.Value) return false;
         return true;
     }
 
-    private bool MatchesSTARODK(ISTARODK s, string query, SearchRequest request)
+    private bool MatchesActionGraphBundle(IActionGraphBundle s, string query, SearchRequest request)
     {
         if (!string.IsNullOrEmpty(query))
         {
@@ -311,7 +311,7 @@ public class SearchManager : ISearchManager
                 return false;
         }
         if (!string.IsNullOrEmpty(request.ChainId) && !s.TargetChain?.Equals(request.ChainId, StringComparison.OrdinalIgnoreCase) == true) return false;
-        if (request.AvatarId.HasValue && s.AvatarId != request.AvatarId.Value) return false;
+        if (request.UserId.HasValue && s.UserId != request.UserId.Value) return false;
         return true;
     }
 

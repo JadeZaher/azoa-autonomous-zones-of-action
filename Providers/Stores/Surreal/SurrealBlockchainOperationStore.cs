@@ -6,6 +6,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
@@ -17,15 +18,16 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 ///
 /// Mapping notes:
 ///   - BlockchainOperation.Id (Guid)        → OperationLog.Id (string, "N" format, lowercase)
-///   - BlockchainOperation.AvatarId (Guid?) → OperationLog.AvatarId (string?, "N" format)
+///   - BlockchainOperation.UserId (Guid?) → OperationLog.UserId (string?, "N" format)
 ///   - BlockchainOperation.WalletId (Guid?) → OperationLog.WalletId (string?, "N" format)
-///   - BlockchainOperation.Amount (ulong)   → OperationLog.Amount (long?, i64; checked on write)
+///   - BlockchainOperation.Amount (RailAmount) → OperationLog.Amount (string?, decimal base units)
+///   - BlockchainOperation.ValueStamp (D16)  → OperationLog.Value* columns (all-null = unpriced)
 ///   - BlockchainOperation.Parameters (Dictionary) → OperationLog.Parameters (JsonElement?)
 ///   - BlockchainOperation.CreatedDate (DateTime UTC) → OperationLog.CreatedDate (DateTimeOffset UTC)
 ///   - BlockchainOperation.CompletedDate (DateTime?) → OperationLog.CompletedDate (DateTimeOffset?)
 ///   - BlockchainOperation.Status (string)  → OperationLog.Status (OperationLog.StatusKind enum)
 ///   - BlockchainOperation.IdempotencyKey (string?) → OperationLog.IdempotencyKey (safe correlation)
-///   - BlockchainOperation.InitiatorAvatarId (Guid?) → OperationLog.InitiatorAvatarId (record link)
+///   - BlockchainOperation.InitiatorUserId (Guid?) → OperationLog.InitiatorUserId (record link)
 ///   - BlockchainOperation.InitiatorApiKeyId (Guid?) → OperationLog.InitiatorApiKeyId (record link)
 ///
 /// Fields in OperationLog NOT in BlockchainOperation / IBlockchainOperation:
@@ -34,6 +36,9 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 {
     private const string TableName = "operation_log";
+
+    /// <summary>Hard cap on one <see cref="QueryAsync"/> page, so no caller can ask for the whole log.</summary>
+    public const int MaxQueryPageSize = 500;
 
     private readonly ISurrealExecutor _executor;
 
@@ -75,7 +80,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
     }
 
-    // ── Receipt correlation and avatar history reads ───────────────────────────
+    // ── Receipt correlation and user history reads ───────────────────────────
 
     /// <inheritdoc />
     public async Task<AZOAResult<IBlockchainOperation>> GetByIdempotencyKeyAsync(
@@ -126,17 +131,17 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         }
     }
 
-    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByAvatarAsync(
-        Guid avatarId,
+    public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByUserAsync(
+        Guid userId,
         CancellationToken ct = default)
     {
         try
         {
-            var avatarSurrealId = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(avatarId));
+            var userSurrealId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
 
-            // SELECT * FROM operation_log WHERE avatar_id = $avatar_id
+            // SELECT * FROM operation_log WHERE user_id = $user_id
             var q = SurrealQuery<OperationLog>.From()
-                .Where(o => o.AvatarId == avatarSurrealId);
+                .Where(o => o.UserId == userSurrealId);
 
             var rows = await _executor.QueryAsync<OperationLog>(q, ct);
             var results = rows.Select(r => (IBlockchainOperation)ToDomain(r)).ToList();
@@ -150,7 +155,68 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         catch (Exception ex)
         {
             return new AZOAResult<IEnumerable<IBlockchainOperation>>()
-                .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByAvatarAsync failed: {ex.Message}");
+                .CaptureException(ex, $"SurrealBlockchainOperationStore.GetByUserAsync failed: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Built to ride <c>operation_log_user_created</c>: equality on <c>user_id</c>, a range on
+    /// <c>created_date</c>, ordered on the same column. The two range bounds bind to distinct
+    /// lowercase parameter names — one name per bound, because two bounds on one column sharing
+    /// a parameter would silently overwrite each other, and a mixed-case name is case-folded in
+    /// the query text but not in the RPC vars, which matches nothing without raising an error.
+    /// The tie-break on <c>id</c> keeps paging stable when several rows share a timestamp;
+    /// without it a row can be shown twice or skipped across page boundaries.
+    /// </remarks>
+    public async Task<AZOAResult<IReadOnlyList<IBlockchainOperation>>> QueryAsync(
+        BlockchainOperationQuery query,
+        CancellationToken ct = default)
+    {
+        if (query is null)
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.FailureWithCode(
+                "A query is required.", AzoaErrorCodes.InvalidRequest);
+
+        if (query.Skip < 0 || query.Take <= 0 || query.Take > MaxQueryPageSize)
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.FailureWithCode(
+                $"Skip must be non-negative and Take must be between 1 and {MaxQueryPageSize}.",
+                AzoaErrorCodes.InvalidRequest);
+
+        if (query.From.HasValue && query.To.HasValue && query.From.Value > query.To.Value)
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.FailureWithCode(
+                "The start of the window cannot be after its end.", AzoaErrorCodes.InvalidRequest);
+
+        try
+        {
+            var userLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(query.UserId));
+
+            var q = SurrealQuery
+                .SelectAll(TableName)
+                .Where("user_id = $user_id", new { user_id = SurrealRecordParam.OfLink(userLink) });
+
+            if (query.From.HasValue)
+                q = q.Where("created_date >= $created_from").WithParam("created_from", query.From.Value);
+
+            if (query.To.HasValue)
+                q = q.Where("created_date < $created_to").WithParam("created_to", query.To.Value);
+
+            // LIMIT precedes START in the SurrealQL grammar; the builder appends in call order.
+            q = q.OrderBy("created_date", OrderDirection.Desc)
+                 .OrderBy("id", OrderDirection.Desc)
+                 .Limit(query.Take)
+                 .Start(query.Skip);
+
+            var rows = await _executor.QueryAsync<OperationLog>(q, ct);
+            var results = rows.Select(r => (IBlockchainOperation)ToDomain(r)).ToList();
+
+            return AZOAResult<IReadOnlyList<IBlockchainOperation>>.Success(results);
+        }
+        catch (Exception ex)
+        {
+            var failure = new AZOAResult<IReadOnlyList<IBlockchainOperation>>()
+                .CaptureException(ex, "Operation history is temporarily unavailable.");
+            failure.Code = AzoaErrorCodes.DependencyUnavailable;
+            return failure;
         }
     }
 
@@ -182,7 +248,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
                 // Null option fields are omitted by the typed writer, preserving creation provenance.
                 poco.IdempotencyKey = null;
-                poco.InitiatorAvatarId = null;
+                poco.InitiatorUserId = null;
                 poco.InitiatorApiKeyId = null;
             }
 
@@ -213,8 +279,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
     {
         return !MatchesImmutableValue(operation.IdempotencyKey, existing.IdempotencyKey)
             || !MatchesImmutableValue(
-                operation.InitiatorAvatarId,
-                ToOptionalGuid(existing.InitiatorAvatarId))
+                operation.InitiatorUserId,
+                ToOptionalGuid(existing.InitiatorUserId))
             || !MatchesImmutableValue(
                 operation.InitiatorApiKeyId,
                 ToOptionalGuid(existing.InitiatorApiKeyId));
@@ -324,7 +390,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         return new OperationLog
         {
             Id            = SurrealId.ToSurrealId(op.Id),
-            AvatarId      = op.AvatarId.HasValue  ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.AvatarId.Value)) : null,
+            UserId      = op.UserId.HasValue  ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(op.UserId.Value)) : null,
             WalletId      = op.WalletId.HasValue   ? SurrealLink.ToLink("wallet", SurrealId.ToSurrealId(op.WalletId.Value)) : null,
             OperationType = op.OperationType,
             Status        = statusKind,
@@ -338,12 +404,20 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // IMintOperation
             TokenUri  = concrete?.TokenUri,
-            // OperationLog.Amount is a 64-bit signed column (option<int> ⇒ i64). The
-            // domain Amount is ulong; a value above long.MaxValue cannot round-trip,
-            // so convert checked — an impossible-to-store amount throws loudly here
-            // rather than silently persisting an inverted (negative) value.
-            Amount    = concrete is not null ? checked((long)concrete.Amount) : null,
+            // D13: operation_log.amount is a STRING of decimal base units, so the whole
+            // BigInteger range round-trips. The former i64 column could not hold an
+            // ordinary wei-denominated amount and forced a checked narrowing here.
+            Amount    = concrete?.Amount.ToBaseUnitString(),
             AssetType = concrete?.AssetType,
+
+            // D16: the five stamp columns move together. An unpriced operation writes
+            // all of them null, which is what "never priced" looks like on the row and
+            // is distinguishable from a stamped rate of "0".
+            ValueCurrencyCode = op.ValueStamp?.CurrencyCode,
+            ValueMinorUnits   = op.ValueStamp?.MinorUnits,
+            ValueRate         = op.ValueStamp?.Rate,
+            ValueRateAsOf     = op.ValueStamp?.RateAsOf,
+            ValueRateSource   = op.ValueStamp?.RateSource,
 
             // IExchangeOperation
             SourceHolonId = concrete?.SourceHolonId.HasValue == true
@@ -359,8 +433,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // Durable allocation receipt context.
             IdempotencyKey = op.IdempotencyKey,
-            InitiatorAvatarId = op.InitiatorAvatarId.HasValue
-                ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.InitiatorAvatarId.Value))
+            InitiatorUserId = op.InitiatorUserId.HasValue
+                ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(op.InitiatorUserId.Value))
                 : null,
             InitiatorApiKeyId = op.InitiatorApiKeyId.HasValue
                 ? SurrealLink.ToLink("api_key", SurrealId.ToSurrealId(op.InitiatorApiKeyId.Value))
@@ -369,7 +443,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             // tenant-consent-delegation AC4: persist the acting tenant + signing
             // scope so the seam's live consent check survives the async saga hop.
             ActingTenantId = op.ActingTenantId.HasValue
-                             ? SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(op.ActingTenantId.Value))
+                             ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(op.ActingTenantId.Value))
                              : null,
             SigningScope   = op.SigningScope,
 
@@ -396,7 +470,7 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
         return new BlockchainOperation
         {
             Id            = SurrealId.FromSurrealId(poco.Id),
-            AvatarId      = poco.AvatarId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.AvatarId)!) : null,
+            UserId      = poco.UserId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.UserId)!) : null,
             WalletId      = poco.WalletId  is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.WalletId)!) : null,
             OperationType = poco.OperationType,
             Status        = poco.Status.ToString(), // enum.ToString() matches OperationStatus const names
@@ -406,9 +480,18 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
 
             // IMintOperation
             TokenUri  = poco.TokenUri,
-            // Stored as a non-negative i64; read back as the domain ulong losslessly.
-            Amount    = poco.Amount.HasValue ? (ulong)poco.Amount.Value : 0UL,
+            // D13: a decimal base-unit string. Absent reads as zero; present-but-corrupt
+            // fails closed, as the former checked i64 narrowing did.
+            Amount    = SurrealAmountColumn.Parse(poco.Amount, poco.Id, "Operation"),
             AssetType = poco.AssetType,
+
+            // D16: null unless every component survived — a partial stamp is not a stamp.
+            ValueStamp = ValueStamp.FromPersisted(
+                poco.ValueCurrencyCode,
+                poco.ValueMinorUnits,
+                poco.ValueRate,
+                poco.ValueRateAsOf,
+                poco.ValueRateSource),
 
             // IExchangeOperation
             SourceHolonId = poco.SourceHolonId is not null ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.SourceHolonId)!) : null,
@@ -419,8 +502,8 @@ public sealed class SurrealBlockchainOperationStore : IBlockchainOperationStore
             RecipientAddress = poco.RecipientAddress,
 
             IdempotencyKey = poco.IdempotencyKey,
-            InitiatorAvatarId = poco.InitiatorAvatarId is not null
-                ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorAvatarId)!)
+            InitiatorUserId = poco.InitiatorUserId is not null
+                ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorUserId)!)
                 : null,
             InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
                 ? SurrealId.FromSurrealId(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)

@@ -5,7 +5,7 @@ public class NftResult
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public Guid? OwnerAvatarId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public string ChainId { get; set; } = string.Empty;
     public string? TokenId { get; set; }
     public string AssetType { get; set; } = "NFT";
@@ -34,7 +34,7 @@ public class NftAttribute
 
 public class NftQueryRequest
 {
-    public Guid? OwnerAvatarId { get; set; }
+    public Guid? OwnerUserId { get; set; }
     public string? ChainId { get; set; }
     public string? TokenId { get; set; }
     public string? Name { get; set; }

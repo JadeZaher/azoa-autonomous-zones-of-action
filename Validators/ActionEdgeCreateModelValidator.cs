@@ -1,0 +1,49 @@
+using FluentValidation;
+using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Requests;
+
+namespace AZOA.WebAPI.Validators;
+
+public class ActionEdgeCreateModelValidator : AbstractValidator<ActionEdgeCreateModel>
+{
+    public ActionEdgeCreateModelValidator()
+    {
+        RuleFor(x => x.SourceNodeId)
+            .GreaterThanOrEqualTo(0).WithMessage("SourceNodeId must be a non-negative index.");
+
+        RuleFor(x => x.TargetNodeId)
+            .GreaterThanOrEqualTo(0).WithMessage("TargetNodeId must be a non-negative index.");
+
+        RuleFor(x => x)
+            .Must(e => e.SourceNodeId != e.TargetNodeId)
+            .WithMessage("SourceNodeId and TargetNodeId must not be the same node (self-loops not allowed).");
+
+        RuleFor(x => x.EdgeType)
+            .IsInEnum().WithMessage("EdgeType is not a valid ActionEdgeType value.");
+
+        // FR-1b: Conditional edges must carry non-empty Condition text —
+        // empty condition produced inert (no-skip) edges. See spec AC-1b.
+        When(x => x.EdgeType == ActionEdgeType.Conditional, () =>
+        {
+            RuleFor(x => x.Condition)
+                .NotEmpty().WithMessage("Condition is required for Conditional edges.")
+                .MaximumLength(4096).WithMessage("Condition must not exceed 4096 characters.");
+        });
+
+        // AC-2f: OnFailure edges must not carry Condition text (it is meaningless
+        // and would be silently ignored, so we reject it at the input surface).
+        When(x => x.EdgeType == ActionEdgeType.OnFailure, () =>
+        {
+            RuleFor(x => x.Condition)
+                .Null().WithMessage("OnFailure edges must not carry a Condition expression.");
+        });
+
+        When(x => x.EdgeType != ActionEdgeType.Conditional
+                  && x.EdgeType != ActionEdgeType.OnFailure
+                  && x.Condition != null, () =>
+        {
+            RuleFor(x => x.Condition)
+                .MaximumLength(4096).WithMessage("Condition must not exceed 4096 characters.");
+        });
+    }
+}

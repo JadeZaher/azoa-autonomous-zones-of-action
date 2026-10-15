@@ -3,7 +3,7 @@ namespace AZOA.WebAPI.Models;
 public class ApiKey
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
     public string Name { get; set; } = string.Empty;
 
     /// <summary>

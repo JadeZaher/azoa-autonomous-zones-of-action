@@ -1,10 +1,10 @@
 'use client'
 
-// avatar-dapp-rbac operator console — assign an avatar's DApp role (PUT /api/avatar/{id}/dapp-role).
+// user-dapp-rbac operator console — assign a user's DApp role (PUT /api/user/{id}/dapp-role).
 // The operator-bootstrap surface: an operator promotes the first dapp:manager here.
 import { useState, useCallback } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
-import type { DappRole, AvatarResponse } from 'azoa-sdk'
+import type { DappRole, UserResponse } from 'azoa-sdk'
 import { DAPP_ROLES } from 'azoa-sdk'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -22,39 +22,39 @@ import { ShieldCheck, UserCog, Info, CheckCircle2 } from 'lucide-react'
 // Human-facing labels for the three assignable DApp roles (mirrors Core/AzoaDappRoles.cs).
 const ROLE_LABELS: Record<DappRole, string> = {
   'dapp:user': 'User — baseline access, no authoring',
-  'dapp:developer': 'Developer — may author dapps/quests',
+  'dapp:developer': 'Developer — may author dapps/actions',
   'dapp:manager': 'Manager — may author + assign developer/user roles',
 }
 
 interface AssignSuccess {
-  avatarId: string
+  userId: string
   role: DappRole
-  avatar: AvatarResponse
+  user: UserResponse
 }
 
 export default function RolesPage() {
   useAzoaAuth()
-  const [avatarId, setAvatarId] = useState('')
+  const [userId, setUserId] = useState('')
   const [role, setRole] = useState<DappRole>('dapp:developer')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<AssignSuccess | null>(null)
 
-  const canSubmit = avatarId.trim().length > 0 && !loading
+  const canSubmit = userId.trim().length > 0 && !loading
 
   const assign = useCallback(async () => {
     setLoading(true)
     setError(null)
     setSuccess(null)
     try {
-      const result = await azoa.api.assignDappRole(avatarId.trim(), role)
+      const result = await azoa.api.assignDappRole(userId.trim(), role)
       if (isOk(result)) {
-        setSuccess({ avatarId: avatarId.trim(), role, avatar: result.value })
+        setSuccess({ userId: userId.trim(), role, user: result.value })
       } else {
         // Map the backend's status-coded envelope to demo-legible copy.
         const msg = result.error.message ?? ''
         if (/not found/i.test(msg)) {
-          setError('Avatar not found. Check the avatar id and try again.')
+          setError('User not found. Check the user id and try again.')
         } else if (/forbidden|403|not authorized|unauthorized/i.test(msg)) {
           setError('You are not authorized to assign this role. An operator can assign any role; a manager can assign only developer/user.')
         } else {
@@ -67,14 +67,14 @@ export default function RolesPage() {
     } finally {
       setLoading(false)
     }
-  }, [avatarId, role])
+  }, [userId, role])
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">DApp Roles</h1>
         <p className="text-sm text-muted-foreground">
-          Assign an avatar&apos;s DApp role — the RBAC surface for granting a team member access
+          Assign a user&apos;s DApp role — the RBAC surface for granting a team member access
         </p>
       </div>
 
@@ -101,22 +101,22 @@ export default function RolesPage() {
             <UserCog className="h-5 w-5 shrink-0 text-foreground" />
             <CardTitle className="text-sm">Assign a role</CardTitle>
           </div>
-          <CardDescription>Enter the target avatar id, pick a role, and assign.</CardDescription>
+          <CardDescription>Enter the target user id, pick a role, and assign.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="avatar-id">Avatar id</Label>
+              <Label htmlFor="user-id">User id</Label>
               <Input
-                id="avatar-id"
-                value={avatarId}
-                onChange={(e) => setAvatarId(e.target.value)}
+                id="user-id"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
                 placeholder="00000000-0000-0000-0000-000000000000"
                 autoComplete="off"
                 spellCheck={false}
                 className="font-mono text-xs"
               />
-              <p className="text-xs text-muted-foreground">The avatar whose role you are setting (a UUID).</p>
+              <p className="text-xs text-muted-foreground">The user whose role you are setting (a UUID).</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="role-select">Role</Label>
@@ -154,7 +154,7 @@ export default function RolesPage() {
               <CardTitle className="text-sm">Role assigned</CardTitle>
             </div>
             <CardDescription>
-              {success.avatar.username || success.avatar.email || 'The avatar'} now has the role below.
+              {success.user.username || success.user.email || 'The user'} now has the role below.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -165,9 +165,9 @@ export default function RolesPage() {
             </div>
             <Separator />
             <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-              <div><span className="uppercase tracking-wider">Avatar</span> <span className="font-mono">{success.avatar.id}</span></div>
-              {success.avatar.email && (
-                <div><span className="uppercase tracking-wider">Email</span> {success.avatar.email}</div>
+              <div><span className="uppercase tracking-wider">User</span> <span className="font-mono">{success.user.id}</span></div>
+              {success.user.email && (
+                <div><span className="uppercase tracking-wider">Email</span> {success.user.email}</div>
               )}
             </div>
           </CardContent>

@@ -14,9 +14,9 @@ public interface IAdminBootstrapStateStore
         AdminBootstrapState state,
         CancellationToken ct = default);
 
-    /// <summary>Atomically rotates the bound operator avatar hash and monotonic revision.</summary>
+    /// <summary>Atomically rotates the bound operator user hash and monotonic revision.</summary>
     Task<AZOAResult<AdminBootstrapState>> RotateCredentialsAsync(
-        Guid avatarId,
+        Guid userId,
         string username,
         string passwordHash,
         long expectedRevision,

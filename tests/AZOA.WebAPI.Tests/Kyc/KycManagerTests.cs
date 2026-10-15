@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Interfaces;
@@ -30,9 +31,9 @@ public class KycManagerTests
             DevelopmentEnvironment());
 
         // Defaults: no active submission, validation passes, session created, upsert echoes.
-        _store.Setup(s => s.GetActiveSubmissionByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        _store.Setup(s => s.GetActiveSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
-        _store.Setup(s => s.GetLatestSubmissionByAvatarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        _store.Setup(s => s.GetLatestSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
         _store.Setup(s => s.UpsertSubmissionAsync(It.IsAny<KycSubmission>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync((KycSubmission sub, CancellationToken _) => new AZOAResult<KycSubmission> { Result = sub });
@@ -101,10 +102,10 @@ public class KycManagerTests
         }
     };
 
-    private static KycSubmission Stored(Guid id, Guid avatarId, KycStatus status) => new()
+    private static KycSubmission Stored(Guid id, Guid userId, KycStatus status) => new()
     {
         Id = id.ToString("N").ToLowerInvariant(),
-        AvatarId = avatarId.ToString("N").ToLowerInvariant(),
+        UserId = userId.ToString("N").ToLowerInvariant(),
         Provider = KycProvider.MANUAL,
         ProviderKey = "manual",
         ProviderResult = KycApprovalTrust.CreateEnvelope(ManualProfile()),
@@ -140,8 +141,8 @@ public class KycManagerTests
     [Fact]
     public async Task Begin_FirstAttemptPersistsSecretBearingProviderStateServerSide()
     {
-        var avatarId = Guid.NewGuid();
-        _provider.Setup(p => p.BeginSessionAsync(avatarId, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _provider.Setup(p => p.BeginSessionAsync(userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSessionStartModel>.Success(new KycSessionStartModel
             {
                 Provider = KycProvider.MANUAL,
@@ -151,12 +152,12 @@ public class KycManagerTests
                 ExpiresAt = DateTime.UtcNow.AddMinutes(30)
             }));
 
-        var result = await _manager.BeginAsync(avatarId);
+        var result = await _manager.BeginAsync(userId);
 
         result.IsError.Should().BeFalse();
         _store.Verify(store => store.CreateSubmissionAsync(
             It.Is<KycSubmission>(submission =>
-                submission.AvatarId == avatarId.ToString("N")
+                submission.UserId == userId.ToString("N")
                 && submission.ProviderSessionId == "internal-session"
                 && submission.Status == KycStatus.PENDING),
             It.Is<IReadOnlyList<KycDocument>>(documents => documents.Count == 0),
@@ -166,16 +167,16 @@ public class KycManagerTests
     [Fact]
     public async Task Begin_ExistingUnexpiredAttemptReplaysWithoutProviderCreate()
     {
-        var avatarId = Guid.NewGuid();
-        var active = Stored(Guid.NewGuid(), avatarId, KycStatus.PENDING);
+        var userId = Guid.NewGuid();
+        var active = Stored(Guid.NewGuid(), userId, KycStatus.PENDING);
         active.AcceptsDocumentReferences = true;
         active.SessionInstructions = "Resume this attempt.";
         active.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15);
-        _store.Setup(store => store.GetActiveSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(store => store.GetActiveSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(active));
 
-        var result = await _manager.BeginAsync(avatarId);
+        var result = await _manager.BeginAsync(userId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Instructions.Should().Be("Resume this attempt.");
@@ -190,15 +191,15 @@ public class KycManagerTests
     [Fact]
     public async Task Begin_ActiveAttemptWithRetiredProviderKeyIsExpiredNotReplayed()
     {
-        var avatarId = Guid.NewGuid();
-        var active = Stored(Guid.NewGuid(), avatarId, KycStatus.PENDING);
+        var userId = Guid.NewGuid();
+        var active = Stored(Guid.NewGuid(), userId, KycStatus.PENDING);
         active.ProviderKey = "retired-provider";
         active.ProviderResult = "{}";
-        _store.Setup(store => store.GetActiveSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(store => store.GetActiveSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(active));
 
-        var result = await _manager.BeginAsync(avatarId);
+        var result = await _manager.BeginAsync(userId);
 
         result.IsError.Should().BeFalse();
         _store.Verify(store => store.UpsertSubmissionAsync(
@@ -206,7 +207,7 @@ public class KycManagerTests
                 && submission.Status == KycStatus.EXPIRED),
             It.IsAny<CancellationToken>()), Times.Once);
         _provider.Verify(provider => provider.BeginSessionAsync(
-            avatarId, It.IsAny<CancellationToken>()), Times.Once);
+            userId, It.IsAny<CancellationToken>()), Times.Once);
         result.Result!.ProviderKey.Should().Be("manual");
     }
 
@@ -215,20 +216,20 @@ public class KycManagerTests
     [Fact]
     public async Task Begin_RejectedLatestAttemptCreatesNextServerOwnedAttempt()
     {
-        var avatarId = Guid.NewGuid();
-        _store.Setup(store => store.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _store.Setup(store => store.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(
-                Stored(Guid.NewGuid(), avatarId, KycStatus.REJECTED)));
+                Stored(Guid.NewGuid(), userId, KycStatus.REJECTED)));
 
-        var result = await _manager.BeginAsync(avatarId);
+        var result = await _manager.BeginAsync(userId);
 
         result.IsError.Should().BeFalse();
         _provider.Verify(provider => provider.BeginSessionAsync(
-            avatarId, It.IsAny<CancellationToken>()), Times.Once);
+            userId, It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(store => store.CreateSubmissionAsync(
             It.Is<KycSubmission>(submission =>
-                submission.AvatarId == avatarId.ToString("N")
+                submission.UserId == userId.ToString("N")
                 && submission.Status == KycStatus.PENDING),
             It.Is<IReadOnlyList<KycDocument>>(documents => documents.Count == 0),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -237,14 +238,14 @@ public class KycManagerTests
     [Fact]
     public async Task Begin_LiveApprovalRefusesAnotherAttempt()
     {
-        var avatarId = Guid.NewGuid();
-        var approved = Stored(Guid.NewGuid(), avatarId, KycStatus.APPROVED);
+        var userId = Guid.NewGuid();
+        var approved = Stored(Guid.NewGuid(), userId, KycStatus.APPROVED);
         approved.ExpiresAt = DateTimeOffset.UtcNow.AddDays(1);
-        _store.Setup(store => store.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(store => store.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(approved));
 
-        var result = await _manager.BeginAsync(avatarId);
+        var result = await _manager.BeginAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith("KYC_ALREADY_APPROVED:");
@@ -261,14 +262,14 @@ public class KycManagerTests
     [Fact]
     public async Task Submit_HappyPath_PersistsPendingAndStampsSession()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        var result = await _manager.SubmitAsync(ValidSubmission(), avatarId);
+        var result = await _manager.SubmitAsync(ValidSubmission(), userId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(KycStatus.PENDING);
-        result.Result.AvatarId.Should().Be(avatarId);
-        result.Result.ProviderSessionId.Should().Be(avatarId.ToString("N"));
+        result.Result.UserId.Should().Be(userId);
+        result.Result.ProviderSessionId.Should().Be(userId.ToString("N"));
         _store.Verify(s => s.CreateSubmissionAsync(
             It.IsAny<KycSubmission>(),
             It.Is<IReadOnlyList<KycDocument>>(documents => documents.Count == 1),
@@ -278,11 +279,11 @@ public class KycManagerTests
     [Fact]
     public async Task Submit_ActiveSubmissionWithDocuments_ReturnsExistingAttempt()
     {
-        var avatarId = Guid.NewGuid();
-        _store.Setup(s => s.GetActiveSubmissionByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
-              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = Stored(Guid.NewGuid(), avatarId, KycStatus.PENDING) });
+        var userId = Guid.NewGuid();
+        _store.Setup(s => s.GetActiveSubmissionByUserAsync(userId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = Stored(Guid.NewGuid(), userId, KycStatus.PENDING) });
 
-        var result = await _manager.SubmitAsync(ValidSubmission(), avatarId);
+        var result = await _manager.SubmitAsync(ValidSubmission(), userId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(KycStatus.PENDING);
@@ -299,16 +300,16 @@ public class KycManagerTests
     [Fact]
     public async Task Submit_ActiveSessionWithoutDocuments_AttachesOnce()
     {
-        var avatarId = Guid.NewGuid();
-        var active = Stored(Guid.NewGuid(), avatarId, KycStatus.PENDING);
+        var userId = Guid.NewGuid();
+        var active = Stored(Guid.NewGuid(), userId, KycStatus.PENDING);
         active.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10);
-        _store.Setup(s => s.GetActiveSubmissionByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(s => s.GetActiveSubmissionByUserAsync(userId, It.IsAny<CancellationToken>()))
               .ReturnsAsync(AZOAResult<KycSubmission>.Success(active));
         _store.Setup(s => s.GetDocumentsBySubmissionAsync(
                 Guid.ParseExact(active.Id, "N"), It.IsAny<CancellationToken>()))
               .ReturnsAsync(AZOAResult<IEnumerable<KycDocument>>.Success(Array.Empty<KycDocument>()));
 
-        var result = await _manager.SubmitAsync(ValidSubmission(), avatarId);
+        var result = await _manager.SubmitAsync(ValidSubmission(), userId);
 
         result.IsError.Should().BeFalse();
         _store.Verify(s => s.AttachDocumentsIfAbsentAsync(
@@ -324,14 +325,14 @@ public class KycManagerTests
     [Fact]
     public async Task Submit_ActiveAttemptWithRetiredProviderKeyIsRejectedBeforeValidation()
     {
-        var avatarId = Guid.NewGuid();
-        var active = Stored(Guid.NewGuid(), avatarId, KycStatus.PENDING);
+        var userId = Guid.NewGuid();
+        var active = Stored(Guid.NewGuid(), userId, KycStatus.PENDING);
         active.ProviderKey = "retired-provider";
-        _store.Setup(store => store.GetActiveSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(store => store.GetActiveSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(active));
 
-        var result = await _manager.SubmitAsync(ValidSubmission(), avatarId);
+        var result = await _manager.SubmitAsync(ValidSubmission(), userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith("KYC_PROVIDER_CHANGED:");
@@ -343,18 +344,18 @@ public class KycManagerTests
     [Fact]
     public async Task Submit_ActiveAttemptFromRetiredPolicyIsRejectedBeforeValidation()
     {
-        var avatarId = Guid.NewGuid();
-        var active = Stored(Guid.NewGuid(), avatarId, KycStatus.PENDING);
+        var userId = Guid.NewGuid();
+        var active = Stored(Guid.NewGuid(), userId, KycStatus.PENDING);
         active.ProviderResult = KycApprovalTrust.CreateEnvelope(new KycApprovalProfile(
             KycProvider.MANUAL,
             "manual",
             "retired-policy",
             "development-manual"));
-        _store.Setup(store => store.GetActiveSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(store => store.GetActiveSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(active));
 
-        var result = await _manager.SubmitAsync(ValidSubmission(), avatarId);
+        var result = await _manager.SubmitAsync(ValidSubmission(), userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith("KYC_POLICY_CHANGED:");
@@ -405,11 +406,11 @@ public class KycManagerTests
     [Fact]
     public async Task Submit_DocumentValidationFails_Rejected()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         _provider.Setup(p => p.ValidateDocumentsAsync(It.IsAny<IReadOnlyList<SubmitKycDocumentModel>>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<bool> { IsError = true, Message = "bad doc" });
 
-        var result = await _manager.SubmitAsync(ValidSubmission(), avatarId);
+        var result = await _manager.SubmitAsync(ValidSubmission(), userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be("bad doc");
@@ -436,16 +437,16 @@ public class KycManagerTests
     }
 
     [Fact]
-    public async Task Submit_IgnoresCallerSuppliedAvatarId()
+    public async Task Submit_IgnoresCallerSuppliedUserId()
     {
         var authenticated = Guid.NewGuid();
         var forged = Guid.NewGuid();
         var model = ValidSubmission();
-        model.AvatarId = forged;
+        model.UserId = forged;
 
         var result = await _manager.SubmitAsync(model, authenticated);
 
-        result.Result!.AvatarId.Should().Be(authenticated);
+        result.Result!.UserId.Should().Be(authenticated);
     }
 
     // ── GetStatus ───────────────────────────────────────────────────────────
@@ -453,11 +454,11 @@ public class KycManagerTests
     [Fact]
     public async Task GetStatus_ReturnsLatest()
     {
-        var avatarId = Guid.NewGuid();
-        _store.Setup(s => s.GetLatestSubmissionByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
-              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = Stored(Guid.NewGuid(), avatarId, KycStatus.APPROVED) });
+        var userId = Guid.NewGuid();
+        _store.Setup(s => s.GetLatestSubmissionByUserAsync(userId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = Stored(Guid.NewGuid(), userId, KycStatus.APPROVED) });
 
-        var result = await _manager.GetStatusAsync(avatarId);
+        var result = await _manager.GetStatusAsync(userId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(KycStatus.APPROVED);
@@ -466,18 +467,18 @@ public class KycManagerTests
     [Fact]
     public async Task GetStatus_ApprovalFromRetiredPolicyProjectsExpired()
     {
-        var avatarId = Guid.NewGuid();
-        var approval = Stored(Guid.NewGuid(), avatarId, KycStatus.APPROVED);
+        var userId = Guid.NewGuid();
+        var approval = Stored(Guid.NewGuid(), userId, KycStatus.APPROVED);
         approval.ProviderResult = KycApprovalTrust.CreateEnvelope(new KycApprovalProfile(
             KycProvider.MANUAL,
             "manual",
             "retired-policy",
             "development-manual"));
-        _store.Setup(store => store.GetLatestSubmissionByAvatarAsync(
-                avatarId, It.IsAny<CancellationToken>()))
+        _store.Setup(store => store.GetLatestSubmissionByUserAsync(
+                userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(approval));
 
-        var result = await _manager.GetStatusAsync(avatarId);
+        var result = await _manager.GetStatusAsync(userId);
 
         result.IsError.Should().BeFalse();
         result.Result!.Status.Should().Be(KycStatus.EXPIRED);
@@ -486,11 +487,11 @@ public class KycManagerTests
     [Fact]
     public async Task GetStatus_None_ReturnsNotFound()
     {
-        var avatarId = Guid.NewGuid();
-        _store.Setup(s => s.GetLatestSubmissionByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _store.Setup(s => s.GetLatestSubmissionByUserAsync(userId, It.IsAny<CancellationToken>()))
               .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
 
-        var result = await _manager.GetStatusAsync(avatarId);
+        var result = await _manager.GetStatusAsync(userId);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(KycAuthorizationError.NotFound);
@@ -501,10 +502,10 @@ public class KycManagerTests
     [Fact]
     public async Task Approve_ConditionallyCommitsLedgerDecision()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var reviewerId = Guid.NewGuid();
         var submissionId = Guid.NewGuid();
-        var stored = Stored(submissionId, avatarId, KycStatus.PENDING);
+        var stored = Stored(submissionId, userId, KycStatus.PENDING);
         _store.Setup(s => s.GetSubmissionByIdAsync(submissionId, It.IsAny<CancellationToken>()))
               .ReturnsAsync(new AZOAResult<KycSubmission> { Result = stored });
 
@@ -518,12 +519,86 @@ public class KycManagerTests
     }
 
     [Fact]
+    public async Task Approve_StampsTheApprovalClockNotTheSubmissionClock()
+    {
+        // The attempt was stamped with the SUBMISSION clock (three days). Approving
+        // it must move the row onto the APPROVAL clock, or every verified sponsor is
+        // pushed back through identity check when the attempt window lapses.
+        var submissionId = Guid.NewGuid();
+        var stored = Stored(submissionId, Guid.NewGuid(), KycStatus.PENDING);
+        stored.ExpiresAt = DateTimeOffset.UtcNow.AddDays(3);
+        _store.Setup(s => s.GetSubmissionByIdAsync(submissionId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = stored });
+
+        var floor = DateTimeOffset.UtcNow.AddDays(KycApprovalValidity.DefaultDays - 1);
+        var result = await _manager.ApproveAsync(submissionId, Guid.NewGuid(), null);
+
+        result.IsError.Should().BeFalse(result.Message);
+        _store.Verify(s => s.TryReviewAsync(
+            It.Is<KycSubmission>(submission =>
+                submission.Status == KycStatus.APPROVED
+                && submission.ExpiresAt > floor),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Approve_HonoursAConfiguredApprovalValidity()
+    {
+        var submissionId = Guid.NewGuid();
+        var stored = Stored(submissionId, Guid.NewGuid(), KycStatus.PENDING);
+        _store.Setup(s => s.GetSubmissionByIdAsync(submissionId, It.IsAny<CancellationToken>()))
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = stored });
+        var manager = new KycManager(
+            _store.Object,
+            _provider.Object,
+            Options.Create(TrustedManualSettings()),
+            DevelopmentEnvironment(),
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [KycApprovalValidity.ConfigurationKey] = "30",
+                })
+                .Build());
+
+        var ceiling = DateTimeOffset.UtcNow.AddDays(31);
+        var result = await manager.ApproveAsync(submissionId, Guid.NewGuid(), null);
+
+        result.IsError.Should().BeFalse(result.Message);
+        _store.Verify(s => s.TryReviewAsync(
+            It.Is<KycSubmission>(submission => submission.ExpiresAt < ceiling),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(null, KycApprovalValidity.DefaultDays)]
+    [InlineData("", KycApprovalValidity.DefaultDays)]
+    [InlineData("0", KycApprovalValidity.DefaultDays)]
+    [InlineData("-5", KycApprovalValidity.DefaultDays)]
+    [InlineData("30", 30)]
+    [InlineData("99999", KycApprovalValidity.MaximumDays)]
+    public void ApprovalValidity_DefaultsAndClamps(string? configured, int expectedDays)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [KycApprovalValidity.ConfigurationKey] = configured,
+            })
+            .Build();
+
+        KycApprovalValidity.ResolveDays(configuration).Should().Be(expectedDays);
+    }
+
+    [Fact]
+    public void ApprovalValidity_WithoutConfiguration_IsTwelveMonths()
+        => KycApprovalValidity.ResolveDays(null).Should().Be(365);
+
+    [Fact]
     public async Task Reject_SetsRejectedWithReason()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var submissionId = Guid.NewGuid();
         _store.Setup(s => s.GetSubmissionByIdAsync(submissionId, It.IsAny<CancellationToken>()))
-              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = Stored(submissionId, avatarId, KycStatus.PENDING) });
+              .ReturnsAsync(new AZOAResult<KycSubmission> { Result = Stored(submissionId, userId, KycStatus.PENDING) });
 
         var result = await _manager.RejectAsync(submissionId, Guid.NewGuid(), "notes", "blurry id");
 
@@ -678,7 +753,7 @@ public class KycManagerTests
     // ── IDOR ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetById_DifferentAvatar_ReturnsForbidden()
+    public async Task GetById_DifferentUser_ReturnsForbidden()
     {
         var owner = Guid.NewGuid();
         var attacker = Guid.NewGuid();
@@ -720,7 +795,7 @@ public class KycManagerTests
     }
 
     [Fact]
-    public async Task ListDocuments_DifferentAvatar_ReturnsForbidden()
+    public async Task ListDocuments_DifferentUser_ReturnsForbidden()
     {
         var owner = Guid.NewGuid();
         var attacker = Guid.NewGuid();

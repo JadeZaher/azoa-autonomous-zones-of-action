@@ -125,7 +125,7 @@ describe("AzoaApiClient tenant custody contract", () => {
       tenantId: "tenant",
       externalSubject: "user-42",
       ardanovaUserId: "user-42",
-      avatarId: null,
+      userId: null,
       walletId: null,
       walletAddress: null,
       kycStatus: "Unknown",

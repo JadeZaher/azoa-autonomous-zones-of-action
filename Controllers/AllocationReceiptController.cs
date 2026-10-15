@@ -85,7 +85,7 @@ public sealed class AllocationReceiptController : ControllerBase
         }
 
         if (!Guid.TryParse(User.FindFirst("ApiKeyId")?.Value, out var apiKeyId) || apiKeyId == Guid.Empty ||
-            !TryGetAvatarId(out var avatarId))
+            !TryGetUserId(out var userId))
         {
             return (null, Unauthorized(new AZOAResult<AllocationReceiptResponse>
             {
@@ -104,7 +104,7 @@ public sealed class AllocationReceiptController : ControllerBase
         return (new AllocationReceiptRequest
         {
             ApiKeyId = apiKeyId,
-            CallerAvatarId = avatarId,
+            CallerUserId = userId,
             ClientIdempotencyKey = idempotencyKey.Trim(),
         }, null);
     }
@@ -123,11 +123,11 @@ public sealed class AllocationReceiptController : ControllerBase
             : BadRequest(result);
     }
 
-    private bool TryGetAvatarId(out Guid avatarId)
+    private bool TryGetUserId(out Guid userId)
     {
-        var value = User.FindFirst("AvatarId")?.Value
+        var value = User.FindFirst("UserId")?.Value
                     ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                     ?? User.FindFirst("sub")?.Value;
-        return Guid.TryParse(value, out avatarId) && avatarId != Guid.Empty;
+        return Guid.TryParse(value, out userId) && userId != Guid.Empty;
     }
 }

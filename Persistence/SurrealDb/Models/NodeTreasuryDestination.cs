@@ -42,8 +42,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public long Version { get; set; }
 
         [Column(Order = 6)]
-        [References(typeof(Avatar), Optional = true)]
-        public string? UpdatedByAvatarId { get; set; }
+        [References(typeof(User), Optional = true)]
+        public string? UpdatedByUserId { get; set; }
 
         [Column(Order = 7)]
         [Default("time::now()")]

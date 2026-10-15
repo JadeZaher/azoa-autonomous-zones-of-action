@@ -55,7 +55,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string ParentIdempotencyKeyHash { get; set; } = string.Empty;
 
         [Column(Order = 3)]
-        [Inside("Mint", "Transfer", "Swap", "QuestComplete", "FederationPublish")]
+        [Inside("Mint", "Transfer", "Swap", "ActionComplete", "FederationPublish")]
         [ReadOnly]
         public string Operation { get; set; } = string.Empty;
 

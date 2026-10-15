@@ -5,7 +5,7 @@ Decision record + track. **Tier 1 — the consumer surface** of the
 `workflow-engine` initiative (Track 4 of 4: value-path-wiring →
 durable-workflow-engine → economic-primitive-nodes → **workflow-sdk**).
 Direction sourced from `conductor/REVIEW-economic-substrate-2026-06-16.md`
-**Part C** (Quest as the economic-workflow substrate). Nothing in this track is
+**Part C** (Action as the economic-workflow substrate). Nothing in this track is
 implemented yet.
 
 ## Goal
@@ -13,18 +13,18 @@ Extend the cross-platform TypeScript SDK `@azoa/wallet-sdk` (at
 `sdk/azoa-wallet/`) so a consumer app — **ArdaNova** first, any future app
 after — can, **from its own backend**:
 
-1. **DESIGN** a workflow *shape* once as a `QuestTemplate` (a DAG of generic
+1. **DESIGN** a workflow *shape* once as an `ActionTemplate` (a DAG of generic
    nodes with `{{param}}` slots), and
 2. **DRIVE** many actors (player / user / tenant) through **durable,
-   step-addressable** quest runs of that shape.
+   step-addressable** action runs of that shape.
 
 The headline ergonomics is the user's pseudocode:
 
 ```ts
-quest(holonStep1).step(holonStep2B)
+action(holonStep1).step(holonStep2B)
 ```
 
-— a fluent run driver where `quest(...)` opens a run handle and `.step(nodeId)`
+— a fluent run driver where `action(...)` opens a run handle and `.step(nodeId)`
 pushes the actor into the next phase. The chain maps **1:1** onto the
 `durable-workflow-engine` advancement endpoints (`advance` / `signal`), and the
 SDK supports the same **HYBRID** model the engine exposes: a consumer can drive
@@ -49,29 +49,29 @@ browser / React Native / Lynx (`azoa-wallet-sdk_20260509/spec.md:5`, FR-8
   (`sdk/azoa-wallet/src/api/client.ts:1265-1269`); token refresh is
   deduplicated via `_refreshInFlight`
   (`sdk/azoa-wallet/src/api/client.ts:1291-1306`).
-- The API client **already wraps the quest template surface** delivered by
-  `quest-api`:
-  - `createQuestTemplate` → `POST /api/quest/templates`
+- The API client **already wraps the action template surface** delivered by
+  `action-api`:
+  - `createActionTemplate` → `POST /api/action/templates`
     (`sdk/azoa-wallet/src/api/client.ts:1042-1044`),
-  - `getQuestTemplate` → `GET /api/quest/templates/{id}`
+  - `getActionTemplate` → `GET /api/action/templates/{id}`
     (`:1047-1050`),
-  - `listQuestTemplates` → `GET /api/quest/templates` (`:1053-1055`),
-  - `instantiateQuestTemplate(templateId, parameters?)` →
-    `POST /api/quest/templates/{id}/instantiate` (`:1058-1061`) — the
+  - `listActionTemplates` → `GET /api/action/templates` (`:1053-1055`),
+  - `instantiateActionTemplate(templateId, parameters?)` →
+    `POST /api/action/templates/{id}/instantiate` (`:1058-1061`) — the
     `{{param}}` substitution entrypoint.
-  - Quest DAG CRUD + the all-at-once `executeQuest` /
-    `executeQuestNode` already exist (`:992-1037`), and the quest DTOs
-    (`QuestResult`, `QuestNodeResult`, `QuestTemplateResult`, …) are typed at
+  - Action DAG CRUD + the all-at-once `executeAction` /
+    `executeActionNode` already exist (`:992-1037`), and the action DTOs
+    (`ActionResult`, `ActionNodeResult`, `ActionTemplateResult`, …) are typed at
     `sdk/azoa-wallet/src/api/client.ts:382-533`.
 - **There is NO durable-run driver surface today.** A grep confirms the SDK has
   no `advance`, `signal`, `run-status`, or `forActor` method, and no
-  `QuestRunStatus` type — `executeQuest` is the synchronous all-at-once call,
+  `ActionRunStatus` type — `executeAction` is the synchronous all-at-once call,
   not the step-addressable durable run this track needs. The advancement
   endpoints it must wrap are delivered by `durable-workflow-engine` (below).
 
 ### The backend contract this SDK binds to (sibling tracks)
 - **`durable-workflow-engine`** (Track 2) ships the durable-run advancement
-  surface on `QuestController` and the new run states:
+  surface on `ActionController` and the new run states:
   - `POST runs/{runId}/advance` — body `{ fromNodeId }` — the `step(nodeId)`
     primitive; resumes a `Suspended` manual-advance run from a node into its
     successor(s) (`durable-workflow-engine/plan.md:37`,
@@ -83,10 +83,10 @@ browser / React Native / Lynx (`azoa-wallet-sdk_20260509/spec.md:5`, FR-8
   - A wait/timer node fires via the saga trigger — **no endpoint**
     (`durable-workflow-engine/plan.md:37`).
   - New run states `Suspended` / `AwaitingSignal` / `AwaitingTimer` on
-    `QuestRunStatus` (`durable-workflow-engine/spec.md:138-142`,
-    `:188-190`), plus the run read surface (`quest-api` shipped the
-    `QuestRun` read methods per project memory).
-  Both endpoints are `[Authorize]`, avatar-scoped from claims
+    `ActionRunStatus` (`durable-workflow-engine/spec.md:138-142`,
+    `:188-190`), plus the run read surface (`action-api` shipped the
+    `ActionRun` read methods per project memory).
+  Both endpoints are `[Authorize]`, user-scoped from claims
   (`durable-workflow-engine/plan.md:37`). **Where these endpoints are not yet
   final, this SDK specs each method against the documented CONTRACT
   (request/response shape) and records the dependency.**
@@ -96,12 +96,12 @@ browser / React Native / Lynx (`azoa-wallet-sdk_20260509/spec.md:5`, FR-8
   (REVIEW Part C #1/#2, `conductor/REVIEW-economic-substrate-2026-06-16.md:184-190`).
   This SDK types the **generic mechanism params** of those configs (optional
   builders, §FR-5); it does **not** type ArdaNova economics.
-- **`quest-api`** ✓ shipped — template CRUD + instantiate + run read surface
+- **`action-api`** ✓ shipped — template CRUD + instantiate + run read surface
   (already wrapped, above).
 - **`tenant-onboarding`** ✓ shipped — issues a short-lived **child credential**
-  via `POST /api/tenant/avatars/{id}/credential`
+  via `POST /api/tenant/users/{id}/credential`
   (`tenant-onboarding/spec.md:124-131`); asserts `child.OwnerTenantId == tenant`
-  before issuing; the credential's subject is the child avatar
+  before issuing; the credential's subject is the child user
   (`tenant-onboarding/spec.md:85-89`). This SDK threads that child credential so
   a tenant principal can act FOR a child actor (§FR-3).
 
@@ -111,17 +111,17 @@ browser / React Native / Lynx (`azoa-wallet-sdk_20260509/spec.md:5`, FR-8
 **Description:** Typed, ergonomic methods so a consumer DESIGNS a workflow shape
 once and runs many actors through it. Wrap the existing template endpoints with
 a thin, discoverable namespace (e.g. `azoa.workflow.templates`) over the
-already-present `createQuestTemplate` / `getQuestTemplate` /
-`listQuestTemplates` / `instantiateQuestTemplate`
+already-present `createActionTemplate` / `getActionTemplate` /
+`listActionTemplates` / `instantiateActionTemplate`
 (`sdk/azoa-wallet/src/api/client.ts:1042-1061`).
 **Acceptance Criteria:**
-- `createTemplate(params)` creates a `QuestTemplate`
-  (`POST /api/quest/templates`); returns the typed `QuestTemplateResult`.
+- `createTemplate(params)` creates an `ActionTemplate`
+  (`POST /api/action/templates`); returns the typed `ActionTemplateResult`.
 - `getTemplate(templateId)` / `listTemplates()` read templates; `assertUuid` on
   `templateId`.
 - `instantiate(templateId, params)` instantiates a run from a template with
-  `{{param}}` values (`POST /api/quest/templates/{id}/instantiate`), returning
-  the run handle (FR-2) — not just the raw `QuestResult` — so DESIGN flows
+  `{{param}}` values (`POST /api/action/templates/{id}/instantiate`), returning
+  the run handle (FR-2) — not just the raw `ActionResult` — so DESIGN flows
   straight into DRIVE.
 - No new HTTP plumbing: these reuse `AzoaApiClient.request` and the existing
   typed DTOs. The namespace is **additive ergonomics**, the wire calls are
@@ -129,19 +129,19 @@ already-present `createQuestTemplate` / `getQuestTemplate` /
 **Priority:** P0
 
 ### FR-2: Fluent run driver (the headline ergonomics — DRIVE)
-**Description:** A `quest(questOrTemplateId)` entrypoint returning a **run
+**Description:** An `action(actionOrTemplateId)` entrypoint returning a **run
 handle** whose chainable methods map 1:1 onto the durable-workflow-engine
-advancement endpoints. This is the literal `quest(step1).step(step2B)`.
+advancement endpoints. This is the literal `action(step1).step(step2B)`.
 **Acceptance Criteria:**
-- `quest(idOrRef)` opens a handle. `idOrRef` is a quest id, a template id, or a
+- `action(idOrRef)` opens a handle. `idOrRef` is an action id, a template id, or a
   prior run id (disambiguated by an explicit `.fromTemplate()` / `.forRun()`
   modifier or by the entrypoint variant — see Open Questions Q1).
 - `.start({ actor, params })` instantiates + starts a durable run for `actor`
-  (an avatar id; see FR-3) with `{{param}}` values. Returns the handle (now
+  (a user id; see FR-3) with `{{param}}` values. Returns the handle (now
   bound to a concrete `runId`) so the chain continues.
 - `.step(nodeId)` issues `POST runs/{runId}/advance` with body
   `{ fromNodeId: nodeId }` — the consumer-driven advance. **Chainable:**
-  `quest(a).start({...}).step(b).step(c)` issues `start → advance(b) →
+  `action(a).start({...}).step(b).step(c)` issues `start → advance(b) →
   advance(c)` in order.
 - `.signal(gateId, payload)` issues `POST runs/{runId}/signal` with body
   `{ gateId, payload }` — un-parks a gated node. The hybrid model is explicit:
@@ -160,22 +160,22 @@ advancement endpoints. This is the literal `quest(step1).step(step2B)`.
   `durable-workflow-engine/plan.md:24,30` — so the UUID guard applies; if the
   final contract makes `gateId` a free string, relax to a non-empty-string guard
   and record it — Open Questions Q4.)
-- The chain returns a thenable/awaitable handle so `await quest(a).start(...)
+- The chain returns a thenable/awaitable handle so `await action(a).start(...)
   .step(b)` resolves to the final `Result<WorkflowRunStatus, SdkError>`, and any
   step failing short-circuits with the `SdkError` (no throw — Result discipline,
   `azoa-wallet-sdk_20260509/spec.md:124-128`).
 **Priority:** P0
 
-### FR-3: Actor abstraction (act FOR a child avatar)
-**Description:** The actor a run targets is an AZOA **Avatar**. For
-ArdaNova-as-tenant, the actor is a **child avatar** provisioned via
+### FR-3: Actor abstraction (act FOR a child user)
+**Description:** The actor a run targets is an AZOA **User**. For
+ArdaNova-as-tenant, the actor is a **child user** provisioned via
 `tenant-onboarding`. The SDK lets a **tenant principal** (authed by
 `X-Api-Key`) act FOR a child by acquiring and using the child's short-lived
 credential.
 **Acceptance Criteria:**
-- `quest(...).forActor(childAvatarId)` (and/or `.start({ actor: childAvatarId
+- `action(...).forActor(childUserId)` (and/or `.start({ actor: childUserId
   })`) acquires a child credential via
-  `POST /api/tenant/avatars/{childAvatarId}/credential`
+  `POST /api/tenant/users/{childUserId}/credential`
   (`tenant-onboarding/spec.md:124-131`) and uses the returned child JWT as the
   Bearer token for that run's advancement calls — while the tenant's
   `X-Api-Key` remains the principal for the credential-acquisition call itself.
@@ -186,10 +186,10 @@ credential.
 - When the consumer is **not** a tenant (a direct end-user JWT session),
   `.forActor()` is unnecessary — the run uses the active session token; the
   child-credential path is only engaged when a tenant principal targets a child.
-- `assertUuid(childAvatarId, "childAvatarId")` before interpolation; the
+- `assertUuid(childUserId, "childUserId")` before interpolation; the
   credential call is verbose-errored with method+path on failure.
 - **No tenant/child types leak into the generic surface** beyond the child
-  credential acquisition — `forActor` takes a plain avatar id; the
+  credential acquisition — `forActor` takes a plain user id; the
   tenant-credential mechanics are an internal auth detail, not an ArdaNova
   concept (NO brand leak, House Rules).
 **Priority:** P0
@@ -206,8 +206,8 @@ reusing the existing header plumbing; all ids are guarded; errors are verbose.
 - All amounts that appear in node configs or run params are **strings**
   (arbitrary precision — project memory; `azoa-wallet-sdk_20260509` amount
   convention). The SDK never coerces an amount to `number`.
-- `assertUuid` on `runId` / `nodeId` / `gateId` / `avatarId` /
-  `childAvatarId` / `templateId` (path-traversal guard, the project-wide rule).
+- `assertUuid` on `runId` / `nodeId` / `gateId` / `userId` /
+  `childUserId` / `templateId` (path-traversal guard, the project-wide rule).
 - Every error carries `method + path` (the SDK's verbose-error convention,
   `sdk/azoa-wallet/src/api/client.ts:1202-1217`); methods return
   `Result<T, SdkError>`, never throw (except the synchronous `assertUuid`
@@ -223,7 +223,7 @@ encoding any economics.
 **Recommendation:** **Ship light builders** (a `nodeConfig.gateCheck({...})` /
 `.swap({...})` / `.grant({...})` family returning the typed `Config` JSON
 string) **plus** allow raw typed config objects. Rationale: the configs are
-opaque JSON on the wire (`QuestNode.Config`,
+opaque JSON on the wire (`ActionNode.Config`,
 `durable-workflow-engine/plan.md:18`); a thin typed builder catches shape errors
 at author time and documents the mechanism params, while raw objects stay
 available for forward-compat when `economic-primitive-nodes` adds a node type
@@ -249,18 +249,18 @@ nothing at runtime and tree-shake away when unused.
 **Description:** vitest tests that mock the API client / `fetch` and prove the
 fluent chain issues the correct ordered HTTP calls and honors every guard.
 **Acceptance Criteria:**
-- **Ordered-call proof:** `quest(a).start({...}).step(b).step(c)` issues, in
+- **Ordered-call proof:** `action(a).start({...}).step(b).step(c)` issues, in
   order: the instantiate/start call, `POST runs/{runId}/advance {fromNodeId:b}`,
   then `{fromNodeId:c}` — asserted against `mockFetch.mock.calls` exactly as
   `self-audit-one-fix.test.ts:218-245` asserts URL/method/body.
-- **Hybrid proof:** `quest(a).start({...}).signal(g, payload)` issues
+- **Hybrid proof:** `action(a).start({...}).signal(g, payload)` issues
   `start → POST runs/{runId}/signal {gateId:g, payload}`.
 - **Idempotency passthrough:** `.step(..., {idempotencyKey})` sets the
   `Idempotency-Key` header (mirror `self-audit-one-fix.test.ts:247-257`).
-- **assertUuid guards:** a non-UUID `runId`/`nodeId`/`gateId`/`childAvatarId`
+- **assertUuid guards:** a non-UUID `runId`/`nodeId`/`gateId`/`childUserId`
   throws before any `fetch` (mirror `self-audit-one-fix.test.ts:290-295`).
-- **Child-credential acquisition:** `quest(...).forActor(childId).start({...})`
-  first issues `POST /api/tenant/avatars/{childId}/credential` (with the
+- **Child-credential acquisition:** `action(...).forActor(childId).start({...})`
+  first issues `POST /api/tenant/users/{childId}/credential` (with the
   tenant `X-Api-Key`), then uses the returned child JWT as the `Authorization:
   Bearer` header on the advance/signal calls.
 - **Status mapping:** `.status()` returns a typed `WorkflowRunStatus` reflecting
@@ -291,7 +291,7 @@ carry `code`, `method+path` message, and `cause`
 ### NFR-4: No brand leak
 The SDK is a **generic** workflow SDK. **Zero** ArdaNova types, names, or
 economic concepts appear in `sdk/azoa-wallet/src/`. `forActor` takes a plain
-avatar id; node-config builders type only generic mechanism params. The
+user id; node-config builders type only generic mechanism params. The
 worked economic example (swap→hold→grant) lives in docs as *illustration*, never
 as a typed ArdaNova entity.
 
@@ -312,13 +312,13 @@ per user,
 "1000" })` for each user
 **Then** each call returns a bound run handle ready to drive.
 
-### US-2: Phase-by-phase drive (`quest(step1).step(step2B)`)
+### US-2: Phase-by-phase drive (`action(step1).step(step2B)`)
 **As** an ArdaNova backend,
 **I want** to push a user from one phase to the next on my schedule,
 **So that** the user advances only when my business logic says so.
 
 **Given** a started run handle
-**When** I `await quest(questId).start({ actor, params }).step("node-2b")`
+**When** I `await action(actionId).start({ actor, params }).step("node-2b")`
 **Then** the SDK issues the start call, then `POST runs/{runId}/advance
 {fromNodeId:"node-2b"}`, and resolves with the updated run status.
 
@@ -338,10 +338,10 @@ and the run resumes.
 **I want** to drive a run on behalf of one of my users,
 **So that** the run executes under that child's identity, not mine.
 
-**Given** a tenant `AzoaClient` (API-key) and a provisioned child avatar
-**When** I call `quest(templateId).forActor(childAvatarId).start({ params })`
+**Given** a tenant `AzoaClient` (API-key) and a provisioned child user
+**When** I call `action(templateId).forActor(childUserId).start({ params })`
 **Then** the SDK acquires a child credential
-(`POST /api/tenant/avatars/{childAvatarId}/credential`) and uses it as the
+(`POST /api/tenant/users/{childUserId}/credential`) and uses it as the
 Bearer token for the run's advancement calls.
 
 ## Technical Considerations
@@ -349,14 +349,14 @@ Bearer token for the run's advancement calls.
 - **Where the code lives.** New module under `sdk/azoa-wallet/src/workflow/`
   (mirrors the `client/` + `api/` split): a `WorkflowClient` (template authoring
   + run-status reads, thin over `AzoaApiClient`) and a `WorkflowRunHandle` /
-  `quest()` factory (the fluent driver). Exposed on the facade as
+  `action()` factory (the fluent driver). Exposed on the facade as
   `azoa.workflow` (composed in `AzoaClient` exactly as `holons` / `portfolio`
   are, `sdk/azoa-wallet/src/client/azoa-client.ts:143-146`).
 - **Path constants.** Add the run-advancement + tenant-credential paths to
   `API_PATHS` / `ApiController` in
   `sdk/azoa-wallet/src/api/api-version.ts:19-116`
-  (`QUEST_RUN_ADVANCE(runId)`, `QUEST_RUN_SIGNAL(runId)`,
-  `QUEST_RUN_STATUS(runId)`, `TENANT_CHILD_CREDENTIAL(avatarId)`), and add
+  (`ACTION_RUN_ADVANCE(runId)`, `ACTION_RUN_SIGNAL(runId)`,
+  `ACTION_RUN_STATUS(runId)`, `TENANT_CHILD_CREDENTIAL(userId)`), and add
   `"tenant"` to the `ApiController` union (`api-version.ts:19-30`).
 - **Reuse the request primitive.** All calls go through
   `AzoaApiClient.request` / `requestBare` with `extraHeaders` for the
@@ -395,10 +395,10 @@ Bearer token for the run's advancement calls.
 
 ## Open Questions
 
-1. **`quest()` overload disambiguation.** Should `quest(id)` infer
-   template-vs-quest-vs-run from a separate `.fromTemplate()` / `.forRun()`
+1. **`action()` overload disambiguation.** Should `action(id)` infer
+   template-vs-action-vs-run from a separate `.fromTemplate()` / `.forRun()`
    modifier, or should there be distinct entrypoints
-   (`quest.fromTemplate(id)` / `quest.run(runId)`)? (Recommendation: explicit
+   (`action.fromTemplate(id)` / `action.run(runId)`)? (Recommendation: explicit
    modifiers — fewer surprises, no id-shape sniffing.)
 2. **Auto-poll vs explicit `.status()`.** Should `.onSuspend` poll the run to
    detect the awaiting state, or rely solely on the advance/signal response
@@ -415,7 +415,7 @@ Bearer token for the run's advancement calls.
    treat as UUID per the current engine model; relax if Track 2 finalizes it as
    a free label.)
 5. **Run-status endpoint shape.** Confirm the exact run read path/shape from the
-   `quest-api` run read surface (`MarkRunCompleted` + run reads landed per
+   `action-api` run read surface (`MarkRunCompleted` + run reads landed per
    project memory) so `.status()` maps to the right GET. (Recommendation: pin
    against the shipped run read route during implementation.)
 
@@ -438,10 +438,10 @@ contract-first against them).
   the generic node config shapes the optional `nodeConfig` builders (FR-5) type.
   The driver + template + actor surface does **not** block on it; raw config
   strings are accepted meanwhile.
-- **`quest-api`** ✓ shipped — template CRUD + instantiate + run read surface,
+- **`action-api`** ✓ shipped — template CRUD + instantiate + run read surface,
   already wrapped (`sdk/azoa-wallet/src/api/client.ts:1042-1061`).
 - **`tenant-onboarding`** ✓ shipped — the child-credential endpoint
-  (`POST /api/tenant/avatars/{id}/credential`,
+  (`POST /api/tenant/users/{id}/credential`,
   `tenant-onboarding/spec.md:124-131`) the actor abstraction (FR-3) threads.
 - **`azoa-wallet-sdk`** ✓ shipped — the SDK substrate (facade, API client,
   auth, `Result`/`SdkError`, `assertUuid`, idempotency plumbing) this track

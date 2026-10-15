@@ -36,7 +36,7 @@ state and must not present simulated verification as production KYC.
 
 ## Workflow SDK (`azoa.workflow`)
 
-DESIGN a workflow *shape* once as a `QuestTemplate` (a DAG of generic nodes with
+DESIGN a workflow *shape* once as an `ActionTemplate` (a DAG of generic nodes with
 `{{param}}` slots), then DRIVE many actors through **durable, step-addressable**
 runs of that shape. The economic / token domain stays in the consumer app; this
 SDK exposes **mechanism-only** primitives — no economic semantics.
@@ -56,22 +56,22 @@ const created = await azoa.workflow.createTemplate({
 const tpl  = await azoa.workflow.getTemplate(templateId);
 const all  = await azoa.workflow.listTemplates();
 
-// Instantiate a quest from a template with {{param}} values
-const quest = await azoa.workflow.instantiate(templateId, { amount: "1000" });
+// Instantiate an action from a template with {{param}} values
+const action = await azoa.workflow.instantiate(templateId, { amount: "1000" });
 ```
 
-### The fluent `quest()` run driver (DRIVE)
+### The fluent `action()` run driver (DRIVE)
 
-`azoa.workflow.quest(...)` opens a **run handle** whose chainable methods map
+`azoa.workflow.action(...)` opens a **run handle** whose chainable methods map
 1:1 onto the durable-workflow-engine advancement endpoints. The handle is
 **awaitable (thenable)**: the chain runs in order and resolves to the final
 `Result<WorkflowRunResult, SdkError>`. The first error **short-circuits** the
 rest of the chain (no throw).
 
 ```ts
-// Phase-by-phase drive — quest(step1).step(step2B)
+// Phase-by-phase drive — action(step1).step(step2B)
 const result = await azoa.workflow
-  .quest(questId)
+  .action(actionId)
   .start({ params: { amount: "1000" } })
   .step("11111111-1111-1111-1111-111111111111")   // POST runs/{runId}/advance {fromNodeId}
   .step("22222222-2222-2222-2222-222222222222");
@@ -85,9 +85,9 @@ Three explicit entrypoints disambiguate what you're driving (no id-shape
 sniffing):
 
 ```ts
-azoa.workflow.quest(questId);                 // existing quest → start-workflow
-azoa.workflow.quest.fromTemplate(templateId); // instantiate, then start-workflow
-azoa.workflow.quest.run(runId);               // re-attach to a prior run
+azoa.workflow.action(actionId);                 // existing action → start-workflow
+azoa.workflow.action.fromTemplate(templateId); // instantiate, then start-workflow
+azoa.workflow.action.run(runId);               // re-attach to a prior run
 ```
 
 ### Hybrid: start-and-signal-at-gates
@@ -97,7 +97,7 @@ A run can be driven **phase-by-phase** (`.step()`) OR
 same handle.
 
 ```ts
-const handle = azoa.workflow.quest(questId);
+const handle = azoa.workflow.action(actionId);
 await handle.start({ params });
 // … run auto-advances and parks at a gate …
 await handle.signal("gate-phase-1", "phase-met"); // POST runs/{runId}/signal {gateId, payload}
@@ -110,15 +110,15 @@ await handle.signal("gate-phase-1", "phase-met"); // POST runs/{runId}/signal {g
 
 ```ts
 azoa.workflow
-  .quest(questId)
+  .action(actionId)
   .onSuspend((run) => {
     // fires when a call leaves the run Suspended / AwaitingSignal / AwaitingTimer
     console.log("parked:", run.status, "run", run.id);
   })
   .start({ params });
 
-// Explicit poll for long-parked runs (GET /api/quest/runs/{runId})
-const status = await azoa.workflow.quest.run(runId).status();
+// Explicit poll for long-parked runs (GET /api/action/runs/{runId})
+const status = await azoa.workflow.action.run(runId).status();
 ```
 
 `WorkflowRunStatus` mirrors the engine 1:1: `Pending`, `Running`, `Succeeded`,
@@ -133,17 +133,17 @@ falls back to its deterministic content key.
 
 ```ts
 await azoa.workflow
-  .quest(questId)
+  .action(actionId)
   .start({ params })
   .step(nodeId, { idempotencyKey: crypto.randomUUID() });
 ```
 
-### Acting FOR a child avatar — `forActor`
+### Acting FOR a child user — `forActor`
 
 A tenant principal (authed by `X-Api-Key`) can drive a run **as** one of its
-child avatars. `forActor` takes a plain avatar id; on the first advancement call
+child users. `forActor` takes a plain user id; on the first advancement call
 the SDK lazily acquires a short-lived child credential
-(`POST /api/tenant/avatars/{childAvatarId}/credential`, with the tenant
+(`POST /api/tenant/users/{childUserId}/credential`, with the tenant
 `X-Api-Key` as the principal), caches the child JWT for the handle's lifetime,
 re-acquires it on expiry, and threads it as a per-run `Authorization: Bearer`
 override on the advance/signal calls — leaving the global tenant `X-Api-Key`
@@ -151,8 +151,8 @@ untouched.
 
 ```ts
 await azoa.workflow
-  .quest.fromTemplate(templateId)
-  .forActor(childAvatarId)        // or .start({ actor: childAvatarId })
+  .action.fromTemplate(templateId)
+  .forActor(childUserId)        // or .start({ actor: childUserId })
   .start({ params: { amount: "1000" } })
   .step(nodeId);
 ```
@@ -163,7 +163,7 @@ API key unchanged.
 ### Typed `nodeConfig` builders
 
 Pure helpers that serialize the **generic mechanism** params of each node type
-into the `Config` JSON string a template/quest node carries. They type only
+into the `Config` JSON string a template/action node carries. They type only
 generic params — amounts are **strings**, and there is no rate, token meaning, or
 economic concept. A raw `Config` is always accepted as an escape hatch.
 
@@ -176,8 +176,8 @@ nodeConfig.emit({ payload: { event: "granted" } });
 nodeConfig.swap({ request: { chain: "algorand", quoteId, walletAddress } });
 nodeConfig.grant({ request: { walletId, name: "Reward", chainId: "algorand" },
                    holonId });
-nodeConfig.transfer({ nftId, request: { targetAvatarId, walletId } });
-nodeConfig.refund({ nftId, request: { targetAvatarId, walletId } });
+nodeConfig.transfer({ nftId, request: { targetUserId, walletId } });
+nodeConfig.refund({ nftId, request: { targetUserId, walletId } });
 
 // Escape hatch for un-typed node kinds:
 nodeConfig.raw({ anything: "goes", amount: "100" });
@@ -199,9 +199,9 @@ The workflow run-driver routes are exported on `API_PATHS` (from
 
 | Constant | Route |
 | --- | --- |
-| `QUEST_START_WORKFLOW(questId)` | `POST /api/quest/{questId}/start-workflow` |
-| `QUEST_RUN_ADVANCE(runId)` | `POST /api/quest/runs/{runId}/advance` |
-| `QUEST_RUN_SIGNAL(runId)` | `POST /api/quest/runs/{runId}/signal` |
-| `QUEST_RUN_STATUS(runId)` | `GET /api/quest/runs/{runId}` |
-| `QUEST_RUN_EXECUTION_STATE(runId)` | `GET /api/quest/runs/{runId}/execution-state` |
-| `TENANT_CHILD_CREDENTIAL(avatarId)` | `POST /api/tenant/avatars/{avatarId}/credential` |
+| `ACTION_START_WORKFLOW(actionId)` | `POST /api/action/{actionId}/start-workflow` |
+| `ACTION_RUN_ADVANCE(runId)` | `POST /api/action/runs/{runId}/advance` |
+| `ACTION_RUN_SIGNAL(runId)` | `POST /api/action/runs/{runId}/signal` |
+| `ACTION_RUN_STATUS(runId)` | `GET /api/action/runs/{runId}` |
+| `ACTION_RUN_EXECUTION_STATE(runId)` | `GET /api/action/runs/{runId}/execution-state` |
+| `TENANT_CHILD_CREDENTIAL(userId)` | `POST /api/tenant/users/{userId}/credential` |

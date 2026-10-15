@@ -25,13 +25,13 @@ public static class McpServerSetup
         services.AddScoped<McpToolRegistry>();
 
         // ── Tool registrations (mcp-surface track) ────────────────────────────
-        services.AddScoped<IMcpTool, QuestReachabilityTool>();
+        services.AddScoped<IMcpTool, ActionReachabilityTool>();
         // NL → DAG authoring surface: vocabulary (read) + validate-and-persist (write).
-        services.AddScoped<IMcpTool, QuestCatalogTool>();
-        services.AddScoped<IMcpTool, QuestAuthorTool>();
+        services.AddScoped<IMcpTool, ActionCatalogTool>();
+        services.AddScoped<IMcpTool, ActionAuthorTool>();
         services.AddScoped<IMcpTool, HolonTraverseTool>();
         services.AddScoped<IMcpTool, NftOwnershipGraphTool>();
-        services.AddScoped<IMcpTool, AvatarScopedQueryTool>();
+        services.AddScoped<IMcpTool, UserScopedQueryTool>();
         services.AddScoped<IMcpTool, VectorSearchTool>();
 
         // ── Embedding provider (placeholder — see EmbeddingProvider.cs) ───────
@@ -40,14 +40,14 @@ public static class McpServerSetup
         // becomes semantically meaningful.
         services.AddSingleton<IEmbeddingProvider, DeterministicDummyEmbeddingProvider>();
 
-        // McpAuthMiddleware stashes the avatar id on HttpContext.Items; the tool
+        // McpAuthMiddleware stashes the user id on HttpContext.Items; the tool
         // bridge lifts it back out per request, so the accessor must be available.
         services.AddHttpContextAccessor();
 
         // Bridge to the SDK's MCP server with HTTP+SSE transport, and register
         // every IMcpTool as an SDK McpServerTool so they are actually reachable
         // over /mcp. The IMcpTool instances here are stateless shells — all
-        // request-scoped dependencies (ISurrealExecutor, IQuestManager, …) are
+        // request-scoped dependencies (ISurrealExecutor, IActionManager, …) are
         // resolved inside the bridge handler from the per-request service
         // provider via IHttpContextAccessor (see McpToolBridge), so no app
         // service provider is captured at registration time.
@@ -68,18 +68,18 @@ public static class McpServerSetup
     /// </summary>
     private static IEnumerable<IMcpTool> ToolInstances() => new IMcpTool[]
     {
-        new QuestReachabilityTool(),
-        new QuestCatalogTool(),
-        new QuestAuthorTool(),
+        new ActionReachabilityTool(),
+        new ActionCatalogTool(),
+        new ActionAuthorTool(),
         new HolonTraverseTool(),
         new NftOwnershipGraphTool(),
-        new AvatarScopedQueryTool(),
+        new UserScopedQueryTool(),
         new VectorSearchTool(),
     };
 
     public static IApplicationBuilder UseMcpAuth(this IApplicationBuilder app)
     {
-        // Avatar-scope extraction middleware — extracts the AvatarId claim from
+        // User-scope extraction middleware — extracts the UserId claim from
         // the authenticated HttpContext and stashes it on ctx.Items for the
         // MCP dispatcher to lift into ToolCallContext.
         return app.UseMiddleware<McpAuthMiddleware>();
@@ -89,9 +89,9 @@ public static class McpServerSetup
     {
         // SDK-provided MCP endpoint group. RequireAuthorization wires the
         // existing JWT+ApiKey multi-scheme policy so unauthenticated callers
-        // get 401 at the framework layer. Per-tool avatar scoping is enforced
+        // get 401 at the framework layer. Per-tool user scoping is enforced
         // by McpAuthMiddleware (registered via UseMcpAuth) which populates
-        // the ToolCallContext.AvatarId from claims.
+        // the ToolCallContext.UserId from claims.
         McpEndpointRouteBuilderExtensions.MapMcp(endpoints, "/mcp")
             .RequireAuthorization();
         return endpoints;

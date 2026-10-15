@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Models.Responses;
 /// <summary>Strict public projection of a fungible-token launch result.</summary>
 public sealed class FungibleTokenResultResponse
 {
-    public Guid AvatarId { get; init; }
+    public Guid UserId { get; init; }
     public Guid WalletId { get; init; }
     public string WalletAddress { get; init; } = string.Empty;
     public bool WalletProvisioned { get; init; }
@@ -19,7 +19,7 @@ public sealed class FungibleTokenResultResponse
 
         return new FungibleTokenResultResponse
         {
-            AvatarId = result.AvatarId,
+            UserId = result.UserId,
             WalletId = result.WalletId,
             WalletAddress = result.WalletAddress,
             WalletProvisioned = result.WalletProvisioned,

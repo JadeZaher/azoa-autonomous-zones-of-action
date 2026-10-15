@@ -184,7 +184,7 @@ package. No multi-wave structure — small enough for one track.
 
 ## Forbidden surface (unchanged)
 
-No worker touches `Models/Quest/**` quest runtime models (those are
-[[quest-temporal-fork-model]]'s territory and already generated-equivalent
-via the manual rewrite). Quest schema generation is a separate
+No worker touches `Models/Actions/**` action runtime models (those are
+[[action-temporal-fork-model]]'s territory and already generated-equivalent
+via the manual rewrite). Action schema generation is a separate
 follow-up — this track only generates the 7 wave-1 value-table POCOs.

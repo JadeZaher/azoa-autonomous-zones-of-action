@@ -32,9 +32,9 @@ operator voice:
 
 - **§4.1 (new)** — value-route reality: **Algorand real; Solana/Wormhole/Ethereum
   fail-closed and must stay disabled** (`RealValueEnabled=false`) until follow-ups.
-  Includes the **D1-L2 forward-compat residual**: if quests ever become
-  shareable/public, value-node actor derivation must switch `quest.AvatarId` →
-  `run.AvatarId`.
+  Includes the **D1-L2 forward-compat residual**: if actions ever become
+  shareable/public, value-node actor derivation must switch `action.UserId` →
+  `run.UserId`.
 - **§8.2** — key-rotation **pending-key marker** must live on a **mounted volume**
   with restrictive perms on ephemeral containers.
 - **§8.3** — mainnet gate now explicitly requires the target chain to have a real
@@ -63,7 +63,7 @@ resolving to a truthful record.
 ## G5 — frontend-demo-harness light audit (non-blocking)
 
 **Dashboard pages present** (`frontend/src/app/(dashboard)/`, 16 feature + 1 tests):
-overview, avatars, avatar-nfts, wallets, holons, nfts, quests, blockchain, bridge,
+overview, users, user-nfts, wallets, holons, nfts, actions, blockchain, bridge,
 swap, fungible-mint, star-odk, search, api-keys, settings, **tests** (test-runner).
 
 **Shipped-this-track features vs pages:**
@@ -73,7 +73,7 @@ swap, fungible-mint, star-odk, search, api-keys, settings, **tests** (test-runne
   **star-odk** page (`EcosystemSection`, GET `/api/starodk/{id}/ecosystem`, plus an
   attach form → `/dapp-series`). No gap.
 - **Fractionalization Bridge/Back nodes (D1)** — covered by the existing
-  **quests** builder palette (`components/quest-builder/`, `presets.ts` +
+  **actions** builder palette (`components/action-builder/`, `presets.ts` +
   `node-catalog.ts`). No dedicated page needed.
 - **Saga operator / dead-letter surface (F1)** — ❌ **no dedicated UI page**.
   Reachable via API/endpoints today. Small; **post-launch** UI item.

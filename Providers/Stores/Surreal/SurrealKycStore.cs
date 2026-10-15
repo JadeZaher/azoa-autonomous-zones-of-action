@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// SurrealDB-backed <see cref="IKycStore"/>.
 ///
 /// ID encoding: <c>Guid.ToString("N").ToLowerInvariant()</c> (32-char hex, no
-/// dashes). The <c>avatar_id</c> / <c>submission_id</c> foreign keys are
+/// dashes). The <c>user_id</c> / <c>submission_id</c> foreign keys are
 /// SurrealDB record links written via <see cref="SurrealLink"/>
 /// (<c>table:id</c>) so SurrealDB 3.x's strict <c>record&lt;table&gt;</c>
 /// coercion accepts them; reads strip the prefix back to bare hex.
@@ -25,7 +25,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// <see cref="KycDocument"/> POCOs directly: a private <c>ToStorage</c> swaps
 /// the in-memory bare-hex id fields for link form before write, and
 /// <c>FromStorage</c> reverses it after read. Mirrors
-/// <c>SurrealStarStore</c>'s ToPoco/FromPoco pattern.
+/// <c>SurrealActionGraphBundleStore</c>'s ToPoco/FromPoco pattern.
 /// </summary>
 public sealed class SurrealKycStore : IKycStore
 {
@@ -62,60 +62,60 @@ public sealed class SurrealKycStore : IKycStore
         }
     }
 
-    public Task<AZOAResult<KycSubmission>> GetLatestSubmissionByAvatarAsync(
-        Guid avatarId,
+    public Task<AZOAResult<KycSubmission>> GetLatestSubmissionByUserAsync(
+        Guid userId,
         CancellationToken ct = default)
-        => GetLatestSubmissionAsync(avatarId, null, ct);
+        => GetLatestSubmissionAsync(userId, null, ct);
 
     public async Task<AZOAResult<KycSubmission>> GetLatestSubmissionAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE avatar_id = $_avatar AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) ORDER BY submitted_at DESC LIMIT 1")
+                .Of("SELECT * FROM type::table($_t) WHERE user_id = $_user AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) ORDER BY submitted_at DESC LIMIT 1")
                 .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)))
+                .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)))
                 .WithParam("_has_tenant", tenantId.HasValue)
                 .WithParam("_tenant", tenantId.HasValue
-                    ? SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId.Value))
+                    ? SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId.Value))
                     : null);
 
             var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
             return new AZOAResult<KycSubmission>
             {
-                Message = row == null ? "No KYC submission found for avatar." : "Success",
+                Message = row == null ? "No KYC submission found for user." : "Success",
                 Result  = row == null ? null : FromStorage(row)
             };
         }
         catch (Exception ex)
         {
             return StoreFailure<KycSubmission>(ex, nameof(GetLatestSubmissionAsync),
-                $"{avatarId:N}:{tenantId?.ToString("N") ?? "node"}");
+                $"{userId:N}:{tenantId?.ToString("N") ?? "node"}");
         }
     }
 
-    public Task<AZOAResult<KycSubmission>> GetActiveSubmissionByAvatarAsync(
-        Guid avatarId,
+    public Task<AZOAResult<KycSubmission>> GetActiveSubmissionByUserAsync(
+        Guid userId,
         CancellationToken ct = default)
-        => GetActiveSubmissionAsync(avatarId, null, ct);
+        => GetActiveSubmissionAsync(userId, null, ct);
 
     public async Task<AZOAResult<KycSubmission>> GetActiveSubmissionAsync(
-        Guid avatarId,
+        Guid userId,
         Guid? tenantId,
         CancellationToken ct = default)
     {
         try
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE avatar_id = $_avatar AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) AND status INSIDE $_active ORDER BY submitted_at DESC LIMIT 1")
+                .Of("SELECT * FROM type::table($_t) WHERE user_id = $_user AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) AND status INSIDE $_active ORDER BY submitted_at DESC LIMIT 1")
                 .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(avatarId)))
+                .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)))
                 .WithParam("_has_tenant", tenantId.HasValue)
                 .WithParam("_tenant", tenantId.HasValue
-                    ? SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId.Value))
+                    ? SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId.Value))
                     : null)
                 .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
 
@@ -129,7 +129,7 @@ public sealed class SurrealKycStore : IKycStore
         catch (Exception ex)
         {
             return StoreFailure<KycSubmission>(ex, nameof(GetActiveSubmissionAsync),
-                $"{avatarId:N}:{tenantId?.ToString("N") ?? "node"}");
+                $"{userId:N}:{tenantId?.ToString("N") ?? "node"}");
         }
     }
 
@@ -336,7 +336,7 @@ public sealed class SurrealKycStore : IKycStore
             var hasTenant = !string.IsNullOrWhiteSpace(submission.TenantId);
             var tenantId = hasTenant ? submission.TenantId : string.Empty;
             var authorityGuardTable = "kyc_authority_guard";
-            var attemptGuardId = $"attempt-{submission.AvatarId}-{(hasTenant ? tenantId : "direct")}";
+            var attemptGuardId = $"attempt-{submission.UserId}-{(hasTenant ? tenantId : "direct")}";
             var loadSelection = SurrealQuery
                 .Of("LET $_selection = (SELECT provider_key, selection_version FROM type::record($_selection_table, $_tenant_id) WHERE $_has_tenant)")
                 .WithParam("_selection_table", TenantKycProviderSelection.SchemaNameConst)
@@ -376,9 +376,9 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_guard_id", attemptGuardId)
                 .WithParam("_provider", submission.ProviderKey);
             var findActive = SurrealQuery
-                .Of("LET $_active = (SELECT id FROM type::table($_submission_table) WHERE avatar_id = $_avatar AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) AND status INSIDE $_active_statuses LIMIT 1)")
+                .Of("LET $_active = (SELECT id FROM type::table($_submission_table) WHERE user_id = $_user AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) AND status INSIDE $_active_statuses LIMIT 1)")
                 .WithParam("_submission_table", KycSubmission.SchemaNameConst)
-                .WithParam("_avatar", SurrealRecordParam.OfLink(storedSubmission.AvatarId))
+                .WithParam("_user", SurrealRecordParam.OfLink(storedSubmission.UserId))
                 .WithParam("_has_tenant", !string.IsNullOrWhiteSpace(storedSubmission.TenantId))
                 .WithParam("_tenant", SurrealRecordParam.OfLink(storedSubmission.TenantId))
                 .WithParam("_active_statuses", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
@@ -428,7 +428,7 @@ public sealed class SurrealKycStore : IKycStore
             var stored = ToStorage(decision);
             // raw: single-winner manual-review CAS; see this directory's AGENTS.md.
             var query = SurrealQuery
-                .Of("UPDATE type::record($_table, $_id) SET status = $_status, reviewer_id = $_reviewer, review_notes = $_notes, rejection_reason = $_reason, reviewed_at = $_reviewed, modified_date = $_modified WHERE provider = $_manual AND provider_key = $_provider_key AND avatar_id = $_avatar_id AND tenant_id = $_tenant_id AND provider_selection_version = $_selection_version AND provider_trust_revision = $_trust_revision AND provider_result = $_provider_result AND status INSIDE $_active AND expires_at != NONE AND expires_at > $_reviewed RETURN AFTER")
+                .Of("UPDATE type::record($_table, $_id) SET status = $_status, reviewer_id = $_reviewer, review_notes = $_notes, rejection_reason = $_reason, reviewed_at = $_reviewed, modified_date = $_modified WHERE provider = $_manual AND provider_key = $_provider_key AND user_id = $_user_id AND tenant_id = $_tenant_id AND provider_selection_version = $_selection_version AND provider_trust_revision = $_trust_revision AND provider_result = $_provider_result AND status INSIDE $_active AND expires_at != NONE AND expires_at > $_reviewed RETURN AFTER")
                 .WithParam("_table", KycSubmission.SchemaNameConst)
                 .WithParam("_id", stored.Id)
                 .WithParam("_status", stored.Status.ToString())
@@ -439,7 +439,7 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_modified", stored.ModifiedDate)
                 .WithParam("_manual", nameof(KycProvider.MANUAL))
                 .WithParam("_provider_key", stored.ProviderKey)
-                .WithParam("_avatar_id", SurrealRecordParam.OfLink(stored.AvatarId))
+                .WithParam("_user_id", SurrealRecordParam.OfLink(stored.UserId))
                 .WithParam("_tenant_id", SurrealRecordParam.OfLink(stored.TenantId))
                 .WithParam("_selection_version", stored.ProviderSelectionVersion)
                 .WithParam("_trust_revision", stored.ProviderTrustRevision)
@@ -601,10 +601,10 @@ public sealed class SurrealKycStore : IKycStore
     private static KycSubmission ToStorage(KycSubmission s) => new()
     {
         Id                = s.Id,
-        AvatarId          = SurrealLink.ToLink("avatar", s.AvatarId),
+        UserId          = SurrealLink.ToLink("user", s.UserId),
         TenantId          = string.IsNullOrWhiteSpace(s.TenantId)
             ? null
-            : SurrealLink.ToLink("avatar", s.TenantId),
+            : SurrealLink.ToLink("user", s.TenantId),
         ProviderSelectionVersion = s.ProviderSelectionVersion,
         ProviderTrustRevision = s.ProviderTrustRevision,
         Provider          = s.Provider,
@@ -629,7 +629,7 @@ public sealed class SurrealKycStore : IKycStore
     private static KycSubmission FromStorage(KycSubmission s) => new()
     {
         Id                = s.Id,
-        AvatarId          = SurrealLink.FromLink(s.AvatarId),
+        UserId          = SurrealLink.FromLink(s.UserId),
         TenantId          = string.IsNullOrWhiteSpace(s.TenantId)
             ? null
             : SurrealLink.FromLink(s.TenantId),

@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
 [SurrealTable("admin_bootstrap_state",
     Aggregate = "AdminBootstrapState (Persistence/SurrealDb/Models/AdminBootstrapState.cs)",
     Guardrail = "G6 SCHEMAFULL; one-time bootstrap identity binding")]
-[SurrealNote("The local row binds a verified bootstrap to one immutable avatar record. It contains no bootstrap secret.")]
+[SurrealNote("The local row binds a verified bootstrap to one immutable user record. It contains no bootstrap secret.")]
 [Slice("identity")]
 public partial class AdminBootstrapState : ISurrealRecord
 {
@@ -26,9 +26,9 @@ public partial class AdminBootstrapState : ISurrealRecord
     public string Id { get; set; } = LocalId;
 
     [Column(Order = 2)]
-    [References(typeof(Avatar))]
+    [References(typeof(User))]
     [ReadOnly]
-    public string AvatarId { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
 
     [Column(Order = 3)]
     [Default("0")]

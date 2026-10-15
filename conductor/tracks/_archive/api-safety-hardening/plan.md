@@ -25,7 +25,7 @@
 16. [ ] Reconciliation tests: kill mid-op → recovery converges to chain truth
 
 ### Validation, rate limiting, provider safety
-17. [ ] Add FluentValidation validators for all swap/wallet/quest/bridge request models (~22 missing)
+17. [ ] Add FluentValidation validators for all swap/wallet/action/bridge request models (~22 missing)
 18. [ ] Add ASP.NET rate limiting middleware + per-API-key usage metering
 19. [ ] Remove `InMemoryStorageProvider` from production DI (`Program.cs:164-169`); keep as a test double only
 

@@ -59,9 +59,9 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
     }
 
     /// <summary>
-    /// The wire-format half of the proof. <c>api_key.avatar_id</c> is declared
-    /// <c>TYPE record&lt;avatar&gt;</c> and is backed by a C# <c>string</c>
-    /// property carrying <c>[References(typeof(Avatar))]</c>; the CBOR
+    /// The wire-format half of the proof. <c>api_key.user_id</c> is declared
+    /// <c>TYPE record&lt;user&gt;</c> and is backed by a C# <c>string</c>
+    /// property carrying <c>[References(typeof(User))]</c>; the CBOR
     /// marshaller promotes it to a native record id. The assertion is made with
     /// <c>type::of()</c> read back over a raw HTTP/JSON fixture, so nothing in
     /// SurrealForge participates in judging its own output.
@@ -72,14 +72,14 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             $"SurrealDB not reachable at {SurrealTestDefaults.Endpoint}.");
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var executor = await CreateExecutorAsync(TestNamespace);
         var store = new SurrealApiKeyStore(executor);
 
         var apiKey = new ApiKey
         {
             Id          = Guid.NewGuid(),
-            AvatarId    = avatarId,
+            UserId    = userId,
             Name        = "cbor-transport-proof",
             KeyHash     = $"hash-{Guid.NewGuid():N}",
             KeyPrefix   = "azoa_pk_",
@@ -91,18 +91,18 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
         await store.CreateAsync(apiKey, CancellationToken.None);
 
         var wireType = await SelectScalarAsync(
-            $"SELECT VALUE type::of(avatar_id) FROM api_key:{Format(apiKey.Id)}");
+            $"SELECT VALUE type::of(user_id) FROM api_key:{Format(apiKey.Id)}");
 
         wireType.Should().Be(
             "record",
-            "a CBOR write must land a native record link in a TYPE record<avatar> column; " +
+            "a CBOR write must land a native record link in a TYPE record<user> column; " +
             "'string' here means the legacy JSON transport served the write");
 
         // The link must also resolve -- a dangling record id would also report
         // "record" while pointing at nothing.
         var linked = await SelectScalarAsync(
-            $"SELECT VALUE <string>avatar_id FROM api_key:{Format(apiKey.Id)}");
-        linked.Should().Be($"avatar:{Format(avatarId)}");
+            $"SELECT VALUE <string>user_id FROM api_key:{Format(apiKey.Id)}");
+        linked.Should().Be($"user:{Format(userId)}");
     }
 
     /// <summary>
@@ -122,14 +122,14 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
             $"SurrealDB not reachable at {SurrealTestDefaults.Endpoint}.");
 
         var executor = await CreateExecutorAsync(TestNamespace);
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        // SurrealWriter.Create -> wallet.avatar_id (TYPE record<avatar>)
+        // SurrealWriter.Create -> wallet.user_id (TYPE record<user>)
         var walletStore = new SurrealWalletStore(executor);
         var wallet = new Wallet
         {
             Id          = Guid.NewGuid(),
-            AvatarId    = avatarId,
+            UserId    = userId,
             ChainType   = "Algorand",
             Address     = $"algo_{Guid.NewGuid():N}",
             Label       = "cbor-transport-proof",
@@ -138,15 +138,15 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
         };
         (await walletStore.UpsertAsync(wallet)).IsError.Should().BeFalse();
 
-        (await SelectScalarAsync($"SELECT VALUE type::of(avatar_id) FROM wallet:{Format(wallet.Id)}"))
+        (await SelectScalarAsync($"SELECT VALUE type::of(user_id) FROM wallet:{Format(wallet.Id)}"))
             .Should().Be("record");
 
         // ...and the typed predicate that reads it back must still match.
-        var byAvatar = await walletStore.GetByAvatarAsync(avatarId);
-        byAvatar.Result.Should().ContainSingle(
+        var byUser = await walletStore.GetByUserAsync(userId);
+        byUser.Result.Should().ContainSingle(
             "a record-link column must still be queryable by the store's own predicate");
 
-        // SurrealWriter.Upsert -> holon.avatar_id / holon.parent_holon_id
+        // SurrealWriter.Upsert -> holon.user_id / holon.parent_holon_id
         var holonStore = new SurrealHolonStore(executor);
         var holon = new Holon
         {
@@ -154,7 +154,7 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
             Name          = "cbor-transport-proof",
             Description   = "record-link proof",
             ParentHolonId = Guid.NewGuid(),
-            AvatarId      = avatarId,
+            UserId      = userId,
             ProviderName  = "SurrealProvider",
             ChainId       = "algorand",
             AssetType     = "NFT",
@@ -164,13 +164,13 @@ public sealed class SurrealCborTransportProofTests : IntegrationTestBase
         };
         (await holonStore.UpsertAsync(holon)).IsError.Should().BeFalse();
 
-        foreach (var column in new[] { "avatar_id", "parent_holon_id" })
+        foreach (var column in new[] { "user_id", "parent_holon_id" })
         {
             (await SelectScalarAsync($"SELECT VALUE type::of({column}) FROM holon:{Format(holon.Id)}"))
                 .Should().Be("record", $"holon.{column} is TYPE option<record<...>>");
         }
 
-        var byFilter = await holonStore.QueryAsync(new HolonQueryRequest { AvatarId = avatarId });
+        var byFilter = await holonStore.QueryAsync(new HolonQueryRequest { UserId = userId });
         byFilter.Result.Should().ContainSingle(
             "the composable typed filter must match a native record link");
     }

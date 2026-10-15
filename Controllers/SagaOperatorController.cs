@@ -11,15 +11,15 @@ namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
 /// Operator/dead-letter surface for the durable saga outbox (Phase-F). The
-/// GENERIC saga-step primitive beneath the quest-specific reconcile board
-/// (<c>QuestController</c> runs/reconcile-sweep, B4): list parked/failed/
+/// GENERIC saga-step primitive beneath the action-specific reconcile board
+/// (<c>ActionController</c> runs/reconcile-sweep, B4): list parked/failed/
 /// dead-lettered steps, requeue a revivable one, or terminally cancel one.
 /// Guarded by the hardened <c>Operator</c> policy (JWT-scheme floor + explicit
 /// operator capability — an API key can NEVER reach this), the same gate as the
-/// cross-avatar reconcile sweep, since these ops mutate the durable outbox
-/// across every saga instance and avatar.
+/// cross-user reconcile sweep, since these ops mutate the durable outbox
+/// across every saga instance and user.
 /// </summary>
-/// <remarks>Contract + relationship to the B4 quest reconcile sweep:
+/// <remarks>Contract + relationship to the B4 action reconcile sweep:
 /// <c>Services/Sagas/AGENTS.md §operator-surface</c>.</remarks>
 [ApiController]
 [Route("api/admin/sagas")]

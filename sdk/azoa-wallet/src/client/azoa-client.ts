@@ -8,6 +8,9 @@ import { AzoaAuthProvider } from "./auth-provider.js";
 import type { AuthProviderConfig } from "./auth-provider.js";
 import { PortfolioAggregator } from "./portfolio.js";
 import { WorkflowClient } from "../workflow/index.js";
+import type { Result } from "../core/result.js";
+import { ok } from "../core/result.js";
+import type { SdkError } from "../core/errors.js";
 
 export interface AzoaClientConfig {
   /** AZOA API base URL */
@@ -52,7 +55,7 @@ export interface AzoaClientConfig {
  * - `api` — Typed HTTP client for all .NET API endpoints
  * - `wallet` — Multi-chain wallet with client-side signing
  * - `session` — JWT lifecycle management with pluggable storage
- * - `auth` — OAuth-compatible auth provider using AZOA avatars
+ * - `auth` — OAuth-compatible auth provider using AZOA users
  * - `holons` — Fluent query builder for holon data
  * - `portfolio` — Cross-chain balance aggregation
  *
@@ -76,7 +79,7 @@ export interface AzoaClientConfig {
  * const nfts = await azoa.holons.where({ assetType: "NFT" }).active().execute();
  *
  * // Check portfolio
- * const portfolio = await azoa.portfolio.getAll(azoa.auth.avatarId!);
+ * const portfolio = await azoa.portfolio.getAll(azoa.auth.userId!);
  *
  * // Build and sign a transaction
  * const tx = await azoa.wallet.buildTransfer("algorand", { from, to, amount: "1.0" });
@@ -103,7 +106,7 @@ export class AzoaClient {
 
   /**
    * Workflow surface — template authoring + run reads, plus the fluent
-   * `azoa.workflow.quest(...)` run driver. The headline ergonomics of the
+   * `azoa.workflow.action(...)` run driver. The headline ergonomics of the
    * workflow-engine initiative.
    */
   readonly workflow: WorkflowClient;
@@ -217,5 +220,31 @@ export class AzoaClient {
     for (const reg of Object.values(this._chainsForNetwork(this._network))) {
       this.wallet.register(reg);
     }
+  }
+
+  /**
+   * The real capability probe for cross-chain bridging: asks the backend's
+   * live `GET /api/bridge/routes` registry whether `chainId` currently
+   * participates as an ENABLED source or target on any route.
+   *
+   * A `ChainProvider.supportsBridging` flag only declares that the provider
+   * implements chain-specific bridge transaction building — it is NOT a live
+   * availability check (mirrors the .NET module seam in
+   * `Providers/Blockchain/Base/BaseBlockchainProvider.cs`, which deliberately
+   * has no boolean a provider could set `true` by mistake). Call this before
+   * offering a bridge flow in a UI so an administratively-disabled or
+   * not-yet-live route never looks bridgeable.
+   */
+  async checkBridgeCapability(chainId: string): Promise<Result<boolean, SdkError>> {
+    const routes = await this.api.getBridgeRoutes();
+    if (!routes.ok) return routes;
+
+    const normalized = chainId.trim().toLowerCase();
+    const capable = routes.value.some(
+      (route) =>
+        route.isEnabled &&
+        (route.sourceChain.toLowerCase() === normalized || route.targetChain.toLowerCase() === normalized)
+    );
+    return ok(capable);
   }
 }

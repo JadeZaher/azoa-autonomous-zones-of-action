@@ -80,9 +80,9 @@ public interface ICommonsClient
 
 `IHoloFederationGateway` is a node-only adapter over this facade. Its inputs
 are already-authorized, explicitly opted-in *public facts*, never a `Holon`, a
-Surreal record, wallet, avatar, payment, fee settlement, or chain operation.
+Surreal record, wallet, user, payment, fee settlement, or chain operation.
 It has exactly three write intents: `PublishConformance`,
-`PublishHolonReference`, and `PublishQuestReceipt`; resolution is read-only.
+`PublishHolonReference`, and `PublishActionReceipt`; resolution is read-only.
 It cannot expose a generic zome-call method. The node maps every client outcome
 to its own typed application result and logs unexpected exceptions once at the
 HTTP/worker boundary.
@@ -105,7 +105,7 @@ caller-supported matrix. Capabilities are only:
 |---|---|
 | `PublishConformance` | Publish the signed L0 conformance/binding public fact. |
 | `PublishHolonReference` | Publish an owner-authorized, metadata-only reference. |
-| `PublishQuestReceipt` | Publish a reference-only completion receipt, never a balance/effect. |
+| `PublishActionReceipt` | Publish a reference-only completion receipt, never a balance/effect. |
 | `ResolvePublicFact` | Read a public fact and its provenance attestation. |
 
 There is deliberately no capability for wallet management, asset transfer,

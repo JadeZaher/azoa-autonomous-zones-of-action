@@ -21,7 +21,7 @@ DEFINE FIELD IF NOT EXISTS address ON TABLE node_treasury_destination TYPE strin
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS version ON TABLE node_treasury_destination TYPE int
     DEFAULT 0;
-DEFINE FIELD IF NOT EXISTS updated_by_avatar_id ON TABLE node_treasury_destination TYPE option<record<avatar>>;
+DEFINE FIELD IF NOT EXISTS updated_by_user_id ON TABLE node_treasury_destination TYPE option<record<user>>;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE node_treasury_destination TYPE datetime
     DEFAULT time::now()
     READONLY;

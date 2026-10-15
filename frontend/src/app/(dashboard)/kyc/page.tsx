@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, FileCheck2, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+    ExternalLink,
+    FileCheck2,
+    RefreshCw,
+    ShieldCheck,
+} from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
     Card,
@@ -302,6 +307,35 @@ export default function TenantKycPage() {
                     </span>
                 </label>
             )}
+
+            <section
+                aria-labelledby="compliance-review"
+                className="border border-dashed p-5 text-sm leading-6 text-muted-foreground"
+            >
+                <h2
+                    id="compliance-review"
+                    className="text-base font-medium text-foreground"
+                >
+                    Compliance review
+                </h2>
+                <p className="mt-2 max-w-2xl">
+                    Identity verification and the sanctions check are separate
+                    questions. Someone whose identity verified can still be held
+                    for a sanctions decision; until a human records one they stay
+                    under review and every value action is closed to them.
+                </p>
+                <p className="mt-2 max-w-2xl">
+                    Recording that decision is a node-operator action, not a tenant
+                    one, and it is taken in the operator console under{" "}
+                    <Link
+                        href="/operator/reviews"
+                        className="underline underline-offset-4"
+                    >
+                        Reviews
+                    </Link>
+                    .
+                </p>
+            </section>
 
             <div className="flex justify-end border-t pt-5">
                 <Button

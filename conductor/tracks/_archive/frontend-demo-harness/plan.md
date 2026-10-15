@@ -11,10 +11,10 @@
 **Goal:** App shell, navigation, auth flow, shared components.
 
 - [ ] Task 1.1: Initialize shadcn/ui
-  Run `npx shadcn@latest init` in frontend/. Configure: New York style, zinc base color, CSS variables enabled. Install components: button, card, input, label, dialog, table, tabs, badge, toast, separator, skeleton, dropdown-menu, sheet, command, avatar, scroll-area, form, select, checkbox, switch, textarea, popover, tooltip.
+  Run `npx shadcn@latest init` in frontend/. Configure: New York style, zinc base color, CSS variables enabled. Install components: button, card, input, label, dialog, table, tabs, badge, toast, separator, skeleton, dropdown-menu, sheet, command, user, scroll-area, form, select, checkbox, switch, textarea, popover, tooltip.
 
 - [ ] Task 1.2: Build dashboard layout
-  Create `app/(dashboard)/layout.tsx` with collapsible sidebar (`components/layout/sidebar.tsx`) and header (`components/layout/header.tsx`). Sidebar nav items map to all pages in the spec. Header shows: auth status (avatar name), chain selector dropdown (Algorand/Solana), theme toggle (dark/light). Nav list: /overview, /avatars, /holons, /wallets, /nfts, /avatar-nfts, /blockchain, /swap, /bridge, /search, /star-odk, /workflow, /settings.
+  Create `app/(dashboard)/layout.tsx` with collapsible sidebar (`components/layout/sidebar.tsx`) and header (`components/layout/header.tsx`). Sidebar nav items map to all pages in the spec. Header shows: auth status (user name), chain selector dropdown (Algorand/Solana), theme toggle (dark/light). Nav list: /overview, /users, /holons, /wallets, /nfts, /user-nfts, /blockchain, /swap, /bridge, /search, /star-odk, /workflow, /settings.
 
 - [ ] Task 1.3: Build auth pages
   Create `app/(auth)/login/page.tsx` and `app/(auth)/register/page.tsx` using shadcn form components. Wire to `useAzoaAuth()`. Redirect to dashboard on success. Show validation errors from API.
@@ -35,13 +35,13 @@
 
 ## Phase 2: Core Entity Pages
 
-**Goal:** Avatar, Holon, Wallet CRUD with full API coverage.
+**Goal:** User, Holon, Wallet CRUD with full API coverage.
 
 - [ ] Task 2.1: Overview page
   Two chain info cards (Algorand + Solana) using `useChainInfo()`. System stats: number of wallets, holons, NFTs (fetched from respective list endpoints). Session info card showing JWT claims.
 
-- [ ] Task 2.2: Avatar page
-  Profile card showing current user info from `useAzoaAuth()`. Edit form (username, email, title, firstName, lastName) with save button calling `api.updateAvatar()`. Delete account with confirmation dialog.
+- [ ] Task 2.2: User page
+  Profile card showing current user info from `useAzoaAuth()`. Edit form (username, email, title, firstName, lastName) with save button calling `api.updateUser()`. Delete account with confirmation dialog.
 
 - [ ] Task 2.3: Holon explorer
   **This is the most complex page.**
@@ -55,13 +55,13 @@
   - Action buttons: clone, move subtree (target parent selector).
 
 - [ ] Task 2.4: Wallet page
-  - Wallet list (table) filtered by avatar. Chain badge per row.
+  - Wallet list (table) filtered by user. Chain badge per row.
   - Create wallet dialog: chain type selector, address input, label, isDefault checkbox.
   - Set default button per wallet.
   - Portfolio card: uses `usePortfolio()` to show live balance per chain. NFT holdings list.
   - Delete wallet with confirmation.
 
-- [ ] Verification: All Avatar, Holon, and Wallet endpoints exercised from UI. Data persists across page navigation.
+- [ ] Verification: All User, Holon, and Wallet endpoints exercised from UI. Data persists across page navigation.
 
 ---
 
@@ -72,14 +72,14 @@
 - [ ] Task 3.1: NFT page
   - Mint form: walletId (dropdown from user wallets), name, description, chainId, imageUri, metadata key/value pairs.
   - NFT gallery: card grid showing minted NFTs with metadata. Click for detail.
-  - Transfer dialog: target avatar ID input, wallet selector.
+  - Transfer dialog: target user ID input, wallet selector.
   - Burn confirmation dialog.
   - Metadata tab: rendered NFT metadata with image preview.
 
-- [ ] Task 3.2: AvatarNFT page
-  - Mint avatar NFT form.
+- [ ] Task 3.2: UserNFT page
+  - Mint user NFT form.
   - Binding manager: bind/unbind holons and wallets with permission selectors.
-  - Composite view: unified card showing the AvatarNFT + all bound holons + all bound wallets.
+  - Composite view: unified card showing the UserNFT + all bound holons + all bound wallets.
   - Verification panel: test ownership verification, holon access, wallet access with result display.
 
 - [ ] Task 3.3: Swap page
@@ -96,7 +96,7 @@
   - Initiate bridge form: source chain, target chain, tokenId, recipient address, amount, mode (Trusted/Wormhole).
   - Bridge tracker: step-by-step visualization (Initiated → Locked → AwaitingVAA → VAAReady → Redeeming → Completed).
   - Wormhole controls: "Fetch VAA" and "Redeem" buttons for multi-step flow.
-  - History table: all bridge transactions for the authenticated avatar.
+  - History table: all bridge transactions for the authenticated user.
   - Reverse bridge button on completed transactions.
 
 - [ ] Task 3.5: Direct blockchain panel
@@ -117,7 +117,7 @@
 
 - [ ] Task 4.1: Search page
   - Search input with debounced query.
-  - Entity type checkboxes (Avatar, Holon, Wallet, BlockchainOperation, STARODK).
+  - Entity type checkboxes (User, Holon, Wallet, BlockchainOperation, STARODK).
   - Chain filter, asset type filter, date range filter.
   - Sort controls (field + direction).
   - Paginated results table with entity type badge per row.
@@ -131,46 +131,46 @@
   - Delete with confirmation.
 
 - [ ] Task 4.3: Settings page
-  - Session info: JWT token (masked), expiry, avatar ID, claims.
+  - Session info: JWT token (masked), expiry, user ID, claims.
   - Provider selection: dropdown to set AZOARequest.providerName for subsequent calls.
   - Network config: display current RPC URLs for each chain.
   - SDK version info.
   - "Clear session" button.
 
 - [ ] Task 4.4: Workflow page
-  Create `app/(dashboard)/workflow/page.tsx`. This page exercises the durable workflow engine + economic-primitive-nodes + workflow-sdk end-to-end via `azoa.workflow` (the `WorkflowClient` and `quest()` factory composed on the AzoaClient facade).
+  Create `app/(dashboard)/workflow/page.tsx`. This page exercises the durable workflow engine + economic-primitive-nodes + workflow-sdk end-to-end via `azoa.workflow` (the `WorkflowClient` and `action()` factory composed on the AzoaClient facade).
 
   **Template authoring panel**
-  - Form to compose a quest template: name, description, and a small node DAG. Use the `nodeConfig` builders from `@azoa/sdk` to construct node config strings:
+  - Form to compose an action template: name, description, and a small node DAG. Use the `nodeConfig` builders from `@azoa/sdk` to construct node config strings:
     - `nodeConfig.gateCheck({ predicate, reads? })` for gate nodes
     - `nodeConfig.emit({ payload })` for emit nodes
     - `nodeConfig.swap/grant/transfer/refund` for chain nodes (optional, Tier-2)
-  - SDK calls: `azoa.workflow.createTemplate(params)` → `POST /api/quest/templates`
-  - Template list table: `azoa.workflow.listTemplates()` → `GET /api/quest/templates`
-  - Template detail viewer: `azoa.workflow.getTemplate(templateId)` → `GET /api/quest/templates/{id}`
-  - Instantiate dialog: param key/value inputs → `azoa.workflow.instantiate(templateId, params)` → `POST /api/quest/templates/{id}/instantiate`
+  - SDK calls: `azoa.workflow.createTemplate(params)` → `POST /api/action/templates`
+  - Template list table: `azoa.workflow.listTemplates()` → `GET /api/action/templates`
+  - Template detail viewer: `azoa.workflow.getTemplate(templateId)` → `GET /api/action/templates/{id}`
+  - Instantiate dialog: param key/value inputs → `azoa.workflow.instantiate(templateId, params)` → `POST /api/action/templates/{id}/instantiate`
 
   **Phase-by-phase run driver panel**
-  - "Start run" button: calls `azoa.workflow.quest(questId).start({ params })` → `POST /api/quest/{questId}/start-workflow`; binds the handle to the returned `runId`.
-  - Node advance controls: for each node in the quest DAG, a "Step" button calls `.step(nodeId)` → `POST /api/quest/runs/{runId}/advance { fromNodeId }`. Steps chain on the same `WorkflowRunHandle` in order.
+  - "Start run" button: calls `azoa.workflow.action(actionId).start({ params })` → `POST /api/action/{actionId}/start-workflow`; binds the handle to the returned `runId`.
+  - Node advance controls: for each node in the action DAG, a "Step" button calls `.step(nodeId)` → `POST /api/action/runs/{runId}/advance { fromNodeId }`. Steps chain on the same `WorkflowRunHandle` in order.
   - Optional idempotency key input (passed as `.step(nodeId, { idempotencyKey })`) — sets `Idempotency-Key` header.
 
   **Start-and-signal-at-gates panel**
-  - Start a run (same `.start()` as above), then show a signal form when the run parks at `AwaitingSignal`: gate id input + payload input → `.signal(gateId, payload)` → `POST /api/quest/runs/{runId}/signal { gateId, payload }`.
+  - Start a run (same `.start()` as above), then show a signal form when the run parks at `AwaitingSignal`: gate id input + payload input → `.signal(gateId, payload)` → `POST /api/action/runs/{runId}/signal { gateId, payload }`.
   - Demonstrates the hybrid model: `.start()` then `.signal()` is the start-and-signal-at-gates path; `.step()` is the phase-by-phase path; both compose on the same `WorkflowRunHandle`.
 
   **Live run state visualizer**
-  - Run status card: poll `.status()` → `GET /api/quest/runs/{runId}`. Display `WorkflowRunStatus` with color coding:
+  - Run status card: poll `.status()` → `GET /api/action/runs/{runId}`. Display `WorkflowRunStatus` with color coding:
     - Active: `Pending` (grey), `Running` (blue), `Suspended` (amber), `AwaitingSignal` (amber), `AwaitingTimer` (amber)
     - Terminal: `Succeeded` (green), `Failed` (red), `Cancelled` (muted)
-  - Per-node execution table: `azoa.workflow.getExecutionState(runId)` → `GET /api/quest/runs/{runId}/execution-state`. Columns: nodeId, state, startedAt, endedAt, error.
+  - Per-node execution table: `azoa.workflow.getExecutionState(runId)` → `GET /api/action/runs/{runId}/execution-state`. Columns: nodeId, state, startedAt, endedAt, error.
   - `.onSuspend(cb)` callback wired to surface a dismissible banner "Run parked at gate — signal to resume" when the run enters an awaiting state.
 
   **Demo flows (built-in)**
   - *Pure-metadata E2E* (Tier-1, chain-free): create a `HolonCreate → GateCheck → Emit` template, instantiate it, start the run, step through each node. No wallet required. This is the canonical proof that the durable engine + economic-primitive-nodes + workflow SDK work end-to-end on the chain-free path.
   - *Capability-gate check* (Tier-2, optional): create a template with a `Transfer` node, start a run without any wallet bound, attempt to step through the Transfer node — the run must enter `Failed` state with a capability-gate rejection, proving fail-closed enforcement.
 
-- [ ] Verification: Template CRUD round-trips correctly. `quest(id).start().step(nodeId)` chain issues ordered HTTP calls and the run reaches `Succeeded`. Signal path parks at `AwaitingSignal` and resumes on `.signal()`. Live status visualizer reflects `WorkflowRunStatus` changes. Pure-metadata E2E completes without a wallet. Capability-gate demo fails closed on Transfer with no wallet. All 13 workflow rows in the Functional Test Matrix pass.
+- [ ] Verification: Template CRUD round-trips correctly. `action(id).start().step(nodeId)` chain issues ordered HTTP calls and the run reaches `Succeeded`. Signal path parks at `AwaitingSignal` and resumes on `.signal()`. Live status visualizer reflects `WorkflowRunStatus` changes. Pure-metadata E2E completes without a wallet. Capability-gate demo fails closed on Transfer with no wallet. All 13 workflow rows in the Functional Test Matrix pass.
 
 ---
 
@@ -189,7 +189,7 @@
   Tests: register → login → get profile → update profile → delete account (uses temp account).
 
 - [ ] Task 5.3: Entity CRUD test suites
-  Tests for Holon, Wallet, NFT, AvatarNFT lifecycles. Each creates → reads → updates → deletes.
+  Tests for Holon, Wallet, NFT, UserNFT lifecycles. Each creates → reads → updates → deletes.
 
 - [ ] Task 5.4: Blockchain query test suite
   Tests: getBalance, validateAddress, getTransactionStatus, getTokenMetadata, getChainInfo for both chains.
@@ -203,8 +203,8 @@
 - [ ] Task 5.7: Workflow test suite
   Tests (mirrors the 13 workflow rows in the Functional Test Matrix):
   - Template lifecycle: createTemplate → listTemplates → getTemplate → instantiate
-  - Phase-by-phase run: quest(questId).start({ params }).step(nodeId) — verify ordered HTTP calls + run reaches Succeeded
-  - Hybrid signal path: quest(questId).start().signal(gateId, payload) — verify run parks at AwaitingSignal then resumes
+  - Phase-by-phase run: action(actionId).start({ params }).step(nodeId) — verify ordered HTTP calls + run reaches Succeeded
+  - Hybrid signal path: action(actionId).start().signal(gateId, payload) — verify run parks at AwaitingSignal then resumes
   - Run status poll: .status() returns WorkflowRunStatus; getExecutionState() returns per-node WorkflowNodeExecution
   - onSuspend fires on AwaitingSignal state
   - Pure-metadata E2E: HolonCreate→GateCheck→Emit completes with status Succeeded, no wallet
@@ -233,7 +233,7 @@
 | Phase | Focus | Est. Effort | Parallelizable |
 |-------|-------|-------------|----------------|
 | 1 | Foundation (shadcn/ui + layout + auth) | 1 day | No (sequential) |
-| 2 | Core entity pages (Avatar, Holon, Wallet) | 2 days | Yes (pages independent) |
+| 2 | Core entity pages (User, Holon, Wallet) | 2 days | Yes (pages independent) |
 | 3 | Blockchain ops (NFT, Swap, Bridge) | 2-3 days | Yes (pages independent) |
 | 4 | Search, STAR, Settings, Workflow | 2 days | Yes (pages independent) |
 | 5 | Functional test dashboard | 1-2 days | Depends on phases 2-4 |

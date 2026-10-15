@@ -5,7 +5,7 @@
 //
 // Invocation model: tools are exercised via their ExecuteAsync overload rather
 // than via the MCP HTTP transport. This keeps the harness transport-agnostic
-// and lets the recording-decorator pattern in McpQuestReachabilityTest count
+// and lets the recording-decorator pattern in McpActionReachabilityTest count
 // round-trips precisely.
 //
 // SurrealDB prerequisite: the per-test namespace is created by IntegrationTestBase
@@ -22,17 +22,17 @@ using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Mcp;
 using AZOA.WebAPI.Mcp.Tools;
 using AZOA.WebAPI.Models;
-using AZOA.WebAPI.Models.Quest;
+using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 
 namespace AZOA.WebAPI.IntegrationTests.Mcp;
 
 /// <summary>
-/// Happy-path integration tests for all five MCP tools (quest_reachability,
-/// holon_traverse, nft_ownership_graph, avatar_scoped_query, vector_search).
+/// Happy-path integration tests for all five MCP tools (action_reachability,
+/// holon_traverse, nft_ownership_graph, user_scoped_query, vector_search).
 ///
 /// Each test seeds data, calls the tool directly, and asserts the response shape
-/// and avatar-scoping contract.
+/// and user-scoping contract.
 /// </summary>
 [Trait("Category", "Mcp")]
 public sealed class McpToolCatalogTests : IntegrationTestBase
@@ -42,12 +42,12 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
     public McpToolCatalogTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TEST 1 — quest_reachability
+    // TEST 1 — action_reachability
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Seed quest with 4 nodes in a linear chain A→B→C→D.
-    /// Call quest_reachability from node B.
+    /// Seed action with 4 nodes in a linear chain A→B→C→D.
+    /// Call action_reachability from node B.
     /// Assert reachable_node_ids == [C, D]  (B is the starting node — only downstream).
     ///
     /// Note: the tool's BFS enqueues fromNode itself first, so the starting node
@@ -60,46 +60,46 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
     /// present and that A (upstream) is absent.
     /// </summary>
     [SkippableFact]
-    public async Task QuestReachability_HappyPath_ReturnsReachableNodeIds()
+    public async Task ActionReachability_HappyPath_ReturnsReachableNodeIds()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
         var executor = CreateExecutor();
-        var questStore = new SurrealQuestStore(executor);
-        var avatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var actionStore = new SurrealActionStore(executor);
+        var userId = Guid.Parse(TestAuthHandler.DefaultUserId);
 
-        // ── Seed: linear quest A→B→C→D ────────────────────────────────────
-        var questId = Guid.NewGuid();
-        var nodeA = NewNode(questId, "A", 0, isEntry: true);
-        var nodeB = NewNode(questId, "B", 1);
-        var nodeC = NewNode(questId, "C", 2);
-        var nodeD = NewNode(questId, "D", 3, isTerminal: true);
+        // ── Seed: linear action A→B→C→D ────────────────────────────────────
+        var actionId = Guid.NewGuid();
+        var nodeA = NewNode(actionId, "A", 0, isEntry: true);
+        var nodeB = NewNode(actionId, "B", 1);
+        var nodeC = NewNode(actionId, "C", 2);
+        var nodeD = NewNode(actionId, "D", 3, isTerminal: true);
 
-        var quest = new Quest
+        var action = new ActionDefinition
         {
-            Id          = questId,
-            AvatarId    = avatarId,
-            Name        = "CatalogLinearQuest",
+            Id          = actionId,
+            UserId    = userId,
+            Name        = "CatalogLinearAction",
             Description = "linear A→B→C→D",
             Metadata    = new Dictionary<string, string>(),
             CreatedDate = DateTime.UtcNow,
-            Nodes       = new List<QuestNode> { nodeA, nodeB, nodeC, nodeD },
-            Edges       = new List<QuestEdge>
+            Nodes       = new List<ActionNode> { nodeA, nodeB, nodeC, nodeD },
+            Edges       = new List<ActionEdge>
             {
-                NewEdge(questId, nodeA.Id, nodeB.Id),
-                NewEdge(questId, nodeB.Id, nodeC.Id),
-                NewEdge(questId, nodeC.Id, nodeD.Id),
+                NewEdge(actionId, nodeA.Id, nodeB.Id),
+                NewEdge(actionId, nodeB.Id, nodeC.Id),
+                NewEdge(actionId, nodeC.Id, nodeD.Id),
             }
         };
 
-        var upserted = await questStore.UpsertQuestAsync(quest);
+        var upserted = await actionStore.UpsertActionAsync(action);
         upserted.IsError.Should().BeFalse(upserted.Message);
 
-        // ── Call quest_reachability from node B ───────────────────────────
-        var tool = new QuestReachabilityTool();
-        var args = BuildArgs(new { quest_id = questId.ToString(), from_node_id = nodeB.Id.ToString() });
-        var ctx  = BuildContext(avatarId, executor);
+        // ── Call action_reachability from node B ───────────────────────────
+        var tool = new ActionReachabilityTool();
+        var args = BuildArgs(new { action_id = actionId.ToString(), from_node_id = nodeB.Id.ToString() });
+        var ctx  = BuildContext(userId, executor);
 
         var result = await tool.ExecuteAsync(ctx, args, CancellationToken.None);
         result.ValueKind.Should().NotBe(JsonValueKind.Undefined);
@@ -139,14 +139,14 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
 
         var executor  = CreateExecutor();
         var holonStore = new SurrealHolonStore(executor);
-        var avatarId  = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var userId  = Guid.Parse(TestAuthHandler.DefaultUserId);
 
         // ── Seed: R → A → {B, C}  and  R → D ────────────────────────────
-        var holonR = NewHolon("R-Root", avatarId, parentId: null);
-        var holonA = NewHolon("A-Child", avatarId, parentId: holonR.Id);
-        var holonB = NewHolon("B-Grandchild", avatarId, parentId: holonA.Id);
-        var holonC = NewHolon("C-Grandchild", avatarId, parentId: holonA.Id);
-        var holonD = NewHolon("D-Sibling", avatarId, parentId: holonR.Id);
+        var holonR = NewHolon("R-Root", userId, parentId: null);
+        var holonA = NewHolon("A-Child", userId, parentId: holonR.Id);
+        var holonB = NewHolon("B-Grandchild", userId, parentId: holonA.Id);
+        var holonC = NewHolon("C-Grandchild", userId, parentId: holonA.Id);
+        var holonD = NewHolon("D-Sibling", userId, parentId: holonR.Id);
 
         foreach (var h in new[] { holonR, holonA, holonB, holonC, holonD })
         {
@@ -157,7 +157,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         // ── Call holon_traverse on node A ─────────────────────────────────
         var tool = new HolonTraverseTool();
         var args = BuildArgs(new { holon_id = holonA.Id.ToString() });
-        var ctx  = BuildContext(avatarId, executor);
+        var ctx  = BuildContext(userId, executor);
 
         var result = await tool.ExecuteAsync(ctx, args, CancellationToken.None);
         result.TryGetProperty("error", out _).Should().BeFalse(
@@ -197,28 +197,28 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Seed 3 NFTs for the test avatar across 2 chains, plus 2 NFTs for a
-    /// different avatar. Assert the response has 3 entries, 2 chain keys,
-    /// and ZERO items from the other avatar.
+    /// Seed 3 NFTs for the test user across 2 chains, plus 2 NFTs for a
+    /// different user. Assert the response has 3 entries, 2 chain keys,
+    /// and ZERO items from the other user.
     /// </summary>
     [SkippableFact]
-    public async Task NftOwnershipGraph_HappyPath_ReturnsAvatarsNftsGroupedByChain()
+    public async Task NftOwnershipGraph_HappyPath_ReturnsUsersNftsGroupedByChain()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
         var executor   = CreateExecutor();
         var holonStore = new SurrealHolonStore(executor);
-        var myAvatarId = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var otherAvatarId = Guid.NewGuid();
+        var myUserId = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var otherUserId = Guid.NewGuid();
 
-        // ── Seed: 3 NFTs for myAvatar (2 on "algorand", 1 on "solana") ─────
-        var nft1 = NewNft("NFT-Algo-1", myAvatarId, "algorand");
-        var nft2 = NewNft("NFT-Algo-2", myAvatarId, "algorand");
-        var nft3 = NewNft("NFT-Sol-1",  myAvatarId, "solana");
-        // 2 NFTs for otherAvatar — must NOT appear in myAvatar's results
-        var nft4 = NewNft("Other-NFT-1", otherAvatarId, "ethereum");
-        var nft5 = NewNft("Other-NFT-2", otherAvatarId, "algorand");
+        // ── Seed: 3 NFTs for myUser (2 on "algorand", 1 on "solana") ─────
+        var nft1 = NewNft("NFT-Algo-1", myUserId, "algorand");
+        var nft2 = NewNft("NFT-Algo-2", myUserId, "algorand");
+        var nft3 = NewNft("NFT-Sol-1",  myUserId, "solana");
+        // 2 NFTs for otherUser — must NOT appear in myUser's results
+        var nft4 = NewNft("Other-NFT-1", otherUserId, "ethereum");
+        var nft5 = NewNft("Other-NFT-2", otherUserId, "algorand");
 
         foreach (var nft in new[] { nft1, nft2, nft3, nft4, nft5 })
         {
@@ -229,7 +229,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         // ── Call nft_ownership_graph (no chain filter) ────────────────────
         var tool = new NftOwnershipGraphTool();
         var args = BuildArgs(new { });   // no chain_id filter
-        var ctx  = BuildContext(myAvatarId, executor);
+        var ctx  = BuildContext(myUserId, executor);
 
         var result = await tool.ExecuteAsync(ctx, args, CancellationToken.None);
         result.TryGetProperty("error", out _).Should().BeFalse(
@@ -239,58 +239,58 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         result.TryGetProperty("nfts", out var nftsProp).Should().BeTrue();
         var nftList = nftsProp.EnumerateArray().ToList();
         nftList.Should().HaveCount(3,
-            "exactly 3 NFTs belong to the test avatar; 2 for other avatar must be excluded");
+            "exactly 3 NFTs belong to the test user; 2 for other user must be excluded");
 
         // by_chain must have exactly 2 keys
         result.TryGetProperty("by_chain", out var byChainProp).Should().BeTrue();
         var chainKeys = byChainProp.EnumerateObject().Select(p => p.Name).ToList();
         chainKeys.Should().HaveCount(2,
-            "the 3 NFTs span 2 chains (algorand + solana); ethereum is for another avatar");
+            "the 3 NFTs span 2 chains (algorand + solana); ethereum is for another user");
         chainKeys.Should().Contain("algorand");
         chainKeys.Should().Contain("solana");
 
-        // No id from the other avatar's NFTs must appear
+        // No id from the other user's NFTs must appear
         var returnedIds = nftList
             .Select(n => n.TryGetProperty("id", out var idEl) ? idEl.GetString() : null)
             .Where(id => id != null)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        returnedIds.Should().NotContain(nft4.Id.ToString(), "NFT4 belongs to another avatar");
-        returnedIds.Should().NotContain(nft5.Id.ToString(), "NFT5 belongs to another avatar");
+        returnedIds.Should().NotContain(nft4.Id.ToString(), "NFT4 belongs to another user");
+        returnedIds.Should().NotContain(nft5.Id.ToString(), "NFT5 belongs to another user");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TEST 4 — avatar_scoped_query
+    // TEST 4 — user_scoped_query
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Seed 4 holons (2 on algorand, 2 on solana). Call avatar_scoped_query
+    /// Seed 4 holons (2 on algorand, 2 on solana). Call user_scoped_query
     /// table="holon" filters={"chain_id":"algorand"}. Assert 2 rows returned.
     ///
     /// Why holon and not wallet: the tool's FilterAllowlist key is "chain_id", but
     /// the SCHEMAFULL wallet table has no chain_id field (its column is chain_type,
     /// which is NOT in the allowlist) — so a chain filter on wallet can never match.
     /// The holon table DOES carry chain_id, so it exercises the allowlist + filter
-    /// codepath honestly. Holons are seeded via the real store so id/avatar_id take
-    /// the correct record-id / record<avatar> link shape.
+    /// codepath honestly. Holons are seeded via the real store so id/user_id take
+    /// the correct record-id / record<user> link shape.
     /// </summary>
     [SkippableFact]
-    public async Task AvatarScopedQuery_HappyPath_ReturnsAllowlistedTableFilteredRows()
+    public async Task UserScopedQuery_HappyPath_ReturnsAllowlistedTableFilteredRows()
     {
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
         var executor   = CreateExecutor();
         var holonStore = new SurrealHolonStore(executor);
-        var avatarId   = Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        var userId   = Guid.Parse(TestAuthHandler.DefaultUserId);
 
         // ── Seed 4 chain-tagged holons (2 algorand, 2 solana) via the store ──
         var seeds = new[]
         {
-            NewChainHolon("ASQ-Algo-1", avatarId, "algorand"),
-            NewChainHolon("ASQ-Algo-2", avatarId, "algorand"),
-            NewChainHolon("ASQ-Sol-1",  avatarId, "solana"),
-            NewChainHolon("ASQ-Sol-2",  avatarId, "solana"),
+            NewChainHolon("ASQ-Algo-1", userId, "algorand"),
+            NewChainHolon("ASQ-Algo-2", userId, "algorand"),
+            NewChainHolon("ASQ-Sol-1",  userId, "solana"),
+            NewChainHolon("ASQ-Sol-2",  userId, "solana"),
         };
         foreach (var h in seeds)
         {
@@ -298,14 +298,14 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
             r.IsError.Should().BeFalse($"seed holon {h.Name}: {r.Message}");
         }
 
-        // ── Call avatar_scoped_query with chain_id filter ─────────────────
-        var tool = new AvatarScopedQueryTool();
+        // ── Call user_scoped_query with chain_id filter ─────────────────
+        var tool = new UserScopedQueryTool();
         var args = BuildArgs(new
         {
             table   = "holon",
             filters = new Dictionary<string, string> { ["chain_id"] = "algorand" }
         });
-        var ctx = BuildContext(avatarId, executor);
+        var ctx = BuildContext(userId, executor);
 
         var result = await tool.ExecuteAsync(ctx, args, CancellationToken.None);
         result.TryGetProperty("error", out _).Should().BeFalse(
@@ -313,7 +313,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
 
         result.TryGetProperty("row_count", out var rowCountProp).Should().BeTrue();
         rowCountProp.GetInt32().Should().Be(2,
-            "exactly 2 holons have chain_id='algorand' for this avatar");
+            "exactly 2 holons have chain_id='algorand' for this user");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -336,8 +336,8 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
             "SurrealDB test container not reachable — start it via `pwsh scripts/surrealdb/start-test-container.ps1`.");
 
-        var avatarId    = Guid.Parse(TestAuthHandler.DefaultAvatarId);
-        var avatarIdStr = avatarId.ToString("N").ToLowerInvariant();
+        var userId    = Guid.Parse(TestAuthHandler.DefaultUserId);
+        var userIdStr = userId.ToString("N").ToLowerInvariant();
         var embedder    = new DeterministicDummyEmbeddingProvider();
 
         // ── Seed 5 holons with embedding vectors ──────────────────────────
@@ -360,19 +360,19 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
             var embJson   = JsonSerializer.Serialize(embedding);
 
             // Persist as a holon record with the embedding field.
-            // id is BARE hex (CREATE prefixes → holon:hex); avatar_id is a
-            // record<avatar> link via type::record (a bare-hex string fails the
-            // SCHEMAFULL record<avatar> coercion). See tests AGENTS.md §g5-seed-shapes.
+            // id is BARE hex (CREATE prefixes → holon:hex); user_id is a
+            // record<user> link via type::record (a bare-hex string fails the
+            // SCHEMAFULL record<user> coercion). See tests AGENTS.md §g5-seed-shapes.
             await ExecuteSurrealSqlAsync(
                 "CREATE holon CONTENT { " +
-                "id: $hid, name: $name, avatar_id: type::record('avatar', $aid), " +
+                "id: $hid, name: $name, user_id: type::record('user', $aid), " +
                 "description: '', provider_name: 'test', is_active: true, " +
                 "created_date: time::now(), embedding: $emb }",
                 new
                 {
                     hid  = hidStr,
                     name = names[i],
-                    aid  = avatarIdStr,
+                    aid  = userIdStr,
                     emb  = embedding   // pass the float array as the param value
                 });
         }
@@ -381,7 +381,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         var executor = CreateExecutor();
         var tool     = new VectorSearchTool();
         var args     = BuildArgs(new { query_text = names[0], table = "holon", k = 3 });
-        var ctx      = BuildContext(avatarId, executor);
+        var ctx      = BuildContext(userId, executor);
 
         var result = await tool.ExecuteAsync(ctx, args, CancellationToken.None);
 
@@ -431,7 +431,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         return new DefaultSurrealExecutor(connection);
     }
 
-    private static ToolCallContext BuildContext(Guid avatarId, ISurrealExecutor executor)
+    private static ToolCallContext BuildContext(Guid userId, ISurrealExecutor executor)
     {
         // ServiceProvider is used by VectorSearchTool only (IEmbeddingProvider + ILogger).
         // Build a minimal provider with the deterministic embedder registered.
@@ -439,7 +439,7 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         services.AddSingleton<IEmbeddingProvider, DeterministicDummyEmbeddingProvider>();
         services.AddLogging();
         var sp = services.BuildServiceProvider();
-        return new ToolCallContext(avatarId, executor, sp);
+        return new ToolCallContext(userId, executor, sp);
     }
 
     private static JsonElement BuildArgs(object payload)
@@ -449,13 +449,13 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         return doc.RootElement.Clone();
     }
 
-    private static QuestNode NewNode(
-        Guid questId, string name, int order,
+    private static ActionNode NewNode(
+        Guid actionId, string name, int order,
         bool isEntry = false, bool isTerminal = false) => new()
     {
         Id             = Guid.NewGuid(),
-        QuestId        = questId,
-        NodeType       = QuestNodeType.HolonGet,
+        ActionId        = actionId,
+        NodeType       = ActionNodeType.HolonGet,
         Name           = name,
         Config         = "{}",
         IsEntry        = isEntry,
@@ -463,45 +463,45 @@ public sealed class McpToolCatalogTests : IntegrationTestBase
         ExecutionOrder = order,
     };
 
-    private static QuestEdge NewEdge(Guid questId, Guid src, Guid tgt) => new()
+    private static ActionEdge NewEdge(Guid actionId, Guid src, Guid tgt) => new()
     {
         Id           = Guid.NewGuid(),
-        QuestId      = questId,
+        ActionId      = actionId,
         SourceNodeId = src,
         TargetNodeId = tgt,
-        EdgeType     = QuestEdgeType.Control,
+        EdgeType     = ActionEdgeType.Control,
     };
 
-    private static Holon NewHolon(string name, Guid avatarId, Guid? parentId) => new()
+    private static Holon NewHolon(string name, Guid userId, Guid? parentId) => new()
     {
         Id            = Guid.NewGuid(),
         Name          = name,
         Description   = string.Empty,
-        AvatarId      = avatarId,
+        UserId      = userId,
         ParentHolonId = parentId,
         ProviderName  = "test",
         IsActive      = true,
         CreatedDate   = DateTime.UtcNow
     };
 
-    private static Holon NewChainHolon(string name, Guid avatarId, string chainId) => new()
+    private static Holon NewChainHolon(string name, Guid userId, string chainId) => new()
     {
         Id           = Guid.NewGuid(),
         Name         = name,
         Description  = string.Empty,
-        AvatarId     = avatarId,
+        UserId     = userId,
         ProviderName = "test",
         ChainId      = chainId,
         IsActive     = true,
         CreatedDate  = DateTime.UtcNow
     };
 
-    private static Holon NewNft(string name, Guid avatarId, string chainId) => new()
+    private static Holon NewNft(string name, Guid userId, string chainId) => new()
     {
         Id           = Guid.NewGuid(),
         Name         = name,
         Description  = string.Empty,
-        AvatarId     = avatarId,
+        UserId     = userId,
         ProviderName = "test",
         AssetType    = "NFT",
         ChainId      = chainId,

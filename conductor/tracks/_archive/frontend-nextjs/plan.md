@@ -15,9 +15,9 @@
 8. [ ] Add code examples section with syntax highlighting
 
 ### Phase 3: Identity Management
-9. [ ] Create avatar creation form component
-10. [ ] Implement avatar creation API integration
-11. [ ] Add avatar display and management interface
+9. [ ] Create user creation form component
+10. [ ] Implement user creation API integration
+11. [ ] Add user display and management interface
 12. [ ] Create local storage for session management
 
 ### Phase 4: Wallet Management
@@ -57,7 +57,7 @@
 
 ### State Management
 - Use React hooks for component state
-- Implement Context API for global state (wallets, avatar)
+- Implement Context API for global state (wallets, user)
 - Consider Zustand for complex state management
 - Implement proper state persistence with localStorage
 

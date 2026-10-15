@@ -65,7 +65,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         hit.Should().NotBeNull();
         hit!.Id.Should().Be(key.Id);
         hit.KeyHash.Should().Be(key.KeyHash);
-        hit.AvatarId.Should().Be(key.AvatarId);
+        hit.UserId.Should().Be(key.UserId);
         hit.IsActive.Should().BeTrue();
     }
 
@@ -94,45 +94,45 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    public async Task ListByAvatar_ReturnsOwnedKeysOnly_NewestFirst()
+    public async Task ListByUser_ReturnsOwnedKeysOnly_NewestFirst()
     {
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var other = Guid.NewGuid();
 
-        var k1 = NewApiKey(avatarId: owner, createdDate: DateTime.UtcNow.AddMinutes(-10));
-        var k2 = NewApiKey(avatarId: owner, createdDate: DateTime.UtcNow);
-        var k3 = NewApiKey(avatarId: other);
+        var k1 = NewApiKey(userId: owner, createdDate: DateTime.UtcNow.AddMinutes(-10));
+        var k2 = NewApiKey(userId: owner, createdDate: DateTime.UtcNow);
+        var k3 = NewApiKey(userId: other);
 
         await _store.CreateAsync(k1, CancellationToken.None);
         await _store.CreateAsync(k2, CancellationToken.None);
         await _store.CreateAsync(k3, CancellationToken.None);
 
-        var list = await _store.ListByAvatarAsync(owner, CancellationToken.None);
+        var list = await _store.ListByUserAsync(owner, CancellationToken.None);
 
         list.Should().HaveCount(2);
         list[0].Id.Should().Be(k2.Id, "ORDER BY created_date DESC returns newest first");
         list[1].Id.Should().Be(k1.Id);
-        list.Should().NotContain(k => k.AvatarId == other);
+        list.Should().NotContain(k => k.UserId == other);
     }
 
     [SkippableFact]
-    public async Task GetByIdForAvatar_WrongAvatar_ReturnsNull()
+    public async Task GetByIdForUser_WrongUser_ReturnsNull()
     {
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var intruder = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
 
         await _store.CreateAsync(key, CancellationToken.None);
 
-        var ownerHit = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
-        var intruderHit = await _store.GetByIdForAvatarAsync(key.Id, intruder, CancellationToken.None);
+        var ownerHit = await _store.GetByIdForUserAsync(key.Id, owner, CancellationToken.None);
+        var intruderHit = await _store.GetByIdForUserAsync(key.Id, intruder, CancellationToken.None);
 
         ownerHit.Should().NotBeNull();
-        intruderHit.Should().BeNull("cross-avatar reads must look like 'not found'");
+        intruderHit.Should().BeNull("cross-user reads must look like 'not found'");
     }
 
     [SkippableFact]
@@ -141,14 +141,14 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
         await _store.CreateAsync(key, CancellationToken.None);
 
         var revokedAt = DateTime.UtcNow;
         var ok = await _store.RevokeAsync(key.Id, owner, revokedAt, CancellationToken.None);
 
         ok.Should().BeTrue();
-        var after = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
+        var after = await _store.GetByIdForUserAsync(key.Id, owner, CancellationToken.None);
         after.Should().NotBeNull();
         after!.IsActive.Should().BeFalse();
         after.RevokedAt.Should().NotBeNull();
@@ -156,19 +156,19 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     }
 
     [SkippableFact]
-    public async Task Revoke_WrongAvatar_ReturnsFalse_RowUnchanged()
+    public async Task Revoke_WrongUser_ReturnsFalse_RowUnchanged()
     {
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
         var intruder = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
         await _store.CreateAsync(key, CancellationToken.None);
 
         var ok = await _store.RevokeAsync(key.Id, intruder, DateTime.UtcNow, CancellationToken.None);
 
         ok.Should().BeFalse();
-        var after = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
+        var after = await _store.GetByIdForUserAsync(key.Id, owner, CancellationToken.None);
         after.Should().NotBeNull();
         after!.IsActive.Should().BeTrue("intruder revoke must be a no-op");
         after.RevokedAt.Should().BeNull();
@@ -180,13 +180,13 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
         await _store.CreateAsync(key, CancellationToken.None);
 
         var ok = await _store.DeleteAsync(key.Id, owner, CancellationToken.None);
 
         ok.Should().BeTrue();
-        var after = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
+        var after = await _store.GetByIdForUserAsync(key.Id, owner, CancellationToken.None);
         after.Should().BeNull();
     }
 
@@ -210,13 +210,13 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
         await _store.CreateAsync(key, CancellationToken.None);
 
         var ts = DateTime.UtcNow;
         await _store.TouchLastUsedAsync(key.Id, ts, CancellationToken.None);
 
-        var after = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
+        var after = await _store.GetByIdForUserAsync(key.Id, owner, CancellationToken.None);
         after.Should().NotBeNull();
         after!.LastUsedAt.Should().NotBeNull();
         after.LastUsedAt!.Value.Should().BeCloseTo(ts, TimeSpan.FromSeconds(2));
@@ -239,7 +239,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
         key.Scopes = "dapp:develop,dapp:manage";
         key.AllowedOrigins = "https://x.example:443,https://y.example:8443";
 
@@ -253,7 +253,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
             "colon/URL-bearing allowed_origins CSV must persist verbatim");
 
         // Same value must survive the record-id read path too.
-        var byId = await _store.GetByIdForAvatarAsync(key.Id, owner, CancellationToken.None);
+        var byId = await _store.GetByIdForUserAsync(key.Id, owner, CancellationToken.None);
         byId.Should().NotBeNull();
         byId!.Scopes.Should().Be("dapp:develop,dapp:manage");
         byId.AllowedOrigins.Should().Be("https://x.example:443,https://y.example:8443");
@@ -269,7 +269,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, $"SurrealDB test container not available on {SurrealTestDefaults.Endpoint}");
 
         var owner = Guid.NewGuid();
-        var key = NewApiKey(avatarId: owner);
+        var key = NewApiKey(userId: owner);
         key.Scopes = null;
         key.AllowedOrigins = null;
 
@@ -284,12 +284,12 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static ApiKey NewApiKey(
-        Guid? avatarId = null,
+        Guid? userId = null,
         string? keyHash = null,
         DateTime? createdDate = null) => new()
     {
         Id          = Guid.NewGuid(),
-        AvatarId    = avatarId ?? Guid.NewGuid(),
+        UserId    = userId ?? Guid.NewGuid(),
         Name        = "test-key",
         KeyHash     = keyHash ?? $"hash-{Guid.NewGuid():N}",
         KeyPrefix   = "azoa_test12345",
@@ -315,7 +315,7 @@ public sealed class SurrealApiKeyStoreTests : IAsyncLifetime
     /// (authored from <c>Persistence/SurrealDb/Models/ApiKey.cs</c>).
     /// </summary>
     private Task BootstrapSchemaAsync()
-        // Apply the REAL generated golden for api_key (avatar_id is record<avatar>
+        // Apply the REAL generated golden for api_key (user_id is record<user>
         // there, not the stale `string` this test used to hand-roll — the drift
         // broke SurrealDB-3.x record coercion).
         => SurrealTestSchema.BootstrapAsync(_testNamespace, "api_key");

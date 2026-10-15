@@ -1,0 +1,182 @@
+{
+  "id": "terminology-neutralization-cutover_20260905",
+  "title": "Terminology neutralization cutover",
+  "type": "feature",
+  "status": "in_progress",
+  "created": "2026-09-05",
+  "decisions": [
+    "D28",
+    "D31",
+    "D32",
+    "D33",
+    "D34",
+    "D35"
+  ],
+  "breaking": true,
+  "cross_repo": true,
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek",
+    "ardanova": "c:/Users/atooz/Documents/Escherbridge/ardanova",
+    "taawun": "c:/Users/atooz/Programming/tawun"
+  },
+  "keystone_artifact": "scripts/d28_rename.py",
+  "measurements": {
+    "computed_at_commit": "9f4e026",
+    "files_changed": 958,
+    "path_renames": 327,
+    "quest_ci_total": 20592,
+    "request_family": 6507,
+    "question_family": 45,
+    "quest_true_positives": 14040,
+    "record_avatar_fk_columns": 60,
+    "record_quest_fk_columns": 9,
+    "compile_errors_from_naive_action_rename": 136
+  },
+  "gates": {
+    "backend_build": "0 errors, 23 warnings (baseline match)",
+    "backend_tests": "2431 passed / 1 skipped / 0 failed",
+    "sdk": "tsc exit 0; 191 passed / 16 files",
+    "frontend": "tsc exit 0; build OK; 65 passed / 11 files",
+    "idempotent": "verify reports 0 files left to change",
+    "ardanova_dotnet": "0 errors; 1050 passed (233 API + 817 Application)",
+    "ardanova_client": "tsc exit 0; 210 passed / 33 files (against local azoa-sdk 0.3.0)",
+    "taawun": "no change required - no AZOA wire coupling exists",
+    "integration_contract": "byte-identical across both repos"
+  },
+  "partitions": {
+    "confidence": "verified",
+    "computed_at_commit": "9f4e026",
+    "note": "Disjointness is asserted by `d28_rename.py verify`, which fails if any changed file is unclaimed or claimed twice. Never split by noun: Program.cs and 28 of ~30 Interfaces/ files carry both.",
+    "waves": [
+      {
+        "wave": 1,
+        "partitions": [
+          "models",
+          "backend",
+          "backend-root",
+          "baselines",
+          "tests"
+        ],
+        "owns": [
+          "Persistence/SurrealDb/Models",
+          "Persistence/SurrealDb/CompatibilityBaselines",
+          "Persistence/SurrealDb/Migrations",
+          "Controllers",
+          "Managers",
+          "Services",
+          "Core",
+          "Interfaces",
+          "Models",
+          "Providers",
+          "Validators",
+          "Mcp",
+          "Helpers",
+          "Extensions",
+          "Middleware",
+          "Observability",
+          "Settings",
+          "Program.cs",
+          "GlobalUsings.cs",
+          "AZOA.WebAPI.csproj",
+          "appsettings.json",
+          "appsettings.Development.json",
+          "tests"
+        ],
+        "gate": "dotnet build --no-incremental && dotnet test"
+      },
+      {
+        "wave": 2,
+        "partitions": [
+          "sdk"
+        ],
+        "owns": [
+          "sdk/azoa-wallet"
+        ],
+        "gate": "tsc --noEmit && npm test && npm run build (tsup)"
+      },
+      {
+        "wave": 3,
+        "partitions": [
+          "frontend"
+        ],
+        "owns": [
+          "frontend"
+        ],
+        "excludes": [
+          "frontend/src/components/ui/avatar.tsx"
+        ],
+        "gate": "refresh node_modules/azoa-sdk, then tsc + build + vitest"
+      },
+      {
+        "wave": 4,
+        "partitions": [
+          "docs",
+          "misc"
+        ],
+        "owns": [
+          "conductor",
+          "docs",
+          "fiat-sidecar",
+          "db",
+          "deploy",
+          "scripts",
+          "README.md",
+          "DEVELOPMENT.md",
+          "PROVIDERS.md",
+          "API_SYNC.md",
+          "CHANGELOG.md"
+        ],
+        "excludes": [
+          "conductor/RUNBOOK.md",
+          "scripts/d28_rename.py"
+        ],
+        "gate": "none (no build dependency)"
+      },
+      {
+        "wave": 5,
+        "partitions": [
+          "ardanova",
+          "taawun",
+          "integration-contract"
+        ],
+        "owns": [
+          "<ardanova repo>",
+          "<taawun repo>",
+          "conductor/ARDANOVA-AZOA-INTEGRATION-CONTRACT.md"
+        ],
+        "gate": "both consumers build+test; contract copies byte-identical",
+        "status": "done"
+      }
+    ]
+  },
+  "never_rename": {
+    "request_family": "`request`/`Request`/`REQUEST` \u2014 contains the letters 'quest'",
+    "question_family": "`question`/`questionnaire`",
+    "denylist": [
+      "bequest",
+      "conquest",
+      "inquest",
+      "questrade"
+    ],
+    "third_party": "frontend/src/components/ui/avatar.tsx \u2014 @base-ui/react/avatar wrapper, plus bare <Avatar> in its importers",
+    "self_documenting": [
+      "conductor/RUNBOOK.md",
+      "scripts/d28_rename.py",
+      "tests/AZOA.WebAPI.Tests/Core/SurrealDeploymentLeastPrivilegeContractTests.cs"
+    ]
+  },
+  "reviews": [
+    {
+      "phase": "transform script, pre-first-run",
+      "reviewer": "adversarial, separate context, prompted to refute",
+      "findings": "2 CRITICAL + 6 HIGH + 4 MEDIUM + 3 LOW",
+      "verdict": "REFUTED as delivered \u2014 'does not run, and its C# rename target does not compile'; all findings remediated and re-verified by building"
+    }
+  ],
+  "blockers": [
+    "azoa-sdk@0.3.0 is UNPUBLISHED; ArdaNova pins ^0.3.0 and is green only via a local node_modules copy",
+    "D29/D31 deployment reconciliation not yet run",
+    "strands 2 and 3 (vocabulary prose rewrites) not started"
+  ],
+  "status_note": "Normalized from 'in-flight' to the canonical four-value vocabulary adopted in conductor/tracks.md on 2026-09-07. This track was the last outlier; it was skipped by the reconciliation lane because its directory was excluded as live-cutover territory."
+}

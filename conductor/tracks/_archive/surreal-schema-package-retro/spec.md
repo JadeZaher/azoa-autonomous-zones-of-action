@@ -74,11 +74,11 @@ Three sealed attribute classes decorate POCOs:
 
 `Persistence/SurrealDb/Models/*.cs` — 26 classes as of 2026-06-10:
 
-`ApiKey`, `Avatar`, `BridgeTx`, `ConsumedVaaLedger`, `DappSeries`,
-`DappSeriesQuest`, `Executes`, `ForkedFrom`, `HnswHolonEmbedding`,
-`HnswQuestEmbedding`, `Holon`, `IdempotencyKeyStore`, `NftOwnership`,
-`OperationLog`, `Quest`, `QuestDependency`, `QuestEdge`, `QuestNode`,
-`QuestNodeExecution`, `QuestNodeTemplate`, `QuestRun`, `QuestTemplate`,
+`ApiKey`, `User`, `BridgeTx`, `ConsumedVaaLedger`, `DappSeries`,
+`DappSeriesAction`, `Executes`, `ForkedFrom`, `HnswHolonEmbedding`,
+`HnswActionEmbedding`, `Holon`, `IdempotencyKeyStore`, `NftOwnership`,
+`OperationLog`, `ActionDefinition`, `ActionDependency`, `ActionEdge`, `ActionNode`,
+`ActionNodeExecution`, `ActionNodeTemplate`, `ActionRun`, `ActionTemplate`,
 `SagaSteps`, `StarOdk`, `SwapState`, `Wallet`.
 
 ### Generator
@@ -99,7 +99,7 @@ Output: `Persistence/SurrealDb/Generated/Schemas/*.surql` (26 files).
 Converts `SchemaModel` to Mermaid ER flowcharts. Produces one diagram per
 aggregate slice plus a master `domain` diagram.
 Output: `Persistence/SurrealDb/Generated/Flowcharts/*.flowchart.mermaid` (7 files):
-`bridge`, `dapp_composition`, `domain`, `identity`, `quest`, `quest_templates`,
+`bridge`, `dapp_composition`, `domain`, `identity`, `action`, `action_templates`,
 `wallet_nft`.
 
 ### CLI

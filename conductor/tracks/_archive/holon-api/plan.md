@@ -19,5 +19,5 @@ The holon primitive is modeled as a **self-similar, autonomous agent**:
 6. `[x]` Implement holon storage in `EfStorageProvider` + update `AZOADbContext`
 7. `[x]` Create `HolonController` with 5+ endpoints (GET, GET query, POST, DELETE, POST interact, POST mint, POST exchange)
 8. `[x]` Cross-universe query aggregation across all active providers
-9. `[x]` Owner-based access control (JWT avatar scoping)
+9. `[x]` Owner-based access control (JWT user scoping)
 10. `[x]` `dotnet build` zero warnings, Swagger lists endpoints

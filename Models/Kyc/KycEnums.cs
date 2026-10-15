@@ -16,10 +16,10 @@ public enum KycStatus
     /// <summary>Picked up by a reviewer / provider but not yet decided.</summary>
     IN_REVIEW,
 
-    /// <summary>Identity verified — the gate opens for this avatar.</summary>
+    /// <summary>Identity verified — the gate opens for this user.</summary>
     APPROVED,
 
-    /// <summary>Rejected — the avatar must re-submit to be verified.</summary>
+    /// <summary>Rejected — the user must re-submit to be verified.</summary>
     REJECTED,
 
     /// <summary>Lapsed past its expiry window.</summary>
@@ -43,8 +43,51 @@ public enum KycProvider
     /// <summary>Operator-configured generic hosted-provider adapter.</summary>
     GENERIC_HOSTED,
 
+    /// <summary>Identomat hosted identity verification + AML screening.</summary>
+    IDENTOMAT,
+
     /// <summary>Unknown or invalid provider configuration; never persisted.</summary>
     UNAVAILABLE
+}
+
+/// <summary>
+/// Non-terminal/terminal classification of a hosted provider outcome. A provider
+/// verdict that is not <see cref="Terminal"/> must never satisfy a value gate.
+/// </summary>
+public enum KycOutcomeFinality
+{
+    /// <summary>The provider is still working (queued, in progress, manual check).</summary>
+    NonTerminal,
+
+    /// <summary>The provider reached a decision that may be persisted as terminal.</summary>
+    Terminal
+}
+
+/// <summary>
+/// AZOA-derived AML/sanctions screening verdict. Identomat publishes no
+/// APPROVED/REJECTED enum on the screening surface; this is entirely our
+/// decision, derived from <c>score</c> plus the open <c>topics</c> string set.
+/// </summary>
+public enum KycScreeningDecision
+{
+    /// <summary>No hits at or above the queried score threshold.</summary>
+    NO_HIT,
+
+    /// <summary>Hits exist but do not meet the auto-block bar; a human must decide.</summary>
+    MANUAL_REVIEW,
+
+    /// <summary>A hit meeting the operator's auto-block bar (score and/or topic).</summary>
+    HIT
+}
+
+/// <summary>Lifecycle of an AZOA-owned ongoing-monitoring registration.</summary>
+public enum KycMonitorState
+{
+    /// <summary>Registered with the provider and being polled.</summary>
+    ACTIVE,
+
+    /// <summary>Unregistered from the provider; retained for audit.</summary>
+    REMOVED
 }
 
 /// <summary>

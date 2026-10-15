@@ -86,7 +86,7 @@ public sealed class SurrealNodeTreasuryStoreTests : IAsyncLifetime
         loaded.IsError.Should().BeFalse(loaded.Message);
         loaded.Result.Should().NotBeNull();
         loaded.Result!.Address.Should().Be("sim:simulated:ALGO_TREASURY");
-        loaded.Result.UpdatedByAvatarId.Should().Be(actorLink);
+        loaded.Result.UpdatedByUserId.Should().Be(actorLink);
 
         var audits = await _store.ListAuditAsync(10);
         audits.IsError.Should().BeFalse(audits.Message);
@@ -208,7 +208,7 @@ public sealed class SurrealNodeTreasuryStoreTests : IAsyncLifetime
             Network = network.ToString(),
             Address = address,
             Version = version,
-            UpdatedByAvatarId = actorLink,
+            UpdatedByUserId = actorLink,
             CreatedAt = createdAt,
             UpdatedAt = updatedAt ?? createdAt,
         };
@@ -223,7 +223,7 @@ public sealed class SurrealNodeTreasuryStoreTests : IAsyncLifetime
         {
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = "DestinationUpdated",
-            ActorAvatarId = actorLink,
+            ActorUserId = actorLink,
             Chain = destination.Chain,
             Network = destination.Network,
             PreviousVersion = previousVersion,
@@ -237,7 +237,7 @@ public sealed class SurrealNodeTreasuryStoreTests : IAsyncLifetime
         };
 
     private static string ActorLink()
-        => SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(Guid.NewGuid()))!;
+        => SurrealLink.ToLink("user", SurrealId.ToSurrealId(Guid.NewGuid()))!;
 
     private static async Task<bool> ProbeSurrealAsync()
     {

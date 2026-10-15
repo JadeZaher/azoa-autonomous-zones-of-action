@@ -49,6 +49,13 @@ export class SolanaProvider implements ChainProvider {
   readonly chainId = "solana";
   readonly displayName = "Solana";
   readonly supportsDex = true;
+  /**
+   * Declares that this provider implements Solana-side bridge transaction
+   * building. This is NOT a live availability check; call
+   * `AzoaClient.checkBridgeCapability("solana")` for the backend-verified
+   * answer on a specific route (see the interface doc on
+   * `ChainProvider.supportsBridging`).
+   */
   readonly supportsBridging = true;
 
   private readonly config: SolanaProviderConfig;

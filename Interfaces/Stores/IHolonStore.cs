@@ -28,8 +28,8 @@ public interface IHolonStore
     /// reused for a later transfer of the holon.
     /// </summary>
     /// <param name="holonId">NFT holon record id.</param>
-    /// <param name="sourceAvatarId">Expected current owner.</param>
-    /// <param name="targetAvatarId">Owner to install during finalization.</param>
+    /// <param name="sourceUserId">Expected current owner.</param>
+    /// <param name="targetUserId">Owner to install during finalization.</param>
     /// <param name="settlementKey">Stable idempotency key for the settlement.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
@@ -40,8 +40,8 @@ public interface IHolonStore
     /// </returns>
     Task<AZOAResult<bool>> TryReserveNftTransferAsync(
         Guid holonId,
-        Guid sourceAvatarId,
-        Guid targetAvatarId,
+        Guid sourceUserId,
+        Guid targetUserId,
         string settlementKey,
         CancellationToken ct = default);
 
@@ -50,8 +50,8 @@ public interface IHolonStore
     /// target, and settlement key are still present.
     /// </summary>
     /// <param name="holonId">NFT holon record id.</param>
-    /// <param name="sourceAvatarId">Owner that placed the reservation.</param>
-    /// <param name="targetAvatarId">Reserved destination owner.</param>
+    /// <param name="sourceUserId">Owner that placed the reservation.</param>
+    /// <param name="targetUserId">Reserved destination owner.</param>
     /// <param name="settlementKey">Reservation/idempotency key.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
@@ -62,8 +62,8 @@ public interface IHolonStore
     /// </returns>
     Task<AZOAResult<bool>> FinalizeReservedNftTransferAsync(
         Guid holonId,
-        Guid sourceAvatarId,
-        Guid targetAvatarId,
+        Guid sourceUserId,
+        Guid targetUserId,
         string settlementKey,
         CancellationToken ct = default);
 
@@ -72,7 +72,7 @@ public interface IHolonStore
     /// successful release is idempotent.
     /// </summary>
     /// <param name="holonId">NFT holon record id.</param>
-    /// <param name="sourceAvatarId">Owner that placed the reservation.</param>
+    /// <param name="sourceUserId">Owner that placed the reservation.</param>
     /// <param name="settlementKey">Reservation/idempotency key.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
@@ -83,7 +83,7 @@ public interface IHolonStore
     /// </returns>
     Task<AZOAResult<bool>> ReleaseNftTransferReservationAsync(
         Guid holonId,
-        Guid sourceAvatarId,
+        Guid sourceUserId,
         string settlementKey,
         CancellationToken ct = default);
 }

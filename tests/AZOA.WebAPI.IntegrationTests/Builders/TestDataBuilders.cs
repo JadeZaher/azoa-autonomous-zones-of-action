@@ -6,10 +6,10 @@ namespace AZOA.WebAPI.IntegrationTests.Builders;
 // ═══════════════════════════════════════════════════════════════════
 // Fluent Builder Pattern for test data construction.
 // Enables readable, composable test setup:
-//   var avatar = new AvatarBuilder().WithUsername("neo").Build();
+//   var user = new UserBuilder().WithUsername("neo").Build();
 // ═══════════════════════════════════════════════════════════════════
 
-public class AvatarBuilder
+public class UserBuilder
 {
     private Guid _id = Guid.NewGuid();
     // Username + email default to UNIQUE values per builder instance. Integration
@@ -17,7 +17,7 @@ public class AvatarBuilder
     // pinned per-factory), so methods run serially against the same data store.
     // Constant "testuser"/"test@azoa.local" defaults caused the second seed in a
     // class to fail with "An account with this email already exists." Unique
-    // defaults make each SeedAvatarAsync() independent; tests that need a specific
+    // defaults make each SeedUserAsync() independent; tests that need a specific
     // email/username still call WithEmail/WithUsername explicitly.
     private string _username = $"user{Guid.NewGuid():N}"[..16];
     private string _email = $"test_{Guid.NewGuid():N}@azoa.local";
@@ -27,17 +27,17 @@ public class AvatarBuilder
     private string? _lastName;
     private bool _isActive = true;
 
-    public AvatarBuilder WithId(Guid id) { _id = id; return this; }
-    public AvatarBuilder WithUsername(string username) { _username = username; return this; }
-    public AvatarBuilder WithEmail(string email) { _email = email; return this; }
-    public AvatarBuilder WithPassword(string password) { _password = password; return this; }
-    public AvatarBuilder WithTitle(string? title) { _title = title; return this; }
-    public AvatarBuilder WithName(string first, string last) { _firstName = first; _lastName = last; return this; }
-    public AvatarBuilder Inactive() { _isActive = false; return this; }
+    public UserBuilder WithId(Guid id) { _id = id; return this; }
+    public UserBuilder WithUsername(string username) { _username = username; return this; }
+    public UserBuilder WithEmail(string email) { _email = email; return this; }
+    public UserBuilder WithPassword(string password) { _password = password; return this; }
+    public UserBuilder WithTitle(string? title) { _title = title; return this; }
+    public UserBuilder WithName(string first, string last) { _firstName = first; _lastName = last; return this; }
+    public UserBuilder Inactive() { _isActive = false; return this; }
 
-    public Avatar Build()
+    public User Build()
     {
-        return new Avatar
+        return new User
         {
             Id = _id,
             Username = _username,
@@ -50,7 +50,7 @@ public class AvatarBuilder
         };
     }
 
-    public AvatarRegisterModel BuildRegisterModel() =>
+    public UserRegisterModel BuildRegisterModel() =>
         new()
         {
             Username = _username,
@@ -61,10 +61,10 @@ public class AvatarBuilder
             LastName = _lastName
         };
 
-    public AvatarLoginModel BuildLoginModel() =>
+    public UserLoginModel BuildLoginModel() =>
         new() { Email = _email, Password = _password };
 
-    public AvatarUpdateModel BuildUpdateModel() =>
+    public UserUpdateModel BuildUpdateModel() =>
         new()
         {
             Username = _username,
@@ -79,7 +79,7 @@ public class AvatarBuilder
 public class WalletBuilder
 {
     private Guid _id = Guid.NewGuid();
-    private Guid _avatarId;
+    private Guid _userId;
     private string _chainType = "Algorand";
     // Must satisfy WalletCreateModelValidator (^[a-zA-Z0-9]+$): no underscore or
     // hyphen. Guid "N" format is pure hex, so "addr" + N passes the rule.
@@ -87,7 +87,7 @@ public class WalletBuilder
     private string? _label;
     private bool _isDefault;
 
-    public WalletBuilder ForAvatar(Guid avatarId) { _avatarId = avatarId; return this; }
+    public WalletBuilder ForUser(Guid userId) { _userId = userId; return this; }
     public WalletBuilder OnChain(string chainType) { _chainType = chainType; return this; }
     public WalletBuilder WithAddress(string address) { _address = address; return this; }
     public WalletBuilder WithLabel(string label) { _label = label; return this; }
@@ -103,7 +103,7 @@ public class WalletBuilder
         new()
         {
             Id = _id,
-            AvatarId = _avatarId,
+            UserId = _userId,
             ChainType = _chainType,
             Address = _address,
             Label = _label,
@@ -116,7 +116,7 @@ public class HolonBuilder
     private Guid _id = Guid.NewGuid();
     private string _name = "TestHolon";
     private string _description = "A test holon";
-    private Guid? _avatarId;
+    private Guid? _userId;
     private Guid? _parentHolonId;
     private string _providerName = "InMemory";
     private string? _chainId;
@@ -128,7 +128,7 @@ public class HolonBuilder
     public HolonBuilder WithId(Guid id) { _id = id; return this; }
     public HolonBuilder WithName(string name) { _name = name; return this; }
     public HolonBuilder WithDescription(string description) { _description = description; return this; }
-    public HolonBuilder ForAvatar(Guid avatarId) { _avatarId = avatarId; return this; }
+    public HolonBuilder ForUser(Guid userId) { _userId = userId; return this; }
     public HolonBuilder OnProvider(string providerName) { _providerName = providerName; return this; }
     public HolonBuilder OnChain(string chainId) { _chainId = chainId; return this; }
     public HolonBuilder AsAsset(string assetType) { _assetType = assetType; return this; }
@@ -143,7 +143,7 @@ public class HolonBuilder
             Id = _id,
             Name = _name,
             Description = _description,
-            AvatarId = _avatarId,
+            UserId = _userId,
             ParentHolonId = _parentHolonId,
             ProviderName = _providerName,
             ChainId = _chainId,
@@ -180,38 +180,38 @@ public class HolonBuilder
         };
 }
 
-public class STARODKBuilder
+public class ActionGraphBundleBuilder
 {
     private Guid _id = Guid.NewGuid();
     private string _name = "TestODK";
     private string _description = "A test ODK";
     private string? _publicKey;
-    private Guid? _avatarId;
+    private Guid? _userId;
     private List<Guid> _boundHolonIds = new();
     private string? _targetChain;
     private string? _generatedCode;
     private string? _deploymentConfig;
     private bool _isActive = true;
 
-    public STARODKBuilder WithId(Guid id) { _id = id; return this; }
-    public STARODKBuilder WithName(string name) { _name = name; return this; }
-    public STARODKBuilder WithDescription(string description) { _description = description; return this; }
-    public STARODKBuilder ForAvatar(Guid avatarId) { _avatarId = avatarId; return this; }
-    public STARODKBuilder WithPublicKey(string key) { _publicKey = key; return this; }
-    public STARODKBuilder BoundTo(params Guid[] holonIds) { _boundHolonIds.AddRange(holonIds); return this; }
-    public STARODKBuilder Targeting(string chain) { _targetChain = chain; return this; }
-    public STARODKBuilder WithGeneratedCode(string code) { _generatedCode = code; return this; }
-    public STARODKBuilder WithDeploymentConfig(string config) { _deploymentConfig = config; return this; }
-    public STARODKBuilder Inactive() { _isActive = false; return this; }
+    public ActionGraphBundleBuilder WithId(Guid id) { _id = id; return this; }
+    public ActionGraphBundleBuilder WithName(string name) { _name = name; return this; }
+    public ActionGraphBundleBuilder WithDescription(string description) { _description = description; return this; }
+    public ActionGraphBundleBuilder ForUser(Guid userId) { _userId = userId; return this; }
+    public ActionGraphBundleBuilder WithPublicKey(string key) { _publicKey = key; return this; }
+    public ActionGraphBundleBuilder BoundTo(params Guid[] holonIds) { _boundHolonIds.AddRange(holonIds); return this; }
+    public ActionGraphBundleBuilder Targeting(string chain) { _targetChain = chain; return this; }
+    public ActionGraphBundleBuilder WithGeneratedCode(string code) { _generatedCode = code; return this; }
+    public ActionGraphBundleBuilder WithDeploymentConfig(string config) { _deploymentConfig = config; return this; }
+    public ActionGraphBundleBuilder Inactive() { _isActive = false; return this; }
 
-    public STARODK Build() =>
+    public ActionGraphBundle Build() =>
         new()
         {
             Id = _id,
             Name = _name,
             Description = _description,
             PublicKey = _publicKey,
-            AvatarId = _avatarId,
+            UserId = _userId,
             BoundHolonIds = new List<Guid>(_boundHolonIds),
             TargetChain = _targetChain,
             GeneratedCode = _generatedCode,
@@ -219,16 +219,16 @@ public class STARODKBuilder
             IsActive = _isActive
         };
 
-    public STARODKCreateModel BuildCreateModel() =>
+    public ActionGraphBundleCreateModel BuildCreateModel() =>
         new()
         {
             Name = _name,
             Description = _description,
             PublicKey = _publicKey,
-            AvatarId = _avatarId
+            UserId = _userId
         };
 
-    public STARDappGenerationRequest BuildGenerationRequest() =>
+    public ActionGraphBundleDappGenerationRequest BuildGenerationRequest() =>
         new()
         {
             TargetChain = _targetChain ?? "Algorand",
@@ -240,14 +240,14 @@ public class STARODKBuilder
 public class BlockchainOperationBuilder
 {
     private Guid _id = Guid.NewGuid();
-    private Guid? _avatarId;
+    private Guid? _userId;
     private Guid? _walletId;
     private string _operationType = "Mint";
     private string _status = OperationStatus.Pending;
     private Dictionary<string, string> _parameters = new();
 
     public BlockchainOperationBuilder WithId(Guid id) { _id = id; return this; }
-    public BlockchainOperationBuilder ForAvatar(Guid avatarId) { _avatarId = avatarId; return this; }
+    public BlockchainOperationBuilder ForUser(Guid userId) { _userId = userId; return this; }
     public BlockchainOperationBuilder UsingWallet(Guid walletId) { _walletId = walletId; return this; }
     public BlockchainOperationBuilder OfType(string type) { _operationType = type; return this; }
     public BlockchainOperationBuilder WithStatus(string status) { _status = status; return this; }
@@ -257,7 +257,7 @@ public class BlockchainOperationBuilder
         new()
         {
             Id = _id,
-            AvatarId = _avatarId,
+            UserId = _userId,
             WalletId = _walletId,
             OperationType = _operationType,
             Status = _status,

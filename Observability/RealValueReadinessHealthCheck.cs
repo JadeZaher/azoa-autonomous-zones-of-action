@@ -60,20 +60,9 @@ public sealed class RealValueReadinessHealthCheck : IHealthCheck
 
         AddKycFailures(failures);
 
-        var mnemonic = _configuration[KeyCustodyService.PlatformMnemonicConfigPath];
-        if (string.IsNullOrWhiteSpace(mnemonic))
-            failures.Add($"{KeyCustodyService.PlatformMnemonicConfigPath} is required");
-        else
-        {
-            try
-            {
-                _ = new Algorand.Algod.Model.Account(mnemonic.Trim());
-            }
-            catch
-            {
-                failures.Add($"{KeyCustodyService.PlatformMnemonicConfigPath} must be a valid Algorand mnemonic");
-            }
-        }
+        AddCustodyFailures(failures);
+
+        AddPlatformKeyFailures(failures);
 
         var vault = _configuration["Blockchain:Wormhole:BridgeVaults:Algorand:VaultAddress"];
         if (string.IsNullOrWhiteSpace(vault)
@@ -113,10 +102,17 @@ public sealed class RealValueReadinessHealthCheck : IHealthCheck
         {
             var provider = _providerFactory.GetProvider("Algorand", network);
             if (!string.Equals(provider.ChainType, "Algorand", StringComparison.OrdinalIgnoreCase)
-                || provider.ActiveNetwork != network
-                || !provider.SupportsBridging)
+                || provider.ActiveNetwork != network)
             {
-                failures.Add($"Algorand {network} provider is not bridge-capable");
+                failures.Add($"Algorand {network} provider did not bind to the requested chain/network");
+            }
+            // Real value leaves the platform through the Algorand SOURCE leg (the configured
+            // vault above is an Algorand vault). Requiring the source capability is what this
+            // probe can truthfully assert; Algorand deliberately implements no target leg, so
+            // demanding one here would fail readiness for a capability the route never uses.
+            else if (!provider.TryGetModule<IBridgeSourceLeg>(out _))
+            {
+                failures.Add($"Algorand {network} provider is not bridge-source-capable");
             }
         }
         catch (Exception ex)
@@ -125,6 +121,83 @@ public sealed class RealValueReadinessHealthCheck : IHealthCheck
         }
 
         return failures;
+    }
+
+    /// <summary>
+    /// Custodial key management is a real-value prerequisite, so the healthy message says so.
+    /// This CONSUMES <see cref="CustodyModeResolver"/> rather than restating its predicate: a probe
+    /// that re-derived the rule would drift from the resolver the wallet path actually obeys, and
+    /// green here would then mean nothing. Without it a node deployed with RealValueEnabled=true,
+    /// CustodyMode=Disabled and a short encryption key reported ready while every wallet
+    /// provisioning attempt failed closed.
+    /// </summary>
+    private void AddCustodyFailures(List<string> failures)
+    {
+        var custody = CustodyModeResolver.Resolve(_configuration, _environment);
+        if (!custody.Available)
+        {
+            failures.Add(custody.UnavailableReason
+                ?? $"{CustodyModeResolver.CustodyModeConfigurationPath} must name a usable custody mode");
+        }
+    }
+
+    /// <summary>
+    /// Every chain that is ENABLED for at least one network must have a usable platform
+    /// signing key, so a missing or malformed Solana/Ethereum key surfaces here rather
+    /// than at the first value operation. A chain configured but disabled on every
+    /// network is skipped — it cannot reach the platform door.
+    /// <para>
+    /// Enabled-implies-registered is guaranteed at boot by
+    /// <c>BlockchainProviderFactory.GuardAgainstUnregisteredEnabledChains</c>, so this
+    /// reads config rather than instantiating providers: building every provider inside a
+    /// readiness probe would be strictly more expensive and no more truthful.
+    /// </para>
+    /// </summary>
+    private void AddPlatformKeyFailures(List<string> failures)
+    {
+        var derivations = PlatformKeyDerivationRegistry.Default;
+
+        foreach (var chain in _configuration.GetSection("Blockchain:Chains").GetChildren())
+        {
+            var chainType = chain["ChainType"];
+            if (string.IsNullOrWhiteSpace(chainType))
+                continue;
+
+            // Simulated settlement never signs; a platform key for it would be meaningless.
+            if (string.Equals(chainType, "Simulated", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var isEnabled = chain.GetSection("Devnet").GetValue<bool>("IsEnabled")
+                || chain.GetSection("Testnet").GetValue<bool>("IsEnabled")
+                || chain.GetSection("Mainnet").GetValue<bool>("IsEnabled");
+            if (!isEnabled)
+                continue;
+
+            if (!derivations.TryGet(chainType, out var derivation))
+            {
+                failures.Add(
+                    $"chain '{chainType.Trim()}' is enabled but has no registered platform signing key "
+                    + $"derivation (chains with a platform key door: {derivations.RegisteredChainTypesDisplay})");
+                continue;
+            }
+
+            var configured = _configuration[derivation.PlatformKeyConfigPath];
+            if (string.IsNullOrWhiteSpace(configured))
+            {
+                failures.Add($"{derivation.PlatformKeyConfigPath} is required");
+                continue;
+            }
+
+            // Prove the key by deriving it, then wipe it: a readiness probe that only
+            // checked for a non-empty string would pass on a malformed secret.
+            if (!derivation.TryDerive(configured, out var key))
+            {
+                failures.Add($"{derivation.PlatformKeyConfigPath} must be a valid {derivation.SecretDescription}");
+                continue;
+            }
+
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(key);
+        }
     }
 
     private void AddKycFailures(List<string> failures)

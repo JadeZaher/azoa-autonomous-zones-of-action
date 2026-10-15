@@ -81,7 +81,7 @@ public class KeyCustodyServiceTests
     }
 
     /// <summary>Real owned Platform wallet whose EncryptedPrivateKey decrypts to a known hex.</summary>
-    private static (Wallet wallet, string clearHex) OwnedPlatformWallet(WalletKeyService keyService, Guid avatarId)
+    private static (Wallet wallet, string clearHex) OwnedPlatformWallet(WalletKeyService keyService, Guid userId)
     {
         // A representative 64-byte Algorand ClearTextPrivateKey, hex-encoded — the
         // exact shape WalletKeyService.GenerateAlgorandKeypair persists.
@@ -92,7 +92,7 @@ public class KeyCustodyServiceTests
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Algorand",
             Address = "TESTADDR",
             WalletType = WalletType.Platform,
@@ -107,12 +107,12 @@ public class KeyCustodyServiceTests
     public async Task WithSigningKeyAsync_owned_platform_wallet_returns_signer_result()
     {
         var keyService = KeyService(EncKeyA);
-        var avatarId = Guid.NewGuid();
-        var (wallet, clearHex) = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var (wallet, clearHex) = OwnedPlatformWallet(keyService, userId);
         var svc = NewService(StoreReturning(wallet), keyService);
 
         byte[]? seenByKeySigner = null;
-        var result = await svc.WithSigningKeyAsync(wallet.Id, avatarId, key =>
+        var result = await svc.WithSigningKeyAsync(wallet.Id, userId, key =>
         {
             seenByKeySigner = (byte[])key.Clone();
             return Task.FromResult("SIGNED");
@@ -124,10 +124,10 @@ public class KeyCustodyServiceTests
         Convert.ToHexString(seenByKeySigner!).ToLowerInvariant().Should().Be(clearHex);
     }
 
-    // ─── IDOR guard: no decrypt on a different avatar ───
+    // ─── IDOR guard: no decrypt on a different user ───
 
     [Fact]
-    public async Task WithSigningKeyAsync_different_avatar_errors_and_never_decrypts()
+    public async Task WithSigningKeyAsync_different_user_errors_and_never_decrypts()
     {
         var keyService = KeyService(EncKeyA);
         var owner = Guid.NewGuid();
@@ -139,7 +139,7 @@ public class KeyCustodyServiceTests
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = owner,
+            UserId = owner,
             ChainType = "Algorand",
             WalletType = WalletType.Platform,
             EncryptedPrivateKey = "not-real-ciphertext-would-throw-if-decrypted",
@@ -154,7 +154,7 @@ public class KeyCustodyServiceTests
         });
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Be("Wallet not owned by this avatar.");
+        result.Message.Should().Be("Wallet not owned by this user.");
         result.Message.Should().NotContain("Decryption failed");
         signerCalled.Should().BeFalse();
     }
@@ -165,18 +165,18 @@ public class KeyCustodyServiceTests
     public async Task WithSigningKeyAsync_external_wallet_errors()
     {
         var keyService = KeyService(EncKeyA);
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = avatarId,
+            UserId = userId,
             ChainType = "Algorand",
             WalletType = WalletType.External,
             EncryptedPrivateKey = "irrelevant-external-wallets-have-no-platform-key",
         };
         var svc = NewService(StoreReturning(wallet), keyService);
 
-        var result = await svc.WithSigningKeyAsync(wallet.Id, avatarId, _ => Task.FromResult(0));
+        var result = await svc.WithSigningKeyAsync(wallet.Id, userId, _ => Task.FromResult(0));
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("External wallets");
@@ -197,14 +197,14 @@ public class KeyCustodyServiceTests
     public async Task WithSigningKeyAsync_zeroes_key_even_when_signer_throws()
     {
         var keyService = KeyService(EncKeyA);
-        var avatarId = Guid.NewGuid();
-        var (wallet, _) = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var (wallet, _) = OwnedPlatformWallet(keyService, userId);
         var svc = NewService(StoreReturning(wallet), keyService);
 
         // Capture the live reference the resolver handed in; after the resolver's
         // finally runs, that very buffer must be all zeros.
         byte[]? handed = null;
-        var result = await svc.WithSigningKeyAsync<int>(wallet.Id, avatarId, key =>
+        var result = await svc.WithSigningKeyAsync<int>(wallet.Id, userId, key =>
         {
             handed = key; // SAME array the resolver will zero (not a clone)
             throw new InvalidOperationException("boom");
@@ -225,13 +225,13 @@ public class KeyCustodyServiceTests
     public async Task DecryptSignZero_throwing_signer_returns_error_and_zeroes_key_without_leaking()
     {
         var keyService = KeyService(EncKeyA);
-        var avatarId = Guid.NewGuid();
-        var (wallet, clearHex) = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var (wallet, clearHex) = OwnedPlatformWallet(keyService, userId);
         var svc = NewService(StoreReturning(wallet), keyService);
 
         byte[]? handed = null;
         byte[]? capturedCopy = null;
-        var result = await svc.WithSigningKeyAsync<int>(wallet.Id, avatarId, key =>
+        var result = await svc.WithSigningKeyAsync<int>(wallet.Id, userId, key =>
         {
             handed = key;                          // SAME array the resolver zeroes
             capturedCopy = (byte[])key.Clone();    // the real key bytes, for a leak check
@@ -259,12 +259,12 @@ public class KeyCustodyServiceTests
     public async Task WithSigningKeyAsync_zeroes_key_on_happy_path_too()
     {
         var keyService = KeyService(EncKeyA);
-        var avatarId = Guid.NewGuid();
-        var (wallet, _) = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var (wallet, _) = OwnedPlatformWallet(keyService, userId);
         var svc = NewService(StoreReturning(wallet), keyService);
 
         byte[]? handed = null;
-        var result = await svc.WithSigningKeyAsync(wallet.Id, avatarId, key =>
+        var result = await svc.WithSigningKeyAsync(wallet.Id, userId, key =>
         {
             handed = key;
             return Task.FromResult("ok");
@@ -280,17 +280,17 @@ public class KeyCustodyServiceTests
     public async Task CanSignAsync_owned_platform_wallet_is_true()
     {
         var keyService = KeyService(EncKeyA);
-        var avatarId = Guid.NewGuid();
-        var (wallet, _) = OwnedPlatformWallet(keyService, avatarId);
+        var userId = Guid.NewGuid();
+        var (wallet, _) = OwnedPlatformWallet(keyService, userId);
         var svc = NewService(StoreReturning(wallet), keyService);
 
-        var result = await svc.CanSignAsync(wallet.Id, avatarId);
+        var result = await svc.CanSignAsync(wallet.Id, userId);
         result.IsError.Should().BeFalse();
         result.Result.Should().BeTrue();
     }
 
     [Fact]
-    public async Task CanSignAsync_wrong_avatar_is_error()
+    public async Task CanSignAsync_wrong_user_is_error()
     {
         var keyService = KeyService(EncKeyA);
         var (wallet, _) = OwnedPlatformWallet(keyService, Guid.NewGuid());
@@ -393,7 +393,7 @@ public class KeyCustodyServiceTests
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             ChainType = "Algorand",
             WalletType = WalletType.Platform,
             EncryptedPrivateKey = oldKeyService.EncryptPrivateKey(clearPk),
@@ -424,7 +424,7 @@ public class KeyCustodyServiceTests
         var wallet = new Wallet
         {
             Id = Guid.NewGuid(),
-            AvatarId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
             WalletType = WalletType.Platform,
             EncryptedPrivateKey = oldKeyService.EncryptPrivateKey(clearPk),
             EncryptedSeedPhrase = null,

@@ -1,7 +1,7 @@
 namespace AZOA.WebAPI.Models.Requests;
 
 /// <summary>
-/// Body for <c>POST /api/tenant/avatars</c>. Carries the tenant's own user id
+/// Body for <c>POST /api/tenant/users</c>. Carries the tenant's own user id
 /// for the child being provisioned plus optional seeds. There is intentionally
 /// NO tenant id field — the tenant id is sourced exclusively from the
 /// authenticated key's claim (IDOR rule); any tenant id in a request body is
@@ -18,7 +18,7 @@ public class ProvisionChildModel
     /// <summary>
     /// Optional username seed. When omitted, a deterministic username is
     /// synthesized from the tenant id + external user id (both are
-    /// unique-indexed and required on the avatar record).
+    /// unique-indexed and required on the user record).
     /// </summary>
     public string? Username { get; set; }
 
@@ -27,7 +27,7 @@ public class ProvisionChildModel
 }
 
 /// <summary>
-/// Body for <c>POST /api/tenant/avatars/{id}/credential</c>. The requested
+/// Body for <c>POST /api/tenant/users/{id}/credential</c>. The requested
 /// scopes are intersected with the tenant key's own scopes before issuance
 /// (no privilege escalation through delegation). When empty, the issued
 /// credential carries the full intersection of the tenant's delegable scopes.
@@ -38,10 +38,10 @@ public class IssueChildCredentialModel
     public List<string> Scopes { get; set; } = new();
 }
 
-/// <summary>Echo response for a provisioned / resolved child avatar.</summary>
-public class ChildAvatarResponse
+/// <summary>Echo response for a provisioned / resolved child user.</summary>
+public class ChildUserResponse
 {
-    public Guid AvatarId { get; set; }
+    public Guid UserId { get; set; }
     public string ExternalUserId { get; set; } = string.Empty;
     public string? ExternalRef { get; set; }
     public string Username { get; set; } = string.Empty;
@@ -51,8 +51,8 @@ public class ChildAvatarResponse
 /// <summary>Response for an issued short-lived child credential.</summary>
 public class ChildCredentialResponse
 {
-    public Guid AvatarId { get; set; }
-    /// <summary>The short-lived child JWT. Subject is the child avatar id.</summary>
+    public Guid UserId { get; set; }
+    /// <summary>The short-lived child JWT. Subject is the child user id.</summary>
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
     /// <summary>The scopes actually delegated (intersection of requested ∩ tenant's own).</summary>

@@ -117,16 +117,17 @@ live-network evidence are complete.
 
 ## Enforce bridge safety
 
-Leave `SupportsBridging` false unless all four provider primitives are real:
+Bridge capability is a MODULE, not a boolean. Do not implement `IBridgeSourceLeg`
+(lock, release) or `IBridgeTargetLeg` (wrapped mint, wrapped burn) until that
+half is real — absence is the fail-closed refusal, and a chain may legitimately
+ship one leg and not the other (Algorand is a proven source and not a target).
 
-- lock native/source asset
-- mint wrapped asset
-- burn wrapped asset
-- release native/source asset
+Never add a leg with a refusal body: a method that does not exist cannot regress
+into a fabricated success.
 
-Require real broadcast hashes, vault/mint-authority ownership, recipient
-opt-in/allowance handling, confirmation and finality, pending-confirmation
-recovery, replay protection, and focused failure tests.
+Require real broadcast hashes, vault/mint-authority ownership PROVEN against
+chain state, recipient opt-in/allowance handling, confirmation and finality,
+pending-confirmation recovery, replay protection, and focused failure tests.
 
 Verified protocol chain IDs, address codecs, and configuration-key schemas may
 land while bridging is false. Deployment addresses, vaults, mint authorities,

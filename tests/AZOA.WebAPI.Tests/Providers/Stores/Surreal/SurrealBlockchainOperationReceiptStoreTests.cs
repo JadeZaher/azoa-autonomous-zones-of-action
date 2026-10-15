@@ -14,7 +14,7 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests
     public async Task GetByIdempotencyKey_RoundTripsReceiptCorrelationAndInitiators()
     {
         var operationId = Guid.NewGuid();
-        var initiatorAvatarId = Guid.NewGuid();
+        var initiatorUserId = Guid.NewGuid();
         var initiatorApiKeyId = Guid.NewGuid();
         var correlation = new string('a', 64);
         var row = new OperationLog
@@ -23,7 +23,7 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests
             OperationType = "Mint",
             Status = OperationLog.StatusKind.Pending,
             IdempotencyKey = correlation,
-            InitiatorAvatarId = $"avatar:{initiatorAvatarId:N}",
+            InitiatorUserId = $"user:{initiatorUserId:N}",
             InitiatorApiKeyId = $"api_key:{initiatorApiKeyId:N}",
             CreatedDate = DateTimeOffset.UtcNow,
         };
@@ -39,7 +39,7 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests
         result.Result.Should().NotBeNull();
         result.Result!.Id.Should().Be(operationId);
         result.Result.IdempotencyKey.Should().Be(correlation);
-        result.Result.InitiatorAvatarId.Should().Be(initiatorAvatarId);
+        result.Result.InitiatorUserId.Should().Be(initiatorUserId);
         result.Result.InitiatorApiKeyId.Should().Be(initiatorApiKeyId);
     }
 
@@ -105,7 +105,7 @@ public sealed class SurrealBlockchainOperationReceiptStoreTests
                 OperationType = "Mint",
                 Status = OperationLog.StatusKind.Pending,
                 IdempotencyKey = new string('e', 64),
-                InitiatorAvatarId = $"avatar:{Guid.NewGuid():N}",
+                InitiatorUserId = $"user:{Guid.NewGuid():N}",
                 CreatedDate = DateTimeOffset.UtcNow,
             });
         var store = new SurrealBlockchainOperationStore(executor.Object);

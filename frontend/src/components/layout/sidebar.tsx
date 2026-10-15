@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
+import type { LucideIcon } from 'lucide-react'
 import {
   LayoutDashboard,
   Users,
@@ -27,35 +28,88 @@ import {
   ShieldAlert,
   GitMerge,
   BadgeCheck,
+  BarChart3,
+  Clock,
+  Undo2,
+  Banknote,
+  Scale,
 } from 'lucide-react'
 import { useState } from 'react'
 
-const navGroups = [
+/**
+ * Who a nav entry is shown to. 'all' = every signed-in avatar; 'operator' = hidden unless
+ * {@link isOperatorConsole} says this console instance is opted into operator-facing nav
+ * (see OI-84). `NavGroup.audience` is REQUIRED (not defaulted) so a new group cannot join
+ * the sidebar without a deliberate visibility choice — the compiler enforces it the same
+ * way `ReserveDrawAuthority` forces reserve callers to name who may draw
+ * (Services/Reserve/ReserveDrawAuthority.cs). An item may narrow below its group's default.
+ */
+type NavAudience = 'all' | 'operator'
+
+interface NavItem {
+  href: string
+  label: string
+  icon: LucideIcon
+  /** Overrides the owning group's `audience` for just this item. */
+  audience?: NavAudience
+}
+
+interface NavGroup {
+  label: string | null
+  audience: NavAudience
+  items: NavItem[]
+}
+
+/**
+ * STUB (OI-84): AZOA's regular avatar session carries no role or scope today — `AuthProfile`
+ * (frontend/src/lib/azoa-context.tsx) has no field for it, and "operator" is presently a
+ * JWT-only backend claim (Controllers/UserController.cs `ActingIsOperator`) with nothing
+ * client-visible to read here. Until AuthProfile/AzoaState carries a real per-avatar signal,
+ * this resolves to a build-time flag instead of a per-user check, and — per the reserve
+ * options precedent (ReserveDrawAuthority.cs ~:180) — an unset or blank value MUST resolve to
+ * the narrowest setting, so an unconfigured deployment hides operator-only nav for everyone.
+ */
+function isOperatorConsole(): boolean {
+  return process.env.NEXT_PUBLIC_AZOA_OPERATOR_CONSOLE === 'true'
+}
+
+/** Whether the current console instance may see a nav entry with this resolved audience. */
+function isNavAudienceVisible(audience: NavAudience): boolean {
+  return audience === 'all' || isOperatorConsole()
+}
+
+const navGroups: NavGroup[] = [
   {
     label: null,
+    audience: 'all',
     items: [
       { href: '/overview', label: 'Overview', icon: LayoutDashboard },
     ],
   },
   {
     label: 'Identity',
+    audience: 'all',
     items: [
-      { href: '/avatars', label: 'Avatars', icon: Users },
+      { href: '/users', label: 'Users', icon: Users },
       { href: '/holons', label: 'Holons', icon: Box },
       { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
     ],
   },
   {
     label: 'Assets',
+    audience: 'all',
     items: [
       { href: '/wallets', label: 'Wallets', icon: Wallet },
       { href: '/nfts', label: 'NFTs', icon: Image },
       { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
-      { href: '/avatar-nfts', label: 'Avatar NFTs', icon: UserCircle },
+      { href: '/user-nfts', label: 'User NFTs', icon: UserCircle },
     ],
   },
+  // OI-84: a "DeFi" group is the platform announcing itself as a blockchain company on
+  // every page load. Operator-only until a real audience picker replaces this raw label.
   {
     label: 'DeFi',
+    audience: 'operator',
     items: [
       { href: '/blockchain', label: 'Blockchain', icon: Link2 },
       { href: '/swap', label: 'Swap', icon: ArrowLeftRight },
@@ -64,23 +118,32 @@ const navGroups = [
   },
   {
     label: 'Tools',
+    audience: 'all',
     items: [
       { href: '/search', label: 'Search', icon: Search },
-      { href: '/holon-query', label: 'Holon Query', icon: Database },
-      { href: '/quests', label: 'Quests', icon: Star },
-      { href: '/star-odk', label: 'Star ODK', icon: Star },
+      // OI-84: raw holon queries are an internals surface, not a builder-facing tool.
+      { href: '/holon-query', label: 'Holon Query', icon: Database, audience: 'operator' },
+      { href: '/actions', label: 'Actions', icon: Star },
+      { href: '/action-graph-bundle', label: 'Action Graph Bundles', icon: Star },
       { href: '/api-keys', label: 'API Keys', icon: KeyRound },
+      { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
   {
     label: 'Admin',
+    audience: 'all',
     items: [
       { href: '/admin/key-rotation', label: 'Key Rotation', icon: ShieldAlert },
       { href: '/admin/sagas', label: 'Saga Console', icon: GitMerge },
+      { href: '/admin/parked-runs', label: 'Waiting on Settlement', icon: Clock },
+      { href: '/admin/fiat-reversals', label: 'Returned Payments', icon: Undo2 },
+      { href: '/admin/fiat-payouts', label: 'Cash-outs', icon: Banknote },
+      { href: '/node-transparency', label: 'Node Economic Rules', icon: Scale },
     ],
   },
   {
     label: null,
+    audience: 'all',
     items: [
       { href: '/settings', label: 'Settings', icon: Settings },
       { href: '/tests', label: 'Tests', icon: FlaskConical },
@@ -91,10 +154,19 @@ const navGroups = [
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
 
+  // Resolve visible items per group first so a group hidden in full (every item's
+  // resolved audience denied) renders neither its label nor a trailing separator.
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => isNavAudienceVisible(item.audience ?? group.audience)),
+    }))
+    .filter((group) => group.items.length > 0)
+
   return (
     <ScrollArea className="h-full">
       <div className="space-y-1 px-3 py-2">
-        {navGroups.map((group, gi) => (
+        {visibleGroups.map((group, gi) => (
           <div key={gi}>
             {group.label && (
               <p className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 first:mt-0">
@@ -121,7 +193,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                 </Link>
               )
             })}
-            {gi < navGroups.length - 1 && <Separator className="mt-3" />}
+            {gi < visibleGroups.length - 1 && <Separator className="mt-3" />}
           </div>
         ))}
       </div>

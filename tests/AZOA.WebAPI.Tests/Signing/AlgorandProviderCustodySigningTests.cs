@@ -18,7 +18,7 @@ namespace AZOA.WebAPI.Tests.Signing;
 /// <summary>
 /// value-path-wiring C1: a per-user custodial value-move signs with the USER's
 /// key (resolved via <see cref="IKeyCustodyService.WithSigningKeyAsync{T}"/> with
-/// the user's walletId/avatarId), NOT the platform key — and a non-owning avatar
+/// the user's walletId/userId), NOT the platform key — and a non-owning user
 /// is IDOR-rejected by the custody guard with NO signing side effect.
 /// </summary>
 public class AlgorandProviderCustodySigningTests
@@ -58,13 +58,13 @@ public class AlgorandProviderCustodySigningTests
     {
         using var stub = RunStub(confirmedRound: 3);
 
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
 
-        // The custody resolver: records the (walletId, avatarId) it was asked to
+        // The custody resolver: records the (walletId, userId) it was asked to
         // resolve and signs with the USER's account key (NOT the platform key).
         Guid? resolvedWallet = null;
-        Guid? resolvedAvatar = null;
+        Guid? resolvedUser = null;
         var custody = new Mock<IKeyCustodyService>();
         // The provider now routes through the consent-aware overload
         // WithSigningKeyAsync(SigningContext, sign) (tenant-consent-delegation C1).
@@ -73,7 +73,7 @@ public class AlgorandProviderCustodySigningTests
             .Returns(async (SigningContext ctx, Func<byte[], Task<AZOAResult<byte[]>>> sign) =>
             {
                 resolvedWallet = ctx.WalletId;
-                resolvedAvatar = ctx.AvatarId;
+                resolvedUser = ctx.UserId;
                 // Hand the USER's private key to the signer.
                 var userKey = (byte[])_userAccount.KeyPair.ClearTextPrivateKey.Clone();
                 var inner = await sign(userKey);
@@ -93,32 +93,32 @@ public class AlgorandProviderCustodySigningTests
             fromAddress: userAddr,
             toAddress: userAddr,
             amount: 1UL,
-            signingContext: SigningContext.ForUser(avatarId, walletId));
+            signingContext: SigningContext.ForUser(userId, walletId));
 
         result.IsError.Should().BeFalse(result.Message);
         _submitCount.Should().Be(1, "the per-user transfer must broadcast exactly once");
 
-        // The custody resolver was invoked with the USER's wallet + avatar — proof
+        // The custody resolver was invoked with the USER's wallet + user — proof
         // the provider routes the right identity into the signer (not the platform).
         resolvedWallet.Should().Be(walletId);
-        resolvedAvatar.Should().Be(avatarId);
+        resolvedUser.Should().Be(userId);
         custody.Verify(c => c.WithSigningKeyAsync(
-            It.Is<SigningContext>(x => x.WalletId == walletId && x.AvatarId == avatarId),
+            It.Is<SigningContext>(x => x.WalletId == walletId && x.UserId == userId),
             It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()), Times.Once);
         custody.Verify(c => c.WithPlatformSigningKeyAsync(
             It.IsAny<bool>(), It.IsAny<SigningContext>(), It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()), Times.Never);
     }
 
     [Fact]
-    public async Task PerUserTransfer_NonOwningAvatar_IsIdorRejected_WithNoSigningSideEffect()
+    public async Task PerUserTransfer_NonOwningUser_IsIdorRejected_WithNoSigningSideEffect()
     {
         using var stub = RunStub(confirmedRound: 3);
 
-        var attackerAvatarId = Guid.NewGuid();
+        var attackerUserId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
 
         var custody = new Mock<IKeyCustodyService>();
-        // The custody IDOR guard: the wallet is not owned by this avatar → error
+        // The custody IDOR guard: the wallet is not owned by this user → error
         // BEFORE the sign delegate runs (mirrors KeyCustodyService.cs:91-96).
         custody.Setup(c => c.WithSigningKeyAsync(
                 It.IsAny<SigningContext>(), It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()))
@@ -127,7 +127,7 @@ public class AlgorandProviderCustodySigningTests
                 Task.FromResult(new AZOAResult<AZOAResult<byte[]>>
                 {
                     IsError = true,
-                    Message = "Wallet not owned by this avatar."
+                    Message = "Wallet not owned by this user."
                 }));
 
         var provider = NewProvider(custody.Object, stub);
@@ -138,9 +138,9 @@ public class AlgorandProviderCustodySigningTests
             fromAddress: userAddr,
             toAddress: userAddr,
             amount: 1UL,
-            signingContext: SigningContext.ForUser(attackerAvatarId, walletId));
+            signingContext: SigningContext.ForUser(attackerUserId, walletId));
 
-        result.IsError.Should().BeTrue("a non-owning avatar must be IDOR-rejected by the custody guard");
+        result.IsError.Should().BeTrue("a non-owning user must be IDOR-rejected by the custody guard");
         _submitCount.Should().Be(0, "no transaction may be broadcast when signing is IDOR-rejected");
     }
 

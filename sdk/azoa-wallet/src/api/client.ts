@@ -34,7 +34,7 @@ interface AZOAResponse<T> {
 
 // ─── Response types matching .NET DTOs ───
 
-export interface AvatarResponse {
+export interface UserResponse {
   id: string;
   username: string;
   email: string;
@@ -44,7 +44,17 @@ export interface AvatarResponse {
   isActive: boolean;
 }
 
-export type TenantKycStatus = "Unknown" | "Pending" | "Approved" | "Rejected";
+/**
+ * Mirrors AZOA's `TenantKycStatus`. `UnderReview` means identity verified but an
+ * additional compliance check still owes a human decision: neither approved nor
+ * rejected, and closed to value until it resolves.
+ */
+export type TenantKycStatus =
+  | "Unknown"
+  | "Pending"
+  | "Approved"
+  | "Rejected"
+  | "UnderReview";
 
 /** Secret-free tenant account projection returned to platforms such as ArdaNova. */
 export interface TenantCustodialAccountStatus {
@@ -52,7 +62,7 @@ export interface TenantCustodialAccountStatus {
   externalSubject: string;
   /** Compatibility alias emitted for the initial ArdaNova integration. */
   ardanovaUserId: string;
-  avatarId: string | null;
+  userId: string | null;
   walletId: string | null;
   walletAddress: string | null;
   kycStatus: TenantKycStatus;
@@ -61,6 +71,8 @@ export interface TenantCustodialAccountStatus {
   walletReady: boolean;
   ready: boolean;
   unavailableReason: string | null;
+  /** When an open compliance review is due a decision; null unless `UnderReview`. */
+  reviewDueAt: string | null;
 }
 
 export interface TenantCustodialCapabilities {
@@ -107,7 +119,7 @@ export interface TenantKycSubmission {
 }
 
 /**
- * Assignable DApp role — the closed allowlist the `PUT /api/avatar/{id}/dapp-role`
+ * Assignable DApp role — the closed allowlist the `PUT /api/user/{id}/dapp-role`
  * endpoint accepts (mirrors `Core/AzoaDappRoles.cs`). `operator:admin` is
  * deliberately absent: operator authority is a JWT-only scope, never a DApp role,
  * so no value assignable here can yield operator privileges.
@@ -121,7 +133,7 @@ export interface NftResult {
   id: string;
   name: string;
   description: string;
-  ownerAvatarId?: string;
+  ownerUserId?: string;
   chainId: string;
   tokenId?: string;
   /** Asset type — defaults to "NFT" on the backend. */
@@ -134,7 +146,7 @@ export interface NftResult {
 
 /** Mirrors the .NET NftQueryRequest fields (sent as querystring). */
 export interface NftQueryParams {
-  ownerAvatarId?: string;
+  ownerUserId?: string;
   chainId?: string;
   tokenId?: string;
   name?: string;
@@ -151,7 +163,7 @@ export interface NftMetadata {
 // Public bridge response. Server-only idempotency metadata is deliberately omitted.
 export interface BridgeTransactionResult {
   id: string;
-  avatarId: string;
+  userId: string;
   sourceChain: string;
   targetChain: string;
   sourceTokenId: string;
@@ -217,7 +229,7 @@ export interface NftMintParams {
 }
 
 export interface NftTransferParams {
-  targetAvatarId: string;
+  targetUserId: string;
   walletId: string;
   memo?: string;
 }
@@ -225,7 +237,7 @@ export interface NftTransferParams {
 /**
  * Mirrors .NET FungibleMintRequest — the body for `POST /api/nft/fungible-mint`
  * (the one-shot, no-DAG fungible token launch). Field shape matches the
- * `FungibleTokenCreate` quest node config; total + decimals are tenant-authoritative.
+ * `FungibleTokenCreate` action node config; total + decimals are tenant-authoritative.
  */
 export interface FungibleMintParams {
   /** Target chain (e.g. "Algorand"). Algorand-only in v1. */
@@ -244,8 +256,8 @@ export interface FungibleMintParams {
 
 /** Mirrors .NET FungibleTokenResult — the outcome of a fungible-token (ASA) launch. */
 export interface FungibleTokenResult {
-  /** The avatar the token was launched for. */
-  avatarId: string;
+  /** The user the token was launched for. */
+  userId: string;
   /** The custodial wallet the token was launched from. */
   walletId: string;
   /** The on-chain address of the custodial wallet. */
@@ -260,6 +272,160 @@ export interface FungibleTokenResult {
 
 export interface NftBurnParams {
   walletId: string;
+}
+
+// ─── Credential types matching .NET DTOs (CredentialController, D19) ───
+
+/** Mirrors .NET CredentialRevokeRequest — the body for `POST /api/credential/{assetId}/revoke`. */
+export interface CredentialRevokeParams {
+  /** Chain the credential lives on. Algorand-only (ASA clawback) in v1. */
+  chainType: string;
+  /** Optional free-text reason recorded on the operation row. */
+  reason?: string;
+}
+
+/** The OperationStatus constants a revocation can carry; only "Completed" is a confirmed clawback. */
+export type CredentialRevokeStatus = "Completed" | "PendingConfirmation" | "Failed";
+
+/**
+ * Mirrors .NET CredentialRevokeResult. `status` is the ONLY authority on what happened —
+ * branch on it (or `isConfirmed`), never on "the call returned a result". The SDK never
+ * returns a "PendingConfirmation" outcome as `ok`; see {@link isCredentialRevocationPending}.
+ */
+export interface CredentialRevokeResult {
+  /** Chain-native asset id (ASA id) of the revoked credential. */
+  assetId: string;
+  /** AZOA's ownership-row id for the credential. */
+  credentialId: string;
+  /** The issuer that authorized this revocation — never the holder. */
+  issuerUserId: string;
+  /** The user the credential was taken from. */
+  holderUserId: string;
+  /** On-chain address the credential was clawed back FROM. */
+  holderAddress: string;
+  /** On-chain address the credential was clawed back TO (the issuer's wallet). */
+  recipientAddress: string;
+  chainType: string;
+  status: CredentialRevokeStatus;
+  /** True only when `status` is "Completed". */
+  isConfirmed: boolean;
+  /** Present whenever a transaction reached the network — including unconfirmed / failed-after-broadcast. */
+  txHash?: string;
+  /** The `CredentialRevoke` operation row recording this move (D16 analytics). */
+  operationId: string;
+  /** True when this response replays a prior revocation under the same idempotency key. */
+  replayed: boolean;
+}
+
+/**
+ * True when a revoke came back HTTP 202: broadcast but NOT confirmed. The credential may
+ * or may not have moved — reconcile against chain truth; do NOT re-submit.
+ */
+export function isCredentialRevocationPending(error: SdkError): boolean {
+  return error.code === SdkErrorCode.API_ERROR && error.status === 202;
+}
+
+// ─── Analytics types matching .NET DTOs (AnalyticsController, D16) ───
+
+/** Mirrors .NET AnalyticsQueryRequest (sent as querystring). ISO-8601 window bounds; skip/take page. */
+export interface AnalyticsQueryParams {
+  from?: string;
+  to?: string;
+  skip?: number;
+  take?: number;
+}
+
+/** Mirrors .NET PricingStatus. "NeverPriced" is a fact, not a zero — never default `value` to 0. */
+export type PricingStatus = "NeverPriced" | "Priced";
+
+/** Mirrors .NET QuantityStatus. "Unknown" is a fact, not a zero — never read `amount ?? "0"`. */
+export type QuantityStatus = "Unknown" | "Known";
+
+/** Mirrors .NET ValueStampResponse — every component a string. */
+export interface ValueStampResponse {
+  /** ISO-4217 code of the stamped currency. */
+  currencyCode: string;
+  /** Decimal string in the currency's minor unit. */
+  minorUnits: string;
+  /** The rate applied; "0" is a real quote of zero, not an absent one. */
+  rate: string;
+  /** When the applied rate was observed — not when it was applied. */
+  rateAsOf: string;
+  rateSource: string;
+}
+
+/** Mirrors .NET TransactionHistoryEntry. Money fields are base-unit decimal strings, never numbers. */
+export interface TransactionHistoryEntry {
+  operationId: string;
+  timestamp: string;
+  settledAt?: string;
+  operationType: string;
+  /** An OperationStatus constant. */
+  status: string;
+  assetType?: string;
+  assetId?: string;
+  chainType?: string;
+  /** Base-unit decimal string; absent iff `amountStatus` is "Unknown". */
+  amount?: string;
+  amountStatus: QuantityStatus;
+  counterpartyAddress?: string;
+  txHash?: string;
+  /** Base-unit decimal string. */
+  fee?: string;
+  /** False for Swap/Exchange/Deploy/Call and non-broadcast rows — not a pricing gap. */
+  isStampable: boolean;
+  pricing: PricingStatus;
+  /** Present iff `pricing` is "Priced". */
+  value?: ValueStampResponse;
+}
+
+/** Mirrors .NET TransactionHistoryPage — one page, newest first. */
+export interface TransactionHistoryPage {
+  items: TransactionHistoryEntry[];
+  skip: number;
+  take: number;
+  hasMore: boolean;
+  /** Rows in this page carrying no value stamp. */
+  unpricedEntryCount: number;
+  /** Rows in this page whose quantity the log does not record. */
+  unknownAmountEntryCount: number;
+}
+
+/** Mirrors .NET FiatValueResponse. Present only when every contributing entry was really priced. */
+export interface FiatValueResponse {
+  currencyCode: string;
+  /** Signed decimal string in the currency's minor unit. */
+  minorUnits: string;
+}
+
+/** Mirrors .NET PositionSummary. A fiat total is either complete or absent — never a partial sum. */
+export interface PositionSummary {
+  chainType?: string;
+  /** Absent means the chain's own native asset. */
+  assetId?: string;
+  /** Signed base-unit decimal string of settled, direction-classified movement. */
+  quantity: string;
+  entryCount: number;
+  unsettledEntryCount: number;
+  unclassifiedEntryCount: number;
+  unknownAmountEntryCount: number;
+  isQuantityComplete: boolean;
+  pricedEntryCount: number;
+  unpricedEntryCount: number;
+  /** Subset of `unpricedEntryCount` that can NEVER be stamped by design (e.g. Swap). */
+  unstampableEntryCount: number;
+  isValueComplete: boolean;
+  /** Absent unless the position is value- and quantity-complete in one currency. */
+  realizedValue?: FiatValueResponse;
+  /** Always absent today: no current-rate source exists. */
+  unrealizedValue?: FiatValueResponse;
+}
+
+/** Mirrors .NET PositionsResponse. `isComplete: false` = truncated scan, never a final total. */
+export interface PositionsResponse {
+  items: PositionSummary[];
+  scannedEntryCount: number;
+  isComplete: boolean;
 }
 
 // ─── Swap types (match SwapController DTOs) ───
@@ -321,7 +487,7 @@ export interface SearchParams {
   entityTypes?: number;
   chainId?: string;
   assetType?: string;
-  avatarId?: string;
+  userId?: string;
   createdAfter?: string;
   createdBefore?: string;
   sortBy?: string;
@@ -334,7 +500,7 @@ export interface SearchParams {
 
 export interface WalletResult {
   id: string;
-  avatarId: string;
+  userId: string;
   chainType: string;
   address: string;
   publicKey?: string;
@@ -357,7 +523,7 @@ export interface WalletUpdateParams {
 }
 
 export interface WalletQueryParams {
-  avatarId?: string;
+  userId?: string;
   chainType?: string;
   isDefault?: boolean;
 }
@@ -415,7 +581,7 @@ export interface NftHolding {
 
 export interface BlockchainOperationResult {
   id: string;
-  avatarId: string | null;
+  userId: string | null;
   walletId: string | null;
   operationType: string;
   status: string;
@@ -429,14 +595,14 @@ export interface BlockchainOperationResult {
   transactionReference: string | null;
 }
 
-// ─── STARODK types matching .NET DTOs ───
+// ─── ActionGraphBundle types matching .NET DTOs ───
 
-export interface STARODKResult {
+export interface ActionGraphBundleResult {
   id: string;
   name: string;
   description: string;
   publicKey?: string;
-  avatarId?: string;
+  userId?: string;
   boundHolonIds: string[];
   targetChain?: string;
   generatedCode?: string;
@@ -446,24 +612,24 @@ export interface STARODKResult {
   isActive: boolean;
 }
 
-export interface STARODKCreateParams {
+export interface ActionGraphBundleCreateParams {
   name: string;
   description: string;
   publicKey?: string;
-  avatarId?: string;
+  userId?: string;
 }
 
-export interface STARDappGenerationParams {
+export interface ActionGraphBundleDappGenerationParams {
   targetChain: string;
   boundHolonIds: string[];
   config?: Record<string, string>;
 }
 
-// ─── AvatarNFT types matching .NET DTOs ───
+// ─── UserNFT types matching .NET DTOs ───
 
-export interface AvatarNFTResult {
+export interface UserNFTResult {
   id: string;
-  avatarId: string;
+  userId: string;
   nftContractAddress?: string;
   tokenId?: string;
   chainType: string;
@@ -485,7 +651,7 @@ export interface AvatarNFTResult {
   walletBindings?: WalletNFTBindingResult[];
 }
 
-export interface AvatarNFTMintParams {
+export interface UserNFTMintParams {
   chainType: string;
   contractAddress?: string;
   tokenStandard?: string;
@@ -503,7 +669,7 @@ export interface AvatarNFTMintParams {
 export interface HolonNFTBindingResult {
   id: string;
   holonId: string;
-  avatarNFTId: string;
+  userNFTId: string;
   role: string;
   permissionLevel: string;
   permissions: Record<string, string>;
@@ -515,7 +681,7 @@ export interface HolonNFTBindingResult {
 export interface WalletNFTBindingResult {
   id: string;
   walletId: string;
-  avatarNFTId: string;
+  userNFTId: string;
   bindingType: string;
   accessLevel?: string;
   accessPermissions: Record<string, string>;
@@ -524,35 +690,42 @@ export interface WalletNFTBindingResult {
   isActive: boolean;
 }
 
-// ─── Quest types matching .NET DTOs ───
+// ─── Action types matching .NET DTOs ───
 
-/** Quest status lifecycle */
-export type QuestStatus = "Draft" | "Active" | "Completed" | "Failed" | "Archived";
+/** Action status lifecycle */
+export type ActionStatus = "Draft" | "Active" | "Completed" | "Failed" | "Archived";
 
 /** Node execution state */
-export type QuestNodeState = "Pending" | "Running" | "Succeeded" | "Failed" | "Skipped";
+export type ActionNodeState = "Pending" | "Running" | "Succeeded" | "Failed" | "Skipped";
 
 /** Edge types for DAG flow control */
-export type QuestEdgeType = "Control" | "Conditional";
+export type ActionEdgeType = "Control" | "Conditional";
 
-/** All supported quest node operation types */
-export type QuestNodeType =
+/** All supported action node operation types */
+export type ActionNodeType =
   | "HolonCreate" | "HolonUpdate" | "HolonDelete" | "HolonQuery"
   | "NftMint" | "NftTransfer" | "NftBurn"
   | "WalletCreate" | "WalletTransfer" | "WalletBalance"
-  | "StarCreate" | "StarGenerate" | "StarDeploy"
+  | "ActionGraphBundleCreate" | "ActionGraphBundleGenerate" | "ActionGraphBundleDeploy"
   | "SearchQuery"
-  | "AvatarNftMint" | "AvatarNftTransfer" | "AvatarNftVerify"
+  | "UserNftMint" | "UserNftTransfer" | "UserNftVerify"
   | "BlockchainExecute"
   | "Gate" | "Delay" | "Webhook" | "Script"
+  // Value-rail primitives (mirrors backend ActionNodeType). Governance + CredentialRevoke are
+  // NOT enabled server-side (governance-vote-of-record_20260906, credential-third-party-issuance_20260906).
+  | "CredentialRevoke"
+  | "GovernanceProposalCreate" | "GovernanceVote" | "GovernanceTally"
+  | "LoanOpen" | "LoanRepaymentRecord" | "LoanBalance"
+  // Hold rails (D14 / W3.4): funds set aside in the platform holding account.
+  | "Hold" | "Release" | "HoldRefund" | "ReleaseIntoHold"
   | string; // extensible
 
-export interface QuestNodeResult {
+export interface ActionNodeResult {
   id: string;
-  questId: string;
+  actionId: string;
   name: string;
   nodeType: string;
-  state: QuestNodeState;
+  state: ActionNodeState;
   config: string;
   output?: string;
   error?: string;
@@ -563,31 +736,31 @@ export interface QuestNodeResult {
   completedAt?: string;
 }
 
-export interface QuestEdgeResult {
+export interface ActionEdgeResult {
   id: string;
-  questId: string;
+  actionId: string;
   sourceNodeId: string;
   targetNodeId: string;
   condition?: string;
-  edgeType: QuestEdgeType;
+  edgeType: ActionEdgeType;
 }
 
-export interface QuestDependencyResult {
+export interface ActionDependencyResult {
   id: string;
-  questId: string;
-  dependsOnQuestId: string;
+  actionId: string;
+  dependsOnActionId: string;
   dependencyType: string;
 }
 
-export interface QuestResult {
+export interface ActionResult {
   id: string;
   name: string;
   description?: string;
-  avatarId: string;
-  status: QuestStatus;
-  nodes: QuestNodeResult[];
-  edges: QuestEdgeResult[];
-  dependencies: QuestDependencyResult[];
+  userId: string;
+  status: ActionStatus;
+  nodes: ActionNodeResult[];
+  edges: ActionEdgeResult[];
+  dependencies: ActionDependencyResult[];
   templateId?: string;
   dappSeriesId?: string;
   metadata: Record<string, string>;
@@ -596,43 +769,43 @@ export interface QuestResult {
   /**
    * Optimistic-concurrency version (final-hardening F6). Bumped on every
    * publish/unpublish transition; a stale read racing a concurrent transition
-   * surfaces as a "conflict" {@link SdkError} from {@link AzoaApiClient.publishQuest} /
-   * {@link AzoaApiClient.unpublishQuest} / workflow run-start — reload and retry.
+   * surfaces as a "conflict" {@link SdkError} from {@link AzoaApiClient.publishAction} /
+   * {@link AzoaApiClient.unpublishAction} / workflow run-start — reload and retry.
    */
   version: number;
   /**
-   * Marketplace visibility. When true and the quest is Active, a non-owner
-   * may start it (see {@link AzoaApiClient.executeQuest}) — the run is
-   * created under the caller's own avatar, linked back to the origin quest.
+   * Marketplace visibility. When true and the action is Active, a non-owner
+   * may start it (see {@link AzoaApiClient.executeAction}) — the run is
+   * created under the caller's own user, linked back to the origin action.
    */
   isPublic: boolean;
   /**
-   * Origin/creator avatar when this quest is a marketplace copy instantiated
-   * from a template (set to the template author's avatar id). Undefined for
-   * first-party quests created directly via {@link AzoaApiClient.createQuest}.
+   * Origin/creator user when this action is a marketplace copy instantiated
+   * from a template (set to the template author's user id). Undefined for
+   * first-party actions created directly via {@link AzoaApiClient.createAction}.
    */
-  originAvatarId?: string;
+  originUserId?: string;
 }
 
 /**
- * Lifecycle status of a single {@link QuestRunResult} (one execution attempt of a
- * Quest). Single source of truth: this is the {@link WorkflowRunStatus} union from
- * `workflow/types.ts` (both mirror C# `Models/Quest/QuestRunStatus.cs` 1:1) — the
+ * Lifecycle status of a single {@link ActionRunResult} (one execution attempt of an
+ * action). Single source of truth: this is the {@link WorkflowRunStatus} union from
+ * `workflow/types.ts` (both mirror C# `Models/Actions/ActionRunStatus.cs` 1:1) — the
  * alias keeps the two public surfaces from drifting apart.
  */
-export type QuestRunStatus = WorkflowRunStatus;
+export type ActionRunStatus = WorkflowRunStatus;
 
 /**
- * One execution attempt of a {@link QuestResult} definition (mirrors .NET
- * `QuestRun`). Returned by {@link AzoaApiClient.executeQuest}. Per-node
- * runtime state lives on {@link QuestNodeResult}, queryable separately by run id.
+ * One execution attempt of a {@link ActionResult} definition (mirrors .NET
+ * `ActionRun`). Returned by {@link AzoaApiClient.executeAction}. Per-node
+ * runtime state lives on {@link ActionNodeResult}, queryable separately by run id.
  */
-export interface QuestRunResult {
+export interface ActionRunResult {
   id: string;
-  questId: string;
-  avatarId: string;
+  actionId: string;
+  userId: string;
   actingTenantId?: string;
-  status: QuestRunStatus;
+  status: ActionRunStatus;
   startedAt: string;
   endedAt?: string;
   parentRunId?: string;
@@ -640,65 +813,65 @@ export interface QuestRunResult {
   forkReason?: string;
   failReason?: string;
   /**
-   * Marketplace provenance: the origin quest this run was started from when
-   * the runner is not the quest owner. Undefined for owner runs.
+   * Marketplace provenance: the origin action this run was started from when
+   * the runner is not the action owner. Undefined for owner runs.
    */
-  sourceQuestId?: string;
+  sourceActionId?: string;
   /**
-   * Marketplace provenance: the origin quest's owner/creator avatar when the
+   * Marketplace provenance: the origin action's owner/creator user when the
    * runner is not the owner. Undefined for owner runs.
    */
-  originAvatarId?: string;
+  originUserId?: string;
 }
 
-// ─── Quest invitations + request/approval (quest-invitations-approval) ───
+// ─── Action invitations + request/approval (action-invitations-approval) ───
 
 /**
- * Run-authorization mode for a quest, orthogonal to `isPublic` discoverability
- * (mirrors C# `Models/Quest/QuestRunAccess`). `Open` = anyone who can view may
- * run/fork (today's default); `InviteOnly` = only owner + invited avatars may
- * run/fork, though the quest stays viewable.
+ * Run-authorization mode for an action, orthogonal to `isPublic` discoverability
+ * (mirrors C# `Models/Actions/ActionRunAccess`). `Open` = anyone who can view may
+ * run/fork (today's default); `InviteOnly` = only owner + invited users may
+ * run/fork, though the action stays viewable.
  */
-export type QuestRunAccess = "Open" | "InviteOnly";
+export type ActionRunAccess = "Open" | "InviteOnly";
 
 /**
- * Lifecycle status of a {@link QuestAccessRequest} (mirrors C#
- * `Models/Quest/QuestAccessRequestStatus`). Terminal states
+ * Lifecycle status of a {@link ActionAccessRequest} (mirrors C#
+ * `Models/Actions/ActionAccessRequestStatus`). Terminal states
  * (`Approved | Rejected | Withdrawn`) are immutable; a re-request after a
  * terminal state opens a fresh `Pending`.
  */
-export type QuestAccessRequestStatus = "Pending" | "Approved" | "Rejected" | "Withdrawn";
+export type ActionAccessRequestStatus = "Pending" | "Approved" | "Rejected" | "Withdrawn";
 
 /**
- * A self-service request by a non-invited avatar to run an `InviteOnly` quest
- * (mirrors .NET `QuestAccessRequest`). Owner approval appends the requester to
- * the quest's invited set; reject/withdraw closes it.
+ * A self-service request by a non-invited user to run an `InviteOnly` action
+ * (mirrors .NET `ActionAccessRequest`). Owner approval appends the requester to
+ * the action's invited set; reject/withdraw closes it.
  */
-export interface QuestAccessRequest {
+export interface ActionAccessRequest {
   id: string;
-  questId: string;
-  requesterAvatarId: string;
-  status: QuestAccessRequestStatus;
+  actionId: string;
+  requesterUserId: string;
+  status: ActionAccessRequestStatus;
   message?: string;
   decisionReason?: string;
   createdAt: string;
   decidedAt?: string;
-  decidedByAvatarId?: string;
+  decidedByUserId?: string;
 }
 
-/** Request body for {@link AzoaApiClient.setQuestRunAccess}. */
+/** Request body for {@link AzoaApiClient.setActionRunAccess}. */
 export interface SetRunAccessRequest {
-  runAccess: QuestRunAccess;
+  runAccess: ActionRunAccess;
   /** Optionally seed the invite list when switching to `InviteOnly`. */
-  invitedAvatarIds?: string[];
+  invitedUserIds?: string[];
 }
 
-/** Request body for {@link AzoaApiClient.inviteAvatar}. */
-export interface InviteAvatarRequest {
-  avatarId: string;
+/** Request body for {@link AzoaApiClient.inviteUser}. */
+export interface InviteUserRequest {
+  userId: string;
 }
 
-/** Request body for {@link AzoaApiClient.requestQuestAccess}. */
+/** Request body for {@link AzoaApiClient.requestActionAccess}. */
 export interface RequestAccessBody {
   /** Optional note from the requester to the owner. */
   message?: string;
@@ -784,65 +957,65 @@ export interface KeyRotationParams {
   newEncryptionKey: string;
 }
 
-export interface QuestNodeCreateParams {
+export interface ActionNodeCreateParams {
   name: string;
-  nodeType: QuestNodeType;
+  nodeType: ActionNodeType;
   config?: string;
   isEntry?: boolean;
   isTerminal?: boolean;
   nodeTemplateId?: string;
 }
 
-export interface QuestEdgeCreateParams {
+export interface ActionEdgeCreateParams {
   sourceNodeId: number;
   targetNodeId: number;
   condition?: string;
-  edgeType?: QuestEdgeType;
+  edgeType?: ActionEdgeType;
 }
 
-export interface QuestCreateParams {
+export interface ActionCreateParams {
   name: string;
   description?: string;
-  nodes: QuestNodeCreateParams[];
-  edges: QuestEdgeCreateParams[];
+  nodes: ActionNodeCreateParams[];
+  edges: ActionEdgeCreateParams[];
   /** Marketplace visibility. Defaults to false (private, owner-only) server-side. */
   isPublic?: boolean;
 }
 
-export interface QuestUpdateParams {
+export interface ActionUpdateParams {
   name?: string;
   description?: string;
-  status?: QuestStatus;
+  status?: ActionStatus;
   /** Marketplace visibility toggle. Omit to leave unchanged. */
   isPublic?: boolean;
 }
 
-export interface QuestTemplateResult {
+export interface ActionTemplateResult {
   id: string;
   name: string;
   description?: string;
-  authorAvatarId: string;
+  authorUserId: string;
   parameters: string;
   version: string;
   isPublic: boolean;
   tags: string[];
-  nodes: QuestNodeResult[];
-  edges: QuestEdgeResult[];
+  nodes: ActionNodeResult[];
+  edges: ActionEdgeResult[];
   createdDate: string;
 }
 
-export interface QuestTemplateCreateParams {
+export interface ActionTemplateCreateParams {
   name: string;
   description?: string;
-  nodes: QuestNodeCreateParams[];
-  edges: QuestEdgeCreateParams[];
+  nodes: ActionNodeCreateParams[];
+  edges: ActionEdgeCreateParams[];
   parameters?: string;
   version?: string;
   isPublic?: boolean;
   tags?: string[];
 }
 
-export interface QuestNodeTemplateResult {
+export interface ActionNodeTemplateResult {
   id: string;
   name: string;
   nodeType: string;
@@ -857,9 +1030,9 @@ export interface QuestNodeTemplateResult {
   createdDate: string;
 }
 
-export interface QuestNodeTemplateCreateParams {
+export interface ActionNodeTemplateCreateParams {
   name: string;
-  nodeType: QuestNodeType;
+  nodeType: ActionNodeType;
   description?: string;
   defaultConfig?: string;
   configSchema?: string;
@@ -902,7 +1075,7 @@ export interface ApiKeyInfo {
 }
 
 /**
- * The self-issuable scopes an ordinary avatar may attach to its own new API key
+ * The self-issuable scopes an ordinary user may attach to its own new API key
  * (mirrors .NET AzoaScopes.SelfIssuableScopes). An empty CSV still means legacy
  * "full access"; these are the explicit opt-in scopes.
  */
@@ -911,7 +1084,7 @@ export type SelfIssuableApiKeyScope =
   | "dapp:manage"
   | "wallet:manage"
   | "nft:mint"
-  | "quest:execute"
+  | "action:execute"
   | "swap:sign"
   | "transfer:sign"
   | "grant:sign"
@@ -932,20 +1105,51 @@ export type ApiKeyScopeInfo = SelfIssuableApiKeyScopeInfo;
 
 // ─── Allocation types (Fiat Stripe Bridge) ───
 
+/**
+ * Mirrors AZOA's `AllocationKind` (D4/D47). `Mint` is retired for tenants — the
+ * manager refuses it for any tenant-driven caller — and stays only so historical
+ * receipts still deserialise. `IssueUnits` is the tenant-facing default: it draws
+ * already-existing units from a named reserve partition instead of creating supply.
+ */
 export interface AllocationRequest {
-  kind: "Mint" | "Transfer";
+  kind: "Mint" | "Transfer" | "IssueUnits";
   chainType: string;
   amount: string;
   name?: string;
   description?: string;
   assetId?: string;
   assetRecordId?: string;
+  /**
+   * The named reserve partition an `IssueUnits` draw comes from (e.g.
+   * `"contributor"`, `"investor"`). Required on that path — the backend refuses
+   * an `IssueUnits` request with no partition rather than defaulting one, so one
+   * purpose can never quietly overdraw another's earmark.
+   */
+  partition?: string;
+  /**
+   * Why these units are being issued, in the caller's own words (e.g.
+   * `"milestone-2 contributor stake"`). Recorded against the durable operation;
+   * never interpreted.
+   */
+  purpose?: string;
+  /**
+   * The fee schedule version the caller quoted via `previewOnly`. When set and
+   * the node's live schedule has moved on, the allocation is refused rather than
+   * settling on terms the caller never agreed to.
+   */
+  expectedFeeScheduleVersion?: number;
+  /**
+   * Quote only: runs every readiness check and returns the exact gross/fee/net
+   * and schedule version, performing NO allocation and claiming NO idempotency
+   * key. Use this to show a caller the fee before it locks terms with a person.
+   */
+  previewOnly?: boolean;
   metadata?: Record<string, string>;
   memo?: string;
 }
 
 export interface AllocationResult {
-  avatarId: string;
+  userId: string;
   walletId: string;
   walletAddress: string;
   walletProvisioned: boolean;
@@ -957,21 +1161,703 @@ export interface AllocationResult {
   nodeFeeScheduleVersion: number;
 }
 
+// ─── Exchange types (ExchangeController, W5.1/D50) ───
+// The sponsorship moment: a consumer that has already decided the amounts and
+// the rate calls `exchange()`, the sponsor's funds reach the project on chain,
+// and the sponsor's units are either theirs immediately or committed to a hold
+// — all in one atomic group. Requires an API-key principal carrying the
+// exchange-signing scope, exactly like `allocate()`.
+
+/** Which way units move in a treasury-rate exchange. */
+export type ExchangeDirection =
+  | "Buy"
+  /**
+   * A holder gives project units back and receives the platform unit. Refused
+   * until a buy-back liquidity policy is registered server-side.
+   */
+  | "Sell";
+
+/**
+ * The rate the CALLER decided, relayed verbatim. AZOA computes no exchange
+ * rate of its own: it records the one its consumer declared, with that
+ * consumer's own source, version and observation time, or it records nothing.
+ * Exactly one of `majorUnitsPerWholeUnit` and `minorUnitsPerBaseUnit` must be
+ * supplied, both as decimal strings so a price is never rounded through a
+ * binary floating-point conversion.
+ */
+export interface DeclaredExchangeRate {
+  /** ISO-4217 code the rate converts into. USD only today. */
+  currencyCode?: string;
+  /** Price of ONE WHOLE project unit in the currency's major unit. Needs `assetDecimals`. */
+  majorUnitsPerWholeUnit?: string;
+  /** Minor units of `currencyCode` per ONE BASE UNIT of the project asset. */
+  minorUnitsPerBaseUnit?: string;
+  /** The project asset's decimals, needed to convert `majorUnitsPerWholeUnit`. */
+  assetDecimals?: number;
+  /** Digits in the currency's minor unit — 2 for USD cents. Defaults to 2. */
+  currencyMinorUnitDigits?: number;
+  /** When the caller observed this rate — not when AZOA read or applied it. */
+  declaredAt?: string;
+  /** The caller's own identifier for where the rate came from (e.g. `"ardanova:treasury-rate"`). */
+  source?: string;
+  /** The caller's own version for the rate schedule it belongs to, when it versions one. */
+  version?: string;
+}
+
+/**
+ * One treasury-rate exchange, with every amount already decided by the
+ * caller. AZOA executes the move; it does not price it. The person the
+ * exchange is for is the `userId` route argument, never a field here.
+ */
+export interface ExchangeParams {
+  /** The rail both legs settle on. They are one atomic group, so there is exactly one. */
+  chainType: string;
+  /** Which way units move. Defaults to `"Buy"` server-side. */
+  direction?: ExchangeDirection;
+  /** The caller's own project id. Names the project treasury the funds land in. */
+  projectReference: string;
+  /** The project's asset — the units the sponsor receives. */
+  projectAssetId: string;
+  /** Platform-unit amount, in base units, as a whole decimal string. The funds leg. */
+  platformAmount: string;
+  /** Project-unit amount, in base units, as a whole decimal string. The units leg. */
+  projectUnitAmount: string;
+  /**
+   * Named partition on the reserve ledger the project units are drawn from.
+   * Required: without it one purpose could quietly draw down another's earmark.
+   */
+  reservePartition: string;
+  /** The rate this exchange was priced at. Required unless the node's policy says otherwise. */
+  declaredRate?: DeclaredExchangeRate;
+  /**
+   * The hold window. When present the project units are COMMITTED to a hold
+   * for the sponsor and become theirs at this instant; when absent they move
+   * straight to them.
+   */
+  releaseNotBefore?: string;
+  /** Optional caller-supplied hold id; derived from the exchange when absent. */
+  holdReference?: string;
+  /** The caller's own reason, carried onto the durable record. */
+  purpose?: string;
+  /**
+   * Runs every gate and validation and then STOPS: no idempotency claim, no
+   * partition draw, no movement, and an empty operation id as the
+   * machine-checkable proof. Exempt from the consent check other exchanges
+   * require, since nothing moves.
+   */
+  previewOnly?: boolean;
+}
+
+/** Externally observable state of a caller-authorized exchange. */
+export type ExchangeReceiptState = "AwaitingReconciliation" | "Completed" | "Failed";
+
+/**
+ * Secret-free, caller-scoped exchange receipt — what a consumer reconciles
+ * against. Deliberately omits raw idempotency keys, caller identity, account
+ * keys and provider payloads.
+ */
+export interface ExchangeReceipt {
+  /** Opaque SHA-256 reference for this exchange. Safe to log and to echo back. */
+  receiptReference: string;
+  /** Opaque durable operation reference once AZOA has persisted one. */
+  operationId: string | null;
+  state: ExchangeReceiptState;
+  isTerminal: boolean;
+  requiresReconciliation: boolean;
+  /** True when this answer replays an earlier identical request rather than a new exchange. */
+  replayed: boolean;
+  direction: ExchangeDirection;
+  /** The person the exchange was for. */
+  userId: string | null;
+  /** The caller's own project id, echoed back. */
+  projectReference: string | null;
+  /** Base units the initiator gave up, and the asset they are counted in. */
+  amountSpent: string | null;
+  amountSpentAssetId: string | null;
+  /** Base units the initiator received, and the asset they are counted in. */
+  amountReceived: string | null;
+  amountReceivedAssetId: string | null;
+  /** Base units credited to the project's own account by this exchange. */
+  projectCreditAmount: string | null;
+  /** The rail's reference for the whole atomic group, when one settled. */
+  settlementReference: string | null;
+  /** The rail's per-leg references, in the order the group declared them. */
+  settlementLegReferences: string[];
+  /** The hold the received units are committed to, when the exchange opened one. */
+  holdReference: string | null;
+  /** When the held units become the recipient's to move. */
+  holdReleasesAt: string | null;
+  /** The declared rate that priced this exchange, and where it came from. */
+  rate: string | null;
+  rateCurrencyCode: string | null;
+  rateSource: string | null;
+  rateVersion: string | null;
+  rateAsOf: string | null;
+  /**
+   * What the spent leg was worth in the rate currency's minor unit at
+   * settlement, when a rate source priced it. Absent means never priced —
+   * never zero.
+   */
+  valueMinorUnits: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Bounded terminal error discriminator; never provider detail. */
+  failureCode: string | null;
+}
+
+// ─── Hold types (HoldController, D14 / W3.4) ───
+// The tenant-callable HOLD surface: units committed out of a declared reserve
+// partition, held until a release window elapses. No address, key, fee or chain
+// name is ever exposed to the person a hold is for.
+
+/** Durable hold lifecycle state (mirrors the backend's `HoldLedger.State` allow-list). */
+export type HoldState =
+  | "Open"
+  | "Released"
+  | "Refunded"
+  | "ChainedToHold";
+
+export interface HoldOpenParams {
+  /** Rail the hold settles on (e.g. "Algorand"). */
+  chain: string;
+  /** The caller's own hold id — the idempotency anchor. */
+  holdId: string;
+  /** Asset being held. */
+  assetId: string;
+  /** Amount in the asset's base units, as a whole decimal string. */
+  amount: string;
+  /** Declared reserve partition the commitment is drawn from. */
+  reservePartition: string;
+  /** Who the units are held for. */
+  beneficiaryUserId: string;
+  /** The hold window (ISO-8601); absent means releasable immediately. */
+  releaseNotBefore?: string;
+  /** Whether the hosted sweep may release it once due. Defaults true server-side. */
+  autoRelease?: boolean;
+  /** The caller's own reason for the hold. */
+  purpose?: string;
+}
+
+export interface HoldSettlementParams {
+  /** Why the hold is being settled; recorded on the ledger row. */
+  reason?: string;
+}
+
+export interface HoldChainParams {
+  /** Id of the hold that continues this one. */
+  nextHoldId: string;
+  /** Who the units are held for next. */
+  nextBeneficiaryUserId: string;
+  /** The next window (ISO-8601); may never be earlier than the one it continues. */
+  releaseNotBefore?: string;
+  autoRelease?: boolean;
+  purpose?: string;
+}
+
+/**
+ * Wire view of a hold. Carries NO wallet address, NO chain and NO asset identifier — the
+ * person a hold is for needs to know how much is theirs and when, not which account it is
+ * parked in or what the chain called the payment.
+ *
+ * `chain` and `assetId` used to be declared here as REQUIRED strings while
+ * `HoldController.HoldView` had already stopped sending either, so a consumer that trusted
+ * the type got `undefined` where it had typed `string` — the doc-comment-contradicts-the-type
+ * defect OI-86 was raised about, reproduced in the mirror by OI-86's own fix. They are gone.
+ *
+ * `reservePartition` and `fundingSource` DO remain: node-internal book names a tenant
+ * developer reconciling a hold needs, and never member-facing copy.
+ */
+export interface HoldView {
+  holdId: string;
+  amount: string;
+  reservePartition: string;
+  fundingSource: string;
+  beneficiaryUserId: string;
+  funderUserId: string | null;
+  state: HoldState;
+  releaseNotBefore: string | null;
+  autoRelease: boolean;
+  parentHoldId: string | null;
+  childHoldId: string | null;
+  purpose: string | null;
+  settledAt: string | null;
+  settlementReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Fiat on-ramp checkout types (FiatCheckoutController) ───
+// The "add funds" surface: start a payment for a person's account and find that
+// payment again when they come back. This controller never credits anything — a
+// payment becomes funds only when the provider's webhook clears server-side.
+
+/**
+ * Consumer-facing lifecycle words for one funding intent (mirrors
+ * `FiatIntentStatuses`). Never rail vocabulary — a caller never sees a Stripe
+ * session state directly.
+ */
+export type FiatCheckoutStatus =
+  | "starting"
+  | "awaiting_payment"
+  | "processing"
+  | "complete"
+  | "failed"
+  | "expired";
+
+/**
+ * How far a funding intent has got, in the vocabulary of the person who paid
+ * (mirrors `FiatSettlementStates`). `payment_received` means the card cleared but
+ * the funds have not yet landed in the account; only `funds_applied` means the
+ * account balance actually moved.
+ */
+export type FiatSettlementState =
+  | "not_started"
+  | "payment_received"
+  | "funds_applied"
+  | "payment_failed";
+
+/** Allowlisted routing value for a checkout (mirrors `FiatCheckoutPurposes`). */
+export type FiatCheckoutPurpose = "funds-top-up";
+
+/** Non-secret capability report for a hosted-session provider (KYC or fiat checkout). */
+export interface HostedSessionCapabilities {
+  providerKey: string;
+  flowKind: string;
+  available: boolean;
+  /** Configuration key NAMES that are missing or invalid. Never values. */
+  missingConfigurationKeys: string[];
+  unavailableReason: string | null;
+}
+
+export interface FiatCheckoutStartParams {
+  /**
+   * Caller-stable key. The same key resumes the same payment instead of opening
+   * a second one, so a double-tapped button cannot charge twice.
+   */
+  requestKey: string;
+  /** Allowlisted routing value; see `Fiat:Checkout:AllowedPurposes` server-side. */
+  purpose?: FiatCheckoutPurpose | string;
+  /** The amount to pay, in minor units of the node's configured currency. Never a unit count. */
+  amountMinorUnits: number;
+  /** Where to return the payer afterwards. Must be on an allowlisted origin. */
+  successUrl?: string;
+  /** Where to return the payer if they back out. Must be on an allowlisted origin. */
+  cancelUrl?: string;
+}
+
+/** Everything the return page needs to recognise the intent it came back to. */
+export interface FiatCheckoutIntent {
+  /** The node's own intent id. Safe to show; it is NOT the payment provider's id. */
+  intentId: string;
+  admissionKey: string;
+  status: FiatCheckoutStatus;
+  settlementState: FiatSettlementState;
+  /** The hosted payment page, while the intent is still open. */
+  paymentUrl: string | null;
+  /** True when this call resumed an existing intent instead of creating one. */
+  resumed: boolean;
+  /** The amount that actually cleared, re-read from the provider. Null until it has. */
+  amountPaidMinorUnits: number | null;
+  currency: string | null;
+  expiresAt: string | null;
+}
+
+// ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
+// The "cash out" surface: set up where a person's money should go, see what
+// they can take out, and take it out. A first-party login may only cash out
+// for itself; an API-key principal additionally needs the subject's live
+// consent, the same gate `startFiatCheckout` applies. Nothing here ever moves
+// value inline — a request claims a durable cash-out and hands it to the
+// backend's saga, so the read surface reports a status, never a receipt.
+
+/**
+ * What a person may cash out right now, in money, plus why the rest may not
+ * leave yet.
+ */
+export interface CashOutQuote {
+  /** Whether this node offers cashing out at all. */
+  available: boolean;
+  /** Whether their payout account can actually receive money. */
+  accountReady: boolean;
+  /** The most they could ask for today, in minor units of `currencyCode`. */
+  cashableMinorUnits: number;
+  /** Money-equivalent of what is still inside a reversal window. */
+  onHoldMinorUnits: number;
+  /** When the oldest held part becomes cashable, when that is knowable. */
+  availableFrom: string | null;
+  /** The smallest cash-out this node will send, in minor units. */
+  minimumAmountMinorUnits: number;
+  /** The largest cash-out this node will send in one go, in minor units. */
+  maximumAmountMinorUnits: number;
+  currencyCode: string;
+  /** One sentence a person can act on. */
+  statusMessage: string;
+}
+
+/** What a person's payout account can do right now, in the words they read on the page. */
+export interface PayoutAccountStatus {
+  /** Whether this node offers cashing out at all. */
+  available: boolean;
+  /** Whether a payout account exists for this person yet. */
+  accountOpened: boolean;
+  /** Whether money may actually be sent to it. */
+  readyToReceive: boolean;
+  /** Whether they have finished the provider's form. */
+  detailsSubmitted: boolean;
+  /** How many things the provider is still waiting for. */
+  outstandingRequirementCount: number;
+  /** The hosted setup page, when there is something left to do. */
+  setupUrl: string | null;
+  /** When that link stops working. */
+  setupUrlExpiresAt: string | null;
+  /** One sentence a person can act on. */
+  statusMessage: string;
+}
+
+/** What a caller posts to cash out. The amount is MONEY; the node works out the units. */
+export interface CashOutStartParams {
+  /**
+   * Caller-stable key. The same key returns the same cash-out instead of
+   * starting a second one, so a double-tapped button cannot pay twice.
+   */
+  requestKey: string;
+  /** The amount to send, in minor units of the node's configured currency. */
+  amountMinorUnits: number;
+}
+
+/** One cash-out as a person sees it. No chain words, no provider ids. */
+export interface CashOutView {
+  id: string;
+  status: string;
+  /** Consumer sentence for the current status. The row's own words are never shown raw. */
+  statusMessage: string;
+  amountMinorUnits: number;
+  currencyCode: string;
+  requestedAt: string;
+  paidAt: string | null;
+  reversedAt: string | null;
+}
+
+// ─── Platform token reserve/genesis read (PlatformTokenController, W3.2/D49) ───
+// Operator-scoped (JWT operator policy; unreachable via API key). Read-only —
+// the SDK deliberately does not expose the one-time genesis mutation, which
+// additionally requires a fresh, non-API-key node-operator login.
+
+/** The platform unit's on-chain definition. Amounts are base-unit decimal strings. */
+export interface PlatformTokenDefinition {
+  chainType: string;
+  network: string;
+  assetId: string;
+  name: string;
+  unitName: string;
+  decimals: number;
+  totalSupply: string;
+  reserveAddress: string;
+  activatedAt: string | null;
+}
+
+/** Supply in base units as decimal strings — nothing here is truncated to a JS number. */
+export interface PlatformTokenSupply {
+  /** The genesis ceiling: everything this node could ever issue. */
+  total: string;
+  /** Reserve outflow: units that have left the reserve and not come back. */
+  circulating: string;
+  /** Units committed to holds; promised, but not yet out of the reserve. */
+  held: string;
+  /** Total minus circulating: what the reserve still accounts for. */
+  inReserve: string;
+}
+
+/** The platform unit plus its live supply. */
+export interface PlatformTokenState {
+  definition: PlatformTokenDefinition;
+  supply: PlatformTokenSupply;
+}
+
+// ─── Project treasury reads (ProjectTreasuryController, Admin/Operator) ───
+// Operator-scoped read surface for per-project custodial treasuries — the
+// accounts a project's funding actually lands in. No SDK method moves units;
+// crediting/spending belong to the value paths that actually move money.
+
+export interface ProjectTreasuryAccount {
+  chain: string;
+  tenantId: string;
+  projectReference: string;
+  address: string;
+  derivationVersion: string;
+  status: string;
+}
+
+/** One asset's counters on a treasury, in base units as decimal strings. */
+export interface ProjectTreasuryAsset {
+  assetId: string;
+  credited: string;
+  spent: string;
+  held: string;
+  available: string;
+}
+
+export interface ProjectTreasuryLedger {
+  chain: string;
+  network: string;
+  tenantId: string;
+  projectReference: string;
+  address: string;
+  derivationVersion: string;
+  status: string;
+  closedAt: string | null;
+  closeReason: string | null;
+  assets: ProjectTreasuryAsset[];
+  /** Set (with an empty `assets`) when the assets blob could not be decoded — never read as "no commitments". */
+  assetsError: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Combines the account, its ledger, and chain truth for one asset. */
+export interface ProjectTreasuryView {
+  account: ProjectTreasuryAccount;
+  ledger: ProjectTreasuryLedger;
+  chainBalance: string | null;
+  chainBalanceError: string | null;
+}
+
+// ─── Node transparency reads (NodeTransparencyController) ───
+// Public, anonymous, ETag/Cache-Control-cacheable reads — never signed and
+// never scoped to a caller. What any browser may show about this node's own
+// governance policy, fee schedule and treasury destinations, plus the append-
+// only audit trail behind each. Every method here needs no `token`/`apiKey`
+// on the client config at all.
+
+/** Network a chain destination or fee change applies to (mirrors the backend's `ChainNetwork`). */
+export type NodeChainNetwork = "Devnet" | "Testnet" | "Mainnet";
+
+/** One operation's flat-plus-bps fee terms, in base units. */
+export interface NodeFeeScheduleEntry {
+  flatBaseUnits: string;
+  bps: number;
+}
+
+/** The node's live, publicly-declared fee schedule. */
+export interface NodeFeeSchedule {
+  mint: NodeFeeScheduleEntry;
+  transfer: NodeFeeScheduleEntry;
+  swap: NodeFeeScheduleEntry;
+  actionComplete: NodeFeeScheduleEntry;
+  federationPublish: NodeFeeScheduleEntry;
+  version: number;
+  updatedAt: string | null;
+}
+
+/** The node's live, publicly-declared governance parameters. */
+export interface NodeGovernanceParameters {
+  allowedChains: string[] | null;
+  allowedAssetTypes: string[] | null;
+  version: number;
+  updatedAt: string | null;
+}
+
+/** One chain the node settles a treasury on, and the address it uses. */
+export interface NodeTreasuryDestination {
+  chain: string;
+  network: NodeChainNetwork;
+  address: string;
+  version: number;
+  updatedAt: string | null;
+}
+
+/** The current state of everything this node discloses about its own policy. */
+export interface NodeTransparencySnapshot {
+  governance: NodeGovernanceParameters;
+  feeSchedule: NodeFeeSchedule;
+  treasuryDestinations: NodeTreasuryDestination[];
+  lastUpdatedAt: string | null;
+  /** Content hash of this snapshot; doubles as the response ETag. */
+  contentSha256: string;
+  cryptographicHistoryProofAvailable: boolean;
+}
+
+/** One cursor-paginated page of a public audit trail. */
+export interface NodeTransparencyPage<T> {
+  items: T[];
+  /** Pass back as the `cursor` query parameter to read the next page. Null on the last page. */
+  nextCursor: string | null;
+  /** Content hash of this page; doubles as the response ETag. */
+  contentSha256: string;
+  cryptographicHistoryProofAvailable: boolean;
+}
+
+/** One recorded change to the node's governance parameters. */
+export interface NodeGovernanceAuditEntry {
+  action: string;
+  previousVersion: number;
+  newVersion: number;
+  previousAllowedChains: string[] | null;
+  previousAllowedAssetTypes: string[] | null;
+  allowedChains: string[] | null;
+  allowedAssetTypes: string[] | null;
+  occurredAt: string;
+}
+
+/** One recorded change to the node's fee schedule. */
+export interface NodeFeeAuditEntry {
+  action: string;
+  previousVersion: number;
+  newVersion: number;
+  previousSchedule: NodeFeeSchedule | null;
+  schedule: NodeFeeSchedule;
+  occurredAt: string;
+}
+
+/** One recorded change to a treasury destination. */
+export interface NodeTreasuryAuditEntry {
+  action: string;
+  chain: string;
+  network: NodeChainNetwork;
+  previousVersion: number;
+  newVersion: number;
+  previousDestination: NodeTreasuryDestination | null;
+  destination: NodeTreasuryDestination;
+  occurredAt: string;
+}
+
+/** Public signing key in SubjectPublicKeyInfo form. */
+export interface NodePublicKey {
+  algorithm: string;
+  keyId: string;
+  subjectPublicKeyInfoBase64: string;
+}
+
+/** Proof that the immediately preceding node key authorized the current key. */
+export interface NodePreviousKeyContinuity {
+  key: NodePublicKey;
+  continuitySignatureBase64: string;
+}
+
+/** Public identity facts for this sovereign node. */
+export interface NodeDescriptor {
+  nodeId: string;
+  currentKey: NodePublicKey;
+  previousKey: NodePreviousKeyContinuity | null;
+}
+
+/** A node-identity-signed checkpoint over the ordered public audit history. */
+export interface NodeTransparencyHistoryCheckpoint {
+  schemaVersion: number;
+  descriptor: NodeDescriptor;
+  issuedAt: string;
+  auditEventCount: number;
+  headSha256: string;
+  signatureBase64: string;
+}
+
+/** One redacted event committed into the public governance-history chain. */
+export interface NodeTransparencyHistoryEntry {
+  kind: string;
+  occurredAt: string;
+  payloadJson: string;
+  entrySha256: string;
+}
+
+/**
+ * Bounded public history and the checkpoint that authenticates it — a
+ * consumer can verify this document independently of trusting the node's own
+ * HTTPS transport.
+ */
+export interface NodeTransparencyHistoryDocument {
+  checkpoint: NodeTransparencyHistoryCheckpoint;
+  entries: NodeTransparencyHistoryEntry[];
+}
+
+// ─── Fiat reversal types (FiatReversalOperatorController) ───
+// TYPES ONLY. This is an Operator-JWT-gated admin board (a refund or dispute
+// unwind, and the account-level risk flag it can carry) with no API-key
+// surface, so the SDK does not wrap it with request methods — an operator
+// console types its own `azoa.api.request(...)` calls against these instead
+// of hand-rolling the shape locally.
+
+/** "Refund" (the node issued it) or "Dispute" (the payer raised it). */
+export type FiatReversalKind = "Refund" | "Dispute";
+
+/** Where a reversal stands (mirrors the backend's `FiatReversal.Status` allow-list). */
+export type FiatReversalStatus =
+  | "Open"
+  | "Recovering"
+  | "Recovered"
+  | "PartiallyRecovered"
+  | "Absorbed"
+  | "Reinstated"
+  | "Unmatched"
+  | "NeedsOperator";
+
+/**
+ * Which rung of the compensation ladder answered (mirrors the backend's
+ * `FiatReversal.RecoveryPath` allow-list). `Mixed` means more than one rung
+ * contributed; `None` means no rung has run yet.
+ */
+export type FiatReversalRecoveryPath =
+  | "None"
+  | "Balance"
+  | "Hold"
+  | "Purchase"
+  | "Reserve"
+  | "Mixed";
+
+/**
+ * One reversal as an operator sees it. Amounts are exact decimal strings;
+ * nothing here is a float, because a rounded figure on a financial board is
+ * worse than no figure. Card details never existed on the row and none
+ * appear here.
+ */
+export interface FiatReversalView {
+  id: string;
+  kind: FiatReversalKind;
+  status: FiatReversalStatus;
+  statusReason: string | null;
+  /** The provider event that last moved this reversal. */
+  lastEventType: string;
+  chargeId: string;
+  subjectUserId: string | null;
+  flowPurpose: string | null;
+  /** The money taken back, in minor units of `currencyCode`. */
+  amountMinorUnits: number;
+  /** The original payment, in the same minor units. */
+  sourceAmountMinorUnits: number;
+  currencyCode: string;
+  isPartial: boolean;
+  /** False for a dispute nobody has debited yet. */
+  fundsWithdrawn: boolean;
+  assetId: string | null;
+  targetQuantityBaseUnits: string;
+  recoveredQuantityBaseUnits: string;
+  absorbedQuantityBaseUnits: string;
+  reinstatementOwedBaseUnits: string;
+  recoveryPath: FiatReversalRecoveryPath;
+  accountFlagged: boolean;
+  flagReason: string | null;
+  flagClearedAt: string | null;
+  attemptCount: number;
+  openedAt: string;
+  resolvedAt: string | null;
+  reinstatedAt: string | null;
+}
+
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
 
 /** DappSeries lifecycle status (mirrors .NET DappSeries.StatusKind). */
 export type DappSeriesStatus = "Draft" | "Building" | "Ready" | "Deployed" | "Archived";
 
-/** A linked series of quest DAGs that compose into a deployable dApp (mirrors .NET DappSeries). */
+/** A linked series of action DAGs that compose into a deployable dApp (mirrors .NET DappSeries). */
 export interface DappSeriesResult {
   id: string;
   name: string;
   description?: string;
-  avatarId: string;
+  userId: string;
   status: DappSeriesStatus;
-  /** Cross-quest deployment settings (string→string map), serialized as JSON on the row. */
+  /** Cross-action deployment settings (string→string map), serialized as JSON on the row. */
   sharedConfig?: unknown;
-  starOdkId?: string;
+  actionGraphBundleId?: string;
   targetChain?: string;
   /** Composed DappManifest as a JSON string (null until ComposeAsync runs). */
   manifest?: string;
@@ -993,22 +1879,22 @@ export interface DappSeriesUpdateParams {
   sharedConfig?: Record<string, string>;
 }
 
-/** One ordered quest entry inside a series (mirrors .NET DappSeriesQuest). */
-export interface DappSeriesQuestResult {
+/** One ordered action entry inside a series (mirrors .NET DappSeriesAction). */
+export interface DappSeriesActionResult {
   id: string;
   dappSeriesId: string;
-  questId: string;
+  actionId: string;
   /** 1-indexed execution order within the series. */
   order: number;
-  /** JSON array of InputMapping entries; null when no cross-quest flow. */
+  /** JSON array of InputMapping entries; null when no cross-action flow. */
   inputMappings?: string;
 }
 
-/** Body for {@link AzoaApiClient.addSeriesQuest} (mirrors .NET DappSeriesAddQuestModel). */
-export interface DappSeriesAddQuestParams {
-  questId: string;
+/** Body for {@link AzoaApiClient.addSeriesAction} (mirrors .NET DappSeriesAddActionModel). */
+export interface DappSeriesAddActionParams {
+  actionId: string;
   order: number;
-  /** JSON array of InputMapping entries; omit when no cross-quest flow. */
+  /** JSON array of InputMapping entries; omit when no cross-action flow. */
   inputMappings?: string;
 }
 
@@ -1052,6 +1938,27 @@ function assertPositiveUlongDecimal(value: string, paramName: string): void {
       `Invalid ${paramName}: expected a value between 1 and ${ULONG_MAX}`
     );
   }
+}
+
+/** Appends the defined AnalyticsQueryParams as a querystring. */
+function withAnalyticsQuery(path: string, query?: AnalyticsQueryParams): string {
+  const qs = new URLSearchParams();
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) qs.set(key, String(value));
+    }
+  }
+  const encoded = qs.toString();
+  return encoded ? `${path}?${encoded}` : path;
+}
+
+/** Appends the `limit`/`cursor` pagination pair the node-transparency audit reads share. */
+function withAuditQuery(path: string, limit?: number, cursor?: string): string {
+  const qs = new URLSearchParams();
+  if (limit !== undefined) qs.set("limit", String(limit));
+  if (cursor !== undefined) qs.set("cursor", cursor);
+  const encoded = qs.toString();
+  return encoded ? `${path}?${encoded}` : path;
 }
 
 export class AzoaApiClient {
@@ -1152,11 +2059,11 @@ export class AzoaApiClient {
     );
   }
 
-  // ─── Avatar ───
+  // ─── User ───
 
   async login(email: string, password: string): Promise<Result<string, SdkError>> {
     // .NET returns AZOAResult<string> where Result is the JWT token
-    return this.request("POST", "/api/avatar/login", { email, password });
+    return this.request("POST", "/api/user/login", { email, password });
   }
 
   async register(params: {
@@ -1166,53 +2073,53 @@ export class AzoaApiClient {
     title?: string;
     firstName?: string;
     lastName?: string;
-  }): Promise<Result<AvatarResponse, SdkError>> {
-    // .NET returns AZOAResult<IAvatar>
-    return this.request("POST", "/api/avatar/register", params);
+  }): Promise<Result<UserResponse, SdkError>> {
+    // .NET returns AZOAResult<IUser>
+    return this.request("POST", "/api/user/register", params);
   }
 
   /**
    * Server-side "logout everywhere": invalidates every live JWT for the
-   * authenticated avatar (bumps AuthNotBefore server-side). The subject is
+   * authenticated user (bumps AuthNotBefore server-side). The subject is
    * taken from the bearer token, never a URL/body param.
    */
   async logoutEverywhere(): Promise<Result<boolean, SdkError>> {
-    return this.request("POST", API_PATHS.AVATAR_LOGOUT);
+    return this.request("POST", API_PATHS.USER_LOGOUT);
   }
 
-  async getAvatar(avatarId: string): Promise<Result<AvatarResponse, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/avatar/${avatarId}`);
+  async getUser(userId: string): Promise<Result<UserResponse, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/user/${userId}`);
   }
 
-  async getAllAvatars(): Promise<Result<AvatarResponse[], SdkError>> {
-    return this.request("GET", "/api/avatar");
+  async getAllUsers(): Promise<Result<UserResponse[], SdkError>> {
+    return this.request("GET", "/api/user");
   }
 
-  async updateAvatar(
-    avatarId: string,
+  async updateUser(
+    userId: string,
     params: { username?: string; email?: string; title?: string; firstName?: string; lastName?: string; isActive?: boolean }
-  ): Promise<Result<AvatarResponse, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("PUT", `/api/avatar/${avatarId}`, params);
+  ): Promise<Result<UserResponse, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("PUT", `/api/user/${userId}`, params);
   }
 
-  async deleteAvatar(avatarId: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("DELETE", `/api/avatar/${avatarId}`);
+  async deleteUser(userId: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("DELETE", `/api/user/${userId}`);
   }
 
   /**
-   * avatar-dapp-rbac: assign the target avatar's DApp role. The target is the
+   * user-dapp-rbac: assign the target user's DApp role. The target is the
    * route id (uuid-asserted). `role` is validated against the {@link DAPP_ROLES}
    * allowlist client-side; `operator:admin` is not assignable here. Authority is
    * enforced server-side (operator may grant any role incl. manager; a
    * dapp:manager may grant only developer/user; otherwise 403). Maps to
-   * `PUT /api/avatar/{id}/dapp-role`, returns the updated avatar.
+   * `PUT /api/user/{id}/dapp-role`, returns the updated user.
    */
-  async assignDappRole(avatarId: string, role: DappRole): Promise<Result<AvatarResponse, SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    const path = API_PATHS.AVATAR_DAPP_ROLE(avatarId);
+  async assignDappRole(userId: string, role: DappRole): Promise<Result<UserResponse, SdkError>> {
+    assertUuid(userId, "userId");
+    const path = API_PATHS.USER_DAPP_ROLE(userId);
     if (!(DAPP_ROLES as readonly string[]).includes(role)) {
       return err(
         new SdkError(
@@ -1254,7 +2161,7 @@ export class AzoaApiClient {
 
   /**
    * One-shot fungible token (ASA) mint — the direct (no-DAG) parallel to the
-   * `FungibleTokenCreate` quest node. Maps to `POST /api/nft/fungible-mint`
+   * `FungibleTokenCreate` action node. Maps to `POST /api/nft/fungible-mint`
    * (NftController.FungibleMint). KYC-gated (a fail-closed rejection surfaces as a
    * 403 → `SdkError` with the `KYC_FORBIDDEN:` message) and idempotent.
    *
@@ -1294,6 +2201,52 @@ export class AzoaApiClient {
   async getNftMetadata(nftId: string): Promise<Result<NftMetadata, SdkError>> {
     assertUuid(nftId, "nftId");
     return this.request("GET", `/api/nft/${nftId}/metadata`);
+  }
+
+  // ─── Credential (CredentialController, D19) ───
+
+  /**
+   * Revoke a soulbound credential (issuer-only ASA clawback). Maps to
+   * `POST /api/credential/{assetId}/revoke`. KYC-gated, scope-gated
+   * (`credential:revoke:sign`) and idempotent — `options.idempotencyKey` sets the
+   * `Idempotency-Key` header; a duplicate call replays the ORIGINAL result with
+   * `replayed: true`.
+   *
+   * NOT yet enabled server-side (credential-third-party-issuance_20260906); this
+   * method exists for parity with the backend surface.
+   *
+   * A PendingConfirmation outcome (HTTP 202, broadcast but unconfirmed) is NEVER
+   * returned as `ok` — it surfaces as an `SdkError` with `status: 202`. Detect it
+   * with {@link isCredentialRevocationPending} and reconcile rather than re-submit.
+   */
+  async revokeCredential(
+    assetId: string,
+    params: CredentialRevokeParams,
+    options?: { idempotencyKey?: string }
+  ): Promise<Result<CredentialRevokeResult, SdkError>> {
+    assertNonEmpty(assetId, "assetId");
+    const extraHeaders = options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined;
+    return this.request<CredentialRevokeResult>(
+      "POST",
+      API_PATHS.CREDENTIAL_REVOKE(assetId),
+      params,
+      false,
+      extraHeaders
+    );
+  }
+
+  // ─── Analytics (AnalyticsController, D16) ───
+
+  /** One page of the caller's operation history, newest first. Unpriced / unknown-quantity rows stay flagged — never coerce to 0. */
+  async getAnalyticsTransactions(query?: AnalyticsQueryParams): Promise<Result<TransactionHistoryPage, SdkError>> {
+    return this.request<TransactionHistoryPage>("GET", withAnalyticsQuery(API_PATHS.ANALYTICS_TRANSACTIONS, query));
+  }
+
+  /** Net movement per (chain, asset) over the window. `isComplete: false` means a truncated scan. */
+  async getAnalyticsPositions(query?: AnalyticsQueryParams): Promise<Result<PositionsResponse, SdkError>> {
+    return this.request<PositionsResponse>("GET", withAnalyticsQuery(API_PATHS.ANALYTICS_POSITIONS, query));
   }
 
   // ─── Bridge ───
@@ -1406,56 +2359,56 @@ export class AzoaApiClient {
     return this.request("GET", `/api/blockchainoperation/${operationId}`);
   }
 
-  async getBlockchainOperationsByAvatar(avatarId: string): Promise<Result<BlockchainOperationResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/blockchainoperation/avatar/${avatarId}`);
+  async getBlockchainOperationsByUser(userId: string): Promise<Result<BlockchainOperationResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/blockchainoperation/user/${userId}`);
   }
 
-  // ─── STARODK ───
+  // ─── ActionGraphBundle ───
 
-  async getSTARODK(id: string): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(id, "starodkId");
-    return this.request("GET", `/api/starodk/${id}`);
+  async getActionGraphBundle(id: string): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(id, "actiongraphbundleId");
+    return this.request("GET", `/api/actiongraphbundle/${id}`);
   }
 
-  async listSTARODK(): Promise<Result<STARODKResult[], SdkError>> {
-    return this.request("GET", "/api/starodk");
+  async listActionGraphBundle(): Promise<Result<ActionGraphBundleResult[], SdkError>> {
+    return this.request("GET", "/api/actiongraphbundle");
   }
 
   /**
-   * Create or update a STARODK record.
+   * Create or update an action graph bundle record.
    *
-   * Upsert by id — the backend's `POST /api/starodk` (STARODKController.CreateOrUpdate)
-   * is the same endpoint also used to update an existing record. See {@link updateSTARODK}
+   * Upsert by id — the backend's `POST /api/actiongraphbundle` (ActionGraphBundleController.CreateOrUpdate)
+   * is the same endpoint also used to update an existing record. See {@link updateActionGraphBundle}
    * for a semantically-explicit alias when the caller intends an update.
    */
-  async createSTARODK(params: STARODKCreateParams): Promise<Result<STARODKResult, SdkError>> {
-    return this.request("POST", "/api/starodk", params);
+  async createActionGraphBundle(params: ActionGraphBundleCreateParams): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    return this.request("POST", "/api/actiongraphbundle", params);
   }
 
   /**
-   * Update an existing STARODK record via PUT. Routes through the same
+   * Update an existing action graph bundle record via PUT. Routes through the same
    * `CreateOrUpdateAsync` upsert path as POST but uses the explicit-id route
-   * `PUT /api/starodk/{id}`, making update intent unambiguous.
+   * `PUT /api/actiongraphbundle/{id}`, making update intent unambiguous.
    */
-  async updateSTARODK(id: string, model: STARODKCreateParams): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(id, "starodkId");
-    return this.request("PUT", `/api/starodk/${id}`, model);
+  async updateActionGraphBundle(id: string, model: ActionGraphBundleCreateParams): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(id, "actiongraphbundleId");
+    return this.request("PUT", `/api/actiongraphbundle/${id}`, model);
   }
 
-  async deleteSTARODK(id: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(id, "starodkId");
-    return this.request("DELETE", `/api/starodk/${id}`);
+  async deleteActionGraphBundle(id: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(id, "actiongraphbundleId");
+    return this.request("DELETE", `/api/actiongraphbundle/${id}`);
   }
 
-  async generateSTARDapp(starodkId: string, params: STARDappGenerationParams): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(starodkId, "starodkId");
-    return this.request("POST", `/api/starodk/${starodkId}/generate`, params);
+  async generateActionGraphBundleDapp(actiongraphbundleId: string, params: ActionGraphBundleDappGenerationParams): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(actiongraphbundleId, "actiongraphbundleId");
+    return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/generate`, params);
   }
 
-  async deploySTARODK(starodkId: string): Promise<Result<STARODKResult, SdkError>> {
-    assertUuid(starodkId, "starodkId");
-    return this.request("POST", `/api/starodk/${starodkId}/deploy`);
+  async deployActionGraphBundle(actiongraphbundleId: string): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(actiongraphbundleId, "actiongraphbundleId");
+    return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/deploy`);
   }
 
   // ─── Holon AssetType registry (HolonTypeRegistryController, final-hardening F5) ───
@@ -1530,12 +2483,12 @@ export class AzoaApiClient {
   /**
    * Executes an idempotent fiat-allocation bridge call (Mint or Transfer).
    *
-   * @param avatarId The target avatar receiving the asset
+   * @param userId The target user receiving the asset
    * @param request The allocation details (amount, chain, kind, etc.)
    * @param idempotencyKey The stable per-payment key (e.g. Stripe PaymentIntent ID). If omitted, a deterministic key is generated based on the request content.
    */
   async allocate(
-    avatarId: string,
+    userId: string,
     request: AllocationRequest,
     idempotencyKey?: string
   ): Promise<Result<AllocationResult, SdkError>> {
@@ -1545,10 +2498,302 @@ export class AzoaApiClient {
     }
     return this.request<AllocationResult>(
       "POST",
-      `/api/allocation/${avatarId}`,
+      `/api/allocation/${userId}`,
       request,
       false,
       headers
+    );
+  }
+
+  // ─── Exchange (ExchangeController, W5.1/D50) ───
+  // Value-moving write requires an API-key principal carrying the exchange-
+  // signing scope, exactly like allocate(). Unlike allocate(), the
+  // idempotency key is REQUIRED — the backend refuses a bare exchange rather
+  // than guessing whether a repeat is a retry or a second sponsorship.
+
+  /**
+   * Runs one sponsorship exchange for `userId` at the rate the caller
+   * declared (AZOA never prices an exchange itself). Idempotent on the
+   * `Idempotency-Key` header, partitioned by the caller's own API key, so a
+   * redelivered request never sponsors twice.
+   *
+   * @param userId The person the exchange is for. Route value only.
+   * @param params The exchange details — rail, direction, amounts, declared rate.
+   * @param idempotencyKey The caller's own stable key for this exchange. Required.
+   */
+  async exchange(
+    userId: string,
+    params: ExchangeParams,
+    idempotencyKey: string
+  ): Promise<Result<ExchangeReceipt, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request<ExchangeReceipt>(
+      "POST",
+      API_PATHS.EXCHANGE_RUN(userId),
+      params,
+      false,
+      { "Idempotency-Key": idempotencyKey }
+    );
+  }
+
+  /**
+   * The receipt for one exchange — the read surface a consumer reconciles
+   * against. Scoped to the caller's own API key and identity.
+   */
+  async getExchangeReceipt(idempotencyKey: string): Promise<Result<ExchangeReceipt, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request<ExchangeReceipt>("GET", API_PATHS.EXCHANGE_RECEIPT(idempotencyKey));
+  }
+
+  // ─── Hold (HoldController, D14 / W3.4) ───
+  // Value-moving writes require an API-key principal carrying transfer:sign,
+  // exactly like allocate(). Reads are owner-scoped server-side.
+
+  /**
+   * Opens a hold, or returns the one this hold id already opened. Idempotent on
+   * the caller's own `holdId`: a redelivered request returns the existing hold
+   * and commits nothing twice.
+   */
+  async openHold(params: HoldOpenParams): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(params.chain, "chain");
+    assertNonEmpty(params.holdId, "holdId");
+    assertNonEmpty(params.assetId, "assetId");
+    assertPositiveUlongDecimal(params.amount, "amount");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_OPEN, params);
+  }
+
+  /** Releases a due hold to its beneficiary. Refused before the window elapses. */
+  async releaseHold(
+    chain: string,
+    holdId: string,
+    params?: HoldSettlementParams
+  ): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_RELEASE(chain, holdId), params);
+  }
+
+  /** Gives a hold back: the commitment returns to the partition it was drawn from. */
+  async refundHold(
+    chain: string,
+    holdId: string,
+    params?: HoldSettlementParams
+  ): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_REFUND(chain, holdId), params);
+  }
+
+  /** Continues a hold as a second hold over the same units — what approving completed work is. */
+  async releaseHoldIntoHold(
+    chain: string,
+    holdId: string,
+    params: HoldChainParams
+  ): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    assertNonEmpty(params.nextHoldId, "nextHoldId");
+    return this.request<HoldView>("POST", API_PATHS.HOLD_RELEASE_INTO_HOLD(chain, holdId), params);
+  }
+
+  /** One hold, visible only to the beneficiary, funder, or owning tenant. */
+  async getHold(chain: string, holdId: string): Promise<Result<HoldView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertNonEmpty(holdId, "holdId");
+    return this.request<HoldView>("GET", API_PATHS.HOLD_GET(chain, holdId));
+  }
+
+  /** Every hold the authenticated person funds or benefits from, newest first. */
+  async listMyHolds(limit?: number): Promise<Result<HoldView[], SdkError>> {
+    const path = limit ? `${API_PATHS.HOLD_MINE}?limit=${limit}` : API_PATHS.HOLD_MINE;
+    return this.request<HoldView[]>("GET", path);
+  }
+
+  // ─── Fiat on-ramp checkout (FiatCheckoutController) ───
+
+  /** Whether this node can take a payment right now, and which config keys are missing if not. */
+  async getFiatCheckoutCapabilities(): Promise<Result<HostedSessionCapabilities, SdkError>> {
+    return this.request<HostedSessionCapabilities>("GET", API_PATHS.FIAT_CHECKOUT_CAPABILITIES);
+  }
+
+  /**
+   * Starts (or resumes) a payment that adds funds to `userId`'s account. A
+   * first-party login may only pay for itself — `userId` must be the caller's own
+   * id unless the principal is a tenant API key with the person's live consent.
+   */
+  async startFiatCheckout(
+    userId: string,
+    params: FiatCheckoutStartParams
+  ): Promise<Result<FiatCheckoutIntent, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(params.requestKey, "requestKey");
+    return this.request<FiatCheckoutIntent>("POST", API_PATHS.FIAT_CHECKOUT_START(userId), params);
+  }
+
+  /**
+   * Reads one payment for the person it belongs to — what the return page calls
+   * with the `intent` query parameter the rail put on the return URL.
+   */
+  async getFiatCheckoutIntent(
+    userId: string,
+    intentId: string
+  ): Promise<Result<FiatCheckoutIntent, SdkError>> {
+    assertUuid(userId, "userId");
+    assertUuid(intentId, "intentId");
+    return this.request<FiatCheckoutIntent>("GET", API_PATHS.FIAT_CHECKOUT_GET(userId, intentId));
+  }
+
+  // ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
+  // The subject is always `userId`; a first-party login may only cash out for
+  // itself, and an API-key principal additionally needs that person's live
+  // consent, resolved server-side exactly like startFiatCheckout().
+
+  /** What `userId` can cash out today, and why the rest is still held. */
+  async getCashOutAvailability(userId: string): Promise<Result<CashOutQuote, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request<CashOutQuote>("GET", API_PATHS.FIAT_PAYOUT_AVAILABILITY(userId));
+  }
+
+  /** Where `userId`'s money goes, and whether it is ready to receive any. */
+  async getPayoutAccountStatus(userId: string): Promise<Result<PayoutAccountStatus, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request<PayoutAccountStatus>("GET", API_PATHS.FIAT_PAYOUT_ACCOUNT(userId));
+  }
+
+  /**
+   * Starts (or resumes) payout-account setup and hands back a fresh hosted
+   * link. This is the one moment paperwork is expected, so it happens at the
+   * first cash-out rather than at sign-up.
+   */
+  async beginPayoutAccountSetup(userId: string): Promise<Result<PayoutAccountStatus, SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request<PayoutAccountStatus>("POST", API_PATHS.FIAT_PAYOUT_ACCOUNT(userId));
+  }
+
+  /**
+   * Claims a cash-out for `userId` and hands it to the backend's saga.
+   * Idempotent on `params.requestKey`: a redelivered request resumes the same
+   * cash-out and pays nothing twice.
+   */
+  async startCashOut(
+    userId: string,
+    params: CashOutStartParams
+  ): Promise<Result<CashOutView, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(params.requestKey, "requestKey");
+    return this.request<CashOutView>("POST", API_PATHS.FIAT_PAYOUT_BASE(userId), params);
+  }
+
+  /** `userId`'s own cash-out history, newest first. */
+  async listCashOutHistory(
+    userId: string,
+    limit?: number
+  ): Promise<Result<CashOutView[], SdkError>> {
+    assertUuid(userId, "userId");
+    const base = API_PATHS.FIAT_PAYOUT_BASE(userId);
+    return this.request<CashOutView[]>("GET", limit ? `${base}?limit=${limit}` : base);
+  }
+
+  // ─── Platform token reserve/genesis read (PlatformTokenController). Operator-scoped. ───
+
+  /**
+   * The platform unit on this node's active network, with live supply. There is
+   * deliberately no `runPlatformTokenGenesis` method — that mutation additionally
+   * requires a fresh, non-API-key node-operator login the SDK's bearer/API-key
+   * config cannot express.
+   */
+  async getPlatformTokenState(): Promise<Result<PlatformTokenState, SdkError>> {
+    return this.request<PlatformTokenState>("GET", API_PATHS.PLATFORM_TOKEN_GET);
+  }
+
+  // ─── Project treasury reads (ProjectTreasuryController). Operator-scoped. ───
+
+  /**
+   * One project's treasury: the account, its ledger counters, and what the chain
+   * says the address actually holds. No SDK method moves units through this
+   * surface — crediting and spending belong to the value paths that move money.
+   */
+  async getProjectTreasury(
+    chain: string,
+    tenantId: string,
+    projectReference: string,
+    assetId?: string
+  ): Promise<Result<ProjectTreasuryView, SdkError>> {
+    assertNonEmpty(chain, "chain");
+    assertUuid(tenantId, "tenantId");
+    assertNonEmpty(projectReference, "projectReference");
+    return this.request<ProjectTreasuryView>(
+      "GET",
+      API_PATHS.PROJECT_TREASURY_GET(chain, tenantId, projectReference, assetId)
+    );
+  }
+
+  /** Every treasury one tenant owns, newest first. */
+  async listProjectTreasuriesByTenant(
+    tenantId: string,
+    limit?: number
+  ): Promise<Result<ProjectTreasuryLedger[], SdkError>> {
+    assertUuid(tenantId, "tenantId");
+    const base = API_PATHS.PROJECT_TREASURY_LIST_BY_TENANT(tenantId);
+    return this.request<ProjectTreasuryLedger[]>("GET", limit ? `${base}?limit=${limit}` : base);
+  }
+
+  // ─── Node transparency reads (NodeTransparencyController) ───
+  // Public, anonymous, cacheable. Every call below goes through requestAnonymous(),
+  // which strips both Authorization and X-Api-Key even when this client instance
+  // is configured with one — what this node discloses about its own policy is the
+  // same answer for every viewer. See parity-w10-3.test.ts's "token-less contract"
+  // suite, which configures a token AND an api key and asserts neither is sent.
+
+  /** The node's current governance parameters, fee schedule and treasury destinations. */
+  async getNodeTransparencySnapshot(): Promise<Result<NodeTransparencySnapshot, SdkError>> {
+    return this.requestAnonymous<NodeTransparencySnapshot>("GET", API_PATHS.NODE_TRANSPARENCY_CURRENT);
+  }
+
+  /** Public audit trail of governance-parameter changes, newest first. */
+  async listNodeGovernanceAudit(
+    limit?: number,
+    cursor?: string
+  ): Promise<Result<NodeTransparencyPage<NodeGovernanceAuditEntry>, SdkError>> {
+    return this.requestAnonymous<NodeTransparencyPage<NodeGovernanceAuditEntry>>(
+      "GET",
+      withAuditQuery(API_PATHS.NODE_TRANSPARENCY_GOVERNANCE_AUDIT, limit, cursor)
+    );
+  }
+
+  /** Public audit trail of fee-schedule changes, newest first. */
+  async listNodeFeeAudit(
+    limit?: number,
+    cursor?: string
+  ): Promise<Result<NodeTransparencyPage<NodeFeeAuditEntry>, SdkError>> {
+    return this.requestAnonymous<NodeTransparencyPage<NodeFeeAuditEntry>>(
+      "GET",
+      withAuditQuery(API_PATHS.NODE_TRANSPARENCY_FEE_AUDIT, limit, cursor)
+    );
+  }
+
+  /** Public audit trail of treasury-destination changes, newest first. */
+  async listNodeTreasuryAudit(
+    limit?: number,
+    cursor?: string
+  ): Promise<Result<NodeTransparencyPage<NodeTreasuryAuditEntry>, SdkError>> {
+    return this.requestAnonymous<NodeTransparencyPage<NodeTreasuryAuditEntry>>(
+      "GET",
+      withAuditQuery(API_PATHS.NODE_TRANSPARENCY_TREASURY_AUDIT, limit, cursor)
+    );
+  }
+
+  /**
+   * The node-identity-signed checkpoint over the bounded audit history above
+   * — verify this independently of trusting the node's own HTTPS transport.
+   */
+  async getNodeTransparencyHistoryCheckpoint(): Promise<
+    Result<NodeTransparencyHistoryDocument, SdkError>
+  > {
+    return this.requestAnonymous<NodeTransparencyHistoryDocument>(
+      "GET",
+      API_PATHS.NODE_TRANSPARENCY_HISTORY_CHECKPOINT
     );
   }
 
@@ -1590,298 +2835,298 @@ export class AzoaApiClient {
     );
   }
 
-  // ─── AvatarNFT ───
+  // ─── UserNFT ───
 
-  async mintAvatarNFT(params: AvatarNFTMintParams): Promise<Result<AvatarNFTResult, SdkError>> {
-    return this.request("POST", "/api/avatarnft/mint", params);
+  async mintUserNFT(params: UserNFTMintParams): Promise<Result<UserNFTResult, SdkError>> {
+    return this.request("POST", "/api/usernft/mint", params);
   }
 
-  async getAvatarNFT(id: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    assertUuid(id, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${id}`);
+  async getUserNFT(id: string): Promise<Result<UserNFTResult, SdkError>> {
+    assertUuid(id, "userNFTId");
+    return this.request("GET", `/api/usernft/${id}`);
   }
 
-  async getAvatarNFTByToken(chainType: string, contractAddress: string, tokenId: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    return this.request("GET", `/api/avatarnft/by-token/${encodeURIComponent(chainType)}/${encodeURIComponent(contractAddress)}/${encodeURIComponent(tokenId)}`);
+  async getUserNFTByToken(chainType: string, contractAddress: string, tokenId: string): Promise<Result<UserNFTResult, SdkError>> {
+    return this.request("GET", `/api/usernft/by-token/${encodeURIComponent(chainType)}/${encodeURIComponent(contractAddress)}/${encodeURIComponent(tokenId)}`);
   }
 
-  async listAvatarNFTs(avatarId: string): Promise<Result<AvatarNFTResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/avatarnft/avatar/${avatarId}`);
+  async listUserNFTs(userId: string): Promise<Result<UserNFTResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/usernft/user/${userId}`);
   }
 
-  async transferAvatarNFT(id: string, recipientAddress: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    assertUuid(id, "avatarNFTId");
-    return this.request("POST", `/api/avatarnft/${id}/transfer`, { recipientAddress });
+  async transferUserNFT(id: string, recipientAddress: string): Promise<Result<UserNFTResult, SdkError>> {
+    assertUuid(id, "userNFTId");
+    return this.request("POST", `/api/usernft/${id}/transfer`, { recipientAddress });
   }
 
-  async burnAvatarNFT(id: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(id, "avatarNFTId");
-    return this.request("DELETE", `/api/avatarnft/${id}`);
+  async burnUserNFT(id: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(id, "userNFTId");
+    return this.request("DELETE", `/api/usernft/${id}`);
   }
 
-  async bindHolonToNFT(avatarNFTId: string, holonId: string, params: { role: string; permissionLevel: string; permissions?: Record<string, string> }): Promise<Result<HolonNFTBindingResult, SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
+  async bindHolonToNFT(userNFTId: string, holonId: string, params: { role: string; permissionLevel: string; permissions?: Record<string, string> }): Promise<Result<HolonNFTBindingResult, SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
     assertUuid(holonId, "holonId");
-    return this.request("POST", `/api/avatarnft/${avatarNFTId}/holons/${holonId}/bind`, params);
+    return this.request("POST", `/api/usernft/${userNFTId}/holons/${holonId}/bind`, params);
   }
 
-  async listNFTHolonBindings(avatarNFTId: string): Promise<Result<HolonNFTBindingResult[], SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${avatarNFTId}/holons`);
+  async listNFTHolonBindings(userNFTId: string): Promise<Result<HolonNFTBindingResult[], SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
+    return this.request("GET", `/api/usernft/${userNFTId}/holons`);
   }
 
   async updateHolonBinding(bindingId: string, params: { role?: string; permissionLevel?: string; permissions?: Record<string, string>; isActive?: boolean }): Promise<Result<HolonNFTBindingResult, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("PUT", `/api/avatarnft/holons/${bindingId}`, params);
+    return this.request("PUT", `/api/usernft/holons/${bindingId}`, params);
   }
 
   async removeHolonBinding(bindingId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("DELETE", `/api/avatarnft/holons/${bindingId}`);
+    return this.request("DELETE", `/api/usernft/holons/${bindingId}`);
   }
 
-  async bindWalletToNFT(avatarNFTId: string, walletId: string, params: { bindingType: string; accessLevel: string; accessPermissions?: Record<string, string> }): Promise<Result<WalletNFTBindingResult, SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
+  async bindWalletToNFT(userNFTId: string, walletId: string, params: { bindingType: string; accessLevel: string; accessPermissions?: Record<string, string> }): Promise<Result<WalletNFTBindingResult, SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
     assertUuid(walletId, "walletId");
-    return this.request("POST", `/api/avatarnft/${avatarNFTId}/wallets/${walletId}/bind`, params);
+    return this.request("POST", `/api/usernft/${userNFTId}/wallets/${walletId}/bind`, params);
   }
 
-  async listNFTWalletBindings(avatarNFTId: string): Promise<Result<WalletNFTBindingResult[], SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${avatarNFTId}/wallets`);
+  async listNFTWalletBindings(userNFTId: string): Promise<Result<WalletNFTBindingResult[], SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
+    return this.request("GET", `/api/usernft/${userNFTId}/wallets`);
   }
 
   async updateWalletBinding(bindingId: string, params: { bindingType?: string; accessLevel?: string; accessPermissions?: Record<string, string>; isActive?: boolean }): Promise<Result<WalletNFTBindingResult, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("PUT", `/api/avatarnft/wallets/${bindingId}`, params);
+    return this.request("PUT", `/api/usernft/wallets/${bindingId}`, params);
   }
 
   async removeWalletBinding(bindingId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(bindingId, "bindingId");
-    return this.request("DELETE", `/api/avatarnft/wallets/${bindingId}`);
+    return this.request("DELETE", `/api/usernft/wallets/${bindingId}`);
   }
 
-  async getAvatarNFTComposite(avatarNFTId: string): Promise<Result<AvatarNFTResult, SdkError>> {
-    assertUuid(avatarNFTId, "avatarNFTId");
-    return this.request("GET", `/api/avatarnft/${avatarNFTId}/composite`);
+  async getUserNFTComposite(userNFTId: string): Promise<Result<UserNFTResult, SdkError>> {
+    assertUuid(userNFTId, "userNFTId");
+    return this.request("GET", `/api/usernft/${userNFTId}/composite`);
   }
 
-  async listAvatarNFTComposites(avatarId: string): Promise<Result<AvatarNFTResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/avatarnft/avatar/${avatarId}/composite`);
+  async listUserNFTComposites(userId: string): Promise<Result<UserNFTResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/usernft/user/${userId}/composite`);
   }
 
   async verifyNFTOwnership(params: { chainType: string; nftContractAddress: string; tokenId: string }): Promise<Result<{ isOwner: boolean }, SdkError>> {
-    return this.request("POST", "/api/avatarnft/verify-ownership", params);
+    return this.request("POST", "/api/usernft/verify-ownership", params);
   }
 
-  async verifyHolonAccess(params: { avatarNFTId: string; holonId: string; requiredPermission?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
-    return this.request("POST", "/api/avatarnft/verify-holon-access", params);
+  async verifyHolonAccess(params: { userNFTId: string; holonId: string; requiredPermission?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
+    return this.request("POST", "/api/usernft/verify-holon-access", params);
   }
 
-  async verifyWalletAccess(params: { avatarNFTId: string; walletId: string; requiredAccess?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
-    return this.request("POST", "/api/avatarnft/verify-wallet-access", params);
+  async verifyWalletAccess(params: { userNFTId: string; walletId: string; requiredAccess?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
+    return this.request("POST", "/api/usernft/verify-wallet-access", params);
   }
 
-  // ─── Quest DAG Operations ───
+  // ─── Action DAG Operations ───
 
-  /** Create a new quest with a DAG of nodes and edges. */
-  async createQuest(params: QuestCreateParams): Promise<Result<QuestResult, SdkError>> {
-    return this.request("POST", "/api/quest", params);
+  /** Create a new action with a DAG of nodes and edges. */
+  async createAction(params: ActionCreateParams): Promise<Result<ActionResult, SdkError>> {
+    return this.request("POST", "/api/action", params);
   }
 
-  /** Get a quest by ID, including all nodes, edges, and dependencies. */
-  async getQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("GET", `/api/quest/${questId}`);
+  /** Get an action by ID, including all nodes, edges, and dependencies. */
+  async getAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("GET", `/api/action/${actionId}`);
   }
 
-  /** List all quests belonging to an avatar. */
-  async listQuestsByAvatar(avatarId: string): Promise<Result<QuestResult[], SdkError>> {
-    assertUuid(avatarId, "avatarId");
-    return this.request("GET", `/api/quest/avatar/${avatarId}`);
+  /** List all actions belonging to a user. */
+  async listActionsByUser(userId: string): Promise<Result<ActionResult[], SdkError>> {
+    assertUuid(userId, "userId");
+    return this.request("GET", `/api/action/user/${userId}`);
   }
 
   /**
-   * Marketplace browse: list every public + Active quest any authenticated avatar
-   * may fork/start (maps to `GET /api/quest/public`, QuestController.ListPublic). A
-   * non-owner starts one via {@link executeQuest}; the run is owned by the caller and
-   * carries provenance back to the origin quest ({@link QuestRunResult.originAvatarId}).
+   * Marketplace browse: list every public + Active action any authenticated user
+   * may fork/start (maps to `GET /api/action/public`, ActionController.ListPublic). A
+   * non-owner starts one via {@link executeAction}; the run is owned by the caller and
+   * carries provenance back to the origin action ({@link ActionRunResult.originUserId}).
    */
-  async listPublicQuests(): Promise<Result<QuestResult[], SdkError>> {
-    return this.request("GET", API_PATHS.QUEST_PUBLIC);
+  async listPublicActions(): Promise<Result<ActionResult[], SdkError>> {
+    return this.request("GET", API_PATHS.ACTION_PUBLIC);
   }
 
-  /** Update quest metadata or status. */
-  async updateQuest(questId: string, params: QuestUpdateParams): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("PUT", `/api/quest/${questId}`, params);
+  /** Update action metadata or status. */
+  async updateAction(actionId: string, params: ActionUpdateParams): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("PUT", `/api/action/${actionId}`, params);
   }
 
-  /** Delete a quest and all its nodes/edges. */
-  async deleteQuest(questId: string): Promise<Result<{ message: string }, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("DELETE", `/api/quest/${questId}`);
+  /** Delete an action and all its nodes/edges. */
+  async deleteAction(actionId: string): Promise<Result<{ message: string }, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("DELETE", `/api/action/${actionId}`);
   }
 
-  /** Validate quest DAG structure (checks for cycles, unreachable nodes, etc.). */
-  async validateQuestDag(questId: string): Promise<Result<boolean, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", `/api/quest/${questId}/validate`);
+  /** Validate action DAG structure (checks for cycles, unreachable nodes, etc.). */
+  async validateActionDag(actionId: string): Promise<Result<boolean, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", `/api/action/${actionId}/validate`);
   }
 
   /**
-   * Run the full validation stack and flip the quest from Draft to Active.
-   * Returns validation errors on failure (400); quest stays Draft. Also fails
+   * Run the full validation stack and flip the action from Draft to Active.
+   * Returns validation errors on failure (400); action stays Draft. Also fails
    * (400, message containing "Publish conflict") when a concurrent
    * publish/unpublish raced this call and won the optimistic-concurrency check
-   * on {@link QuestResult.version} (final-hardening F6) — use {@link isQuestConflict}
+   * on {@link ActionResult.version} (final-hardening F6) — use {@link isActionConflict}
    * to detect this case and prompt the caller to reload + retry.
    * See Managers/AGENTS.md §publish-lifecycle.
    */
-  async publishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", API_PATHS.QUEST_PUBLISH(questId));
+  async publishAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", API_PATHS.ACTION_PUBLISH(actionId));
   }
 
   /**
-   * Flip an Active quest back to Draft so its definition can be mutated.
-   * Returns an error if any in-flight runs exist for this quest, or (message
+   * Flip an Active action back to Draft so its definition can be mutated.
+   * Returns an error if any in-flight runs exist for this action, or (message
    * containing "Unpublish conflict") if a concurrent transition raced and won
-   * the version check (final-hardening F6) — see {@link isQuestConflict}.
+   * the version check (final-hardening F6) — see {@link isActionConflict}.
    */
-  async unpublishQuest(questId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", API_PATHS.QUEST_UNPUBLISH(questId));
+  async unpublishAction(actionId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", API_PATHS.ACTION_UNPUBLISH(actionId));
   }
 
   /**
-   * Execute all ready nodes in the quest DAG. Returns the produced
-   * {@link QuestRunResult} (one execution attempt) — NOT the quest
-   * definition. Fails (400, message containing "Quest run conflict") if the
-   * quest was unpublished or modified concurrently (final-hardening F6) —
-   * see {@link isQuestConflict}. A non-owner may call this on a
-   * `isPublic` quest (quest-marketplace-provenance); the resulting run is
-   * owned by the caller and carries {@link QuestRunResult.sourceQuestId} /
-   * {@link QuestRunResult.originAvatarId} back to the quest owner.
+   * Execute all ready nodes in the action DAG. Returns the produced
+   * {@link ActionRunResult} (one execution attempt) — NOT the action
+   * definition. Fails (400, message containing "Action run conflict") if the
+   * action was unpublished or modified concurrently (final-hardening F6) —
+   * see {@link isActionConflict}. A non-owner may call this on a
+   * `isPublic` action (action-marketplace-provenance); the resulting run is
+   * owned by the caller and carries {@link ActionRunResult.sourceActionId} /
+   * {@link ActionRunResult.originUserId} back to the action owner.
    */
-  async executeQuest(questId: string): Promise<Result<QuestRunResult, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", `/api/quest/${questId}/execute`);
+  async executeAction(actionId: string): Promise<Result<ActionRunResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", `/api/action/${actionId}/execute`);
   }
 
-  /** Execute a single node within a quest. */
-  async executeQuestNode(questId: string, nodeId: string): Promise<Result<QuestNodeResult, SdkError>> {
-    assertUuid(questId, "questId");
+  /** Execute a single node within an action. */
+  async executeActionNode(actionId: string, nodeId: string): Promise<Result<ActionNodeResult, SdkError>> {
+    assertUuid(actionId, "actionId");
     assertUuid(nodeId, "nodeId");
-    return this.request("POST", `/api/quest/${questId}/nodes/${nodeId}/execute`);
+    return this.request("POST", `/api/action/${actionId}/nodes/${nodeId}/execute`);
   }
 
-  // ─── Quest Invitations + Request/Approval (quest-invitations-approval) ───
+  // ─── Action Invitations + Request/Approval (action-invitations-approval) ───
 
   /**
    * Owner-only: set the run-authorization mode (`Open` ↔ `InviteOnly`) and
    * optionally seed the invite list. Orthogonal to marketplace visibility
-   * ({@link QuestResult.isPublic}) — an `InviteOnly` quest stays viewable but
-   * runs/forks only for owner + invited avatars.
+   * ({@link ActionResult.isPublic}) — an `InviteOnly` action stays viewable but
+   * runs/forks only for owner + invited users.
    */
-  async setQuestRunAccess(questId: string, body: SetRunAccessRequest): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    if (body.invitedAvatarIds) {
-      for (const id of body.invitedAvatarIds) assertUuid(id, "invitedAvatarId");
+  async setActionRunAccess(actionId: string, body: SetRunAccessRequest): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    if (body.invitedUserIds) {
+      for (const id of body.invitedUserIds) assertUuid(id, "invitedUserId");
     }
-    return this.request("PUT", API_PATHS.QUEST_RUN_ACCESS(questId), body);
+    return this.request("PUT", API_PATHS.ACTION_RUN_ACCESS(actionId), body);
   }
 
-  /** Owner-only: directly invite an avatar to run an `InviteOnly` quest (no request needed). */
-  async inviteAvatar(questId: string, avatarId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    assertUuid(avatarId, "avatarId");
-    return this.request("POST", API_PATHS.QUEST_INVITE(questId), { avatarId } as InviteAvatarRequest);
+  /** Owner-only: directly invite a user to run an `InviteOnly` action (no request needed). */
+  async inviteUser(actionId: string, userId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    assertUuid(userId, "userId");
+    return this.request("POST", API_PATHS.ACTION_INVITE(actionId), { userId } as InviteUserRequest);
   }
 
-  /** Owner-only: revoke an avatar's invitation. In-flight runs are unaffected; new starts are gated. */
-  async revokeInvite(questId: string, avatarId: string): Promise<Result<QuestResult, SdkError>> {
-    assertUuid(questId, "questId");
-    assertUuid(avatarId, "avatarId");
-    return this.request("DELETE", API_PATHS.QUEST_INVITE_REVOKE(questId, avatarId));
+  /** Owner-only: revoke a user's invitation. In-flight runs are unaffected; new starts are gated. */
+  async revokeInvite(actionId: string, userId: string): Promise<Result<ActionResult, SdkError>> {
+    assertUuid(actionId, "actionId");
+    assertUuid(userId, "userId");
+    return this.request("DELETE", API_PATHS.ACTION_INVITE_REVOKE(actionId, userId));
   }
 
   /**
    * Open (or return the existing) Pending access request for an `InviteOnly`
-   * quest the caller can view. Idempotent per (quest, requester): re-requesting
+   * action the caller can view. Idempotent per (action, requester): re-requesting
    * while Pending returns the same request; re-requesting after a terminal state
    * opens a fresh Pending. Rejected server-side for owner / already-invited.
    */
-  async requestQuestAccess(questId: string, message?: string): Promise<Result<QuestAccessRequest, SdkError>> {
-    assertUuid(questId, "questId");
-    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUESTS(questId), { message } as RequestAccessBody);
+  async requestActionAccess(actionId: string, message?: string): Promise<Result<ActionAccessRequest, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.request("POST", API_PATHS.ACTION_ACCESS_REQUESTS(actionId), { message } as RequestAccessBody);
   }
 
-  /** Owner-only: list the approval queue for a quest, optionally filtered by status. */
-  async listAccessRequests(questId: string, status?: QuestAccessRequestStatus): Promise<Result<QuestAccessRequest[], SdkError>> {
-    assertUuid(questId, "questId");
+  /** Owner-only: list the approval queue for an action, optionally filtered by status. */
+  async listAccessRequests(actionId: string, status?: ActionAccessRequestStatus): Promise<Result<ActionAccessRequest[], SdkError>> {
+    assertUuid(actionId, "actionId");
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request("GET", `${API_PATHS.QUEST_ACCESS_REQUESTS(questId)}${query}`);
+    return this.request("GET", `${API_PATHS.ACTION_ACCESS_REQUESTS(actionId)}${query}`);
   }
 
   /**
    * Owner-only: approve (append requester to the invited set) or reject a
-   * Pending request. Scoped by the request's quest owner; terminal requests are
+   * Pending request. Scoped by the request's action owner; terminal requests are
    * immutable.
    */
-  async decideAccessRequest(requestId: string, approve: boolean, reason?: string): Promise<Result<QuestAccessRequest, SdkError>> {
+  async decideAccessRequest(requestId: string, approve: boolean, reason?: string): Promise<Result<ActionAccessRequest, SdkError>> {
     assertUuid(requestId, "requestId");
-    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUEST_DECISION(requestId), { approve, reason } as DecideAccessRequestBody);
+    return this.request("POST", API_PATHS.ACTION_ACCESS_REQUEST_DECISION(requestId), { approve, reason } as DecideAccessRequestBody);
   }
 
   /** Requester-only: withdraw the caller's own Pending request. */
-  async withdrawAccessRequest(requestId: string): Promise<Result<QuestAccessRequest, SdkError>> {
+  async withdrawAccessRequest(requestId: string): Promise<Result<ActionAccessRequest, SdkError>> {
     assertUuid(requestId, "requestId");
-    return this.request("POST", API_PATHS.QUEST_ACCESS_REQUEST_WITHDRAW(requestId));
+    return this.request("POST", API_PATHS.ACTION_ACCESS_REQUEST_WITHDRAW(requestId));
   }
 
   /** Requester-only: list the caller's own outbound access requests, optionally filtered by status. */
-  async listMyAccessRequests(status?: QuestAccessRequestStatus): Promise<Result<QuestAccessRequest[], SdkError>> {
+  async listMyAccessRequests(status?: ActionAccessRequestStatus): Promise<Result<ActionAccessRequest[], SdkError>> {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request("GET", `${API_PATHS.QUEST_ACCESS_REQUESTS_MINE}${query}`);
+    return this.request("GET", `${API_PATHS.ACTION_ACCESS_REQUESTS_MINE}${query}`);
   }
 
-  // ─── Quest Templates ───
+  // ─── Action Templates ───
 
-  /** Create a reusable quest template. */
-  async createQuestTemplate(params: QuestTemplateCreateParams): Promise<Result<QuestTemplateResult, SdkError>> {
-    return this.request("POST", "/api/quest/templates", params);
+  /** Create a reusable action template. */
+  async createActionTemplate(params: ActionTemplateCreateParams): Promise<Result<ActionTemplateResult, SdkError>> {
+    return this.request("POST", "/api/action/templates", params);
   }
 
-  /** Get a quest template by ID. */
-  async getQuestTemplate(templateId: string): Promise<Result<QuestTemplateResult, SdkError>> {
+  /** Get an action template by ID. */
+  async getActionTemplate(templateId: string): Promise<Result<ActionTemplateResult, SdkError>> {
     assertUuid(templateId, "templateId");
-    return this.request("GET", `/api/quest/templates/${templateId}`);
+    return this.request("GET", `/api/action/templates/${templateId}`);
   }
 
-  /** List all available quest templates. */
-  async listQuestTemplates(): Promise<Result<QuestTemplateResult[], SdkError>> {
-    return this.request("GET", "/api/quest/templates");
+  /** List all available action templates. */
+  async listActionTemplates(): Promise<Result<ActionTemplateResult[], SdkError>> {
+    return this.request("GET", "/api/action/templates");
   }
 
-  /** Instantiate a quest from a template with optional parameter overrides. */
-  async instantiateQuestTemplate(templateId: string, parameters?: Record<string, string>): Promise<Result<QuestResult, SdkError>> {
+  /** Instantiate an action from a template with optional parameter overrides. */
+  async instantiateActionTemplate(templateId: string, parameters?: Record<string, string>): Promise<Result<ActionResult, SdkError>> {
     assertUuid(templateId, "templateId");
-    return this.request("POST", `/api/quest/templates/${templateId}/instantiate`, parameters);
+    return this.request("POST", `/api/action/templates/${templateId}/instantiate`, parameters);
   }
 
-  // ─── Quest Node Templates ───
+  // ─── Action Node Templates ───
 
   /** Create a reusable node template. */
-  async createQuestNodeTemplate(params: QuestNodeTemplateCreateParams): Promise<Result<QuestNodeTemplateResult, SdkError>> {
-    return this.request("POST", "/api/quest/node-templates", params);
+  async createActionNodeTemplate(params: ActionNodeTemplateCreateParams): Promise<Result<ActionNodeTemplateResult, SdkError>> {
+    return this.request("POST", "/api/action/node-templates", params);
   }
 
   /** List all available node templates. */
-  async listQuestNodeTemplates(): Promise<Result<QuestNodeTemplateResult[], SdkError>> {
-    return this.request("GET", "/api/quest/node-templates");
+  async listActionNodeTemplates(): Promise<Result<ActionNodeTemplateResult[], SdkError>> {
+    return this.request("GET", "/api/action/node-templates");
   }
 
   // ─── API Key Management ───
@@ -1891,7 +3136,7 @@ export class AzoaApiClient {
     return this.request("POST", "/api/apikey", params);
   }
 
-  /** List all API keys for the authenticated avatar (raw keys are never returned). */
+  /** List all API keys for the authenticated user (raw keys are never returned). */
   async listApiKeys(): Promise<Result<ApiKeyInfo[], SdkError>> {
     return this.request("GET", "/api/apikey");
   }
@@ -1909,7 +3154,7 @@ export class AzoaApiClient {
   }
 
   /**
-   * List the scopes an avatar may self-issue on a new key, each with a human
+   * List the scopes a user may self-issue on a new key, each with a human
    * description (maps to `GET /api/apikey/scopes`). Drives the key-creation scope
    * picker. An empty CSV still means legacy "full access" — these are the opt-in scopes.
    */
@@ -1933,7 +3178,7 @@ export class AzoaApiClient {
   }
 
   // ─── DappSeries (DappSeriesController) ───
-  // Reads are authenticated-avatar reads; authoring writes require dapp:develop.
+  // Reads are authenticated-user reads; authoring writes require dapp:develop.
 
   /** List the caller's dApp-series, optionally filtered by status. */
   async listDappSeries(status?: DappSeriesStatus): Promise<Result<DappSeriesResult[], SdkError>> {
@@ -1964,38 +3209,38 @@ export class AzoaApiClient {
     return this.request("DELETE", API_PATHS.DAPP_SERIES_DELETE(id));
   }
 
-  /** List the ordered quest entries in a dApp-series. */
-  async listSeriesQuests(seriesId: string): Promise<Result<DappSeriesQuestResult[], SdkError>> {
+  /** List the ordered action entries in a dApp-series. */
+  async listSeriesActions(seriesId: string): Promise<Result<DappSeriesActionResult[], SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    return this.request("GET", API_PATHS.DAPP_SERIES_QUESTS(seriesId));
+    return this.request("GET", API_PATHS.DAPP_SERIES_ACTIONS(seriesId));
   }
 
-  /** Add a quest to a dApp-series at a given order. Requires the `dapp:develop` scope. */
-  async addSeriesQuest(seriesId: string, params: DappSeriesAddQuestParams): Promise<Result<DappSeriesQuestResult, SdkError>> {
+  /** Add an action to a dApp-series at a given order. Requires the `dapp:develop` scope. */
+  async addSeriesAction(seriesId: string, params: DappSeriesAddActionParams): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(params.questId, "questId");
-    return this.request("POST", API_PATHS.DAPP_SERIES_QUESTS(seriesId), params);
+    assertUuid(params.actionId, "actionId");
+    return this.request("POST", API_PATHS.DAPP_SERIES_ACTIONS(seriesId), params);
   }
 
-  /** Remove a quest from a dApp-series. Requires the `dapp:develop` scope. */
-  async removeSeriesQuest(seriesId: string, questId: string): Promise<Result<{ message: string }, SdkError>> {
+  /** Remove an action from a dApp-series. Requires the `dapp:develop` scope. */
+  async removeSeriesAction(seriesId: string, actionId: string): Promise<Result<{ message: string }, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(questId, "questId");
-    return this.request("DELETE", API_PATHS.DAPP_SERIES_QUEST_REMOVE(seriesId, questId));
+    assertUuid(actionId, "actionId");
+    return this.request("DELETE", API_PATHS.DAPP_SERIES_ACTION_REMOVE(seriesId, actionId));
   }
 
-  /** Change a quest's 1-indexed order within a series. Requires the `dapp:develop` scope. */
-  async reorderSeriesQuest(seriesId: string, questId: string, newOrder: number): Promise<Result<DappSeriesQuestResult, SdkError>> {
+  /** Change an action's 1-indexed order within a series. Requires the `dapp:develop` scope. */
+  async reorderSeriesAction(seriesId: string, actionId: string, newOrder: number): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(questId, "questId");
-    return this.request("PUT", API_PATHS.DAPP_SERIES_QUEST_ORDER(seriesId, questId), { newOrder });
+    assertUuid(actionId, "actionId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_ACTION_ORDER(seriesId, actionId), { newOrder });
   }
 
-  /** Update a quest's cross-quest input mappings (JSON array). Requires the `dapp:develop` scope. */
-  async updateSeriesMappings(seriesId: string, questId: string, inputMappings: string | null): Promise<Result<DappSeriesQuestResult, SdkError>> {
+  /** Update an action's cross-action input mappings (JSON array). Requires the `dapp:develop` scope. */
+  async updateSeriesMappings(seriesId: string, actionId: string, inputMappings: string | null): Promise<Result<DappSeriesActionResult, SdkError>> {
     assertUuid(seriesId, "dappSeriesId");
-    assertUuid(questId, "questId");
-    return this.request("PUT", API_PATHS.DAPP_SERIES_QUEST_MAPPINGS(seriesId, questId), { inputMappings });
+    assertUuid(actionId, "actionId");
+    return this.request("PUT", API_PATHS.DAPP_SERIES_ACTION_MAPPINGS(seriesId, actionId), { inputMappings });
   }
 
   /**
@@ -2009,19 +3254,22 @@ export class AzoaApiClient {
     path: string,
     body?: unknown,
     _retried: boolean = false,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    anonymous: boolean = false
   ): Promise<Result<T, SdkError>> {
     this.logRequest(method, path, body);
     try {
-      const resp = await this.fetchWithAuth(method, path, body, extraHeaders);
+      const resp = await this.fetchWithAuth(method, path, body, extraHeaders, anonymous);
 
-      if (resp.status === 401 && this.config.onTokenRefresh && !_retried) {
+      // An anonymous call carries no token to refresh, so a 401 falls straight
+      // through to the plain !resp.ok branch below instead of this retry.
+      if (!anonymous && resp.status === 401 && this.config.onTokenRefresh && !_retried) {
         try {
           await this.getOrRefreshToken(true);
         } catch (refreshErr) {
           return this.handleFetchError(method, path, refreshErr);
         }
-        return this.request(method, path, body, true, extraHeaders);
+        return this.request(method, path, body, true, extraHeaders, anonymous);
       }
 
       if (resp.status === 401 && _retried) {
@@ -2047,6 +3295,16 @@ export class AzoaApiClient {
     } catch (e) {
       return this.handleFetchError(method, path, e);
     }
+  }
+
+  /**
+   * Like {@link request}, but never attaches a bearer token or API key, even
+   * when this client is configured with one — for genuinely anonymous routes
+   * such as NodeTransparencyController's `[AllowAnonymous]` reads (OI-70: a
+   * doc-comment asserted this and nothing enforced it).
+   */
+  async requestAnonymous<T>(method: string, path: string): Promise<Result<T, SdkError>> {
+    return this.request<T>(method, path, undefined, false, undefined, true);
   }
 
   /** For endpoints that return bare objects (BridgeController pattern). */
@@ -2149,10 +3407,11 @@ export class AzoaApiClient {
     method: string,
     path: string,
     body?: unknown,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    anonymous: boolean = false
   ): Promise<Response> {
-    let token = this.config.token;
-    if (!token && this.config.onTokenRefresh) {
+    let token = anonymous ? undefined : this.config.token;
+    if (!anonymous && !token && this.config.onTokenRefresh) {
       try {
         token = await this.getOrRefreshToken();
       } catch (e) {
@@ -2164,10 +3423,14 @@ export class AzoaApiClient {
 
     const headers: Record<string, string> = {};
     if (body) headers["Content-Type"] = "application/json";
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    } else if (this.config.apiKey) {
-      headers["X-Api-Key"] = this.config.apiKey;
+    // `anonymous` routes (e.g. node transparency) never attach either credential,
+    // even when this client instance is configured with a token or API key.
+    if (!anonymous) {
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      } else if (this.config.apiKey) {
+        headers["X-Api-Key"] = this.config.apiKey;
+      }
     }
     if (extraHeaders) {
       for (const [k, v] of Object.entries(extraHeaders)) {

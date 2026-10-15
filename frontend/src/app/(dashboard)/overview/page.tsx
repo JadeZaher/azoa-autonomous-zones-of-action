@@ -44,7 +44,7 @@ function ChainInfoCard({ chain }: { chain: string }) {
 }
 
 export default function OverviewPage() {
-  const { avatarId, isAuthenticated, user } = useAzoaAuth()
+  const { userId, isAuthenticated, user } = useAzoaAuth()
 
   return (
     <div className="space-y-6">
@@ -66,8 +66,8 @@ export default function OverviewPage() {
           </div>
           <Separator />
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Avatar</span>
-            <span className="font-mono text-xs">{avatarId ?? '—'}</span>
+            <span className="text-muted-foreground">User</span>
+            <span className="font-mono text-xs">{userId ?? '—'}</span>
           </div>
           {user && (
             <>

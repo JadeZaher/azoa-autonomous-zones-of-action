@@ -60,7 +60,14 @@ namespace AZOA.WebAPI.Tests.Persistence.SurrealDb
             // developer-only path.
             var regen = Environment.GetEnvironmentVariable("AZOA_REGENERATE_GOLDENS") == "1";
             var emptyGolden = File.Exists(goldenPath) && new FileInfo(goldenPath).Length == 0;
-            if (regen || !File.Exists(goldenPath) || emptyGolden)
+
+            // A MISSING golden must NOT auto-author. That escape hatch fired on the
+            // star_odk -> action_graph_bundle table rename: the new golden path did not
+            // exist, so this test wrote it and passed 60/60 while three SCHEMAFULL tables
+            // still carried `record<star_odk>` FKs and the node-type enum still read
+            // "StarGenerate". A rename must turn this suite RED until someone regenerates
+            // deliberately. Only the explicit env var or a zero-byte file authors now.
+            if (regen || emptyGolden)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(goldenPath)!);
                 File.WriteAllText(goldenPath, emitted);

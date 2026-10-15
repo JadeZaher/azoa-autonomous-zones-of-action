@@ -1,0 +1,38 @@
+{
+  "type": "feature",
+  "status": "in_progress",
+  "created": "2026-09-06",
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek"
+  },
+  "blocked_by": [],
+  "supersedes_defects_in_commit": "a59bd85",
+  "id": "credential-third-party-issuance_20260906",
+  "title": "Credential third-party issuance",
+  "decisions": [
+    "D19",
+    "D41"
+  ],
+  "priority": 2,
+  "why_second": "the rail is inert, not dangerous - it refuses every revoke rather than performing a wrong one",
+  "open_question": "RESOLVED (Phase 0, plan.md): who may issue a credential to another user is ROLE-GATED - dapp:manager role plus nft:mint scope, enforced in CredentialController.Issue. A recipient-consent-grant model was considered and deliberately deferred (owed, not dismissed).",
+  "requires_security_review": true,
+  "partitions": {
+    "confidence": "planned",
+    "computed_at_commit": "a59bd85",
+    "owns": [
+      "Managers/CredentialManager.cs",
+      "Controllers/CredentialController.cs",
+      "Providers/Stores/Surreal/SurrealNftStore.cs",
+      "Services/Users/UserNFTService.cs",
+      "Providers/Blockchain/Algorand/AlgorandProvider.cs",
+      "Services/Reconciliation/ReconciliationService.cs",
+      "tests/AZOA.WebAPI.Tests/Providers/Stores/Surreal/**"
+    ]
+  },
+  "acceptance_headline": "issuer != holder on a real mint, and no path reports success without a confirmed broadcast",
+  "enforcement_gate": "Enforcement now exists: Services/Actions/NotEnabledActionNodeTypes refuses CredentialRevoke at publish and at BOTH dispatch seams. Phases 0-3 (two-party mint, current_owner at mint, clawback preconditions, confirmation/ownership re-pointing) are landed per plan.md. Only Phase 4 remains: adversarial review, /security-review, then remove CredentialRevoke as the final step.",
+  "gate_added_commit": "7b28a16",
+  "phases_0_to_3_landed": true,
+  "reconciled_2026_09_07": "status moved from pending to in_progress and the open_question marked resolved, matching plan.md's own Phase 0-3 [x] checkboxes and verified against source (Controllers/CredentialController.cs Issue endpoint, Services/Reconciliation/ReconciliationService.cs D41/AC5 handling, tests/AZOA.WebAPI.Tests/Credentials/). Only Phase 4 remains open; status stays in_progress, not shipped, until it closes."
+}

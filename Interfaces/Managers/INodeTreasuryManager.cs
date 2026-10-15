@@ -14,11 +14,11 @@ public interface INodeTreasuryManager
 
     /// <summary>Validates and atomically versions a destination plus its audit row.</summary>
     /// <param name="request">Destination values and optional expected version.</param>
-    /// <param name="actorAvatarId">Authenticated node-governance actor.</param>
+    /// <param name="actorUserId">Authenticated node-governance actor.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<AZOAResult<NodeTreasuryDestinationResponse>> UpdateDestinationAsync(
         NodeTreasuryDestinationUpdateRequest request,
-        Guid actorAvatarId,
+        Guid actorUserId,
         CancellationToken ct = default);
 
     /// <summary>Loads the newest operator-only treasury audit rows.</summary>

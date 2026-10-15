@@ -1,0 +1,89 @@
+{
+  "id": "ardanova-production-readiness-waves_20260907",
+  "title": "ArdaNova production-readiness waves",
+  "type": "feature",
+  "status": "shipped",
+  "created": "2026-09-07",
+  "source": "11-agent vertical review, 2026-09-07 (REVIEW-EVIDENCE.json)",
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek",
+    "ardanova": "c:/Users/atooz/Documents/Escherbridge/ardanova"
+  },
+  "finding_count": 147,
+  "waves": 11,
+  "owner_questions": 4,
+  "gotchas": 41,
+  "decisions_to_ratify": 16,
+  "thesis_health": "Materially better than at plan time, and still failing the practical test in named places. What changed: a person signs in, sets up an account and sees 'Ready'/'Not created' with no address and no GUID; /settings/wallets is deleted; the sponsorship flow speaks in stake, sponsors, workers, units and dollars; refusals are consumer English; AZOA's Core/ConsumerSafeErrors actively strips chain vocabulary, base32 addresses and hex digests from rail refusals; the escrow node labels read 'Set Funds Aside' / 'Pay Out' / 'Give Back' / 'Hand On'. What still fails: a member's own credential page says 'Blockchain Status', 'Minted on Algorand' and 'ASA #', and the credential card renders a raw asset id as a mono 'Reference' (OI-54, OI-85); the project Money view renders an engineering refusal naming the node, a tenant credential and two /api/admin routes as the answer to 'where is my money' (OI-51); the funding ask is entered in ARDA with dollars as a caption, which is plan text faithfully implemented and needs an owner ruling (OI-19); AZOA's own sidebar shows every signed-in user a 'DeFi' group with Blockchain/Swap/Bridge (OI-84); and /governance renders the raw enum 'SHARES' and 'total voting power' (OI-49). None of these is a money defect; all of them are the defect the thesis names.",
+  "partitions": {
+    "confidence": "verified",
+    "computed_at_commit": "8328c0703a040b8ba669788ab40257d1f110751a",
+    "verified_at": "2026-09-08",
+    "note": "Verified by execution, not by hypothesis: all 11 waves ran as parallel fan-outs against the per-item owns lists in plan.md, each wave's join gate re-grepped the boundaries before launch (AC3), and no wave reported a write outside its declared partition. Where an implementer needed a file it did not own it declared a crossBoundary handoff instead of editing \u2014 which is why several items ship as fail-closed seams rather than wired features (see OPEN-ITEMS.md \u00a7D). Two partition facts worth carrying forward: test files were in NO item's owns list for the whole program, so new behaviour ships largely unpinned (OI-91); and ardanova-client/prisma/ was owned by too few items, which is how the Wave 6 schema drift (OI-36, OI-37) reached a commit."
+  },
+  "items": 54,
+  "owner_questions_note": "The review's Q1-Q4 are answered by D44-D47 and Q5-Q7 are carried as stated assumptions. Of the five design questions D44 opened, D49 and D50 answered two (ARDA genesis; the exchange mechanism), recorded in plan.md as design notes N-X1 and N-X2. Four remain open and gate Wave 3: Q-X2 (the ARDA price per US cent), Q-X3 (project-ASA parameters), Q-X4 (who may create a project token), Q-X5 (the off-ramp destination; Stripe Connect platform approval is an unbounded external clock). Q-X6 (who holds a project's ARDA) is ANSWERED in plan.md - a per-project custodial treasury account on the node - because the waves could not be collision-proofed with it open; the owner may reverse it before W3.7 lands.",
+  "decisions": "D44-D51 (conductor/RUNBOOK.md); chain-first, token-native",
+  "revisions": [
+    {
+      "date": "2026-09-07",
+      "what": "chain-first re-sequence under D44-D48; the review's fiat-first ordering rejected"
+    },
+    {
+      "date": "2026-09-07",
+      "what": "critique pass: all 25 RESEQUENCE-CRITIQUE.json findings applied or accepted by name in plan.md's 'Accepted residual risks'; D49/D50/D51 folded in. Two blockers closed - W1.8 teaches the node a production CustodyMode (walletReady was false by construction outside Development, so every downstream wave was silently blocked on the custody the plan claimed to assume), and W3.7 gives each project a custodial treasury account on the node (the exchange credited the platform reserve, leaving the project's funding balance as the Postgres ledger D47 rejected). Wave 8 reordered so the buy-back liquidity policy lands before the user-facing sell path."
+    },
+    {
+      "date": "2026-09-08",
+      "what": "CLOSEOUT. All 11 waves executed as parallel fan-outs with per-wave join gates; 53 of 54 items delivered across 18 commits in two repos. Adversarial review per wave: 5 PASS-WITH-DEBT, 6 FAIL. plan.md checkboxes ticked with a per-item status glyph (tick = landed as planned, warning = landed with disclosed stubs or debt, blocked = did not land) and an 'As built' note under every wave. Owner questions Q-X2..Q-X5 closed (Q-X2 settled: ARDA is backing-derived with a 1 ARDA = $0.01 genesis seed, not pegged; Q-X3 resolved by constraint at scale 6; Q-X4 self-serve at publish; Q-X5 Stripe Connect Express). Everything still red, stubbed or found by review is enumerated in OPEN-ITEMS.md as a checkable item with a file:line and an unblock \u2014 including 10 open CRITICALs and 16 new instances of the 'a claim in prose is not a control in code' class."
+    }
+  ],
+  "closed": "2026-09-08",
+  "items_delivered": 53,
+  "items_not_delivered": [
+    "W0.4 \u2014 publish azoa-sdk (blocked: npm credential 401s; see OPEN-ITEMS.md OI-01)"
+  ],
+  "head_commits": {
+    "azoa": "8328c0703a040b8ba669788ab40257d1f110751a",
+    "azoa_branch": "feat/kyc-aml-providers-value-rail",
+    "ardanova": "3ffa223119c89706a238a5c9b88aa49bf8a43554",
+    "ardanova_branch": "codex/azoa-security-hardening"
+  },
+  "wave_commits": {
+    "wave0": "7dbfc8a (azoa), ea9b9d1 (ardanova)",
+    "wave1": "33e08e3, 881a609",
+    "wave2": "0026dbe",
+    "wave3": "2336a13, ca11c2d",
+    "wave4": "2f7944f",
+    "wave5": "413b0d5, baa5105",
+    "wave6": "7c4e078",
+    "wave7": "16f1a38",
+    "wave8": "671894a (azoa), ae4bc34 (ardanova)",
+    "wave9": "924ec47 (azoa), 160b6be (ardanova)",
+    "wave10": "8328c07 (azoa), 3ffa223 (ardanova)"
+  },
+  "review_verdicts": {
+    "pass_with_debt": [
+      "Wave 0",
+      "Wave 1",
+      "Wave 4",
+      "Wave 5",
+      "Wave 9"
+    ],
+    "fail": [
+      "Wave 2",
+      "Wave 3",
+      "Wave 6",
+      "Wave 7",
+      "Wave 8",
+      "Wave 10"
+    ],
+    "note": "Every wave shipped and every wave shipped with debt; none closed clean, so no wave heading in plan.md carries a bare tick. A FAIL verdict means the wave's code landed and was committed AND an adversarial reviewer found at least one CRITICAL that is still open \u2014 it does not mean the wave was reverted."
+  },
+  "open_items": {
+    "file": "./OPEN-ITEMS.md",
+    "count": 95,
+    "critical_open": 10,
+    "note": "Every stub, fail-closed seam, CRITICAL finding, operator action and piece of debt the program left, each with a file:line and its exact unblock. plan.md's per-wave 'As built' notes cite these ids. Read this before starting any follow-up work."
+  }
+}

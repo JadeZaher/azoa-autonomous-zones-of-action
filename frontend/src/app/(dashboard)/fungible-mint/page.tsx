@@ -9,7 +9,7 @@
  *
  *   (a) generate a custodial wallet (UNGATED — wallet-generate needs no KYC, §11.4);
  *   (b) attempt a one-shot fungible-mint and surface the KYC_FORBIDDEN 403 when the
- *       avatar is not KYC-approved (the value seam IS gated, §11.4);
+ *       user is not KYC-approved (the value seam IS gated, §11.4);
  *   (c) render the wallet's holdings using ONLY the render-model DTO returned by the
  *       SINGLE portfolio call (§11.5) — no per-asset round-trips, no client-side
  *       decimals math (raw + display amounts arrive precomputed).
@@ -61,7 +61,7 @@ function isHttpsUrl(ref: string | null | undefined): boolean {
 }
 
 export default function FungibleMintPage() {
-  const { avatarId } = useAzoa()
+  const { userId } = useAzoa()
 
   // ── (a) wallet generation ──
   const [chainType, setChainType] = useState('Algorand')
@@ -112,7 +112,7 @@ export default function FungibleMintPage() {
       },
       // A stable idempotency key so a re-click replays the original launch (no
       // double-mint) — exercises the idempotency path of the endpoint.
-      { idempotencyKey: `harness:${avatarId}:${name}:${unitName}:${total}:${decimals}` }
+      { idempotencyKey: `harness:${userId}:${name}:${unitName}:${total}:${decimals}` }
     )
 
     if (isOk(result)) {
@@ -125,16 +125,16 @@ export default function FungibleMintPage() {
     } else {
       const msg = result.error.message
       if (isKycForbidden(msg)) {
-        // The value seam is KYC-gated (§11.4): a non-approved avatar is rejected
+        // The value seam is KYC-gated (§11.4): a non-approved user is rejected
         // fail-closed with KYC_FORBIDDEN: → 403. This is the EXPECTED harness path
-        // for an un-KYC'd avatar.
+        // for an un-KYC'd user.
         setKycBlocked(true)
       } else {
         setMintError(msg)
       }
     }
     setMintBusy(false)
-  }, [chainType, name, unitName, total, decimals, avatarId])
+  }, [chainType, name, unitName, total, decimals, userId])
 
   // ── (c) render-model portfolio (ONE call) ──
   const [portfolio, setPortfolio] = useState<PortfolioResult | null>(null)
@@ -156,7 +156,7 @@ export default function FungibleMintPage() {
     setPortfolioBusy(false)
   }, [wallet])
 
-  if (!avatarId) {
+  if (!userId) {
     return (
       <Card>
         <CardContent className="pt-6">
@@ -239,7 +239,7 @@ export default function FungibleMintPage() {
                 <div>
                   <p className="font-medium">Blocked: KYC_FORBIDDEN (HTTP 403)</p>
                   <p className="text-xs mt-0.5">
-                    The mint seam is fail-closed: this avatar is not KYC-approved, so the value-bearing
+                    The mint seam is fail-closed: this user is not KYC-approved, so the value-bearing
                     launch was rejected. Wallet generation above still succeeded — you can make a wallet,
                     but to mint you must be KYC-approved.
                   </p>

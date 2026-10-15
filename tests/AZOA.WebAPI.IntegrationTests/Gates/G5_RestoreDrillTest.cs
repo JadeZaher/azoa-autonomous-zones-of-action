@@ -29,7 +29,7 @@ namespace AZOA.WebAPI.IntegrationTests.Gates;
 /// Both scripts use the selected container, not a host-installed surreal binary.
 ///
 /// Seed data-shape contract (2026-07-06): every seeded value must satisfy its
-/// SCHEMAFULL column type. `record&lt;...&gt;` link fields (e.g. wallet.avatar_id) and
+/// SCHEMAFULL column type. `record&lt;...&gt;` link fields (e.g. wallet.user_id) and
 /// `datetime` fields cannot be a bare JSON string, so they are injected as SurrealQL
 /// literals via `object::extend($body, { field: type::record(...) / type::datetime(...) })`
 /// while plain scalars stay in `$body`. `option&lt;...&gt;` fields are OMITTED when NONE —
@@ -78,35 +78,35 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
     private static readonly string SagaId2 = "07000000000000000000000000000002";
     private static readonly string SagaId3 = "07000000000000000000000000000003";
 
-    // avatar rows
-    private static readonly string AvatarId1 = "18000000000000000000000000000001";
-    private static readonly string AvatarId2 = "18000000000000000000000000000002";
-    private static readonly string AvatarId3 = "18000000000000000000000000000003";
+    // user rows
+    private static readonly string UserId1 = "18000000000000000000000000000001";
+    private static readonly string UserId2 = "18000000000000000000000000000002";
+    private static readonly string UserId3 = "18000000000000000000000000000003";
 
     // holon rows
     private static readonly string HolonId1 = "29000000000000000000000000000001";
     private static readonly string HolonId2 = "29000000000000000000000000000002";
     private static readonly string HolonId3 = "29000000000000000000000000000003";
 
-    // star_odk rows
-    private static readonly string StarId1 = "3a000000000000000000000000000001";
-    private static readonly string StarId2 = "3a000000000000000000000000000002";
-    private static readonly string StarId3 = "3a000000000000000000000000000003";
+    // action_graph_bundle rows
+    private static readonly string ActionGraphBundleId1 = "3a000000000000000000000000000001";
+    private static readonly string ActionGraphBundleId2 = "3a000000000000000000000000000002";
+    private static readonly string ActionGraphBundleId3 = "3a000000000000000000000000000003";
 
     // api_key rows
     private static readonly string ApiKeyId1 = "4b000000000000000000000000000001";
     private static readonly string ApiKeyId2 = "4b000000000000000000000000000002";
     private static readonly string ApiKeyId3 = "4b000000000000000000000000000003";
 
-    // quest_template rows
-    private static readonly string QuestTplId1 = "5c000000000000000000000000000001";
-    private static readonly string QuestTplId2 = "5c000000000000000000000000000002";
-    private static readonly string QuestTplId3 = "5c000000000000000000000000000003";
+    // action_template rows
+    private static readonly string ActionTplId1 = "5c000000000000000000000000000001";
+    private static readonly string ActionTplId2 = "5c000000000000000000000000000002";
+    private static readonly string ActionTplId3 = "5c000000000000000000000000000003";
 
-    // quest_node_template rows
-    private static readonly string QuestNodeTplId1 = "6d000000000000000000000000000001";
-    private static readonly string QuestNodeTplId2 = "6d000000000000000000000000000002";
-    private static readonly string QuestNodeTplId3 = "6d000000000000000000000000000003";
+    // action_node_template rows
+    private static readonly string ActionNodeTplId1 = "6d000000000000000000000000000001";
+    private static readonly string ActionNodeTplId2 = "6d000000000000000000000000000002";
+    private static readonly string ActionNodeTplId3 = "6d000000000000000000000000000003";
 
     // ── Connection config (mirrors IntegrationTestBase private statics) ─────────
 
@@ -298,14 +298,14 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                // avatar_id is record<avatar>: inject as a record-link literal
+                // user_id is record<user>: inject as a record-link literal
                 // (type::record) via object::extend — a bare string won't coerce.
-                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "wallet",
                     id,
-                    avatarId = AvatarId1,
+                    userId = UserId1,
                     ts,
                     body = new
                     {
@@ -331,13 +331,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                // avatar_id is record<avatar>.
-                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_at: type::datetime($ts) }) RETURN AFTER",
+                // user_id is record<user>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), created_at: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "bridge_tx",
                     id,
-                    avatarId = AvatarId1,
+                    userId = UserId1,
                     ts,
                     body = new
                     {
@@ -364,13 +364,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                // avatar_id is record<avatar>.
-                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), minted_date: type::datetime($ts) }) RETURN AFTER",
+                // user_id is record<user>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), minted_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "nft_ownership",
                     id,
-                    avatarId = AvatarId1,
+                    userId = UserId1,
                     ts,
                     body = new
                     {
@@ -504,13 +504,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 });
         }
 
-        // ── avatar ────────────────────────────────────────────────────────────
+        // ── user ────────────────────────────────────────────────────────────
         // Each row must have a unique username and email (UNIQUE indexes).
         foreach (var (id, username, email) in new[]
         {
-            (AvatarId1, "g5_user_01", "g5_01@g5test.internal"),
-            (AvatarId2, "g5_user_02", "g5_02@g5test.internal"),
-            (AvatarId3, "g5_user_03", "g5_03@g5test.internal"),
+            (UserId1, "g5_user_01", "g5_01@g5test.internal"),
+            (UserId2, "g5_user_02", "g5_02@g5test.internal"),
+            (UserId3, "g5_user_03", "g5_03@g5test.internal"),
         })
         {
             await ExecuteSurrealSqlAsync(
@@ -518,7 +518,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 "CREATE type::record($t, $id) CONTENT object::extend($body, { created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
-                    t = "avatar",
+                    t = "user",
                     id,
                     ts,
                     body = new
@@ -544,13 +544,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                // avatar_id is option<record<avatar>>.
-                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
+                // user_id is option<record<user>>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "holon",
                     id,
-                    avatarId = AvatarId1,
+                    userId = UserId1,
                     ts,
                     body = new
                     {
@@ -563,29 +563,29 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 });
         }
 
-        // ── star_odk ─────────────────────────────────────────────────────────
-        // Note: the table name is star_odk (not star) per Persistence/SurrealDb/Schemas/110_star.surql.
-        foreach (var (id, starName) in new[]
+        // ── action_graph_bundle ─────────────────────────────────────────────────────────
+        // Note: the table name is action_graph_bundle (not bundle) per Persistence/SurrealDb/Generated/Schemas/action_graph_bundle.surql.
+        foreach (var (id, bundleName) in new[]
         {
-            (StarId1, "G5 Star Alpha"),
-            (StarId2, "G5 Star Beta"),
-            (StarId3, "G5 Star Gamma"),
+            (ActionGraphBundleId1, "G5 ActionGraphBundle Alpha"),
+            (ActionGraphBundleId2, "G5 ActionGraphBundle Beta"),
+            (ActionGraphBundleId3, "G5 ActionGraphBundle Gamma"),
         })
         {
             await ExecuteSurrealSqlAsync(
-                // avatar_id is option<record<avatar>>.
-                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
+                // user_id is option<record<user>>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
-                    t = "star_odk",
+                    t = "action_graph_bundle",
                     id,
-                    avatarId = AvatarId1,
+                    userId = UserId1,
                     ts,
                     body = new
                     {
                         id,
-                        name              = starName,
-                        description       = $"G5 test star {id[^2..]}",
+                        name              = bundleName,
+                        description       = $"G5 test bundle {id[^2..]}",
                         target_chain      = "Solana",
                         is_active         = true,
                     },
@@ -602,13 +602,13 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         })
         {
             await ExecuteSurrealSqlAsync(
-                // avatar_id is record<avatar>.
-                "CREATE type::record($t, $id) CONTENT object::extend($body, { avatar_id: type::record('avatar', $avatarId), created_date: type::datetime($ts) }) RETURN AFTER",
+                // user_id is record<user>.
+                "CREATE type::record($t, $id) CONTENT object::extend($body, { user_id: type::record('user', $userId), created_date: type::datetime($ts) }) RETURN AFTER",
                 new
                 {
                     t = "api_key",
                     id,
-                    avatarId = AvatarId1,
+                    userId = UserId1,
                     ts,
                     body = new
                     {
@@ -622,26 +622,26 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 });
         }
 
-        // ── quest_template ────────────────────────────────────────────────────
+        // ── action_template ────────────────────────────────────────────────────
         foreach (var (id, name) in new[]
         {
-            (QuestTplId1, "G5 Quest Alpha"),
-            (QuestTplId2, "G5 Quest Beta"),
-            (QuestTplId3, "G5 Quest Gamma"),
+            (ActionTplId1, "G5 Action Alpha"),
+            (ActionTplId2, "G5 Action Beta"),
+            (ActionTplId3, "G5 Action Gamma"),
         })
         {
             await ExecuteSurrealSqlAsync(
                 "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
-                    t = "quest_template",
+                    t = "action_template",
                     id,
                     body = new
                     {
                         id,
                         name,
-                        description      = $"G5 quest template {id[^2..]}",
-                        author_avatar_id = AvatarId1,
+                        description      = $"G5 action template {id[^2..]}",
+                        author_user_id = UserId1,
                         parameters       = "{}",
                         version          = "1.0.0",
                         is_public        = false,
@@ -652,19 +652,19 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                 });
         }
 
-        // ── quest_node_template ───────────────────────────────────────────────
+        // ── action_node_template ───────────────────────────────────────────────
         foreach (var (id, name) in new[]
         {
-            (QuestNodeTplId1, "G5 Node Alpha"),
-            (QuestNodeTplId2, "G5 Node Beta"),
-            (QuestNodeTplId3, "G5 Node Gamma"),
+            (ActionNodeTplId1, "G5 Node Alpha"),
+            (ActionNodeTplId2, "G5 Node Beta"),
+            (ActionNodeTplId3, "G5 Node Gamma"),
         })
         {
             await ExecuteSurrealSqlAsync(
                 "CREATE type::record($t, $id) CONTENT $body RETURN AFTER",
                 new
                 {
-                    t = "quest_node_template",
+                    t = "action_node_template",
                     id,
                     body = new
                     {
@@ -677,7 +677,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
                         input_schema     = "{}",
                         output_schema    = "{}",
                         version          = "1.0.0",
-                        author_avatar_id = AvatarId1,
+                        author_user_id = UserId1,
                         is_public        = false,
                         tags             = Array.Empty<string>(),
                     },
@@ -762,7 +762,7 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
 
     /// <summary>
     /// Lists all value tables covered by G5.
-    /// Note: star_odk is the SurrealDB table name for the star entity.
+    /// Note: action_graph_bundle is the SurrealDB table name for the bundle entity.
     /// </summary>
     private static string[] AllValueTables() =>
     [
@@ -773,12 +773,12 @@ public sealed class G5_RestoreDrillTest : IntegrationTestBase
         "consumed_vaa_ledger",
         "idempotency_key_store",
         "saga_steps",
-        "avatar",
+        "user",
         "holon",
-        "star_odk",
+        "action_graph_bundle",
         "api_key",
-        "quest_template",
-        "quest_node_template",
+        "action_template",
+        "action_node_template",
     ];
 
     /// <summary>

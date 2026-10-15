@@ -5,7 +5,7 @@
   "created_at": "2026-07-19T00:00:00Z",
   "status": "in_progress",
   "horizon": "alpha",
-  "phase": "Contract and provider decisions are recorded; implementation waits on the versioned AZOA .NET settlement client and durable hosted-KYC outcome lifecycle.",
+  "phase": "Phase 3 (hosted KYC providers) is the AZOA-side half and is COMPLETE: durable hosted-session admission with a state_version CAS, the Identomat adapter, the D3 Stripe-Identity deferral, and the production/mainnet simulation guard all shipped. Phases 0-2 are ArdaNova-repo work and remain open, gated on the versioned AZOA .NET settlement client and the unresolved onboarding model.",
   "blocks": [
     "ardanova-financial-launch"
   ],
@@ -16,5 +16,16 @@
   "related": [
     "fiat-stripe-bridge",
     "node-operator-governance"
-  ]
+  ],
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "Phase 3 items 11-14 shipped in this repo and were never ticked in plan.md. Phases 0-2 land in the ArdaNova repo, so this track's plan is only partly observable from here - a plan whose progress lives in another repo will keep drifting, and that is the structural cause of this defect, not an oversight.",
+    "phase3_evidence": {
+      "11": "Persistence/SurrealDb/Models/HostedSession.cs (admission_key claimed pre-create; state_version CAS), Services/HostedSessions/, Services/Kyc/KycHostedSessionOutcomeHandler.cs",
+      "12": "Providers/Kyc/IdentomatKycProviderService.cs + IdentomatHttpTransport.cs, Models/Kyc/IdentomatWireModels.cs, Controllers/KycCallbackController.cs, Services/Kyc/KycRegisteredAdapters.cs",
+      "13": "DECISIONS.md D3 - Stripe Identity deferred behind a separate boundary decision; no adapter in AZOA, which is the intended outcome",
+      "14": "Services/Kyc/KycRuntimeSafety.GuardStartup - refuses manual/mock provider or admin override outside permitted environments, in Production, or on Mainnet"
+    }
+  }
 }

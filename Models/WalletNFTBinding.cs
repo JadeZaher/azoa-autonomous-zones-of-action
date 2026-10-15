@@ -6,7 +6,7 @@ public class WalletNFTBinding : IWalletNFTBinding
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid WalletId { get; set; }
-    public Guid AvatarNFTId { get; set; }
+    public Guid UserNFTId { get; set; }
     public string BindingType { get; set; } = string.Empty; // "primary", "secondary", "authorized"
     public string? AccessLevel { get; set; } // "full", "transaction", "view"
     public Dictionary<string, string> AccessPermissions { get; set; } = new();
@@ -16,5 +16,5 @@ public class WalletNFTBinding : IWalletNFTBinding
     
     // Navigation properties
     public Wallet? Wallet { get; set; }
-    public AvatarNFT? AvatarNFT { get; set; }
+    public UserNFT? UserNFT { get; set; }
 }

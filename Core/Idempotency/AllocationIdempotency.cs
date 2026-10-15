@@ -20,7 +20,7 @@ public static class AllocationIdempotency
     /// </summary>
     public static AllocationIdempotencyValue Create(
         Guid apiKeyId,
-        Guid avatarId,
+        Guid userId,
         AllocationRequest request,
         string? clientIdempotencyKey)
     {
@@ -31,7 +31,7 @@ public static class AllocationIdempotency
         if (!string.IsNullOrWhiteSpace(clientIdempotencyKey))
             return CreateFromClientKey(apiKeyId, clientIdempotencyKey);
 
-        var ledgerKey = BuildLedgerKey(apiKeyId, DeterministicContentKey(avatarId, request));
+        var ledgerKey = BuildLedgerKey(apiKeyId, DeterministicContentKey(userId, request));
         return new AllocationIdempotencyValue(ledgerKey, CorrelationFor(ledgerKey));
     }
 
@@ -69,10 +69,10 @@ public static class AllocationIdempotency
     private static string BuildLedgerKey(Guid apiKeyId, string tail)
         => $"alloc:{apiKeyId}:{tail}";
 
-    private static string DeterministicContentKey(Guid avatarId, AllocationRequest request)
+    private static string DeterministicContentKey(Guid userId, AllocationRequest request)
     {
         var canonical = string.Join('|',
-            avatarId.ToString("N"),
+            userId.ToString("N"),
             request.Kind.ToString(),
             request.ChainType.ToLowerInvariant(),
             request.Amount,

@@ -8,10 +8,10 @@ bare-hex strings. Two consequences the MCP tools MUST honour:
 - A record id (`SELECT ... WHERE id = $x`) only matches when `$x` is bound as the
   `table:hex` link form. A bare-hex string never equals `holon:hex` — the query
   silently returns zero rows.
-- A `record<avatar>` / `record<holon>` / `record<quest>` link column
-  (`avatar_id`, `parent_holon_id`, `quest_id`, `source_node_id`, ...) likewise
+- A `record<user>` / `record<holon>` / `record<action>` link column
+  (`user_id`, `parent_holon_id`, `action_id`, `source_node_id`, ...) likewise
   only matches a `table:hex` link value. Comparing against bare hex returns zero
-  rows; the value also reads back OUT as `"avatar:hex"`, so an ownership check
+  rows; the value also reads back OUT as `"user:hex"`, so an ownership check
   against bare hex is always unequal.
 
 Therefore every id / link comparison in `Tools/*.cs` binds

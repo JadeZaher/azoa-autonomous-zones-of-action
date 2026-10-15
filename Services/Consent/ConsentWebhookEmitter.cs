@@ -57,8 +57,8 @@ public sealed class ConsentWebhookEmitter : IConsentWebhookEmitter
             TenantId         = grant.TenantId,
             EventType        = type,
             GrantId          = grant.Id,
-            // avatarId = the grantor (the USER who granted) — the payload's `avatarId`.
-            AvatarId         = grant.GrantorAvatarId,
+            // userId = the grantor (the USER who granted) — the payload's `userId`.
+            UserId         = grant.GrantorUserId,
             // Scopes serialized as CSV to mirror the consent_grant store's column shape.
             Scopes           = string.Join(',', grant.Scopes ?? new List<string>()),
             ParticipationRef = grant.ParticipationRef,

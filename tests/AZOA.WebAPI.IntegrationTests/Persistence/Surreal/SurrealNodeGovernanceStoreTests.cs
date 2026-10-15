@@ -64,20 +64,20 @@ public sealed class SurrealNodeGovernanceStoreTests : IAsyncLifetime
             "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var now = DateTimeOffset.UtcNow;
-        var actor = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(Guid.NewGuid()))!;
+        var actor = SurrealLink.ToLink("user", SurrealId.ToSurrealId(Guid.NewGuid()))!;
         var parameters = new NodeGovernanceParameters
         {
             Id = NodeGovernanceParameters.LocalId,
             AllowedChains = ["Algorand"],
             Version = 1,
-            UpdatedByAvatarId = actor,
+            UpdatedByUserId = actor,
             UpdatedAt = now,
         };
         var invalidAudit = new NodeGovernanceAudit
         {
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = string.Empty,
-            ActorAvatarId = actor,
+            ActorUserId = actor,
             PreviousVersion = 0,
             NewVersion = 1,
             AllowedChains = ["Algorand"],

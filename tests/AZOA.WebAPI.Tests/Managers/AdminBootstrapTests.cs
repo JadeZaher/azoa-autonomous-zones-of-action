@@ -20,21 +20,21 @@ using SurrealForge.Client;
 namespace AZOA.WebAPI.Tests.Managers;
 
 /// <summary>
-/// Verifies ordinary avatar login never receives node-operator authority and
+/// Verifies ordinary user login never receives node-operator authority and
 /// legacy partial bootstrap configuration fails during hosted startup.
 /// </summary>
 public class AdminBootstrapTests
 {
-    private static Mock<IAvatarStore> MakeStore(IAvatar avatar)
+    private static Mock<IUserStore> MakeStore(IUser user)
     {
-        var store = new Mock<IAvatarStore>();
+        var store = new Mock<IUserStore>();
         store.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new[] { avatar } });
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new[] { user } });
         return store;
     }
 
-    private static AvatarManager MakeManager(
-        Mock<IAvatarStore> store,
+    private static UserManager MakeManager(
+        Mock<IUserStore> store,
         string _environmentName,
         string? seedEmail = null,
         string? seedSecret = null,
@@ -51,13 +51,13 @@ public class AdminBootstrapTests
 
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
-        return new AvatarManager(
+        return new UserManager(
             store.Object,
             config,
             bootstrapState ?? new FakeAdminBootstrapStateStore());
     }
 
-    private static AZOA.WebAPI.Models.Avatar MakeAvatar(string email) => new()
+    private static AZOA.WebAPI.Models.User MakeUser(string email) => new()
     {
         Id = Guid.NewGuid(),
         Email = email,
@@ -69,13 +69,13 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithMatchingLegacySeed_NeverStampsOperatorAuthority()
     {
-        var avatar = MakeAvatar("admin@azoa.test");
-        var store = MakeStore(avatar);
+        var user = MakeUser("admin@azoa.test");
+        var store = MakeStore(user);
         var manager = MakeManager(store, "Development", "admin@azoa.test", "seed-secret");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel
+        var result = await manager.LoginAsync(new UserLoginModel
         {
-            Email = avatar.Email,
+            Email = user.Email,
             Password = "password123",
             BootstrapSecret = "seed-secret",
         });
@@ -90,11 +90,11 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithSeedConfigured_ButDifferentEmail_DoesNotStamp()
     {
-        var avatar = MakeAvatar("regular-user@azoa.test");
-        var store = MakeStore(avatar);
+        var user = MakeUser("regular-user@azoa.test");
+        var store = MakeStore(user);
         var manager = MakeManager(store, "Development", "admin@azoa.test", "seed-secret");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
@@ -104,11 +104,11 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithBootstrapOff_NeverStamps()
     {
-        var avatar = MakeAvatar("admin@azoa.test");
-        var store = MakeStore(avatar);
+        var user = MakeUser("admin@azoa.test");
+        var store = MakeStore(user);
         var manager = MakeManager(store, "Development"); // no seed email/secret at all
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
@@ -118,12 +118,12 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithDeveloperRole_EmitsDappDevelopClaims()
     {
-        var avatar = MakeAvatar("dev@azoa.test");
-        avatar.DappRole = AzoaDappRoles.Developer;
-        var store = MakeStore(avatar);
+        var user = MakeUser("dev@azoa.test");
+        user.DappRole = AzoaDappRoles.Developer;
+        var store = MakeStore(user);
         var manager = MakeManager(store, "Development");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
@@ -135,12 +135,12 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithManagerRole_EmitsDevelopAndManageClaims()
     {
-        var avatar = MakeAvatar("manager@azoa.test");
-        avatar.DappRole = AzoaDappRoles.Manager;
-        var store = MakeStore(avatar);
+        var user = MakeUser("manager@azoa.test");
+        user.DappRole = AzoaDappRoles.Manager;
+        var store = MakeStore(user);
         var manager = MakeManager(store, "Development");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
@@ -154,11 +154,11 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithPlainUserRole_EmitsNoDappAuthority()
     {
-        var avatar = MakeAvatar("user@azoa.test");
-        var store = MakeStore(avatar);
+        var user = MakeUser("user@azoa.test");
+        var store = MakeStore(user);
         var manager = MakeManager(store, "Development");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
@@ -170,12 +170,12 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithPartialSeedConfig_InDevelopment_SkipsSafely()
     {
-        var avatar = MakeAvatar("admin@azoa.test");
-        var store = MakeStore(avatar);
+        var user = MakeUser("admin@azoa.test");
+        var store = MakeStore(user);
         // Only SeedEmail set, no SeedSecret — partial config.
         var manager = MakeManager(store, "Development", seedEmail: "admin@azoa.test");
 
-        var result = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
+        var result = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
 
         result.IsError.Should().BeFalse();
         var token = Decode(result.Result!);
@@ -203,14 +203,14 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Login_WithMissingOrWrongBootstrapSecret_DoesNotStamp()
     {
-        var avatar = MakeAvatar("admin@azoa.test");
-        var store = MakeStore(avatar);
-        var manager = MakeManager(store, "Development", avatar.Email, "seed-secret");
+        var user = MakeUser("admin@azoa.test");
+        var store = MakeStore(user);
+        var manager = MakeManager(store, "Development", user.Email, "seed-secret");
 
-        var missing = await manager.LoginAsync(new AvatarLoginModel { Email = avatar.Email, Password = "password123" });
-        var wrong = await manager.LoginAsync(new AvatarLoginModel
+        var missing = await manager.LoginAsync(new UserLoginModel { Email = user.Email, Password = "password123" });
+        var wrong = await manager.LoginAsync(new UserLoginModel
         {
-            Email = avatar.Email,
+            Email = user.Email,
             Password = "password123",
             BootstrapSecret = "wrong-secret",
         });
@@ -220,23 +220,23 @@ public class AdminBootstrapTests
     }
 
     [Fact]
-    public async Task Login_WithLegacyBinding_NeverGrantsEitherAvatarNodeAuthority()
+    public async Task Login_WithLegacyBinding_NeverGrantsEitherUserNodeAuthority()
     {
-        var seed = MakeAvatar("admin@azoa.test");
-        var attacker = MakeAvatar("attacker@azoa.test");
+        var seed = MakeUser("admin@azoa.test");
+        var attacker = MakeUser("attacker@azoa.test");
         var state = new FakeAdminBootstrapStateStore();
         var store = MakeStore(seed);
         var manager = MakeManager(store, "Development", seed.Email, "seed-secret", state);
 
-        var first = await manager.LoginAsync(new AvatarLoginModel
+        var first = await manager.LoginAsync(new UserLoginModel
         {
             Email = seed.Email,
             Password = "password123",
             BootstrapSecret = "seed-secret",
         });
         store.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IEnumerable<IAvatar>> { Result = new IAvatar[] { attacker } });
-        var replay = await manager.LoginAsync(new AvatarLoginModel
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new IUser[] { attacker } });
+        var replay = await manager.LoginAsync(new UserLoginModel
         {
             Email = attacker.Email,
             Password = "password123",
@@ -250,17 +250,17 @@ public class AdminBootstrapTests
     [Fact]
     public async Task Update_SelfCannotClaimConfiguredBootstrapEmail()
     {
-        var avatar = MakeAvatar("attacker@azoa.test");
-        avatar.Id = Guid.NewGuid();
-        var store = MakeStore(avatar);
-        store.Setup(p => p.GetByIdAsync(avatar.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<IAvatar> { Result = avatar });
+        var user = MakeUser("attacker@azoa.test");
+        user.Id = Guid.NewGuid();
+        var store = MakeStore(user);
+        store.Setup(p => p.GetByIdAsync(user.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = user });
         var manager = MakeManager(store, "Development", "admin@azoa.test", "seed-secret");
 
         var result = await manager.UpdateAsync(
-            avatar.Id,
-            new AvatarUpdateModel { Email = "admin@azoa.test" },
-            avatar.Id);
+            user.Id,
+            new UserUpdateModel { Email = "admin@azoa.test" },
+            user.Id);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("cannot be claimed");
@@ -282,7 +282,7 @@ public class AdminBootstrapTests
         }
 
         public Task<AZOAResult<AdminBootstrapState>> RotateCredentialsAsync(
-            Guid avatarId,
+            Guid userId,
             string username,
             string passwordHash,
             long expectedRevision,

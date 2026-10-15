@@ -354,18 +354,18 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
 
     // ── HTTP Seeding helpers (via real app API, not direct DB) ────────────────
 
-    protected async Task<Avatar> SeedAvatarAsync(Action<AvatarBuilder>? configure = null)
+    protected async Task<User> SeedUserAsync(Action<UserBuilder>? configure = null)
     {
-        var builder = new AvatarBuilder();
+        var builder = new UserBuilder();
         configure?.Invoke(builder);
 
         var model = builder.BuildRegisterModel();
-        var response = await Client.PostAsJsonAsync("api/avatar/register", model, JsonOptions);
-        await EnsureSeedSucceededAsync(response, "Avatar");
+        var response = await Client.PostAsJsonAsync("api/user/register", model, JsonOptions);
+        await EnsureSeedSucceededAsync(response, "User");
 
-        var result = await response.Content.ReadFromJsonAsync<AZOAResult<Avatar>>(JsonOptions);
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<User>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
-            $"Avatar seed failed: {await response.Content.ReadAsStringAsync()}");
+            $"User seed failed: {await response.Content.ReadAsStringAsync()}");
     }
 
     protected async Task<Holon> SeedHolonAsync(Action<HolonBuilder>? configure = null)
@@ -387,9 +387,9 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
         var builder = new WalletBuilder();
         configure?.Invoke(builder);
 
-        // Wallets require an avatar context. The TestAuthHandler supplies the
-        // default avatar ID (TestAuthHandler.DefaultAvatarId) as the authenticated
-        // user — WalletController reads AvatarId from the JWT claim.
+        // Wallets require a user context. The TestAuthHandler supplies the
+        // default user ID (TestAuthHandler.DefaultUserId) as the authenticated
+        // user — WalletController reads UserId from the JWT claim.
         var model = new AZOA.WebAPI.Models.Requests.WalletCreateModel
         {
             ChainType = builder.GetChainType(),
@@ -406,18 +406,18 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
             $"Wallet seed failed: {await response.Content.ReadAsStringAsync()}");
     }
 
-    protected async Task<STARODK> SeedSTARODKAsync(Action<STARODKBuilder>? configure = null)
+    protected async Task<ActionGraphBundle> SeedActionGraphBundleAsync(Action<ActionGraphBundleBuilder>? configure = null)
     {
-        var builder = new STARODKBuilder();
+        var builder = new ActionGraphBundleBuilder();
         configure?.Invoke(builder);
 
         var model = builder.BuildCreateModel();
-        var response = await Client.PostAsJsonAsync("api/starodk", model, JsonOptions);
-        await EnsureSeedSucceededAsync(response, "STARODK");
+        var response = await Client.PostAsJsonAsync("api/actiongraphbundle", model, JsonOptions);
+        await EnsureSeedSucceededAsync(response, "ActionGraphBundle");
 
-        var result = await response.Content.ReadFromJsonAsync<AZOAResult<STARODK>>(JsonOptions);
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<ActionGraphBundle>>(JsonOptions);
         return result?.Result ?? throw new InvalidOperationException(
-            $"STARODK seed failed: {await response.Content.ReadAsStringAsync()}");
+            $"ActionGraphBundle seed failed: {await response.Content.ReadAsStringAsync()}");
     }
 
     protected async Task<BlockchainOperation> SeedBlockchainOperationAsync(
@@ -426,7 +426,7 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
         var builder = new BlockchainOperationBuilder();
         configure?.Invoke(builder);
         var operation = builder.Build();
-        operation.AvatarId ??= Guid.Parse(TestAuthHandler.DefaultAvatarId);
+        operation.UserId ??= Guid.Parse(TestAuthHandler.DefaultUserId);
 
         var executor = await CreateExecutorAsync(TestNamespace);
         var store = new SurrealBlockchainOperationStore(executor);

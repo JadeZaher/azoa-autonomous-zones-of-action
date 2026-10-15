@@ -15,7 +15,7 @@ namespace AZOA.WebAPI.Controllers;
 /// a new one. Guarded by the hardened <c>Operator</c> policy (security-review HIGH-2:
 /// JWT-scheme floor + explicit operator capability — an API key can NEVER reach this)
 /// and rate-limited by the <c>financial</c> policy, since a rotation rewrites key
-/// material across every avatar.
+/// material across every user.
 /// </summary>
 /// <remarks>Contract + rationale: <c>Services/Custody/AGENTS.md</c> §rotation.</remarks>
 [ApiController]

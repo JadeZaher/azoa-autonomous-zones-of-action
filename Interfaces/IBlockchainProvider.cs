@@ -4,7 +4,17 @@ using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Interfaces;
 
-public interface IBlockchainProvider
+/// <summary>
+/// A value rail that is a blockchain: everything on <see cref="IValueRailProvider"/>
+/// plus the chain-only surface — contract deploy/call, wrapped mint/burn, faucets,
+/// token metadata, and capability modules (decision D9).
+/// </summary>
+/// <remarks>
+/// A caller that only moves value should depend on <see cref="IValueRailProvider"/>;
+/// depending on this interface asserts the counterparty is a chain, which a fiat rail
+/// is not. See <c>Interfaces/AGENTS.md</c> §value-rail.
+/// </remarks>
+public interface IBlockchainProvider : IValueRailProvider
 {
     string ChainType { get; }
     ChainNetwork ActiveNetwork { get; }
@@ -14,6 +24,7 @@ public interface IBlockchainProvider
     /// Callers should obtain production providers from
     /// <c>IBlockchainProviderFactory</c>; factory-bound providers reject external
     /// reinitialization so a cached network binding cannot be retargeted.
+    /// <para>The chain-shaped form of <see cref="IValueRailProvider.InitializeRail"/>.</para>
     /// </summary>
     void Initialize(BlockchainNetworkConfig config, ChainNetwork network);
 
@@ -22,17 +33,13 @@ public interface IBlockchainProvider
     /// </summary>
     bool TryGetModule<T>(out T? module) where T : class, IBlockchainProviderModule;
 
-    // ─── Account / Wallet ───
-    Task<AZOAResult<string>> GetBalanceAsync(string address, string? tokenId = null, CancellationToken ct = default);
-    Task<AZOAResult<bool>> ValidateAddressAsync(string address, CancellationToken ct = default);
-
     // ─── Faucet (dev / test networks only) ───
     /// <summary>
     /// True when this provider exposes a faucet top-up path for its chain (server-
     /// side dispense like Algorand, or a client-side airdrop acknowledgement like
-    /// Solana). Mirrors <see cref="SupportsBridging"/>: the chain-agnostic top-up
-    /// caller checks this before dispatching, so an unsupported chain yields a clear
-    /// "not supported" without inspecting concrete provider types.
+    /// Solana). The chain-agnostic top-up caller checks this before dispatching, so
+    /// an unsupported chain yields a clear "not supported" without inspecting
+    /// concrete provider types.
     /// </summary>
     bool SupportsFaucet { get; }
 
@@ -56,14 +63,17 @@ public interface IBlockchainProvider
         CancellationToken ct = default);
 
     // ─── Token / Asset Lifecycle ───
-    // value-path-wiring H4: the value amount is `ulong` (Algorand ASA AssetAmount
-    // is ulong-native) so large allocations cannot truncate at the boundary.
+    // D13/D15: the value amount is a RailAmount — arbitrary-precision base units plus
+    // the dimension they are counted in. It replaced `ulong`, which was chosen because
+    // Algorand's ASA AssetAmount is ulong-native but capped the whole interface at
+    // ~18.45 ETH. Chains whose SDK takes 64 bits narrow at their own edge and REFUSE
+    // rather than truncate; see RailAmount.TryToUInt64.
     // value-path-wiring C1/D1: the optional `signingContext` carries the
-    // avatar/wallet identity so the provider signs with the RIGHT key (per-user
+    // user/wallet identity so the provider signs with the RIGHT key (per-user
     // custody vs platform/ASA-admin). A null context = platform/ASA-admin op.
     Task<AZOAResult<string>> MintAsync(
         string tokenUri,
-        ulong amount,
+        RailAmount amount,
         string assetType,
         string walletAddress,
         SigningContext? signingContext = null,
@@ -71,18 +81,13 @@ public interface IBlockchainProvider
 
     Task<AZOAResult<string>> BurnAsync(
         string tokenId,
-        ulong amount,
+        RailAmount amount,
         string walletAddress,
         SigningContext? signingContext = null,
         CancellationToken ct = default);
 
-    Task<AZOAResult<string>> TransferAsync(
-        string tokenId,
-        string fromAddress,
-        string toAddress,
-        ulong amount,
-        SigningContext? signingContext = null,
-        CancellationToken ct = default);
+    // TransferAsync is inherited from IValueRailProvider: moving value is the one thing
+    // every rail does, so it is declared once, there.
 
     // ─── Exchange / Swap ───
     Task<AZOAResult<string>> ExchangeAsync(
@@ -109,29 +114,12 @@ public interface IBlockchainProvider
         string ownerAddress,
         CancellationToken ct = default);
 
-    Task<AZOAResult<Dictionary<string, object>>> GetTransactionStatusAsync(
-        string txHash,
-        CancellationToken ct = default);
-
-    /// <summary>
-    /// Explicit confirmation tri-state for a previously-broadcast tx
-    /// (blockchain-recovery-and-portable-wallets §1.2). Unlike
-    /// <see cref="GetTransactionStatusAsync"/> (provider-inconsistent dictionary),
-    /// this returns a normalized <see cref="ChainConfirmation"/> so callers —
-    /// the reconciler and the quest engine's reconcile-before-retry hook — can
-    /// safely decide advance-vs-retry-vs-wait WITHOUT re-broadcasting.
-    ///
-    /// <para>The base implementation derives the verdict from
-    /// <see cref="GetTransactionStatusAsync"/> via <c>ChainTxClassifier</c>,
-    /// preserving the conservative "IsError ⇒ Unknown, never FailedOnChain"
-    /// invariant. Providers that can positively distinguish "dropped" from "not
-    /// yet observed" (e.g. via a mempool lookup) SHOULD override to sharpen
-    /// <see cref="ChainConfirmation.Pending"/> vs
-    /// <see cref="ChainConfirmation.Unknown"/>.</para>
-    /// </summary>
-    Task<AZOAResult<ChainConfirmation>> GetTransactionConfirmationAsync(
-        string txHash,
-        CancellationToken ct = default);
+    // GetTransactionStatusAsync / GetTransactionConfirmationAsync are inherited from
+    // IValueRailProvider: "what became of this operation" is rail-generic. The base
+    // provider derives the confirmation tri-state from the status dictionary via
+    // ChainTxClassifier, preserving "IsError ⇒ Unknown, never FailedOnChain"; a
+    // provider that can positively distinguish dropped from not-yet-observed SHOULD
+    // override to sharpen Pending vs Unknown.
 
     // ─── Smart Contract / Program ───
     Task<AZOAResult<string>> DeployContractAsync(
@@ -150,48 +138,18 @@ public interface IBlockchainProvider
     // ─── Chain Info ───
     Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(CancellationToken ct = default);
 
-    // ─── Cross-Chain Bridge Primitives ───
-    /// <summary>
-    /// Lock an asset in a bridge vault on this chain (for outbound bridging).
-    /// </summary>
-    Task<AZOAResult<string>> LockForBridgeAsync(
-        string tokenId, string vaultAddress, ulong amount,
-        string targetChain, string targetRecipient, CancellationToken ct = default);
-
-    /// <summary>
-    /// Mint a wrapped asset representation of an asset from another chain.
-    /// </summary>
-    Task<AZOAResult<string>> MintWrappedAsync(
-        string sourceChain, string sourceTokenId, string tokenUri,
-        ulong amount, string recipientAddress, CancellationToken ct = default);
-
-    /// <summary>
-    /// Burn a wrapped asset to release the original asset on the source chain.
-    /// </summary>
-    Task<AZOAResult<string>> BurnWrappedAsync(
-        string tokenId, ulong amount, string sourceChain,
-        string sourceRecipient, string walletAddress, CancellationToken ct = default);
-
-    /// <summary>
-    /// Release a previously locked source asset from the provider-controlled
-    /// bridge vault after the target burn is positively confirmed. A success
-    /// without <see cref="Models.OperationStatus.PendingConfirmationMarker"/>
-    /// means the release is chain-confirmed; a marked success is submitted but
-    /// nonterminal and must be reconciled by transaction hash.
-    /// </summary>
-    Task<AZOAResult<string>> ReleaseFromBridgeAsync(
-        string tokenId, string vaultAddress, ulong amount,
-        string recipientAddress, CancellationToken ct = default);
-
-    // Cross-chain proof/VAA verification is intentionally NOT a provider method.
-    // The single hardened verification path is WormholeAdapter +
-    // Secp256k1VaaSignatureVerifier (fail-closed guardian-quorum check). A
-    // provider-level verifier previously returned `true` unconditionally; it was
-    // removed so no always-true verifier can exist. See Providers/Blockchain/AGENTS.md.
-
-    /// <summary>
-    /// Check if this provider supports the complete lock, wrapped mint, wrapped
-    /// burn, and source release lifecycle. Partial primitives must return false.
-    /// </summary>
-    bool SupportsBridging { get; }
+    // ─── Cross-Chain Bridge ───
+    // The bridge primitives are NOT on this interface. Lock/release live on
+    // IBridgeSourceLeg and wrapped mint/burn on IBridgeTargetLeg, both resolved at
+    // runtime through TryGetModule. A chain that cannot bridge does not implement the
+    // module, so absence IS the fail-closed refusal — there is no `SupportsBridging`
+    // boolean to set true by mistake and no refusal body that can regress into an `Ok`.
+    // The direction asymmetry a single boolean could not express (Algorand is a proven
+    // SOURCE but not a target) is expressed exactly by which modules a provider
+    // implements. See Providers/Blockchain/AGENTS.md §bridge.
+    //
+    // Cross-chain proof/VAA verification is likewise NOT a provider method: it belongs
+    // to IBridgeProtocol<TProof>, whose Wormhole implementation is the single hardened
+    // fail-closed guardian-quorum path. A provider-level verifier previously returned
+    // `true` unconditionally; it was removed so no always-true verifier can exist.
 }

@@ -12,8 +12,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { EcosystemNode, type EcosystemNodeData } from './ecosystem-node'
-// Reuse the quest-builder longest-path layout (pure helper, read-only import).
-import { layoutGraph } from '../quest-builder/layout'
+// Reuse the action-builder longest-path layout (pure helper, read-only import).
+import { layoutGraph } from '../action-builder/layout'
 
 const nodeTypes = { ecosystem: EcosystemNode }
 
@@ -41,7 +41,7 @@ export interface EcosystemTree {
 
 const KIND_HEX: Record<string, string> = {
   DappSeries: '#f59e0b',
-  StarOdk: '#6366f1',
+  ActionGraphBundle: '#6366f1',
 }
 
 /** Flattens the recursive tree into React Flow nodes + parent→child edges. */
@@ -86,8 +86,8 @@ function flatten(roots: EcosystemTreeNode[]): {
 }
 
 /**
- * Read-only React Flow render of a STARODK ecosystem tree. Auto-lays-out with
- * the quest-builder's longest-path layering, so nesting depth reads top→bottom.
+ * Read-only React Flow render of an ActionGraphBundle ecosystem tree. Auto-lays-out with
+ * the action-builder's longest-path layering, so nesting depth reads top→bottom.
  */
 export function EcosystemTreeFlow({ tree }: { tree: EcosystemTree }) {
   const { flowNodes, flowEdges } = useMemo(() => {

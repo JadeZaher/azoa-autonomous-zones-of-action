@@ -40,6 +40,26 @@ public sealed class ReconciliationService : IReconciliationService
     private readonly IBridgeStore _bridgeStore;
     private readonly IBlockchainProviderFactory _chainFactory;
     private readonly IIdempotencyStore _idempotency;
+    /// <summary>D41/AC5: the ownership consumer a chain-confirmed CredentialRevoke must drive.</summary>
+    /// <remarks>
+    /// Optional in the SIGNATURE only, so the five existing call sites that construct this service
+    /// positionally keep compiling; DI resolves the real store because it is registered. Its absence
+    /// is never silent: a CredentialRevoke that reaches the confirmed branch without it is refused
+    /// advancement and flagged for operators, so a missing registration cannot turn into a
+    /// revocation reported Completed while nft_ownership still names the holder.
+    /// </remarks>
+    private readonly AZOA.WebAPI.Interfaces.Managers.ICredentialIssuerStore? _credentials;
+
+    /// <summary>OI-33: what a confirmed or failed exchange still owes the node's own ledgers.</summary>
+    /// <remarks>
+    /// Optional for the same reason and with the same discipline as <see cref="_credentials"/>:
+    /// an exchange that reaches either terminal branch without it is NOT advanced and IS flagged,
+    /// because completing a buy's replay anchor with its project credit unmade — or reporting a
+    /// group Failed while its partition stays drawn — is exactly the class this service exists to
+    /// refuse.
+    /// </remarks>
+    private readonly AZOA.WebAPI.Services.Reserve.IExchangeSettlementReconciler? _exchanges;
+
     private readonly ILogger<ReconciliationService> _logger;
     private readonly ReconciliationOptions _options;
 
@@ -80,11 +100,19 @@ public sealed class ReconciliationService : IReconciliationService
         IBlockchainProviderFactory chainFactory,
         IIdempotencyStore idempotency,
         ILogger<ReconciliationService> logger,
-        IOptions<ReconciliationOptions> options)
+        IOptions<ReconciliationOptions> options,
+        AZOA.WebAPI.Interfaces.Managers.ICredentialIssuerStore? credentials = null,
+        // OI-33. What an exchange still OWES once chain truth arrives — the project credit a buy
+        // withholds until confirmation, and the commitments an accepted-then-failed group leaves
+        // standing. Optional so the existing positional fixtures keep compiling; Program.cs
+        // registers it, and an unwired one is reported rather than assumed settled.
+        AZOA.WebAPI.Services.Reserve.IExchangeSettlementReconciler? exchanges = null)
     {
         _bridgeStore = bridgeStore;
         _chainFactory = chainFactory;
         _idempotency = idempotency;
+        _credentials = credentials;
+        _exchanges = exchanges;
         _logger = logger;
         _options = options.Value;
     }
@@ -554,6 +582,40 @@ public sealed class ReconciliationService : IReconciliationService
                     return ReconciliationReport.Empty;
                 }
 
+                // D41/AC5: a CredentialRevoke that confirms HERE rather than in-line must re-point
+                // nft_ownership exactly as the in-line path does. Without it the row flips Completed,
+                // the idempotency claim replays a Completed result, and every AZOA read surface still
+                // reports the credential as held by the party it was clawed back from -- a fabricated
+                // success the ledger could never be reconciled against.
+                //
+                // Ordered BEFORE the status transition on purpose: the transition is what settles the
+                // idempotency claim, and settling a claim for a move AZOA never recorded is the exact
+                // defect. A revoke that cannot be re-pointed stays PendingConfirmation and is flagged,
+                // so the next sweep retries it and an operator can see it in the meantime.
+                if (IsCredentialRevoke(op)
+                    && await ApplyCredentialRevokeOwnershipAsync(op, txHash!, ct) is not true)
+                {
+                    // Always hard-flagged, never "wait longer": a confirmed clawback whose ownership
+                    // row cannot be moved is an operator problem the passage of time does not solve.
+                    return MaybeFlagStuckOperation(op, ageSeconds, hardStuck: true,
+                        $"CredentialRevoke tx {txHash} confirmed on chain but its nft_ownership row " +
+                        "could not be re-pointed; refusing to report the revocation Completed");
+                }
+
+                // OI-33, the same shape and for the same reason. ReserveExchangeManager credits a
+                // project's treasury ONLY on a confirmed group; a group the submitter reported
+                // merely Accepted therefore leaves the credit outstanding, and until this line
+                // existed nothing ever made it good — the sponsor's units moved on chain and the
+                // project was never credited on the node's own ledger. Ordered BEFORE the status
+                // transition because the transition is what settles the idempotency claim, and a
+                // claim settled over an unmade credit can never be repaired.
+                if (await ApplyExchangeSettlementAsync(op, ct) is false)
+                {
+                    return MaybeFlagStuckOperation(op, ageSeconds, hardStuck: true,
+                        $"Exchange tx {txHash} confirmed on chain but its project treasury credit " +
+                        "could not be recorded; refusing to report the exchange Completed");
+                }
+
                 var expected = op.Status;
                 int affected = await _bridgeStore.TryTransitionOperationStatusAsync(
                     op.Id, expected, OperationStatus.Completed, DateTime.UtcNow, ct);
@@ -601,6 +663,20 @@ public sealed class ReconciliationService : IReconciliationService
                     return ReconciliationReport.Empty;
                 }
 
+                // OI-33's own words: "an accepted-but-unconfirmed group that LATER fails has no
+                // compensation". This is that group. The in-request unwind only ever reached a
+                // group the submitter had PROVED could never commit while the request was still on
+                // the wire; one that dies afterwards persisted a row and left the partition drawn
+                // — and, on a sell, the project's treasury short — with nothing to hand it back.
+                // Ordered BEFORE the transition for the same reason as the confirmed branch: the
+                // transition settles the claim, and a settled claim is never revisited.
+                if (await CompensateFailedExchangeAsync(op, ct) is false)
+                {
+                    return MaybeFlagStuckOperation(op, ageSeconds, hardStuck: true,
+                        $"Exchange tx {txHash} failed on chain but the commitments it took could " +
+                        "not be handed back; refusing to close it over a drawn partition");
+                }
+
                 var expected = op.Status;
                 int affected = await _bridgeStore.TryTransitionOperationStatusAsync(
                     op.Id, expected, OperationStatus.Failed, DateTime.UtcNow, ct);
@@ -632,6 +708,172 @@ public sealed class ReconciliationService : IReconciliationService
                 return MaybeFlagStuckOperation(op, ageSeconds, hardStuck,
                     $"chain status for tx {txHash} is indeterminate");
         }
+    }
+
+    // ───────────── D41: credential ownership on the reconcile path ───────────
+
+    /// <summary>True for the operation type <c>CredentialManager</c> writes for a revocation.</summary>
+    /// <remarks>
+    /// Named from the manager's own constant rather than a second string literal here: two
+    /// literals drift, and a drifted one would silently disable the ownership move below while
+    /// leaving every log line and test comment claiming it runs.
+    /// </remarks>
+    private static bool IsCredentialRevoke(BlockchainOperation op) =>
+        string.Equals(
+            op.OperationType,
+            AZOA.WebAPI.Managers.CredentialManager.OperationTypeName,
+            StringComparison.Ordinal);
+
+    // ───────────── OI-33: what a settled exchange still owes the node ────────
+
+    /// <summary>True for the operation type <c>ReserveExchangeManager</c> writes.</summary>
+    /// <remarks>
+    /// Read from the manager's own constant rather than a second literal, for the reason the
+    /// credential check above states: a drifted literal silently disables the settlement below
+    /// while every log line still claims it runs.
+    /// </remarks>
+    private static bool IsExchange(BlockchainOperation op) =>
+        string.Equals(
+            op.OperationType,
+            AZOA.WebAPI.Managers.ReserveExchangeManager.ChainOperationType,
+            StringComparison.Ordinal);
+
+    /// <summary>
+    /// Applies what a chain-confirmed exchange still owes. Returns true when nothing is
+    /// outstanding, false when something is and could not be applied.
+    /// </summary>
+    /// <remarks>
+    /// An UNWIRED reconciler on an exchange that owes something answers FALSE, never "assume
+    /// settled": the whole point of the flag on the row is that somebody makes it good, and a
+    /// missing registration must surface as a flagged operation rather than as a Completed
+    /// exchange whose project was never credited.
+    /// </remarks>
+    private async Task<bool> ApplyExchangeSettlementAsync(BlockchainOperation op, CancellationToken ct)
+    {
+        if (!IsExchange(op))
+            return true;
+
+        if (_exchanges is null)
+        {
+            var outstanding = op.Parameters.TryGetValue(
+                    AZOA.WebAPI.Managers.ReserveExchangeManager.ProjectCreditAppliedParameter,
+                    out var applied)
+                && string.Equals(applied, "false", StringComparison.Ordinal);
+
+            if (!outstanding)
+                return true;
+
+            _logger.LogError(
+                "Reconciliation: MANUAL INTERVENTION REQUIRED — exchange {OperationId} is " +
+                "chain-confirmed and still owes its project a credit, but no " +
+                "IExchangeSettlementReconciler is wired into this service. NOT advancing it.",
+                op.Id);
+            return false;
+        }
+
+        return await _exchanges.SettleConfirmedAsync(op, ct);
+    }
+
+    /// <summary>
+    /// Hands back the node-side commitments a chain-FAILED exchange left standing. Returns true
+    /// when nothing is left standing, false when an operator has to finish it.
+    /// </summary>
+    private async Task<bool> CompensateFailedExchangeAsync(BlockchainOperation op, CancellationToken ct)
+    {
+        if (!IsExchange(op))
+            return true;
+
+        if (_exchanges is null)
+        {
+            _logger.LogError(
+                "Reconciliation: MANUAL INTERVENTION REQUIRED — exchange {OperationId} failed on " +
+                "chain with its commitments still standing, but no IExchangeSettlementReconciler " +
+                "is wired into this service. NOT closing it.",
+                op.Id);
+            return false;
+        }
+
+        return await _exchanges.CompensateFailedAsync(op, ct);
+    }
+
+    /// <summary>
+    /// Re-points the credential's <c>nft_ownership</c> row after a chain-confirmed clawback.
+    /// Returns true when it moved, false when the write failed, and null when the operation does
+    /// not name WHICH credential moved or WHERE it went.
+    /// </summary>
+    /// <remarks>
+    /// AC6. Everything is read from the operation row and nothing is guessed: the credential id and
+    /// destination address come from the parameters <c>CredentialManager.BuildOperation</c> stamped
+    /// before broadcasting, and the issuer is the row's own <c>UserId</c> (the op belongs to the
+    /// authority; <c>InitiatorUserId</c> records who called, which differs on a tenant-driven
+    /// revocation and would be the wrong party to hand the asset to). An operation missing any of
+    /// them cannot be settled by an automatic advance at all -- marking it Completed would
+    /// manufacture a success naming no credential, which is the fabricated-success class this
+    /// codebase has shipped three times -- so it returns null and the caller flags it for operators.
+    /// </remarks>
+    private async Task<bool?> ApplyCredentialRevokeOwnershipAsync(
+        BlockchainOperation op, string txHash, CancellationToken ct)
+    {
+        if (_credentials is null)
+        {
+            _logger.LogError(
+                "Reconciliation: MANUAL INTERVENTION REQUIRED — CredentialRevoke {OperationId} is " +
+                "chain-confirmed (tx {TxHash}) but no ICredentialIssuerStore is wired into this " +
+                "service, so ownership cannot follow chain truth. NOT advancing it.",
+                op.Id, txHash);
+            return false;
+        }
+
+        if (!op.Parameters.TryGetValue("CredentialId", out var rawCredentialId)
+            || !Guid.TryParse(rawCredentialId, out var credentialId)
+            || credentialId == Guid.Empty)
+        {
+            _logger.LogError(
+                "Reconciliation: MANUAL INTERVENTION REQUIRED — CredentialRevoke {OperationId} is " +
+                "chain-confirmed (tx {TxHash}) but names no credential to re-point. NOT advancing it: " +
+                "a Completed revocation AZOA never recorded would replay from its idempotency claim " +
+                "while every read surface still reports the credential as held.",
+                op.Id, txHash);
+            return null;
+        }
+
+        var destination = op.Parameters.TryGetValue("RecipientAddress", out var recorded)
+                          && !string.IsNullOrWhiteSpace(recorded)
+            ? recorded
+            : op.RecipientAddress;
+
+        // op.UserId is Guid?, so the original `== Guid.Empty` let a NULL issuer through
+        // the very guard whose point is "NOT guessing an owner". Bind it explicitly.
+        if (op.UserId is not { } issuerUserId
+            || issuerUserId == Guid.Empty
+            || string.IsNullOrWhiteSpace(destination))
+        {
+            _logger.LogError(
+                "Reconciliation: MANUAL INTERVENTION REQUIRED — CredentialRevoke {OperationId} is " +
+                "chain-confirmed (tx {TxHash}) but names no issuer/destination to return the " +
+                "credential to. NOT advancing it, and NOT guessing an owner.",
+                op.Id, txHash);
+            return null;
+        }
+
+        var moved = await _credentials.RecordCredentialRevokedAsync(
+            credentialId, issuerUserId, destination!, ct);
+
+        if (moved.IsError)
+        {
+            _logger.LogError(
+                "Reconciliation: CredentialRevoke {OperationId} confirmed on chain (tx {TxHash}) but " +
+                "credential {CredentialId} could not be re-pointed to its issuer ({Error}). Leaving " +
+                "the operation non-terminal so the next sweep retries the move.",
+                op.Id, txHash, credentialId, moved.Message);
+            return false;
+        }
+
+        _logger.LogInformation(
+            "Reconciliation: credential {CredentialId} re-pointed to issuer {IssuerUserId} at " +
+            "{Destination} from chain-confirmed clawback tx {TxHash}",
+            credentialId, op.UserId, destination, txHash);
+        return true;
     }
 
     private ReconciliationReport MaybeFlagStuckOperation(

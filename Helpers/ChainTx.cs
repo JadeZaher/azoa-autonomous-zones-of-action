@@ -8,7 +8,7 @@ namespace AZOA.WebAPI.Helpers;
 /// a normalized <see cref="ChainConfirmation"/> verdict. This is the promoted,
 /// shared form of the private <c>ClassifyTx</c> that previously lived inside
 /// <c>ReconciliationService</c> (blockchain-recovery-and-portable-wallets §1.1),
-/// so the reconciler and the quest engine share ONE conservative classifier.
+/// so the reconciler and the action engine share ONE conservative classifier.
 ///
 /// <para><b>Conservative invariant (unchanged from the reconciler):</b> a
 /// not-found tx / RPC error surfaces as <c>AZOAResult.IsError == true</c> on

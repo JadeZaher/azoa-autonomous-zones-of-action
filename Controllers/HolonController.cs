@@ -25,9 +25,9 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        // Owner-or-public read scope: thread the authenticated avatar so a non-owner
+        // Owner-or-public read scope: thread the authenticated user so a non-owner
         // cannot read another tenant's private holon by id.
-        var result = await _holonManager.GetAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.GetAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -35,7 +35,7 @@ public class HolonController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> Query([FromQuery] HolonQueryRequest query, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.QueryAsync(query, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.QueryAsync(query, GetUserIdFromClaims(), request);
         return Ok(result);
     }
 
@@ -43,11 +43,11 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Create([FromBody] HolonCreateModel model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.CreateAsync(model, avatarId.Value, request);
+        var result = await _holonManager.CreateAsync(model, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -56,11 +56,11 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Update(Guid id, [FromBody] HolonUpdateModel model, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.UpdateAsync(id, model, avatarId.Value, request);
+        var result = await _holonManager.UpdateAsync(id, model, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -69,11 +69,11 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.DeleteAsync(id, avatarId.Value, request);
+        var result = await _holonManager.DeleteAsync(id, userId.Value, request);
         if (result.IsError || !result.Result) return NotFound(result);
         return Ok(new AZOAResponse { Message = "Holon deleted." });
     }
@@ -82,11 +82,11 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Interact(Guid id, [FromBody] HolonInteractionRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.InteractAsync(id, request, avatarId.Value, providerRequest);
+        var result = await _holonManager.InteractAsync(id, request, userId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -96,7 +96,7 @@ public class HolonController : ControllerBase
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Mint(Guid id, [FromBody] MintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
-            builder.ForAvatar(GetAvatarIdFromClaims() ?? Guid.Empty)
+            builder.ForUser(GetUserIdFromClaims() ?? Guid.Empty)
                    .UsingWallet(request.WalletId)
                    .Mint(request.TokenUri, request.Amount, request.AssetType)
                    .Build(), providerRequest);
@@ -108,10 +108,10 @@ public class HolonController : ControllerBase
 
     [HttpPost("{id:guid}/exchange")]
     [Authorize(Policy = "DappDevelop")]
-    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Exchange(Guid id, [FromBody] ExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
+    public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Exchange(Guid id, [FromBody] HolonExchangeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var result = await _blockchainManager.BuildAndExecuteAsync(builder =>
-            builder.ForAvatar(GetAvatarIdFromClaims() ?? Guid.Empty)
+            builder.ForUser(GetUserIdFromClaims() ?? Guid.Empty)
                    .UsingWallet(request.WalletId)
                    .Exchange(id, request.TargetHolonId, request.ExchangeRate)
                    .Build(), providerRequest);
@@ -126,14 +126,14 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/children")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetChildren(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetChildrenAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.GetChildrenAsync(id, GetUserIdFromClaims(), request);
         return Ok(result);
     }
 
     [HttpGet("{id:guid}/peers")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetPeers(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetPeersAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.GetPeersAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -141,7 +141,7 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/ancestors")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetAncestors(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetAncestorsAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.GetAncestorsAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -149,7 +149,7 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/descendants")]
     public async Task<ActionResult<AZOAResult<IEnumerable<IHolon>>>> GetDescendants(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.GetDescendantsAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.GetDescendantsAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -160,11 +160,11 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<int>>> Propagate(Guid id, [FromBody] HolonPropagateRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.PropagateAsync(id, request, avatarId.Value, providerRequest);
+        var result = await _holonManager.PropagateAsync(id, request, userId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -172,7 +172,7 @@ public class HolonController : ControllerBase
     [HttpGet("{id:guid}/compose")]
     public async Task<ActionResult<AZOAResult<HolonComposition>>> Compose(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _holonManager.ComposeAsync(id, GetAvatarIdFromClaims(), request);
+        var result = await _holonManager.ComposeAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError) return NotFound(result);
         return Ok(result);
     }
@@ -181,11 +181,11 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IHolon>>> Clone(Guid id, [FromBody] HolonCloneRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.CloneAsync(id, request, avatarId.Value, providerRequest);
+        var result = await _holonManager.CloneAsync(id, request, userId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -194,16 +194,16 @@ public class HolonController : ControllerBase
     [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<bool>>> MoveSubtree(Guid id, [FromBody] MoveSubtreeRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null)
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
             return Unauthorized(new AZOAResult<IHolon> { IsError = true, Message = "Invalid token." });
 
-        var result = await _holonManager.MoveSubtreeAsync(id, request.NewParentId, avatarId.Value, providerRequest);
+        var result = await _holonManager.MoveSubtreeAsync(id, request.NewParentId, userId.Value, providerRequest);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;
@@ -219,7 +219,7 @@ public class MintRequest
     public string AssetType { get; set; } = string.Empty;
 }
 
-public class ExchangeRequest
+public class HolonExchangeRequest
 {
     public Guid WalletId { get; set; }
     public Guid TargetHolonId { get; set; }

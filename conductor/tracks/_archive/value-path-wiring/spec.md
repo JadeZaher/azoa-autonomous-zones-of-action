@@ -56,10 +56,10 @@ private SigningKeyMaterial? ResolveInterimKeyMaterial(string signerAddress)
 }
 ```
 
-Meanwhile `KeyCustodyService.WithSigningKeyAsync(walletId, avatarId, sign)`
+Meanwhile `KeyCustodyService.WithSigningKeyAsync(walletId, userId, sign)`
 (`Managers/KeyCustodyService.cs:73-115`) is the **real** per-user resolver: it
 loads the wallet, enforces the IDOR guard *before* any decrypt
-(`wallet.AvatarId != avatarId` ⇒ error, `:91-96`), rejects non-platform wallets
+(`wallet.UserId != userId` ⇒ error, `:91-96`), rejects non-platform wallets
 (`:99-104`), and hands a zeroable `byte[]` to the signer. Its platform sibling
 `WithPlatformSigningKeyAsync(true, sign)` (`:118+`) is the only legitimate door
 to the platform key. **Both are called only by their own tests.**
@@ -69,11 +69,11 @@ platform key → sender mismatch → the chain rejects it, or it moves the
 platform's asset. The custody track's entire security property is bypassed at
 runtime.
 
-The blocker is structural: the provider call surface has **no avatar param**.
+The blocker is structural: the provider call surface has **no user param**.
 `IBlockchainProvider.TransferAsync/MintAsync/BurnAsync`
 (`Interfaces/IBlockchainProvider.cs:23-41`) take only `(tokenId, addresses,
 amount)` — there is no way to tell the provider *whose* wallet to resolve. So
-C1 requires threading `avatarId` (and the owning `walletId`) into the call
+C1 requires threading `userId` (and the owning `walletId`) into the call
 surface. That threading is an explicit design decision (see plan.md D1).
 
 **Interim safety:** until the per-user path is wired, a per-user custodial
@@ -195,14 +195,14 @@ existing-and-correct machinery together; it does not rebuild it.
 - [ ] **C1 — Wire `IKeyCustodyService` into `AlgorandProvider` signing.** Replace
   `ResolveInterimKeyMaterial(signerAddress)` (`AlgorandProvider.cs:654, 785-800`)
   so signing routes through the custody resolver:
-  - user-wallet ops → `KeyCustodyService.WithSigningKeyAsync(walletId, avatarId,
+  - user-wallet ops → `KeyCustodyService.WithSigningKeyAsync(walletId, userId,
     sign)` (`KeyCustodyService.cs:73-115`), inheriting its IDOR guard;
   - platform / ASA-admin ops (create, destroy/burn, clawback, opt-in of the
     platform account) → `WithPlatformSigningKeyAsync(true, sign)`
     (`KeyCustodyService.cs:118+`).
-- [ ] **C1 — Thread the signing context (`avatarId` + owning `walletId`) into the
+- [ ] **C1 — Thread the signing context (`userId` + owning `walletId`) into the
   provider call surface.** `IBlockchainProvider.TransferAsync/MintAsync/BurnAsync`
-  (`IBlockchainProvider.cs:23-41`) gain the avatar/wallet context (mechanism is
+  (`IBlockchainProvider.cs:23-41`) gain the user/wallet context (mechanism is
   plan.md D1). `BlockchainOperationManager.Execute*Async` (`:311-357`) populate
   it from the op row.
 - [ ] **C1 — Interim safety gate.** Until the per-user path is fully wired, a
@@ -224,7 +224,7 @@ existing-and-correct machinery together; it does not rebuild it.
   `ReconciliationService.SettleOperationIdempotencyAsync` (`:542-568`) can
   release an orphaned claim on crash, exactly as the bridge path does (`:519-540`).
 - [ ] **H3 — Move the KYC gate into `NftManager.MintAsync`.** Add the
-  `RequireVerifiedAsync(avatarId)` gate (today only at `AllocationManager.cs:82`)
+  `RequireVerifiedAsync(userId)` gate (today only at `AllocationManager.cs:82`)
   at the single choke point `NftManager.MintAsync` (`NftManager.cs:53`) so both
   the allocation door and the raw `POST /api/nft/mint` door
   (`NftController.cs:42-52`) inherit it, failing closed before any
@@ -276,8 +276,8 @@ exactly-once. None can be made real until this track ships.
 
 - [ ] **Per-user signing proof.** A test drives a per-user custodial
   `TransferAsync(from = userWallet)` and asserts it is signed with the **user's**
-  key (resolved via `WithSigningKeyAsync(walletId, avatarId, …)`), **not** the
-  platform key — and that a caller whose `avatarId` does not own the wallet is
+  key (resolved via `WithSigningKeyAsync(walletId, userId, …)`), **not** the
+  platform key — and that a caller whose `userId` does not own the wallet is
   rejected by the IDOR guard (`KeyCustodyService.cs:91-96`) with **no** signing
   side effect.
 - [ ] **Crash-replay proof (exactly-once).** A test simulates a crash *between
@@ -287,7 +287,7 @@ exactly-once. None can be made real until this track ships.
   `op.Parameters["IdempotencyKey"]` (H1) and the second call replays the original
   result.
 - [ ] **KYC-gate-at-choke-point proof.** `POST /api/nft/mint`
-  (`NftController.cs:42-52`) for an avatar whose KYC is not approved is rejected
+  (`NftController.cs:42-52`) for a user whose KYC is not approved is rejected
   with **no** Holon and **no** `BlockchainOperation` side effect (gate in
   `NftManager.MintAsync`).
 - [ ] **C2 wiring.** An allocation mint produces a `BlockchainOperation` with a

@@ -26,14 +26,14 @@ public interface IKycProviderService
     /// Begins a safe verification flow. Hosted providers return an HTTPS redirect;
     /// the manual provider returns document-reference instructions instead.
     /// </summary>
-    Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid avatarId, CancellationToken ct = default);
+    Task<AZOAResult<KycSessionStartModel>> BeginSessionAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>
-    /// Begins a provider session for the avatar's documents and returns the
+    /// Begins a provider session for the user's documents and returns the
     /// provider session id. The manual provider has no external session and
-    /// returns the avatar id as a pseudo-session id.
+    /// returns the user id as a pseudo-session id.
     /// </summary>
-    Task<AZOAResult<string>> CreateSessionAsync(Guid avatarId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default);
+    Task<AZOAResult<string>> CreateSessionAsync(Guid userId, IReadOnlyList<KycDocumentModel> documents, CancellationToken ct = default);
 
     /// <summary>Polls the current status of a provider session.</summary>
     Task<AZOAResult<KycStatus>> GetSessionStatusAsync(string providerSessionId, CancellationToken ct = default);

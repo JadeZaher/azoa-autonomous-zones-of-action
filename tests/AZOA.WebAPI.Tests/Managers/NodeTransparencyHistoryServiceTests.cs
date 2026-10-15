@@ -126,7 +126,7 @@ public sealed class NodeTransparencyHistoryServiceTests : IDisposable
         {
             Id = id,
             Action = "ParametersUpdated",
-            ActorAvatarId = $"avatar:{actor:N}",
+            ActorUserId = $"user:{actor:N}",
             PreviousVersion = version - 1,
             NewVersion = version,
             AllowedChains = ["Algorand"],
@@ -142,16 +142,16 @@ public sealed class NodeTransparencyHistoryServiceTests : IDisposable
             Mint = new NodeFeeScheduleEntryResponse { FlatBaseUnits = "1", Bps = 0 },
             Transfer = new NodeFeeScheduleEntryResponse(),
             Swap = new NodeFeeScheduleEntryResponse(),
-            QuestComplete = new NodeFeeScheduleEntryResponse(),
+            ActionComplete = new NodeFeeScheduleEntryResponse(),
             FederationPublish = new NodeFeeScheduleEntryResponse(),
             Version = version,
-            UpdatedByAvatarId = actor,
+            UpdatedByUserId = actor,
         };
         return new NodeFeeAudit
         {
             Id = id,
             Action = "ScheduleUpdated",
-            ActorAvatarId = $"avatar:{actor:N}",
+            ActorUserId = $"user:{actor:N}",
             PreviousVersion = version - 1,
             NewVersion = version,
             ScheduleJson = JsonSerializer.Serialize(schedule, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
@@ -168,13 +168,13 @@ public sealed class NodeTransparencyHistoryServiceTests : IDisposable
             Network = ChainNetwork.Devnet,
             Address = "sim:public-address",
             Version = version,
-            UpdatedByAvatarId = actor,
+            UpdatedByUserId = actor,
         };
         return new NodeTreasuryAudit
         {
             Id = id,
             Action = "DestinationUpdated",
-            ActorAvatarId = $"avatar:{actor:N}",
+            ActorUserId = $"user:{actor:N}",
             Chain = "Simulated",
             Network = nameof(ChainNetwork.Devnet),
             PreviousVersion = version - 1,

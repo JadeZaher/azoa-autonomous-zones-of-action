@@ -3,11 +3,33 @@ name: CI
 # Build and test guard. This remains intentionally separate from release and
 # deployment, but includes the SurrealDB-backed integration suite now that
 # namespace isolation makes the full suite a meaningful green/red signal.
+#
+# Every test suite in the repo runs from here, so none of them can rot unseen:
+#   dotnet      -> unit tests + integration tests (Category != Chaos, Perf)
+#                  + the five conformance gates (which re-admit the Chaos-traited
+#                    G1 by name, so Chaos is covered too)
+#   perf        -> the Perf-traited SurrealPerfBudgets class the dotnet job excludes
+#   sdk         -> sdk/azoa-wallet vitest
+#   frontend    -> frontend vitest, plus lint/typecheck/build
+#   secret-scan -> gitleaks over the working tree AND the full history
 on:
   push:
     branches: ["**"]
   pull_request:
     branches: ["**"]
+
+# One pin, referenced by every job that needs a server. There were two literal
+# copies of this tag before; a third for the perf job would have made "which
+# SurrealDB does CI actually test against" a question with three answers.
+# The release path pins by digest instead (conformance-release.yml,
+# deploy/railway/template.json) because it publishes immutable images -- that is
+# a deliberately different guarantee, not a second copy of this one.
+env:
+  SURREALDB_IMAGE: surrealdb/surrealdb:v3.1.4
+  # Pinned scanner version. Swap for an image digest once someone resolves one:
+  # an unpinned scanner is a supply-chain hole in the job that exists to close
+  # supply-chain holes.
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.18.4
 
 jobs:
   dotnet:
@@ -43,7 +65,7 @@ jobs:
             --publish 8020:8000 \
             --env SURREAL_SYNC_DATA=true \
             --volume azoa-ci-surrealdb-data:/data \
-            surrealdb/surrealdb:v3.1.4 \
+            "$SURREALDB_IMAGE" \
             start --log info --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
 
           for attempt in {1..30}; do
@@ -167,7 +189,7 @@ jobs:
             --user 0:0 \
             --publish 8030:8000 \
             --env SURREAL_SYNC_DATA=true \
-            surrealdb/surrealdb:v3.1.4 \
+            "$SURREALDB_IMAGE" \
             start --log warn --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
 
           for attempt in {1..30}; do
@@ -336,8 +358,9 @@ jobs:
         run: npm test
 
   frontend:
-    name: Frontend audit + lint + typecheck + build
+    name: Frontend audit + lint + typecheck + vitest + build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: frontend
@@ -349,7 +372,29 @@ jobs:
         with:
           node-version: "20.x"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          # Both lockfiles: this job installs the SDK's dependencies too, so
+          # keying the cache on the frontend lockfile alone would keep serving a
+          # stale entry after an SDK dependency bump.
+          cache-dependency-path: |
+            frontend/package-lock.json
+            sdk/azoa-wallet/package-lock.json
+
+      # `frontend` depends on `azoa-sdk` as `file:../sdk/azoa-wallet`, which npm
+      # SYMLINKS rather than copies, and every entry point in that package
+      # points into `dist/` -- which is gitignored and therefore absent from a
+      # fresh checkout. Without a tsup build here the link resolves to a
+      # directory with no `dist`, and lint, typecheck, vitest and `next build`
+      # all fail on the first `azoa-sdk` import. (`next.config.js` pins the
+      # Turbopack root to the repo so the symlink resolves at all; that only
+      # helps once there is something at the other end of it.) The `sdk` job
+      # builds its own copy on a different runner, so this cannot be inherited.
+      - name: Install SDK dependencies
+        working-directory: sdk/azoa-wallet
+        run: npm ci
+
+      - name: Build the SDK so the path dependency resolves
+        working-directory: sdk/azoa-wallet
+        run: npm run build
 
       - name: Install dependencies
         run: npm ci
@@ -363,8 +408,149 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # vitest + jsdom over src/**/*.test.{ts,tsx} (vitest.config.ts). These
+      # cover the action-builder canvas -- history, selection, the render-loop
+      # regression -- which is exactly the code a typecheck cannot vouch for.
+      - name: Unit tests
+        run: npm test
+
       - name: Build
         run: npm run build
+
+  perf:
+    name: SurrealDB perf budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore azoa.sln
+
+      - name: Build
+        run: dotnet build azoa.sln --configuration Release --no-restore
+
+      # tests/AZOA.WebAPI.IntegrationTests/Perf/SurrealPerfBudgets.cs is
+      # [Trait("Category", "Perf")], which the dotnet job filters out
+      # (Category!=Chaos&Category!=Perf). This job is the only place it runs.
+      # It talks straight to SurrealTestDefaults.Endpoint -- http://127.0.0.1:8020,
+      # root/root, a compile-time constant with no env-var indirection -- so the
+      # port publication has to match the dotnet job's exactly.
+      #
+      # No named volume here, unlike the dotnet job: the suite creates and drops
+      # its own per-run namespace and must not inherit a previous run's state.
+      # Why this job blocks rather than reporting: it asserts an 8x regression
+      # ceiling, not the declared latency targets, so it fails on a broken store
+      # or an order-of-magnitude regression -- not on runner noise. The declared
+      # targets are printed per run instead. Derivation: Perf/AGENTS.md.
+      - name: Start SurrealDB
+        run: |
+          docker run --detach \
+            --name azoa-perf-surrealdb \
+            --user 0:0 \
+            --publish 8020:8000 \
+            --env SURREAL_SYNC_DATA=true \
+            "$SURREALDB_IMAGE" \
+            start --log warn --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
+
+          for attempt in {1..30}; do
+            if docker exec azoa-perf-surrealdb /surreal is-ready --endpoint http://localhost:8000; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs azoa-perf-surrealdb
+          exit 1
+
+      # SurrealPerfBudgets is [SkippableFact] and skips when it cannot reach the
+      # server, so a vacuous green would be indistinguishable from a real one in
+      # the test output. Two independent controls close that hole: this step
+      # fails from the host on the same published port the tests use, and
+      # AZOA_PERF_REQUIRE_SURREAL below turns the skip itself into a thrown
+      # failure inside InitializeAsync. Removing either one lets this job pass
+      # while running nothing.
+      - name: Prove the port the tests probe is answering
+        run: curl -fsS --max-time 10 http://127.0.0.1:8020/health
+
+      - name: Perf budget tests
+        env:
+          # Without this the suite skips instead of failing when SurrealDB is
+          # unreachable, and the job goes green having executed no assertion.
+          AZOA_PERF_REQUIRE_SURREAL: "1"
+        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category=Perf" --logger "console;verbosity=detailed"
+
+      - name: SurrealDB logs on failure
+        if: failure()
+        run: docker logs azoa-perf-surrealdb
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Full history on purpose. A credential that was committed and then
+          # "removed" in a later commit is still in the pack and still leaked;
+          # the default shallow clone would hide precisely those.
+          fetch-depth: 0
+
+      # Two passes, because they answer different questions. `detect` walks the
+      # commit graph (was a secret ever committed?); `detect --no-git` reads the
+      # working tree (is one sitting in the checkout right now, e.g. arriving
+      # via a generated or untracked file?). Run as the runner's own uid so the
+      # report lands writable and git does not flag the bind mount as
+      # dubiously-owned; the checkout itself is mounted read-only.
+      - name: Scan commit history
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "$PWD:/repo:ro" \
+            --volume "$RUNNER_TEMP/gitleaks:/out" \
+            "$GITLEAKS_IMAGE" \
+            detect \
+              --source /repo \
+              --redact \
+              --no-banner \
+              --exit-code 1 \
+              --report-format sarif \
+              --report-path /out/history.sarif
+
+      - name: Scan the working tree
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "$PWD:/repo:ro" \
+            --volume "$RUNNER_TEMP/gitleaks:/out" \
+            "$GITLEAKS_IMAGE" \
+            detect \
+              --source /repo \
+              --no-git \
+              --redact \
+              --no-banner \
+              --exit-code 1 \
+              --report-format sarif \
+              --report-path /out/worktree.sarif
+
+      # --redact means the reports name the file, line and rule but not the
+      # secret, so they are safe to keep as a build artifact.
+      - name: Upload gitleaks reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gitleaks-${{ github.sha }}
+          path: ${{ runner.temp }}/gitleaks/*.sarif
+          if-no-files-found: ignore
+          retention-days: 14
 
   release-blueprint:
     name: Railway blueprint contract

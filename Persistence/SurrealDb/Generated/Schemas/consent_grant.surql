@@ -13,8 +13,8 @@ DEFINE PARAM IF NOT EXISTS $consent_grant_origin VALUE ["UserExplicit", "Partici
 DEFINE TABLE IF NOT EXISTS consent_grant SCHEMAFULL;
 
 DEFINE FIELD IF NOT EXISTS id ON TABLE consent_grant TYPE string;
-DEFINE FIELD IF NOT EXISTS grantor_avatar_id ON TABLE consent_grant TYPE record<avatar>;
-DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_grant TYPE record<avatar>;
+DEFINE FIELD IF NOT EXISTS grantor_user_id ON TABLE consent_grant TYPE record<user>;
+DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_grant TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS scopes ON TABLE consent_grant TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS origin ON TABLE consent_grant TYPE string
@@ -30,7 +30,7 @@ DEFINE FIELD IF NOT EXISTS revoked_at ON TABLE consent_grant TYPE option<datetim
 
 DEFINE INDEX IF NOT EXISTS consent_grant_by_grantor
     ON TABLE consent_grant
-    FIELDS grantor_avatar_id;
+    FIELDS grantor_user_id;
 
 DEFINE INDEX IF NOT EXISTS consent_grant_by_tenant
     ON TABLE consent_grant
@@ -38,7 +38,7 @@ DEFINE INDEX IF NOT EXISTS consent_grant_by_tenant
 
 DEFINE INDEX IF NOT EXISTS consent_grant_seam_lookup
     ON TABLE consent_grant
-    FIELDS grantor_avatar_id, tenant_id;
+    FIELDS grantor_user_id, tenant_id;
 
 DEFINE INDEX IF NOT EXISTS consent_grant_tenant_partref
     ON TABLE consent_grant

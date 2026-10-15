@@ -101,7 +101,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         currentResponse.Headers.CacheControl!.Public.Should().BeTrue();
         var currentBody = await currentResponse.Content.ReadAsStringAsync();
         currentBody.Contains(actorId.ToString(), StringComparison.OrdinalIgnoreCase).Should().BeFalse();
-        currentBody.Contains("updatedByAvatarId", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        currentBody.Contains("updatedByUserId", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
         currentBody.Should().Contain("\"flatBaseUnits\":\"92\"");
         var current = JsonSerializer.Deserialize<AZOAResult<NodeTransparencySnapshotResponse>>(
             currentBody,
@@ -113,7 +113,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         var firstPageBody = await firstPageResponse.Content.ReadAsStringAsync();
         firstPageBody.Contains(actorId.ToString(), StringComparison.OrdinalIgnoreCase).Should().BeFalse();
         firstPageBody.Contains("scheduleJson", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
-        firstPageBody.Contains("actorAvatarId", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
+        firstPageBody.Contains("actorUserId", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
         var firstPage = JsonSerializer.Deserialize<AZOAResult<NodeTransparencyPageResponse<PublicNodeFeeAuditResponse>>>(
             firstPageBody,
             JsonOptions);
@@ -218,8 +218,8 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PutParameters_AsApiKey_Returns403()
     {
-        var avatar = await SeedAvatarAsync();
-        using var manager = Factory.CreateAuthenticatedClientForAvatar(avatar.Id, AzoaDappRoles.Manager);
+        var user = await SeedUserAsync();
+        using var manager = Factory.CreateAuthenticatedClientForUser(user.Id, AzoaDappRoles.Manager);
         var rawKey = await MintApiKeyAsync(manager);
         using var apiKeyClient = Factory.CreateApiKeyClient(rawKey);
 
@@ -234,8 +234,8 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task GetFeeSchedule_AsApiKey_Returns403()
     {
-        var avatar = await SeedAvatarAsync();
-        using var manager = Factory.CreateAuthenticatedClientForAvatar(avatar.Id, AzoaDappRoles.Manager);
+        var user = await SeedUserAsync();
+        using var manager = Factory.CreateAuthenticatedClientForUser(user.Id, AzoaDappRoles.Manager);
         var rawKey = await MintApiKeyAsync(manager);
         using var apiKeyClient = Factory.CreateApiKeyClient(rawKey);
 
@@ -272,7 +272,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync());
         var saved = await ReadResultAsync<NodeFeeScheduleResponse>(put);
         saved!.Result!.Version.Should().Be(expectedVersion);
-        saved.Result.UpdatedByAvatarId.Should().Be(actorId);
+        saved.Result.UpdatedByUserId.Should().Be(actorId);
         saved.Result.Mint.FlatBaseUnits.Should().Be("7");
         saved.Result.Mint.Bps.Should().Be(250);
         saved.Result.Transfer.FlatBaseUnits.Should().Be("3");
@@ -294,7 +294,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         auditResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var audit = await ReadResultAsync<List<NodeFeeAuditResponse>>(auditResponse);
         var entry = audit!.Result.Should().ContainSingle(a =>
-            a.ActorAvatarId == actorId
+            a.ActorUserId == actorId
             && a.Action == "ScheduleUpdated"
             && a.PreviousVersion == expectedVersion - 1
             && a.NewVersion == expectedVersion).Which;
@@ -368,7 +368,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         saved!.Result!.Chain.Should().Be("Simulated");
         saved.Result.Network.Should().Be(ChainNetwork.Devnet);
         saved.Result.Address.Should().Be(address);
-        saved.Result.UpdatedByAvatarId.Should().Be(actorId);
+        saved.Result.UpdatedByUserId.Should().Be(actorId);
 
         var get = await nodeGovernor.GetAsync(
             "api/node-governance/treasury/Simulated/Devnet");
@@ -398,7 +398,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         auditResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var audit = await ReadResultAsync<List<NodeTreasuryAuditResponse>>(auditResponse);
         audit!.Result.Should().Contain(a =>
-            a.ActorAvatarId == actorId
+            a.ActorUserId == actorId
             && a.Action == "DestinationUpdated"
             && a.Chain == "Simulated"
             && a.Network == ChainNetwork.Devnet
@@ -426,7 +426,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync());
         var saved = await ReadResultAsync<NodeGovernanceParametersResponse>(put);
         saved!.Result!.Version.Should().Be(expectedVersion);
-        saved.Result.UpdatedByAvatarId.Should().Be(actorId);
+        saved.Result.UpdatedByUserId.Should().Be(actorId);
         saved.Result.AllowedChains.Should().Equal("Algorand", "solana");
         saved.Result.AllowedAssetTypes.Should().BeEmpty();
         saved.Result.CreatedAt.Should().NotBeNull();
@@ -443,7 +443,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         auditResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var audit = await ReadResultAsync<List<NodeGovernanceAuditResponse>>(auditResponse);
         audit!.Result.Should().Contain(a =>
-            a.ActorAvatarId == actorId
+            a.ActorUserId == actorId
             && a.Action == "ParametersUpdated"
             && a.PreviousVersion == expectedVersion - 1
             && a.NewVersion == expectedVersion

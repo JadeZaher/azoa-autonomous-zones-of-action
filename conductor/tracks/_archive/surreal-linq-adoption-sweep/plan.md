@@ -46,10 +46,10 @@ _Expected (from spec, to be confirmed):_
 
 | file:line | current SurrealQL | POCO | ctx in scope? | tier | translator gap? |
 |---|---|---|---|---|---|
-| SurrealQuestStore.cs:318 | `SELECT * FROM quest_template` | QuestTemplate POCO | verify | 2 or 3 | none (bare From) |
-| SurrealQuestStore.cs:428 | `SELECT * FROM quest_node_template` | QuestNodeTemplate POCO | verify | 2 or 3 | none (bare From) |
-| SurrealNftStore.cs:232 | `SELECT * FROM holon_nft_binding WHERE avatar_nft_id = $x` | HolonNftBinding | verify | 2 or 3 | none (`==`) |
-| SurrealNftStore.cs:332 | `SELECT * FROM wallet_nft_binding WHERE avatar_nft_id = $x` | WalletNftBinding | verify | 2 or 3 | none (`==`) |
+| SurrealActionStore.cs:318 | `SELECT * FROM action_template` | ActionTemplate POCO | verify | 2 or 3 | none (bare From) |
+| SurrealActionStore.cs:428 | `SELECT * FROM action_node_template` | ActionNodeTemplate POCO | verify | 2 or 3 | none (bare From) |
+| SurrealNftStore.cs:232 | `SELECT * FROM holon_nft_binding WHERE user_nft_id = $x` | HolonNftBinding | verify | 2 or 3 | none (`==`) |
+| SurrealNftStore.cs:332 | `SELECT * FROM wallet_nft_binding WHERE user_nft_id = $x` | WalletNftBinding | verify | 2 or 3 | none (`==`) |
 
 _Note:_ the two bare `SELECT *` template reads are the lowest-risk starters —
 no WHERE, so `SurrealQuery<T>.From()` with no predicate is a one-line swap.
@@ -62,10 +62,10 @@ table. One site per commit-sized change; apply all, then verify once (per user
 policy — no test-per-fix loop).
 
 Order (lowest → highest risk):
-1. `SurrealQuestStore.cs:318` — bare template read → `SurrealQuery<QuestTemplate>.From()`.
-2. `SurrealQuestStore.cs:428` — bare template read → `SurrealQuery<QuestNodeTemplate>.From()`.
-3. `SurrealNftStore.cs:232` — `.Where(b => b.AvatarNftId == avatarNftId)`.
-4. `SurrealNftStore.cs:332` — `.Where(b => b.AvatarNftId == avatarNftId)`.
+1. `SurrealActionStore.cs:318` — bare template read → `SurrealQuery<ActionTemplate>.From()`.
+2. `SurrealActionStore.cs:428` — bare template read → `SurrealQuery<ActionNodeTemplate>.From()`.
+3. `SurrealNftStore.cs:232` — `.Where(b => b.UserNftId == userNftId)`.
+4. `SurrealNftStore.cs:332` — `.Where(b => b.UserNftId == userNftId)`.
 
 Per site:
 - Prefer **Tier 3** (`ctx.Set<T>()…ToListAsync`) IF a `SurrealContext` is already
@@ -76,7 +76,7 @@ Per site:
   `QuerySingleAsync`, use `FirstOrDefaultAsync`/`SingleOrDefaultAsync`
   accordingly.
 - Verify the POCO's `[JsonPropertyName]` / column mapping matches the raw
-  column name (`avatar_nft_id`) so the translated predicate targets the right
+  column name (`user_nft_id`) so the translated predicate targets the right
   column. This is the one real correctness risk — the translator resolves the
   column from the property attribute, not the raw string.
 
@@ -103,7 +103,7 @@ translator test style. Expected: none needed (all sites are bare `From` or `==`)
 Single integrated sweep — NOT per-fix:
 1. `dotnet build` — zero new warnings vs the 28-warning baseline
    ([[build-warning-baseline-2026-06-16]]).
-2. `dotnet test` — green, with attention to quest / nft / saga /
+2. `dotnet test` — green, with attention to action / nft / saga /
    `api-safety-hardening` suites (the ones touching the migrated stores).
 3. SRDB0001 analyzer — clean (no new concatenated SurrealQL).
 4. Confirm diff scope: read-path store files + translator tests (if any) +

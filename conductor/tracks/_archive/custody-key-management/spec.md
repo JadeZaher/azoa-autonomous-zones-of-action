@@ -3,7 +3,7 @@
 ## Goal
 
 Define the **custody policy/lifecycle layer** that sits on top of the real
-signing primitive: how a per-Avatar wallet's encrypted private key is resolved,
+signing primitive: how a per-User wallet's encrypted private key is resolved,
 decrypted just-in-time to sign, and zeroed afterward; how ownership is enforced
 on every resolve; and how the signer obtains keys through a single abstraction
 that is agnostic to whether the key belongs to a user or to the platform.
@@ -47,7 +47,7 @@ via the `WalletType` enum (`Core/WalletType.cs:6-13`).
   (`Managers/WalletManager.cs:259-301`) creates a `WalletType.External` row.
 - **Export** is the only existing decrypt-to-cleartext path:
   `ExportWalletAsync` (`Managers/WalletManager.cs:305-347`). It is already
-  IDOR-guarded — ownership is checked by `wallet.AvatarId != avatarId`
+  IDOR-guarded — ownership is checked by `wallet.UserId != userId`
   (`:313-314`), restricted to `WalletType.Platform` (`:316-317`), and returns
   cleartext exactly once with a "Handle with extreme care" message (`:340`).
 
@@ -89,8 +89,8 @@ This track formalizes **per-user custody as the default**:
 
 4. **Ownership is checked on every resolve.** The resolver replicates the
    `ExportWalletAsync` IDOR guard (`Managers/WalletManager.cs:313-314`): a key
-   is only released for `walletId` if the wallet's `AvatarId` equals the
-   authenticated `avatarId`. The caller-supplied avatar identity, not a body
+   is only released for `walletId` if the wallet's `UserId` equals the
+   authenticated `userId`. The caller-supplied user identity, not a body
    field, is the authority (STARODK IDOR precedent).
 
 5. **The signer never touches storage.** All key access goes through one
@@ -100,9 +100,9 @@ This track formalizes **per-user custody as the default**:
 ### Decrypt → sign → zero lifetime (the contract the signer calls)
 
 ```
-IKeyCustodyService.WithSigningKeyAsync(walletId, avatarId, sign):
+IKeyCustodyService.WithSigningKeyAsync(walletId, userId, sign):
   1. load wallet by walletId            (store read)
-  2. assert wallet.AvatarId == avatarId (IDOR guard — else fail, no decrypt)
+  2. assert wallet.UserId == userId (IDOR guard — else fail, no decrypt)
   3. assert wallet.WalletType == Platform OR is the platform pseudo-wallet
   4. cleartext = DecryptPrivateKey(wallet.EncryptedPrivateKey)   [JIT]
   5. try:    result = sign(cleartext-key-material)
@@ -120,10 +120,10 @@ custody contract — the key never escapes the resolver's `finally`.
 A new interface the signer depends on instead of `IWalletStore` +
 `WalletKeyService` directly:
 
-- `Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid avatarId, Func<byte[], Task<T>> sign)`
+- `Task<AZOAResult<T>> WithSigningKeyAsync<T>(Guid walletId, Guid userId, Func<byte[], Task<T>> sign)`
   — the decrypt→sign→zero higher-order path above. Returns the signer's result,
   never the key.
-- `Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid avatarId)` — the
+- `Task<AZOAResult<bool>> CanSignAsync(Guid walletId, Guid userId)` — the
   ownership/eligibility predicate (no decrypt), so callers can pre-flight without
   touching key material.
 
@@ -140,7 +140,7 @@ resolve through the **same** `IKeyCustodyService` so the signer stays agnostic.
 
 The platform key is modeled as a **platform pseudo-wallet**: a reserved
 `walletId` (and/or a `CanSignAsync` branch) that resolves to the platform
-mnemonic instead of an Avatar's `encrypted_private_key`. The precedent for a
+mnemonic instead of a User's `encrypted_private_key`. The precedent for a
 config-sourced platform mnemonic already exists — the Algorand faucet reads
 `Blockchain:Faucet:Algorand:Mnemonic` (`Core/AlgorandFaucet.cs:45`). The
 platform custody branch resolves a platform signing key from config the same
@@ -148,8 +148,8 @@ way, encrypts/decrypts it through the same `WalletKeyService`, and yields it via
 the same decrypt→sign→zero contract. **The signer cannot tell** whether it
 signed with a user key or the platform key — only `IKeyCustodyService` knows.
 
-The IDOR guard for the platform pseudo-wallet is a **role check**, not an
-`AvatarId` equality check: only a caller with platform/manager authority may
+The IDOR guard for the platform pseudo-wallet is a **role check**, not a
+`UserId` equality check: only a caller with platform/manager authority may
 resolve it. This is documented here and stubbed; enforcement detail is recorded
 in `plan.md`.
 
@@ -204,7 +204,7 @@ deploy-stub list and must be recorded in `conductor/DEPLOY-STEPS-TODO.md`
       `WalletKeyService.DecryptPrivateKey`; it is the only caller of
       `DecryptPrivateKey` besides `ExportWalletAsync`.
 - [ ] IDOR guard on resolve replicates `ExportWalletAsync`
-      (`Managers/WalletManager.cs:313-314`): different-avatar resolve returns an
+      (`Managers/WalletManager.cs:313-314`): different-user resolve returns an
       error and performs **no decrypt**.
 - [ ] `Platform`-only enforcement on resolve (mirror
       `Managers/WalletManager.cs:316-317`); `External` wallets are never

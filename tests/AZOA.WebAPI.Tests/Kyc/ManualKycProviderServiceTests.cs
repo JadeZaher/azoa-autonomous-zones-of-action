@@ -90,14 +90,14 @@ public class ManualKycProviderServiceTests
     }
 
     [Fact]
-    public async Task CreateSession_ReturnsAvatarIdAsPseudoSession()
+    public async Task CreateSession_ReturnsUserIdAsPseudoSession()
     {
-        var avatarId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
 
-        var result = await _provider.CreateSessionAsync(avatarId, new List<KycDocumentModel>());
+        var result = await _provider.CreateSessionAsync(userId, new List<KycDocumentModel>());
 
         result.IsError.Should().BeFalse();
-        result.Result.Should().Be(avatarId.ToString("N"));
+        result.Result.Should().Be(userId.ToString("N"));
     }
 
     [Fact]

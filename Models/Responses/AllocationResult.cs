@@ -12,8 +12,8 @@ namespace AZOA.WebAPI.Models.Responses;
 /// </summary>
 public sealed class AllocationResult
 {
-    /// <summary>The avatar the allocation targeted (the authorised principal).</summary>
-    public Guid AvatarId { get; set; }
+    /// <summary>The user the allocation targeted (the authorised principal).</summary>
+    public Guid UserId { get; set; }
 
     /// <summary>The custodial wallet the asset was allocated into.</summary>
     public Guid WalletId { get; set; }

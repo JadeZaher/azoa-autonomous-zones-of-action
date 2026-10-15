@@ -6,18 +6,18 @@ namespace AZOA.WebAPI.Interfaces;
 public interface IRealValueKycGate
 {
     /// <summary>
-    /// Succeeds only when <paramref name="avatarId"/>'s latest authoritative
+    /// Succeeds only when <paramref name="userId"/>'s latest authoritative
     /// submission is approved and has an explicit expiry later than the current
     /// time. Missing, indefinite, expired, revoked, or unreadable approvals fail
     /// closed. Callers must enforce this before any claim, state transition, or
     /// external value effect.
     /// </summary>
     Task<AZOAResult<bool>> RequireCurrentApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct = default);
 
     Task<AZOAResult<bool>> RequireCurrentApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         Guid tenantId,
         CancellationToken ct = default);
 }

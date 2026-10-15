@@ -3,12 +3,12 @@ using System.Security.Claims;
 namespace AZOA.WebAPI.Mcp;
 
 /// <summary>
-/// Extracts the AvatarId claim from the authenticated HttpContext and stashes
-/// it in <c>ctx.Items["mcp.avatar_id"]</c> so the MCP tool dispatcher can
+/// Extracts the UserId claim from the authenticated HttpContext and stashes
+/// it in <c>ctx.Items["mcp.user_id"]</c> so the MCP tool dispatcher can
 /// build a <see cref="ToolCallContext"/> with the correct identity.
 ///
-/// Enforced only on <c>/mcp</c> paths. Rejects (401) if no parseable AvatarId
-/// claim is present — every MCP tool runs inside an avatar scope; there is no
+/// Enforced only on <c>/mcp</c> paths. Rejects (401) if no parseable UserId
+/// claim is present — every MCP tool runs inside a user scope; there is no
 /// anonymous MCP surface.
 ///
 /// Claim resolution order (mirrors <see cref="Controllers.HolonController"/> +
@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Mcp;
 ///   1. <see cref="ClaimTypes.NameIdentifier"/> — set by JWT (sub → NameIdentifier
 ///      via ASP.NET's default JWT claim mapping) and by ApiKeyAuthenticationHandler.
 ///   2. "sub" — explicit copy emitted by ApiKeyAuthenticationHandler + TestAuthHandler.
-///   3. "AvatarId" — additional explicit copy emitted by ApiKeyAuthenticationHandler
+///   3. "UserId" — additional explicit copy emitted by ApiKeyAuthenticationHandler
 ///      for callers that inspect the custom claim directly.
 /// </summary>
 public sealed class McpAuthMiddleware
@@ -43,25 +43,25 @@ public sealed class McpAuthMiddleware
         //   "sub") and the ApiKey scheme's explicit copy.
         //   "sub" is an explicit copy emitted by ApiKeyAuthenticationHandler and
         //   TestAuthHandler — acts as a belt-and-suspenders fallback.
-        //   "AvatarId" is the additional explicit ApiKey-scheme copy; checked last
+        //   "UserId" is the additional explicit ApiKey-scheme copy; checked last
         //   because it is only present under the ApiKey scheme, not JWT.
-        var avatarClaim =
+        var userClaim =
             ctx.User?.FindFirst(ClaimTypes.NameIdentifier)
             ?? ctx.User?.FindFirst("sub")
-            ?? ctx.User?.FindFirst("AvatarId");
+            ?? ctx.User?.FindFirst("UserId");
 
-        if (avatarClaim is null || !Guid.TryParse(avatarClaim.Value, out var avatarId))
+        if (userClaim is null || !Guid.TryParse(userClaim.Value, out var userId))
         {
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
             ctx.Response.ContentType = "application/json";
             await ctx.Response.WriteAsync(
-                "{\"error\":\"mcp_unauthorized\",\"detail\":\"missing or invalid avatar_id claim\"}");
+                "{\"error\":\"mcp_unauthorized\",\"detail\":\"missing or invalid user_id claim\"}");
             return;
         }
 
         // Stash on the request items bag so the MCP dispatcher (McpToolRegistry or
-        // any custom tool-call handler) can build a ToolCallContext.AvatarId.
-        ctx.Items["mcp.avatar_id"] = avatarId;
+        // any custom tool-call handler) can build a ToolCallContext.UserId.
+        ctx.Items["mcp.user_id"] = userId;
         await _next(ctx);
     }
 }

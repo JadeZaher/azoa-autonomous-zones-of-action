@@ -6,7 +6,7 @@ namespace AZOA.WebAPI.Models.Responses;
 /// only the fields a user (or the authorized tenant) needs to reason about the
 /// grant's identity, scope and lifecycle. It exposes NO signing material, NO key
 /// reference, and NO audit detail — the grant record is an authorization fact,
-/// not a credential. The grantor avatar id is intentionally OMITTED on the wire:
+/// not a credential. The grantor user id is intentionally OMITTED on the wire:
 /// the user surface already knows it is "me", and the tenant surface must never
 /// be handed the grantor as an enumerable identifier beyond what it already
 /// authorized (L2 isolation).

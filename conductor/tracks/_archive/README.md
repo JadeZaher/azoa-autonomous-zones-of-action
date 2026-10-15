@@ -8,12 +8,12 @@ were archived as bookkeeping once their work landed.
 ## 2026-07-06 — Archived as shipped (bookkeeping)
 
 - **marketplace-logout-dapp-keys/** — server logout-everywhere
-  (`AuthNotBefore` bump), public quest marketplace (start-as-template with
-  runner-owned runs + `SourceQuestId`/`OriginAvatarId` provenance), holon
+  (`AuthNotBefore` bump), public action marketplace (start-as-template with
+  runner-owned runs + `SourceActionId`/`OriginUserId` provenance), holon
   clone provenance, `dapp:develop` API-key capability scope + issuance
-  validation, avatar PII projection + KYC operator gating. Shipped; hardening
-  review caught a CRITICAL cross-avatar asset-theft bug (execution ran as the
-  quest **owner** not the **runner**) fixed before ship + regression-tested.
+  validation, user PII projection + KYC operator gating. Shipped; hardening
+  review caught a CRITICAL cross-user asset-theft bug (execution ran as the
+  action **owner** not the **runner**) fixed before ship + regression-tested.
   Design-of-record: `docs/logout-and-dapp-keys-design.md`.
 
 ## 2026-07-05 — Archived as shipped (bookkeeping)
@@ -22,7 +22,7 @@ These tracks are **code-complete and shipped**; they were moved here once
 their work (and, where applicable, the owed review) landed. Their catalog
 one-liners live in the **Shipped** table of `conductor/tracks.md`.
 
-- **user-sovereign-identity/** — self-owned avatars + external-wallet
+- **user-sovereign-identity/** — self-owned users + external-wallet
   (challenge-signature) auth; tenant-provision-and-lock dropped. Shipped;
   security review done + remediated in commit `10e5dad` (2026-06-22).
 - **tenant-consent-delegation/** — user-granted, revocable consent grants

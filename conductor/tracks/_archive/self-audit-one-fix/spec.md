@@ -153,7 +153,7 @@ was incorrect.
 has no `listNfts()` method. The NFTs page fetches individual NFTs by ID only.
 
 Fix: confirm whether `GET /api/nft` in `AZOA.WebAPI/Controllers/NftController.cs`
-returns a list. If yes, add `listNfts(params?: { avatarId?: string }): Promise<…>`
+returns a list. If yes, add `listNfts(params?: { userId?: string }): Promise<…>`
 to `AzoaApiClient`. If the endpoint does not exist, document the gap in a
 `// TODO:` with a link to this track's closure.
 
@@ -190,16 +190,16 @@ to `HolonController` and update `API_PATHS`.
 
 ```ts
 const result = await azoa.api.request<Array<…>>(
-  "GET", `/api/wallet?avatarId=${avatarId}`
+  "GET", `/api/wallet?userId=${userId}`
 )
 ```
 
-`AzoaApiClient` already has a typed `listWallets({ avatarId })` method that
+`AzoaApiClient` already has a typed `listWallets({ userId })` method that
 constructs this same request with `assertUuid` validation and proper typing.
 The hook duplicates the logic with a raw `request()` call, bypassing the
 validation and typed return.
 
-Fix: replace with `azoa.api.listWallets({ avatarId })`.
+Fix: replace with `azoa.api.listWallets({ userId })`.
 
 ### 10. AuthWrapper cluster removal (boundary note)
 
@@ -208,7 +208,7 @@ is unconsumed — no import of it exists outside its own definition. The followi
 files form a dead cluster that should be deleted atomically:
 
 - `frontend/src/components/AuthWrapper.tsx`
-- `frontend/src/components/AvatarNFTDashboard.tsx` (imported only by AuthWrapper)
+- `frontend/src/components/UserNFTDashboard.tsx` (imported only by AuthWrapper)
 - `frontend/src/components/BlockchainDashboard.tsx` (imported only by AuthWrapper)
 - `frontend/src/components/WalletManager.tsx` (imported only by AuthWrapper)
 - `frontend/src/components/TransactionHistory.tsx` (imported only by AuthWrapper)
@@ -230,7 +230,7 @@ same closable track rather than floating as a note.
 - [ ] Finding 6: `listNfts()` added to `AzoaApiClient` (if backend endpoint exists), OR gap documented with a `// TODO:` comment referencing the track.
 - [ ] Finding 7: `updateSTARODK` added (backend + SDK), OR immutability documented. Decision recorded in `plan.md`.
 - [ ] Finding 8: `getComposite()` path reconciled with backend controller route; `API_PATHS` updated if a new route is added.
-- [ ] Finding 9: `azoa-hooks.ts:132` uses `azoa.api.listWallets({ avatarId })`.
+- [ ] Finding 9: `azoa-hooks.ts:132` uses `azoa.api.listWallets({ userId })`.
 - [ ] Finding 10: AuthWrapper cluster (8 files) deleted; `auth.test.tsx` deleted if stale.
 - [ ] All SDK fixes have a unit test (vitest) where a meaningful test is possible.
 - [ ] SDK build green: `cd sdk/azoa-wallet && pnpm build`.

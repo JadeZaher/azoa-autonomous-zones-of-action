@@ -26,7 +26,7 @@ races.
    both see `VAAReady`, both mint.
 3. **No dedupe key:** `AZOADbContext.cs:204-210` — all three bridge indexes
    non-unique; nothing on `LockTxHash` or Wormhole
-   `(emitterChain,emitterAddress,sequence)`. (`QuestEdge` uses `.IsUnique()` at
+   `(emitterChain,emitterAddress,sequence)`. (`ActionEdge` uses `.IsUnique()` at
    `:241` — omission is conspicuous.)
 4. **No VAA replay protection:** `VaaBytes`/`Digest` stored, never uniqueness-
    enforced; `VerifyVAAAsync` (`WormholeAdapter.cs:136-156`) checks only sig
@@ -52,7 +52,7 @@ races.
   safely retriable nor known-complete.
 
 ### Other Tier 0 gaps
-- Validation: 9 validators vs ~31 request models; every swap/wallet/quest/
+- Validation: 9 validators vs ~31 request models; every swap/wallet/action/
   bridge model unvalidated.
 - No rate limiting / API-key metering anywhere (no `AddRateLimiter`).
 - `InMemoryStorageProvider` registered in production DI
@@ -70,7 +70,7 @@ races.
   `Minted` removed or correctly wired.
 - A reconciliation path re-derives true op/bridge status from chain
   confirmations.
-- Every financial/quest/bridge request model has a FluentValidation validator.
+- Every financial/action/bridge request model has a FluentValidation validator.
 - Rate limiting + per-API-key metering enforced.
 - `InMemoryStorageProvider` is test-only, not in production composition.
 

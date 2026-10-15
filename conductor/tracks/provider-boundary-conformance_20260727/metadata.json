@@ -16,5 +16,11 @@
     "providers-and-cross-chain-bridge",
     "settlement-primitives-dotnet-sdk",
     "integration-test-isolation-debt"
-  ]
+  ],
+  "reconciled": {
+    "verified_at_commit": "b2576f4",
+    "verified_on": "2026-09-07",
+    "note": "metadata.json and the spec summary both said `pending`; only tracks.md disagreed by listing the track under 'In flight'. The metadata was right. plan.md has 0 of 38 boxes ticked - no phase has started - so the catalog row moved to the launch-gating queue rather than the status moving to in_progress.",
+    "plan_progress": "0/38 complete"
+  }
 }

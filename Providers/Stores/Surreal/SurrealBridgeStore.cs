@@ -45,9 +45,10 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// Field mapping notes for <see cref="BridgeTransactionResult"/> ⇔
 /// <see cref="BridgeTx"/>:
 /// <list type="bullet">
-///   <item><c>AvatarId</c>: Guid → 32-char "N" string.</item>
-///   <item><c>Amount</c>: ulong → canonical decimal string (BridgeTx keeps the
-///         wire-safe representation while the domain prevents signed overflow).</item>
+///   <item><c>UserId</c>: Guid → 32-char "N" string.</item>
+///   <item><c>Amount</c>: RailAmount → canonical decimal base-unit string. The column
+///         was already a string, so the D13 widening of the domain type needed no
+///         schema change: the full BigInteger range round-trips.</item>
 ///   <item><c>WormholeEmitterChainId</c>: int? → long? (POCO storage is wider).</item>
 ///   <item><c>WormholeSequence</c>: long? → long?.</item>
 ///   <item><c>VaaSignatureCount</c>: int? → long?.</item>
@@ -158,9 +159,9 @@ public sealed class SurrealBridgeStore : IBridgeStore
     }
 
     public async Task<IReadOnlyList<BridgeTransactionResult>> GetBridgeHistoryAsync(
-        Guid avatarId, bool descending = false, CancellationToken ct = default)
+        Guid userId, bool descending = false, CancellationToken ct = default)
     {
-        var avatarSurrealId = AvatarToSurrealId(avatarId);
+        var userSurrealId = UserToSurrealId(userId);
 
         // Sort direction is an author-controlled literal (ASC/DESC), NOT a
         // parameter — SurrealQL does not support parameter-bound sort direction.
@@ -169,15 +170,15 @@ public sealed class SurrealBridgeStore : IBridgeStore
         if (descending)
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM bridge_tx WHERE avatar_id = $_avatar ORDER BY created_at DESC")
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarSurrealId));
+                .Of("SELECT * FROM bridge_tx WHERE user_id = $_user ORDER BY created_at DESC")
+                .WithParam("_user", SurrealRecordParam.Of("user", userSurrealId));
             rows = await _executor.QueryAsync<BridgeTx>(q, ct);
         }
         else
         {
             var q = SurrealQuery
-                .Of("SELECT * FROM bridge_tx WHERE avatar_id = $_avatar ORDER BY created_at ASC")
-                .WithParam("_avatar", SurrealRecordParam.Of("avatar", avatarSurrealId));
+                .Of("SELECT * FROM bridge_tx WHERE user_id = $_user ORDER BY created_at ASC")
+                .WithParam("_user", SurrealRecordParam.Of("user", userSurrealId));
             rows = await _executor.QueryAsync<BridgeTx>(q, ct);
         }
         return rows.Select(FromBridgePoco).ToList();
@@ -546,14 +547,14 @@ public sealed class SurrealBridgeStore : IBridgeStore
     private static BridgeTx ToBridgePoco(BridgeTransactionResult tx) => new BridgeTx
     {
         Id                       = tx.Id,
-        AvatarId                 = SurrealLink.ToLink("avatar", AvatarToSurrealId(tx.AvatarId)) ?? string.Empty,
+        UserId                 = SurrealLink.ToLink("user", UserToSurrealId(tx.UserId)) ?? string.Empty,
         SourceChain              = tx.SourceChain,
         TargetChain              = tx.TargetChain,
         SourceTokenId            = tx.SourceTokenId,
         TargetTokenId            = tx.TargetTokenId,
         SourceAddress            = tx.SourceAddress,
         TargetAddress            = tx.TargetAddress,
-        Amount                   = tx.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        Amount                   = tx.Amount.ToBaseUnitString(),
         Status                   = ParseBridgeStatus(tx.Status),
         Mode                     = ParseBridgeMode(tx.Mode),
         LockTxHash               = tx.LockTxHash,
@@ -575,7 +576,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
     private static BridgeTransactionResult FromBridgePoco(BridgeTx poco) => new BridgeTransactionResult
     {
         Id                     = StripSurrealIdPrefix(poco.Id, BridgeTable),
-        AvatarId               = AvatarFromSurrealId(SurrealLink.FromLink(poco.AvatarId)),
+        UserId               = UserFromSurrealId(SurrealLink.FromLink(poco.UserId)),
         SourceChain            = poco.SourceChain,
         TargetChain            = poco.TargetChain,
         SourceTokenId          = poco.SourceTokenId,
@@ -644,7 +645,7 @@ public sealed class SurrealBridgeStore : IBridgeStore
         return new BlockchainOperation
         {
             Id            = FromSurrealGuid(poco.Id),
-            AvatarId      = poco.AvatarId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.AvatarId)!) : null,
+            UserId      = poco.UserId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.UserId)!) : null,
             WalletId      = poco.WalletId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.WalletId)!) : null,
             OperationType = poco.OperationType,
             Status        = poco.Status.ToString(),
@@ -652,20 +653,29 @@ public sealed class SurrealBridgeStore : IBridgeStore
             CreatedDate   = poco.CreatedDate.UtcDateTime,
             CompletedDate = poco.CompletedDate?.UtcDateTime,
             TokenUri      = poco.TokenUri,
-            // Persisted corruption must fail closed instead of wrapping a negative i64.
-            Amount        = poco.Amount.HasValue ? checked((ulong)poco.Amount.Value) : 0UL,
+            // D13: a decimal base-unit string. Absent reads as zero; present-but-corrupt
+            // fails closed, as the former checked i64 narrowing did.
+            Amount        = SurrealAmountColumn.Parse(poco.Amount, poco.Id, "Operation"),
             AssetType     = poco.AssetType,
             SourceHolonId = poco.SourceHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.SourceHolonId)!) : null,
             TargetHolonId = poco.TargetHolonId is not null ? FromSurrealGuid(SurrealLink.FromLink(poco.TargetHolonId)!) : null,
             ExchangeRate  = poco.ExchangeRate,
             RecipientAddress = poco.RecipientAddress,
             IdempotencyKey = poco.IdempotencyKey,
-            InitiatorAvatarId = poco.InitiatorAvatarId is not null
-                ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorAvatarId)!)
+            InitiatorUserId = poco.InitiatorUserId is not null
+                ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorUserId)!)
                 : null,
             InitiatorApiKeyId = poco.InitiatorApiKeyId is not null
                 ? FromSurrealGuid(SurrealLink.FromLink(poco.InitiatorApiKeyId)!)
                 : null,
+
+            // D16: null unless every component survived — a partial stamp is not a stamp.
+            ValueStamp = ValueStamp.FromPersisted(
+                poco.ValueCurrencyCode,
+                poco.ValueMinorUnits,
+                poco.ValueRate,
+                poco.ValueRateAsOf,
+                poco.ValueRateSource),
         };
     }
 
@@ -683,18 +693,19 @@ public sealed class SurrealBridgeStore : IBridgeStore
             : throw new InvalidOperationException(
                 $"BridgeTx.StatusKind '{kind}' has no corresponding BridgeStatus — schema and domain enum drifted.");
 
-    private static ulong ParseBridgeAmount(string? value, string recordId)
+    /// <summary>
+    /// D13: the persisted amount is a canonical decimal base-unit string with no 64-bit
+    /// ceiling. A blank, non-numeric, signed or zero amount is still corruption and still
+    /// fails closed — a bridge row that cannot say how much it moves must not be readable.
+    /// </summary>
+    private static RailAmount ParseBridgeAmount(string? value, string recordId)
     {
-        if (!ulong.TryParse(
-                value,
-                System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var amount)
-            || amount == 0)
-        {
-            throw new InvalidDataException(
-                $"Bridge '{StripSurrealIdPrefix(recordId, BridgeTable)}' contains an invalid persisted amount.");
-        }
+        var id = StripSurrealIdPrefix(recordId, BridgeTable);
+        var amount = SurrealAmountColumn.Parse(value ?? string.Empty, id, "Bridge");
+
+        // A bridge row differs from an operation row: zero is never legitimate here.
+        if (amount.IsZero)
+            throw new InvalidDataException($"Bridge '{id}' contains an invalid persisted amount.");
 
         return amount;
     }
@@ -723,10 +734,10 @@ public sealed class SurrealBridgeStore : IBridgeStore
 
     // ── Id helpers ────────────────────────────────────────────────────────────
 
-    private static string AvatarToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
+    private static string UserToSurrealId(Guid id) => id.ToString("N").ToLowerInvariant();
     private static string GuidToSurrealId(Guid id)   => id.ToString("N").ToLowerInvariant();
 
-    private static Guid AvatarFromSurrealId(string? id)
+    private static Guid UserFromSurrealId(string? id)
     {
         if (string.IsNullOrEmpty(id)) return Guid.Empty;
         return FromSurrealGuid(id);

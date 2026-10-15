@@ -2,9 +2,9 @@
 
 ## §ecosystem-tree — SurrealEcosystemStore (D2)
 
-`final-hardening-cutover` Phase D / D2. Backs `IEcosystemStore` (the STARODK
+`final-hardening-cutover` Phase D / D2. Backs `IEcosystemStore` (the ActionGraphBundle
 ecosystem tree — see `Managers/AGENTS.md §ecosystem-tree` for the feature). Two
-tables: `ecosystem` (root, one per STARODK) and `ecosystem_node` (tree nodes).
+tables: `ecosystem` (root, one per ActionGraphBundle) and `ecosystem_node` (tree nodes).
 
 - **Decorated-POCO interface, inline wire POCO storage.** The interface exposes
   the attributed `Persistence/SurrealDb/Models/{Ecosystem,EcosystemNode}` POCOs
@@ -15,7 +15,7 @@ tables: `ecosystem` (root, one per STARODK) and `ecosystem_node` (tree nodes).
   stripped by `SurrealLink.FromLink` on read. The manager works in bare Guid('N')
   hex throughout; the store owns the link (de)coding.
 - **`ref_id` is NOT a record-link.** `EcosystemNode.RefId` is a polymorphic
-  reference (DappSeries OR star_odk, discriminated by `ref_kind`), so it is stored
+  reference (DappSeries OR action_graph_bundle, discriminated by `ref_kind`), so it is stored
   as bare hex, never `table:hex`. SurrealDB `record<>` is single-table; ownership
   is validated app-side in the manager, not by a schema FK.
 - **Cascade delete.** `DeleteAsync(ecosystemId)` deletes child nodes first
@@ -62,16 +62,16 @@ full feature rationale; this note covers only the persistence choices.
   (`AZOA_REGENERATE_GOLDENS=1` or the CLI). `surrealforge up` picks the new file up
   lexically with no manifest registration.
 
-## quest_webhook_event outbox (final-hardening F3)
+## action_webhook_event outbox (final-hardening F3)
 
-`SurrealQuestWebhookOutboxStore` is a column-for-column mirror of
+`SurrealActionWebhookOutboxStore` is a column-for-column mirror of
 `SurrealConsentWebhookOutboxStore`: CREATE a row, then a polling worker scans due rows
 (`status='Pending' AND next_attempt_at<=now`, oldest first) and transitions them with
 conditional single-winner `UPDATE ... WHERE status='Pending'` (`AffectedCount()==1` is
 the arbiter). Status literals are bound params so the schema `ASSERT INSIDE [...]`
-compares the same tokens. FK columns are record-links: `tenant_id→avatar`,
-`run_id→quest_run`, `node_id→quest_node`, `quest_id→quest`. It is the GENERIC quest.emit
-mirror of the consent outbox; see `Services/Webhooks/AGENTS.md §quest-webhook`.
+compares the same tokens. FK columns are record-links: `tenant_id→user`,
+`run_id→action_run`, `node_id→action_node`, `action_id→action`. It is the GENERIC action.emit
+mirror of the consent outbox; see `Services/Webhooks/AGENTS.md §action-webhook`.
 
 ## §surrealql-3x-wire-surface — SurrealDB 3.1.4 audit (final-hardening E3)
 
@@ -92,7 +92,7 @@ Invariants to preserve when adding stores:
   keep binding the set as a param so schema `ASSERT INSIDE [...]` compares the same tokens.
 - **Multi-statement atomicity is one HTTP request.** 3.x scopes a transaction to a single
   `/rpc` request, so compose `BEGIN; …; COMMIT;` via `SurrealQuery.Combine(...)` (see
-  `SurrealQuestRunStore` fork path) — never as separate stateless requests. RELATE cannot
+  `SurrealActionRunStore` fork path) — never as separate stateless requests. RELATE cannot
   parse an inline `type::record(...)` on either side of the `->edge->` arrow, so bind both
   endpoints to `LET` vars first, then `RELATE $_child->forked_from->$_parent`.
 - **SELECT hits only DEFINED tables.** 3.x errors on `SELECT ... FROM undefined_table`
@@ -245,7 +245,7 @@ null `option<>` fields. A mapping that only serializes a collection when
 non-empty (`X = list.Count > 0 ? ... : null`) therefore makes "empty the
 collection" a silent no-op: the null is dropped from the SET clause and the
 stale stored value survives. Found in Holon (Phase H), then confirmed by audit
-in Star (`bound_holon_ids`), Nft AvatarNFT (`attributes`), and
+in ActionGraphBundle (`bound_holon_ids`), Nft UserNFT (`attributes`), and
 BlockchainOperation (`parameters`) — all fixed 2026-07-06.
 
 Rules for any SET-upserted store mapping:
@@ -257,3 +257,58 @@ Rules for any SET-upserted store mapping:
   clearable collections.
 - CONTENT-based writes (`CREATE/UPSERT ... CONTENT $_body`) are full-document
   replaces and immune; this rule applies to `SurrealWriter.Upsert` paths only.
+
+## §person-operation-claim-store — SurrealPersonOperationClaimStore (D3/D23)
+
+The Sybil ledger behind `IPersonUniquenessGate`. Two shapes carry its correctness and
+neither is stylistic.
+
+**The winner is decided inside ONE statement, then read back.** The record id is
+deterministic over `(scope, operation, personKey)`, and the claim statement both writes
+and returns the row; the caller compares the returned `UserId` to its own to learn
+whether it won. A `SELECT` before the write is the bug this avoids — two concurrent
+claims both pass a preceding read and both proceed. This mirrors the `BindUserAsync`
+precedent in `SurrealKycIdentityStore`; copy that shape for any single-winner claim.
+(A losing concurrent write can still surface as a retryable transaction conflict on
+RocksDB — see `Core/Surreal/AGENTS.md`.)
+
+**Reads cannot become a person-key oracle.** `ListLiveByOperationAsync` is keyed by
+`(scope, operation)` only — a caller cannot ask this store about a person it names. A
+store fault must surface as an error result and never as an empty list, because an empty
+list is indistinguishable from a published tally of zero. This store is
+node-operator-only: no consumer route may reach it, and the global person key exists
+nowhere else on a consumer-readable surface.
+
+Column semantics and the uniqueness/index rules are in
+`Persistence/SurrealDb/Models/AGENTS.md` §person-operation-claim; the policy above it is
+in `Services/Kyc/AGENTS.md` §person-uniqueness.
+
+## §issuer-column — the one field that is NOT §set-omits-null (D19)
+
+`SurrealNftStore` maps `IUserNFT` ↔ `NftOwnership` field-by-field, but `issuer_user_id`
+is read and written through a second, narrow face on the same store,
+`ICredentialIssuerStore` — never through the ordinary `IUserNFT` upsert. `IUserNFT` has
+no issuer property, and its only writable carrier is the caller-supplied `Attributes`
+bag, so routing the issuer through the normal mapping would let a holder name themselves
+issuer and revoke their own credential. The issuer is the field the revoke authorization
+decision turns on.
+
+`ToNftPoco` therefore leaves `IssuerUserId` **null on purpose**, and here the
+§set-omits-null behaviour is load-bearing rather than a trap: `SurrealWriter` drops null
+`option<>` fields from the SET, so an ordinary transfer or metadata edit PRESERVES the
+recorded issuer instead of wiping the authorization anchor. Read §set-omits-null's
+"always serialize" rule as applying to clearable COLLECTIONS; this scalar is the
+documented exception, and writing it unconditionally would erase revocability on every
+unrelated update.
+
+`SetIssuerUserIdAsync` is write-once (a differing issuer is refused, the same issuer
+re-stamps cleanly so an idempotent mint retry succeeds) and
+`RecordCredentialRevokedAsync` moves ownership only after a CONFIRMED clawback — without
+it, AZOA keeps reporting a revoked credential as held. Pinned by
+`tests/AZOA.WebAPI.Tests/Providers/Stores/Surreal/SurrealNftStoreCredentialIssuerTests.cs`.
+
+**Known defect (why the rail is gated).** The production mint path stamps the issuer as
+the HOLDER, which makes the "issuer, never the holder" authorization vacuous. That is why
+`CredentialRevoke` sits on `Services/Actions/NotEnabledActionNodeTypes` — see
+`Services/Actions/AGENTS.md` §not-enabled-node-types — and it is what
+`conductor/tracks/credential-third-party-issuance_20260906` exists to fix.

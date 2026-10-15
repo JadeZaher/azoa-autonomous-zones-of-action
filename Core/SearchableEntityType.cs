@@ -4,10 +4,10 @@ namespace AZOA.WebAPI.Core;
 public enum SearchableEntityType
 {
     None = 0,
-    Avatar = 1,
+    User = 1,
     Holon = 2,
     Wallet = 4,
     BlockchainOperation = 8,
-    STARODK = 16,
-    All = Avatar | Holon | Wallet | BlockchainOperation | STARODK
+    ActionGraphBundle = 16,
+    All = User | Holon | Wallet | BlockchainOperation | ActionGraphBundle
 }

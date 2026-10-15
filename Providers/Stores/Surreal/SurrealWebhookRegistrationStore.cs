@@ -61,7 +61,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
             // read another tenant's registration through this seam (H5).
             var q = SurrealQuery
                 .Of("SELECT * FROM webhook_registration WHERE tenant_id = $_tenant LIMIT 1")
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)));
             var row = await _executor.QuerySingleAsync<WebhookRegistrationPoco>(q, ct);
             return new AZOAResult<WebhookRegistration>
             {
@@ -87,7 +87,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
                 .Of("UPDATE webhook_registration SET secret = $_secret, secret_rotated_at = $_now WHERE tenant_id = $_tenant RETURN AFTER")
                 .WithParam("_secret", newSecret)
                 .WithParam("_now", nowUtc)
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)));
 
             var resp = await _executor.ExecuteAsync(q, ct);
             if (resp.Count == 0 || !resp[0].IsOk)
@@ -106,7 +106,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
     private static WebhookRegistrationPoco FromDomain(WebhookRegistration r) => new()
     {
         Id              = SurrealId.ToSurrealId(r.Id),
-        TenantId        = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(r.TenantId)) ?? string.Empty,
+        TenantId        = SurrealLink.ToLink("user", SurrealId.ToSurrealId(r.TenantId)) ?? string.Empty,
         Url             = r.Url ?? string.Empty,
         Secret          = r.Secret ?? string.Empty,
         SecretRotatedAt = r.SecretRotatedAt.HasValue
@@ -141,7 +141,7 @@ public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
         public string SchemaName => Table;
 
         [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
         [JsonPropertyName("url")]               public string Url { get; set; } = string.Empty;
         [JsonPropertyName("secret")]            public string Secret { get; set; } = string.Empty;
         [JsonPropertyName("secret_rotated_at")] public DateTimeOffset? SecretRotatedAt { get; set; }

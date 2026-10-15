@@ -7,8 +7,8 @@ using AZOA.WebAPI.Core.Surreal;
 namespace AZOA.WebAPI.Mcp.Tools;
 
 /// <summary>
-/// Returns all NFT holons owned by the calling avatar, optionally filtered
-/// by chain.  The avatar_id is sourced exclusively from the
+/// Returns all NFT holons owned by the calling user, optionally filtered
+/// by chain.  The user_id is sourced exclusively from the
 /// <see cref="ToolCallContext"/> — never from a tool input parameter.
 /// </summary>
 public sealed class NftOwnershipGraphTool : IMcpTool
@@ -36,7 +36,7 @@ public sealed class NftOwnershipGraphTool : IMcpTool
     // ── IMcpTool ──────────────────────────────────────────────────────────────
 
     public string Name        => "nft_ownership_graph";
-    public string Description => "Return all NFT holons owned by the calling avatar, optionally filtered by chain.";
+    public string Description => "Return all NFT holons owned by the calling user, optionally filtered by chain.";
     public JsonElement InputSchema => _inputSchema;
 
     public async Task<JsonElement> ExecuteAsync(
@@ -46,10 +46,10 @@ public sealed class NftOwnershipGraphTool : IMcpTool
     {
         try
         {
-            // AvatarId comes exclusively from context — privilege-escalation gate.
-            // avatar_id is a record<avatar> column; bind the `avatar:hex` link form so
+            // UserId comes exclusively from context — privilege-escalation gate.
+            // user_id is a record<user> column; bind the `user:hex` link form so
             // the comparison matches. See Mcp/AGENTS.md §record-id-binding.
-            var avatarIdStr = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(context.AvatarId));
+            var userIdStr = SurrealLink.ToLink("user", SurrealId.ToSurrealId(context.UserId));
 
             // Optional chain filter — null means "all chains"
             string? chainFilter = null;
@@ -65,11 +65,11 @@ public sealed class NftOwnershipGraphTool : IMcpTool
 
             if (string.IsNullOrEmpty(chainFilter))
             {
-                // No chain filter — return all NFTs for this avatar
+                // No chain filter — return all NFTs for this user
                 // raw: narrow projection — the graph only needs identity + chain columns.
                 var q = SurrealQuery
-                    .Of("SELECT id, name, chain_id, provider_name, token_id, asset_type FROM holon WHERE avatar_id = $avatar_id AND asset_type = 'NFT' ORDER BY chain_id, name")
-                    .WithParam("avatar_id", SurrealRecordParam.OfLink(avatarIdStr));
+                    .Of("SELECT id, name, chain_id, provider_name, token_id, asset_type FROM holon WHERE user_id = $user_id AND asset_type = 'NFT' ORDER BY chain_id, name")
+                    .WithParam("user_id", SurrealRecordParam.OfLink(userIdStr));
 
                 rows = await context.Executor.QueryAsync<NftHolonPoco>(q, ct);
             }
@@ -78,8 +78,8 @@ public sealed class NftOwnershipGraphTool : IMcpTool
                 // Chain-filtered path
                 // raw: narrow projection — the graph only needs identity + chain columns.
                 var q = SurrealQuery
-                    .Of("SELECT id, name, chain_id, provider_name, token_id, asset_type FROM holon WHERE avatar_id = $avatar_id AND asset_type = 'NFT' AND chain_id = $chain ORDER BY chain_id, name")
-                    .WithParam("avatar_id", SurrealRecordParam.OfLink(avatarIdStr))
+                    .Of("SELECT id, name, chain_id, provider_name, token_id, asset_type FROM holon WHERE user_id = $user_id AND asset_type = 'NFT' AND chain_id = $chain ORDER BY chain_id, name")
+                    .WithParam("user_id", SurrealRecordParam.OfLink(userIdStr))
                     .WithParam("chain", chainFilter);
 
                 rows = await context.Executor.QueryAsync<NftHolonPoco>(q, ct);

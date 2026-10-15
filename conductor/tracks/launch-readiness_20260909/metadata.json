@@ -1,0 +1,123 @@
+{
+  "id": "launch-readiness_20260909",
+  "title": "Launch readiness — QA-ready on main, both repos",
+  "type": "feature",
+  "status": "in-flight",
+  "created": "2026-09-09",
+  "source": "OPEN-ITEMS.md of ardanova-production-readiness-waves_20260907 (95 items) + owner directive 2026-09-09: 'design and kick off the remaining waves for a full product launch; QA-ready after this run; merge-to-main sweep on both repos'",
+  "predecessor": "ardanova-production-readiness-waves_20260907",
+  "repos": {
+    "azoa": "c:/Users/atooz/Programming/Projects/oasis-sleek",
+    "ardanova": "c:/Users/atooz/Documents/Escherbridge/ardanova",
+    "ardanova_financial_worktree": "c:/Users/atooz/Documents/Escherbridge/ardanova-financial-domain (branch codex/financial-engine-domain; lands on main by cherry-pick of 0bb1ec3 + a6c3ecc per D53, never by merge)"
+  },
+  "waves": 8,
+  "wave_titles": {
+    "L0": "Stop the bleeding — CRITICALs on the shipped configuration + runtime blockers",
+    "L1": "Open the valve, AZOA side — declare, provision, issue, hold, settle",
+    "L2": "Wire ArdaNova to the node — the money loop closes end to end",
+    "L3": "Thesis sweep — a sponsor never meets the chain; vocabulary control",
+    "L4": "Governance of record + remaining hygiene; independent review lifts NotEnabledActionNodeTypes or records why not",
+    "L5": "QA readiness — owed tests, full suites incl. integration, React component harness, E2E golden path, QA runbook + smoke checklist",
+    "L6": "Operator + deploy readiness — Railway template, config keys, scripted operator procedures, named external dependencies",
+    "L7": "Merge-to-main sweep, both repos — AZOA --no-ff merge; ArdaNova hardening fast-forward then financial cherry-pick with DBML regeneration; push only when green"
+  },
+  "items": 62,
+  "items_note": "62 items itemised by an opus planner over OPEN-ITEMS.md; collision proof re-run by the orchestrator (0 overlaps in every wave, prefix-aware). Unplaced: OI-04 (downstream of the operator-gated publish), OI-47b (Algorand-only by design), the ArdaNova financial migration (deferred per its PASSOFF).",
+  "orchestration": {
+    "shape": "sequential waves; parallel disjoint-owns items within a wave; per-wave serial join gate; adversarial review; remediate→re-review up to 2 cycles BEFORE the wave closes",
+    "collision_proof": "plain-JS subRounds(): topological sort on depends-on, then prefix-aware path comparison splits any batch where two items' owns overlap — never an agent's assurance",
+    "lesson_from_predecessor": "Workflow resume caches the longest unchanged PREFIX of agent() calls. Inserting the remediation stage mid-script and resuming re-ran every wave after the insertion point. The loop is in the script from line one here; the resumed run was stopped at its Wave 1 join gate and its in-flight work gated and committed separately."
+  },
+  "partitions": {
+    "confidence": "planned",
+    "computed_at_commit": "206e3c9 (azoa) / f71e115 (ardanova) — pre-gate; the in-flight Wave 1 re-run is being gated and committed on top",
+    "note": "Hypothesis until the collision proof runs at launch: owns lists are derived by the planner from OPEN-ITEMS.md *Where:* citations plus the tests each item must add. Shared central files (oasis-sleek/Program.cs, oasis-sleek/appsettings.json, ardanova DependencyInjection.cs, ardanova-client/prisma/schema.prisma, ardanova-client/src/server/api/root.ts) are single-owner per wave by rule. Test files are IN owns lists this time — the predecessor shipped largely unpinned because they were not (OI-91)."
+  },
+  "decisions": "D52-D55 (spec.md): dollars primary / ARDA caption; financial branch by cherry-pick; governance lifts only on an independent verdict; operator actions become scripts",
+  "open_items_input": {
+    "file": "../ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md",
+    "count": 95,
+    "critical_open_at_start": 10
+  },
+  "blocked_on_operator": [
+    "OI-01 azoa-sdk@0.4.0 publish: gated and staged (build clean, tsc 0, 17 test files, dry-run packs 0.4.0); `npm publish` requires the owner's 2FA one-time password (EOTP). L0's lockfile item is conditional on the registry holding 0.4.0.",
+    "OI-08 Identomat vendor credentials",
+    "OI-05 Stripe Connect platform approval",
+    "OI-09 ArdaNova tenant provisioning on the live node (becomes scripts/ops/provision-tenant.ps1; the operator runs it)"
+  ],
+  "head_commits_at_creation": {
+    "azoa": "206e3c9",
+    "azoa_branch": "feat/kyc-aml-providers-value-rail",
+    "ardanova": "f71e115",
+    "ardanova_branch": "codex/azoa-security-hardening",
+    "ardanova_main": "9e1d5c3 (== origin/main; hardening is 18 ahead, financial is 3 ahead of merge-base 6cf61fe)"
+  },
+  "revisions": [
+    {
+      "date": "2026-09-09",
+      "what": "Track created. Spec + wave design by the orchestrator; itemization delegated to a planner over OPEN-ITEMS.md. M2 corrected mid-planning from 'merge financial branch' to 'cherry-pick two implementation commits + regenerate from DBML' after reading the financial worktree's PASSOFF.md."
+    },
+    {
+      "date": "2026-09-09",
+      "what": "L0 executed and closed; program stopped after L0 for a machine-lag handoff; RUNBOOK ▶ RESUME carries the packet. First launch blocked by the classifier (push + blanket kill); relaunched with a NETWORK OVERRIDE."
+    }
+  ],
+  "items_per_wave": {
+    "L0": 7,
+    "L1": 13,
+    "L2": 14,
+    "L3": 8,
+    "L4": 7,
+    "L5": 6,
+    "L6": 3,
+    "L7": 4
+  },
+  "progress": "L0 closed 2026-09-09 (PASS-WITH-DEBT after 1 remediation cycle); L1–L7 not started",
+  "run": {
+    "workflow": "wf_22a2ed71-c10",
+    "task": "w5x5tnqbn",
+    "stopped": "2026-09-09 by owner (machine lag) after L0 remediation #1 + re-review; remediation #2 in flight, gated solo and landed (b582256 / a2ec96e)",
+    "resume_guidance": "fresh run over L1–L7 (copy script, WAVES=L1..L7); do NOT resume with an edited script (prefix cache)"
+  },
+  "wave_commits": {
+    "L0": "b5e21fc, 471a955, be055d2, b582256 (azoa); 4eb8f1e, 41edf9e, a2ec96e (ardanova)"
+  },
+  "review_verdicts": {
+    "L0": {
+      "original": "PASS-WITH-DEBT (10 findings, 0 crit, 5 claim-not-control)",
+      "after_remediation_1": "PASS-WITH-DEBT (10, 0, 4; all 6 actionable FIXED)",
+      "remediation_cycles": "2 (second interrupted by the session stop; its work gated solo and landed at b582256 / a2ec96e)"
+    }
+  },
+  "gates_at_L0_close": {
+    "azoa": "build 0 err / 22 warn; 3341 unit tests; SDK tsc 0 + 205; frontend 78 + build",
+    "ardanova": "build 0 err / 61 warn; 1188 tests; client 265 vitest / 39 files; npm run build WITHOUT SKIP_ENV_VALIDATION"
+  },
+  "oi_closed_L0": [
+    "OI-02",
+    "OI-03",
+    "OI-13",
+    "OI-14",
+    "OI-16",
+    "OI-20",
+    "OI-21",
+    "OI-36",
+    "OI-37",
+    "OI-40",
+    "OI-43",
+    "OI-52",
+    "OI-57",
+    "OI-78",
+    "OI-80",
+    "OI-92 (new)",
+    "OI-93 (new)",
+    "OI-94 (new)",
+    "OI-95 (new)"
+  ],
+  "head_commits_at_handoff": {
+    "azoa": "b582256 + docs(handoff) commits on feat/kyc-aml-providers-value-rail",
+    "ardanova": "a2ec96e on codex/azoa-security-hardening",
+    "main": "untouched in both"
+  }
+}

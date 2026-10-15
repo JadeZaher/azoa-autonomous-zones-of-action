@@ -23,7 +23,14 @@ public class BlockchainChainConfig
 
 public class BlockchainConfig
 {
-    public string DefaultChain { get; set; } = "Algorand";
+    /// <summary>
+    /// The rail assumed when nothing names one. Public so the value-rail capability gate
+    /// can fall back to the SAME rail the factory would, instead of inventing a second
+    /// default that could drift away from this one.
+    /// </summary>
+    public const string DefaultChainFallback = "Algorand";
+
+    public string DefaultChain { get; set; } = DefaultChainFallback;
     public ChainNetwork DefaultNetwork { get; set; } = ChainNetwork.Devnet;
     public List<BlockchainChainConfig> Chains { get; set; } = new();
 

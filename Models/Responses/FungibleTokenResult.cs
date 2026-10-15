@@ -11,8 +11,8 @@ namespace AZOA.WebAPI.Models.Responses;
 /// </summary>
 public sealed class FungibleTokenResult
 {
-    /// <summary>The avatar the token was launched for (the authorised principal).</summary>
-    public Guid AvatarId { get; set; }
+    /// <summary>The user the token was launched for (the authorised principal).</summary>
+    public Guid UserId { get; set; }
 
     /// <summary>The custodial wallet the token was launched from.</summary>
     public Guid WalletId { get; set; }

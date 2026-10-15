@@ -12,10 +12,10 @@ using AZOA.WebAPI.Models.Responses;
 namespace AZOA.WebAPI.Controllers;
 
 /// <summary>
-/// Avatar-scoped KYC endpoints. Mirrors <c>STARODKController</c>: the
-/// authenticated avatar (claim-sourced) is authoritative; any AvatarId on a
-/// request body is ignored, and there is no <c>{avatarId}</c> in any route (so
-/// a per-id status lookup IDOR cannot exist — the avatar comes from the token).
+/// User-scoped KYC endpoints. Mirrors <c>ActionGraphBundleController</c>: the
+/// authenticated user (claim-sourced) is authoritative; any UserId on a
+/// request body is ignored, and there is no <c>{userId}</c> in any route (so
+/// a per-id status lookup IDOR cannot exist — the user comes from the token).
 /// The manager's <see cref="KycAuthorizationError"/> message prefixes are
 /// translated to 403/404 by <see cref="TranslateResult{T}"/>.
 /// </summary>
@@ -36,11 +36,11 @@ public sealed class KycController : ControllerBase
     [RequestSizeLimit(KycDocumentRequestLimits.MaxRequestBodyBytes)]
     public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Submit([FromBody] SubmitKycModel model, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
         if (User.GetActingTenantId() is not null) return Forbid();
 
-        var result = await _manager.SubmitAsync(model, avatarId.Value, ct);
+        var result = await _manager.SubmitAsync(model, userId.Value, ct);
         return TranslateResult(result);
     }
 
@@ -48,11 +48,11 @@ public sealed class KycController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> GetStatus(CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
         if (User.GetActingTenantId() is not null) return Forbid();
 
-        var result = await _manager.GetStatusAsync(avatarId.Value, ct);
+        var result = await _manager.GetStatusAsync(userId.Value, ct);
         return TranslateResult(result);
     }
 
@@ -60,8 +60,8 @@ public sealed class KycController : ControllerBase
     [HttpGet("status/summary")]
     public async Task<ActionResult<AZOAResult<KycStatusSummaryResponse>>> GetStatusSummary(CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
 
         if ((IsApiKeyPrincipal() || User.GetActingTenantId() is not null)
             && !User.HasScope(AzoaScopes.KycRead))
@@ -71,7 +71,7 @@ public sealed class KycController : ControllerBase
                     $"Caller lacks the '{AzoaScopes.KycRead}' scope.",
                     AzoaErrorCodes.Forbidden));
 
-        var result = await _manager.GetStatusAsync(avatarId.Value, ct);
+        var result = await _manager.GetStatusAsync(userId.Value, ct);
         if (result.IsError)
         {
             if (result.Message?.StartsWith(KycAuthorizationError.NotFound, StringComparison.Ordinal) == true)
@@ -96,11 +96,11 @@ public sealed class KycController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> GetById(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
         if (User.GetActingTenantId() is not null) return Forbid();
 
-        var result = await _manager.GetByIdAsync(id, avatarId.Value, ct);
+        var result = await _manager.GetByIdAsync(id, userId.Value, ct);
         return TranslateResult(result);
     }
 
@@ -108,11 +108,11 @@ public sealed class KycController : ControllerBase
     [Authorize(Policy = "FirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<IEnumerable<KycDocumentModel>>>> GetDocuments(Guid id, CancellationToken ct)
     {
-        var avatarId = GetAvatarIdFromClaims();
-        if (avatarId == null) return Unauthorized();
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
         if (User.GetActingTenantId() is not null) return Forbid();
 
-        var result = await _manager.ListDocumentsAsync(id, avatarId.Value, ct);
+        var result = await _manager.ListDocumentsAsync(id, userId.Value, ct);
         return TranslateResult(result);
     }
 
@@ -137,7 +137,7 @@ public sealed class KycController : ControllerBase
         return BadRequest(result);
     }
 
-    private Guid? GetAvatarIdFromClaims()
+    private Guid? GetUserIdFromClaims()
     {
         var sub = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                  ?? User.FindFirst("sub")?.Value;

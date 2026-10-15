@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+﻿// SPDX-License-Identifier: UNLICENSED
 
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -8,14 +8,14 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 /// <summary>
 /// The thin AZOA-side seam a fiat-settlement tenant calls AFTER money has
 /// already cleared on its own platform: "provision a custodial wallet for
-/// avatar X if absent, and allocate an already-decided amount of asset A into
+/// user X if absent, and allocate an already-decided amount of asset A into
 /// it." This composes three existing primitives behind one idempotent,
 /// KYC-gated entry point:
 /// <list type="number">
 ///   <item>KYC gate (<see cref="IKycGateService.RequireVerifiedAsync"/>) —
 ///   fail-closed before any value-bearing side effect.</item>
 ///   <item>Provision-if-absent (<c>IWalletManager.GenerateWalletAsync</c> /
-///   <c>IWalletStore.GetByAvatarAsync</c>) — never duplicates a wallet.</item>
+///   <c>IWalletStore.GetByUserAsync</c>) — never duplicates a wallet.</item>
 ///   <item>Allocation (<c>INftManager.MintAsync</c> / <c>TransferAsync</c>)
 ///   deduped via <see cref="AZOA.WebAPI.Interfaces.IIdempotencyStore"/>.</item>
 /// </list>
@@ -31,26 +31,26 @@ public interface IAllocationManager
     /// Idempotent, KYC-gated wallet-provision + asset-allocation primitive.
     ///
     /// Idempotency: a client key wins; absent ⇒ a deterministic content key over
-    /// (<paramref name="avatarId"/>, asset descriptor, amount) — NEVER a random
+    /// (<paramref name="userId"/>, asset descriptor, amount) — NEVER a random
     /// per-request key. AZOA partitions the internal ledger key by
     /// <paramref name="apiKeyId"/> and exposes only an opaque correlation on the
     /// durable operation. A duplicate call returns the ORIGINAL result and performs
     /// NO second mint/transfer.
     ///
-    /// Fail-closed KYC: when the target avatar is not APPROVED the call is
+    /// Fail-closed KYC: when the target user is not APPROVED the call is
     /// rejected with a <c>KycAuthorizationError.Forbidden</c>-prefixed message and
     /// no value-bearing side effect runs. Per D3 wallet provisioning MAY precede
     /// approval, but allocation may not — so the gate sits before the
     /// mint/transfer.
     ///
-    /// IDOR: the allocation always targets <paramref name="avatarId"/> (resolved
+    /// IDOR: the allocation always targets <paramref name="userId"/> (resolved
     /// from the authenticated principal / contract). Any owner id on the request
     /// body is ignored.
     /// </summary>
-    /// <param name="avatarId">The authorised target avatar (route/contract).</param>
+    /// <param name="userId">The authorised target user (route/contract).</param>
     /// <param name="request">Asset descriptor + already-decided amount (D4).</param>
-    /// <param name="callerAvatarId">
-    /// The authenticated caller (the tenant's avatar). On Transfer it is the
+    /// <param name="callerUserId">
+    /// The authenticated caller (the tenant's user). On Transfer it is the
     /// source owner whose existing chain wallet signs the move; it never widens
     /// authority beyond the API-key and consent scopes.
     /// </param>
@@ -70,10 +70,11 @@ public interface IAllocationManager
     /// required).
     /// </param>
     Task<AZOAResult<AllocationResult>> AllocateAsync(
-        Guid avatarId,
+        Guid userId,
         AllocationRequest request,
-        Guid callerAvatarId,
+        Guid callerUserId,
         string? clientIdempotencyKey,
         string apiKeyId,
-        Guid? actingTenantId = null);
+        Guid? actingTenantId = null,
+        AZOA.WebAPI.Services.Reserve.ReserveDrawAuthority? drawAuthority = null);
 }

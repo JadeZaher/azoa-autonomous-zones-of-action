@@ -7,11 +7,11 @@ namespace AZOA.WebAPI.Interfaces.Managers;
 /// Discriminator the controller uses to translate a manager auth failure into
 /// the right HTTP status without raw string-matching. Carried via the
 /// <see cref="AZOAResult{T}.Message"/> prefix — mirrors
-/// <see cref="STARODKAuthorizationError"/>.
+/// <see cref="ActionGraphBundleAuthorizationError"/>.
 ///
 /// SECURITY NOTE: a cross-tenant or unowned target is reported as
 /// <see cref="NotFound"/> (→ 404), NEVER <see cref="Forbidden"/>, so a prober
-/// cannot distinguish "no such avatar" from "exists but belongs to another
+/// cannot distinguish "no such user" from "exists but belongs to another
 /// tenant" (the §3 isolation crux). <see cref="Forbidden"/> is reserved for the
 /// surface-level "missing tenant:provision scope" case, which the
 /// authorization policy already rejects at 403 before the manager runs.
@@ -29,41 +29,41 @@ public static class TenantAuthorizationError
 }
 
 /// <summary>
-/// Tenant provisioning surface. A "tenant" is an Avatar that owns an API key
+/// Tenant provisioning surface. A "tenant" is a User that owns an API key
 /// carrying the <c>tenant:provision</c> scope (Decision D1 — Option B: scope +
 /// <c>OwnerTenantId</c> self-FK, no parallel Tenant entity). Every method takes
 /// the tenant id as an explicit parameter the controller fills from the
 /// authenticated key's claim — NEVER from a request body (IDOR rule, mirrors
-/// <c>AvatarManager.UpdateAsync(id, model, avatarId)</c>).
+/// <c>UserManager.UpdateAsync(id, model, userId)</c>).
 /// </summary>
 public interface ITenantManager
 {
     /// <summary>
-    /// Provisions a claimable avatar using a deterministic, create-only
+    /// Provisions a claimable user using a deterministic, create-only
     /// <c>(tenantId, externalUserId)</c> identity. <c>OwnerTenantId</c> is an
     /// unclaimed onboarding correlation only and is cleared on user claim; the
     /// deterministic identity still makes post-claim retries resolve the original
-    /// avatar without updating it. The binding grants no signing authority: a
+    /// user without updating it. The binding grants no signing authority: a
     /// tenant acts for the user solely through a live <c>ConsentGrant</c>.
     /// </summary>
-    Task<AZOAResult<ChildAvatarResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default);
+    Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default);
 
     /// <summary>
-    /// Lists the tenant's child avatars, optionally filtered to a single
+    /// Lists the tenant's child users, optionally filtered to a single
     /// external user id. Scoped to the tenant — never returns another tenant's
     /// children.
     /// </summary>
-    Task<AZOAResult<IEnumerable<ChildAvatarResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default);
+    Task<AZOAResult<IEnumerable<ChildUserResponse>>> ListChildrenAsync(Guid tenantId, string? externalUserId, CancellationToken ct = default);
 
     /// <summary>
     /// Resolves one child by the tenant's own external user id, including after
     /// user claim via the deterministic tenant-partitioned identity. Cross-tenant
     /// / no match → <see cref="TenantAuthorizationError.NotFound"/>.
     /// </summary>
-    Task<AZOAResult<ChildAvatarResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default);
+    Task<AZOAResult<ChildUserResponse>> ResolveChildAsync(Guid tenantId, string externalUserId, CancellationToken ct = default);
 
     /// <summary>
-    /// Issues a short-lived child-scoped JWT (subject = the USER's avatar id, plus
+    /// Issues a short-lived child-scoped JWT (subject = the USER's user id, plus
     /// an <c>act_as_tenant</c> claim = <paramref name="tenantId"/>) the tenant uses
     /// to act FOR that user.
     /// <para>
@@ -71,7 +71,7 @@ public interface ITenantManager
     /// requires a LIVE <c>ConsentGrant</c> (grantor = the user, tenant =
     /// <paramref name="tenantId"/>, scope ⊇ requested, not revoked/expired). The
     /// legacy <c>child.OwnerTenantId == tenantId</c> check is GONE (the hard cutover
-    /// makes every avatar self-owned). A target with no covering live grant returns
+    /// makes every user self-owned). A target with no covering live grant returns
     /// <see cref="TenantAuthorizationError.NotFound"/> (404, never 403 — the
     /// isolation crux).
     /// </para>

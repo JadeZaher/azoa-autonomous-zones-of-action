@@ -11,7 +11,7 @@ namespace AZOA.WebAPI.Models.Responses;
 public sealed class BlockchainOperationResponse
 {
     public Guid Id { get; init; }
-    public Guid? AvatarId { get; init; }
+    public Guid? UserId { get; init; }
     public Guid? WalletId { get; init; }
     public string OperationType { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
@@ -36,7 +36,7 @@ public sealed class BlockchainOperationResponse
         return new BlockchainOperationResponse
         {
             Id = operation.Id,
-            AvatarId = operation.AvatarId,
+            UserId = operation.UserId,
             WalletId = operation.WalletId,
             OperationType = operation.OperationType,
             Status = operation.Status,

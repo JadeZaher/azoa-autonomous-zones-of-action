@@ -2,6 +2,8 @@ using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Providers.Blockchain.Base;
+using AZOA.WebAPI.Core.Blockchain.Bridge;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -14,18 +16,23 @@ using AZOA.WebAPI.Services.Bridge;
 namespace AZOA.WebAPI.Services;
 
 /// <summary>
-/// Hybrid cross-chain bridge orchestrator.
-///
-/// Trusted mode: AZOA server coordinates lock→mint (fast, custodial).
-/// Wormhole mode: Guardian network produces VAAs for trustless proof verification.
-///
-/// Bridge transactions are persisted via IBridgeStore. Service is Scoped
-/// (tied to request scope).
+/// Cross-chain bridge orchestrator. It knows exactly two things about a route: the two
+/// capability legs it resolved, and the protocol that carries proof between them.
+/// <para>
+/// There is no per-chain branching here and no chain name in any decision. A source chain is
+/// one that implements <see cref="IBridgeSourceLeg"/>; a target chain is one that implements
+/// <see cref="IBridgeTargetLeg"/>; a chain that implements neither cannot be bridged and there
+/// is no method on it to call. Lifecycle, ordering, idempotency, reconcile-before-retry and the
+/// fail-closed rules therefore live ONCE, here.
+/// </para>
+/// <para>Trusted mode: AZOA coordinates lock→mint directly across the two legs (custodial).
+/// Protocol mode: the protocol's proof artifact (a Wormhole VAA) gates settlement.</para>
+/// <para>Bridge transactions are persisted via IBridgeStore. Service is Scoped.</para>
 /// </summary>
 public class CrossChainBridgeService : ICrossChainBridgeService
 {
     private readonly IBlockchainProviderFactory _factory;
-    private readonly IWormholeAdapter _wormhole;
+    private readonly IBridgeProtocol<WormholeVAA> _protocol;
     private readonly WormholeConfig _wormholeConfig;
     private readonly IBridgeStore _bridgeStore;
     private readonly IIdempotencyStore _idempotency;
@@ -36,7 +43,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public CrossChainBridgeService(
         IBlockchainProviderFactory factory,
-        IWormholeAdapter wormhole,
+        IBridgeProtocol<WormholeVAA> protocol,
         IOptions<WormholeConfig> wormholeConfig,
         IBridgeStore bridgeStore,
         IIdempotencyStore idempotency,
@@ -46,22 +53,93 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         IRealValueKycGate realValueKycGate)
     {
         _factory = factory;
-        _wormhole = wormhole;
+        _protocol = protocol;
         _wormholeConfig = wormholeConfig.Value;
         _bridgeStore = bridgeStore;
         _idempotency = idempotency;
         _realValueKycGate = realValueKycGate;
         _logger = logger;
         _bridgeOptions = bridgeOptions.Value;
-        // Single config-driven network for provider resolution + row stamping.
-        _network = Enum.TryParse<ChainNetwork>(
-            config.GetValue<string>("Blockchain:DefaultNetwork"), ignoreCase: true, out var net)
-            ? net : ChainNetwork.Devnet;
+        // Single config-driven network for provider resolution + row stamping. An
+        // unparseable value THROWS rather than pinning the whole bridge to devnet
+        // (see ChainNetworkResolution).
+        _network = ChainNetworkResolution.FromConfiguration(config);
+    }
+
+    // ─── Capability resolution: the one gate, in one place ───
+
+    /// <summary>
+    /// Resolves the chain's bridge SOURCE capability. A chain that does not implement
+    /// <see cref="IBridgeSourceLeg"/> has no reviewed lock/release lifecycle and no primitive
+    /// to call, so absence IS the refusal — there is nothing here that could fabricate one.
+    /// The message names the real reason and deliberately never blames the signer: a missing
+    /// leg means an unbuilt lifecycle, not a missing key.
+    /// </summary>
+    private AZOAResult<IBridgeSourceLeg> ResolveSourceLeg(string chain)
+    {
+        var provider = _factory.GetProvider(chain, _network);
+        if (provider.TryGetModule<IBridgeSourceLeg>(out var leg) && leg is not null)
+            return Ok(leg);
+
+        return Error<IBridgeSourceLeg>(
+            $"{chain} cannot act as a bridge source: it implements no reviewed bridge source "
+            + "lifecycle (IBridgeSourceLeg), so no asset can be locked or released on it.");
+    }
+
+    /// <summary>
+    /// Resolves the chain's bridge TARGET capability. Absence is the refusal, for the same
+    /// structural reason as <see cref="ResolveSourceLeg"/>.
+    /// </summary>
+    private AZOAResult<IBridgeTargetLeg> ResolveTargetLeg(string chain)
+    {
+        var provider = _factory.GetProvider(chain, _network);
+        if (provider.TryGetModule<IBridgeTargetLeg>(out var leg) && leg is not null)
+            return Ok(leg);
+
+        return Error<IBridgeTargetLeg>(
+            $"{chain} cannot act as a bridge target: it implements no reviewed wrapped-asset "
+            + "lifecycle (IBridgeTargetLeg), so no wrapped value can be minted or burned on it.");
+    }
+
+    /// <summary>Re-types a leg-resolution refusal into the orchestrator's result type.</summary>
+    private static AZOAResult<BridgeTransactionResult> Refusal<TLeg>(AZOAResult<TLeg> refusal)
+        => new() { IsError = true, Message = refusal.Message, Exception = refusal.Exception };
+
+    /// <summary>
+    /// Narrows the caller's <see cref="RailAmount"/> to the 64-bit base-unit count this
+    /// orchestrator threads through its idempotency key, route binding and leg requests.
+    /// Returns null on success; otherwise a refusal. Never truncates: a silently wrapped
+    /// amount would bridge a different quantity than the caller authorised.
+    /// <para>D13: the persisted row is NO LONGER the constraint —
+    /// <c>bridge_tx.amount</c> is a string column and
+    /// <see cref="BridgeTransactionResult.Amount"/> is a <see cref="RailAmount"/>, so the
+    /// full range stores and round-trips. This refusal is kept deliberately as defence in
+    /// depth: nothing above the 64-bit line has been exercised end to end through the lock,
+    /// mint and reverse legs, and refusing is the only safe answer while that is true.</para>
+    /// </summary>
+    private AZOAResult<BridgeTransactionResult>? NarrowToPersistedAmount(
+        RailAmount amount, out ulong baseUnits)
+    {
+        baseUnits = 0;
+
+        if (!amount.IsChainDenominated)
+            return Error<BridgeTransactionResult>(
+                $"Cannot bridge an amount denominated in {amount.Dimension}: the bridge settles "
+                + "chain assets only. Refusing to reinterpret it as chain base units.");
+
+        if (!amount.TryToUInt64(out baseUnits))
+            return Error<BridgeTransactionResult>(
+                $"Cannot bridge {amount.ToBaseUnitString()} base units: it exceeds the 64-bit "
+                + "ceiling this bridge's settlement path has been proven for. The row itself "
+                + "can hold it; the lock/mint/reverse legs have not been exercised above that "
+                + "line. Refusing to truncate.");
+
+        return null;
     }
 
     public async Task<AZOAResult<BridgeTransactionResult>> InitiateBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, ulong amount = 1,
+        string recipientAddress, Guid userId, RailAmount amount,
         BridgeMode? mode = null, CancellationToken ct = default,
         string? clientIdempotencyKey = null)
     {
@@ -71,7 +149,9 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 return Error<BridgeTransactionResult>("Source and target chain are required");
             if (string.IsNullOrWhiteSpace(tokenId) || string.IsNullOrWhiteSpace(recipientAddress))
                 return Error<BridgeTransactionResult>("Token ID and recipient address are required");
-            if (amount == 0)
+            if (NarrowToPersistedAmount(amount, out var baseUnits) is { } unbridgeable)
+                return unbridgeable;
+            if (baseUnits == 0)
                 return Error<BridgeTransactionResult>("Amount must be positive");
 
             var simulatedRoute = IsSimulatedRoute(sourceChain, targetChain);
@@ -83,30 +163,28 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
             var resolvedMode = mode ?? _wormholeConfig.DefaultMode;
 
-            if (resolvedMode == BridgeMode.Wormhole)
+            if (resolvedMode == _protocol.Mode)
                 return Error<BridgeTransactionResult>(
-                    "Wormhole bridge mode is disabled: executable source-message sequence "
-                    + "derivation and launch-safe provider settlement are not implemented.");
+                    $"{_protocol.ProtocolName} bridge mode is disabled: executable source-message "
+                    + "sequence derivation and launch-safe provider settlement are not implemented.");
 
-            var sourceProvider = _factory.GetProvider(sourceChain, _network);
-            var targetProvider = _factory.GetProvider(targetChain, _network);
-            if (!sourceProvider.SupportsBridging)
-                return Error<BridgeTransactionResult>(
-                    $"{sourceChain} does not support the complete bridge lifecycle");
-            if (!targetProvider.SupportsBridging)
-                return Error<BridgeTransactionResult>(
-                    $"{targetChain} does not support the complete bridge lifecycle");
+            var sourceLeg = ResolveSourceLeg(sourceChain);
+            if (sourceLeg.IsError)
+                return Refusal(sourceLeg);
+            var targetLeg = ResolveTargetLeg(targetChain);
+            if (targetLeg.IsError)
+                return Refusal(targetLeg);
 
             if (!simulatedRoute)
             {
-                var kycFailure = await RequireCurrentKycApprovalAsync(avatarId, ct);
+                var kycFailure = await RequireCurrentKycApprovalAsync(userId, ct);
                 if (kycFailure is not null)
                     return kycFailure;
             }
 
             return await InitiateTrustedBridgeAsync(
-                sourceChain, targetChain, tokenId, recipientAddress, avatarId,
-                amount, ct, clientIdempotencyKey);
+                sourceChain, targetChain, tokenId, recipientAddress, userId,
+                amount, baseUnits, sourceLeg.Result!, targetLeg.Result!, ct, clientIdempotencyKey);
         }
         catch (Exception ex)
         {
@@ -116,14 +194,15 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> FetchVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
-        if (tx.Mode != BridgeMode.Wormhole)
-            return Error<BridgeTransactionResult>("FetchVAA is only available for Wormhole bridges");
+        if (tx.Mode != _protocol.Mode)
+            return Error<BridgeTransactionResult>(
+                $"FetchVAA is only available for {_protocol.ProtocolName} bridges");
 
         if (tx.Status != BridgeStatus.AwaitingVAA)
         {
@@ -143,27 +222,26 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         if (tx.WormholeEmitterChainId == null || tx.WormholeEmitterAddress == null || tx.WormholeSequence == null)
             return Error<BridgeTransactionResult>("Missing Wormhole emitter information");
 
-        var vaaResult = await _wormhole.FetchVAAAsync(
-            tx.WormholeEmitterChainId.Value,
-            tx.WormholeEmitterAddress,
-            tx.WormholeSequence.Value,
-            ct);
+        var handle = new BridgeMessageHandle(
+            tx.WormholeEmitterChainId.Value, tx.WormholeEmitterAddress, tx.WormholeSequence.Value);
 
-        if (vaaResult.IsError)
+        var vaaResult = await _protocol.FetchProofAsync(handle, ct);
+
+        if (vaaResult.IsError || vaaResult.Result is null)
         {
             await _bridgeStore.RecordVaaFetchErrorAsync(tx.Id, vaaResult.Message, ct);
             return Error<BridgeTransactionResult>($"VAA fetch failed: {vaaResult.Message}");
         }
 
-        var vaa = vaaResult.Result!;
-        // A VAA with no bytes or no digest is unusable proof — reject rather than
-        // persisting an empty/null proof field that later steps would trust.
-        if (string.IsNullOrWhiteSpace(vaa.VaaBytes) || string.IsNullOrWhiteSpace(vaa.Digest))
-            return Error<BridgeTransactionResult>(
-                "VAA fetch returned incomplete proof (missing VAA bytes or digest) — refusing to persist");
+        // The protocol decides what a usable proof is. Incomplete proof is rejected rather
+        // than persisted into a field later steps would trust.
+        var facts = _protocol.DescribeProof(vaaResult.Result);
+        if (facts.IsError || facts.Result is null)
+            return Error<BridgeTransactionResult>(facts.Message);
 
         bool saved = await _bridgeStore.SaveVaaFetchResultAsync(
-            tx.Id, vaa.VaaBytes, vaa.SignatureCount, vaa.Digest, BridgeStatus.VAAReady, ct);
+            tx.Id, facts.Result.ProofBytes, facts.Result.SignatureCount,
+            facts.Result.CanonicalDigest, BridgeStatus.VAAReady, ct);
 
         if (!saved)
         {
@@ -192,7 +270,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
         _logger.LogInformation(
             "VAA ready for bridge {Id}: seq={Sequence} sigs={Sigs}",
-            tx.Id, vaa.Sequence, vaa.SignatureCount);
+            tx.Id, handle.Sequence, facts.Result.SignatureCount);
 
         return Ok(tx, "VAA fetched — ready for redemption");
     }
@@ -200,19 +278,19 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     public async Task<AZOAResult<BridgeTransactionResult>> RedeemWithVAAAsync(
         string bridgeTransactionId, CancellationToken ct = default,
         string? clientIdempotencyKey = null,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
-        if (tx.Mode != BridgeMode.Wormhole)
-            return Error<BridgeTransactionResult>("Redeem is only available for Wormhole bridges");
-
-        var targetProvider = _factory.GetProvider(tx.TargetChain, _network);
-        if (!targetProvider.SupportsBridging)
+        if (tx.Mode != _protocol.Mode)
             return Error<BridgeTransactionResult>(
-                $"{tx.TargetChain} cannot safely settle wrapped redemption");
+                $"Redeem is only available for {_protocol.ProtocolName} bridges");
+
+        var targetLeg = ResolveTargetLeg(tx.TargetChain);
+        if (targetLeg.IsError)
+            return Refusal(targetLeg);
 
         if (string.IsNullOrWhiteSpace(tx.VaaBytes))
             return Error<BridgeTransactionResult>("No VAA available — call FetchVAA first");
@@ -226,7 +304,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
         if (!simulatedRoute)
         {
-            var kycFailure = await RequireCurrentKycApprovalAsync(tx.AvatarId, ct);
+            var kycFailure = await RequireCurrentKycApprovalAsync(tx.UserId, ct);
             if (kycFailure is not null)
                 return kycFailure;
         }
@@ -239,26 +317,23 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         // formula throws — a VAA whose bytes are unusable must be REJECTED with a
         // deterministic error, never minted, and this runs BEFORE the claim, the
         // atomic transition, and any on-chain call (no state mutated yet).
-        string vaaDigest;
-        try
+        var proofRecord = ProofRecordOf(tx);
+        var digestResult = _protocol.ComputeReplayDigest(proofRecord);
+        if (digestResult.IsError || string.IsNullOrWhiteSpace(digestResult.Result))
         {
-            vaaDigest = AZOA.WebAPI.Services.WormholeAdapter.ComputeVaaDigest(tx.VaaBytes);
+            _logger.LogError(
+                "Bridge {Id} redeem rejected: no canonical replay digest could be derived from the "
+                + "persisted proof; refusing to settle an unverifiable proof", tx.Id);
+            return Error<BridgeTransactionResult>(digestResult.Message);
         }
-        catch (Exception ex) when (ex is FormatException or ArgumentException)
-        {
-            _logger.LogError(ex,
-                "Bridge {Id} redeem rejected: VaaBytes is not valid base64 — cannot compute "
-                + "canonical replay digest; refusing to mint an unverifiable VAA", tx.Id);
-            return Error<BridgeTransactionResult>(
-                "VAA bytes are malformed (not valid base64) — redeem rejected, no mint performed");
-        }
-        // Client-supplied Idempotency-Key wins but is avatar-namespaced (two avatars
+        var vaaDigest = digestResult.Result!;
+        // Client-supplied Idempotency-Key wins but is user-namespaced (two users
         // sending the same key must never collide on one claim record); else the
         // deterministic (bridge, VAA) content key. Absence is dedup-safe (never random).
         var hasClientIdempotencyKey = !string.IsNullOrWhiteSpace(clientIdempotencyKey);
         var idempotencyKey = !hasClientIdempotencyKey
             ? $"bridge-redeem:{tx.Id}:{vaaDigest}"
-            : BuildClientBridgeKey(tx.AvatarId, clientIdempotencyKey!);
+            : BuildClientBridgeKey(tx.UserId, clientIdempotencyKey!);
         var operationType = hasClientIdempotencyKey
             ? BuildBoundOperationType("bridge-redeem", tx.Id, vaaDigest)
             : "bridge-redeem";
@@ -317,7 +392,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                                 "Stale redeem claim for bridge {Id}: resuming from VAAReady under existing claim",
                                 tx.Id);
                             return await RedeemFromVaaReadyAsync(
-                                tx, vaaDigest, idempotencyKey, ct);
+                                tx, targetLeg.Result!, vaaDigest, idempotencyKey, ct);
 
                         case BridgeStatus.Redeeming:
                         {
@@ -330,7 +405,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                                     "Stale redeem claim for bridge {Id}: no consumed-VAA row found, "
                                     + "resuming from consume step under existing claim", tx.Id);
                                 return await RedeemFromConsumeStepAsync(
-                                    tx, vaaDigest, idempotencyKey, ct);
+                                    tx, targetLeg.Result!, vaaDigest, idempotencyKey, ct);
                             }
                             // Consumed row exists: ambiguous — crash windows 4/5 (consume-row written,
                             // on-chain may or may not have landed). Fail closed; leave Redeeming for sweep.
@@ -352,8 +427,22 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             }
         }
 
-        return await RedeemFromVaaReadyAsync(tx, vaaDigest, idempotencyKey, ct);
+        return await RedeemFromVaaReadyAsync(tx, targetLeg.Result!, vaaDigest, idempotencyKey, ct);
     }
+
+    /// <summary>
+    /// Projects the persisted proof fields of a bridge row into the protocol-agnostic
+    /// <see cref="BridgeProofRecord"/>. This is the ONLY place the orchestrator touches
+    /// proof storage; the protocol owns what those bytes mean.
+    /// </summary>
+    private static BridgeProofRecord ProofRecordOf(BridgeTransactionResult tx)
+        => new(
+            tx.VaaBytes ?? string.Empty,
+            tx.VaaSignatureCount ?? 0,
+            new BridgeMessageHandle(
+                tx.WormholeEmitterChainId ?? 0,
+                tx.WormholeEmitterAddress ?? string.Empty,
+                tx.WormholeSequence ?? 0));
 
     /// <summary>
     /// Shared continuation: atomic VAAReady→Redeeming, then consume and redeem.
@@ -361,7 +450,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     /// Preserves the full exactly-once invariant: transition predicate is the gate.
     /// </summary>
     private async Task<AZOAResult<BridgeTransactionResult>> RedeemFromVaaReadyAsync(
-        BridgeTransactionResult tx, string vaaDigest, string idempotencyKey, CancellationToken ct)
+        BridgeTransactionResult tx, IBridgeTargetLeg targetLeg, string vaaDigest,
+        string idempotencyKey, CancellationToken ct)
     {
         // ── Step 2: atomic VAAReady → Redeeming. Persisted BEFORE any on-chain
         // call. The WHERE Status==VAAReady predicate makes this the single point
@@ -389,7 +479,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>(rejectMsg);
         }
 
-        return await RedeemFromConsumeStepAsync(tx, vaaDigest, idempotencyKey, ct);
+        return await RedeemFromConsumeStepAsync(tx, targetLeg, vaaDigest, idempotencyKey, ct);
     }
 
     /// <summary>
@@ -398,7 +488,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     /// resume path.
     /// </summary>
     private async Task<AZOAResult<BridgeTransactionResult>> RedeemFromConsumeStepAsync(
-        BridgeTransactionResult tx, string vaaDigest, string idempotencyKey, CancellationToken ct)
+        BridgeTransactionResult tx, IBridgeTargetLeg targetLeg, string vaaDigest,
+        string idempotencyKey, CancellationToken ct)
     {
         // ── Step 3: VAA replay ledger. Insert-before-redeem; a duplicate digest
         // means this VAA was already consumed elsewhere ⇒ reject, never mint. ──
@@ -451,32 +542,26 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>(replayMsg);
         }
 
-        // VaaBytes is proven non-null upstream (RedeemWithVAAAsync guards it and
-        // the canonical digest is computed from it); guard defensively so a
-        // stale-claim resume path can never construct a VAA with null bytes.
-        if (string.IsNullOrWhiteSpace(tx.VaaBytes))
+        // The persisted proof is rehydrated by the PROTOCOL, which owns what those bytes
+        // mean. A record it cannot rehydrate (e.g. missing bytes after a stale-claim resume)
+        // is rejected before any chain effect.
+        var proof = _protocol.RehydrateProof(ProofRecordOf(tx));
+        if (proof.IsError || proof.Result is null)
         {
-            await FailRedeemAsync(tx.Id, "VAA bytes missing at redeem step", ct);
-            await _idempotency.FailAsync(idempotencyKey, "VAA bytes missing at redeem step", ct);
-            return Error<BridgeTransactionResult>("VAA bytes missing at redeem step — redeem rejected, no mint performed");
+            await FailRedeemAsync(tx.Id, proof.Message, ct);
+            await _idempotency.FailAsync(idempotencyKey, proof.Message, ct);
+            return Error<BridgeTransactionResult>(
+                $"{proof.Message} — redeem rejected, no mint performed");
         }
-
-        var vaaObj = new WormholeVAA
-        {
-            VaaBytes = tx.VaaBytes,
-            EmitterChainId = tx.WormholeEmitterChainId ?? 0,
-            EmitterAddress = tx.WormholeEmitterAddress ?? "",
-            Sequence = tx.WormholeSequence ?? 0,
-            SignatureCount = tx.VaaSignatureCount ?? 0,
-            Version = 1
-        };
 
         // ── Step 4: the single irreversible on-chain effect. Reached only by the
         // claim winner that also won the atomic transition and passed replay. ──
-        var redeemResult = await _wormhole.RedeemTransferAsync(
-            tx.TargetChain, vaaObj, tx.TargetAddress, ct);
+        var redeemResult = await _protocol.SettleAsync(
+            new BridgeSettlementRequest<WormholeVAA>(
+                tx.TargetChain, proof.Result, tx.TargetAddress, targetLeg),
+            ct);
 
-        if (redeemResult.IsError)
+        if (redeemResult.IsError || redeemResult.Result is null)
         {
             var failMsg = redeemResult.Message;
             // Only stamp the idempotency record Failed if THIS call moved the
@@ -499,15 +584,15 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 $"Redemption failed (manual intervention may be required): {failMsg}");
         }
 
-        var redemption = redeemResult.Result!;
+        var redemption = redeemResult.Result;
 
         // ── Step 5: atomic Redeeming → Completed (only the Redeeming owner). ──
         int completed = await _bridgeStore.TryTransitionBridgeStatusAsync(
             tx.Id, BridgeStatus.Redeeming, BridgeStatus.Completed,
             new BridgeStatusMutation
             {
-                RedemptionTxHash = redemption.TxHash,
-                MintTxHash = redemption.TxHash,
+                RedemptionTxHash = redemption.TransactionId,
+                MintTxHash = redemption.TransactionId,
                 SetCompletedAtUtcNow = true,
             }, ct);
 
@@ -515,7 +600,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         {
             // We are the row that performed the Redeeming→Completed transition;
             // the bridge IS Completed ⇒ the idempotency record may record success.
-            await _idempotency.CompleteAsync(idempotencyKey, redemption.TxHash ?? string.Empty, ct);
+            await _idempotency.CompleteAsync(idempotencyKey, redemption.TransactionId ?? string.Empty, ct);
         }
         else
         {
@@ -527,7 +612,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             // Failed/needs-intervention row.
             await SettleIdempotencyToBridgeStateAsync(
                 tx.Id, idempotencyKey,
-                $"redeem tx {redemption.TxHash}", ct);
+                $"redeem tx {redemption.TransactionId}", ct);
         }
 
         // Re-fetch final state for the response.
@@ -536,10 +621,13 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>("Bridge transaction vanished after completion");
 
         _logger.LogInformation(
-            "Wormhole bridge completed: {Id} {Source}→{Target} redeemTx={TxHash}",
-            finalTx.Id, finalTx.SourceChain, finalTx.TargetChain, redemption.TxHash);
+            "{Protocol} bridge completed: {Id} {Source}→{Target} redeemTx={TxHash}",
+            _protocol.ProtocolName, finalTx.Id, finalTx.SourceChain, finalTx.TargetChain,
+            redemption.TransactionId);
 
-        return Ok(finalTx, $"Wormhole bridge completed trustlessly: {finalTx.SourceChain} → {finalTx.TargetChain}");
+        return Ok(finalTx,
+            $"{_protocol.ProtocolName} bridge completed trustlessly: "
+            + $"{finalTx.SourceChain} → {finalTx.TargetChain}");
     }
 
     /// <summary>
@@ -611,10 +699,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     public async Task<AZOAResult<BridgeTransactionResult>> ReverseBridgeAsync(
         string bridgeTransactionId, string sourceRecipientAddress, CancellationToken ct = default,
         string? clientIdempotencyKey = null,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         // Only a Completed bridge starts a fresh reversal. Refunded and Reversing
@@ -635,26 +723,30 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         if (string.IsNullOrWhiteSpace(sourceRecipientAddress))
             return Error<BridgeTransactionResult>("Source recipient address is required for reversal");
 
-        var targetProvider = _factory.GetProvider(tx.TargetChain, _network);
-        var sourceProvider = _factory.GetProvider(tx.SourceChain, _network);
-        if (!targetProvider.SupportsBridging || !sourceProvider.SupportsBridging)
-            return Error<BridgeTransactionResult>(
-                "Bridge reversal is unavailable because the route cannot prove both target burn and source release");
+        // A reversal needs BOTH capabilities: the target must be able to burn the wrapped
+        // asset and the source must be able to release the original. A route missing either
+        // leg cannot prove the pair, so it is refused before any claim is taken.
+        var targetLeg = ResolveTargetLeg(tx.TargetChain);
+        if (targetLeg.IsError)
+            return Refusal(targetLeg);
+        var sourceLeg = ResolveSourceLeg(tx.SourceChain);
+        if (sourceLeg.IsError)
+            return Refusal(sourceLeg);
 
         if (!simulatedRoute)
         {
-            var kycFailure = await RequireCurrentKycApprovalAsync(tx.AvatarId, ct);
+            var kycFailure = await RequireCurrentKycApprovalAsync(tx.UserId, ct);
             if (kycFailure is not null)
                 return kycFailure;
         }
 
         // The reversal itself is an irreversible chain effect (burn-wrapped) —
         // gate it so a retried/concurrent reverse cannot double-burn.
-        // Client Idempotency-Key wins but is avatar-namespaced; else deterministic key.
+        // Client Idempotency-Key wins but is user-namespaced; else deterministic key.
         var hasClientIdempotencyKey = !string.IsNullOrWhiteSpace(clientIdempotencyKey);
         var idempotencyKey = !hasClientIdempotencyKey
             ? $"bridge-reverse:{tx.Id}:{sourceRecipientAddress}"
-            : BuildClientBridgeKey(tx.AvatarId, clientIdempotencyKey!);
+            : BuildClientBridgeKey(tx.UserId, clientIdempotencyKey!);
         var operationType = hasClientIdempotencyKey
             ? BuildBoundOperationType("bridge-reverse", tx.Id, sourceRecipientAddress)
             : "bridge-reverse";
@@ -762,9 +854,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         {
             if (!string.IsNullOrWhiteSpace(tx.TargetTokenId))
             {
-                burnResult = await targetProvider.BurnWrappedAsync(
-                    tx.TargetTokenId!, tx.Amount, tx.SourceChain,
-                    sourceRecipientAddress, tx.TargetAddress, ct);
+                burnResult = await targetLeg.Result!.BurnWrappedAsync(
+                    new BridgeBurnRequest(
+                        tx.TargetTokenId!, tx.Amount, tx.SourceChain,
+                        sourceRecipientAddress, tx.TargetAddress),
+                    ct);
             }
             else
             {
@@ -804,8 +898,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 return Error<BridgeTransactionResult>(missingCustodyError);
             }
 
-            var releaseResult = await sourceProvider.ReleaseFromBridgeAsync(
-                tx.SourceTokenId, tx.SourceAddress, tx.Amount, sourceRecipientAddress, ct);
+            var releaseResult = await sourceLeg.Result!.ReleaseAsync(
+                new BridgeReleaseRequest(
+                    tx.SourceTokenId, tx.SourceAddress, tx.Amount,
+                    sourceRecipientAddress),
+                ct);
 
             if (releaseResult.IsError || string.IsNullOrWhiteSpace(releaseResult.Result))
             {
@@ -872,9 +969,9 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     public async Task<AZOAResult<IEnumerable<BridgeTransactionResult>>> GetBridgeHistoryAsync(
-        Guid avatarId, CancellationToken ct = default)
+        Guid userId, CancellationToken ct = default)
     {
-        var history = await _bridgeStore.GetBridgeHistoryAsync(avatarId, descending: true, ct);
+        var history = await _bridgeStore.GetBridgeHistoryAsync(userId, descending: true, ct);
 
         return Ok<IEnumerable<BridgeTransactionResult>>(
             history, $"Retrieved {history.Count} bridge transactions");
@@ -892,6 +989,12 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             {
                 var src = providers[i];
                 var tgt = providers[j];
+                // A route is enabled exactly when the source declares the source capability
+                // and the target declares the target capability. Direction asymmetry is
+                // expressible here for the first time: a chain that is a proven source but
+                // not a target now advertises outbound routes only.
+                var routeEnabled = src.TryGetModule<IBridgeSourceLeg>(out _)
+                    && tgt.TryGetModule<IBridgeTargetLeg>(out _);
                 // Skip same-provider self-routes EXCEPT the simulated self-route:
                 // Simulated→Simulated is an always-available sim-only lane and must
                 // be emitted so callers can move test value while real value is off.
@@ -904,7 +1007,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 {
                     SourceChain = src.ChainType,
                     TargetChain = tgt.ChainType,
-                    IsEnabled = src.SupportsBridging && tgt.SupportsBridging,
+                    IsEnabled = routeEnabled,
                     EstimatedTime = wormholeSupported ? "2-15 minutes (Wormhole)" : "1-5 minutes (Trusted)",
                     SupportedAssetTypes = new List<string> { "Native", "SPL/ASA", "NFT" },
                     MinAmount = "1",
@@ -913,9 +1016,9 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                         : "Gas fees on source and target chain",
                     AvailableModes = modes,
                     WormholeSupported = wormholeSupported,
-                    WormholeSourceChainId = _wormhole.GetWormholeChainId(src.ChainType),
-                    WormholeTargetChainId = _wormhole.GetWormholeChainId(tgt.ChainType),
-                    RealValueEnabled = src.SupportsBridging && tgt.SupportsBridging
+                    WormholeSourceChainId = _protocol.GetProtocolChainId(src.ChainType),
+                    WormholeTargetChainId = _protocol.GetProtocolChainId(tgt.ChainType),
+                    RealValueEnabled = routeEnabled
                         && (_bridgeOptions.RealValueEnabled || IsSimulatedRoute(src.ChainType, tgt.ChainType))
                 });
             }
@@ -926,10 +1029,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     public async Task<AZOAResult<BridgeTransactionResult>> GetBridgeStatusAsync(
         string bridgeTransactionId, CancellationToken ct = default,
-        Guid? callerAvatarId = null)
+        Guid? callerUserId = null)
     {
         var tx = await _bridgeStore.GetBridgeAsync(bridgeTransactionId, ct);
-        if (tx == null || !CallerOwns(tx, callerAvatarId))
+        if (tx == null || !CallerOwns(tx, callerUserId))
             return Error<BridgeTransactionResult>("Bridge transaction not found");
 
         return Ok(tx, $"Bridge status: {tx.Status} (mode: {tx.Mode})");
@@ -937,36 +1040,29 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
     /// <summary>
     /// IDOR guard: internal callers pass null (no scoping); an untrusted caller
-    /// passes its authenticated avatar id and may only touch its own rows. A
+    /// passes its authenticated user id and may only touch its own rows. A
     /// mismatch is surfaced as "not found" (never a distinct 403) so bridge-id
-    /// existence is not leaked across avatars.
+    /// existence is not leaked across users.
     /// </summary>
-    private static bool CallerOwns(BridgeTransactionResult tx, Guid? callerAvatarId)
-        => !callerAvatarId.HasValue || tx.AvatarId == callerAvatarId.Value;
+    private static bool CallerOwns(BridgeTransactionResult tx, Guid? callerUserId)
+        => !callerUserId.HasValue || tx.UserId == callerUserId.Value;
 
     // ─── Private: Trusted (custodial) flow ───
 
     private async Task<AZOAResult<BridgeTransactionResult>> InitiateTrustedBridgeAsync(
         string sourceChain, string targetChain, string tokenId,
-        string recipientAddress, Guid avatarId, ulong amount,
+        string recipientAddress, Guid userId, RailAmount amount, ulong baseUnits,
+        IBridgeSourceLeg sourceLeg, IBridgeTargetLeg targetLeg,
         CancellationToken ct, string? clientIdempotencyKey = null)
     {
-        var sourceProvider = _factory.GetProvider(sourceChain, _network);
-        var targetProvider = _factory.GetProvider(targetChain, _network);
-
-        if (!sourceProvider.SupportsBridging)
-            return Error<BridgeTransactionResult>($"{sourceChain} does not support bridging");
-        if (!targetProvider.SupportsBridging)
-            return Error<BridgeTransactionResult>($"{targetChain} does not support bridging");
-
         // Deterministic idempotency key for the trusted lock→mint pair: identical
-        // bridge requests (same avatar/route/token/recipient/amount) collapse to
+        // bridge requests (same user/route/token/recipient/amount) collapse to
         // a single irreversible chain effect under duplicate/concurrent calls.
-        // Client Idempotency-Key wins but is avatar-namespaced; else the deterministic key.
+        // Client Idempotency-Key wins but is user-namespaced; else the deterministic key.
         var hasClientIdempotencyKey = !string.IsNullOrWhiteSpace(clientIdempotencyKey);
         var idempotencyKey = !hasClientIdempotencyKey
-            ? $"bridge-trusted:{avatarId:N}:{sourceChain}:{targetChain}:{tokenId}:{recipientAddress}:{amount}"
-            : BuildClientBridgeKey(avatarId, clientIdempotencyKey!);
+            ? $"bridge-trusted:{userId:N}:{sourceChain}:{targetChain}:{tokenId}:{recipientAddress}:{baseUnits}"
+            : BuildClientBridgeKey(userId, clientIdempotencyKey!);
         var operationType = hasClientIdempotencyKey
             ? BuildBoundOperationType(
                 "bridge-trusted",
@@ -974,7 +1070,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 targetChain,
                 tokenId,
                 recipientAddress,
-                amount.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                baseUnits.ToString(System.Globalization.CultureInfo.InvariantCulture))
             : "bridge-trusted";
 
         var bridgeVault = GetBridgeVaultAddress(sourceChain, targetChain);
@@ -999,7 +1095,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             {
                 return MatchesTrustedRequest(
                         prior, sourceChain, targetChain, tokenId, recipientAddress,
-                        avatarId, amount, bridgeVault)
+                        userId, baseUnits, bridgeVault)
                     ? Ok(prior, $"Trusted bridge already completed (idempotent replay): {sourceChain} → {targetChain}")
                     : IdempotencyBindingError();
             }
@@ -1025,13 +1121,13 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         var candidate = new BridgeTransactionResult
         {
             Id = $"bridge_{IdempotencyReplay.ContentHash(idempotencyKey)[..32]}",
-            AvatarId = avatarId,
+            UserId = userId,
             SourceChain = sourceChain,
             TargetChain = targetChain,
             SourceTokenId = tokenId,
             SourceAddress = bridgeVault,
             TargetAddress = recipientAddress,
-            Amount = amount,
+            Amount = baseUnits,
             Mode = BridgeMode.Trusted,
             Status = BridgeStatus.Initiated,
             IdempotencyKey = idempotencyKey,
@@ -1048,8 +1144,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                 targetChain,
                 tokenId,
                 recipientAddress,
-                avatarId,
-                amount,
+                userId,
+                baseUnits,
                 bridgeVault))
         {
             return IdempotencyBindingError();
@@ -1110,7 +1206,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                     return Error<BridgeTransactionResult>(
                         "Trusted bridge is Locked without a durable source transaction hash; manual reconciliation is required.");
                 return await MintTrustedLockedBridgeAsync(
-                    bridgeTx, targetProvider, idempotencyKey, ct);
+                    bridgeTx, targetLeg, idempotencyKey, ct);
             case BridgeStatus.Locking:
                 return Error<BridgeTransactionResult>(
                     "Trusted bridge lock outcome is ambiguous after an interrupted attempt; reconciliation is required.");
@@ -1143,8 +1239,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                     : $"Trusted bridge could not reserve the source lock from state {current?.Status.ToString() ?? "MISSING"}.");
         }
 
-        var lockResult = await sourceProvider.LockForBridgeAsync(
-            tokenId, bridgeVault, amount, targetChain, recipientAddress, ct);
+        var lockResult = await sourceLeg.LockAsync(
+            new BridgeLockRequest(tokenId, bridgeVault, amount, targetChain, recipientAddress), ct);
 
         if (lockResult.IsError)
         {
@@ -1156,7 +1252,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>(lockErr);
         }
 
-        if (string.IsNullOrWhiteSpace(lockResult.Result))
+        if (lockResult.Result is null || string.IsNullOrWhiteSpace(lockResult.Result.TransactionId))
         {
             var lockErr = "Source chain lock returned no transaction hash";
             await _bridgeStore.TryTransitionBridgeStatusAsync(
@@ -1166,20 +1262,23 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>(lockErr);
         }
 
-        var lockPending = IsPendingSubmission(lockResult);
+        // The source leg reports pending-ness as an explicit flag, not a message marker:
+        // a broadcast-but-unconfirmed lock must never advance to the target mint.
+        var lockTxId = lockResult.Result.TransactionId;
+        var lockPending = lockResult.Result.PendingConfirmation;
         var lockPersisted = await _bridgeStore.TryTransitionBridgeStatusAsync(
             bridgeTx.Id, BridgeStatus.Locking,
             lockPending ? BridgeStatus.Locking : BridgeStatus.Locked,
             new BridgeStatusMutation
             {
-                LockTxHash = lockResult.Result,
+                LockTxHash = lockTxId,
                 SourceAddress = bridgeVault,
             }, ct);
 
         if (lockPersisted != 1)
         {
             var persistErr =
-                $"MANUAL INTERVENTION REQUIRED: source lock {lockResult.Result} was submitted "
+                $"MANUAL INTERVENTION REQUIRED: source lock {lockTxId} was submitted "
                 + "but its durable bridge state could not be persisted; target mint was not attempted.";
             await _idempotency.FailAsync(idempotencyKey, persistErr, ct);
             return Error<BridgeTransactionResult>(persistErr);
@@ -1189,7 +1288,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         {
             var pending = await _bridgeStore.GetBridgeAsync(bridgeTx.Id, ct);
             return Ok(pending!,
-                $"Source lock {lockResult.Result} submitted and awaiting positive chain confirmation; target mint not attempted");
+                $"Source lock {lockTxId} submitted and awaiting positive chain confirmation; target mint not attempted");
         }
 
         var locked = await _bridgeStore.GetBridgeAsync(bridgeTx.Id, ct);
@@ -1197,12 +1296,12 @@ public class CrossChainBridgeService : ICrossChainBridgeService
             return Error<BridgeTransactionResult>(
                 "Bridge transaction vanished after the source lock was persisted.");
 
-        return await MintTrustedLockedBridgeAsync(locked, targetProvider, idempotencyKey, ct);
+        return await MintTrustedLockedBridgeAsync(locked, targetLeg, idempotencyKey, ct);
     }
 
     private async Task<AZOAResult<BridgeTransactionResult>> MintTrustedLockedBridgeAsync(
         BridgeTransactionResult bridgeTx,
-        IBlockchainProvider targetProvider,
+        IBridgeTargetLeg targetLeg,
         string idempotencyKey,
         CancellationToken ct)
     {
@@ -1224,10 +1323,14 @@ public class CrossChainBridgeService : ICrossChainBridgeService
                     : $"Trusted bridge could not reserve the target mint from state {current?.Status.ToString() ?? "MISSING"}.");
         }
 
-        var mintResult = await targetProvider.MintWrappedAsync(
-            bridgeTx.SourceChain, bridgeTx.SourceTokenId,
-            $"bridge://{bridgeTx.SourceChain}/{bridgeTx.SourceTokenId}",
-            bridgeTx.Amount, bridgeTx.TargetAddress, ct);
+        var mintResult = await targetLeg.MintWrappedAsync(
+            new BridgeMintRequest(
+                bridgeTx.SourceChain,
+                bridgeTx.SourceTokenId,
+                $"bridge://{bridgeTx.SourceChain}/{bridgeTx.SourceTokenId}",
+                bridgeTx.Amount,
+                bridgeTx.TargetAddress),
+            ct);
 
         if (mintResult.IsError)
         {
@@ -1308,7 +1411,7 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         _logger.LogInformation(
             "Trusted bridge completed: {Id} {Source}→{Target} token={TokenId} amount={Amount}",
             bridgeTx.Id, bridgeTx.SourceChain, bridgeTx.TargetChain,
-            bridgeTx.SourceTokenId, bridgeTx.Amount);
+            bridgeTx.SourceTokenId, bridgeTx.Amount.ToBaseUnitString());
 
         return Ok(updated, $"Trusted bridge completed: {bridgeTx.SourceChain} → {bridgeTx.TargetChain}");
     }
@@ -1343,11 +1446,11 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         string targetChain,
         string tokenId,
         string recipientAddress,
-        Guid avatarId,
-        ulong amount,
+        Guid userId,
+        ulong baseUnits,
         string bridgeVault)
-        => transaction.AvatarId == avatarId
-           && transaction.Amount == amount
+        => transaction.UserId == userId
+           && transaction.Amount == baseUnits
            && transaction.Mode == BridgeMode.Trusted
            && transaction.Network == _network
            && string.Equals(transaction.SourceChain, sourceChain, StringComparison.Ordinal)
@@ -1356,8 +1459,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
            && string.Equals(transaction.TargetAddress, recipientAddress, StringComparison.Ordinal)
            && string.Equals(transaction.SourceAddress, bridgeVault, StringComparison.Ordinal);
 
-    private static string BuildClientBridgeKey(Guid avatarId, string clientKey)
-        => $"bridge-client:{avatarId:N}:{IdempotencyReplay.ContentHash(clientKey.Trim())}";
+    private static string BuildClientBridgeKey(Guid userId, string clientKey)
+        => $"bridge-client:{userId:N}:{IdempotencyReplay.ContentHash(clientKey.Trim())}";
 
     private static string BuildBoundOperationType(string operation, params string[] requestFields)
     {
@@ -1399,10 +1502,10 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     }
 
     private async Task<AZOAResult<BridgeTransactionResult>?> RequireCurrentKycApprovalAsync(
-        Guid avatarId,
+        Guid userId,
         CancellationToken ct)
     {
-        var gate = await _realValueKycGate.RequireCurrentApprovalAsync(avatarId, ct);
+        var gate = await _realValueKycGate.RequireCurrentApprovalAsync(userId, ct);
         if (!gate.IsError && gate.Result)
             return null;
 

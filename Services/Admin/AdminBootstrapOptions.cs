@@ -17,8 +17,8 @@ public sealed class AdminBootstrapOptions
     public const string SectionName = "AdminBootstrap";
 
     /// <summary>
-    /// The email of the avatar to promote to <c>operator:admin</c> on JWT mint.
-    /// Empty/unset means bootstrap is OFF — no avatar is ever stamped.
+    /// The email of the user to promote to <c>operator:admin</c> on JWT mint.
+    /// Empty/unset means bootstrap is OFF — no user is ever stamped.
     /// </summary>
     public string? SeedEmail { get; set; }
 

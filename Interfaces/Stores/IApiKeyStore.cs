@@ -27,16 +27,16 @@ public interface IApiKeyStore
     Task<ApiKey?> GetByHashAsync(string keyHash, CancellationToken ct);
 
     /// <summary>
-    /// List every key owned by an avatar, newest first. Includes revoked and
+    /// List every key owned by a user, newest first. Includes revoked and
     /// expired keys (the management UI shows them with a status badge).
     /// </summary>
-    Task<IReadOnlyList<ApiKey>> ListByAvatarAsync(Guid avatarId, CancellationToken ct);
+    Task<IReadOnlyList<ApiKey>> ListByUserAsync(Guid userId, CancellationToken ct);
 
     /// <summary>
-    /// Fetch one key by id, scoped to an avatar — returns <c>null</c> if the
-    /// key does not belong to that avatar (prevents cross-account access).
+    /// Fetch one key by id, scoped to a user — returns <c>null</c> if the
+    /// key does not belong to that user (prevents cross-account access).
     /// </summary>
-    Task<ApiKey?> GetByIdForAvatarAsync(Guid id, Guid avatarId, CancellationToken ct);
+    Task<ApiKey?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken ct);
 
     /// <summary>
     /// Persist a freshly-minted key. Throws if a row with the same
@@ -48,16 +48,16 @@ public interface IApiKeyStore
 
     /// <summary>
     /// Soft-delete a key: sets <c>IsActive = false</c> and <c>RevokedAt = revokedAt</c>.
-    /// Returns <c>true</c> when the row existed and belonged to the avatar,
+    /// Returns <c>true</c> when the row existed and belonged to the user,
     /// <c>false</c> otherwise.
     /// </summary>
-    Task<bool> RevokeAsync(Guid id, Guid avatarId, DateTime revokedAt, CancellationToken ct);
+    Task<bool> RevokeAsync(Guid id, Guid userId, DateTime revokedAt, CancellationToken ct);
 
     /// <summary>
     /// Hard-delete a key row. Returns <c>true</c> when the row existed and
-    /// belonged to the avatar.
+    /// belonged to the user.
     /// </summary>
-    Task<bool> DeleteAsync(Guid id, Guid avatarId, CancellationToken ct);
+    Task<bool> DeleteAsync(Guid id, Guid userId, CancellationToken ct);
 
     /// <summary>
     /// Update the <c>LastUsedAt</c> timestamp. Fire-and-forget — this method

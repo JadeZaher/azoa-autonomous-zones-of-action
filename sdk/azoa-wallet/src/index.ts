@@ -10,7 +10,7 @@ export {
   mapErr,
   SdkError,
   SdkErrorCode,
-  isQuestConflict,
+  isActionConflict,
   toHex,
   fromHex,
   concatBytes,
@@ -61,11 +61,11 @@ export type { TinymanConfig, AlgodClientConfig } from "./dex/tinyman.js";
 export type { JupiterConfig } from "./dex/jupiter.js";
 
 // API client
-export { AzoaApiClient, DAPP_ROLES } from "./api/index.js";
+export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./api/index.js";
 export type {
   AzoaApiConfig,
-  // avatar-dapp-rbac: assignable DApp role allowlist + avatar DTO
-  AvatarResponse,
+  // user-dapp-rbac: assignable DApp role allowlist + user DTO
+  UserResponse,
   DappRole,
   TenantKycStatus,
   TenantCustodialAccountStatus,
@@ -84,14 +84,14 @@ export type {
   PortfolioAsset,
   PortfolioAssetKind,
   NftHolding,
-  // Quest + Holon AssetType registry (final-hardening Phase C)
-  QuestResult,
-  // Quest invitations + request/approval (quest-invitations-approval)
-  QuestRunAccess,
-  QuestAccessRequestStatus,
-  QuestAccessRequest,
+  // Action + Holon AssetType registry (final-hardening Phase C)
+  ActionResult,
+  // Action invitations + request/approval (action-invitations-approval)
+  ActionRunAccess,
+  ActionAccessRequestStatus,
+  ActionAccessRequest,
   SetRunAccessRequest,
-  InviteAvatarRequest,
+  InviteUserRequest,
   RequestAccessBody,
   DecideAccessRequestBody,
   HolonTypeResult,
@@ -106,8 +106,8 @@ export type {
   DappSeriesResult,
   DappSeriesCreateParams,
   DappSeriesUpdateParams,
-  DappSeriesQuestResult,
-  DappSeriesAddQuestParams,
+  DappSeriesActionResult,
+  DappSeriesAddActionParams,
   // Admin surfaces: saga operator dead-letters + key rotation (final-hardening Wave6)
   SagaStepStatus,
   SagaDeadLetterListParams,
@@ -116,6 +116,78 @@ export type {
   SagaStepCancelResult,
   KeyRotationReport,
   KeyRotationParams,
+  // Credential revocation (CredentialController, D19) — parity only; rail not enabled server-side
+  CredentialRevokeParams,
+  CredentialRevokeStatus,
+  CredentialRevokeResult,
+  // Allocation (AllocationController, D4/D47)
+  AllocationRequest,
+  AllocationResult,
+  // Exchange (ExchangeController, W5.1/D50)
+  ExchangeDirection,
+  DeclaredExchangeRate,
+  ExchangeParams,
+  ExchangeReceiptState,
+  ExchangeReceipt,
+  // Hold rails (HoldController, D14 / W3.4)
+  HoldState,
+  HoldOpenParams,
+  HoldSettlementParams,
+  HoldChainParams,
+  HoldView,
+  // Fiat on-ramp checkout (FiatCheckoutController)
+  FiatCheckoutStatus,
+  FiatSettlementState,
+  FiatCheckoutPurpose,
+  HostedSessionCapabilities,
+  FiatCheckoutStartParams,
+  FiatCheckoutIntent,
+  // Fiat off-ramp / cash-out (FiatPayoutController)
+  CashOutQuote,
+  PayoutAccountStatus,
+  CashOutStartParams,
+  CashOutView,
+  // Platform token reserve/genesis read (PlatformTokenController). Operator-scoped.
+  PlatformTokenDefinition,
+  PlatformTokenSupply,
+  PlatformTokenState,
+  // Project treasury reads (ProjectTreasuryController). Operator-scoped.
+  ProjectTreasuryAccount,
+  ProjectTreasuryAsset,
+  ProjectTreasuryLedger,
+  ProjectTreasuryView,
+  // Node transparency reads (NodeTransparencyController). Public, anonymous.
+  NodeChainNetwork,
+  NodeFeeScheduleEntry,
+  NodeFeeSchedule,
+  NodeGovernanceParameters,
+  NodeTreasuryDestination,
+  NodeTransparencySnapshot,
+  NodeTransparencyPage,
+  NodeGovernanceAuditEntry,
+  NodeFeeAuditEntry,
+  NodeTreasuryAuditEntry,
+  NodePublicKey,
+  NodePreviousKeyContinuity,
+  NodeDescriptor,
+  NodeTransparencyHistoryCheckpoint,
+  NodeTransparencyHistoryEntry,
+  NodeTransparencyHistoryDocument,
+  // Fiat reversal types (FiatReversalOperatorController). Types only, no SDK methods.
+  FiatReversalKind,
+  FiatReversalStatus,
+  FiatReversalRecoveryPath,
+  FiatReversalView,
+  // Analytics read surface (AnalyticsController, D16)
+  AnalyticsQueryParams,
+  PricingStatus,
+  QuantityStatus,
+  ValueStampResponse,
+  TransactionHistoryEntry,
+  TransactionHistoryPage,
+  FiatValueResponse,
+  PositionSummary,
+  PositionsResponse,
 } from "./api/index.js";
 
 // High-level client
@@ -130,11 +202,11 @@ export type { AuthProfile } from "./client/index.js";
 export { PortfolioAggregator } from "./client/index.js";
 export type { ChainBalance, PortfolioSummary } from "./client/index.js";
 
-// Workflow SDK (workflow-sdk) — template authoring + the fluent quest() run driver
+// Workflow SDK (workflow-sdk) — template authoring + the fluent action() run driver
 export {
   WorkflowClient,
   WorkflowRunHandle,
-  createQuestFactory,
+  createActionFactory,
   nodeConfig,
   isAwaiting,
   isTerminal,
@@ -142,7 +214,7 @@ export {
   TERMINAL_STATUSES,
 } from "./workflow/index.js";
 export type {
-  QuestFactory,
+  ActionFactory,
   SuspendCallback,
   WorkflowRunStatus,
   WorkflowRunResult,

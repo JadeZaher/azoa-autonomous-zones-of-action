@@ -24,7 +24,7 @@ public interface ITenantConsentGate
     /// <summary>
     /// Returns a non-error result iff the signing action described by
     /// <paramref name="ctx"/> is permitted. For a tenant-driven action this requires
-    /// a live <c>ConsentGrant</c> (grantor=<see cref="SigningContext.GrantorAvatarId"/>,
+    /// a live <c>ConsentGrant</c> (grantor=<see cref="SigningContext.GrantorUserId"/>,
     /// tenant=<see cref="SigningContext.ActingTenantId"/>, scope ⊇
     /// <see cref="SigningContext.Scope"/>, not revoked, not expired at <c>now</c>).
     /// FAILS CLOSED: any missing/ambiguous input on a tenant-driven action denies.

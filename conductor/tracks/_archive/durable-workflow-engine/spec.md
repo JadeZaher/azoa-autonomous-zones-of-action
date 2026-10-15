@@ -4,20 +4,20 @@
 **`[x]` SHIPPED 2026-06-17.** Tier 0.5/1 — the CENTERPIECE enabler of the
 `workflow-engine` initiative (Track 2 of 4: value-path-wiring → **durable-workflow-engine**
 → economic-primitive-nodes → workflow-sdk). Direction sourced from
-`conductor/REVIEW-economic-substrate-2026-06-16.md` **Part C** (Quest execution-model
+`conductor/REVIEW-economic-substrate-2026-06-16.md` **Part C** (Action execution-model
 gap analysis).
 
 ### As-built closeout (for the dependent tracks)
 - **Mapping = Approach A (self-advancing handler).** A durable run is a saga
   instance; `CorrelationKey` = runId, each step's `StepName` = the node id. ONE
-  registered `ISagaDefinition` (`QuestWorkflowSagaDefinition`, the first real
+  registered `ISagaDefinition` (`ActionWorkflowSagaDefinition`, the first real
   saga consumer) whose `FindStep` is **type-uniform** (every node-id step
-  resolves to the single `SagaStep<QuestStepPayload>`) and whose
-  `NextForwardStep` is always `null` — the handler (`QuestNodeStepHandler`)
+  resolves to the single `SagaStep<ActionStepPayload>`) and whose
+  `NextForwardStep` is always `null` — the handler (`ActionNodeStepHandler`)
   computes the next node from the DAG's outgoing Control edges and enqueues it
   via `ISagaStore.EnqueueNextStepAsync`. Started via `ISagaStore.EnqueueAsync`
   directly (NOT `SagaCoordinator`, whose `is SagaDefinition` cast rejects this
-  definition). Files: `Services/Quest/Workflow/*`.
+  definition). Files: `Services/Actions/Workflow/*`.
 - **Suspend/signal/timer = the one saga-layer extension this track delivered.**
   `StepStatus.Parked` + `SagaStepRecord.GateId`/`gate_id`;
   `StepResult.Parked(gateId, resumeAt?)`; `ISagaStore.ParkStepAsync` /
@@ -32,14 +32,14 @@ gap analysis).
   node already ran is an idempotent replay (re-drives advancement, never re-runs
   the node).
 - **Compensation owns the terminal verdict.** The node-step ALWAYS declares
-  `CompensationStepName = quest-compensate`; a failing node does NOT pre-empt a
+  `CompensationStepName = action-compensate`; a failing node does NOT pre-empt a
   terminal `Failed` — the run stays in flight through retries, then
-  `QuestCompensateStepHandler` (a per-RUN refund driven by executed-node
-  history; distinct payload type `QuestCompensatePayload` for unambiguous DI)
+  `ActionCompensateStepHandler` (a per-RUN refund driven by executed-node
+  history; distinct payload type `ActionCompensatePayload` for unambiguous DI)
   settles it **`Cancelled`** (the worked example's refund-on-cancel).
-- **Endpoints (Swagger):** `POST quest/{id}/start-workflow`,
-  `POST quest/runs/{runId}/advance` (the `step(nodeId)` primitive),
-  `POST quest/runs/{runId}/signal`. `POST {id}/execute` kept for fully-auto DAGs.
+- **Endpoints (Swagger):** `POST action/{id}/start-workflow`,
+  `POST action/runs/{runId}/advance` (the `step(nodeId)` primitive),
+  `POST action/runs/{runId}/signal`. `POST {id}/execute` kept for fully-auto DAGs.
 - **Advancement marker** lives in node `Config._workflow`
   (`{advance: auto|manual|gated|timer, gateId, resumeInSeconds}`) — no schema
   migration. Default `auto`; absent marker is back-compatible.
@@ -48,25 +48,25 @@ gap analysis).
   fire-timers clause); (2) a signal un-park/payload-stamp race silently
   re-parked the run — fixed by folding the payload write into `TrySignalAsync`'s
   single atomic conditional UPDATE.
-- **Proof:** `tests/.../Quest/Workflow/DurableWorkflowEngineTests.cs` (5 cases
+- **Proof:** `tests/.../Actions/Workflow/DurableWorkflowEngineTests.cs` (5 cases
   incl. suspend→**dispose processor+scope**→fresh processor over the same
   rows→signal→resume→Succeeded, and failure→compensate→Cancelled), over a new
   `InMemorySagaStore` test double. 722/722 unit tests green; 0 new warnings.
 - **Open follow-ups (out of this track):** real predicate eval (`GateCheck`) +
   the value-moving node handlers are `economic-primitive-nodes`; the TS
-  `quest().step()/.signal()` surface is `workflow-sdk`; if compensation itself
+  `action().step()/.signal()` surface is `workflow-sdk`; if compensation itself
   dead-letters the run stays `Running` for an operator (no terminal `Failed`
   projection on dead-letter yet); `StartWorkflowRunAsync` is a non-atomic
   multi-write (a crash mid-create leaves an inert Pending run — clean failure,
   not a wedge).
 
 ## Goal
-Make the Quest DAG a **durable, step-addressable, consumer-driven workflow
+Make the Action DAG a **durable, step-addressable, consumer-driven workflow
 engine** so an external consumer (ArdaNova) can push an actor (player / user /
-tenant) through a multi-phase process it *designed once* (a `QuestTemplate`) and
+tenant) through a multi-phase process it *designed once* (a `ActionTemplate`) and
 runs many actors through. A run must be able to **PAUSE between nodes**, survive
 a process restart, and be **advanced externally** — the user's literal pseudocode
-`quest(holonStep1).step(holonStep2B)`.
+`action(holonStep1).step(holonStep2B)`.
 
 The engine supports a **HYBRID** advancement model (confirmed with the user):
 
@@ -96,29 +96,29 @@ capabilities this track delivers. The swap / grant / transfer *nodes* are the
 
 ## Background — the core problem (file:line evidence)
 
-`QuestManager.ExecuteAsync` runs the **entire DAG synchronously in one HTTP
+`ActionManager.ExecuteAsync` runs the **entire DAG synchronously in one HTTP
 call** and **cannot pause between nodes**:
 
-- The run is created, every node's `QuestNodeExecution` is pre-created Pending
-  (`QuestManager.cs:216-242`), then a single `foreach` walks
-  `quest.Nodes.OrderBy(n => n.ExecutionOrder)` to completion in-process
-  (`QuestManager.cs:251-369`). The method returns only once every node is
-  terminal (`QuestManager.cs:371-379`). There is **no suspension point** — no
+- The run is created, every node's `ActionNodeExecution` is pre-created Pending
+  (`ActionManager.cs:216-242`), then a single `foreach` walks
+  `action.Nodes.OrderBy(n => n.ExecutionOrder)` to completion in-process
+  (`ActionManager.cs:251-369`). The method returns only once every node is
+  terminal (`ActionManager.cs:371-379`). There is **no suspension point** — no
   way to express "vest over steps", "HOLD until settlement", or "wait for an
   external phase-met signal".
-- **Edge conditions are dead data.** `QuestEdge.Condition` is a `string?`
-  (`QuestEdge.cs:13-16`) that is stored and round-tripped but **only read as a
+- **Edge conditions are dead data.** `ActionEdge.Condition` is a `string?`
+  (`ActionEdge.cs:13-16`) that is stored and round-tripped but **only read as a
   presence flag** for failed-predecessor skipping
-  (`QuestManager.cs:266: if (edge.EdgeType == Conditional && !string.IsNullOrEmpty(edge.Condition))`).
+  (`ActionManager.cs:266: if (edge.EdgeType == Conditional && !string.IsNullOrEmpty(edge.Condition))`).
   It is never parsed or evaluated. `Condition` node handler is a no-op
   (REVIEW Part C #1).
 - **Supervisor hooks anticipate externally-driven runs but not per-node
-  resume.** `MarkRunCompletedAsync` (`QuestManager.cs:1138`) and
-  `MarkRunFailedAsync` (`QuestManager.cs:575`) let an *external* supervisor
-  close a run, and `ForkAsync` (`QuestManager.cs:465`) already cancels in-flight
+  resume.** `MarkRunCompletedAsync` (`ActionManager.cs:1138`) and
+  `MarkRunFailedAsync` (`ActionManager.cs:575`) let an *external* supervisor
+  close a run, and `ForkAsync` (`ActionManager.cs:465`) already cancels in-flight
   node executions — but there is **no "advance run from node N" resume API**.
-- `QuestRunStatus` has no suspended state: `Pending / Running / Succeeded /
-  Failed / Forked / Cancelled` (`QuestRunStatus.cs:15-38`).
+- `ActionRunStatus` has no suspended state: `Pending / Running / Succeeded /
+  Failed / Forked / Cancelled` (`ActionRunStatus.cs:15-38`).
 
 REVIEW Part C #3 names the fix exactly: *"a node that suspends the run + a
 per-node advance run from node N resume API … The pending durable-saga
@@ -128,13 +128,13 @@ M2 (multi-step allocation compensation) wants."*
 ## The headline architectural decision — build ON the saga layer (see plan.md D1)
 
 **Recommendation: build the durable/suspendable engine ON TOP OF the existing
-saga layer, NOT a new orchestration runtime.** A durable Quest run maps onto a
+saga layer, NOT a new orchestration runtime.** A durable action run maps onto a
 saga instance with near-zero new orchestration vocabulary:
 
 | Workflow concept | Saga concept (already built) |
 |---|---|
-| A durable Quest run | A saga instance (one `CorrelationKey`) |
-| A `QuestNode` | A forward `ISagaStep` |
+| A durable action run | A saga instance (one `CorrelationKey`) |
+| A `ActionNode` | A forward `ISagaStep` |
 | Node advancement | Step dispatch (`SagaProcessor.OnStepSucceededAsync`) |
 | A gate / wait node | A step that **PARKS** until a signal / timer |
 | Refund-on-cancel | A declared **compensation step** |
@@ -142,7 +142,7 @@ saga instance with near-zero new orchestration vocabulary:
 | Crash-safe resume | Lease reclaim of an `InProgress` row |
 
 This is not speculative: `durable-saga-orchestration/spec.md:14` already **names
-"quest step dispatch"** as an intended saga consumer. This track *realizes* that
+"action step dispatch"** as an intended saga consumer. This track *realizes* that
 consumer.
 
 **Current real state of the saga layer (verified, file:line):** the saga
@@ -188,11 +188,11 @@ adoption / generalization) to land.
 
 ## Scope `[x]`
 
-- `[x]` **Run lifecycle = durable + suspendable.** Extend `QuestRunStatus`
-  (`QuestRunStatus.cs`) with `Suspended`, `AwaitingSignal`, `AwaitingTimer`. A
+- `[x]` **Run lifecycle = durable + suspendable.** Extend `ActionRunStatus`
+  (`ActionRunStatus.cs`) with `Suspended`, `AwaitingSignal`, `AwaitingTimer`. A
   suspended run persists a **resume point** (which node, what it is waiting on,
   and the next-hop semantics). Survives process restart (durable via the
-  `saga_steps` row + the `QuestRun` row; no in-memory continuation).
+  `saga_steps` row + the `ActionRun` row; no in-memory continuation).
 - `[x]` **Suspend/signal in the saga step-machine.** Add a `Parked` (a.k.a.
   `AwaitingSignal`) `StepStatus` and a `SignalAsync(correlationKey, gateId,
   payload)` path that atomically un-parks a parked step (conditional UPDATE,
@@ -200,7 +200,7 @@ adoption / generalization) to land.
   is a parked step whose `NextRunAt` is set forward; the existing
   `GetDueStepIdsAsync` fires it. **This is the saga-layer extension this track
   owns** (see D1, D2). No new orchestration runtime.
-- `[x]` **Step-addressable advancement API** on `QuestController`:
+- `[x]` **Step-addressable advancement API** on `ActionController`:
   - `advance(runId, fromNodeId)` — the `step(nodeId)` primitive: resume a
     manual-advance run from a specific node into its successor(s).
   - `signal(runId, gateId, payload)` — deliver an external signal to a parked
@@ -208,41 +208,41 @@ adoption / generalization) to land.
   - a wait/timer node fires via the existing saga trigger (no new endpoint).
   These are distinct from the all-at-once `ExecuteAsync` — **decide** whether to
   keep `ExecuteAsync` for fully-`auto` DAGs or deprecate it (D3). The
-  `MarkRunCompleted` / `MarkRunFailed` supervisor hooks (`QuestManager.cs:1138`,
+  `MarkRunCompleted` / `MarkRunFailed` supervisor hooks (`ActionManager.cs:1138`,
   `:575`) are the precedent for externally-driven runs and are reused, not
   rebuilt.
 - `[x]` **Edge/advancement semantics.** A node (or its outgoing edge) declares
   whether progression is `manual-advance`, `auto`, or `gated` (signal/timer).
-  Reuse `QuestEdge` (`SourceNodeId` / `TargetNodeId` / `Condition` / `EdgeType`,
-  `QuestEdge.cs`). This track makes **suspension / advancement** real; it does
+  Reuse `ActionEdge` (`SourceNodeId` / `TargetNodeId` / `Condition` / `EdgeType`,
+  `ActionEdge.cs`). This track makes **suspension / advancement** real; it does
   **NOT** build the predicate evaluator inside a gate node — that is the
   `economic-primitive-nodes` track's `GateCheck` handler (cross-referenced;
   REVIEW Part C #1).
 - `[x]` **Consumer-designed shapes via templates.** Runs are instantiated from a
-  `QuestTemplate` (`QuestInstantiator` + `{{param}}` substitution already exist —
+  `ActionTemplate` (`ActionInstantiator` + `{{param}}` substitution already exist —
   REVIEW Part C "Already there"). ArdaNova designs the workflow shape once
   (template), parameterizes per-actor, and runs many actors through the durable
   engine. The HOLD-until-or-compensate and the on-cancel/on-continue branch are
   the load-bearing capabilities this track proves end-to-end.
 - `[x]` **Exactly-once + crash-safe.** Every advancement claims via the existing
-  G2 conditional-UPDATE / idempotency primitive (`QuestManager` already uses
-  `TryClaimPendingAsync`, `QuestManager.cs:304`; the saga store uses
+  G2 conditional-UPDATE / idempotency primitive (`ActionManager` already uses
+  `TryClaimPendingAsync`, `ActionManager.cs:304`; the saga store uses
   `TryClaimDueStepAsync`). A crash mid-advance leaves the run **resumable, not
   poisoned**. This also absorbs REVIEW Part-A **M2** (multi-step allocation
   compensation = a declared saga compensation step).
-- `[x]` **Cross-tenant / ownership.** Runs are avatar-scoped via the existing
-  `GetAvatarIdFromClaims` + `LoadOwnedRunAsync` precedent
-  (`QuestManager.cs:467`). A tenant advancing a child's run uses the
+- `[x]` **Cross-tenant / ownership.** Runs are user-scoped via the existing
+  `GetUserIdFromClaims` + `LoadOwnedRunAsync` precedent
+  (`ActionManager.cs:467`). A tenant advancing a child's run uses the
   `tenant-onboarding` authorization. Integrate the existing auth — do **not**
   rebuild it.
 
 ## Acceptance (house rules)
 
-- `[x]` `QuestRunStatus` extended with `Suspended` / `AwaitingSignal` /
+- `[x]` `ActionRunStatus` extended with `Suspended` / `AwaitingSignal` /
   `AwaitingTimer`; persisted (SurrealDB sole engine; schema regen if a typed
   column changes).
 - `[x]` `advance(runId, fromNodeId)` and `signal(runId, gateId, payload)`
-  endpoints exist on `QuestController`, avatar-scoped, and appear in **Swagger**.
+  endpoints exist on `ActionController`, user-scoped, and appear in **Swagger**.
 - `[x]` The saga step-machine gains a **parked/awaiting** state and a signal path
   with the same G2 single-winner discipline (no double-resume under concurrent
   signals).
@@ -251,7 +251,7 @@ adoption / generalization) to land.
   rows) → **RESUMES** on `signal(...)` → and runs a **compensation step on
   cancel** (the refund-on-cancel of the worked example).
 - `[x]` Zero-warning `dotnet build`.
-- `[x]` `dotnet test` green, including: all existing **quest** tests, all
+- `[x]` `dotnet test` green, including: all existing **action** tests, all
   **`api-safety-hardening`** safety tests (exactly-once / replay /
   reconciliation), and the new suspend/restart/resume/compensate test.
 - `[x]` Commits follow `[durable-workflow-engine] <verb> <subject>`.
@@ -263,7 +263,7 @@ adoption / generalization) to land.
   **`economic-primitive-nodes`** track. This track builds the **SUSPEND /
   RESUME machinery + signal plumbing**; the predicate evaluator and the
   value-moving handlers are *that* track. (REVIEW Part C #1, #2.)
-- **The TS SDK `quest()` / `step()` / `signal()` surface** is the
+- **The TS SDK `action()` / `step()` / `signal()` surface** is the
   **`workflow-sdk`** track (Track 4). This track exposes the HTTP endpoints the
   SDK wraps.
 - **Value-path broadcast / custody fixes** (REVIEW Part-A C1/C2/H1–H4) are the
@@ -277,7 +277,7 @@ adoption / generalization) to land.
 - **No broker / external infra.** Same homebake stance as
   `durable-saga-orchestration` (poll now → SurrealDB LIVE later).
 - **No fork-merge, no inter-iteration cycles** — inherited non-goals from
-  `quest-temporal-fork-model`.
+  `action-temporal-fork-model`.
 
 ## Tier
 **Tier 0.5 / 1** — the centerpiece enabler. It unblocks the economic workflow
@@ -287,8 +287,8 @@ Part-A M2 (allocation compensation).
 
 ## Dependencies
 
-- **`quest-temporal-fork-model`** ✓ shipped — provides the definition/runtime
-  split (`QuestRun` / `QuestNodeExecution`) and the G2 per-node claim this track
+- **`action-temporal-fork-model`** ✓ shipped — provides the definition/runtime
+  split (`ActionRun` / `ActionNodeExecution`) and the G2 per-node claim this track
   resumes against.
 - **`durable-saga-orchestration`** — **SOFT** dependency. The saga *foundation*
   (`Services/Sagas/*`, `SurrealSagaStore`, `saga_steps` schema, DI at
@@ -308,7 +308,7 @@ Part-A M2 (allocation compensation).
 
 ## House rules (carried into Acceptance)
 Zero-warning build; `dotnet test` green incl. the suspend→restart→resume→
-compensate test; existing quest + `api-safety-hardening` tests stay green;
-SurrealDB sole engine; new `QuestRunStatus` values persisted; Swagger lists the
+compensate test; existing action + `api-safety-hardening` tests stay green;
+SurrealDB sole engine; new `ActionRunStatus` values persisted; Swagger lists the
 new advancement endpoints; one commit per `[durable-workflow-engine] <verb>
 <subject>`.

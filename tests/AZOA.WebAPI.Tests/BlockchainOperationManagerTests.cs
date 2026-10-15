@@ -28,12 +28,12 @@ public class BlockchainOperationManagerTests
 
         _algoProvider = new Mock<IBlockchainProvider>();
         _algoProvider.Setup(p => p.ChainType).Returns("Algorand");
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_tx_123" });
 
         _solProvider = new Mock<IBlockchainProvider>();
         _solProvider.Setup(p => p.ChainType).Returns("Solana");
-        _solProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _solProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                     .ReturnsAsync(new AZOAResult<string> { Result = "sol_tx_456" });
 
         var config = BuildEnabledProviderConfig();
@@ -107,7 +107,7 @@ public class BlockchainOperationManagerTests
         var calls = 0;
         _algoProvider.Setup(p => p.MintAsync(
                 It.IsAny<string>(),
-                It.IsAny<ulong>(),
+                It.IsAny<RailAmount>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<SigningContext?>(),
@@ -136,7 +136,7 @@ public class BlockchainOperationManagerTests
     [Fact]
     public async Task ExecuteAsync_WithChainFailure_ShouldSetFailedStatus()
     {
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { IsError = true, Message = "Insufficient funds" });
 
         var operation = new BlockchainOperation
@@ -163,7 +163,7 @@ public class BlockchainOperationManagerTests
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
 
         var result = await _manager.BuildAndExecuteAsync(builder =>
-            builder.ForAvatar(Guid.NewGuid())
+            builder.ForUser(Guid.NewGuid())
                    .Mint("ipfs://test", 1, "NFT")
                    .Build());
 
@@ -185,16 +185,16 @@ public class BlockchainOperationManagerTests
     }
 
     [Fact]
-    public async Task GetByAvatarAsync_ShouldFilterByAvatarId()
+    public async Task GetByUserAsync_ShouldFilterByUserId()
     {
-        var avatarId = Guid.NewGuid();
-        _store.Setup(p => p.GetByAvatarAsync(avatarId, It.IsAny<CancellationToken>()))
+        var userId = Guid.NewGuid();
+        _store.Setup(p => p.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IBlockchainOperation>>
                  {
-                     Result = new[] { new BlockchainOperation { AvatarId = avatarId } }
+                     Result = new[] { new BlockchainOperation { UserId = userId } }
                  });
 
-        var result = await _manager.GetByAvatarAsync(avatarId);
+        var result = await _manager.GetByUserAsync(userId);
 
         result.Result.Should().HaveCount(1);
     }
@@ -226,7 +226,7 @@ public class BlockchainOperationManagerTests
     {
         // Count real chain invocations.
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new AZOAResult<string> { Result = "algo_tx_DUP" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
@@ -272,7 +272,7 @@ public class BlockchainOperationManagerTests
     public async Task ExecuteAsync_IdenticalContentWithDistinctParentKeys_ExecutesBothEffects()
     {
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() =>
                      {
                          Interlocked.Increment(ref mintCalls);
@@ -303,7 +303,7 @@ public class BlockchainOperationManagerTests
     {
         const int concurrency = 16;
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new AZOAResult<string> { Result = "algo_tx_CONC" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
@@ -381,7 +381,7 @@ public class BlockchainOperationManagerTests
     public async Task ExecuteAsync_DifferentValueBearingParam_IsNotDeduped()
     {
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new AZOAResult<string> { Result = "algo_tx_X" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
@@ -418,14 +418,14 @@ public class BlockchainOperationManagerTests
     // under-allocation. Widening Amount to ulong keys off the true value.
     //
     // This drives the REAL DeriveIdempotencyKey path (no mocked ExecuteAsync): two
-    // distinct amounts both above int.MaxValue, same wallet/asset/avatar. Pre-fix:
+    // distinct amounts both above int.MaxValue, same wallet/asset/user. Pre-fix:
     // identical keys ⇒ ONE record, mintCalls == 1 (the bug). Post-fix: distinct keys
     // ⇒ TWO records, mintCalls == 2.
     [Fact]
     public async Task ExecuteAsync_DistinctLargeMintAmounts_AboveIntMaxValue_DeriveDistinctKeys()
     {
         var mintCalls = 0;
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(() => { Interlocked.Increment(ref mintCalls); return new AZOAResult<string> { Result = "algo_tx_BIG" }; });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
@@ -483,7 +483,7 @@ public class BlockchainOperationManagerTests
         // The provider broadcast succeeded but did not confirm in the poll window:
         // it returns a SUCCESS carrying the txId + the pending-confirmation marker.
         _algoProvider.Setup(p => p.MintAsync(
-                It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
@@ -531,7 +531,7 @@ public class BlockchainOperationManagerTests
         // "Requires client-side signing" message → AwaitingSignature). Such
         // an op was NOT broadcast server-side, so it must NOT be a terminal
         // Completed idempotency record (no false "done").
-        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
+        _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string>
                      {
                          IsError = false,

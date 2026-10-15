@@ -16,11 +16,11 @@ public sealed class FirstPartyCredentialBoundaryTests
             .Should().Contain("FirstPartyLogin");
 
     [Theory]
-    [InlineData(nameof(AvatarController.Update))]
-    [InlineData(nameof(AvatarController.Delete))]
-    [InlineData(nameof(AvatarController.LogoutEverywhere))]
-    public void AvatarOwnerMutations_RequireFirstPartyLogin(string action)
-        => PoliciesOn(typeof(AvatarController).GetMethod(action)!)
+    [InlineData(nameof(UserController.Update))]
+    [InlineData(nameof(UserController.Delete))]
+    [InlineData(nameof(UserController.LogoutEverywhere))]
+    public void UserOwnerMutations_RequireFirstPartyLogin(string action)
+        => PoliciesOn(typeof(UserController).GetMethod(action)!)
             .Should().Contain("FirstPartyLogin");
 
     [Fact]

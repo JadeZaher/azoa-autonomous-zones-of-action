@@ -47,7 +47,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Owning tenant — the per-tenant isolation key (H5). Resolves ONLY this tenant's registration + secret at delivery.")]
         [JsonPropertyName("tenant_id")]
-        [References(typeof(Avatar))]
+        [References(typeof(User))]
         public string TenantId { get; set; } = string.Empty;
 
         [FieldGroup("Which consent lifecycle transition this describes")]
@@ -61,10 +61,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [References(typeof(ConsentGrant))]
         public string GrantId { get; set; } = string.Empty;
 
-        [FieldGroup("Event payload — the grantor user's avatar")]
-        [JsonPropertyName("avatar_id")]
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [FieldGroup("Event payload — the grantor user's user")]
+        [JsonPropertyName("user_id")]
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("Event payload — scopes (CSV, mirrors consent_grant.scopes)")]
         [JsonPropertyName("scopes")]

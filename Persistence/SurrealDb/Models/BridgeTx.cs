@@ -22,7 +22,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [Index("bridge_tx_idempotency_key", Fields = new[] { "idempotency_key" }, Unique = true)]
     [Index("bridge_tx_lock_route", Fields = new[] { "source_chain", "lock_tx_hash", "target_chain" }, Unique = true)]
     [Index("bridge_tx_wormhole_vaa", Fields = new[] { "wormhole_emitter_chain_id", "wormhole_emitter_address", "wormhole_sequence" }, Unique = true)]
-    [Index("bridge_tx_avatar_id", Fields = new[] { "avatar_id" })]
+    [Index("bridge_tx_user_id", Fields = new[] { "user_id" })]
     [Index("bridge_tx_status", Fields = new[] { "status" })]
     public partial class BridgeTx : ISurrealRecord
     {
@@ -54,8 +54,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        [References(typeof(Avatar))]
-        public string AvatarId { get; set; } = string.Empty;
+        [References(typeof(User))]
+        public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("Route")]
         [Required(NotEmpty = true)]

@@ -51,7 +51,7 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         {
             var q = SurrealQuery
                 .Of("SELECT * FROM consent_audit WHERE tenant_id = $_tenant ORDER BY occurred_at DESC")
-                .WithParam("_tenant", SurrealRecordParam.Of("avatar", SurrealId.ToSurrealId(tenantId)));
+                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)));
             var rows = await _executor.QueryAsync<ConsentAuditPoco>(q, ct);
             return new AZOAResult<IEnumerable<ConsentAuditEntry>>
             {
@@ -71,8 +71,8 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         Id         = SurrealId.ToSurrealId(e.Id),
         Action     = e.Action.ToString(),
         GrantId    = e.GrantId == Guid.Empty ? null : SurrealId.ToSurrealId(e.GrantId),
-        TenantId   = SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.TenantId)) ?? string.Empty,
-        AvatarId   = e.AvatarId == Guid.Empty ? null : SurrealLink.ToLink("avatar", SurrealId.ToSurrealId(e.AvatarId)),
+        TenantId   = SurrealLink.ToLink("user", SurrealId.ToSurrealId(e.TenantId)) ?? string.Empty,
+        UserId   = e.UserId == Guid.Empty ? null : SurrealLink.ToLink("user", SurrealId.ToSurrealId(e.UserId)),
         Scope      = e.Scope,
         Detail     = e.Detail,
         OccurredAt = new DateTimeOffset(DateTime.SpecifyKind(e.OccurredAt, DateTimeKind.Utc)),
@@ -84,7 +84,7 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         Action     = Enum.TryParse<ConsentAuditAction>(p.Action, ignoreCase: true, out var a) ? a : ConsentAuditAction.TenantSignDenied,
         GrantId    = string.IsNullOrEmpty(p.GrantId) ? Guid.Empty : SurrealId.FromSurrealId(p.GrantId),
         TenantId   = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
-        AvatarId   = string.IsNullOrEmpty(p.AvatarId) ? Guid.Empty : SurrealId.FromSurrealId(SurrealLink.FromLink(p.AvatarId)!),
+        UserId   = string.IsNullOrEmpty(p.UserId) ? Guid.Empty : SurrealId.FromSurrealId(SurrealLink.FromLink(p.UserId)!),
         Scope      = p.Scope ?? string.Empty,
         Detail     = p.Detail,
         OccurredAt = p.OccurredAt.UtcDateTime,
@@ -97,8 +97,8 @@ public sealed class SurrealConsentAuditStore : IConsentAuditStore
         [JsonPropertyName("id")]          public string Id { get; set; } = string.Empty;
         [JsonPropertyName("action")]      public string Action { get; set; } = string.Empty;
         [JsonPropertyName("grant_id")]    public string? GrantId { get; set; }
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("tenant_id")]   public string TenantId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Avatar))] [JsonPropertyName("avatar_id")]   public string? AvatarId { get; set; }
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("tenant_id")]   public string TenantId { get; set; } = string.Empty;
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("user_id")]   public string? UserId { get; set; }
         [JsonPropertyName("scope")]       public string? Scope { get; set; }
         [JsonPropertyName("detail")]      public string? Detail { get; set; }
         [JsonPropertyName("occurred_at")] public DateTimeOffset OccurredAt { get; set; }

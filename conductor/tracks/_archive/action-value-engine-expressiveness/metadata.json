@@ -1,0 +1,9 @@
+{
+  "id": "action-value-engine-expressiveness",
+  "description": "Complete the deferred value-engine features: $from output-binding in node configs (SHIPPED), OnFailure edge type (enum+POCO done), Emit webhooks, ActionDependency enforcement, opt-in HolonType registry, unpublish TOCTOU guard, SDK+builder mirrors",
+  "type": "feature",
+  "created_at": "2026-07-02T00:00:00Z",
+  "status": "in_progress",
+  "phase": "B (F2 OnFailure - enum+POCO done, remaining skip loop logic + DAG validator + durable engine)",
+  "blocks": []
+}

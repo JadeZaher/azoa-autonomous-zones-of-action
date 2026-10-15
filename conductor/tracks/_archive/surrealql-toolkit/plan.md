@@ -42,7 +42,7 @@ The "wow" surface that lets non-developers (operators, support, even
 agents via MCP) interact with the data without writing SurrealQL.
 
 7. [ ] **[surrealql-studio](../surrealql-studio/spec.md)** — read-only
-   browse + typed query + EXPLAIN. Avatar-scoped via `McpAuthMiddleware`
+   browse + typed query + EXPLAIN. User-scoped via `McpAuthMiddleware`
    pattern.
 8. [ ] **MCP integration of studio primitives** — extend the
    `mcp-surface` track with structured-introspection tools (table

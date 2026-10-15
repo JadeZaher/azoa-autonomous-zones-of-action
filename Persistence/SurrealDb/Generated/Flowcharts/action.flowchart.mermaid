@@ -1,0 +1,52 @@
+graph LR
+    %% Slice: action
+    %% GENERATED FILE -- do not edit. Source: SurrealDB schema attribute scan.
+    %% Regenerate with: dotnet run --project packages/SurrealForge.Schema -- flowcharts
+
+    %% Nodes in this slice
+    action["action: Node"]:::nodeClass
+    action_access_request["action_access_request: Node"]:::nodeClass
+    action_dependency["action_dependency: Node"]:::nodeClass
+    action_edge["action_edge: Node"]:::nodeClass
+    action_node["action_node: Node"]:::nodeClass
+    action_node_execution["action_node_execution: Node"]:::nodeClass
+    action_run["action_run: Node"]:::nodeClass
+    executes["executes: Node"]:::nodeClass
+    forked_from["forked_from: Node"]:::nodeClass
+
+    %% Cross-slice targets (rendered as ghost nodes)
+    action_node_template["action_node_template: Node (external)"]:::externalNode
+    action_template["action_template: Node (external)"]:::externalNode
+    dapp_series["dapp_series: Node (external)"]:::externalNode
+    user["user: Node (external)"]:::externalNode
+
+    %% Edges (outbound from this slice)
+    action -- "template_id [N:0..1]" --> action_template
+    action -- "dapp_series_id [N:0..1]" --> dapp_series
+    action -- "origin_user_id [N:0..1]" --> user
+    action -- "user_id [N:1]" --> user
+    action_access_request -- "action_id [N:1]" --> action
+    action_access_request -- "decided_by_user_id [N:0..1]" --> user
+    action_access_request -- "requester_user_id [N:1]" --> user
+    action_dependency -- "action_id [N:1]" --> action
+    action_dependency -- "depends_on_action_id [N:1]" --> action
+    action_dependency -- "depends_on_node_id [N:0..1]" --> action_node
+    action_edge -- "action_id [N:1]" --> action
+    action_edge -- "source_node_id [N:1]" --> action_node
+    action_edge -- "target_node_id [N:1]" --> action_node
+    action_node -- "action_id [N:1]" --> action
+    action_node -- "node_template_id [N:0..1]" --> action_node_template
+    action_node_execution -- "node_id [N:1]" --> action_node
+    action_node_execution -- "run_id [N:1]" --> action_run
+    action_run -- "source_action_id [N:0..1]" --> action
+    action_run -- "action_id [N:1]" --> action
+    action_run -- "forked_at_node_id [N:0..1]" --> action_node
+    action_run -- "executes [N:M]" --> action_node_execution
+    action_run -- "forked_from [N:M]" --> action_run
+    action_run -- "parent_run_id [N:0..1]" --> action_run
+    action_run -- "acting_tenant_id [N:0..1]" --> user
+    action_run -- "origin_user_id [N:0..1]" --> user
+    action_run -- "user_id [N:1]" --> user
+
+    classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
+    classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;

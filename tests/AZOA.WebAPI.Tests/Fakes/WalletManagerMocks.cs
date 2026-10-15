@@ -9,7 +9,7 @@ namespace AZOA.WebAPI.Tests.Fakes;
 
 /// <summary>
 /// Shared <see cref="IWalletManager"/> mocks for the chain-capability gate
-/// (economic-primitive-nodes D1). Existing quest tests drive Tier-1 / Condition
+/// (economic-primitive-nodes D1). Existing action tests drive Tier-1 / Condition
 /// nodes that never trip the gate, so they use <see cref="Empty"/> (no wallet
 /// bound) — the gate only fires for a Tier-2 handler.
 /// </summary>
@@ -17,7 +17,7 @@ public static class WalletManagerMocks
 {
     /// <summary>
     /// An <see cref="IWalletManager"/> whose <c>QueryAsync</c> returns an empty,
-    /// non-error wallet list for any avatar ⇒ "no wallet bound" (gate fails closed
+    /// non-error wallet list for any user ⇒ "no wallet bound" (gate fails closed
     /// for Tier-2 nodes; Tier-1 nodes are unaffected).
     /// </summary>
     public static IWalletManager Empty() => WithWallets();
@@ -47,7 +47,7 @@ public static class WalletManagerMocks
     private sealed class StubWallet : IWallet
     {
         public Guid Id { get; set; }
-        public Guid AvatarId { get; set; }
+        public Guid UserId { get; set; }
         public string ChainType { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
         public string? PublicKey { get; set; }

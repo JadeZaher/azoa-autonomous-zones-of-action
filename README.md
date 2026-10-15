@@ -8,19 +8,19 @@ blockchains, fiat, or both.
 
 It is built from three composable layers:
 
-- **Identity** — a self-sovereign avatar that a person actually owns, and a
+- **Identity** — a self-sovereign identity that a person actually owns, and a
   consent model that lets an app act on their behalf only within explicit,
   revocable permission.
-- **Quests** — durable, structured workflows. A quest is a graph of steps
+- **Actions** — durable, structured workflows. An action is a graph of steps
   (gates, transfers, swaps, grants, external calls) that survives restarts,
   reconciles against real-world truth before acting again, and never
   double-spends.
-- **Dapps (STAR)** — a generator that scaffolds and deploys applications on top
-  of the identity and quest layers, so a new product doesn't rebuild the
+- **Dapps (action graph bundles)** — a generator that scaffolds and deploys applications on top
+  of the identity and action layers, so a new product doesn't rebuild the
   plumbing.
 
 Bridges connect these workflows to the outside world: value can enter and leave
-a quest over a blockchain or over a fiat settlement partner, through the same
+an action over a blockchain or over a fiat settlement partner, through the same
 structured, idempotent seam.
 
 ## Why it exists
@@ -31,7 +31,7 @@ systems and days — and they need to be **structured** — auditable, idempoten
 never running a step twice or losing one halfway. Ad-hoc scripts and cron jobs
 give you the first and none of the second.
 
-AZOA is the substrate for the second. A quest is a durable state machine: it
+AZOA is the substrate for the second. An action is a durable state machine: it
 parks when it needs to wait, resumes on a signal or a timer, and — critically —
 reconciles against the source of truth (a chain confirmation, a settlement
 callback) *before* it takes the next irreversible action. The identity layer
@@ -49,7 +49,7 @@ cleared, makes one idempotent, KYC-gated call into AZOA to provision a wallet or
 allocate an asset. AZOA never runs the checkout, holds card data, or owns the
 payout — it materializes the value once and records it exactly once.
 
-A quest doesn't care which rail a step settles on. That is the point: the same
+An action doesn't care which rail a step settles on. That is the point: the same
 structured workflow can move on-chain value and fiat-originated value in the
 same run.
 
@@ -82,7 +82,7 @@ rather than pretending a config it can't verify is safe.
 
 Each deployment seeds one durable, reserved node-operator identity from
 host-managed `NodeOperator__*` variables. Its dedicated, short-lived session is
-separate from avatar login and tenant API keys. After deployment, the operator
+separate from user login and tenant API keys. After deployment, the operator
 can sign in at `/operator/login` to see node readiness, configure secret-free
 KYC provider policy, assign providers to tenants, and work the bounded review
 queue. Provider credentials, webhook secrets, and the operator password never
@@ -98,20 +98,50 @@ an older profile cannot silently authorize value actions.
 
 AZOA is licensed under the [Apache License, Version 2.0](LICENSE). It is meant
 to be self-hosted and extended: new chains plug in via the `ChainProvider`
-interface, new DEXes via `DexAdapter`, new workflow steps as quest nodes, and new
+interface, new DEXes via `DexAdapter`, new workflow steps as action nodes, and new
 settlement rails behind the same bridge seam. Run it yourself, audit it, and own
 the responsibility pattern above end to end.
 
 ## Status
 
 Pre-launch (Alpha Gate). The core platform features have been shipped and hardened:
-- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their avatars (wallet-challenge login, ed25519), and tenants can only act on behalf of an avatar under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
-- **Tenant onboarding + Azoa-owned KYC control plane**: The authenticated tenant can idempotently ensure one avatar identity per external subject, begin or submit KYC from a profile flow, and read a secret-free readiness projection. Wallet creation is limited to explicit Development simulation until a reviewed production custody adapter exists. See [`docs/TENANT-CUSTODIAL-ONBOARDING.md`](docs/TENANT-CUSTODIAL-ONBOARDING.md).
+- **User Self-Sovereignty & Consent Delegation**: Shipped and code-complete. End users own their identities (wallet-challenge login, ed25519), and tenants can only act on behalf of a user under a live, revocable `ConsentGrant`. The security review has been completed and all findings remediated (commit `10e5dad`).
+- **Tenant onboarding + Azoa-owned KYC control plane**: The authenticated tenant can idempotently ensure one user identity per external subject, begin or submit KYC from a profile flow, and read a secret-free readiness projection. Wallet creation is limited to explicit Development simulation until a reviewed production custody adapter exists. See [`docs/TENANT-CUSTODIAL-ONBOARDING.md`](docs/TENANT-CUSTODIAL-ONBOARDING.md).
 - **Node operator control plane**: A reserved, revisioned operator identity and mobile-first `/operator` console expose deployment readiness, KYC provider/tenant policy, and human review without exposing host secrets. See [`docs/NODE-HOST.md`](docs/NODE-HOST.md) §8.9.
-- **Durable Quests & Stepwise Execution**: Shipped. Features stepwise saga execution (`QuestNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.
-- **Visual Quest Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
+- **Durable Actions & Stepwise Execution**: Shipped. Features stepwise saga execution (`ActionNodeStepHandler`), run-scoped variable data bindings (`run.<node>.<field>`), control-cascade skips (failed check nodes stop downstream payout chains), and publish-time semantic/executability validation.
+- **Visual Action Builder**: Shipped. Replaced the legacy JSON textarea builder with an interactive drag-and-drop React Flow builder interface in the Next.js frontend.
 - **SurrealDB Persistence Cutover**: Shipped. SurrealDB is the sole persistent data engine backing the WebAPI, operating with RocksDB-backed G1 durability.
 - **API Key Scopes & Allowed Origins**: Dynamic CORS allowed origins per API key is implemented / in-flight to secure public and developer-scoped SDK requests.
+- **Three chain providers + a value-rail seam**: Algorand, Solana and Ethereum are registered against `IBlockchainProvider`, and `IValueRailProviderFactory` resolves a rail whether or not it is a chain — so a fiat settlement partner is expressible without pretending to be a blockchain. Bridge capability is a runtime module (`IBridgeSourceLeg` / `IBridgeTargetLeg`), never a boolean: a chain that cannot bridge has no method to call.
+- **KYC/AML + external OAuth**: multi-tenant, fail-closed KYC with a versioned policy envelope, and an `auth/oauth` external-identity surface.
+- **Terminology rename (breaking)**: the platform's domain nouns were neutralized across C#, the SurrealDB schema, REST routes, the SDK and the frontend. The C# entity is `ActionDefinition` with plural namespaces (`Models.Actions`) to dodge a `System.Action` collision under `ImplicitUsings`; the DB table, REST route segment and SDK type are all plain `action`, so the wire surface is unchanged.
+
+**Fixed in code, still deliberately gated off — do not describe these as shipped:**
+
+- **Governance vote / tally (D20/D39/D40/D42)** — the original live Sybil hole is
+  **fixed**: the tally now reads a per-person-per-operation claim ledger
+  (`GovernanceClaimLedgerTally`) instead of counting raw child holons, so a
+  ballot posted straight at `POST /api/holon` counts for nothing by
+  construction, and re-voting before close is a mutable in-place update with a
+  server-set ordering key. It still cannot run: `GovernanceProposalCreate` /
+  `Vote` / `Tally` remain in `NotEnabledActionNodeTypes` pending the adversarial
+  review that closes the track. Corrective track:
+  `conductor/tracks/governance-vote-of-record_20260906`.
+- **Credential issuance/revocation (D19/D41)** — the vacuous issuer-equals-holder
+  check is **fixed**: soulbound mint is now two-party
+  (`POST /api/credential/issue/{recipientUserId}`, role-gated to `dapp:manager`),
+  `current_owner` is written at mint, and the Algorand clawback precondition no
+  longer refuses the `defaultFrozen` holding it exists to serve. It still cannot
+  run: `CredentialRevoke` remains in `NotEnabledActionNodeTypes` pending the
+  non-negotiable `/security-review` on this value path. Corrective track:
+  `conductor/tracks/credential-third-party-issuance_20260906`.
+
+Both were the same defect class — *a control is not wired until the thing that reads
+its result is wired too* — and both are now corrected at the source. What remains open
+is the deliberate enablement gate, not the underlying bug: the refusal is enforced in
+code (`Services/Actions/NotEnabledActionNodeTypes.cs`) at publish and at both dispatch
+seams, and is lifted per-node-type only when that node's track closes its adversarial
+review. See `PROVIDERS.md` §"Phase 5 primitives that are NOT enabled".
 
 The repository includes unit, integration, schema-equivalence, and release-contract suites. All real-value bridge routes are disabled by default (`RealValueEnabled=false`) and remain non-launchable: no provider currently implements the complete reviewed lock/mint/burn/release plus production-custody lifecycle. Simulated routes remain available for development. See `conductor/tracks.md` for the full roadmap.
 
@@ -119,22 +149,24 @@ The repository includes unit, integration, schema-equivalence, and release-contr
 
 A quick orientation for contributors:
 
-- **.NET 10 WebAPI** — the AZOA protocol: identity, quests, holons, swaps, STAR,
+- **.NET 10 WebAPI** — the AZOA protocol: identity, actions, holons, swaps, action graph bundles,
   bridges. Dual auth (JWT + `X-Api-Key`).
 - **SurrealDB** — the sole data engine, via the `SurrealForge.*` packages.
   Real-world state (chain confirmations, settlement callbacks) is the source of
   truth; balances are read, never stored.
-- **@azoa/sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
+- **azoa-sdk** — TypeScript SDK (`AzoaClient` facade) with pluggable
   `ChainProvider` and `DexAdapter` points.
-- **Next.js 16 frontend** — reference UI, including a visual quest builder.
+- **Next.js 16 frontend** — reference UI, including a visual action builder.
 
 ### Repo layout
 
 - `Controllers/`, `Managers/` — HTTP surface and business logic (identity,
-  quests, holons, swaps, STAR, bridge, …)
-- `Core/` — providers, base classes, auth handlers
+  actions, holons, swaps, bundles, bridge, …)
+- `Core/` — primitives, base classes, auth handlers
+- `Providers/Blockchain/` — chain providers (Algorand, Solana, Ethereum, Simulated),
+  the value-rail factory, and per-chain transaction signers
 - `Persistence/SurrealDb/`, `Providers/Stores/Surreal/` — data engine and
-  per-aggregate stores; conventions in `CONVENTION.md`
+  per-aggregate stores; conventions in `Persistence/SurrealDb/CONVENTION.md`
 - `https://github.com/Escherbridge/surrealforge/tree/main/src/SurrealForge.*` — SurrealDB toolkit (C#-first schema authoring +
   Roslyn injection-guard analyzer)
 - `sdk/azoa-wallet/` — TypeScript SDK
@@ -183,7 +215,7 @@ dev stack, see [`docs/NODE-HOST.md`](docs/NODE-HOST.md).
 - `PROVIDERS.md` — API surface and provider architecture
 - `docs/DAPP-DEVELOPER-GUIDE.md` — Quickstart for building a dApp on an Azoa node
   you don't operate (issue a `dapp:develop` key, point the SDK at the node, ship a
-  first series + quest to the marketplace)
+  first series + action to the marketplace)
 - `API_SYNC.md` — Controller ↔ SDK regression mapping; read before shipping
   controller changes
 - `DEVELOPMENT.md` — Developer setup, dev-up variants, conventions,

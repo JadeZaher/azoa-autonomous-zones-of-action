@@ -8,7 +8,7 @@ public sealed class NodeGovernanceParametersResponse
 
     public long Version { get; set; }
 
-    public Guid? UpdatedByAvatarId { get; set; }
+    public Guid? UpdatedByUserId { get; set; }
 
     public DateTimeOffset? CreatedAt { get; set; }
 
@@ -21,7 +21,7 @@ public sealed class NodeGovernanceAuditResponse
 
     public string Action { get; set; } = string.Empty;
 
-    public Guid ActorAvatarId { get; set; }
+    public Guid ActorUserId { get; set; }
 
     public long PreviousVersion { get; set; }
 

@@ -18,7 +18,7 @@ export interface PortfolioSummary {
 }
 
 /**
- * Aggregates balances across all wallets and chains for the authenticated avatar.
+ * Aggregates balances across all wallets and chains for the authenticated user.
  *
  * ```ts
  * const portfolio = await azoa.portfolio.getAll();
@@ -37,13 +37,13 @@ export class PortfolioAggregator {
   }
 
   /**
-   * Fetch balances for all wallets registered to the given avatar.
+   * Fetch balances for all wallets registered to the given user.
    * Queries the AZOA API for wallet list, then queries each chain provider
    * for live balances.
    */
-  async getAll(avatarId: string): Promise<Result<PortfolioSummary, SdkError>> {
+  async getAll(userId: string): Promise<Result<PortfolioSummary, SdkError>> {
     // Get wallets from the API
-    const qs = new URLSearchParams({ avatarId });
+    const qs = new URLSearchParams({ userId });
     const walletsResult = await this.api.request<Array<{
       id: string;
       chainType: string;

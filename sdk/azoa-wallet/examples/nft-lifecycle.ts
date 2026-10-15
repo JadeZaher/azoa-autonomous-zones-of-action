@@ -33,19 +33,19 @@ async function main() {
   // Get metadata (public, no auth needed)
   // const metadata = await azoa.api.getNftMetadata(nftId);
 
-  // Transfer to another avatar
+  // Transfer to another user
   // const transferred = await azoa.api.transferNft(nftId, {
-  //   targetAvatarId: "recipient-avatar-id",
+  //   targetUserId: "recipient-user-id",
   //   walletId: WALLET_ID,
   // });
 
   // Burn
   // const burned = await azoa.api.burnNft(nftId, { walletId: WALLET_ID });
 
-  // --- Avatar NFT (richer model with bindings) ---
+  // --- User NFT (richer model with bindings) ---
 
-  // Mint an Avatar NFT with holon + wallet bindings
-  const avatarNft = await azoa.api.mintAvatarNFT({
+  // Mint a User NFT with holon + wallet bindings
+  const userNft = await azoa.api.mintUserNFT({
     chainType: "Solana",
     name: "Soul Badge",
     description: "Soulbound identity badge",
@@ -55,11 +55,11 @@ async function main() {
       { holonId: "holon-uuid-here", role: "owner", permissionLevel: "full" },
     ],
   });
-  if (isOk(avatarNft)) {
-    console.log("Minted Avatar NFT:", avatarNft.value.id);
+  if (isOk(userNft)) {
+    console.log("Minted User NFT:", userNft.value.id);
 
     // Get composite view (NFT + all bindings)
-    const composite = await azoa.api.getAvatarNFTComposite(avatarNft.value.id);
+    const composite = await azoa.api.getUserNFTComposite(userNft.value.id);
     if (isOk(composite)) {
       console.log("Holon bindings:", composite.value.holonBindings?.length);
       console.log("Wallet bindings:", composite.value.walletBindings?.length);

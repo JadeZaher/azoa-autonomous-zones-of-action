@@ -7,10 +7,10 @@ public class WalletQueryRequestValidator : AbstractValidator<WalletQueryRequest>
 {
     public WalletQueryRequestValidator()
     {
-        When(x => x.AvatarId.HasValue, () =>
+        When(x => x.UserId.HasValue, () =>
         {
-            RuleFor(x => x.AvatarId!.Value)
-                .NotEqual(Guid.Empty).WithMessage("AvatarId must not be an empty GUID.");
+            RuleFor(x => x.UserId!.Value)
+                .NotEqual(Guid.Empty).WithMessage("UserId must not be an empty GUID.");
         });
 
         When(x => x.ChainType != null, () =>

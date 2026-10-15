@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Tests.Controllers;
 
 public class BlockchainOperationControllerTests
 {
-    private static readonly Guid AuthenticatedAvatarId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid AuthenticatedUserId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     private readonly Mock<IBlockchainOperationManager> _manager;
     private readonly BlockchainOperationController _controller;
@@ -23,14 +23,14 @@ public class BlockchainOperationControllerTests
     {
         _manager = new Mock<IBlockchainOperationManager>();
         _controller = new BlockchainOperationController(_manager.Object);
-        // Inject a ClaimsPrincipal so GetAvatarIdFromClaims() resolves.
+        // Inject a ClaimsPrincipal so GetUserIdFromClaims() resolves.
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
             {
                 User = new ClaimsPrincipal(new ClaimsIdentity(new[]
                 {
-                    new Claim(ClaimTypes.NameIdentifier, AuthenticatedAvatarId.ToString())
+                    new Claim(ClaimTypes.NameIdentifier, AuthenticatedUserId.ToString())
                 }, "TestScheme"))
             }
         };
@@ -67,7 +67,7 @@ public class BlockchainOperationControllerTests
         var operation = new BlockchainOperation
         {
             Id = id,
-            AvatarId = AuthenticatedAvatarId,
+            UserId = AuthenticatedUserId,
             InitiatorApiKeyId = Guid.NewGuid(),
             IdempotencyKey = new string('a', 64),
             Parameters = new Dictionary<string, string>
@@ -95,13 +95,13 @@ public class BlockchainOperationControllerTests
     }
 
     [Fact]
-    public async Task GetByAvatar_ReturnsOk()
+    public async Task GetByUser_ReturnsOk()
     {
-        var avatarId = AuthenticatedAvatarId;
-        _manager.Setup(m => m.GetByAvatarAsync(avatarId, It.IsAny<AZOARequest?>()))
+        var userId = AuthenticatedUserId;
+        _manager.Setup(m => m.GetByUserAsync(userId, It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<IEnumerable<IBlockchainOperation>> { Result = Array.Empty<IBlockchainOperation>() });
 
-        var result = await _controller.GetByAvatar(avatarId, null);
+        var result = await _controller.GetByUser(userId, null);
 
         result.Result.Should().BeOfType<OkObjectResult>();
     }
