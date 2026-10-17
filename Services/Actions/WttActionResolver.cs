@@ -14,7 +14,7 @@ namespace AZOA.WebAPI.Services.Actions;
 
 /// <summary>Admits and advances workflow Bridge/Back transfers on the <c>wtt</c> domain; see Services/Wormhole/AGENTS.md §Workflow authority.</summary>
 public sealed class WttActionResolver(WttLifecycleService lifecycle, WttRecoveryService recovery, IWttOperationStore operations,
-    IActionNodeExecutionStore executions, WttModuleResolver modules) : IActionExternalOperationResolver
+    IActionNodeExecutionStore executions, WttModuleResolver modules) : IActionExternalOperationResolver, IActionWttRoute
 {
     public const string DomainName = "wtt";
 
@@ -31,6 +31,18 @@ public sealed class WttActionResolver(WttLifecycleService lifecycle, WttRecovery
 
     /// <summary>Signing scopes a WTT node selects at admission (plus <c>action:execute</c>, which the engine appends).</summary>
     public static IReadOnlyList<string> SigningScopes { get; } = [AzoaScopes.WttSourceSign, AzoaScopes.WttTargetSign];
+
+    /// <inheritdoc/>
+    public bool Applies(AZOA.WebAPI.Models.Actions.ActionNode node) => ReadConfig(node.Config) is not null;
+
+    /// <inheritdoc/>
+    IReadOnlyList<string> IActionWttRoute.SigningScopes => SigningScopes;
+
+    /// <inheritdoc/>
+    public string? SettlementRailId(AZOA.WebAPI.Models.Actions.ActionNode node) => ReadConfig(node.Config)?.Source.ChainType;
+
+    /// <inheritdoc/>
+    public ActionExternalOperationReference CreateReference(ActionNodeExecutionContext context, string intentHash) => Reference(context, intentHash);
 
     public static ActionExternalOperationReference Reference(ActionNodeExecutionContext context, string intentHash)
     {
