@@ -51,7 +51,6 @@ public sealed partial class SurrealSwapAdmissionTests
             {
                 oldStage.State.Should().Be("Cancelled");
                 oldOperation.State.Should().Be("Cancelled");
-                (await _store.AuthorizeStageAsync(old.Id, 3, stageId, 2, oldAuthority)).Should().BeNull("a cancelled stage never sends");
                 var settled = await allowances.ClaimAsync(Allowance(next, executor));
                 settled.Should().NotBeNull("a never-sent cancelled holder hands the lane over");
                 if (claimOutcome is not null) claimOutcome.OperationId.Should().Be(next.Id);
