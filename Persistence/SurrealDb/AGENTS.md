@@ -24,31 +24,41 @@ goldens; `SchemaGoldenOrphanTests`).
 ## §deploy-path
 
 `docker-entrypoint.sh schema` and the CI schema job compose `Generated/Schemas` **overlaid by**
-`CompatibilityBaselines/` into one directory, then `surrealforge up` runs: phase 1 schema files,
-phase 2 `Migrations/` (lexical), phase 3 reconcile (introspect the live DB, `OVERWRITE` drifted
-field/index definitions against the *composed* directory). Every file is checksummed in
-`schema_migration`; a changed file aborts `up` (exit 2) unless `--force`.
+`CompatibilityBaselines/` into one directory, then run `surrealforge up --no-reconcile`: phase 1
+schema files, phase 2 `Migrations/` (lexical). Every file is checksummed in `schema_migration`; a
+changed file aborts `up` (exit 2) unless `--force` (never passed).
 
-Gate used by W1 (throwaway SurrealDB v3.1.4, `--user 0:0`): compose exactly as CI, `up` twice; the
-second pass must report `applied 0 … evolved 0`. Then apply `Generated/Schemas` alone to a second
-namespace and diff `INFO FOR TABLE` across both — the only remaining difference must be the phase-3
-item below.
+**Why `--no-reconcile` (round 4 W2, platform lane).** Phase 3 reconcile diffs the live DB against
+the *composed* directory, so for a baselined table the desired model is the frozen baseline and
+every deploy reverted migration-added constraints (the `^[0-9a-f]{64}$` ASSERT on
+`operation_log.idempotency_key`, `Migrations/20260719_140000`). SurrealForge 1.3.0 offers no flag
+to reconcile against a different directory. `--assembly <AZOA.WebAPI.dll>` (POCO model) was probed
+and rejected: it converges, but re-evolves three `node_fee_settlement` ASSERTs on every run (its
+comparer reads `dec`/quote spelling as drift) and reports the `executes`/`forked_from` `in`/`out`
+fields as removals, so the CI re-run gate can never pass. Probe (throwaway v3.1.4): composed +
+`--no-reconcile` → `INFO FOR TABLE` identical to `Generated/Schemas` alone for all 131 tables;
+second run `applied 0 … evolved 0`; composed + default reconcile → the one ASSERT difference.
 
-Known limits (recorded for the platform lane, not fixable from this directory):
+Consequence: nothing evolves a shipped definition implicitly. Any change to a field or index on a
+table that already exists on a deployed database ships as a forward migration with
+`DEFINE … OVERWRITE` (the same rule §compatibility-baselines already imposes on baselined tables;
+a changed generated file aborts `up` on checksum first anyway).
 
-- **Phase 3 reconciles toward the baseline, not the current model.** For the six baselined tables
-  the desired model is the frozen baseline, so a constraint a migration added is reverted on every
-  deploy. Today that strips the `^[0-9a-f]{64}$` ASSERT from `operation_log.idempotency_key`
-  (`Migrations/20260719_140000`); the UNIQUE index survives. Additions show up as
-  "destructive-skipped" (never applied without `--allow-destructive`, which nothing passes).
+Gates: the CI schema job applies the composed set twice (second pass `applied 0 … evolved 0`), then
+applies `Generated/Schemas` alone to `azoa_reference` and fails on any `INFO FOR TABLE` difference
+("Deploy path converges to the generated model").
+
+Known limits (SurrealForge, owner repo; harmless while nothing reconciles or passes
+`--allow-destructive`):
+
 - **The reconcile reader loses all of `on_ramp_lot`** (every field and index reads as absent from
-  the desired model, before and after W1). Isolated to the file's bracket/brace string defaults
-  (`"[]"`, `"{}"`): replacing `recovery_audit_json`'s `"[]"` with a plain literal makes it parse;
-  escaping or re-quoting the `"{}"` default alone does not. A SurrealForge reader defect (owner repo), harmless only
-  because nothing passes `--allow-destructive`: with it, reconcile would drop the table's fields.
-  It also means drift on `on_ramp_lot` is never evolved by phase 3.
-- `DEFINE PARAM IF NOT EXISTS` never updates an `[Inside]` list on an existing database and phase 3
-  does not reconcile params; an upgraded database needs a `DEFINE PARAM OVERWRITE` migration.
+  the desired model). Isolated to the file's bracket/brace string defaults (`"[]"`, `"{}"`):
+  replacing `recovery_audit_json`'s `"[]"` with a plain literal makes it parse; escaping or
+  re-quoting the `"{}"` default alone does not. Repro: `on_ramp_lot.surql` alone in a schemas dir,
+  `up --dry-run` → 41 "remove" items. With `--allow-destructive` reconcile would drop its fields.
+- **The `--assembly` reconcile comparer is not idempotent** (above).
+- `DEFINE PARAM IF NOT EXISTS` never updates an `[Inside]` list on an existing database; an
+  upgraded database needs a `DEFINE PARAM OVERWRITE` migration.
 
 ## §compatibility-baselines
 
@@ -144,7 +154,8 @@ only. `DEFAULT ALWAYS` fills NONE on every write and leaves set values alone. Tr
   store's migrate-on-write path.
 - Indexes changed on existing tables (`fiat_payout_request`, `hold_ledger_hold`,
   `kyc_screening_monitor_query` widened; `platform_token_network`, `kyc_submission_tenant_id`
-  added) are rebuilt by phase-3 reconcile; widening cannot collide on old rows (NONE in the new
+  added) need a `DEFINE INDEX OVERWRITE` migration on an upgraded database (nothing reconciles;
+  §deploy-path); widening cannot collide on old rows (NONE in the new
   columns); `platform_token_network` would fail only if two chains shared a network row.
 - `DEFAULT ALWAYS` keeps an old row writable, but a CAS predicate (`version = $expected`) still
   compares the stored NONE, so `Migrations/20261017_122000` materializes the 32 defaults once
