@@ -56,54 +56,16 @@ public class WormholeAdapter : IWormholeAdapter
         _network = ChainNetworkResolution.FromConfiguration(appConfig);
     }
 
-    public async Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
+    /// <summary>Refuses before any source lock: the legacy path cannot read the emitter sequence; WTT (`/api/bridge/wtt`) replaces it.</summary>
+    public Task<AZOAResult<WormholeTransferInitiation>> InitiateTransferAsync(
         string sourceChain, string targetChain,
         string tokenId, string senderAddress, string recipientAddress,
         RailAmount amount, CancellationToken ct = default)
-    {
-        if (!IsRouteSupported(sourceChain, targetChain))
-            return Error<WormholeTransferInitiation>(
-                $"Wormhole route {sourceChain}→{targetChain} is not supported");
-
-        var sourceMapping = _config.ChainMappings[sourceChain];
-
-        var sourceProvider = _providerFactory.GetProvider(sourceChain, _network);
-
-        // The source chain must declare the bridge SOURCE capability. Absence is the
-        // fail-closed refusal: there is no lock primitive to call, so nothing can be
-        // faked. This is never a signer problem — see Providers/Blockchain/AGENTS.md §bridge.
-        if (!sourceProvider.TryGetModule<IBridgeSourceLeg>(out var sourceLeg) || sourceLeg is null)
-            return Error<WormholeTransferInitiation>(
-                $"{sourceChain} cannot act as a bridge source: it implements no reviewed bridge "
-                + "source lifecycle (IBridgeSourceLeg), so no asset can be locked on it.");
-
-        // Lock the asset on the source chain via the Wormhole Core Bridge.
-        var lockResult = await sourceLeg.LockAsync(
-            new BridgeLockRequest(
-                tokenId, sourceMapping.CoreBridgeAddress, amount, targetChain, recipientAddress),
-            ct);
-
-        if (lockResult.IsError || lockResult.Result is null)
-            return Error<WormholeTransferInitiation>($"Source lock failed: {lockResult.Message}");
-
-        // In production, parse the actual sequence from the on-chain tx logs.
-        // For now, derive a deterministic sequence from the tx hash.
-        var sequence = DeriveSequenceFromTxHash(lockResult.Result.TransactionId);
-
-        var initiation = new WormholeTransferInitiation
-        {
-            TxHash = lockResult.Result.TransactionId,
-            EmitterChainId = sourceMapping.WormholeChainId,
-            EmitterAddress = NormalizeEmitterAddress(sourceMapping.CoreBridgeAddress),
-            Sequence = sequence
-        };
-
-        _logger.LogInformation(
-            "Wormhole transfer initiated: {SourceChain}→{TargetChain} seq={Sequence} tx={TxHash}",
-            sourceChain, targetChain, sequence, lockResult.Result.TransactionId);
-
-        return Ok(initiation);
-    }
+        => Task.FromResult(IsRouteSupported(sourceChain, targetChain)
+            ? Error<WormholeTransferInitiation>(
+                $"Legacy Wormhole initiation {sourceChain}→{targetChain} is retired: the emitter sequence must be read from the "
+                + "source core-bridge message, which only the WTT journal (/api/bridge/wtt) does. Nothing was locked.")
+            : Error<WormholeTransferInitiation>($"Wormhole route {sourceChain}→{targetChain} is not supported"));
 
     public async Task<AZOAResult<WormholeVAA>> FetchVAAAsync(
         int emitterChainId, string emitterAddress, long sequence,
@@ -524,33 +486,6 @@ public class WormholeAdapter : IWormholeAdapter
         foreach (var c in hex)
             if (c != '0' && c != 'x' && c != 'X') return false;
         return true;
-    }
-
-    /// <summary>
-    /// Canonicalize an emitter address to lowercase 64-hex (`^[0-9a-f]{64}$`) — the
-    /// exact shape the consumed_vaa_ledger schema ASSERT enforces. This is the single
-    /// seam that produces the emitter written into the replay ledger, so canonicalizing
-    /// HERE guarantees the ASSERT never false-rejects a legit redeem over mere casing or
-    /// an `0x` prefix. Strips a leading `0x`, lowercases, then left-pads to 64 hex chars
-    /// (e.g. Algorand app IDs / EVM checksummed hex). See Services/AGENTS.md §bridge.
-    /// </summary>
-    private static string NormalizeEmitterAddress(string address)
-    {
-        var hex = address.Trim();
-        if (hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            hex = hex.Substring(2);
-        hex = hex.ToLowerInvariant();
-        if (hex.Length < 64)
-            hex = hex.PadLeft(64, '0');
-        return hex;
-    }
-
-    private static long DeriveSequenceFromTxHash(string txHash)
-    {
-        // In production, parse the sequence from the source chain's Wormhole message logs.
-        // For dev/testing, derive a deterministic sequence from the tx hash.
-        var hash = txHash.GetHashCode(StringComparison.Ordinal);
-        return Math.Abs((long)hash);
     }
 
     private AZOAResult<T> Ok<T>(T result, string message = "")

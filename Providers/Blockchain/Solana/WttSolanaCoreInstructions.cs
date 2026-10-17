@@ -30,7 +30,9 @@ internal static class WttSolanaCoreInstructions
         if (guardians.Count is < 1 or > 19 || count is < 1 or > 7 || start < 0 || start > vaa.Signatures.Count - count
             || payer.Key == signatureSet.Key || secpInstructionIndex == byte.MaxValue)
             throw new InvalidDataException("Exact bounded guardian batch, distinct payer/signature-set and adjacent instruction position are required.");
-        var normalizedGuardians = guardians.Select(value => WttPayloadCodec.FixedHex(value, 20)).ToArray();
+        byte[][] normalizedGuardians;
+        try { normalizedGuardians = guardians.Select(value => WttPayloadCodec.FixedHex(value, 20)).ToArray(); }
+        catch (FormatException exception) { throw new InvalidDataException("Guardian set contains a noncanonical address.", exception); }
         if (normalizedGuardians.Select(value => Convert.ToHexStringLower(value)).Distinct(StringComparer.Ordinal).Count() != guardians.Count)
             throw new InvalidDataException("Guardian set contains duplicate actual addresses.");
         var dataStart = 1 + count * 11; var messageOffset = dataStart + count * 85;
