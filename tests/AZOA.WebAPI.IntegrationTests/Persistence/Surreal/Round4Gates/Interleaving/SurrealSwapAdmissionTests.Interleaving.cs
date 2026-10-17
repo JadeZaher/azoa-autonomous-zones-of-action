@@ -30,8 +30,11 @@ public sealed partial class SurrealSwapAdmissionTests
             var cancel = _store.CancelUnsentStageAsync(old.Id, 2, stageId, 1, Consent(oldAuthority));
             var claim = allowances.ClaimAsync(Allowance(next, executor));
             await Task.WhenAll(authorize, cancel, claim);
+            var authorizeOutcome = await authorize;
+            var cancelOutcome = await cancel;
+            var claimOutcome = await claim;
 
-            new[] { authorize.Result, cancel.Result }.Where(result => result is not null)
+            new[] { authorizeOutcome, cancelOutcome }.Where(result => result is not null)
                 .Should().ContainSingle("first send and unsent cancellation share one stage version");
             var oldStage = (await _store.GetStageAsync(stageId))!;
             var oldOperation = (await _store.GetAsync(old.Id))!;
@@ -40,7 +43,7 @@ public sealed partial class SurrealSwapAdmissionTests
             {
                 oldStage.State.Should().Be("SubmissionAuthorized");
                 oldOperation.State.Should().Be("Pending");
-                claim.Result.Should().BeNull("an operation that may broadcast keeps its allowance lane");
+                claimOutcome.Should().BeNull("an operation that may broadcast keeps its allowance lane");
                 (await allowances.ClaimAsync(Allowance(next, executor))).Should().BeNull("the loser re-reads the authorized winner");
                 (await allowances.GetAsync(allowanceId))!.OperationId.Should().Be(old.Id);
             }
@@ -51,7 +54,7 @@ public sealed partial class SurrealSwapAdmissionTests
                 (await _store.AuthorizeStageAsync(old.Id, 3, stageId, 2, oldAuthority)).Should().BeNull("a cancelled stage never sends");
                 var settled = await allowances.ClaimAsync(Allowance(next, executor));
                 settled.Should().NotBeNull("a never-sent cancelled holder hands the lane over");
-                if (claim.Result is not null) claim.Result.OperationId.Should().Be(next.Id);
+                if (claimOutcome is not null) claimOutcome.OperationId.Should().Be(next.Id);
                 var row = (await allowances.GetAsync(allowanceId))!;
                 row.OperationId.Should().Be(next.Id);
                 row.State.Should().Be("Held");
@@ -77,8 +80,10 @@ public sealed partial class SurrealSwapAdmissionTests
             var authorize = _store.AuthorizeStageAsync(operation.Id, 3, stageId, stage.Version, authority);
             var withdraw = _store.WithdrawSubmissionAsync(operation.Id, 3, stageId, stage.Version, Consent(authority));
             await Task.WhenAll(authorize, withdraw);
+            var authorizeOutcome = await authorize;
+            var withdrawOutcome = await withdraw;
 
-            new[] { authorize.Result, withdraw.Result }.Where(result => result is not null)
+            new[] { authorizeOutcome, withdrawOutcome }.Where(result => result is not null)
                 .Should().ContainSingle("both transitions compare-and-swap the same operation and stage versions");
             var saved = (await _store.GetStageAsync(stageId))!;
             (await _store.GetAsync(operation.Id))!.Version.Should().Be(4);

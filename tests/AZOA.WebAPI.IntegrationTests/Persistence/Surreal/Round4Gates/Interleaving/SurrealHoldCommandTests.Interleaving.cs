@@ -33,11 +33,12 @@ public sealed partial class SurrealHoldCommandTests
             return response;
         }, CancellationToken.None);
         await Task.WhenAll(consume, revoke).WaitAsync(TimeSpan.FromSeconds(15));
+        var consumeOutcome = await consume;
 
         var persisted = (await _store.GetExchangeSourceAsync(source.Id))!;
         var liability = await _store.GetHoldAsync(HoldCommandIdentity.Hold(intent.Opening!));
         var replay = await _store.CommitExchangeOpeningAsync(source.Id);
-        if (consume.Result is { } receipt)
+        if (consumeOutcome is { } receipt)
         {
             persisted.State.Should().Be("Committed");
             persisted.Version.Should().Be(1, "the source version is consumed exactly once");
@@ -53,7 +54,7 @@ public sealed partial class SurrealHoldCommandTests
             (await Counters()).Held.Should().Be(0);
             replay.Should().BeNull("the loser re-reads the revoked authority and still refuses");
         }
-        (await _executor.QueryAsync<HoldLedger>(SurrealQuery<HoldLedger>.From())).Should().HaveCount(consume.Result is null ? 0 : 1);
+        (await _executor.QueryAsync<HoldLedger>(SurrealQuery<HoldLedger>.From())).Should().HaveCount(consumeOutcome is null ? 0 : 1);
     }
 
     [Fact]
@@ -65,14 +66,16 @@ public sealed partial class SurrealHoldCommandTests
         var authorize = _store.AuthorizeSendAsync(command);
         var revoke = mandates.RevokeAsync(accepted.Id, revocation, authority.Direct!.Credential);
         await Task.WhenAll(authorize, revoke).WaitAsync(TimeSpan.FromSeconds(15));
+        var authorizeOutcome = await authorize;
+        var revokeOutcome = await revoke;
 
-        revoke.Result!.Status.Should().Be("Revoked", "an owner can always withdraw further automatic authorization");
+        revokeOutcome!.Status.Should().Be("Revoked", "an owner can always withdraw further automatic authorization");
         var uses = await _executor.QueryAsync<HoldMandateUseReceipt>(SurrealQuery<HoldMandateUseReceipt>.From()
             .Where(row => row.OperationId == command.Id));
         uses.Should().OnlyContain(row => row.MandateId == accepted.Id && row.MandateVersion == accepted.Version
             && row.AuthorityJson == accepted.CurrentAuthorityJson, "every use is bound to the pre-revocation mandate");
         var current = (await _store.GetCommandAsync(command.Id))!;
-        if (authorize.Result is { } authorized)
+        if (authorizeOutcome is { } authorized)
         {
             authorized.State.Should().NotBe(command.State);
             current.State.Should().Be(authorized.State);
