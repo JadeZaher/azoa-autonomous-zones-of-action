@@ -26,7 +26,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "action_node_execution";
         public string SchemaName => SchemaNameConst;
 
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long Version { get; set; }
         public string? FrozenInput { get; set; }
         public string? SigningAuthorityJson { get; set; }
@@ -34,6 +34,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? ExternalOperationJson { get; set; }
         public string? RecoveryState { get; set; }
         public DateTimeOffset? WaitUntil { get; set; }
+        [Default("ALWAYS false")]
         public bool ManualAdvanceReleased { get; set; }
 
         public enum ActionNodeState

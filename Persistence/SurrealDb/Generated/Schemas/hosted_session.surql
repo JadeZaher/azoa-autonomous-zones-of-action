@@ -27,6 +27,11 @@ DEFINE FIELD IF NOT EXISTS provider_key ON TABLE hosted_session TYPE string
 -- Durable admission claimed before any external side effect
 DEFINE FIELD IF NOT EXISTS admission_key ON TABLE hosted_session TYPE string
     ASSERT $value != NONE AND $value != "";
+DEFINE FIELD IF NOT EXISTS creation_token ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS creation_claimed_at ON TABLE hosted_session TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS creation_started_at ON TABLE hosted_session TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS creation_quarantined_at ON TABLE hosted_session TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS creation_completed_at ON TABLE hosted_session TYPE option<datetime>;
 
 -- Subject + tenancy
 DEFINE FIELD IF NOT EXISTS subject_user_id ON TABLE hosted_session TYPE option<record<user>>;
@@ -42,7 +47,16 @@ DEFINE FIELD IF NOT EXISTS state ON TABLE hosted_session TYPE string
     ASSERT $value INSIDE $hosted_session_state;
 DEFINE FIELD IF NOT EXISTS state_version ON TABLE hosted_session TYPE int
     DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS resume_lease_token ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS resume_lease_expires_at ON TABLE hosted_session TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS reconciled_by_user_id ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS reconciled_at ON TABLE hosted_session TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS reconciliation_reason ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS reconciliation_audit_json ON TABLE hosted_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS authoritative_outcome ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS provider_decision_id ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS provider_evidence_digest ON TABLE hosted_session TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS provider_evidence_conflict ON TABLE hosted_session TYPE option<bool>;
 DEFINE FIELD IF NOT EXISTS outcome_detail ON TABLE hosted_session TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS callback_count ON TABLE hosted_session TYPE int
     DEFAULT 0;

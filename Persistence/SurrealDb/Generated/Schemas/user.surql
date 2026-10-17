@@ -33,6 +33,7 @@ DEFINE FIELD IF NOT EXISTS external_user_id ON TABLE user TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS external_ref ON TABLE user TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS auth_wallet_address ON TABLE user TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS auth_wallet_chain_type ON TABLE user TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS auth_identity_version ON TABLE user TYPE option<int>;
 DEFINE FIELD IF NOT EXISTS auth_not_before ON TABLE user TYPE option<datetime>;
 
 -- ── Indexes ──────────────────────────────────────────────────

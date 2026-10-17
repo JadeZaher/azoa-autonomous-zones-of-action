@@ -9,13 +9,29 @@ graph LR
     api_key["api_key: Node"]:::nodeClass
     consent_audit["consent_audit: Node"]:::nodeClass
     consent_grant["consent_grant: Node"]:::nodeClass
+    exchange_hold_settlement_receipt["exchange_hold_settlement_receipt: Node"]:::nodeClass
+    exchange_hold_source["exchange_hold_source: Node"]:::nodeClass
+    exchange_purchase_allocation["exchange_purchase_allocation: Node"]:::nodeClass
     fiat_event["fiat_event: Node"]:::nodeClass
     fiat_payout["fiat_payout: Node"]:::nodeClass
     fiat_reversal["fiat_reversal: Node"]:::nodeClass
+    governance_command_receipt["governance_command_receipt: Node"]:::nodeClass
+    governance_proposal["governance_proposal: Node"]:::nodeClass
+    hold_command["hold_command: Node"]:::nodeClass
+    hold_command_authorization["hold_command_authorization: Node"]:::nodeClass
+    hold_command_receipt["hold_command_receipt: Node"]:::nodeClass
     hold_ledger["hold_ledger: Node"]:::nodeClass
+    hold_mandate_use_receipt["hold_mandate_use_receipt: Node"]:::nodeClass
+    hold_recovery_receipt["hold_recovery_receipt: Node"]:::nodeClass
+    hold_release_mandate["hold_release_mandate: Node"]:::nodeClass
+    hold_release_mandate_offer["hold_release_mandate_offer: Node"]:::nodeClass
     holon["holon: Node"]:::nodeClass
     holon_type_registry["holon_type_registry: Node"]:::nodeClass
+    hosted_provider_attempt["hosted_provider_attempt: Node"]:::nodeClass
+    hosted_provider_callback["hosted_provider_callback: Node"]:::nodeClass
     hosted_session["hosted_session: Node"]:::nodeClass
+    hosted_session_provider_alias["hosted_session_provider_alias: Node"]:::nodeClass
+    kyb_verification["kyb_verification: Node"]:::nodeClass
     kyc_authority_guard["kyc_authority_guard: Node"]:::nodeClass
     kyc_control_audit["kyc_control_audit: Node"]:::nodeClass
     kyc_document["kyc_document: Node"]:::nodeClass
@@ -29,6 +45,7 @@ graph LR
     node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
     node_governance_audit["node_governance_audit: Node"]:::nodeClass
     node_governance_parameters["node_governance_parameters: Node"]:::nodeClass
+    node_governance_policy_lock["node_governance_policy_lock: Node"]:::nodeClass
     node_treasury_audit["node_treasury_audit: Node"]:::nodeClass
     node_treasury_destination["node_treasury_destination: Node"]:::nodeClass
     oauth_exchange_code["oauth_exchange_code: Node"]:::nodeClass
@@ -42,7 +59,9 @@ graph LR
     user["user: Node"]:::nodeClass
     user_external_login["user_external_login: Node"]:::nodeClass
     wallet_auth_challenge["wallet_auth_challenge: Node"]:::nodeClass
+    wallet_auth_challenge_budget["wallet_auth_challenge_budget: Node"]:::nodeClass
     wallet_auth_claim_token["wallet_auth_claim_token: Node"]:::nodeClass
+    wallet_auth_identity_migration["wallet_auth_identity_migration: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
     operation_log["operation_log: Node (external)"]:::externalNode

@@ -18,6 +18,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [Slice("identity")]
     [Index("kyc_submission_user_id", Fields = new[] { "user_id" })]
     [Index("kyc_submission_status", Fields = new[] { "status" })]
+    [Index("kyc_submission_tenant_id", Fields = new[] { "tenant_id" })]
     public partial class KycSubmission : ISurrealRecord
     {
         public const string SchemaNameConst = "kyc_submission";
