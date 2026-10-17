@@ -77,7 +77,21 @@ static-review verdict, not runtime proof.
   AZOA needs no edits — only the 1.3.0 bump.
 - **Round 4, in flight at handoff** (background agents of the previous session; they may not
   survive the session ending):
-  - adversarial assessment → `tracks/platform-stub-closeout_20261015/round4-assessment-adversarial.md`
+  - adversarial assessment → `tracks/platform-stub-closeout_20261015/round4-assessment-adversarial.md` —
+    **DONE 2026-10-17.** Bottom line: no KYC, KYB or Stripe journey works end to end even in principle,
+    and the causes are internal defects. New: C2 the generated schema predates rounds 1–3 (61 tables, ~120
+    fields missing; **missing UNIQUE indexes fail open**, so schema regen must precede any runtime work);
+    C6 SurrealForge typed filters lowercase enum values (`ExpressionTranslator.cs` `NormaliseValue`), so
+    the KYC active-submission guard fails open and operator queues are empty, and captured-null filters
+    bind NULL not NONE (both queued into SurrealForge 1.3.0); C3 first-party KYC begin has no route; C7
+    fungible creation isn't registered in DI (dev API should fail to boot); H1/H2 no Identomat refresh
+    path, KYB gates nothing; H4/H5/H6/H10 exchange/DEX undeclared, child credentials 503, governance
+    gates lifted without a verdict, webhook delivery disabled. Proposes WP0 (compile + DI) → WP1 (schema
+    + stale index) → WP2–WP12 in parallel → sweep. **Coverage gap:** its fail-closed SurrealQL sweep
+    (binding names, strict validator, array captures, positional offsets, 3.x syntax) never reported,
+    so round 4 must re-run it.
+  - reconciled `round4-plan.md` — being written by an opus planner (then an adversarial critic review,
+    then owner decisions in one round).
   - optimism-challenge assessment → `.../round4-assessment-optimism.md` — **DONE 2026-10-17.** Headlines:
     "KYC/KYB set up", "Stripe complete", "exactly-once" and "lanes A/C closed" are not yet true (KYC
     stores and WTT quotes don't compile; `OffRampService.cs:452` uses an undeclared `requestedQuantity`;
