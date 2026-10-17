@@ -150,3 +150,23 @@ RedirectOrigins and optional bounded RetiredWebhookKeys; callbacks target
 `/api/kyc/callback/generic-hosted`. Credentials stay in deployment configuration.
 Source implementation and local synthetic HTTP fixtures do not establish vendor
 dashboard activation or live verification evidence.
+
+## §F-M1 refusal classification and session deletion (round 4)
+
+`IdentomatHttpTransport` reports a definitive refusal as `HostedSessionFlow.ProviderRefusedCode`:
+any 4xx, and 429/529 (529 is the documented one-hour block: "all requests from the blocked IP
+will return 529", `.omc/research/identomat-recovery-contract-full-2026-10-15.md` L9-L11). A
+refused `/begin` created nothing, so the flow releases the admission. 5xx, timeouts, transport
+exceptions and unreadable bodies stay `DependencyUnavailable` (uncertain, quarantined). 429/529
+also park the shared budget, so an immediate retry is refused locally and unsent.
+
+`IdentomatSessionDeletion` wraps the documented widget-host `POST /external-api/delete/`
+(`company_key`, `session_token`; answers `true` or `{"argumentError":"session-not-found"}`,
+`.omc/research/identomat-pending-result-find-2026-10-15.md` L914-L959). It is used only for a
+create response that arrives after its admission closed (Services/HostedSessions/AGENTS.md
+§recovery). Both the KYC adapter and the KYB provider implement it; the profile-bound KYC
+wrapper forwards it.
+
+Dev return URLs: the adapter forwards `general.returnUrl` only when it is public HTTPS, so the
+dev compose default is empty (dashboard configuration applies). Set a tunnel URL ending in
+`/verify-identity` (KYC) or `/business-verification` (KYB) to exercise redirects (F-M3, D7).
