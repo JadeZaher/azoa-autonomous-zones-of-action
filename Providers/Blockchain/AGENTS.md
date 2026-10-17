@@ -236,3 +236,24 @@ production stays off until that chain's protocol fixture passes in the sweep; an
 `IHttpClientFactory` named client `chain-rpc:{chain}` (production constructors take the factory), else a bare client.
 Fake-RPC flows configure the named client instead of reflection. Never put a node URL (it can embed a provider API key)
 into a result, log message or chain-info dictionary — `GetChainInfoAsync` no longer returns `rpcEndpoint`.
+
+## §broadcast-outcome — a failed broadcast POST is not a failed transaction (RV-L3 H1, round 4)
+
+`AlgorandProvider.BuildSignSubmitCoreAsync` signs, then POSTs `/v2/transactions` once (never retried:
+`RetrySafety.Broadcast`). The POST can fail AFTER algod accepted the bytes (timeout, reset, 5xx), so the
+outcome is classified, not assumed:
+
+- **Algod answered 4xx (not 408)** → the pool refused this exact txid; nothing can land. Definitive error
+  (`IsDefinitiveBroadcastRefusal`). A caller may retry under a new key.
+- **Anything else** (exception, 5xx, 408) → outcome unknown. The provider polls
+  `/v2/transactions/pending/{txid}` like any submit: confirmed → success; pool error → definitive error;
+  not seen in the poll window → the ordinary `PendingConfirmation` success carrying the txid (callers see
+  `OperationStatus.PendingConfirmationMarker` and record "pending + TxHash", reconciled from chain truth).
+  A cancelled request returns the same pending result without polling.
+
+Callers on value-moving paths (fiat collect, reversal clawbacks) treat a provider ERROR as definitive only
+when it lacks `OperationStatus.OutcomeUnknownMarker` ("reconcile against chain truth" — the phrase every
+provider's unacknowledged-broadcast error carries); with it, the move is recorded ambiguous with the txid
+the message names (`OperationStatus.TransactionIdIn`) and parks. Other Algorand broadcast sites (atomic
+groups, recipient preparation) and Solana still return the outcome-unknown error rather than the pending
+result; their callers must keep honouring the marker.

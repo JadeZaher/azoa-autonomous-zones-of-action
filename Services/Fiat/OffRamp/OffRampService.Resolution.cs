@@ -190,6 +190,9 @@ public sealed partial class OffRampService
         return AZOAResult<FiatPayout>.Success(row);
     }
 
+    /// <summary>Operation type of a fence claim, so a fence a crash left InProgress is never mistaken for a lost pay attempt.</summary>
+    public const string OperatorFenceOperationType = "fiat-off-ramp-fence";
+
     /// <summary>Reason a fenced move claim records: the operator closed the cash-out, so this leg may never run.</summary>
     public const string OperatorFenceReason = "Fenced by an operator resolution: this cash-out was closed and this move must never run.";
 
@@ -206,7 +209,7 @@ public sealed partial class OffRampService
         var record = await _idempotency.GetAsync(key, ct);
         if (record is null)
         {
-            var claim = await _idempotency.TryClaimAsync(key, PayoutOperationType, ct);
+            var claim = await _idempotency.TryClaimAsync(key, OperatorFenceOperationType, ct);
             if (claim.Won)
             {
                 await _idempotency.FailAsync(key, OperatorFenceReason, ct);
@@ -237,7 +240,7 @@ public sealed partial class OffRampService
         var claim = await _idempotency.GetAsync(key, ct);
         if (claim is null)
         {
-            var fence = await _idempotency.TryClaimAsync(key, PayoutOperationType, ct);
+            var fence = await _idempotency.TryClaimAsync(key, OperatorFenceOperationType, ct);
             if (fence.Won)
             {
                 await _idempotency.FailAsync(key, OperatorFenceReason, ct);
@@ -273,7 +276,7 @@ public sealed partial class OffRampService
     /// <summary>A pay claim stuck InProgress past a crash window but still inside Stripe's key retention.</summary>
     private bool IsReplayablePayClaim(IdempotencyRecord record)
     {
-        if (record.State != IdempotencyState.InProgress)
+        if (record.State != IdempotencyState.InProgress || record.OperationType != PayoutOperationType)
             return false;
         var age = _clock.GetUtcNow() - new DateTimeOffset(DateTime.SpecifyKind(record.CreatedAt, DateTimeKind.Utc));
         return age >= StalePayClaimAge && age < FiatHostedCreation.ReplayWindow;

@@ -40,6 +40,23 @@ public partial class OffRampTests
     }
 
     [Fact]
+    public async Task A_fence_claim_a_crash_left_in_progress_is_never_replayed_as_a_lost_payment()
+    {
+        // The resolution died between taking the pay fence and failing it; the stale-pay replay must not send.
+        var harness = new Harness { Holding = "50000" };
+        await harness.RequestAsync(amountMinorUnits: 500);
+        var payoutId = harness.Payouts.Rows.Single().Id;
+        await harness.Service.CollectUnitsAsync(payoutId);
+        harness.Idempotency.SeedAged(OffRampService.MoveIdempotencyKey(payoutId, "pay"), OffRampService.OperatorFenceOperationType,
+            IdempotencyState.InProgress, DateTime.UtcNow.AddMinutes(-10));
+        harness.Clock.Now = DateTimeOffset.UtcNow;
+
+        await harness.Service.SendMoneyAsync(payoutId);
+
+        harness.SentTransfers.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task An_operator_return_of_a_collected_tenant_cash_out_releases_its_debit_once()
     {
         var harness = Funded(500);

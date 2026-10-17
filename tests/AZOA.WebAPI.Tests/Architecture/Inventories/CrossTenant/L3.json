@@ -10,6 +10,7 @@
   { "store": "SurrealOnRampLotLedger", "method": "GetByIntentAsync", "tenantCheck": "operator/settlement only" },
   { "store": "SurrealOnRampLotLedger", "method": "UpdateIfVersionAsync", "tenantCheck": "settlement/cash-out/reversal only; version CAS" },
   { "store": "SurrealOnRampLotLedger", "method": "ListIssuedForUserAsync", "tenantCheck": "subject link; cash-out aging arithmetic only" },
+  { "store": "SurrealOnRampLotLedger", "method": "ListSoldSinceAsync", "tenantCheck": "cross-user by design: the off-ramp reads only the max sold rate (D-8c cross-scope floor); no row is projected to any caller" },
   { "store": "SurrealOnRampLotLedger", "method": "ListNeedingOperatorAsync", "tenantCheck": "Operator policy only" },
   { "store": "SurrealFiatReversalLedger", "method": "ClaimAsync", "tenantCheck": "record id = provider|scope|object; signature-verified webhook only" },
   { "store": "SurrealFiatReversalLedger", "method": "GetAsync", "tenantCheck": "operator/saga only" },

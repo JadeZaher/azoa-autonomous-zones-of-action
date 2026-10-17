@@ -40,9 +40,14 @@ spans the Stripe call (transaction-scope rule 5).
 **The replay window.** Stripe prunes idempotency keys after at least 24 hours, so a replay later
 than that could open a second object. `FiatHostedCreation.ReplayWindow` is 23 hours measured from
 `creation_started_at` (which precedes the first send, so the window is conservative). Past it, or on
-a quarantined row, the verdict is `NeedsOperator`: the operator reconciliation path
-(`ReconcileAdmissionAsync`) attaches the verified object. Connected accounts carry
-`metadata[azoa_payout_claim]=<rowId>` so the operator can find the one Stripe opened.
+a quarantined row, the verdict is `NeedsOperator`. The generic operator route
+(`POST /api/operator/hosted-sessions/{id}/reconcile`) cannot resolve Stripe rows (it needs a provider-attempt
+record the fiat path never writes), so payout-account setups have their own Stripe-specific exit:
+`POST /api/admin/fiat-payouts/accounts/{userId}/setup/resolve` (`PayoutAccountService.ResolveStuckSetupAsync`,
+see `Services/Fiat/OffRamp/AGENTS.md` §account-recovery). Connected accounts carry
+`metadata[azoa_payout_claim]=<rowId>` and `metadata[azoa_user_id]` so that exit can find the one Stripe opened.
+Checkout claims have no such exit: a new request key opens a new claim, and a Stripe session a lost response
+created expires unpaid (RV-L1-01; revisit if a stuck checkout claim ever blocks a person).
 
 ## §expiry-pin — checkout `expires_at` is fixed per claim (D8, round 4)
 
