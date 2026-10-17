@@ -183,8 +183,22 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
   send a hash), re-applies its rename as a logged pass, returns a merged hash; we fast-forward. It
   never writes to this checkout. `round3-join-ledger.md` lines quoting the retired word list are pinned
   as history in its `sweep.py`.
-- **Containers (podman):** `azoa-dev-surrealdb` (SurrealDB **3.1.4**, host :8020, the shared dev DB —
-  never wipe without reason); `logseq-ai-hub` owns :3000 (another app — leave it). E2E runs as compose
+- **⚠ INCIDENT 2026-10-17 07:43:34 MDT — the podman WSL machine is gone.** The WSL distribution
+  `podman-machine-default` was unregistered (`wsl -l` shows no distributions; the `wsldist` folder is
+  empty; no Lxss registry entries). Every container and volume inside it was lost, including
+  `azoa-dev-surrealdb` and its data and `logseq-ai-hub`. **Cause (found 2026-10-17):** a separate
+  Claude Code disk-cleanup session in `C:\Users\atooz` (session `f315249a…`) ran
+  `wsl --shutdown` + `wsl --unregister Ubuntu` + `wsl --unregister podman-machine-default` at 13:43Z,
+  after the owner selected "Nuke everything now" (334 GB reclaimed). Its preview listed the Ubuntu
+  home contents but not the podman containers' data. The SurrealForge agent's throwaway test
+  containers were running and were killed mid-run. The base image and cache survive, so the machine
+  can be recreated empty. **Recovered 2026-10-17 08:53 (owner decision): `podman-machine-default`
+  recreated empty** — podman 5.7.1, 6 CPU / 2 GiB / 100 GiB, **rootless** (`podman machine set
+  --rootful` if needed; SurrealDB RocksDB containers use `--user 0:0`), Docker-API pipe proxy not
+  available (podman CLI is fine). `azoa-dev-surrealdb` does not exist until `.\dev-up.ps1 -ResetDb`
+  rebuilds it (pre-launch, reseedable); `logseq-ai-hub` needs its own redeploy by the owner.
+- **Containers (podman, before the incident):** `azoa-dev-surrealdb` (SurrealDB **3.1.4**, host :8020,
+  the shared dev DB); `logseq-ai-hub` owned :3000 (another app). E2E runs as compose
   project `azoa-e2e` (own volume; ports 3200/5200). SurrealForge tests use throwaway containers
   (`surrealforge-test-121` :8031 / 3.1.4 :8032) — reap after use.
 - **Credentials:** values live in the ignored root `.env` under `IDENTOMAT_API_KEY`,

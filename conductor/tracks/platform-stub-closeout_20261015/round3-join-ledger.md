@@ -124,6 +124,12 @@ Security audit of 20 core resource controllers (static, opus; spawned during the
 
 - Verified sound (first audit): KYC submit/status/documents, KYB, tenant KYC policy, operator hosted sessions, webhook registration/events, deployment reads/cancel/list/artifacts, Ethereum recovery, blockchain-operation owner checks, credential issue, wallet owner checks + export, tenant/user consent, tenant custodial accounts, tenant user list.
 
+Liveness dead-end sweep (actions / sagas / webhooks / reconciliation / blockchain operations / custody; static, spawned during the round-4 assessment, arrived after `round4-plan.md` was drafted):
+- **CRITICAL — `BlockchainOperation.AwaitingSignature` has no exit.** Written at `Managers/BlockchainOperationManager.cs:859-864` when a provider requires client-side signing; reconciliation skips it (`Services/Reconciliation/ReconciliationService.cs:82,516-524`); `BlockchainOperationController` is GET-only; no submit/broadcast-signed route; the idempotency key stays `InProgress` "if ever added" (`BlockchainOperationManager.cs:345-347,361-366`).
+- **CRITICAL — the `AwaitingReconciliation` bulk sweep silently no-ops and reports success.** `SweepParkedRunsAsync` (`ActionManager.cs:1758-1819`) → `SurrealActionRunStore.GetByStatusAsync` (`:90-95`) uses a typed enum filter (the SurrealForge enum-casing class, fixed in 1.3.0 `ba0783b`); the background sweep and the operator button always scan 0, and the admin parked-runs page reports "every run resolved". Per-run reconcile works. Also fragile: an ordinal enum cast `(Row.ActionRunStatusKind)(int)status` (`:92`) with no compile-time guard.
+- **HIGH — outbound webhook delivery is inert everywhere:** `WebhookOptions.Enabled` defaults false with no override (`Services/Webhooks/WebhookOptions.cs:29`; `docker-compose.e2e.yml:111` explicit false), and the due-scan (`SurrealActionWebhookDeliveryStore.cs:18-24`, consent equivalent) uses the same enum filter; manual retry only accepts `DeadLettered`, which only the dead worker produces.
+- **MEDIUM:** no frontend for the generic saga dead-letter console (`/api/admin/sagas/dead-letters`). **LOW / UNVERIFIED:** tenant-delegated `NeedsParticipantAuthorization` resumption after consent expiry; `NodeFeeSettlementRecoveryWorker` reportedly unreferenced (peer-reported, not verified).
+
 ## Round-4 carry-forward
 
 **MUST-FIX before the fiat on-ramp accepts real cards (from lane B's final review):**
