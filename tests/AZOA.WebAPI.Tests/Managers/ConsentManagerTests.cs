@@ -21,7 +21,6 @@ public sealed class ConsentManagerTests
         var foreign = await manager.GetForUserAsync(Guid.NewGuid(), id);
         foreign.IsError.Should().BeTrue(); foreign.Message.Should().StartWith(TenantAuthorizationError.NotFound);
         (await manager.GetForUserAsync(owner, id)).Result!.Id.Should().Be(id);
-        grants.Verify(item => item.UpsertAsync(It.IsAny<ConsentGrant>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

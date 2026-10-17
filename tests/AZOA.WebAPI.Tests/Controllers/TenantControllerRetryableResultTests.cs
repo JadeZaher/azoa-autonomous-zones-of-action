@@ -73,6 +73,7 @@ public sealed class TenantControllerRetryableResultTests
         {
             new(ClaimTypes.NameIdentifier, tenantId.ToString()),
             new(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
+            new(AzoaClaims.AuthTime, DateTimeOffset.UtcNow.AddSeconds(-10).ToUnixTimeSeconds().ToString()),
             new("iat", DateTimeOffset.UtcNow.AddSeconds(-5).ToUnixTimeSeconds().ToString()),
             new("exp", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString())
         };

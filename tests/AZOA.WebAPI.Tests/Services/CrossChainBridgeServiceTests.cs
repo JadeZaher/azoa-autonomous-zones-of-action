@@ -18,6 +18,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 public class CrossChainBridgeServiceTests
@@ -55,7 +57,8 @@ public class CrossChainBridgeServiceTests
             // RealValueEnabled=true: these tests exercise the live flows behind the gate.
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
     }
 
     // ─── Initiation ───
@@ -397,6 +400,22 @@ public class CrossChainBridgeServiceTests
     /// Refunded. The redeem path's Redeeming usage is untouched (covered by
     /// the full-lifecycle + concurrency tests above).
     /// </summary>
+    /// <summary>Audit-2 M8: a reversal never pays an address that is not one of the bridge owner's wallets.</summary>
+    [Fact]
+    public async Task ReverseBridge_ToAnAddressTheOwnerDoesNotHold_IsRefusedBeforeAnyBurn()
+    {
+        using var harness = new FakeBridgeHarness();
+        var bridgeId = harness.SeedCompletedBridge(targetTokenId: "wrapped_token_1");
+        var (svc, _) = harness.CreateService();
+
+        var result = await svc.ReverseBridgeAsync(bridgeId, "attacker_controlled_addr");
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("bridge owner's wallets");
+        harness.GetBridge(bridgeId).Status.Should().Be(BridgeStatus.Completed);
+        harness.Legs.Target.Verify(leg => leg.BurnWrappedAsync(It.IsAny<BridgeBurnRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task ReverseBridge_Success_UsesExplicitReversingState_ThenRefunded()
     {
@@ -1032,7 +1051,8 @@ public class CrossChainBridgeServiceTests
                     StaleClaimTakeoverSeconds = staleClaimTakeoverSeconds ?? 120,
                 }),
                 new ConfigurationBuilder().Build(),
-                new ApprovedRealValueKycGate());
+                new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
             return (svc, _trackingStore);
         }
 

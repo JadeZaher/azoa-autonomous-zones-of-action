@@ -1,5 +1,6 @@
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
@@ -71,7 +72,8 @@ public sealed partial class SurrealDeploymentStore(ISurrealExecutor executor) : 
         => executor.QuerySingleAsync<DeploymentOperation>(SurrealQuery<DeploymentOperation>.Key(id), ct);
 
     /// <inheritdoc/>
-    public async Task<DeploymentOperation?> UpdateAsync(DeploymentOperation row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false)
+    public async Task<DeploymentOperation?> UpdateAsync(DeploymentOperation row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false,
+        IReadOnlyList<SigningAdmissionAuthority>? signing = null)
     {
         var update = SurrealWriter.UpdateOnly<DeploymentOperation>(row.Id)
             .Where(item => item.Version == expectedVersion && item.RecoveryChildId == null && !item.RecoveryProjected && item.ReplacedByOperationId == null
@@ -87,20 +89,31 @@ public sealed partial class SurrealDeploymentStore(ISurrealExecutor executor) : 
         update = row.Detail is null ? update.Unset(item => item.Detail) : update.Set(item => item.Detail, row.Detail);
         try
         {
-            var fenced = Fenced(update.Build(), row, requireActionAuthority);
+            var fenced = Fenced(update.Build(), row, requireActionAuthority, signing);
             var response = await executor.ExecuteAsync(fenced.Query, ct);
             response.EnsureAllOk();
             return response.GetValues<DeploymentOperation>(fenced.MutationIndex).SingleOrDefault();
         }
         catch (SurrealStatementException exception) when (exception.Message.Contains(ActionExecutionFence.FailureMarker, StringComparison.Ordinal)
-            || exception.Message.Contains(RecoveryConflict, StringComparison.Ordinal))
+            || exception.Message.Contains(RecoveryConflict, StringComparison.Ordinal)
+            || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal))
         { return null; }
     }
 
     // raw: action cancellation/fork and domain admission or first authorization share one transaction.
-    private static (SurrealQuery Query, int MutationIndex) Fenced(SurrealQuery mutation, DeploymentOperation row, bool required)
+    private static (SurrealQuery Query, int MutationIndex) Fenced(SurrealQuery mutation, DeploymentOperation row, bool required,
+        IReadOnlyList<SigningAdmissionAuthority>? signing = null)
     {
         var guards = new List<SurrealQuery>();
+        for (var index = 0; index < (signing?.Count ?? 0); index++)
+        {
+            var authority = signing![index];
+            if (authority.Credential.ActorUserId.ToString("N") != row.ActorUserId
+                || (authority.Credential.TenantId?.ToString("N") ?? "") != row.TenantId)
+                throw new InvalidOperationException("Deployment signing authority belongs to another actor or acting tenant.");
+            guards.AddRange(SigningAuthorityFence.Create(authority, authority.RequiredScopes, "deployment_signing_" + index)
+                ?? throw new InvalidOperationException("Deployment signing authority witness is incomplete."));
+        }
         if (required && row.ActionRunId is not null)
         {
             if (row.ActionNodeId is null || row.ActionIntentHash is null) throw new InvalidOperationException("Action deployment authority is incomplete.");
@@ -129,6 +142,12 @@ public sealed partial class SurrealDeploymentStore(ISurrealExecutor executor) : 
         => executor.QueryAsync<DeploymentOperation>(SurrealQuery<DeploymentOperation>.From()
             .Where(row => row.ActorUserId == actorId && row.TenantId == tenantId && row.CreatedAt <= snapshot)
             .OrderByDescending(row => row.CreatedAt).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 101)).Start(offset), ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<DeploymentOperation>> ListNeedsOperatorAsync(int limit, CancellationToken ct = default)
+        => executor.QueryAsync<DeploymentOperation>(SurrealQuery<DeploymentOperation>.From()
+            .Where(row => row.State == "NeedsOperator")
+            .OrderBy(row => row.UpdatedAt).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<DeploymentOperation>> ListPendingAsync(int limit, CancellationToken ct = default)

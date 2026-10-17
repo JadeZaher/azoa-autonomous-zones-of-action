@@ -13,6 +13,8 @@ using Moq;
 using Xunit;
 using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
+using AZOA.WebAPI.Tests.TestSupport;
+
 namespace AZOA.WebAPI.Tests.Actions;
 
 /// <summary>
@@ -38,14 +40,14 @@ public class ActionInvitationsTests
 
     // ─── Scaffolding ───
 
-    private static (ActionManager manager, InMemoryActionStore actionStore, InMemoryActionRunStore runStore)
+    private static (DurableActionExecutionHarness manager, InMemoryActionStore actionStore, InMemoryActionRunStore runStore)
         Build(Mock<IActionAccessRequestStore>? accessStore = null)
     {
         var actionStore = new InMemoryActionStore();
         var runStore = new InMemoryActionRunStore();
         var execStore = new InMemoryActionNodeExecutionStore();
 
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             actionStore,
             runStore,
             execStore,
@@ -59,8 +61,7 @@ public class ActionInvitationsTests
             WalletManagerMocks.Empty(),
             BlockchainProviderFactoryFakes.Returning(),
             BindingResolverFakes.PassThrough(),
-            configuration: null,
-            accessRequestStore: (accessStore ?? new Mock<IActionAccessRequestStore>()).Object);
+            (accessStore ?? new Mock<IActionAccessRequestStore>()).Object);
 
         return (manager, actionStore, runStore);
     }
@@ -180,14 +181,14 @@ public class ActionInvitationsTests
         var action = PublishedAction(ActionRunAccess.InviteOnly);
         await actionStore.UpsertActionAsync(action);
 
-        var first = await manager.InviteUserAsync(action.Id, Owner, Invited);
+        var first = await manager.Manager.InviteUserAsync(action.Id, Owner, Invited);
         first.IsError.Should().BeFalse();
 
         var afterFirst = (await actionStore.GetActionAsync(action.Id)).Result!;
         afterFirst.InvitedUserIds.Should().ContainSingle().Which.Should().Be(Invited);
 
         // Idempotent: re-inviting the same user does not duplicate.
-        var second = await manager.InviteUserAsync(action.Id, Owner, Invited);
+        var second = await manager.Manager.InviteUserAsync(action.Id, Owner, Invited);
         second.IsError.Should().BeFalse();
 
         var afterSecond = (await actionStore.GetActionAsync(action.Id)).Result!;
@@ -201,7 +202,7 @@ public class ActionInvitationsTests
         var action = PublishedAction(ActionRunAccess.InviteOnly, Invited);
         await actionStore.UpsertActionAsync(action);
 
-        var revoke = await manager.RevokeInviteAsync(action.Id, Owner, Invited);
+        var revoke = await manager.Manager.RevokeInviteAsync(action.Id, Owner, Invited);
         revoke.IsError.Should().BeFalse();
 
         var reloaded = (await actionStore.GetActionAsync(action.Id)).Result!;
@@ -222,7 +223,7 @@ public class ActionInvitationsTests
         await actionStore.UpsertActionAsync(action);
 
         // AC5: owner-only op — a non-owner cannot mint invites on another's action.
-        var result = await manager.InviteUserAsync(action.Id, Outsider, Invited);
+        var result = await manager.Manager.InviteUserAsync(action.Id, Outsider, Invited);
 
         result.IsError.Should().BeTrue();
         var reloaded = (await actionStore.GetActionAsync(action.Id)).Result!;
@@ -254,7 +255,7 @@ public class ActionInvitationsTests
         };
         await runStore.CreateAsync(run);
 
-        var fork = await manager.ForkAsync(run.Id, action.Nodes[0].Id, "branch", Outsider);
+        var fork = await manager.Manager.ForkAsync(run.Id, action.Nodes[0].Id, "branch", Outsider);
 
         fork.IsError.Should().BeTrue(
             "a non-invited user cannot fork an InviteOnly action (fork re-runs its nodes)");

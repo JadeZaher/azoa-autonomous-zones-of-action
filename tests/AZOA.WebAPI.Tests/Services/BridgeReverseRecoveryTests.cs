@@ -18,6 +18,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 /// <summary>
@@ -265,7 +267,8 @@ public class BridgeReverseRecoveryTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true, StaleClaimTakeoverSeconds = _staleSeconds }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         /// <summary>Seeds a bridge row and returns its ID.</summary>
         public string SeedBridge(BridgeTransactionResult tx)

@@ -21,7 +21,6 @@ public class WalletAuthManagerTests
     private readonly Mock<IWalletAuthClaimTokenStore> _claimTokens = new();
     private readonly Mock<IUserStore> _users = new();
     private readonly Mock<IWalletSignatureVerifier> _verifier = new();
-    private readonly Mock<IConsentGrantStore> _consentGrants = new();
     private readonly WalletAuthManager _mgr;
 
     private static readonly string Addr = new Algorand.Address(new byte[32]).ToString();
@@ -35,10 +34,6 @@ public class WalletAuthManagerTests
             ["Jwt:Issuer"] = "test",
             ["Jwt:Audience"] = "test",
         }).Build();
-        // Default: revoke-all-on-claim succeeds (AC3b). Individual tests override to
-        // assert the call happens / fails gracefully.
-        _consentGrants.Setup(c => c.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<int> { Result = 0 });
         _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, config);
     }
 
@@ -198,8 +193,6 @@ public class WalletAuthManagerTests
             .ReturnsAsync(AZOAResult<IUser>.Failure("Consent changed concurrently."));
         var result = await _mgr.ClaimAsync(id, "claim-token-abc", "a-strong-new-password", null, null, null, null);
         result.IsError.Should().BeTrue(); result.Result.Should().BeNull();
-        _consentGrants.Verify(store => store.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(),
-            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]

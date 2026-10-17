@@ -50,9 +50,11 @@ public interface IActionGraphBundleManager
     // unscoped — never pass null from a controller.
     Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? userId = null, AZOARequest? request = null);
     Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid id, ActionGraphBundleDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
-    /// <summary>Admits an exact artifact and returns its authoritative pending or confirmed deployment receipt.</summary>
+    /// <summary>Admits an exact artifact and returns its authoritative pending or confirmed deployment receipt;
+    /// native signers bind to <paramref name="credential"/> (absent ⇒ native signing fails closed).</summary>
     Task<AZOAResult<DeploymentReceipt>> DeployAsync(Guid id, DeploymentStartRequest request, string requestKey,
-        Guid userId, Guid? actingTenantId = null, CancellationToken ct = default);
+        Guid userId, Guid? actingTenantId = null, CancellationToken ct = default,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null);
 
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
     //

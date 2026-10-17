@@ -211,8 +211,16 @@ builder.Services.AddAuthentication(options =>
             var principal = context.Principal;
             if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
             {
-                context.Fail("Delegated child credentials are disabled until accepting endpoints are explicitly scope-allowlisted.");
-                return;
+                // D-5: allowlisted endpoint + scope + live consent + active issuing tenant; see Services/Consent/AGENTS.md.
+                var childGate = ActivatorUtilities.CreateInstance<AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate>(
+                    context.HttpContext.RequestServices);
+                var childRejection = await childGate.RejectAsync(
+                    principal!, context.HttpContext.GetEndpoint(), context.HttpContext.RequestAborted);
+                if (childRejection is not null)
+                {
+                    context.Fail(childRejection);
+                    return;
+                }
             }
 
             if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
@@ -646,7 +654,7 @@ builder.Services.AddAuthorization(o =>
         p.RequireAssertion(ctx =>
         {
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User))
-                return ctx.User.HasDappManagerRole();
+                return ctx.User.CanAssignDappRoles();
             if (!ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
                 || !long.TryParse(
                     ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.AuthTime)?.Value,
@@ -1017,6 +1025,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeSto
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthClaimTokenStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletOwnershipProofStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletOwnershipProofStore>();
 // Phase 1B federated sign-in: the (tenant_scope, provider, subject) binding and the
 // single-use handoff code that carries an OAuth result to the SPA.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IUserExternalLoginStore,

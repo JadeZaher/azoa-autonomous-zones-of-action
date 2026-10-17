@@ -4,6 +4,7 @@ using System.Text.Json;
 using AZOA.WebAPI.Helpers.Deployments;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 namespace AZOA.WebAPI.Services.Deployments;
@@ -60,10 +61,11 @@ public sealed partial class DeploymentService
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<DeploymentReceipt>> ContinueAsync(string operationId, Guid actor, Guid? tenant, CancellationToken ct = default)
+    public async Task<AZOAResult<DeploymentReceipt>> ContinueAsync(string operationId, Guid actor, Guid? tenant, CancellationToken ct = default,
+        SigningCredentialWitness? credential = null)
     {
         var row = await OwnedAsync(operationId, actor, tenant, ct);
-        return row is null ? Fail<DeploymentReceipt>("Deployment not found.") : await AdvanceAsync(row, actor, tenant, true, ct);
+        return row is null ? Fail<DeploymentReceipt>("Deployment not found.") : await AdvanceAsync(row, actor, tenant, true, ct, credential);
     }
 
     /// <inheritdoc/>
@@ -96,7 +98,7 @@ public sealed partial class DeploymentService
     }
 
     private async Task<AZOAResult<DeploymentReceipt>> AdvanceAsync(DeploymentOperation row, Guid actor, Guid? tenant,
-        bool authorizeNewStage, CancellationToken ct)
+        bool authorizeNewStage, CancellationToken ct, SigningCredentialWitness? credential = null)
     {
         if (row.ReplacedByOperationId is not null) return AZOAResult<DeploymentReceipt>.Success(View(row));
         if (row.State is "Confirmed" or "Cancelled" or "Failed" or "AbortedClean" or "FailedClean")
@@ -160,10 +162,13 @@ public sealed partial class DeploymentService
                 row = await store.UpdateAsync(row, row.Version, ct) ?? await RequireCurrentAsync(row.Id, ct);
                 return AZOAResult<DeploymentReceipt>.Success(View(row));
             }
+            var signers = await BindNativeAuthorityAsync(intent, actor, tenant, row.ActionRunId, credential, ct);
+            if (signers.IsError) return Fail<DeploymentReceipt>(signers.Message);
             row.Stage = next.Result.Stage;
             row.State = "Preparing";
-            var preparing = await store.UpdateAsync(row, row.Version, ct, requireActionAuthority: true);
-            if (preparing is null) return AZOAResult<DeploymentReceipt>.Success(View(await RequireCurrentAsync(row.Id, ct)));
+            var preparing = await store.UpdateAsync(row, row.Version, ct, requireActionAuthority: true, signers.Result);
+            if (preparing is null) return signers.Result is null ? AZOAResult<DeploymentReceipt>.Success(View(await RequireCurrentAsync(row.Id, ct)))
+                : Fail<DeploymentReceipt>(AuthorityChanged);
             row = preparing;
             var prepared = await module.PrepareNativeStageAsync(intent, row.Stage, row.Generation, ct);
             if (prepared.IsError || prepared.Result is null)
@@ -197,12 +202,13 @@ public sealed partial class DeploymentService
             if (access.IsError) return Fail<DeploymentReceipt>(access.Message);
             var allowed = await governance.EnsureChainAllowedAsync(intent.ChainType, "native-deployment", ct);
             if (!allowed.IsAllowed) return Fail<DeploymentReceipt>(allowed.ConsumerMessage);
-            var authorityError = await CheckSigningAuthorityAsync(intent, actor, tenant, ct);
-            if (authorityError is not null) return Fail<DeploymentReceipt>(authorityError);
+            var signers = await BindNativeAuthorityAsync(intent, actor, tenant, row.ActionRunId, credential, ct);
+            if (signers.IsError) return Fail<DeploymentReceipt>(signers.Message);
             row.SubmissionAuthorized = true;
             row.State = "Submitted";
-            var authorized = await store.UpdateAsync(row, row.Version, ct, requireActionAuthority: true);
-            if (authorized is null) return AZOAResult<DeploymentReceipt>.Success(View(await RequireCurrentAsync(row.Id, ct)));
+            var authorized = await store.UpdateAsync(row, row.Version, ct, requireActionAuthority: true, signers.Result);
+            if (authorized is null) return signers.Result is null ? AZOAResult<DeploymentReceipt>.Success(View(await RequireCurrentAsync(row.Id, ct)))
+                : Fail<DeploymentReceipt>(AuthorityChanged);
             row = authorized;
         }
         var wire = Read<NativeStagePreparation>(row.PreparedJson!);
@@ -314,6 +320,7 @@ public sealed partial class DeploymentService
                 row.RecoveryEvidenceJson, row.RecoveryProjected || row.RecoveryEvidenceJson is not null,
                 row.ReplacesOperationId, row.ReplacedByOperationId));
     }
+    private const string AuthorityChanged = "The deployment or its signing authority changed; reload the operation and continue.";
     private sealed record DiscoveryCursor(string Actor, string Tenant, DateTimeOffset Snapshot, int Offset);
 }
 

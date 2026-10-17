@@ -63,6 +63,8 @@ public interface IDappCompositionManager
     Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default,
         DeploymentGenerateRequest? request = null, Guid? actingTenantId = null);
 
+    /// <summary>Deploys the series' generated bundle; native signers bind to <paramref name="credential"/>.</summary>
     Task<AZOAResult<DeploymentReceipt>> DeployAsync(Guid seriesId, Guid userId, DeploymentStartRequest request,
-        string requestKey, Guid? actingTenantId = null, CancellationToken ct = default);
+        string requestKey, Guid? actingTenantId = null, CancellationToken ct = default,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null);
 }

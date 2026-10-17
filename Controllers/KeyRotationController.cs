@@ -42,6 +42,7 @@ public sealed class KeyRotationController : ControllerBase
     /// batch back to its pre-rotation state). Returns counts only — never key material.
     /// </summary>
     [HttpPost("rotate")]
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [EnableRateLimiting("financial")] // security-review HIGH-2: throttle the most destructive endpoint in the tree.
     [ProducesResponseType(typeof(KeyRotationReport), 200)]
     [ProducesResponseType(400)]

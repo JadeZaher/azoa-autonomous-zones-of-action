@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
@@ -143,6 +144,31 @@ public class WalletController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Issues the challenge the caller's external wallet signs to prove control (audit-1 M2).</summary>
+    [HttpPost("{id:guid}/ownership-challenge")]
+    [Authorize(Policy = "FirstPartyLogin")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<WalletChallengeResponse>>> CreateOwnershipChallenge(Guid id)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
+        var result = await _walletManager.CreateOwnershipChallengeAsync(id, userId.Value, HttpContext.RequestAborted);
+        return result.IsError ? (result.Message == "Wallet not found." ? NotFound(result) : BadRequest(result)) : Ok(result);
+    }
+
+    /// <summary>Verifies the signed challenge and records the wallet ownership proof.</summary>
+    [HttpPost("{id:guid}/ownership-proof")]
+    [Authorize(Policy = "FirstPartyLogin")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<WalletOwnershipProof>>> ProveOwnership(Guid id, [FromBody] WalletOwnershipProofRequest model)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(model.Signature)) return BadRequest(AZOAResult<WalletOwnershipProof>.Failure("A signature is required."));
+        var result = await _walletManager.ProveOwnershipAsync(id, userId.Value, model.Signature, model.Message, HttpContext.RequestAborted);
+        return result.IsError ? (result.Message == "Wallet not found." ? NotFound(result) : BadRequest(result)) : Ok(result);
+    }
+
     // ─── Export a platform wallet's private key ───
 
     [HttpPost("{id:guid}/export")]
@@ -263,3 +289,6 @@ public class WalletController : ControllerBase
     }
 
 }
+
+/// <summary>Body for <c>POST /api/wallet/{id}/ownership-proof</c>: the wallet's signature over the issued challenge message.</summary>
+public sealed record WalletOwnershipProofRequest(string Signature, string? Message);

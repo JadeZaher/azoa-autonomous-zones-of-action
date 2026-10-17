@@ -64,4 +64,30 @@ public sealed partial class SurrealConsentLifecycleTests
         created.IsError.Should().BeFalse(); created.Result!.IsDefault.Should().BeFalse();
         (await wallets.GetByIdAsync(prior.Id)).Result!.IsDefault.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Tenant_bootstrap_returns_the_committed_wallet_on_create_and_on_exact_replay()
+    {
+        var authority = new SigningConsentWitness(1, Authority() with { ActorUserId = _tenant }, [AzoaScopes.TenantProvision], []);
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+            .Set(row => row.OwnerTenantId, "user:" + _tenant.ToString("N")).Set(row => row.ExternalUserId, "child").Build())).EnsureAllOk();
+        (await _store.AdmitProvisionedAsync(_actor, "child", authority)).Should().NotBeNull();
+        var walletAuthority = authority with { RequiredScopes = [AzoaScopes.TenantProvision, AzoaScopes.WalletManage, AzoaScopes.KycRead] };
+        var candidate = new Wallet { Id = WalletBootstrapIdentity.For(_actor, "Algorand"), UserId = _actor,
+            ChainType = "Algorand", Address = "bootstrap-replay", WalletType = WalletType.Platform,
+            EncryptedPrivateKey = "fixture-ciphertext", IsDefault = true };
+        var wallets = new SurrealWalletStore(_executor);
+
+        var created = await wallets.BootstrapTenantAsync(candidate, "child", walletAuthority);
+        var replayed = await wallets.BootstrapTenantAsync(candidate, "child", walletAuthority);
+
+        foreach (var outcome in new[] { created, replayed })
+        {
+            outcome.IsError.Should().BeFalse(outcome.Message);
+            outcome.Result!.Id.Should().Be(candidate.Id);
+            outcome.Result.Address.Should().Be("bootstrap-replay");
+            outcome.Result.UserId.Should().Be(_actor);
+        }
+        (await _executor.QueryAsync<Row>(SurrealQuery<Row>.From())).Should().ContainSingle();
+    }
 }
