@@ -888,8 +888,11 @@ public class OffRampTests
                     return Task.CompletedTask;
                 });
             preparedModule.Setup(m => m.ObserveValueTransferAsync(It.IsAny<PreparedValueTransfer>(), It.IsAny<CancellationToken>()))
+                // A transaction never submitted is not observable on chain (Unknown), which is what
+                // makes the service submit it; a submitted one is Confirmed or still Pending.
                 .ReturnsAsync((PreparedValueTransfer prepared, CancellationToken _) => AZOAResult<ChainConfirmation>.Success(
-                    submitted.Contains(prepared.TransactionId) && TransferConfirms ? ChainConfirmation.Confirmed : ChainConfirmation.Pending));
+                    !submitted.Contains(prepared.TransactionId) ? ChainConfirmation.Unknown
+                    : TransferConfirms ? ChainConfirmation.Confirmed : ChainConfirmation.Pending));
             provider.Setup(p => p.TryGetModule<IValueTransferTransactionModule>(out It.Ref<IValueTransferTransactionModule?>.IsAny))
                 .Returns((out IValueTransferTransactionModule? valueModule) => { valueModule = preparedModule.Object; return true; });
 
