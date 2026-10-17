@@ -230,7 +230,9 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         var intent = intentRead.Result;
         if (intent is null
             || !string.Equals(intent.FlowKind, HostedSessionFlowKinds.FiatCheckout, StringComparison.Ordinal)
-            || !string.Equals(intent.ProviderKey, FiatRailIds.StripeProviderKey, StringComparison.Ordinal))
+            || !string.Equals(intent.ProviderKey, FiatRailIds.StripeProviderKey, StringComparison.Ordinal)
+            // D-8: a tenant payout top-up credits the tenant's float, never units.
+            || OffRamp.TenantPayoutTopUp.IsTopUpAdmission(intent.AdmissionKey))
         {
             return FiatEventOutcome.Ignored;
         }

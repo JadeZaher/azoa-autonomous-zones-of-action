@@ -249,3 +249,14 @@ and close fail. The record id still hashes the bare tenant hex (`ProjectTreasury
 reads go through the record id, and `ProjectTreasuryService.ParseTenant` accepts both link and bare
 forms, so `GuardRowOwnership` compares GUIDs, never strings. Admin wire views that echo
 `row.TenantId` now show the link form (see the lane record's cross-lane note).
+
+## §reattribution — tenant-funded cash-outs return units to the tenant (round 4, D-8)
+
+Owner decision (b): units collected by a tenant-funded cash-out belong to the tenant that paid to buy
+them back. `IPlatformReserve.ReattributeReturnAsync` applies, in one ledger CAS and under the same
+replay window as a draw: source partition `Return amount` and `Declared -= amount` (its availability
+and promises are unchanged), target partition `Declared += amount` (created on first use). Total
+declared supply is unchanged, so the supply cap still holds. Only `ReserveDrawAuthority.NodeOperator`
+may call it (the off-ramp rail; both partitions come from node configuration and a node-written row).
+The target partition is `tenant-payout:{tenant compact id}`; the cash-out row records it in
+`collect_partition`, and returning units draws `Issue` from that same partition.

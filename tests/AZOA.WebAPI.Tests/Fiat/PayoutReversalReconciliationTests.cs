@@ -148,7 +148,7 @@ public sealed class PayoutReversalReconciliationTests
                 }));
             var handler = new PayoutReversalEventHandler(
                 new FiatOptions(), payouts.Object, reversals.Object, connect.Object,
-                NullLogger<PayoutReversalEventHandler>.Instance);
+                Mock.Of<ITenantPayoutFunding>(), NullLogger<PayoutReversalEventHandler>.Instance);
             var context = new FiatEventContext(
                 new FiatEvent { ProviderEventId = "evt_" + Guid.NewGuid().ToString("N") },
                 PayoutReversalEventHandler.TransferReversedEventType, null, null, null,
