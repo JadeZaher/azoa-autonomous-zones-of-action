@@ -10,6 +10,23 @@ namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
 public partial class SolanaProvider
 {
+    /// <inheritdoc cref="IDexTransactionModule.DexCapability"/>
+    public DexCapability DexCapability { get; } = new("Jupiter", "6-whirlpool/1", ExactInput: true, ExactOutput: false,
+        NativeInput: true, NativeOutput: true, SelfRecipientOnly: true,
+        ["Jupiter Build API single 100% Orca Whirlpool hop only; no split, multihop, RFQ, tip or Jupiter platform fee.",
+         "Standard SPL token program mints only; Token-2022, transfer hooks and transfer fees are refused.",
+         "Native SOL uses a dedicated operation-owned wrapped account; an existing wrapped SOL account is never closed.",
+         "The recipient is the owner; a created output account remains disclosed rent until separately consented cleanup."],
+        CleanupSemantics: [SwapCleanupContract.CloseCurrentZeroHolding]);
+
+    /// <inheritdoc cref="IDexTransactionModule.DescribeDexNetworkAsync"/>
+    public async Task<AZOAResult<DexNetwork>> DescribeDexNetworkAsync(CancellationToken ct = default)
+    {
+        try { return Ok(new DexNetwork(ChainType, ActiveNetwork.ToString(), "solana:" + await VerifyGenesisAsync(ct))); }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException)
+        { return AZOAResult<DexNetwork>.FailureWithCode("Solana genesis identity is unavailable or differs from the bound network.", AzoaErrorCodes.DependencyUnavailable); }
+    }
+
     /// <inheritdoc cref="IDexTransactionModule.GetNextSwapStageAsync"/>
     public Task<AZOAResult<SwapNextStage>> GetNextSwapStageAsync(SwapIntent intent,
         IReadOnlyList<SwapStageHistory> history, CancellationToken ct = default)

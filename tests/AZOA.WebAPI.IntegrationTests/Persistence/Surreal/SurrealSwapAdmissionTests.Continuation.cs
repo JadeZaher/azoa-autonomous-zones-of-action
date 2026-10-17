@@ -103,4 +103,75 @@ public sealed partial class SurrealSwapAdmissionTests
         saved.State.Should().Be("Planned");
         saved.PreviousStageId.Should().Be(stageId);
     }
+
+    [Fact]
+    public async Task CancellingAnUnsentCleanupReturnsToCleanupReadyAndReplansTheSameStageAtTheNextGeneration()
+    {
+        var (operation, stage, authority, prepared) = await PreparedStageAsync("cleanup-cancel");
+        var stageId = SurrealRecordGuid.BareId(stage.Id);
+        var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
+        (await _store.AuthorizeStageAsync(operation.Id, 2, stageId, 1, authority)).Should().NotBeNull();
+        var confirmed = new SwapStageObservation("Confirmed", prepared.TransactionIds, intent.Terms.Network.ProtocolIdentity,
+            intent.Terms.GrossInput, intent.Terms.MinimumOutput, intent.Terms.PlatformFee.Amount, "3000", "0",
+            "{\"receipt\":\"finalized-swap-fixture\"}");
+        (await _store.RecordObservationAsync(operation.Id, 3, stageId, 2, confirmed)).Should().NotBeNull();
+        var consent = new SwapCleanupConsent(1, operation.Id, intent.QuoteHash, new string('b', 64), intent.Terms.ActorUserId,
+            null, intent.Terms.Owner, intent.Terms.OutputAsset.Id, "CloseCurrentZeroHolding", intent.Terms.Budget.MaximumCleanupFee, true);
+        SwapStagePlan Cleanup(int generation) => prepared.Plan with
+        {
+            Stage = "CloseOptIn", Generation = generation, Purpose = "Cleanup", ReservedNetworkFee = intent.Terms.Budget.MaximumCleanupFee,
+            CleanupConsent = consent,
+            PreparationKey = SwapOperationIdentity.CleanupPreparation(operation.Id, "CloseOptIn", generation, operation.IntentHash, consent),
+        };
+        (await _store.BeginCleanupAsync(operation.Id, 4, consent, authority)).Should().NotBeNull();
+        var planned = (await _store.ClaimNextStageAsync(operation.Id, 5, Cleanup(0), authority))!;
+        var plannedId = SurrealRecordGuid.BareId(planned.Id);
+
+        (await _store.CancelUnsentStageAsync(operation.Id, 6, plannedId, planned.Version, Consent(authority))).Should().NotBeNull();
+
+        var ready = (await _store.GetAsync(operation.Id))!;
+        ready.State.Should().Be("CleanupReady", "an unsent cleanup cancellation must not strand the retained resource lane in Cancelled");
+        ready.CleanupStarted.Should().BeTrue();
+        (await _store.CancelUnsentStageAsync(operation.Id, 6, plannedId, planned.Version, Consent(authority)))!.State
+            .Should().Be("Cancelled", "the response-loss replay returns the same cancelled stage");
+        var effectRetry = prepared.Plan with
+        {
+            Generation = 1, PreparationKey = SwapOperationIdentity.Preparation(operation.Id, "swap", 1, operation.IntentHash),
+        };
+        (await _store.ClaimNextStageAsync(operation.Id, 7, effectRetry, authority)).Should().BeNull("CleanupReady admits only cleanup plans");
+        var replanned = (await _store.ClaimNextStageAsync(operation.Id, 7, Cleanup(1), authority))!;
+        replanned.Generation.Should().Be(1);
+        replanned.PreviousStageId.Should().Be(plannedId);
+        (await _store.GetAsync(operation.Id))!.State.Should().Be("Preparing");
+    }
+
+    [Fact]
+    public async Task CancellingTheCleanupOfANeverSentOperationReturnsItToCancelledSoItsLaneCanBeHandedOver()
+    {
+        var (operation, stage, authority, prepared) = await PreparedStageAsync("cleanup-never-sent");
+        var stageId = SurrealRecordGuid.BareId(stage.Id);
+        var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
+        (await _store.CancelUnsentStageAsync(operation.Id, 2, stageId, 1, Consent(authority))).Should().NotBeNull();
+        var consent = new SwapCleanupConsent(1, operation.Id, intent.QuoteHash, new string('c', 64), intent.Terms.ActorUserId,
+            null, intent.Terms.Owner, intent.Terms.OutputAsset.Id, "CloseCurrentZeroHolding", intent.Terms.Budget.MaximumCleanupFee, true);
+        var cleanup = prepared.Plan with
+        {
+            Stage = "CloseOptIn", Purpose = "Cleanup", ReservedNetworkFee = intent.Terms.Budget.MaximumCleanupFee, CleanupConsent = consent,
+            PreparationKey = SwapOperationIdentity.CleanupPreparation(operation.Id, "CloseOptIn", 0, operation.IntentHash, consent),
+        };
+        (await _store.BeginCleanupAsync(operation.Id, 3, consent, authority)).Should().NotBeNull();
+        var planned = (await _store.ClaimNextStageAsync(operation.Id, 4, cleanup, authority))!;
+        var plannedId = SurrealRecordGuid.BareId(planned.Id);
+
+        (await _store.CancelUnsentStageAsync(operation.Id, 5, plannedId, planned.Version, Consent(authority))).Should().NotBeNull();
+
+        var cancelled = (await _store.GetAsync(operation.Id))!;
+        cancelled.State.Should().Be("Cancelled", "no stage ever had egress, so nothing pins the allowance lane in CleanupReady");
+        (await _store.CancelUnsentStageAsync(operation.Id, 5, plannedId, planned.Version, Consent(authority)))!.State
+            .Should().Be("Cancelled", "the response-loss replay agrees with the no-egress outcome");
+        (await _store.ClaimNextStageAsync(operation.Id, 6, cleanup with
+        {
+            Generation = 1, PreparationKey = SwapOperationIdentity.CleanupPreparation(operation.Id, "CloseOptIn", 1, operation.IntentHash, consent),
+        }, authority)).Should().BeNull("a cancelled never-sent operation has nothing left to clean up");
+    }
 }

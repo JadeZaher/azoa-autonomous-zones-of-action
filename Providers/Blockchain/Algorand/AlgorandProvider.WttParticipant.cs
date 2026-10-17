@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
-public partial class AlgorandProvider
+public partial class AlgorandProvider : IWttParticipantModule
 {
     /// <inheritdoc cref="IWttParticipantModule.PrepareWttParticipantAsync"/>
     public async Task<AZOAResult<WttParticipantPreparation>> PrepareWttParticipantAsync(WttOperationIntent intent,

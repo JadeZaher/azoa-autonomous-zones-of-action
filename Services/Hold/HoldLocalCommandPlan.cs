@@ -61,6 +61,8 @@ public sealed record HoldLocalCommandPlan(HoldLedger Result, HoldLedger? Child,
                 || current.ProtocolIdentity != intent.Asset.ProtocolIdentity || current.AssetId != intent.Asset.AssetId
                 || current.HoldingAddress != intent.Asset.HoldingAddress || intent.Definition is not null)
                 return Fail("The unchanged held aggregate and original admission provenance are required.");
+            if (current.EconomicSourceId is not null)
+                return Fail("A purchased liability settles only through its original economic source or a release to its beneficiary.");
             var definition = JsonSerializer.Deserialize<HoldDefinition>(current.DefinitionJson);
             if (definition is null || definition.Asset != intent.Asset || definition.QuantityBaseUnits != current.Amount
                 || definition.FundingSource != current.FundingSource || definition.ReservePartition != current.ReservePartition
@@ -76,7 +78,7 @@ public sealed record HoldLocalCommandPlan(HoldLedger Result, HoldLedger? Child,
             if (intent.Kind == "Refund")
             {
                 if (current.FundingSource != "Reserve" || intent.ActorUserId != intent.OwnerUserId
-                    || intent.NextHoldId is not null || intent.NextBeneficiaryUserId is not null
+                    || !HoldCustodyScope.AdmitsSettlement(intent) || intent.NextHoldId is not null || intent.NextBeneficiaryUserId is not null
                     || intent.NextReleaseNotBefore is not null || intent.NextAutoRelease)
                     return Fail("A local refund returns the original owner's reserve commitment only.");
                 var planned = HoldReserveMutationPlan.Create(reserve, current.ReservePartition, ReserveDrawKind.CancelHold,

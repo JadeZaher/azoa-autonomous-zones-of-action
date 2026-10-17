@@ -13,6 +13,9 @@ public interface IDexTransactionModule : IBlockchainProviderModule
     /// <summary>Describes the actual supported protocol grammar without implying configured readiness.</summary>
     DexCapability DexCapability { get; }
 
+    /// <summary>Reads the authoritative physical network identity that binds quotes, without signing or sending.</summary>
+    Task<AZOAResult<DexNetwork>> DescribeDexNetworkAsync(CancellationToken ct = default);
+
     /// <summary>Checks public terms and returns fresh protocol evidence without signing or sending.</summary>
     Task<AZOAResult<DexQuoteTerms>> QuoteSwapAsync(DexQuoteTerms requested, CancellationToken ct = default);
 

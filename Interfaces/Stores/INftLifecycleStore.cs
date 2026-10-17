@@ -8,8 +8,9 @@ public interface INftLifecycleStore
 {
     /// <summary>Reserves the current asset version for one durable operation before signing.</summary>
     Task<bool> ReserveAuthorityAsync(NftAssetAuthority authority, NftLifecycle lifecycle, CancellationToken ct = default);
-    /// <summary>Cancels only a never-dispatched lifecycle and releases its asset reservation atomically.</summary>
-    Task<bool> CancelUnsentAsync(NftLifecycle expected, NftAssetAuthority? authority, CancellationToken ct = default);
+    /// <summary>Cancels only a never-dispatched lifecycle under the requester's current consent and releases its asset reservation atomically.</summary>
+    Task<bool> CancelUnsentAsync(NftLifecycle expected, NftAssetAuthority? authority,
+        AZOA.WebAPI.Models.Signing.SigningConsentWitness consent, CancellationToken ct = default);
     /// <summary>Resolves a credential only through exact network/asset identity and original completed issuance.</summary>
     Task<CredentialOwnershipRecord?> FindCredentialAsync(string chain, string network, string assetId, string? contractAddress, CancellationToken ct = default);
     /// <summary>Reads an immutable participant/creation snapshot page, including terminal rows for stable pagination.</summary>

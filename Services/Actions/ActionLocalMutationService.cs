@@ -9,6 +9,7 @@ using AZOA.WebAPI.Models.Actions;
 using ActionLocalReceipt = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionLocalReceipt;
 using AZOA.WebAPI.Services.Actions.Handlers;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Services.Actions;
 

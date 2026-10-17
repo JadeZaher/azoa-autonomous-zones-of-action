@@ -17,3 +17,8 @@ The closed observation verdicts are Pending, Confirmed, FailedOnChain,
 ExpiredAbsent and NeedsOperator. Only Confirmed carries a completed swap's exact
 economic evidence. Retained prerequisite effects are distinct from swap success.
 The full reviewed contract is `conductor/tracks/platform-stub-closeout_20261015/round3-dex-contract.md`.
+
+`DexCapabilityView` pairs a module's grammar with the provider-read network
+identity and a readiness flag; it is discovery, not a liquidity claim.
+`SwapActionOutput` is the only workflow-visible swap result and is projected
+from the immutable settlement receipt (never from a quote or unsigned wire).

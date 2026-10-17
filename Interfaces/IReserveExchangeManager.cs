@@ -7,13 +7,13 @@ namespace AZOA.WebAPI.Interfaces;
 
 /// <summary>
 /// The treasury-rate exchange: a sponsor spends the platform unit, the project receives it
-/// on chain, and the sponsor receives project units — as one atomic group (N-X1 / D50).
+/// on chain, and the sponsor receives project units — as one atomic group (N-X1 / D50) settled through
+/// a durable exchange source (see Services/Reserve/AGENTS.md §durable-exchange).
 /// </summary>
 /// <remarks>
-/// <para><b>This is not a swap and not an AMM.</b> The existing <c>Swap</c> node and
-/// <c>SwapManager</c> delegate to DEX adapters and stay off this path entirely; nothing here
-/// is wired through <c>ISwapManager</c>. There is no pool, no curve and no price discovery:
-/// the consumer computes the rate and this seam executes the move it already decided (D7/D16).</para>
+/// <para><b>This is not a swap and not an AMM.</b> The DEX path stays separate and nothing here
+/// resolves a DEX service. There is no pool, no curve and no price discovery: the consumer computes
+/// the rate and this seam executes the move it already decided (D7/D16).</para>
 /// <para><b>Every exchange is gated exactly like an allocation.</b> Identity readiness (D46),
 /// the person's live consent when a tenant drives it (W3.6), the node governance guard, and
 /// the reserve's own named-partition ledger (W3.1), which is what makes an oversubscription

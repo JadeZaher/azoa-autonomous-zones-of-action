@@ -349,7 +349,7 @@ public static class AzoaScopes
             [ContractDeploySign] = "Deploy a native contract with your wallet and explicit fee limits.",
             [ContractCallSign] = "Execute a state-changing native program call.",
             [SolanaAccountSign] = "Manage Solana metadata and token accounts, including rent destinations.",
-            [WttSourceSign] = "Send tokens through Wormhole with explicit source costs.",
+            [WttSourceSign] = "Send tokens through Wormhole with explicit source costs and no relayer fee; a tenant acting for you can deliver only to your own custodial wallets (paying someone else needs transfer:sign).",
             [WttTargetSign] = "Complete a Wormhole transfer with explicit destination costs.",
             [WttParticipantSign] = "Authorize the exact receiving-account prerequisite for a Wormhole transfer.",
             [WttCleanupSign] = "Return remaining Wormhole stage funds to your original wallet with explicit costs.",

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Models.Actions;
@@ -116,10 +117,10 @@ public class EmitNodeConfig
     public string? EventType { get; set; }
 }
 
-/// <summary>Swap config: tenant-supplied DEX swap params. Rate comes from the DEX, never AZOA.</summary>
+/// <summary>Swap config: frozen exact-input quote request; price, receipt and costs come from the durable DEX journal.</summary>
 public class SwapNodeConfig
 {
-    public SwapExecuteRequest Request { get; set; } = new();
+    public DexQuoteRequest? Quote { get; set; }
 }
 
 /// <summary>Grant (mint-to-actor) config. Actor user is taken from the run context, never this body.</summary>

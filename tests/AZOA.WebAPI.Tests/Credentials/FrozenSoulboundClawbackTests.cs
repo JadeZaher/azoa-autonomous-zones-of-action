@@ -66,7 +66,8 @@ public sealed class FrozenSoulboundClawbackTests
         rail.Rail.Configuration["NftFees:Policies:0:TreasuryAddress"] = treasury;
         var quote = (await rail.Rail.Service.QuoteFeeAsync(rail.IssuerA, "Algorand", "Revoke", nftId: issued.Record.Id)).Result!;
         var result = await rail.Manager.RevokeAsync(AssetId, new() { ChainType = "Algorand", ContractAddress = "ASA",
-            FeeAuthorization = new(quote.Revision, "30", quote.QuoteId), Reason = "Membership expired" }, rail.IssuerA, "revoke");
+            FeeAuthorization = new(quote.Revision, "30", quote.QuoteId), Reason = "Membership expired",
+            AuthenticationWitness = AZOA.WebAPI.Tests.TestSupport.NftLifecycleHarness.Credential(rail.IssuerA) }, rail.IssuerA, "revoke");
 
         result.IsError.Should().BeFalse(result.Message);
         result.Message.Should().NotContain("frozen",

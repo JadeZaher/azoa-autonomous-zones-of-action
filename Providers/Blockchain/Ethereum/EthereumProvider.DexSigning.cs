@@ -22,8 +22,11 @@ public partial class EthereumProvider
         var quote = ReadDexAcceptedIntent(intent);
         var snapshot = await ReadDexSnapshotAsync(quote.Deployment, ct);
         if (!CurrentDexTime(snapshot.ChainTime)) return Error<PreparedSwapStage>("Finalized Ethereum evidence is not current enough for fresh signing.");
-        if (snapshot.ProtocolIdentity != saved.ProtocolIdentity || snapshot.ChainTime >= EthereumDexExecutionCodec.Amount(quote.ExecutionDeadline))
-            return Error<PreparedSwapStage>("The original execution deadline or physical network no longer permits fresh signing.");
+        if (snapshot.ProtocolIdentity != saved.ProtocolIdentity)
+            return Error<PreparedSwapStage>("The original physical network no longer permits fresh signing.");
+        if (plan.Purpose == "Effect" && snapshot.ChainTime >= EthereumDexExecutionCodec.Amount(quote.ExecutionDeadline))
+            return AZOAResult<PreparedSwapStage>.FailureWithCode("The executor authorization deadline elapsed; the stage will not be signed.",
+                DexResultCodes.Unsettleable);
         var fees = await GetFeeDataAsync(ct);
         if (fees.IsError || fees.Result is null || fees.Result.MaxFeePerGas > EthereumDexExecutionCodec.Amount(saved.Call.MaxFee) ||
             fees.Result.MaxPriorityFeePerGas > EthereumDexExecutionCodec.Amount(saved.Call.PriorityFee))

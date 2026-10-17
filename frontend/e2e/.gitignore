@@ -1,0 +1,4 @@
+# Per-run certificates and random vendor secrets written by scripts/e2e-stack.mjs.
+.generated/
+# Playwright traces, screenshots and the HTML report (see playwright.config.ts outputDir).
+.output/

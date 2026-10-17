@@ -47,14 +47,16 @@ public static class ExchangeAuthorityFence
                 && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == null && row.RevokedAt == null);
         statements.Add(SurrealGeneratedStatementScope.Assign(selected.Set(row => row.Scopes, grant.StoredScopes).Build(),
             prefix + "_grant", "_" + prefix + "_grant"));
-        statements.Add(SurrealQuery.Of($"""
-            IF $_{prefix}_participant = NONE OR $_{prefix}_participant = [] OR $_{prefix}_wallet = NONE OR $_{prefix}_wallet = []
-                OR $_{prefix}_grant = NONE OR $_{prefix}_grant = [] {{ THROW 'EXCHANGE_PARTICIPANT_AUTHORITY_CHANGED' }}
+        statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_participant", FailureMarker));
+        statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_wallet", FailureMarker));
+        statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_grant", FailureMarker));
+        // raw: prefix is a caller-fixed lowercase token (validated by Assign above); no value is interpolated.
+#pragma warning disable SRDB0001
+        statements.Add(SurrealQuery.Of($$"""
+            IF $_{{prefix}}_grant.expires_at != NONE AND $_{{prefix}}_grant.expires_at <= time::now()
+                { THROW 'EXCHANGE_PARTICIPANT_AUTHORITY_CHANGED' }
             """));
-        statements.Add(SurrealQuery.Of($"""
-            IF $_{prefix}_grant.expires_at != NONE AND $_{prefix}_grant.expires_at <= time::now()
-                {{ THROW 'EXCHANGE_PARTICIPANT_AUTHORITY_CHANGED' }}
-            """));
+#pragma warning restore SRDB0001
         return statements;
     }
 }

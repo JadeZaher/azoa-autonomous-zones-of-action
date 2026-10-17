@@ -51,7 +51,7 @@ public sealed class NftWorkflowCostConsentTests
             .ReturnsAsync(new NftWorkflowCostAcceptanceRecord { LifecycleId = "original", FrozenInputHash = "frozen",
                 RequestHash = NftWorkflowCostAcceptanceIdentity.RequestHash(request, "original", "frozen") });
         var lifecycle = new Mock<INftLifecycleService>(MockBehavior.Strict);
-        lifecycle.Setup(x => x.GetAsync(actor, "original", It.IsAny<CancellationToken>()))
+        lifecycle.Setup(x => x.GetAsync(actor, "original", It.IsAny<CancellationToken>(), Guid.Empty))
             .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new("original", Guid.NewGuid(), "Preparing", "Create", null, null, null)));
 
         var result = await Service(executions.Object, audits.Object, lifecycle.Object).ReconcileAsync(request, actor, null);

@@ -7,3 +7,15 @@ The C# parent consumes generated local keys through a private process pipe, uses
 Assertions cover byte-identical preparation after provider reconstruction, no egress before authorization, native value settlement, NFT ownership and exactly-once native fees. Keep runtime verification status in the active Conductor track.
 
 Child stderr is consumed continuously through a fixed-size buffer and never printed or retained; startup diagnostics expose only its character count. Initialization failure uses the same child/connection/namespace cleanup as normal disposal. The handshake containing ephemeral keys stays confined to the parent pipe.
+
+## DEX protocol chain
+
+`dex-chain.mjs` starts its own loopback Ganache chain, verifies the pinned WETH9 artifact digest, deploys the
+pinned Uniswap V3 factory/router/quoter/position-manager npm artifacts, two `DexTestToken` instances with one
+initialized full-range 0.3% pool, and the compiled production `AzoaDexExecutor` with a dedicated local policy key.
+It reports addresses, deployed runtime code hashes, the genesis hash and ephemeral keys over the same private pipe.
+`EthereumDexProtocolTests` drives the production `EthereumProvider` DEX module with real Surreal preparation and
+allowance stores: quote, exact approval, policy-permitted swap, finalized settlement grammar, exactly-once replay and
+allowance release from the saved confirmed stage. The DEX module pins state reads to finalized block hashes through
+EIP-1898 `{blockHash, requireCanonical}` parameters and the `finalized` tag; the final sweep must confirm the pinned
+Ganache release honours both (shared with the WTT Ethereum reads) or move these fixtures to a local node that does.

@@ -22,7 +22,7 @@ public sealed partial class SwapOperationService(ISwapOperationStore operations,
             !Guid.TryParseExact(request.QuoteId, "N", out var quoteId) || quoteId == Guid.Empty ||
             request.QuoteHash is not { Length: 64 } || credential.ActorUserId == Guid.Empty || credential.TenantId == Guid.Empty)
             return Fail("Explicit acceptance of the original quote and a stable request key are required.");
-        var key = CanonicalJson.Hash(new { Domain = "swap-request-key/1", request.RequestKey });
+        var key = SwapOperationIdentity.RequestKey(request.RequestKey);
         var id = SwapOperationIdentity.Operation(credential.ActorUserId, credential.TenantId, key);
         var hash = CanonicalJson.Hash(request);
         var existing = await operations.GetAsync(id, ct);
@@ -75,7 +75,7 @@ public sealed partial class SwapOperationService(ISwapOperationStore operations,
 
     private async Task<SwapOperationRecord?> ReadOwnedAsync(string id, SigningCredentialWitness credential, bool directOwner, CancellationToken ct)
     {
-        if (id is not { Length: 64 } || id.Any(character => !char.IsAsciiHexDigitLower(character))) return null;
+        if (id is not { Length: 64 } || id.Any(character => !char.IsAsciiHexDigitLower(character)) || !SwapScope(credential)) return null;
         var operation = await operations.GetAsync(id, ct);
         return operation is not null && InScope(operation, credential, directOwner) ? operation : null;
     }
@@ -100,7 +100,8 @@ public sealed partial class SwapOperationService(ISwapOperationStore operations,
                 observed?.TransactionIds ?? candidate?.TransactionIds ?? [], observed?.ActualInput, observed?.ActualOutput, observed?.PlatformFeePaid,
                 observed?.NetworkFeePaid, stage.ResolvedLockedBalance ?? observed?.LockedBalance,
                 stage.AuthorizedAt is not null && stage.ServerSubmissionWithdrawnAt is null,
-                stage.ExternalExposedAt is not null, stage.ServerSubmissionWithdrawnAt is not null));
+                stage.ExternalExposedAt is not null, stage.ServerSubmissionWithdrawnAt is not null, plan.PreparationKey,
+                stage.PreparedJson is not null));
     }
 
     private static bool InScope(SwapOperationRecord row, SigningCredentialWitness credential, bool directOwner)
@@ -109,6 +110,9 @@ public sealed partial class SwapOperationService(ISwapOperationStore operations,
     private static bool SameWorkflow(SwapOperationRecord row, WorkflowSigningWitness? workflow)
         => row.ActionRunId == workflow?.Action.RunId.ToString("N") && row.ActionNodeId == workflow?.Action.NodeId.ToString("N") &&
             row.ActionIntentHash == workflow?.Action.IntentHash;
+    /// <summary>Swap reads and commands sit under the same swap-signing ceiling as admission.</summary>
+    internal static bool SwapScope(SigningCredentialWitness credential)
+        => credential.OwnerAuthority || credential.Scopes.Contains(AzoaScopes.SwapSign, StringComparer.Ordinal);
     private static bool ValidKey(string key) => key is { Length: > 0 and <= 256 } && key == key.Trim() && !key.Any(char.IsControl);
     private static string Tenant(Guid? tenant) => tenant?.ToString("N") ?? "";
     private static AZOAResult<SwapOperationView> Fail(string message) => AZOAResult<SwapOperationView>.FailureWithCode(message, "Conflict");

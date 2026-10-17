@@ -2,7 +2,6 @@ using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Blockchain;
-using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Services.Reserve;
@@ -26,7 +25,7 @@ public sealed partial class SurrealHoldCommandTests : IAsyncLifetime
         await SurrealTestSchema.BootstrapAsync(_namespace, "user", "hold_ledger", "hold_command", "hold_command_receipt",
             "platform_reserve_ledger", "consent_grant", "wallet", "hold_command_authorization", "hold_recovery_receipt", "hold_release_mandate", "hold_release_mandate_offer", "hold_mandate_use_receipt",
             "action_definition", "action_node", "action_run", "action_node_execution", "exchange_hold_source", "api_key",
-            "exchange_hold_settlement_receipt", "project_treasury_ledger");
+            "exchange_hold_settlement_receipt", "project_treasury_ledger", "exchange_purchase_allocation");
         _connection = new SurrealDbNetConnection(new SurrealConnectionOptions { Endpoint = SurrealTestDefaults.Endpoint,
             Namespace = _namespace, Database = "test", User = SurrealTestDefaults.User, Password = SurrealTestDefaults.Password });
         _executor = new DefaultSurrealExecutor(_connection);

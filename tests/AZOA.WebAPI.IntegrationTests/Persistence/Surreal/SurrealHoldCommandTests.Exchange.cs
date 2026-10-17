@@ -19,7 +19,7 @@ public sealed partial class SurrealHoldCommandTests
         var source = await _store.AdmitExchangeSourceAsync(intent, authority);
         source.Should().NotBeNull();
         (await Counters()).Held.Should().Be(0);
-        (await _store.GetHoldAsync(HoldCommandIdentity.Hold(intent.Opening))).Should().BeNull();
+        (await _store.GetHoldAsync(HoldCommandIdentity.Hold(intent.Opening!))).Should().BeNull();
 
         var receipts = await Task.WhenAll(_store.CommitExchangeOpeningAsync(source!.Id),
             _store.CommitExchangeOpeningAsync(source.Id)).WaitAsync(TimeSpan.FromSeconds(15));
@@ -29,8 +29,8 @@ public sealed partial class SurrealHoldCommandTests
         var persisted = (await _store.GetExchangeSourceAsync(source.Id))!;
         persisted.State.Should().Be("Committed");
         persisted.Version.Should().Be(1);
-        persisted.HoldCommandId.Should().Be(HoldCommandIdentity.Operation(intent.Opening));
-        persisted.HoldRecordId.Should().Be(HoldCommandIdentity.Hold(intent.Opening));
+        persisted.HoldCommandId.Should().Be(HoldCommandIdentity.Operation(intent.Opening!));
+        persisted.HoldRecordId.Should().Be(HoldCommandIdentity.Hold(intent.Opening!));
         var liability = (await _store.GetHoldAsync(persisted.HoldRecordId!))!;
         liability.State.Should().Be("AwaitingSourceSettlement", "unsettled purchase funds cannot unlock release or ordinary refund");
         liability.EconomicSourceId.Should().Be(source.Id);
@@ -77,10 +77,10 @@ public sealed partial class SurrealHoldCommandTests
         (await _store.AdmitExchangeSourceAsync(intent with { OriginalRequestJson = "{\"different\":true}" }, authority)).Should().BeNull();
         (await _store.AdmitExchangeSourceAsync(intent with { ParticipantUserId = Guid.NewGuid() }, authority)).Should().BeNull();
         (await _store.CommitExchangeOpeningAsync(source.Id)).Should().NotBeNull();
-        var alternate = intent.Opening with { RequestKey = "forged", HoldId = "forged" };
+        var alternate = intent.Opening! with { RequestKey = "forged", HoldId = "forged" };
         (await _store.CommitLocalAsync(alternate, new(1, EconomicSource: new("Exchange", source.Id, source.IntentHash))))
             .Should().BeNull("the generic local API cannot manufacture source authority");
-        (await _store.CommitLocalAsync(intent.Opening with { RequestKey = "premature-refund", Kind = "Refund", Definition = null }, Authority()))
+        (await _store.CommitLocalAsync(intent.Opening! with { RequestKey = "premature-refund", Kind = "Refund", Definition = null }, Authority()))
             .Should().BeNull("an ordinary owner cannot release an unresolved purchase commitment");
         (await Counters()).Held.Should().Be(400);
     }

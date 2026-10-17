@@ -1,8 +1,9 @@
 import type { WebhookRegistrationCommand, WebhookRegistrationStatus, WebhookRegistrationMutationResult, WebhookRegistrationWithdrawal, WebhookEventStatus, WebhookEventRetryCommand, WebhookEventRetryReceipt, ConsentWebhookEventStatus } from "./webhooks.js";
 import type { ConsentGrantCommand, ConsentGrantView, ConsentGrantReceipt, ConsentRevocationReceipt, ConsentOffboardReceipt, ConsentCommandWithdrawal } from "./consent.js";
 import type { Result } from "../core/result.js";
-import type { HoldStartCommand, HoldCommandView, HoldCommandPage, HoldConsentCommand, HoldRecoveryCommand, HoldOpeningAcceptance, HoldRequestLookup, HoldRequestResolution, HoldOpeningRecoveryLookup, HoldMandateOfferRequest, HoldMandateOffer, HoldMandateAcceptance, HoldMandateView, HoldMandatePage, HoldMandateResolution } from "./hold-commands.js";
-import type { DexQuoteRequest, DexQuoteAvailability, DexQuoteView, SwapAdmissionRequest, SwapOperationView, SwapVersionCommand, SwapStageCommand, SwapExposureCommand, SwapExternalSigningView, SwapBrowserStageCommand, SwapCleanupRequest, SwapCleanupStageCommand } from "./dex.js";
+import type { HoldStartCommand, HoldCommandView, HoldCommandPage, HoldConsentCommand, HoldRecoveryCommand, HoldOpeningAcceptance, HoldRequestLookup, HoldRequestResolution, HoldOpeningRecoveryLookup, HoldMandateOfferRequest, HoldMandateOffer, HoldMandateAcceptance, HoldMandateView, HoldMandatePage, HoldMandateResolution, ExchangeReleaseMandateRequest, ExchangeReleaseAcceptance, ExchangeReleaseDisclosure } from "./hold-commands.js";
+import type { DexCapabilityView, NodeFeeScheduleUpdateRequest, DexQuoteRequest, DexQuoteAvailability, DexQuoteView, SwapAdmissionRequest, SwapOperationView, SwapVersionCommand, SwapStageCommand, SwapExposureCommand, SwapExternalSigningView, SwapBrowserStageCommand, SwapCleanupRequest, SwapCleanupStageCommand } from "./dex.js";
+import type { WttQuoteRequest, WttOfferView, WttStartRequest, WttCancelRequest, WttOperationView, WttOperationPage, WttContinueCommand, WttStageCommand, WttParticipantSigningView, WttParticipantSignatureCommand, WttNativeOutputOffer, WttNativeOutputRequest, WttCleanupOffer, WttCleanupRequest } from "./wtt.js";
 import { ok, err } from "../core/result.js";
 import { SdkError, SdkErrorCode } from "../core/errors.js";
 import type { SdkErrorDetail } from "../core/errors.js";
@@ -598,50 +599,6 @@ export interface PositionsResponse {
   isComplete: boolean;
 }
 
-// ─── Swap types (match SwapController DTOs) ───
-
-/** Mirrors .NET SwapQuoteRequest (sent as querystring). */
-export interface SwapQuoteParams {
-  /** "algorand" or "solana". */
-  chain: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: string;
-  /** Defaults to 50 (0.5%). */
-  slippageBps?: number;
-  /** Public key of the wallet requesting the swap (required for Jupiter v2). */
-  walletAddress?: string;
-}
-
-/** Mirrors .NET SwapExecuteRequest (sent as JSON body). */
-export interface SwapExecuteParams {
-  chain: string;
-  /** The quoteId returned from getSwapQuote(). */
-  quoteId: string;
-  walletAddress: string;
-}
-
-/** Mirrors .NET SwapQuoteResponse. */
-export interface SwapQuoteResponse {
-  chain: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: string;
-  expectedAmountOut: string;
-  priceImpact: number;
-  fee: string;
-  route?: unknown;
-  raw?: unknown;
-  /** Unique quote identifier for downstream swap execution (Jupiter v2). */
-  quoteId?: string;
-  /** Base64-encoded unsigned swap transaction for client-side signing. */
-  swapTransaction?: string;
-  /** Last valid block height for the swap transaction (Solana). */
-  lastValidBlockHeight?: number;
-  /** Human-readable status message. */
-  message?: string;
-}
-
 export interface BridgeInitiateParams {
   sourceChain: string;
   targetChain: string;
@@ -883,6 +840,11 @@ export interface NftLifecycleView {
   needsStageAcceptance?: boolean;
   needsReplacementCosts?: boolean;
   replacementCostsAccepted?: boolean;
+  /** Display hint: the original requester's direct authority lapsed and must be renewed before the next new signature. */
+  needsActorContinuation?: boolean;
+  /** Display hint: the accepting participant's stage credential lapsed; that participant re-accepts the same stage. */
+  needsParticipantRenewal?: boolean;
+  renewalParticipantUserId?: string | null;
   operation: NftOperation;
   feeQuote: NftFeeQuote | null;
   actorUserId: string;
@@ -1502,6 +1464,10 @@ export interface ExchangeParams {
    * require, since nothing moves.
    */
   previewOnly?: boolean;
+  /** Requested automatic release of a held purchase; a preview returns its `releaseDisclosure`. */
+  releaseMandate?: ExchangeReleaseMandateRequest;
+  /** Explicit acceptance of the previewed disclosure; required with `releaseMandate`. */
+  releaseAcceptance?: ExchangeReleaseAcceptance;
 }
 
 /** Externally observable state of a caller-authorized exchange. */
@@ -1559,88 +1525,15 @@ export interface ExchangeReceipt {
   updatedAt: string;
   /** Bounded terminal error discriminator; never provider detail. */
   failureCode: string | null;
+  /** Durable exchange source this receipt reads; retain it for discovery after a lost response. */
+  sourceId?: string | null;
+  /** Server-authored automatic-release disclosure returned by a preview. */
+  releaseDisclosure?: ExchangeReleaseDisclosure | null;
+  /** Release permission created with a held purchase, separate from its settlement. */
+  releaseMandateId?: string | null;
 }
 
-// ─── Hold types (HoldController, D14 / W3.4) ───
-// The tenant-callable HOLD surface: units committed out of a declared reserve
-// partition, held until a release window elapses. No address, key, fee or chain
-// name is ever exposed to the person a hold is for.
-
-/** Durable hold lifecycle state (mirrors the backend's `HoldLedger.State` allow-list). */
-export type HoldState =
-  | "Open"
-  | "Released"
-  | "Refunded"
-  | "ChainedToHold";
-
-export interface HoldOpenParams {
-  /** Rail the hold settles on (e.g. "Algorand"). */
-  chain: string;
-  /** The caller's own hold id — the idempotency anchor. */
-  holdId: string;
-  /** Asset being held. */
-  assetId: string;
-  /** Amount in the asset's base units, as a whole decimal string. */
-  amount: string;
-  /** Declared reserve partition the commitment is drawn from. */
-  reservePartition: string;
-  /** Who the units are held for. */
-  beneficiaryUserId: string;
-  /** The hold window (ISO-8601); absent means releasable immediately. */
-  releaseNotBefore?: string;
-  /** Whether the hosted sweep may release it once due. Defaults true server-side. */
-  autoRelease?: boolean;
-  /** The caller's own reason for the hold. */
-  purpose?: string;
-}
-
-export interface HoldSettlementParams {
-  /** Why the hold is being settled; recorded on the ledger row. */
-  reason?: string;
-}
-
-export interface HoldChainParams {
-  /** Id of the hold that continues this one. */
-  nextHoldId: string;
-  /** Who the units are held for next. */
-  nextBeneficiaryUserId: string;
-  /** The next window (ISO-8601); may never be earlier than the one it continues. */
-  releaseNotBefore?: string;
-  autoRelease?: boolean;
-  purpose?: string;
-}
-
-/**
- * Wire view of a hold. Carries NO wallet address, NO chain and NO asset identifier — the
- * person a hold is for needs to know how much is theirs and when, not which account it is
- * parked in or what the chain called the payment.
- *
- * `chain` and `assetId` used to be declared here as REQUIRED strings while
- * `HoldController.HoldView` had already stopped sending either, so a consumer that trusted
- * the type got `undefined` where it had typed `string` — the doc-comment-contradicts-the-type
- * defect OI-86 was raised about, reproduced in the mirror by OI-86's own fix. They are gone.
- *
- * `reservePartition` and `fundingSource` DO remain: node-internal book names a tenant
- * developer reconciling a hold needs, and never member-facing copy.
- */
-export interface HoldView {
-  holdId: string;
-  amount: string;
-  reservePartition: string;
-  fundingSource: string;
-  beneficiaryUserId: string;
-  funderUserId: string | null;
-  state: HoldState;
-  releaseNotBefore: string | null;
-  autoRelease: boolean;
-  parentHoldId: string | null;
-  childHoldId: string | null;
-  purpose: string | null;
-  settledAt: string | null;
-  settlementReason: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+// ─── Hold commands and release mandates live in ./hold-commands.ts ───
 
 // ─── Fiat on-ramp checkout types (FiatCheckoutController) ───
 // The "add funds" surface: start a payment for a person's account and find that
@@ -2158,6 +2051,41 @@ export interface DappSeriesAddActionParams {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ULONG_MAX = 18_446_744_073_709_551_615n;
+
+const NFT_LIFECYCLE_ID_RE = /^[0-9a-f]{32}$/;
+
+/** Validates a server-issued NFT lifecycle reference (32 lowercase hex) before URL interpolation. */
+function assertLifecycleId(id: string, paramName: string): void {
+  if (typeof id !== "string" || !NFT_LIFECYCLE_ID_RE.test(id)) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 32-character lowercase hex NFT lifecycle reference`);
+  }
+}
+
+const SWAP_OPERATION_ID_RE = /^[0-9a-f]{64}$/;
+const DEX_QUOTE_ID_RE = /^[0-9a-f]{32}$/;
+
+/** Validates a server-issued swap operation id (64 lowercase hex) before URL interpolation. */
+function assertSwapOperationId(id: string, paramName: string): void {
+  if (typeof id !== "string" || !SWAP_OPERATION_ID_RE.test(id)) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex swap operation id`);
+  }
+}
+
+/** Validates a server-issued DEX quote id (32 lowercase hex) before URL interpolation. */
+function assertDexQuoteId(id: string, paramName: string): void {
+  if (typeof id !== "string" || !DEX_QUOTE_ID_RE.test(id)) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 32-character lowercase hex DEX quote id`);
+  }
+}
+
+const HEX64_ID_RE = /^[0-9a-f]{64}$/;
+
+/** Validates a server-issued hold command or release mandate id (64 lowercase hex) before URL interpolation. */
+function assertHex64(id: string, paramName: string): void {
+  if (typeof id !== "string" || !HEX64_ID_RE.test(id)) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex id`);
+  }
+}
 
 /** Validates that an ID is a UUID before URL interpolation. Prevents path traversal. */
 function assertUuid(id: string, paramName: string): void {
@@ -3152,22 +3080,7 @@ export class AzoaApiClient {
     return this.request<ExchangeReceipt>("GET", API_PATHS.EXCHANGE_RECEIPT(idempotencyKey));
   }
 
-  // ─── Hold (HoldController, D14 / W3.4) ───
-  // Value-moving writes require an API-key principal carrying transfer:sign,
-  // exactly like allocate(). Reads are owner-scoped server-side.
-
-  /**
-   * Opens a hold, or returns the one this hold id already opened. Idempotent on
-   * the caller's own `holdId`: a redelivered request returns the existing hold
-   * and commits nothing twice.
-   */
-  async openHold(params: HoldOpenParams): Promise<Result<HoldView, SdkError>> {
-    assertNonEmpty(params.chain, "chain");
-    assertNonEmpty(params.holdId, "holdId");
-    assertNonEmpty(params.assetId, "assetId");
-    assertPositiveUlongDecimal(params.amount, "amount");
-    return this.request<HoldView>("POST", API_PATHS.HOLD_OPEN, params);
-  }
+  // ─── Hold commands (HoldCommandsController) and release mandates ───
 
   /** Admits the original keyed command and returns its actual custody progress. */
   async startHoldCommand(request: HoldStartCommand): Promise<Result<HoldCommandView, SdkError>> {
@@ -3180,52 +3093,63 @@ export class AzoaApiClient {
   }
 
   async getHoldCommand(id: string): Promise<Result<HoldCommandView, SdkError>> {
-    assertNonEmpty(id, 'operationId');
+    assertHex64(id, 'operationId');
     return this.request('GET', `/api/hold-commands/${encodeURIComponent(id)}`);
   }
 
   /** Observes or rebroadcasts previously authorized bytes without new signing consent. */
   async refreshHoldCommand(id: string): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/refresh`);
   }
 
   async continueHoldCommand(id: string, request: HoldConsentCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/continue`, request);
   }
 
   async acceptHoldRecipient(id: string, request: HoldConsentCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/accept`, request);
   }
 
   async replaceHoldCommand(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/replace`, request);
   }
 
   async cancelHoldCommand(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/cancel`, request);
   }
 
   async reconcileHoldCommand(id: string, request: HoldRequestLookup): Promise<Result<HoldRequestResolution, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/reconcile-request`, request);
   }
 
   async acceptHoldOpening(id: string, request: HoldOpeningAcceptance): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/accept-opening`, request);
   }
 
   async reconcileHoldOpening(id: string, request: HoldOpeningAcceptance): Promise<Result<HoldRequestResolution, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/reconcile-opening`, request);
   }
 
   async replaceHoldOpening(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/replace-opening`, request);
   }
 
   async withdrawHoldOpening(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/withdraw-opening`, request);
   }
 
   async reconcileHoldOpeningRecovery(id: string, request: HoldOpeningRecoveryLookup): Promise<Result<HoldRequestResolution, SdkError>> {
+    assertHex64(id, 'operationId');
     return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/reconcile-opening-recovery`, request);
   }
 
@@ -3242,67 +3166,25 @@ export class AzoaApiClient {
   }
 
   async getHoldReleaseMandate(id: string): Promise<Result<HoldMandateView, SdkError>> {
+    assertHex64(id, 'mandateId');
     return this.request('GET', `/api/hold-release-mandates/${encodeURIComponent(id)}`);
   }
 
   async reauthorizeHoldReleaseMandate(id: string, request: HoldRecoveryCommand): Promise<Result<HoldMandateView, SdkError>> {
+    assertHex64(id, 'mandateId');
     return this.request('POST', `/api/hold-release-mandates/${encodeURIComponent(id)}/reauthorize`, request);
   }
 
   async revokeHoldReleaseMandate(id: string, request: HoldRecoveryCommand): Promise<Result<HoldMandateView, SdkError>> {
+    assertHex64(id, 'mandateId');
     return this.request('POST', `/api/hold-release-mandates/${encodeURIComponent(id)}/revoke`, request);
   }
 
   async reconcileHoldReleaseMandate(id: string, request: { kind: 'MandateReauthorize' | 'MandateRevoke'; request: HoldRecoveryCommand }): Promise<Result<HoldMandateResolution, SdkError>> {
+    assertHex64(id, 'mandateId');
     return this.request('POST', `/api/hold-release-mandates/${encodeURIComponent(id)}/reconcile-request`, request);
   }
 
-  /** Releases a due hold to its beneficiary. Refused before the window elapses. */
-  async releaseHold(
-    chain: string,
-    holdId: string,
-    params?: HoldSettlementParams
-  ): Promise<Result<HoldView, SdkError>> {
-    assertNonEmpty(chain, "chain");
-    assertNonEmpty(holdId, "holdId");
-    return this.request<HoldView>("POST", API_PATHS.HOLD_RELEASE(chain, holdId), params);
-  }
-
-  /** Gives a hold back: the commitment returns to the partition it was drawn from. */
-  async refundHold(
-    chain: string,
-    holdId: string,
-    params?: HoldSettlementParams
-  ): Promise<Result<HoldView, SdkError>> {
-    assertNonEmpty(chain, "chain");
-    assertNonEmpty(holdId, "holdId");
-    return this.request<HoldView>("POST", API_PATHS.HOLD_REFUND(chain, holdId), params);
-  }
-
-  /** Continues a hold as a second hold over the same units — what approving completed work is. */
-  async releaseHoldIntoHold(
-    chain: string,
-    holdId: string,
-    params: HoldChainParams
-  ): Promise<Result<HoldView, SdkError>> {
-    assertNonEmpty(chain, "chain");
-    assertNonEmpty(holdId, "holdId");
-    assertNonEmpty(params.nextHoldId, "nextHoldId");
-    return this.request<HoldView>("POST", API_PATHS.HOLD_RELEASE_INTO_HOLD(chain, holdId), params);
-  }
-
-  /** One hold, visible only to the beneficiary, funder, or owning tenant. */
-  async getHold(chain: string, holdId: string): Promise<Result<HoldView, SdkError>> {
-    assertNonEmpty(chain, "chain");
-    assertNonEmpty(holdId, "holdId");
-    return this.request<HoldView>("GET", API_PATHS.HOLD_GET(chain, holdId));
-  }
-
-  /** Every hold the authenticated person funds or benefits from, newest first. */
-  async listMyHolds(limit?: number): Promise<Result<HoldView[], SdkError>> {
-    const path = limit ? `${API_PATHS.HOLD_MINE}?limit=${limit}` : API_PATHS.HOLD_MINE;
-    return this.request<HoldView[]>("GET", path);
-  }
 
   // ─── Fiat on-ramp checkout (FiatCheckoutController) ───
 
@@ -3515,18 +3397,21 @@ export class AzoaApiClient {
     );
   }
 
-  // ─── Swap (SwapController) ───
+  // ─── Durable DEX (DexController) ───
 
-  /**
-   * Get a swap quote from the backend's swap manager (dispatches to Tinyman
-   * for Algorand and Jupiter for Solana). Maps to `GET /api/swap/quote`.
-   */
-  async getSwapQuote(params: SwapQuoteParams): Promise<Result<SwapQuoteResponse, SdkError>> {
-    const qs = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) qs.set(key, String(value));
-    }
-    return this.request<SwapQuoteResponse>("GET", `/api/swap/quote?${qs}`);
+  /** Lists structurally complete DEX modules per network; grammar never implies liquidity or readiness. */
+  async getDexCapabilities(): Promise<Result<DexCapabilityView[], SdkError>> {
+    return this.request("GET", "/api/dex/capabilities");
+  }
+
+  /** Reads the governed fee schedule, including the swap flat-fee denomination (NodeGovern). */
+  async getNodeFeeSchedule(): Promise<Result<NodeFeeSchedule, SdkError>> {
+    return this.request("GET", "/api/node-governance/fee-schedule");
+  }
+
+  /** Version-checked fee schedule update; a nonzero swap flat fee needs an explicit denomination before DEX quoting. */
+  async updateNodeFeeSchedule(request: NodeFeeScheduleUpdateRequest): Promise<Result<NodeFeeSchedule, SdkError>> {
+    return this.request("PUT", "/api/node-governance/fee-schedule", request);
   }
 
   /** Issues an immutable owner-bound quote; unavailable liquidity is an ordinary result. */
@@ -3535,6 +3420,7 @@ export class AzoaApiClient {
   }
 
   async getDexQuote(id: string): Promise<Result<DexQuoteView, SdkError>> {
+    assertDexQuoteId(id, "id");
     return this.request("GET", `/api/dex/quotes/${encodeURIComponent(id)}`);
   }
 
@@ -3544,94 +3430,179 @@ export class AzoaApiClient {
   }
 
   async getDexSwap(id: string): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("GET", `/api/dex/operations/${encodeURIComponent(id)}`);
   }
 
   async prepareDexSwap(id: string, command: SwapVersionCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/prepare`, command);
   }
 
   async signDexSwap(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/sign`, command);
   }
 
   /** Disclosure is potential egress and requires explicit persisted participant consent. */
   async exposeDexSwap(id: string, command: SwapExposureCommand): Promise<Result<SwapExternalSigningView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/external-signing`, command);
   }
 
   async acceptDexSwapSignature(id: string, command: SwapBrowserStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/external-signature`, command);
   }
 
   async submitDexSwap(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/submit`, command);
   }
 
   async refreshDexSwap(id: string): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/refresh`);
   }
 
   async cancelDexSwap(id: string, command: SwapVersionCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cancel`, command);
   }
 
   /** Stops future server submission without recalling a send or releasing reserved accounting. */
   async withdrawDexSwapSubmission(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/withdraw-submission`, command);
   }
 
   async beginDexSwapCleanup(id: string, command: SwapCleanupRequest): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cleanup`, command);
   }
 
   async prepareDexSwapCleanup(id: string, command: SwapCleanupStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    assertSwapOperationId(id, "id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cleanup/prepare`, command);
   }
 
-  /**
-   * Execute a previously-fetched swap quote — returns an unsigned swap
-   * transaction the caller signs and broadcasts. Maps to `POST /api/swap/execute`.
-   *
-   * Supply `options.idempotencyKey` to set the `Idempotency-Key` request header;
-   * the backend dedupes against this key. When absent the server falls back to
-   * a deterministic content key.
-   */
-  async executeSwap(
-    params: SwapExecuteParams,
-    options?: { idempotencyKey?: string }
-  ): Promise<Result<SwapQuoteResponse, SdkError>> {
-    const extraHeaders = options?.idempotencyKey
-      ? { "Idempotency-Key": options.idempotencyKey }
-      : undefined;
-    return this.request<SwapQuoteResponse>(
-      "POST",
-      "/api/swap/execute",
-      params,
-      false,
-      extraHeaders
-    );
+  // ─── Wormhole Token Transfer (WttBridgeController) ───
+
+  /** Read-only offer; its request key fixes the operation identity and must be reused as the start Idempotency-Key. */
+  async quoteWtt(request: WttQuoteRequest): Promise<Result<WttOfferView, SdkError>> {
+    return this.request("POST", "/api/bridge/wtt/quotes", request);
+  }
+
+  /** Admits the exact offer once; response loss replays the same operation with the same key. */
+  async startWtt(request: WttStartRequest, idempotencyKey: string): Promise<Result<WttOperationView, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("POST", "/api/bridge/wtt/operations", request, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  /** Server-side discovery that survives cleared browser storage. */
+  async findWttByRequestKey(idempotencyKey: string): Promise<Result<WttOperationView, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("GET", "/api/bridge/wtt/operations/by-request-key", undefined, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async listWtt(cursor?: string, limit?: number): Promise<Result<WttOperationPage, SdkError>> {
+    const query = new URLSearchParams();
+    if (cursor) query.set("cursor", cursor);
+    if (limit) query.set("limit", String(limit));
+    const suffix = query.toString();
+    return this.request("GET", `/api/bridge/wtt/operations${suffix ? `?${suffix}` : ""}`);
+  }
+
+  async getWtt(id: string): Promise<Result<WttOperationView, SdkError>> {
+    return this.request("GET", this.wttOperationPath(id));
+  }
+
+  /** Cancels before any source publication by original request key; a tombstone blocks delayed admission. */
+  async cancelWtt(request: WttCancelRequest, idempotencyKey: string): Promise<Result<WttOperationView, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("POST", "/api/bridge/wtt/operations/cancel", request, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  /** Prepares the next stage under current custody and optionally authorizes its first send. */
+  async continueWtt(id: string, command: WttContinueCommand): Promise<Result<WttOperationView, SdkError>> {
+    return this.request("POST", this.wttOperationPath(id, "/continue"), command);
+  }
+
+  async submitWtt(id: string, command: WttStageCommand): Promise<Result<WttOperationView, SdkError>> {
+    this.requireWttId(command.stageId, "stageId");
+    return this.request("POST", this.wttOperationPath(id, "/submit"), command);
+  }
+
+  /** Records exposure, then returns the exact unsigned participant message; replays the same message after response loss. */
+  async exposeWttParticipant(id: string, command: WttStageCommand): Promise<Result<WttParticipantSigningView, SdkError>> {
+    this.requireWttId(command.stageId, "stageId");
+    return this.request("POST", this.wttOperationPath(id, "/participant"), command);
+  }
+
+  async acceptWttParticipantSignature(id: string, command: WttParticipantSignatureCommand): Promise<Result<WttOperationView, SdkError>> {
+    this.requireWttId(command.stageId, "stageId");
+    return this.request("POST", this.wttOperationPath(id, "/participant-signature"), command);
+  }
+
+  /** Observes and replays only already-authorized wire; never signs. */
+  async refreshWtt(id: string): Promise<Result<WttOperationView, SdkError>> {
+    return this.request("POST", this.wttOperationPath(id, "/refresh"));
+  }
+
+  async quoteWttNativeOutput(id: string): Promise<Result<WttNativeOutputOffer, SdkError>> {
+    return this.request("GET", this.wttOperationPath(id, "/native-output/quote"));
+  }
+
+  async startWttNativeOutput(id: string, request: WttNativeOutputRequest): Promise<Result<WttOperationView, SdkError>> {
+    return this.request("POST", this.wttOperationPath(id, "/native-output"), request);
+  }
+
+  async quoteWttCleanup(id: string, stageId: string): Promise<Result<WttCleanupOffer, SdkError>> {
+    this.requireWttId(stageId, "stageId");
+    return this.request("GET", this.wttOperationPath(id, `/cleanup/${stageId}/quote`));
+  }
+
+  /** Fresh direct-owner residual return; never revives the original transfer's authority. */
+  async startWttCleanup(id: string, request: WttCleanupRequest): Promise<Result<WttOperationView, SdkError>> {
+    this.requireWttId(request.stageId, "stageId");
+    return this.request("POST", this.wttOperationPath(id, "/cleanup"), request);
+  }
+
+  /** WTT operation and stage identities are server-issued 64-character lowercase hex digests. */
+  private wttOperationPath(id: string, suffix = ""): string {
+    this.requireWttId(id, "operationId");
+    return `/api/bridge/wtt/operations/${id}${suffix}`;
+  }
+
+  private requireWttId(value: string, paramName: string): void {
+    if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+      throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex identity`);
+    }
   }
 
   // ─── UserNFT ───
 
   /** Discloses costs for the caller-reviewed replacement generation without signing. */
   async quoteNftReplacementCosts(operationId: string, stage: NftStageAcceptance): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/quote`, stage);
   }
 
   /** Accepts the exact saved replacement cost request without signing. */
   async acceptNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/accept`, request);
   }
 
   /** Reads the saved request outcome before any fresh offer replaces it. */
   async reconcileNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/reconcile`, request);
   }
 
   /** Atomically retires an unanswered acceptance version, preserving a winning acceptance. */
   async retireNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/retire`, request);
   }
 
@@ -3719,10 +3690,12 @@ export class AzoaApiClient {
   }
 
   async refundNftTransfer(operationId: string, idempotencyKey: string, feeAuthorization?: NftFeeAuthorization): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/refund`, { feeAuthorization }, false, { "Idempotency-Key": idempotencyKey });
   }
 
   async getNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("GET", `/api/UserNFT/lifecycle/${encodeURIComponent(operationId)}`);
   }
 
@@ -3737,14 +3710,23 @@ export class AzoaApiClient {
   }
 
   async refreshNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/refresh`);
   }
 
   async acceptNftLifecycle(operationId: string, acceptance: NftStageAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/accept`, acceptance);
   }
 
+  /** Records the original requester's fresh authority for the exact reviewed stage; it never signs or prepares. */
+  async renewNftLifecycleAuthority(operationId: string, request: NftStageAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
+    return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/renew-authority`, request);
+  }
+
   async cancelNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
+    assertLifecycleId(operationId, "operationId");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/cancel`);
   }
 

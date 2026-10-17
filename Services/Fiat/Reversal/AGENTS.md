@@ -86,10 +86,30 @@ Three rungs, in the order that hurts the fewest honest people.
    `min(outstanding, what they actually hold)`, and the on-ramp partition gets its availability
    back with a `Return` draw. Without that draw the partition would shrink by every chargeback the
    node successfully recovered from.
-2. **What those units bought** (`Hold` / `Purchase`). An open hold the money funded is given back
-   (nothing moves on any rail — the units never left the holding account, so the hold service's own
-   `CancelHold` draw is the whole accounting and this directory performs no second draw), or the
-   asset they were exchanged for is taken back.
+2. **What those units bought** (`Hold` / `Purchase`). For an open purchased hold, exactly the
+   attributed share is recovered through its settled exchange source
+   (`IExchangeHoldSourceStore.RecoverExchangePurchaseAsync`). Nothing moves on any rail: the units
+   never left the holding account. A partial attribution splits the liability; it never refunds
+   the whole hold (§provenance). For a direct purchase, or a held purchase that has since been
+   released, the asset is clawed back from whoever received it.
+
+**Rung 0 runs before the others.** Purchase steps are immutable store receipts: hold recoveries,
+plus clawbacks once their move has completed. The row counts them in `PurchaseRecoveredBaseUnits`.
+If a pass recovered but its row save lost a version race, the next pass counts the
+committed-but-unrecorded receipts first. Otherwise another rung could take the same units again.
+
+**No move is keyed on its amount.** An amount-keyed claim repeats whenever a later pass computes a
+different amount, for example after a refund redelivery raised the target. Two keying rules
+replace it:
+- **Balance moves** are keyed on `(reversal, "balance", balance already recorded)`, where the
+  recorded balance is `RecoveredQuantity − PurchaseRecovered`. The completed claim stores the exact
+  amount moved. A later pass checks its key before reading the balance, replays that stored amount,
+  and only then makes the next move for whatever is still owed.
+- **Asset clawbacks** are first reserved as a store step (`ReserveExchangeClawbackAsync`), and the
+  step's receipt id is the move's claim key. A pass finishes any reservation whose move has not
+  completed before it reserves anything new. The reserved units are the payment's own share,
+  `ceil(received × attributable ÷ spent)`, capped at the units delivered minus those already
+  clawed. They are never the claim's whole-lot quantity.
 3. **The platform's own pocket** (`Reserve`). Whatever is left is recorded as
    `absorbed_quantity_base_units` — a bill, not a silence — and the account is flagged.
 
@@ -99,21 +119,34 @@ That attribution is `IReversedPurchaseProvenance` — see §provenance.
 
 ## §provenance — how rung 2 knows what a payment funded
 
-**Shipped (OI-59).** `ExchangePurchaseProvenance` lives in this directory and
-`ReversalRegistration.cs:92` wires it. The rules it works by:
+**Shipped (OI-59), re-based on durable exchange sources (B3-08).** `ExchangePurchaseProvenance` lives
+in this directory and is wired by `ReversalRegistration`, which requires `IExchangeHoldSourceStore`.
+It works by these rules:
 
-- **FIFO over lots.** A person's purchases are walked oldest-first against their lots oldest-first,
-  and only the share that drew on the *reversed* lot is ever claimed. Already-reversed lots still
-  consume capacity — dropping them would shift later lots earlier and re-attribute a purchase that
-  has been unwound once already. The same rule serves W8.1's cash-out.
-- **What counts as a purchase.** An Exchange operation the subject made, buying the lot's own asset
-  on the lot's own chain.
-- **Identifying the commitment.** Exact first, on the hold id the exchange derives from its own
-  correlation (`exchange:{correlation}`); failing that, a match on the whole shape the exchange
-  opened the leg with — and *only* when exactly one candidate exists. Two matching commitments is
-  an unanswerable question, and it refuses outright rather than guess.
-- **The robbery guard.** A hold is claimed only when the reversed account is its beneficiary and
-  nobody else funded it. Checked positively in `ClaimForHold`, never inferred.
+- **FIFO over lots.** A person's settled purchases are walked oldest-first against their lots
+  oldest-first, and only the share that drew on the *reversed* lot is ever claimed. Lots that were
+  already reversed still consume capacity. Dropping them would shift later lots earlier and
+  re-attribute a purchase that has already been unwound once.
+- **What counts as a purchase.** A `Completed` exchange source for this participant
+  (`ListParticipantPurchasesAsync`) that spent the lot's own asset. A held buy or a direct buy
+  counts; a sale (`Units: Return`) does not. A claim carries the exact `SourceId`, so there is no
+  shape matching and no guessing between candidates.
+- **Exact partial recovery, never twice.** The ladder passes the reversal's *cumulative* want from
+  a purchase (`already taken + still outstanding`, capped at the claim) together with the claim
+  itself. The store recovers only the growth beyond what this reversal already took. Across every
+  reversal of the lot, the `exchange_purchase_allocation` row caps the total at the lot's attributed
+  share. Hold units are rounded **up** (§amounts), capped at what is still held. A partial step
+  splits the liability and narrows any release mandate. See `Providers/Stores/Surreal/AGENTS.md`
+  §Hold command and exchange source transactions.
+- **Released purchases.** Once a held purchase's liability is `Released`, the claim becomes a
+  clawback against the release recipient. It is rounded up and capped at what the release actually
+  delivered.
+- **Reversal never moves a lot's place.** A partial reversal raises the lot's `ConsumedBaseUnits`
+  (for the cash-out rule) and `ReversedBaseUnits` by the same amount. FIFO capacity subtracts only
+  the difference, which is the cash-out. So a later pass never shifts a purchase onto the next
+  payment.
+- **The robbery guard.** The source binds the participant as beneficiary and the participant
+  wallet as the funder. A purchase by anyone else is never in the walk.
 - **The opt-out survives.** `UnavailableReversedPurchaseProvenance` is still registerable for a node
   that will not attribute; it returns nothing and reports `IsAvailable == false`, so no caller can
   read "no link" as "this person spent nothing", and the reason travels onto the reversal row.
@@ -172,6 +205,12 @@ of view, a unit taken back by a chargeback and a unit already cashed out are the
 gone — so one watermark is the right place for both. Two counters that could disagree with each
 other would not be. (The `on_ramp_lot` table note still describes the watermark as W8.1's alone;
 that file belongs to the on-ramp item.)
+
+**The target is cumulative, so it is marked once.** A second partial refund raises the same row's
+target from 30 to 60. Adding 60 on top of 30 would leave 10 of a 100-unit lot cashable instead of
+40. So the lot keeps each reversal's marked target in `reversal_marks_json`, in the same write as
+the watermark, and a pass adds only `target − marked`. A pass repeated after a lost row save adds
+nothing. `reversed_base_units` grows by the same applied amount (see §provenance).
 
 ## §wiring — this directory is inert until `Program.cs` calls it
 

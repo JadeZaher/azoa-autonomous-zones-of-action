@@ -7,7 +7,12 @@ namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 /// <summary>Reconstructs actual RPC signature bytes for the closed empty-access-list type-2 grammar.</summary>
 internal static class EthereumRpcEnvelope
 {
-    internal static byte[] Read(JsonElement value, byte[] expectedUnsigned, string sender)
+    internal static byte[] Read(JsonElement value, byte[] expectedUnsigned, string sender) => Reconstruct(value, expectedUnsigned, sender);
+
+    /// <summary>Reconstructs the sender's own signed bytes for a wallet-chosen envelope (fees, gas) that matches no saved plan.</summary>
+    internal static byte[] ReadOwnEnvelope(JsonElement value, string sender) => Reconstruct(value, null, sender);
+
+    private static byte[] Reconstruct(JsonElement value, byte[]? expectedUnsigned, string sender)
     {
         if (Number(value, "type") != 2 || !value.TryGetProperty("accessList", out var access) ||
             access.ValueKind != JsonValueKind.Array || access.GetArrayLength() != 0 ||
@@ -23,7 +28,7 @@ internal static class EthereumRpcEnvelope
             throw new InvalidDataException("RPC transaction carries conflicting recovery parity.");
         transaction.SetSignature(new Signature(Number(value, "r").ToByteArray(true, true), Number(value, "s").ToByteArray(true, true), [(byte)parity]));
         var wire = transaction.GetRLPEncoded();
-        var identity = EthereumSignedEnvelope.Verify(wire, expectedUnsigned, sender);
+        var identity = EthereumSignedEnvelope.Verify(wire, expectedUnsigned ?? transaction.GetRLPEncodedRaw(), sender);
         if (!identity.Equals(Text(value, "hash"), StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("RPC transaction hash differs from its actual signature and complete payload.");
         return wire;

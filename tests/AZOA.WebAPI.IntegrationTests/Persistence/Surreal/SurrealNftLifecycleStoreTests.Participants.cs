@@ -63,13 +63,13 @@ public sealed partial class SurrealNftLifecycleStoreTests
         (await _store.UpdateAsync(stored, stored.Version))!.Detail.Should().Be(stored.Detail);
     }
 
-    private async Task<(NftLifecycle Before, NftLifecycle Accepted, NftStageConsent Consent)> ParticipantCandidate()
+    private async Task<(NftLifecycle Before, NftLifecycle Accepted, NftStageConsent Consent)> ParticipantCandidate(TimeSpan? issuerLifetime = null, TimeSpan? participantLifetime = null)
     {
         var actor = Guid.NewGuid(); var recipient = Guid.NewGuid();
         var actorWallet = Guid.NewGuid(); var recipientWallet = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
-        SigningAdmissionAuthority Authority(Guid user, Guid wallet, string address) => new(1, "DirectJwt",
-            new(1, "Jwt", user, null, null, now.AddMinutes(-1), now.AddHours(1), null, null, [], true,
+        SigningAdmissionAuthority Authority(Guid user, Guid wallet, string address, TimeSpan? lifetime = null) => new(1, "DirectJwt",
+            new(1, "Jwt", user, null, null, now.AddMinutes(-1), now + (lifetime ?? TimeSpan.FromHours(1)), null, null, [], true,
                 TokenUse: AzoaClaims.TokenUseLogin), new(wallet, user, address, "Algorand"), [AzoaScopes.NftMint], []);
         foreach (var (user, wallet, address) in new[] { (actor, actorWallet, "issuer"), (recipient, recipientWallet, "holder") })
         {
@@ -81,7 +81,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         var command = new NftLifecycleCommand(actor, recipient, actorWallet, recipientWallet, "issuer", "holder",
             new UserNFTMintModel { ChainType = "Algorand", MetadataURI = "ipfs://credential", Name = "Credential", IsSoulbound = true },
             -1, Guid.Empty, FeeQuote: new("Algorand", ChainNetwork.Devnet, "Mint", 1, "ALGO", 6, "0", "treasury", actor),
-            ActorAuthority: Authority(actor, actorWallet, "issuer"), PlatformAuthorityAddress: "platform");
+            ActorAuthority: Authority(actor, actorWallet, "issuer", issuerLifetime), PlatformAuthorityAddress: "platform");
         var json = JsonSerializer.Serialize(command);
         var before = new NftLifecycle { Id = Guid.NewGuid().ToString("N"), NftId = Guid.NewGuid().ToString("N"),
             ActorUserId = actor.ToString("N"), RecipientUserId = recipient.ToString("N"), Operation = "Mint", ChainType = "Algorand",
@@ -93,7 +93,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         accepted.Stage = "Accept"; accepted.State = "Preparing";
         var intent = NftLifecycleIntentFactory.Create(accepted, command, ChainNetwork.Devnet, "platform", Guid.Empty)!;
         var consent = new NftStageConsent(before.Id, "Accept", 0, NftStageConsentIdentity.Hash(accepted, intent),
-            Authority(recipient, recipientWallet, "holder"), now,
+            Authority(recipient, recipientWallet, "holder", participantLifetime), now,
             new(Guid.NewGuid(), before.Version, before.State, before.Stage, before.PreparationGeneration));
         accepted.StageConsentsJson = JsonSerializer.Serialize(new[] { consent });
         return (before, accepted, consent);

@@ -24,9 +24,11 @@ public partial class EthereumProvider
                 throw new InvalidDataException("Ethereum DEX requires an explicit " + name + " pin.");
             return EthereumHex.Data(bytes);
         }
+        // Activation gate: exposed-plan and nonce-winner proofs read historical sender nonces, so the node must keep archive state.
         if (!bool.TryParse(Text("Enabled"), out var enabled) || !enabled ||
+            !bool.TryParse(Text("ArchiveStateConfirmed"), out var archive) || !archive ||
             !uint.TryParse(Text("PoolFee"), NumberStyles.None, CultureInfo.InvariantCulture, out var fee) || fee is 0 or > 0xffffff)
-            throw new InvalidDataException("Ethereum DEX requires an enabled reviewed pool policy.");
+            throw new InvalidDataException("Ethereum DEX requires an enabled reviewed pool policy and a confirmed archive-state node.");
         return new(Address("Executor"), Address("Router"), Address("Factory"), Address("Quoter"), Address("WrappedNative"),
             Address("PolicySigner"), Hash("PolicyKeyVersion"), Hash("GenesisHash"), Hash("ExecutorCodeHash"),
             Hash("RouterCodeHash"), Hash("FactoryCodeHash"), Hash("QuoterCodeHash"), Hash("WrappedNativeCodeHash"), fee);

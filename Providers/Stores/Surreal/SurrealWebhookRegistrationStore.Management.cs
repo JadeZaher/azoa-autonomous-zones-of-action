@@ -79,7 +79,7 @@ public sealed partial class SurrealWebhookRegistrationStore
         {
             if (legacy)
             {
-                statements.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<Row>.Key(row.Id), "webhook_legacy", "_webhook_legacy"));
+                statements.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<Row>.Key(row.Id), "webhook_legacy", "_webhook_legacy"));
                 statements.Add(SurrealQuery.Of("""
                     IF $_webhook_legacy = NONE OR ($_webhook_legacy.version ?? 0) != $_legacy_version
                         OR $_webhook_legacy.tenant_id != $_legacy_tenant OR $_webhook_legacy.url != $_legacy_url

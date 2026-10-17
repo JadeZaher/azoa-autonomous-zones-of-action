@@ -14,8 +14,14 @@ using Solnet.Wallet;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
-public partial class SolanaProvider
+public partial class SolanaProvider : IWttSourceModule
 {
+    /// <inheritdoc/>
+    public Task<AZOAResult<WttPublicationRules>> ReadWttPublicationRulesAsync(CancellationToken ct = default)
+        => Task.FromResult(ReadWttSolanaDeployment() is null
+            ? Error<WttPublicationRules>("An enabled pinned WTT deployment is required.")
+            : Ok(new WttPublicationRules(32, false)));
+
     /// <inheritdoc cref="IWttSourceModule.QuoteWttSourceAsync"/>
     public async Task<AZOAResult<WttStageQuote>> QuoteWttSourceAsync(WttOperationIntent intent, CancellationToken ct = default)
     {

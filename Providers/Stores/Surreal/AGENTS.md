@@ -63,6 +63,36 @@ call, actor, nonce or activation epoch. Signed wire is separate from submission
 authority; only `SubmissionAuthorized` rows enter the fair oldest-attempt sweep.
 Checkpoints are create-only and never silently relabeled to a new deployment epoch.
 
+Released-nonce refill: `ListReleasedAsync` returns the lowest `Released` rows for
+one protocol/sender. `TryClaimReleasedAsync` claims one released nonce for a new
+preparation in a single raw transaction (`// raw:` retire-and-create must share
+one commit).
+
+1. A typed `UpdateOnly` turns the released row into a `ReleasedRefilled`
+   tombstone with `nonce_slot = its own id`. It is captured as
+   `$released_nonce` and fenced on version, `Released` state, exact nonce and
+   an empty slot. `RequireResult` aborts with `ETHEREUM_RELEASED_NONCE_CONFLICT`
+   otherwise.
+2. A typed `Create` of the successor follows, returned by name
+   (`$released_successor`).
+
+The row is never deleted, so its id keeps the preparation-key lock forever.
+
+The unique index is `ethereum_preparation_live_nonce`
+`(protocol_identity, sender, nonce, nonce_slot)`. Live rows have an empty slot,
+so there is still one live owner per nonce. Each tombstone's slot is unique, so
+tombstones never collide.
+
+The batch runs under `SurrealTransientConflict.RetryOnConflictAsync`. A
+concurrent refiller loses on the marker or the unique index and retries through
+the allocator loop. Only never-signed rows reach `Released`; see
+`Providers/Blockchain/Ethereum/AGENTS.md` §Nonce holes.
+
+Deploy note: the index was renamed, so the schema sync (`IF NOT EXISTS`) defines
+the new one. A database that still has the old `ethereum_preparation_nonce`
+index must drop it (dev: `-ResetDb`). Until then, refills fail closed as "busy"
+instead of double-assigning.
+
 ## Â§ecosystem-tree â€” SurrealEcosystemStore (D2)
 
 `final-hardening-cutover` Phase D / D2. Backs `IEcosystemStore` (the ActionGraphBundle
@@ -858,18 +888,55 @@ work; this initial source slice is not registered or a replacement for callers.
 `SurrealEthereumDexAllowanceStore` serializes each physical network, owner, token,
 and executor allowance across operations. Its raw transaction locks the owning
 swap operation together with the resource; lock expiry never releases ownership.
-A prior canceled operation can be displaced only when no historical stage was
-authorized or externally exposed. Positive transitions in the swap journal lock
-the same operation, so cancellation and late exposure cannot cross this check.
+A prior canceled operation can be displaced only when it is still `Cancelled` and
+no historical stage was authorized or externally exposed. The displacing
+transaction touches that operation row. Cancelled is not permanently egress-free:
+cleanup legitimately moves Cancelled -> CleanupReady -> revoke. The invariant is
+that every transition out of Cancelled and every egress write (authorize, expose)
+updates the same operation row through `CommitStageAsync`. A concurrent cleanup
+start or exposure therefore conflicts with the displacement instead of crossing it.
 Release uses an exact saved confirmed Swap/RevokeAllowance stage and immutable
 observation under a stage/version fence. A pending, failed or approval receipt
 cannot release ownership. The provider remains responsible for authoritative
-chain proof before the domain records that receipt.
+chain proof before the domain records that receipt. A contending claim first
+retries that same release from the holder's saved current stage, so a lost
+eager release cannot strand the resource; it never releases on absence.
+The release mutation result is captured as `$allowance_released` and returned by
+name (no positional result offset). If the conditional update matches no row, or
+the transaction conflicts, the store re-reads the resource. It reports success
+only when the winner released this same operation with this same stage. A
+contending claimer and the eager releaser therefore agree instead of one
+reporting a spurious failure.
+
+A confirmed stage normally proves its winner through its saved candidate
+(`PreparedJson`). An operator-settled stage proves it through its recorded
+settlement (an `OperatorSettlement` evidence member). The swap journal admits
+that member only through `SettleOperatorReviewAsync`, so `ReleaseAsync`
+accepts either. The zero-allowance `AllowanceRelease` binding is required in
+both cases.
+
+### Swap operator settlement
+
+`SurrealSwapOperationStore.SettleOperatorReviewAsync` is the only writer of an
+operator-settled observation. `RecordObservationAsync` refuses one.
+
+- It requires the operation and current stage in `NeedsOperator`, at their
+  expected versions, with egress.
+- The audit's `ReplacedObservationHash` must equal the hash of the stage's
+  current review observation.
+- `SwapOperatorSettlementContract.IsValid` must pass.
+- One `CommitStageAsync` writes the terminal stage and moves the operation to
+  `StageResolved`, charging the actual fee to the effect or cleanup total.
+- An exact replay of a terminal stage is idempotent.
+
+`ProvenConfirmedStage` lets `CompleteAsync` and `CompleteCleanupAsync` accept
+either proof. `ValidJournalObservation` accepts a recorded settlement on a
+terminal stage, for continuation and cleanup admission.
 
 
 ### NFT participant stage consent
 
-StageConsentsJson is append-only under the lifecycle version CAS. A fresh entry binds the actual participant credential and owned wallet to one lifecycle, stage, generation, canonical full intent and physical protocol identity. The stored acceptance request also binds the reviewed prior version/state/stage/generation and a stable request ID. Only an eligible awaiting stage or a replacement after recorded authoritative no-effect may append; Prepared/Submitted rows cannot reinterpret a new acceptance. The atomic mutation checks the unchanged original actor authority and the separate participant authority together. Preparation and first-send repeat both checks. Observation preserves the history without requiring current signing authority. A saved request replay may resume only its same stage and generation; a later stage remains observation-only.
+StageConsentsJson is append-only under the lifecycle version CAS. A fresh entry binds the actual participant credential and owned wallet to one lifecycle, stage, generation, canonical full intent and physical protocol identity. The stored acceptance request also binds the reviewed prior version/state/stage/generation and a stable request ID. Only an eligible awaiting stage or a replacement after recorded authoritative no-effect may append a new stage/generation; Prepared/Submitted rows cannot reinterpret a new acceptance. The one exception is a participant renewal (`CanRenew`): while Preparing or Prepared, the same participant, tenant and wallet may append a fresher credential for the unchanged stage, generation and intent hash, and `Current` then returns that latest entry. The batch first proves the superseded credential is no longer live (JWT expiry, user deactivation or watermark advance, API-key revocation or expiry), so a live participant cannot keep advancing the version to invalidate the requester's in-flight requests. A tenant-grant-only revocation becomes renewable once the held credential expires. The atomic mutation checks the effective requester authority (the original witness or its latest renewal) and the separate participant authority together. Preparation and first-send repeat both checks. Observation preserves the history without requiring current signing authority. A saved request replay may resume only its same stage and generation; a later stage remains observation-only.
 # Exchange source and finalized accounting
 
 Exchange custody preparation and first egress join the exact source CAS with both
@@ -889,6 +956,79 @@ receipt survives later permissions and reserve movement-key eviction.
 
 ### Replacement NFT cost receipts
 
-ReplacementCostConsentsJson preserves every accepted generation while RequestJson keeps the initial command and offer. Appending requires the unchanged original lifecycle version and exact prior authoritative no-effect evidence. NftReplacementCostContract matches the full new-generation intent, physical network, original payer and current accepting authority. The acceptance transaction joins the original authority, current mint authority and database-time immutable receipt expiry. Preparation and first send recheck the recorded accepting authority without reapplying offer expiry.
+ReplacementCostConsentsJson preserves every accepted generation while RequestJson keeps the initial command and offer. Appending requires the unchanged original lifecycle version and exact prior authoritative no-effect evidence. NftReplacementCostContract matches the full new-generation intent, physical network, original payer and current accepting authority. The acceptance transaction joins the effective requester authority, the accepting mint authority and database-time immutable receipt expiry. After that commit the receipt is immutable evidence: preparation and first send recheck its binding (`NftReplacementCostContract.Matches`) and the current requester authority, not the accepting credential or the offer expiry. The branch applies only to unconfirmed replacement Create generations.
 
 ReplacementCostRetirementsJson supplies a negative receipt for an unanswered exact acceptance. Its version advance competes with acceptance, so only one can commit. Retirement requires the current original payer's mint authority but does not revive original signing authority or require the expired quote. All other lifecycle fields and existing histories remain unchanged. Reconciliation reads one lifecycle snapshot, returns Applied for exact accepted audit first, then Obsolete for retirement/higher version, otherwise Unresolved.
+
+ActorContinuationsJson is append-only under the same version CAS and requires the action-authority path. An appended renewal must review the exact current version/state/stage/generation, reuse no request ID, change no other lifecycle field and bind the original direct requester, tenant, wallet and operation scope. The requester fence for every later new effect uses the latest matching renewal instead of the lapsed original witness; fresh admission requires an empty renewal history and the empty cancellation marker rejects one.
+
+### NFT effect authorities
+
+`NftEffectAuthorities.Select` is the single list of credential witnesses each lifecycle write fences, shared by the durable store and the in-memory test store. `NftLifecycleWrite` names the kind. A fresh admission fences the original requester (the empty cancellation marker and the deterministic workflow rejection fence none). An effect (participant consent append, preparation, first send) fences the effective requester plus the current stage participant when the stage needs one. A replacement-cost acceptance additionally fences the accepting credential and the receipt's database-time expiry. A requester renewal or participant renewal fences only its new credential, because it signs nothing; the next effect checks everything again. Workflow fences (`ActionExecutionFence`, workflow cost authority) join admissions, effects and cost acceptances, never renewals. A missing or non-binding witness fails closed before the batch is sent. Every contended lifecycle batch runs through `SurrealTransientConflict.RetryOnConflictAsync`; a retried loser fails its own version predicate (null or `NFT_LIFECYCLE_CHANGED`) and the caller re-reads. The mutation result is captured as `$_nft_effect_row` and returned by name, not by a guard-count offset. `CancelUnsentAsync` fences the requester's current consent (`SigningAuthorityFence.ForConsent`, operation scope) with the cancellation.
+
+## Hold command and exchange source transactions
+
+`SurrealHoldCommandStore` partials compose multi-table atomic transactions. Every raw statement is
+`BEGIN`/`COMMIT`, an `IF ... THROW` guard over a captured typed mutation, or
+`SurrealGeneratedStatementScope.Assign/Apply/RequireResult` around typed builders. Each composition
+carries one `// raw:` pointer naming its invariant. A captured conditional mutation that matched
+no row aborts the whole batch, and the caller re-reads. A loser of a race replays the winner's
+immutable receipt rather than failing.
+
+- **In-batch receipt reads** use `AssignRecord` (`LET $v = (SELECT …)[0]`, the record or `NONE`), never
+  `Assign`. A `Key()` select is an array, and the field comparisons and `crypto::sha256` checks
+  would always fail closed. Each read carries a `// lock:` note. Receipts are create-only, and the
+  liability, source or run CAS in the same batch serializes the operation.
+- **Contention is re-planned, not refused** (`Contention` partial). A counter-row CAS that loses to
+  an unrelated writer (another hold drawing the same reserve row) throws `HOLD_COMMAND_CHANGED`.
+  The retry wrapper would only replay the stale version. So local commits, units commitments,
+  terminal settlement and purchase recovery re-read and re-plan up to `MaxReplans` (4). Each pass
+  first re-reads the receipt, and a loser returns the winner's receipt.
+- **Terminal accounting** (`TerminalAsync`): every terminal op (settle, compensate, abandon) plans
+  from a fresh source read. Before any `null`, it re-reads the one settlement receipt and returns it
+  only when the source is in that op's own terminal state. An absent group can never answer as
+  settled.
+
+- **Exchange units** (`ExchangeUnits`, `ExchangeSettlement`, `ExchangeAbsence`): commitment,
+  finalized settlement, proven-absence compensation and unsent abandonment each join, in one
+  batch, the source CAS (`SourceTransition`), the reserve ledger version CAS, the treasury
+  ledger CAS where it applies, and the immutable `ExchangeHoldSettlementReceipt`. A held buy also
+  joins its liability and, when one was accepted, its release mandate. A sale's partition
+  `Return` is clamped to the outstanding issued units (`ReturnableUnits`). Treasury chain
+  identity is compared case-insensitively, as the treasury ledger stores it.
+- **Authority fences** (`ExchangeAuthorityFence`): tenant API key, participant watermark, wallet
+  and exact grant are re-locked at commitment, preparation and first egress. Each prefix is a
+  caller-fixed lowercase token (`exchange_source`, `exchange_units`, `exchange_wire`,
+  `exchange_opening`, `hold_exchange_original`). Captured variables are `$_<prefix>_participant`,
+  `_wallet` and `_grant`. The tenant fence delegates to `SigningAuthorityFence.ForConsent` with
+  `<prefix>_tenant`.
+- **Purchase recovery** (`ExchangeRecovery`). The request carries the reversal's **cumulative**
+  want from the purchase and the lot's whole attributed share (`ClaimSourceUnits`). Each step:
+  - recovers only `want − already recovered by this reversal`, further capped by
+    `share − allocation.consumed` over every reversal of the lot;
+  - writes an immutable receipt keyed on (reversal, lot, source, recovered-before), with
+    `OperationId` = the reversal id, so `ListReversalRecoveriesAsync` finds them by index;
+  - lets concurrent passes collide on the receipt position: one commits and the other replays it;
+  - makes the allocation CAS (or deterministic create) hold the cap at commit;
+  - rounds hold units **up**, capped at what is still held. Credit is
+    `min(delta, ceil(share × spent ÷ purchased))`.
+
+  **Clawback reservations** (`ExchangeClawback`) use the same want, cap and receipt-position rules,
+  with kind `FiatReversalClawback`. They apply to a direct buy, or a held purchase whose liability
+  is `Released`. The reserved units are `min(ceil(received × delta ÷ spent), delivered − clawed)`,
+  where `clawed` sums `ClawedAssetUnits` over every allocation of the purchase. A version CAS on the
+  completed source row serializes all clawbacks of one purchase, so the delivered cap holds at
+  commit. The receipt is committed **before** anything is sent, and its id is the ladder's claim
+  key for that one move.
+
+  A partial step marks the parent `PartiallyRecovered`, creates the remainder child with
+  `InheritsReserveCommitment` plus a recovery `HoldCommandReceipt` proving it, and narrows any
+  active mandate (`HoldReleaseLineage`, quote id recomputed). `GetPurchaseLiabilityAsync` follows
+  the remainders. Once the liability is `Released`, it names the recipient wallet from the
+  completed `Release` command's rail plan, so the reversal raises a clawback instead.
+- **Release of a purchased liability** (`HoldReleaseExchangeFence`): only a `Completed` source
+  whose settlement receipt, opening receipt hash and liability pointer all still match may
+  authorize a release. A remainder mandate additionally needs its exact lineage receipt hash.
+- **Local commands** close an Active mandate atomically, and the transition `WHERE` pins both
+  `EconomicSourceId == null` and the mandate pointer that was read (see `Services/Hold/AGENTS.md`
+  §purchased-liabilities and §mandates).

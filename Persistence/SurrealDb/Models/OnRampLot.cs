@@ -184,6 +184,16 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 35)]
         public string? ProviderRefundStatus { get; set; }
 
+        /// <summary>The part of <see cref="ConsumedBaseUnits"/> a partial reversal took back; it never shrinks purchase attribution.</summary>
+        [Column(Order = 36)]
+        [Default("\"0\"")]
+        public string ReversedBaseUnits { get; set; } = "0";
+
+        /// <summary>Each reversal's cumulative target already marked here, by reversal id, so a repeat adds only the difference.</summary>
+        [Column(Order = 37)]
+        [Default("\"{}\"")]
+        public string ReversalMarksJson { get; set; } = "{}";
+
         /// <summary>Deterministic record id for the one lot a funding intent may settle into.</summary>
         public static string RecordIdFor(string intentId)
         {

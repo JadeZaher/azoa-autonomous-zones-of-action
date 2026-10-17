@@ -11,7 +11,7 @@ using Solnet.Wallet;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
-public partial class SolanaProvider
+public partial class SolanaProvider : IWttCleanupModule
 {
     private sealed record WttSolanaCleanupPlan(int Version, string OriginalTransactionId, string OriginalBlockIdentity,
         ulong OriginalSlot, ulong OriginalBefore, ulong OriginalAfter, ulong OriginalFunding, ulong OriginalProtocolCost,

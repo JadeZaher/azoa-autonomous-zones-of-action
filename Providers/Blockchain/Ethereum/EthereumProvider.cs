@@ -268,10 +268,10 @@ public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueMo
                 return Error<BigInteger>("The node reported chain id 0, which is not a valid EIP-155 chain.");
 
             if (expected is { } pinned && pinned != read.Result)
+                // The node URL can embed a provider API key; it never enters result text.
                 return Error<BigInteger>(
-                    $"Chain id mismatch: the configured {ActiveNetwork} network pins chain id {pinned} but the node at "
-                    + $"{RpcHttpClient.BaseAddress} reports {read.Result}. Refusing to sign for a chain the configuration "
-                    + "does not expect.");
+                    $"Chain id mismatch: the configured {ActiveNetwork} network pins chain id {pinned} but the configured node "
+                    + $"reports {read.Result}. Refusing to sign for a chain the configuration does not expect.");
 
             _chainId = read.Result;
             return Ok(read.Result);

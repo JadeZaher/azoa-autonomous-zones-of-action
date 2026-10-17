@@ -1,6 +1,7 @@
 export type * from "./webhooks.js";
 export type * from "./hold-commands.js";
 export type * from "./dex.js";
+export type * from "./wtt.js";
 export type * from "./consent.js";
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
 export type * from "./deployments.js";
@@ -49,12 +50,6 @@ export type {
   ExchangeParams,
   ExchangeReceiptState,
   ExchangeReceipt,
-  // Hold types (HoldController, D14 / W3.4)
-  HoldState,
-  HoldOpenParams,
-  HoldSettlementParams,
-  HoldChainParams,
-  HoldView,
   // Fiat on-ramp checkout types (FiatCheckoutController)
   FiatCheckoutStatus,
   FiatSettlementState,
@@ -108,10 +103,6 @@ export type {
   FungibleAttachmentView,
   PlatformGenesisRequest,
   PlatformGenesisResponse,
-  // Swap types
-  SwapQuoteParams,
-  SwapExecuteParams,
-  SwapQuoteResponse,
   BridgeTransactionResult,
   BridgeRouteInfo,
   BridgeInitiateParams,
@@ -140,6 +131,16 @@ export type {
   NftFeeQuote,
   NftFeeAuthorization,
   NftOperation,
+  NftStageAcceptance,
+  NftReplacementCostAcceptance,
+  NftReplacementCostReconciliation,
+  NftProtocolCostLimits,
+  NftProtocolCostAuthorization,
+  NftProtocolCostQuote,
+  NftProtocolCostOffer,
+  NftWorkflowCostDisclosure,
+  NftWorkflowCostAcceptance,
+  NftWorkflowCostResolution,
   HolonNFTBindingResult,
   WalletNFTBindingResult,
   // Action types

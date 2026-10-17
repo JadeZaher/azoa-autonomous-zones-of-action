@@ -163,9 +163,13 @@ public static class ActionNodeOutputSchema
             // Emit: serializes the tenant-shaped cfg.Payload directly (free-form).
             [ActionNodeType.Emit] = NodeOutputShape.OpenShape,
 
+            // Swap: flat SwapActionOutput projected only from the confirmed settlement receipt.
+            [ActionNodeType.Swap] = NodeOutputShape.Of(
+                ("OperationId", OutputFieldType.String), ("ChainType", OutputFieldType.String), ("Network", OutputFieldType.String),
+                ("Provider", OutputFieldType.String), ("InputAssetId", OutputFieldType.String), ("OutputAssetId", OutputFieldType.String),
+                ("ActualInput", OutputFieldType.String), ("ActualOutput", OutputFieldType.String), ("PlatformFeePaid", OutputFieldType.String),
+                ("TransactionIds", OutputFieldType.Array), ("TransactionId", OutputFieldType.String), ("RetainedEffects", OutputFieldType.Array)),
             // Tier-2 economic nodes serialize the WHOLE AZOAResult<T>.
-            // Result = SwapQuoteResponse
-            [ActionNodeType.Swap] = WrappedObject(),
             // Result = strict BlockchainOperationResponse (Grant / Transfer / Refund)
             [ActionNodeType.Grant] = WrappedObject(),
             [ActionNodeType.Transfer] = WrappedObject(),

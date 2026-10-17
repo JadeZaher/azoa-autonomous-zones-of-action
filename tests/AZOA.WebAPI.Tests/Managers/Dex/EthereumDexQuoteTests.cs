@@ -33,6 +33,7 @@ public sealed partial class EthereumDexQuoteTests
         result.Result.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow);
         fixture.Methods.Should().NotContain(method => method.Contains("send", StringComparison.OrdinalIgnoreCase) || method.Contains("sign", StringComparison.OrdinalIgnoreCase));
         fixture.QuoterCalls.Should().Be(1);
+        fixture.CallBlocks.Should().Equal(fixture.QuoteBlock);
     }
 
     [Theory]
@@ -81,6 +82,16 @@ public sealed partial class EthereumDexQuoteTests
         internal readonly EthECKey OwnerKey = EthECKey.GenerateKey();
         internal readonly FakeEthereumPreparationStore Preparations = new();
         internal readonly IConfigurationRoot Configuration;
+        internal readonly Allowances AllowanceStore = new();
+        internal readonly List<string> Sent = [];
+        internal readonly HashSet<string> CallBlocks = [];
+        /// <summary>Scripted chain responses consulted before the quote defaults; return Null for a JSON null result.</summary>
+        internal Func<string, JsonElement, object?>? Chain;
+        internal static readonly object Null = new();
+        internal BigInteger Head = 10;
+        internal BigInteger HeadTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 60;
+        internal string QuoteBlock => _block;
+        internal string Genesis => _genesis;
         private readonly ServiceProvider _services;
         private readonly string _policy;
         private readonly string _hash = EthereumHex.Data(new Sha3Keccack().CalculateHash(new byte[] { 0x60, 0x00 }));
@@ -98,7 +109,7 @@ public sealed partial class EthereumDexQuoteTests
                 ["Blockchain:Chains:0:Devnet:NodeUrl"] = "http://dex-ethereum.test/", ["Blockchain:Chains:0:Devnet:ChainId"] = "31337",
                 ["AZOA:Ethereum:RpcRetryMaxAttempts"] = "0", ["AZOA:Ethereum:PlatformPrivateKey"] = "0x" + Convert.ToHexString(key.GetPrivateKeyAsBytes()),
                 ["AZOA:Ethereum:AllocatorActivationEpoch"] = "dex-fixture",
-                [prefix + "Enabled"] = "true", [prefix + "PoolFee"] = "3000", [prefix + "ExecutionLifetimeSeconds"] = "3600", [prefix + "Executor"] = Address(1),
+                [prefix + "Enabled"] = "true", [prefix + "ArchiveStateConfirmed"] = "true", [prefix + "PoolFee"] = "3000", [prefix + "ExecutionLifetimeSeconds"] = "3600", [prefix + "Executor"] = Address(1),
                 [prefix + "MaximumFinalizedLagSeconds"] = "1800", [prefix + "MaximumFutureSkewSeconds"] = "60",
                 [prefix + "Router"] = Address(2), [prefix + "Factory"] = Address(3), [prefix + "Quoter"] = Address(4),
                 [prefix + "WrappedNative"] = Address(5), [prefix + "PolicySigner"] = _policy,
@@ -114,7 +125,7 @@ public sealed partial class EthereumDexQuoteTests
                 settings[prefix + "Tokens:" + address + ":Standard"] = "ERC20Immutable";
             }
             Configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").AddInMemoryCollection(settings).Build();
-            _services = new ServiceCollection().AddSingleton<IEthereumDexAllowanceStore>(new Allowances()).BuildServiceProvider();
+            _services = new ServiceCollection().AddSingleton<IEthereumDexAllowanceStore>(AllowanceStore).BuildServiceProvider();
             Provider = new(Configuration, NullLogger<EthereumProvider>.Instance, null, null,
                 _services.GetRequiredService<IServiceScopeFactory>(), this, Preparations);
             var actor = Guid.NewGuid(); var owner = new DexParticipant(actor, Guid.NewGuid(), OwnerKey.GetPublicAddress());
@@ -131,12 +142,23 @@ public sealed partial class EthereumDexQuoteTests
             using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
             var root = document.RootElement; var method = root.GetProperty("method").GetString()!; var args = root.GetProperty("params");
             Methods.Add(method);
-            object result = method switch
+            if (method == "eth_sendRawTransaction") Sent.Add(args[0].GetString()!);
+            var custom = Chain?.Invoke(method, args);
+            if (custom is RpcFailure failure)
+                return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { jsonrpc = "2.0", id = root.GetProperty("id").GetInt32(),
+                    error = new { code = -32000, message = failure.Message } })) };
+            object? result = custom is not null ? ReferenceEquals(custom, Null) ? null : custom : method switch
             {
                 "eth_chainId" => "0x7a69",
-                "eth_getBlockByNumber" => new { number = "0xa", hash = args[0].GetString() == "0x0" ? _genesis : _block,
-                    timestamp = EthereumHex.Quantity(new BigInteger(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + (Mutation == "stale" ? -4000 : Mutation == "future" ? 180 : -60))),
-                    baseFeePerGas = "0x3b9aca00" },
+                "eth_getBlockByNumber" when args[0].GetString() is "0x0" or "finalized" or "latest" => new
+                {
+                    number = args[0].GetString() == "0x0" ? "0x0" : EthereumHex.Quantity(Head),
+                    hash = args[0].GetString() == "0x0" ? _genesis : BlockHash(Head),
+                    parentHash = BlockHash(Head - 1),
+                    timestamp = EthereumHex.Quantity(Mutation == "stale" ? new BigInteger(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 4000)
+                        : Mutation == "future" ? new BigInteger(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 180) : HeadTime),
+                    baseFeePerGas = "0x3b9aca00"
+                },
                 "eth_maxPriorityFeePerGas" => "0x3b9aca00",
                 "eth_getBalance" => "0x3635c9adc5dea00000",
                 "eth_getCode" => Mutation == "code" ? "0x6001" : "0x6000",
@@ -148,9 +170,12 @@ public sealed partial class EthereumDexQuoteTests
             return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { jsonrpc = "2.0", id = root.GetProperty("id").GetInt32(), result })) };
         }
 
+        /// <summary>Finalized block identity by height; height 10 is the quote's pinned block.</summary>
+        internal string BlockHash(BigInteger number) => number == 10 ? _block : "0x" + number.ToString("x64", CultureInfo.InvariantCulture);
+
         private string Call(JsonElement args)
         {
-            args[1].GetProperty("blockHash").GetString().Should().Be(_block);
+            CallBlocks.Add(args[1].GetProperty("blockHash").GetString()!);
             args[1].GetProperty("requireCanonical").GetBoolean().Should().BeTrue();
             var data = args[0].GetProperty("data").GetString()!;
             bool Is(string signature) => data.StartsWith("0x" + EthereumAbi.Selector(signature), StringComparison.Ordinal);
@@ -180,9 +205,12 @@ public sealed partial class EthereumDexQuoteTests
         }
     }
 
-    private sealed class Allowances : IEthereumDexAllowanceStore
+    internal sealed record RpcFailure(string Message);
+
+    internal sealed class Allowances : IEthereumDexAllowanceStore
     {
         private readonly Dictionary<string, EthereumDexAllowance> _rows = [];
+        internal readonly List<(string Id, string Operation, string Stage)> Released = [];
         public Task<EthereumDexAllowance?> GetAsync(string id, CancellationToken ct = default)
             => Task.FromResult(_rows.GetValueOrDefault(id));
         public Task<EthereumDexAllowance?> ClaimAsync(EthereumDexAllowance candidate, CancellationToken ct = default)
@@ -192,7 +220,13 @@ public sealed partial class EthereumDexQuoteTests
             _rows.Add(candidate.Id, candidate);
             return Task.FromResult<EthereumDexAllowance?>(candidate);
         }
-        public Task<bool> ReleaseAsync(string id, string operationId, string stageId, CancellationToken ct = default) => Task.FromResult(false);
+        public Task<bool> ReleaseAsync(string id, string operationId, string stageId, CancellationToken ct = default)
+        {
+            if (!_rows.TryGetValue(id, out var row) || row.OperationId != operationId) return Task.FromResult(false);
+            row.State = "Released"; row.ReleaseStageId = stageId;
+            Released.Add((id, operationId, stageId));
+            return Task.FromResult(true);
+        }
     }
 
     private static string Address(int value) => "0x" + value.ToString("x40", CultureInfo.InvariantCulture);

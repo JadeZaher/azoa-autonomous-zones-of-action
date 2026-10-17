@@ -14,3 +14,10 @@ the current holder's explicit return authorization.
 Do not clear a saved request merely because a different operation for that asset
 completed. Preserve unreadable saved requests until their outcomes are reconciled.
 Verification endpoints return booleans; absent or false evidence never means verified.
+
+`nft-replacement-costs.tsx` discloses a fresh offer for a proven-no-effect Solana
+creation generation and archives the exact acceptance (stage request + receipt)
+before sending it. A saved acceptance blocks a new offer until reconciliation or
+retirement returns Applied or Obsolete; an Applied acceptance for an earlier
+generation then permits reviewing the later one. Accepting records permission
+only; the lifecycle panel's explicit continue action prepares the attempt.

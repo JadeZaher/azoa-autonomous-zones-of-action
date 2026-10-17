@@ -1,0 +1,144 @@
+# ─── AZOA — E2E stack (Playwright journeys only) ───
+#
+# A self-contained compose PROJECT (`azoa-e2e`): its own containers, network, dedicated ports
+# (frontend 3200, API 5200; never AZOA_FRONTEND_HOST_PORT, which the dev stack uses) and
+# SurrealDB volume, so a local E2E run never touches the dev stack or its `surrealdb_data`.
+# The API calls host-run fake Identomat/Stripe servers (frontend/e2e/support/fake-vendors)
+# with per-run random credentials and trusts ONLY a throwaway test CA. Bring it up with
+#
+#   node frontend/e2e/scripts/e2e-stack.mjs up
+#
+# which generates frontend/e2e/.generated/ (gitignored) and exports every AZOA_E2E_* value.
+# The ":?" forms make a bare `compose up` fail loudly instead of booting a node that would call
+# real vendors. See frontend/e2e/AGENTS.md §stack and §hermetic.
+
+name: azoa-e2e
+
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v3.1.4
+    container_name: azoa-e2e-surrealdb
+    user: "0:0"
+    command: [start, --log, warn, --user, root, --pass, root, --bind, 0.0.0.0:8000, rocksdb:///data/db]
+    environment:
+      SURREAL_SYNC_DATA: "true"
+    # Not published: only the API talks to it, over the project network.
+    volumes:
+      - e2e_surrealdb_data:/data
+    healthcheck:
+      test: ["CMD", "/surreal", "is-ready", "--endpoint", "http://localhost:8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  azoa-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SOURCE_REVISION: "${SOURCE_REVISION:?run frontend/e2e/scripts/e2e-stack.mjs up (sets the 40-character Git SHA)}"
+    container_name: azoa-e2e-api
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    # host.docker.internal: the host-run fake vendors (Desktop and podman add it themselves).
+    # webhook-receiver.e2e.azoa.test: the journeys' webhook destination, pinned without DNS to a
+    # public-range address so the SSRF guard (which refuses the private gateway) admits it.
+    # Delivery is disabled, so it is never dialled.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "webhook-receiver.e2e.azoa.test:198.51.99.10"
+    environment:
+      SurrealRuntime__Endpoint: "http://surrealdb:8000"
+      SurrealRuntime__Namespace: "azoa"
+      SurrealRuntime__Database: "azoa"
+      SurrealRuntime__User: "root"
+      SurrealRuntime__Password: "root"
+      SurrealRuntime__G1DurabilityAcknowledged: "true"
+      SURREALFORGE_URL: "http://surrealdb:8000"
+      SURREALFORGE_NS: "azoa"
+      SURREALFORGE_DB: "azoa"
+      SURREALFORGE_USER: "root"
+      SURREALFORGE_PASS: "root"
+      AZOA_SKIP_MIGRATIONS: "0"
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:5000"
+      DataProtection__ApplicationName: "AZOA.WebAPI.NodeTransparency.v1"
+      DataProtection__KeyRingPath: "/app/data/data-protection-keys"
+
+      # Hermetic by construction: SSL_CERT_DIR is set explicitly (so .NET never falls back to the
+      # system /etc/ssl/certs) and, like SSL_CERT_FILE, holds ONLY the per-run test CA. Any call
+      # to a real vendor, or any other public HTTPS host, fails TLS. Global setup proves it.
+      SSL_CERT_FILE: "/e2e/trust/ca.pem"
+      SSL_CERT_DIR: "/e2e/trust"
+
+      # Seeded once into this project's own volume; rotating it means `e2e-stack.mjs up --rotate`,
+      # which wipes the E2E volume first.
+      NodeOperator__Username: "node-operator"
+      NodeOperator__Password: "${AZOA_E2E_OPERATOR_PASSWORD:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      NodeOperator__CredentialRevision: "1"
+      NodeOperator__SessionMinutes: "20"
+
+      Kyc__Provider: "identomat"
+      Kyc__Identomat__BeginBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_IDENTOMAT_PORT:-9443}"
+      Kyc__Identomat__ResultBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_IDENTOMAT_PORT:-9443}"
+      Kyc__Identomat__CompanyKey: "${AZOA_E2E_IDENTOMAT_COMPANY_KEY:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      Kyc__Identomat__ConfigId: "${AZOA_E2E_IDENTOMAT_KYC_CONFIG:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      Kyc__Identomat__CallbackApiKey: "${AZOA_E2E_IDENTOMAT_CALLBACK_KEY:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      Kyc__Identomat__ReturnUrl: "https://app.e2e.azoa.test/business-verification"
+      Kyc__Identity__PersonKeySecret: "${AZOA_E2E_PERSON_KEY_SECRET:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      Kyc__ApprovalPolicy__PolicyVersion: "identomat-hosted-v1"
+      Kyc__ApprovalPolicy__AssuranceLevel: "document-and-liveness"
+      Kyc__ApprovalPolicy__TrustedProviderKeys__0: "identomat"
+      Kyc__ApprovalPolicy__AllowManualInDevelopment: "false"
+      Kyb__ConfigId: "${AZOA_E2E_IDENTOMAT_KYB_CONFIG:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      # Must be a public HTTPS URL or business verification reports itself unconfigured; the
+      # hosted page is intercepted in the browser, so this address is never visited.
+      Kyb__ReturnUrl: "https://app.e2e.azoa.test/business-verification"
+
+      Fiat__Environment: "test"
+      Fiat__ApiBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_STRIPE_PORT:-9444}"
+      Fiat__Test__SecretKey: "${AZOA_E2E_STRIPE_SECRET_KEY:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      Fiat__Test__WebhookSecret: "${AZOA_E2E_STRIPE_WEBHOOK_SECRET:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
+      Fiat__Checkout__AllowedReturnOrigins__0: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}"
+      Fiat__Checkout__DefaultSuccessUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
+      Fiat__Checkout__DefaultCancelUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
+      Fiat__OffRamp__OnboardingReturnUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
+      Fiat__OffRamp__OnboardingRefreshUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
+
+      # Registered webhook destinations are never dialled during a journey.
+      Webhooks__Enabled: "false"
+    ports:
+      - "${AZOA_E2E_API_PORT:-5200}:5000"
+    volumes:
+      - ./frontend/e2e/.generated/trust:/e2e/trust:ro
+      # The .NET egress probe global setup runs in this container (frontend/e2e/stack/egress-probe).
+      - ./frontend/e2e/.generated/egress-probe:/e2e/probe:ro
+      - e2e_api_data_protection:/app/data/data-protection-keys
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 30s
+
+  azoa-frontend:
+    build:
+      context: .
+      dockerfile: frontend/e2e/stack/frontend.Dockerfile
+    container_name: azoa-e2e-frontend
+    depends_on:
+      azoa-api:
+        condition: service_healthy
+    environment:
+      # Read per request (src/lib/runtime-config.ts): the browser calls the API's host port.
+      API_URL: "http://localhost:${AZOA_E2E_API_PORT:-5200}"
+      AZOA_ALLOW_INSECURE_LOCAL_API: "true"
+      NODE_ENV: "production"
+    ports:
+      - "${AZOA_E2E_FRONTEND_PORT:-3200}:3000"
+
+volumes:
+  e2e_surrealdb_data:
+  e2e_api_data_protection:

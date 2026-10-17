@@ -1,6 +1,6 @@
 ---
 type: design
-status: implementation-in-progress
+status: source-complete-pending-review
 ---
 
 # Replacement NFT creation cost consent
@@ -56,3 +56,20 @@ lost acceptance response, crash before custody, retained prior receipt/history,
 new generation refusal without fresh consent, exact provider cost enforcement,
 SDK bodies and browser saved-request recovery. This is implementation work, not
 a deferral. Gates run with the final integrated sweep.
+
+## Round-3 resume completion (lane N, 2026-10-16)
+
+Source-complete, runtime NOT RUN. Review fixes: typed refusal for missing request/stage/costs
+bodies; the browser no longer stalls when a saved acceptance was Applied for an earlier
+generation (Applied or Obsolete now permits reviewing the later generation, with distinct
+copy); SDK/root index exports for the stage, replacement and cost types the browser imports.
+The in-memory store mirrors the durable append/retirement preconditions so service flows
+exercise them. Fixtures: `NftReplacementCostTests` (refusal without consent, stale review,
+widened limits, exact replay, rebound request ID, original command preserved, gen-1 intent
+carries the replacement quote, retirement replay and fresh offer, gen-2 refusal, actor/tenant/
+payer, crash before custody, rotated platform signer); `SurrealNftLifecycleStoreTests.ReplacementCosts`
+(DB-time expiry, single receipt per generation, original revocation despite newer credential,
+current expiry, payer wallet move, acceptance-vs-retirement and acceptance-vs-cancellation races,
+first send blocked after accepting-authority expiry while observation continues); SDK exact
+bodies; browser saved-request recovery. Generated schema for the new histories is final-sweep work.
+

@@ -20,7 +20,8 @@ public sealed partial class SurrealSwapOperationStore
             (stage.AuthorizedAt is null && stage.ExternalExposedAt is null)) return null;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
         var plan = JsonSerializer.Deserialize<SwapStagePlan>(stage.PlanJson)!;
-        if (!ValidJournalObservation(intent, stage, observation)) return null;
+        // Operator settlements enter only through SettleOperatorReviewAsync, never through automatic observation.
+        if (SwapOperatorSettlementContract.IsOperatorSettlement(observation) || !ValidJournalObservation(intent, stage, observation)) return null;
         var observationJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(observation));
         if (SwapObservationContract.IsTerminal(stage.State))
             return stage.ObservationJson == observationJson ? stage : null;
@@ -78,6 +79,8 @@ public sealed partial class SurrealSwapOperationStore
     {
         if (CanonicalJson.HashCanonical(stage.PlanJson) != stage.PlanHash) return false;
         var plan = JsonSerializer.Deserialize<SwapStagePlan>(stage.PlanJson)!;
+        if (SwapOperatorSettlementContract.IsOperatorSettlement(observation))
+            return SwapObservationContract.IsTerminal(stage.State) && SwapOperatorSettlementContract.IsValid(intent, plan, observation);
         if (stage.PreparedJson is { } json)
         {
             var prepared = JsonSerializer.Deserialize<PreparedSwapStage>(json)!;

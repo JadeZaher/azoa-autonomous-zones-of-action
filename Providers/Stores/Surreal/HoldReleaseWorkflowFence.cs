@@ -40,7 +40,8 @@ internal static class HoldReleaseWorkflowFence
             .Where(row => row.RunId == run && row.NodeId == node && row.State == ActionNodeExecution.ActionNodeState.Succeeded
                 && row.SigningAuthorityJson == signing)
             .Set(row => row.State, ActionNodeExecution.ActionNodeState.Succeeded).Build(), "hold_workflow_node", "_hold_workflow_node"));
-        result.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<HoldCommandReceipt>.Key(source.OpeningCommandId),
+        // lock: command receipts are create-only; the run, node and liability CAS updates serialize this release.
+        result.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<HoldCommandReceipt>.Key(source.OpeningCommandId),
             "hold_workflow_receipt", "_hold_workflow_receipt"));
         result.Add(SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<HoldLedger>(mandate.HoldRecordId)
             .Where(row => row.OpeningCommandId == source.OpeningCommandId && row.ActiveReleaseMandateId == mandate.Id)

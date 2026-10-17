@@ -248,8 +248,8 @@ export interface WorkflowReconciliationResult {
 /** Per-call options for value-moving advances (`.step` / `.signal`). */
 export interface AdvanceOptions {
   /**
-   * Sets the `Idempotency-Key` request header, reusing the same `extraHeaders`
-   * plumbing as `executeSwap`. When absent the server falls back to its
+   * Sets the `Idempotency-Key` request header through the shared `extraHeaders`
+   * plumbing. When absent the server falls back to its
    * deterministic content key.
    */
   idempotencyKey?: string;

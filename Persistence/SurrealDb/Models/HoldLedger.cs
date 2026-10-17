@@ -11,7 +11,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("hold_ledger",
-        Aggregate = "PlatformHold (Services/Hold/PlatformHoldService.cs)",
+        Aggregate = "HoldCommand (Services/Hold/HoldCommandService.cs)",
         Guardrail = "G6 SCHEMAFULL; protocol, network, owner and tenant qualified custody liability")]
     [SurrealNote("Immutable definition and opening command bind liability; atomic command receipts preserve replay independently of later state. See Services/Hold/AGENTS.md.")]
     [Slice("identity")]
@@ -99,7 +99,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 14)]
         [FieldGroup("Lifecycle")]
-        [Inside("Pending", "AwaitingSourceSettlement", "Held", "Releasing", "Released", "Refunded", "ReleasedIntoHold", "Cancelled")]
+        [Inside("Pending", "AwaitingSourceSettlement", "Held", "Releasing", "Released", "Refunded", "ReleasedIntoHold", "Cancelled", "PartiallyRecovered")]
         public string State { get; set; } = string.Empty;
 
         /// <summary>The hold window: a plain release before this instant is refused.</summary>

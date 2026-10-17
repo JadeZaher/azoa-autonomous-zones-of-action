@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using System.Text.Json.Serialization;
+using AZOA.WebAPI.Models.Blockchain;
+using AZOA.WebAPI.Models.Signing;
 
 namespace AZOA.WebAPI.Models.Requests;
 
@@ -112,7 +114,43 @@ public sealed class ExchangeRequest
     /// draw, no movement, and an empty operation id as the machine-checkable proof.
     /// </summary>
     public bool PreviewOnly { get; set; }
+
+    /// <summary>Requested automatic release of a held purchase: deadline and independent cost caps. A preview returns its disclosure.</summary>
+    public ExchangeReleaseMandateRequest? ReleaseMandate { get; set; }
+
+    /// <summary>Explicit acceptance of the exact release disclosure a preview returned; required for automatic release.</summary>
+    public ExchangeReleaseAcceptance? ReleaseAcceptance { get; set; }
 }
+
+/// <summary>Owner-chosen automatic-release deadline and separately capped native cost categories, in base units.</summary>
+public sealed class ExchangeReleaseMandateRequest
+{
+    /// <summary>Instant after which the release permission lapses; must follow the hold window.</summary>
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    /// <summary>Most the reserve may spend on the release's network fee.</summary>
+    public string MaximumNetworkFeeBaseUnits { get; set; } = "0";
+
+    /// <summary>Most the reserve may lock as account minimum balance for the release.</summary>
+    public string MaximumLockedBalanceBaseUnits { get; set; } = "0";
+
+    /// <summary>Most the reserve may spend on nonrefundable protocol costs for the release.</summary>
+    public string MaximumNonrefundableCostBaseUnits { get; set; } = "0";
+}
+
+/// <summary>Echo of the server-authored release disclosure the caller explicitly accepts.</summary>
+public sealed class ExchangeReleaseAcceptance
+{
+    /// <summary>Caller's stable identity for this acceptance; a revised disclosure needs a new one.</summary>
+    public Guid RequestId { get; set; }
+
+    /// <summary>The exact disclosure returned by the preview.</summary>
+    public ExchangeReleaseDisclosure? Disclosure { get; set; }
+}
+
+/// <summary>Immutable request-derived and admitted-rate terms bound into an exchange source.</summary>
+public sealed record ExchangeSourceTerms(int Version, string RequestJson, string PolicyVersion, string? Rate,
+    string? RateCurrencyCode, string? RateSource, string? RateVersion, DateTimeOffset? RateAsOf, string? ValueMinorUnits);
 
 /// <summary>
 /// Claims-derived caller identity for an exchange. Constructed by the controller from the
@@ -134,6 +172,9 @@ public sealed class ExchangeCallerContext
 
     /// <summary>The required client-supplied idempotency key.</summary>
     public string ClientIdempotencyKey { get; init; } = string.Empty;
+
+    /// <summary>The authenticated API-key credential captured at the edge; required for any effect.</summary>
+    public SigningCredentialWitness? Credential { get; init; }
 }
 
 /// <summary>

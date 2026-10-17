@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Users;
@@ -65,7 +66,7 @@ public sealed class NftLifecycleSafetyTests
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             (await h.Service.MoveAsync(owner, mint.Result.NftId, destination.Address, false, "competitor", credential: AZOA.WebAPI.Tests.TestSupport.NftLifecycleHarness.Credential(owner))).IsError.Should().BeTrue();
-            (await h.Service.CancelRequestAsync(owner, "Transfer", "paused")).Result!.State.Should().Be("Cancelled");
+            (await h.Service.CancelRequestAsync(owner, "Transfer", "paused", credential: NftLifecycleHarness.Credential(owner))).Result!.State.Should().Be("Cancelled");
         }
         finally { release.TrySetResult(); }
         (await transfer.WaitAsync(TimeSpan.FromSeconds(10))).Result!.State.Should().Be("Cancelled");
@@ -92,6 +93,9 @@ public sealed class NftLifecycleSafetyTests
         }
         finally { release.TrySetResult(); }
         cancelled.Result!.State.Should().Be("Cancelled");
+        var marker = (await h.Store.GetAsync(cancelled.Result.OperationId))!;
+        NftCancellationTombstone.Matches(marker, System.Text.Json.JsonSerializer.Deserialize<NftLifecycleCommand>(marker.RequestJson)!)
+            .Should().BeTrue("the never-admitted marker must be the exact empty shape the durable store admits without a signing wallet");
         (await mint).Result!.State.Should().Be("Cancelled");
         h.Prepared.Should().BeEmpty();
         h.Submitted.Should().BeEmpty();
@@ -173,7 +177,8 @@ public sealed class NftLifecycleSafetyTests
         h.AddWallet(actor);
         var result = await h.Service.MintAsync(actor, actor, NftLifecycleHarness.MintRequest(), "no-effect", credential: AZOA.WebAPI.Tests.TestSupport.NftLifecycleHarness.Credential(actor));
         result.Result!.State.Should().Be("Preparing");
-        (await h.Service.CancelAsync(actor, result.Result.OperationId)).Result!.State.Should().Be("Cancelled");
+        (await h.Service.CancelAsync(actor, result.Result.OperationId)).IsError.Should().BeTrue("admitted work needs the requester's current authority");
+        (await h.Service.CancelAsync(actor, result.Result.OperationId, credential: NftLifecycleHarness.Credential(actor))).Result!.State.Should().Be("Cancelled");
         var row = await h.Store.GetAsync(result.Result.OperationId);
         row!.PreparationGeneration.Should().Be(1);
         row.TransactionHistoryJson.Should().Contain("SignedTransactionBase64");
@@ -255,5 +260,37 @@ public sealed class NftLifecycleSafetyTests
         h.Prepared.Last().SignerAddress.Should().Be(destination.Address);
         h.Prepared.Last().RecipientAddress.Should().Be(sender.ToString("N"));
         (await h.Store.GetAuthorityAsync(mint.Result.NftId.ToString("N")))!.HolderUserId.Should().Be(sender.ToString("N"));
+    }
+
+    [Fact]
+    public async Task RefundAuthorizationResumesAfterCrashBeforeCustodyOnlyForTheHolder()
+    {
+        var h = new NftLifecycleHarness();
+        var sender = Guid.NewGuid();
+        var holder = Guid.NewGuid();
+        h.AddWallet(sender);
+        var destination = h.AddWallet(holder);
+        var mint = await h.Service.MintAsync(sender, sender, NftLifecycleHarness.MintRequest(), "mint", credential: NftLifecycleHarness.Credential(sender));
+        var transfer = await h.Service.MoveAsync(sender, mint.Result!.NftId, destination.Address, false, "transfer", credential: NftLifecycleHarness.Credential(sender));
+        var refund = (await h.Service.RefundAsync(sender, transfer.Result!.OperationId, "refund", credential: NftLifecycleHarness.Credential(sender))).Result!;
+        var request = await h.Acceptance(refund.OperationId);
+        var signatures = h.Prepared.Count;
+        h.BeforePrepare = _ => throw new HttpRequestException("Crash before custody");
+        await Assert.ThrowsAsync<HttpRequestException>(() => h.Service.RefreshAsync(holder, refund.OperationId, true,
+            credential: NftLifecycleHarness.Credential(holder), acceptance: request));
+        h.BeforePrepare = null;
+        var saved = (await h.Store.GetAsync(refund.OperationId))!;
+        saved.State.Should().Be("Preparing");
+        h.Prepared.Should().HaveCount(signatures);
+
+        (await h.Service.RefreshAsync(sender, refund.OperationId, true, credential: NftLifecycleHarness.Credential(sender), acceptance: request))
+            .IsError.Should().BeTrue("the requester cannot replay the holder's saved authorization");
+        h.Prepared.Should().HaveCount(signatures);
+        var resumed = await h.Service.RefreshAsync(holder, refund.OperationId, true, credential: NftLifecycleHarness.Credential(holder), acceptance: request);
+
+        resumed.Result!.State.Should().Be("Completed");
+        h.Prepared.Should().HaveCount(signatures + 1);
+        h.Prepared.Last().SignerAddress.Should().Be(destination.Address);
+        NftStageConsentIdentity.Read((await h.Store.GetAsync(refund.OperationId))!).Should().ContainSingle().Which.Request.Should().Be(request);
     }
 }

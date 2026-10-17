@@ -10,8 +10,24 @@ using AZOA.WebAPI.Services.Wormhole;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 
-public partial class EthereumProvider
+public partial class EthereumProvider : IWttSourceModule
 {
+    /// <inheritdoc/>
+    public async Task<AZOAResult<WttPublicationRules>> ReadWttPublicationRulesAsync(CancellationToken ct = default)
+    {
+        _ = RpcHttpClient;
+        try
+        {
+            var snapshot = await ReadWttSnapshotAsync(ct);
+            var finality = await ReadWttUIntAsync(snapshot.Deployment.TokenBridge, "finality()", [], snapshot.Block, ct);
+            return finality < 0 || finality > byte.MaxValue
+                ? Error<WttPublicationRules>("The bridge's actual publication finality is outside the protocol byte range.")
+                : Ok(new WttPublicationRules((byte)finality, false));
+        }
+        catch (FormatException exception) { return Error<WttPublicationRules>(exception.Message); }
+        catch (InvalidDataException exception) { return Error<WttPublicationRules>(exception.Message); }
+    }
+
     private sealed record WttEvmStep(string Stage, string Target, string Value, string Data, string GasLimit,
         WttStageReservation Reservation);
     private sealed record WttEvmPlan(int Version, string IntentHash, string Sender, string ProtocolIdentity,

@@ -7,6 +7,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Blockchain;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using Receipt = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionLocalReceipt;
 using Lifecycle = AZOA.WebAPI.Persistence.SurrealDb.Models.NftLifecycle;
 

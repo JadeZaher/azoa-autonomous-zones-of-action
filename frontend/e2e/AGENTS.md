@@ -1,0 +1,127 @@
+# e2e — Playwright journeys against a dedicated E2E stack
+
+Real browser, real frontend and API containers, real SurrealDB. Only Identomat and Stripe are
+fake, and they are fakes **the API reaches over HTTPS**, not mocks inside it. Journeys are
+`journeys/*.journey.ts` (the repo `.gitignore` swallows `*.spec.ts`); `shell/*.shell.ts` needs no
+API.
+
+## §stack — bring-up
+
+```powershell
+cd frontend
+node e2e/scripts/e2e-stack.mjs up      # certs, trust dir, secrets, egress probe, build, compose up, health waits
+npm run test:e2e                        # global setup starts the fake vendors and proves hermeticity
+node e2e/scripts/e2e-stack.mjs down    # stop the project; keeps its volume (add --wipe to drop it)
+```
+
+- `docker-compose.e2e.yml` is a **self-contained compose project, `azoa-e2e`**: its own SurrealDB
+  (unpublished), container names `azoa-e2e-*`, volume `azoa-e2e_e2e_surrealdb_data`, and
+  **dedicated ports**: frontend `AZOA_E2E_FRONTEND_PORT` (3200), API `AZOA_E2E_API_PORT` (5200).
+  Nothing here reads `AZOA_FRONTEND_HOST_PORT`, which root `AGENTS.md` uses (3100) to let the dev
+  stack coexist with another frontend. The dev stack and its `surrealdb_data` are never touched,
+  so no `dev-up -Reset` is involved; the API entrypoint applies the schema to the E2E volume.
+- `down` removes volumes only with `--wipe` or `CI=true`, and refuses unless the compose file
+  declares the `azoa-e2e` project.
+- **New secrets always mean a fresh volume.** The operator credential is seeded once per volume
+  (`CredentialRevision` 1), so whenever `prepare`/`up` writes `.generated/e2e.env` (first run, the
+  file was lost, or `--rotate`) the script prints that it is removing the `azoa-e2e` stack and
+  volumes, then does so before anything starts. A kept volume never meets a new password.
+- `prepare` (also run by `up`; needs a container engine) writes `.generated/` (gitignored): a
+  throwaway CA, a server certificate whose SAN covers `host.docker.internal`,
+  `host.containers.internal`, `localhost`, `127.0.0.1` (needs `openssl`; Git for Windows' copy is
+  found automatically), `trust/` holding only the CA (as `ca.pem` and its OpenSSL
+  `<subject-hash>.0`), `e2e.env` with random vendor and operator credentials, and
+  `egress-probe/` (see §hermetic).
+- Values resolve the same way on both sides: `process.env` first, then `.generated/e2e.env`
+  (`scripts/e2e-stack.mjs`, `support/environment.ts`).
+- The frontend image is `stack/frontend.Dockerfile` (build context: repo root): `azoa-sdk` is a
+  `file:../sdk/azoa-wallet` dependency and the repo `.dockerignore` excludes `dist/`, so the image
+  builds the SDK before `npm ci` in the frontend, in the `/repo/{sdk,frontend}` layout that
+  `next.config.js` expects. It copies explicit paths and never `frontend/e2e/`.
+- On podman set `AZOA_E2E_VENDOR_HOST=host.containers.internal` (and `AZOA_E2E_COMPOSE="podman
+  compose"` if docker is also installed) for both `up` and the test run. On Windows the host must
+  accept inbound connections on 9443/9444 from the container VM; the probe's positive control
+  fails with "Connection refused" until it does (seen locally with podman machine 2026-10-16).
+
+## §hermetic — why no journey can reach a real vendor
+
+`docker-compose.e2e.yml` points `Kyc__Identomat__*BaseUrl` and `Fiat__ApiBaseUrl` at
+`https://${AZOA_E2E_VENDOR_HOST}:9443/9444`, injects the generated credentials (`:?` makes a bare
+compose up fail loudly), disables webhook delivery, and sets **both** `SSL_CERT_FILE` and
+`SSL_CERT_DIR` to the mounted trust directory. .NET on Linux reads trust roots from OpenSSL's
+`SSL_CERT_FILE` and `SSL_CERT_DIR`, and only falls back to `/etc/ssl/certs` when `SSL_CERT_DIR` is
+not set (`.omc/research/dotnet-linux-x509-2026-10-16.md`), so the per-run CA is the only root.
+
+Global setup proves it with **.NET itself**: `support/egress-probe.ts` runs
+`dotnet /e2e/probe/AzoaEgressProbe.dll` inside `azoa-e2e-api` (same process environment as the
+API). The probe's `HttpClient` must reach the fake Identomat (positive control) and must fail
+against `external-api.identomat.com`, `widget.identomat.com` (the host D5 hardcodes) and
+`api.stripe.com`; any violation aborts the run. Source: `stack/egress-probe/` (BCL only). It is
+kept as `EgressProbe.csx` because the repo-root `AZOA.WebAPI.csproj` compiles every `**/*.cs`; the
+script copies it to `Program.cs` and publishes it inside `mcr.microsoft.com/dotnet/sdk:10.0`, and
+compose mounts the output at `/e2e/probe`.
+
+Executed locally in `aspnet:10.0` containers (2026-10-16): with both variables the probe reported
+"certificate not trusted" for both Identomat hosts; with only `SSL_CERT_FILE` (the first-pass
+configuration) `widget.identomat.com` answered a trusted response, which is why both are set.
+
+## §fake-vendors — `support/fake-vendors/`
+
+Node HTTPS servers on `0.0.0.0` (the API container dials them through the host gateway), started
+by `global-setup.ts` for the whole run and closed by its returned teardown. They mirror the
+backend fakes in `tests/AZOA.WebAPI.IntegrationTests/Http/Infrastructure/`:
+
+- Identomat follows the documented **standard** configuration by default: `/begin` returns
+  `{ id, url: "?session_token=<id>" }`, so the session id is the token. `AZOA_E2E_IDENTOMAT_MODE=
+  additional-information` adds the child `additionalSessionId`; which token the widget result
+  takes for that pair is undocumented, so no journey depends on it.
+- Stripe honours `Idempotency-Key` like Stripe (parameter mismatch → 400 `idempotency_error`).
+
+Each exposes a `/__e2e/*` control plane that only the test runner calls (`support/vendors.ts`,
+TLS verification skipped for that client alone).
+
+## §hosted-pages — interception, then the vendor's side
+
+Identomat workflows do not exist yet (owner-authorized mocking), so the hosted pages are served
+inside the browser by `context.route`: `FakeVendors.interceptIdentomatWidget` and
+`interceptStripeCheckout`. The person presses "Complete verification" / "Pay" on that page; the
+route handler then plays the vendor: set the verdict (or mark the session paid) through the
+control plane and deliver the callback or the **signed** Stripe event
+(`AzoaApi.deliverStripeEvent`, HMAC with the run's `AZOA_E2E_STRIPE_WEBHOOK_SECRET`). Nothing is
+mocked inside the browser except the vendor's own page.
+
+## §journeys
+
+| Journey | Path through the product |
+|---|---|
+| `signup-and-identity-verification` | Register (UI) → operator issues tenant key → `/kyc` shows Identomat → member enrolled → hosted KYC (intercepted) → callback → member gate `Approved` |
+| `tenant-business-verification` | Sign in (UI) → `/business-verification` → start → hosted KYB in a popup → callback → refresh → "Business verified" |
+| `stripe-on-ramp` | Member KYC approved → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `payment_received`/`funds_applied` |
+| `webhook-registration` | Sign in (UI) → `/settings` → register `webhook-receiver.e2e.azoa.test` (pinned via compose `extra_hosts`, no DNS) → secret shown once → reload shows version 1 and no secret |
+
+There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
+tenant API exactly as an integration would; the browser covers every screen that exists.
+
+## §writing-a-journey (round 4: NFT, DEX, Hold)
+
+1. `import { expect, signIn, test } from '../support/fixtures'`; actors come from `api`
+   (`registerPerson`, `makeTenant`, `assignIdentomat`, `enrolMember`, ...). Add routes to
+   `support/api.ts` only if the API exposes them.
+2. A third party reached through `IHttpClientFactory` is a new fake server under
+   `support/fake-vendors/` with a `/__e2e/*` control plane, a port, a config override in
+   `docker-compose.e2e.yml`, and a SAN already covered by the generated certificate. Chain RPC is
+   not routable yet (the providers build their own `HttpClient`; see
+   `tests/AZOA.WebAPI.IntegrationTests/Http/AGENTS.md` §vendor-edge): chain journeys run on the
+   API's simulated chain mode until that product item lands. Never stub a provider inside the API.
+3. Hosted or wallet pages are intercepted with `context.route`; the vendor's side runs in the
+   route handler.
+4. Assert what the person sees, then the API state they would see on reload.
+
+## §ci
+
+`.github/workflows/ci.yml` job `e2e`: installs frontend deps on the host (Playwright and the fake
+vendors only; neither imports the SDK), caches `~/.cache/ms-playwright` by the Playwright version,
+`e2e-stack.mjs up` (builds the egress probe in an SDK container; the frontend image builds the
+SDK itself), `npm run test:e2e`, on failure
+`e2e-stack.mjs logs` plus an upload of `e2e/.output/` (traces, screenshots, HTML report), and
+always `e2e-stack.mjs down` (`CI=true` drops the project's volumes).

@@ -2,7 +2,6 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Services.Actions;
-using AZOA.WebAPI.Services.Hold;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
@@ -38,55 +37,23 @@ public sealed class RefundNodeHandler(INftLifecycleService lifecycle) : IActionN
     }
 }
 
-/// <summary>Returns a confirmed hold commitment through the hold service.</summary>
+/// <summary>
+/// Declares <see cref="ActionNodeType.HoldRefund"/> (Tier-2, D14 / W3.4), distinct from the NFT
+/// <see cref="ActionNodeType.Refund"/>. Effects run only through <see cref="ActionHoldOperationService"/>.
+/// </summary>
 public sealed class HoldRefundNodeHandler : IActionNodeHandler
 {
-    private readonly IPlatformHold _holds;
-
-    public HoldRefundNodeHandler(IPlatformHold holds) => _holds = holds;
-
     public ActionNodeType NodeType => ActionNodeType.HoldRefund;
 
     public bool RequiresChainCapability => true;
 
     /// <inheritdoc />
     public string? ResolveSettlementRailId(ActionNode node) =>
-        HoldNodeRail.Resolve<HoldRefundNodeConfig>(
-            node, nameof(ActionNodeType.HoldRefund), cfg => cfg.ChainType);
+        HoldNodeRail.Resolve<HoldRefundNodeConfig>(node, nameof(ActionNodeType.HoldRefund), cfg => cfg.ChainType);
 
-    public async Task<ActionNodeHandlerResult> HandleAsync(
-        ActionNodeExecutionContext context, CancellationToken ct = default)
-    {
-        if (!ActionNodeConfig.TryDeserialize<HoldRefundNodeConfig>(
-                context.Node.Config, nameof(ActionNodeType.HoldRefund), out var cfg, out var cfgError))
-        {
-            return ActionNodeResults.Invalid(cfgError);
-        }
-
-        if (string.IsNullOrWhiteSpace(cfg.ChainType))
-            return ActionNodeResults.Invalid("[HoldRefund] config must name the rail the hold settles on.");
-
-        if (!HoldNodeTargetResolver.TryResolve(
-                cfg.HoldId, cfg.HoldNodeName, context, nameof(ActionNodeType.HoldRefund),
-                out var holdId, out var resolveError))
-        {
-            return ActionNodeResults.Invalid(resolveError);
-        }
-
-        var refunded = await _holds.RefundAsync(
-            new HoldSettlementRequest(
-                new HoldReference(cfg.ChainType!, holdId),
-                ActingTenantId: context.ActingTenantId,
-                Reason: cfg.Reason),
-            ct);
-
-        if (refunded.IsError || refunded.Result is null)
-            return ActionNodeResults.Fail(refunded.Message, chainType: cfg.ChainType);
-
-        return ActionNodeResults.Ok(
-            HoldNodeResult.Serialize(refunded.Result),
-            chainType: cfg.ChainType);
-    }
+    /// <inheritdoc />
+    public Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
+        => Task.FromResult(HoldNodeRail.RequiresDurableAdmission());
 }
 
 /// <summary>Config for <see cref="ActionNodeType.HoldRefund"/>.</summary>

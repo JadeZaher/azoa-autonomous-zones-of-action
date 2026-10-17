@@ -70,6 +70,27 @@ public sealed class SurrealEthereumPreparationStoreTests : IAsyncLifetime
         retained.InitialNonce.Should().Be("7");
     }
 
+    [Fact]
+    public async Task Refilling_a_released_nonce_keeps_the_released_key_locked_by_a_tombstone()
+    {
+        var released = (await _store.TryClaimAsync(Candidate("released", 9)))!;
+        released.State = "Released";
+        released = (await _store.UpdateAsync(released, released.Version))!;
+        (await _store.ListReleasedAsync(released.ProtocolIdentity, released.Sender, 16)).Should().ContainSingle();
+
+        var successor = await _store.TryClaimReleasedAsync(released, Candidate("successor", 9));
+
+        successor!.Nonce.Should().Be(9.ToString("D78"));
+        var tombstone = (await _store.GetAsync("released"))!;
+        tombstone.State.Should().Be("ReleasedRefilled", "the released key must never reserve a fresh nonce again");
+        tombstone.NonceSlot.Should().Be("released");
+        tombstone.Nonce.Should().Be(9.ToString("D78"), "the tombstone keeps its original nonce as evidence");
+        (await _store.ListReleasedAsync(released.ProtocolIdentity, released.Sender, 16)).Should().BeEmpty();
+        (await _store.TryClaimAsync(Candidate("intruder", 9))).Should().BeNull("the successor is the one live owner of the nonce");
+        (await _store.TryClaimReleasedAsync(released, Candidate("second-successor", 9))).Should().BeNull("a stale released row cannot be refilled twice");
+        (await _store.GetHighestNonceAsync(released.ProtocolIdentity, released.Sender))!.Nonce.Should().Be(9.ToString("D78"));
+    }
+
     private static EthereumPreparation Candidate(string id, int nonce) => new()
     {
         Id = id, ProtocolIdentity = "eip155:31337", Sender = "sender", Network = "Devnet", Nonce = nonce.ToString("D78"),

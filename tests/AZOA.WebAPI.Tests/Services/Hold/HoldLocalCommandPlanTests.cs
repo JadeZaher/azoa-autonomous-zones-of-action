@@ -52,6 +52,24 @@ public sealed class HoldLocalCommandPlanTests
         HoldLocalCommandPlan.Create(chain, opened.Result, reserve, DateTimeOffset.UtcNow).IsError.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("own-login", false)]
+    [InlineData("custody-tenant", false)]
+    [InlineData("other-tenant", true)]
+    public void OnlyTheOwnersLoginOrTheCustodyTenantMayRefundAReserveHold(string caller, bool refused)
+    {
+        var (intent, reserve) = Input();
+        var custody = Guid.NewGuid();
+        intent = intent with { TenantId = custody, CustodyTenantId = custody };
+        var opened = HoldLocalCommandPlan.Create(intent, null, reserve, DateTimeOffset.UtcNow).Result!;
+        reserve.Partitions = opened.Reserve!.Partitions;
+        reserve.Version++;
+        var refund = intent with { RequestKey = "refund", Kind = "Refund", Definition = null,
+            TenantId = caller switch { "own-login" => null, "custody-tenant" => custody, _ => Guid.NewGuid() } };
+
+        HoldLocalCommandPlan.Create(refund, opened.Result, reserve, DateTimeOffset.UtcNow).IsError.Should().Be(refused);
+    }
+
     [Fact]
     public void FunderFundingCannotBecomeAnUnpaidReserveOpening()
     {

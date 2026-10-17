@@ -34,7 +34,8 @@ public sealed class SoulboundIssuanceTests
     {
         var rail = new CredentialRailHarness();
         var request = CredentialRailHarness.SoulboundModelFor("778899"); request.TokenId = "778899";
-        var result = await rail.Rail.Service.MintAsync(rail.IssuerA, rail.RecipientB, request, "forged-import");
+        var result = await rail.Rail.Service.MintAsync(rail.IssuerA, rail.RecipientB, request, "forged-import",
+            credential: AZOA.WebAPI.Tests.TestSupport.NftLifecycleHarness.Credential(rail.IssuerA));
         result.IsError.Should().BeTrue(); rail.Rail.Prepared.Should().BeEmpty(); rail.Rail.Store.Ownership.Should().BeEmpty();
     }
 
@@ -42,7 +43,8 @@ public sealed class SoulboundIssuanceTests
     public async Task PendingCreationDoesNotReportCredentialOwnership()
     {
         var rail = new CredentialRailHarness(); rail.Rail.Confirm = false;
-        var result = await rail.Rail.Service.MintAsync(rail.IssuerA, rail.RecipientB, CredentialRailHarness.SoulboundModelFor("778899"), "pending");
+        var result = await rail.Rail.Service.MintAsync(rail.IssuerA, rail.RecipientB, CredentialRailHarness.SoulboundModelFor("778899"), "pending",
+            credential: AZOA.WebAPI.Tests.TestSupport.NftLifecycleHarness.Credential(rail.IssuerA));
         result.Result!.State.Should().NotBe("Completed");
         rail.Rail.Store.Ownership.Should().BeEmpty();
     }

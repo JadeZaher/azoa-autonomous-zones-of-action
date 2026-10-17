@@ -1,9 +1,8 @@
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using SurrealForge.Client;
 using SurrealForge.Client.Query;
-using SurrealForge.Client.Idempotency;
+using SurrealTransientConflict = SurrealForge.Client.Idempotency.SurrealTransientConflict;
 using PackageLedger = SurrealForge.Client.Idempotency.SurrealIdempotencyLedger;
 using PackageOptions = SurrealForge.Client.Idempotency.IdempotencyLedgerOptions;
 using PackageRecord = SurrealForge.Client.Idempotency.IdempotencyRecord;

@@ -26,6 +26,7 @@ import { JsonViewer } from '@/components/shared/json-viewer'
 import { ResultDisplay } from '@/components/shared/result-display'
 import { ChainBadge } from '@/components/shared/chain-badge'
 import { azoa, isOk } from '@/lib/azoa'
+import { WttTransferPanel } from '@/components/bridge/wtt-transfer'
 
 // ─── Types ───
 
@@ -590,10 +591,11 @@ export default function BridgePage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight tracking-tight">Bridge</h1>
         <p className="text-sm text-muted-foreground">
-          Cross-chain asset bridging via Trusted or Wormhole modes
+          Wormhole token transfers settle only on finalized destination evidence; the trusted bridge below remains a separate mode.
         </p>
       </div>
 
+      <WttTransferPanel />
       <RouteExplorer />
       <InitiateBridgeForm />
       <BridgeStatusTracker />

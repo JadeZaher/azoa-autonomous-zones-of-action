@@ -14,6 +14,8 @@ public sealed partial class NftLifecycleService
     public async Task<AZOAResult<NftReplacementCostReconciliation>> ReconcileReplacementCostsAsync(string operationId,
         NftReplacementCostAcceptance request, SigningCredentialWitness credential, CancellationToken ct = default)
     {
+        if (request?.Stage is null || request.Costs is null)
+            return AZOAResult<NftReplacementCostReconciliation>.Failure("NFT replacement request is invalid.");
         var row = await store.GetAsync(operationId, ct);
         if (row is null || row.ActorUserId != credential.ActorUserId.ToString("N"))
             return AZOAResult<NftReplacementCostReconciliation>.Failure("NFT operation not found.");
@@ -57,6 +59,7 @@ public sealed partial class NftLifecycleService
     public async Task<AZOAResult<NftProtocolCostQuote>> QuoteReplacementCostsAsync(string operationId, NftStageAcceptance stage,
         SigningCredentialWitness credential, CancellationToken ct = default)
     {
+        if (stage is null) return CostRefused("Review the exact replacement generation before requesting costs.");
         var row = await store.GetAsync(operationId, ct);
         if (row is null || row.ActorUserId != credential.ActorUserId.ToString("N")) return CostRefused("NFT operation not found.");
         var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!;
@@ -97,6 +100,8 @@ public sealed partial class NftLifecycleService
     public async Task<AZOAResult<NftLifecycleView>> AcceptReplacementCostsAsync(string operationId, NftReplacementCostAcceptance request,
         SigningCredentialWitness credential, CancellationToken ct = default)
     {
+        if (request?.Stage is null || request.Costs is null || request.Stage.RequestId == Guid.Empty)
+            return Refused("Exact replacement cost acceptance is required.");
         var row = await store.GetAsync(operationId, ct);
         if (row is null || row.ActorUserId != credential.ActorUserId.ToString("N")) return Refused("NFT operation not found.");
         var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!;

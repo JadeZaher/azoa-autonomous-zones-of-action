@@ -37,12 +37,21 @@ internal static class WttAlgorandGroup
         var result = new List<SignedTransaction>();
         for (var index = 0; index < expected.Count; index++)
         {
-            var signed = AlgorandSignedEnvelope.DecodeCanonical(envelopes[index]);
+            var signed = Decode(envelopes[index]);
             if (!Encoder.EncodeToMsgPackOrdered(signed.Tx).AsSpan().SequenceEqual(Encoder.EncodeToMsgPackOrdered(expected[index])))
                 throw new InvalidDataException("WTT group member differs from the exact saved plan.");
-            AlgorandSignedEnvelope.RequireSingleSender(signed, owner);
+            try { AlgorandSignedEnvelope.RequireSingleSender(signed, owner); }
+            catch (InvalidOperationException exception) { throw new InvalidDataException(exception.Message, exception); }
             result.Add(signed);
         }
         return result;
+    }
+
+    /// <summary>Participant-supplied bytes are untrusted input: any decoder failure is a validation refusal, not a server fault.</summary>
+    private static SignedTransaction Decode(string envelope)
+    {
+        try { return AlgorandSignedEnvelope.DecodeCanonical(envelope); }
+        catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException))
+        { throw new InvalidDataException("WTT signed envelope is malformed or noncanonical.", exception); }
     }
 }

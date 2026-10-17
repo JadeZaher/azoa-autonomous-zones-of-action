@@ -1,9 +1,13 @@
+using System.Globalization;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using AZOA.WebAPI.Controllers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Services.Signing;
+using SurrealForge.Client;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
@@ -17,19 +21,28 @@ public class NftControllerTests
     private readonly Mock<INftManager> _nftManager;
     private readonly Mock<IFungibleTokenManager> _fungibleTokenManager;
     private readonly NftController _controller;
+    private readonly Guid _actor = Guid.NewGuid();
 
     public NftControllerTests()
     {
         _nftManager = new Mock<INftManager>();
         _fungibleTokenManager = new Mock<IFungibleTokenManager>();
-        _controller = new NftController(_nftManager.Object, _fungibleTokenManager.Object);
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(_actor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Success(Mock.Of<IUser>(user => user.IsActive)));
+        var signing = new SigningAdmissionAuthorityFactory(users.Object, Mock.Of<IWalletStore>(), Mock.Of<ISurrealExecutor>());
+        _controller = new NftController(_nftManager.Object, _fungibleTokenManager.Object, signing);
+        var now = DateTimeOffset.UtcNow;
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
             {
                 User = new ClaimsPrincipal(new ClaimsIdentity(new[]
                 {
-                    new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())
+                    new Claim(ClaimTypes.NameIdentifier, _actor.ToString()),
+                    new Claim(AZOA.WebAPI.Core.AzoaClaims.TokenUse, AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin),
+                    new Claim(AZOA.WebAPI.Core.AzoaClaims.AuthTime, now.AddMinutes(-1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+                    new Claim("exp", now.AddHours(1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
                 }, "TestScheme"))
             }
         };
@@ -85,6 +98,8 @@ public class NftControllerTests
         var result = await _controller.Mint(req, null);
 
         result.Result.Should().BeOfType<OkObjectResult>();
+        _nftManager.Verify(m => m.MintAsync(req, _actor, It.Is<AZOARequest?>(forwarded => forwarded!.AuthenticationWitness!.ActorUserId == _actor
+            && forwarded.AuthenticationWitness.Kind == "Jwt"), It.IsAny<Guid?>()), Times.Once);
     }
 
     [Fact]

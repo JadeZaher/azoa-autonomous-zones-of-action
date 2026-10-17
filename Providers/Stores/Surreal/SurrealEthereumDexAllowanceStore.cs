@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Helpers;
+using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -26,6 +27,13 @@ public sealed class SurrealEthereumDexAllowanceStore(ISurrealExecutor executor) 
         if (!Valid(candidate)) return null;
         var prior = await GetAsync(candidate.Id, ct);
         if (prior is not null && !SameResource(prior, candidate)) return null;
+        if (prior is { State: "Held" } && prior.OperationId != candidate.OperationId &&
+            await executor.QuerySingleAsync<SwapOperationRecord>(SurrealQuery<SwapOperationRecord>.Key(prior.OperationId), ct)
+                is { CurrentStageId: { } holderStage } && await ReleaseAsync(prior.Id, prior.OperationId, holderStage, ct))
+        {
+            prior = await GetAsync(candidate.Id, ct);
+            if (prior is null || !SameResource(prior, candidate)) return null;
+        }
         var sameOwner = prior?.OperationId == candidate.OperationId && prior.IntentHash == candidate.IntentHash;
         if (prior?.OperationId == candidate.OperationId && !sameOwner) return null;
         // raw: operation admission, prior no-egress cancellation and exclusive allowance ownership are atomic.
@@ -94,12 +102,14 @@ public sealed class SurrealEthereumDexAllowanceStore(ISurrealExecutor executor) 
         if (row.State == "Released") return row.ReleaseStageId == stageId;
         var stage = await executor.QuerySingleAsync<SwapStageRecord>(SurrealQuery<SwapStageRecord>.Key(stageId), ct);
         if (stage is not { State: "Confirmed", Stage: "Swap" or "RevokeAllowance", ObservationJson: not null } ||
-            stage.OperationId != operationId || stage.IntentHash != row.IntentHash || stage.PreparedJson is null ||
+            stage.OperationId != operationId || stage.IntentHash != row.IntentHash ||
             stage.AuthorizedAt is null && stage.ExternalExposedAt is null) return false;
         SwapStageObservation? observation;
         try { observation = JsonSerializer.Deserialize<SwapStageObservation>(stage.ObservationJson); }
         catch (JsonException) { return false; }
-        if (observation is not { Verdict: "Confirmed", LockedBalance: "0", EvidenceJson: not null } || !BindsRelease(row, stage, observation)) return false;
+        // A confirmed stage proves its winner by its saved candidate, or (wallet-chosen envelope) by its recorded operator settlement.
+        if (observation is not { Verdict: "Confirmed", LockedBalance: "0", EvidenceJson: not null } || !BindsRelease(row, stage, observation) ||
+            stage.PreparedJson is null && !SwapOperatorSettlementContract.IsOperatorSettlement(observation)) return false;
         // raw: immutable terminal stage evidence and allowance release share one commit.
         var guard = SurrealQuery.Of("""
             LET $_allowance_proof = (UPDATE ONLY type::record('swap_stage', $_allowance_stage)
@@ -114,11 +124,23 @@ public sealed class SurrealEthereumDexAllowanceStore(ISurrealExecutor executor) 
             .Set(item => item.State, "Released").Set(item => item.ReleaseStageId, stageId)
             .Set(item => item.ReleaseEvidenceJson, stage.ObservationJson).Set(item => item.Version, row.Version + 1)
             .Set(item => item.UpdatedAt, DateTimeOffset.UtcNow).Build();
-        var query = SurrealQuery.Combine(SurrealQuery.Of("BEGIN"), guard,
+        var statements = new List<SurrealQuery>
+        {
+            SurrealQuery.Of("BEGIN"), guard,
             SurrealQuery.Of("IF $_allowance_proof = NONE { THROW 'DEX_ALLOWANCE_CONFLICT' }"),
-            SurrealGeneratedStatementScope.Apply(mutation, "allowance_release"), SurrealQuery.Of("COMMIT"));
-        try { return (await ExecuteAsync(query, ct)).GetValues<EthereumDexAllowance>(3).Any(); }
-        catch (SurrealStatementException exception) when (ExpectedConflict(exception)) { return false; }
+            SurrealGeneratedStatementScope.Assign(mutation, "allowance_release", "allowance_released"),
+            SurrealGeneratedStatementScope.RequireResult("allowance_released", Conflict),
+        };
+        var resultIndex = statements.Count;
+        statements.Add(SurrealQuery.Of("RETURN $allowance_released"));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        try
+        {
+            if ((await ExecuteAsync(SurrealQuery.Combine(statements.ToArray()), ct)).GetValues<EthereumDexAllowance>(resultIndex).Any()) return true;
+        }
+        catch (SurrealStatementException exception) when (ExpectedConflict(exception)) { }
+        // A concurrent releaser may have won with this exact stage proof; that is the same release, not a refusal.
+        return await GetAsync(id, ct) is { State: "Released" } winner && winner.OperationId == operationId && winner.ReleaseStageId == stageId;
     }
 
     private Task<SurrealResponse> ExecuteAsync(SurrealQuery query, CancellationToken ct)

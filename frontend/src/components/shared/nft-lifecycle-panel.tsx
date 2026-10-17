@@ -35,9 +35,13 @@ export function NftLifecyclePanel({ value, onChange }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { setReference(''); setBusy(false); setError(null) }, [userId, value?.operationId])
-  const run = async (action: 'refresh' | 'accept' | 'cancel') => {
+  const run = async (action: 'refresh' | 'accept' | 'cancel' | 'renew' | 'reaccept') => {
     const id = value?.operationId ?? reference.trim()
     if (!id) return
+    if (!value && !/^[0-9a-f]{32}$/.test(id)) {
+      setError('Enter the 32-character lowercase operation reference.')
+      return
+    }
     const current = generation.current
     setBusy(true); setError(null)
     try {
@@ -60,7 +64,22 @@ export function NftLifecyclePanel({ value, onChange }: {
           throw new Error('Saved acceptance differs from this stage. Refresh the operation to reconcile it.')
         localStorage.setItem(storageKey, JSON.stringify(acceptance))
       }
-      const result = await (action === 'accept' ? azoa.api.acceptNftLifecycle(id, acceptance!)
+      if (action === 'renew' || action === 'reaccept') {
+        if (!value || !Number.isSafeInteger(value.version) || !Number.isSafeInteger(value.preparationGeneration))
+          throw new Error('Refresh the operation before renewing authority.')
+        const storageKey = `azoa:${action === 'renew' ? 'nft-actor-renewal' : 'nft-participant-renewal'}:${userId}:${id}:${value.version}`
+        const saved = localStorage.getItem(storageKey)
+        acceptance = saved ? JSON.parse(saved) as NftStageAcceptance : {
+          requestId: crypto.randomUUID(), expectedVersion: value.version, state: value.state,
+          stage: value.stage, generation: value.preparationGeneration,
+        }
+        if (!acceptance.requestId || acceptance.expectedVersion !== value.version || acceptance.state !== value.state
+          || acceptance.stage !== value.stage || acceptance.generation !== value.preparationGeneration)
+          throw new Error('Saved renewal differs from this stage. Refresh the operation to reconcile it.')
+        localStorage.setItem(storageKey, JSON.stringify(acceptance))
+      }
+      const result = await (action === 'accept' || action === 'reaccept' ? azoa.api.acceptNftLifecycle(id, acceptance!)
+        : action === 'renew' ? azoa.api.renewNftLifecycleAuthority(id, acceptance!)
         : action === 'cancel' ? azoa.api.cancelNftLifecycle(id) : azoa.api.refreshNftLifecycle(id))
       if (generation.current !== current) return
       if (isOk(result)) onChange(result.value)
@@ -87,9 +106,17 @@ export function NftLifecyclePanel({ value, onChange }: {
         </dl>
         {value.feeQuote && <NftFeeReview quote={value.feeQuote} authorization={false} />}
         {value.detail && <p className="text-sm">{value.detail}</p>}
+        {value.needsActorContinuation && userId !== value.actorUserId &&
+          <p className="text-sm">The requester&apos;s authority has lapsed; this stage continues after they renew it.</p>}
+        {value.needsParticipantRenewal && userId !== value.renewalParticipantUserId &&
+          <p className="text-sm">The accepting participant&apos;s authority has lapsed; this stage continues after they renew their acceptance.</p>}
       </>}
       <div className="flex gap-2 flex-wrap">
         <Button onClick={() => run('refresh')} disabled={busy || (!value && !reference.trim())}>Refresh status</Button>
+        {value?.needsActorContinuation && userId === value.actorUserId &&
+          <Button disabled={busy} onClick={() => run('renew')}>Renew my authority</Button>}
+        {value?.needsParticipantRenewal && userId === value.renewalParticipantUserId &&
+          <Button disabled={busy} onClick={() => run('reaccept')}>Renew my acceptance</Button>}
         {value?.state === 'Preparing' && value.replacementCostsAccepted && userId === value.actorUserId &&
           <Button disabled={busy} onClick={() => run('refresh')}>Continue accepted replacement</Button>}
         {value && (['AwaitingRecipientAcceptance', 'AwaitingCreatorDestruction', 'AwaitingRefundAuthorization', 'AwaitingRefundDestinationAcceptance'].includes(value.state)

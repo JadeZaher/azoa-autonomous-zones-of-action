@@ -70,3 +70,35 @@ it("retires and reconciles the identical saved workflow acceptance without issui
   ]);
   expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[1][1].body);
 });
+
+it("routes replacement cost commands to their own endpoints with the saved request and full-width limits as strings", async () => {
+  const api = new AzoaApiClient({ baseUrl: "https://azoa.example", token: "token" });
+  const operationId = "0123456789abcdef0123456789abcdef";
+  const stage = { requestId: "5d6c3c39-6e2b-4f6f-a0ba-1c8a7a3e8a41", expectedVersion: 8, state: "Preparing" as const, stage: "Create", generation: 1 };
+  const request = { stage, costs: { quoteId: "replacement", quoteHash: "replacement-hash",
+    limits: { networkFee: "18446744073709551615", retainedRent: "9646560", protocolLevy: "10000000" } } };
+  fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ isError: false, result: { status: "Unresolved" } }) });
+  await api.quoteNftReplacementCosts(operationId, stage);
+  await api.acceptNftReplacementCosts(operationId, request);
+  await api.reconcileNftReplacementCosts(operationId, request);
+  await api.retireNftReplacementCosts(operationId, request);
+  const base = `https://azoa.example/api/nft-replacement-costs/${operationId}`;
+  expect(fetchMock.mock.calls.map(call => call[0])).toEqual([`${base}/quote`, `${base}/accept`, `${base}/reconcile`, `${base}/retire`]);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(stage);
+  expect(JSON.parse(fetchMock.mock.calls[3][1].body).costs.limits.networkFee).toBe("18446744073709551615");
+});
+
+it("refuses a malformed lifecycle reference before any request leaves the client", async () => {
+  const api = new AzoaApiClient({ baseUrl: "https://azoa.example", token: "token" });
+  const stage = { requestId: "0f1e2d3c-4b5a-4968-8776-655443322110", expectedVersion: 5, state: "AwaitingRecipientAcceptance" as const,
+    stage: "Create", generation: 0 };
+  for (const reference of ["../replacement", "0123456789ABCDEF0123456789ABCDEF", "lifecycle/one", ""])
+    await expect(api.renewNftLifecycleAuthority(reference, stage)).rejects.toThrow(/lifecycle reference/);
+  await expect(api.retireNftReplacementCosts("x".repeat(32), { stage, costs: { quoteId: "q", quoteHash: "h",
+    limits: { networkFee: "1", retainedRent: "2", protocolLevy: "3" } } })).rejects.toThrow(/lifecycle reference/);
+  expect(fetchMock).not.toHaveBeenCalled();
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ isError: false, result: { state: "AwaitingRecipientAcceptance" } }) });
+  await api.renewNftLifecycleAuthority("fedcba9876543210fedcba9876543210", stage);
+  expect(fetchMock.mock.calls[0][0]).toBe("https://azoa.example/api/usernft/lifecycle/fedcba9876543210fedcba9876543210/renew-authority");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(stage);
+});

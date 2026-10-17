@@ -19,6 +19,8 @@ public partial class EthereumProvider : IEthereumRecoveryModule
         var rows = await WithPreparationStoreAsync(store => store.ListAuthorizedAsync(ActiveNetwork.ToString(), ct));
         foreach (var row in rows)
         {
+            // Domain-owned reservations replay only through their journal's withdrawal/authorization checks.
+            if (JsonSerializer.Deserialize<EthereumCall>(row.IntentJson)?.Owner is not null) continue;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             var current = await WithPreparationStoreAsync(store => store.UpdateAsync(row, row.Version, ct));
             if (current is null) continue;
@@ -74,6 +76,9 @@ public partial class EthereumProvider : IEthereumRecoveryModule
         var row = await WithPreparationStoreAsync(store => store.GetAsync(id, ct));
         if (row is null || row.Network != ActiveNetwork.ToString() || string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
             return Error<EthereumPreparationView>("Ethereum preparation or recovery reason is invalid.");
+        // A released reservation was never signed and its nonce may already belong to a successor: a same-nonce send would hit that successor.
+        if (ReleasedReservation(row.State))
+            return Error<EthereumPreparationView>("A released reservation was never signed and no longer owns its nonce; there is nothing to recover.");
         var call = JsonSerializer.Deserialize<EthereumCall>(row.IntentJson) ?? throw new InvalidOperationException("Ethereum intent is missing.");
         SigningContext recoveryContext;
         if (call.Owner is { } owner)

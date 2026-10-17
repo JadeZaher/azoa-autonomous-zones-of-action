@@ -7,6 +7,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
 [Slice("identity")]
 [Index("exchange_hold_source_request", Fields = new[] { "tenant_user_id", "api_key_id", "request_key" }, Unique = true)]
 [Index("exchange_hold_source_pending", Fields = new[] { "state", "updated_at" })]
+[Index("exchange_hold_source_due", Fields = new[] { "state", "next_reconcile_at" })]
+[Index("exchange_hold_source_participant", Fields = new[] { "participant_user_id", "state" })]
 public sealed class ExchangeHoldSource : ISurrealRecord
 {
     public string SchemaName => "exchange_hold_source";
@@ -26,6 +28,7 @@ public sealed class ExchangeHoldSource : ISurrealRecord
     public string? PreparedHash { get; set; }
     public string? SettlementEvidenceJson { get; set; }
     public long Generation { get; set; }
+    public DateTimeOffset? NextReconcileAt { get; set; }
     public long Version { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

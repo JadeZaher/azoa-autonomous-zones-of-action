@@ -36,7 +36,7 @@ public sealed partial class NftLifecycleService
             return admissionOnly ? AZOAResult<NftLifecycleView>.Success(View(replay)) : await AdvanceAsync(replay, actor, false, ct, actingTenantId);
         }
         var source = await store.GetAsync(sourceLifecycleId, ct);
-        if (source is null || source.Operation != "Transfer" || source.State != "Completed" || source.ActorUserId != actor.ToString("N"))
+        if (source is null || source.Operation != "Transfer" || source.State != "Completed" || !RequesterOwns(source, actor, actingTenantId))
             return Refused("A refund must reference this caller's completed NFT transfer.");
         var previous = JsonSerializer.Deserialize<NftLifecycleCommand>(source.RequestJson)
             ?? throw new InvalidOperationException("Original NFT transfer is unreadable.");

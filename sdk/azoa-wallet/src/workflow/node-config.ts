@@ -1,4 +1,5 @@
 import type { NftFeeAuthorization, NftProtocolCostAuthorization } from "../api/client.js";
+import type { DexQuoteRequest } from "../api/dex.js";
 
 /**
  * Typed `nodeConfig` builders — pure helpers that serialize the **generic
@@ -45,19 +46,12 @@ export interface EmitConfig {
 }
 
 /**
- * Swap config. Mirrors `SwapNodeConfig { SwapExecuteRequest Request }`, whose
- * request is `{ Chain, QuoteId, WalletAddress }`. The rate comes from the DEX,
- * never AZOA — this only carries the mechanism params.
+ * Swap config. Mirrors `SwapNodeConfig { DexQuoteRequest Quote }`: the frozen exact-input
+ * request. The node quotes once under the run's frozen signing witness and succeeds only
+ * with the confirmed settlement receipt (`SwapActionOutput`); the rate comes from the DEX.
  */
 export interface SwapConfig {
-  request: {
-    /** Chain identifier, e.g. "algorand" / "solana". */
-    chain: string;
-    /** The QuoteId returned by the swap-quote endpoint. */
-    quoteId: string;
-    /** Public key of the wallet that will sign the swap transaction. */
-    walletAddress: string;
-  };
+  quote: DexQuoteRequest;
 }
 
 /** A generic NFT mint request (`NftMintRequest`). Amounts/ids are strings. */
@@ -160,11 +154,17 @@ export const nodeConfig = {
 
   /** Serialize a {@link SwapConfig} to its `Config` string. */
   swap(config: SwapConfig): string {
+    const { walletId, network, inputAsset, outputAsset, grossInput, slippageBps, budget } = config.quote;
     return JSON.stringify({
-      request: {
-        chain: config.request.chain,
-        quoteId: config.request.quoteId,
-        walletAddress: config.request.walletAddress,
+      quote: {
+        walletId,
+        network: { chainType: network.chainType, network: network.network, protocolIdentity: network.protocolIdentity },
+        inputAsset: { id: inputAsset.id, symbol: inputAsset.symbol, decimals: inputAsset.decimals, native: inputAsset.native },
+        outputAsset: { id: outputAsset.id, symbol: outputAsset.symbol, decimals: outputAsset.decimals, native: outputAsset.native },
+        grossInput,
+        slippageBps,
+        budget: { maximumNetworkFee: budget.maximumNetworkFee, maximumLockedBalance: budget.maximumLockedBalance,
+          maximumCleanupFee: budget.maximumCleanupFee },
       },
     });
   },

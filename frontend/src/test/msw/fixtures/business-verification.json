@@ -1,0 +1,44 @@
+{
+  "capabilitiesAvailable": {
+    "providerKey": "identomat",
+    "flowKind": "kyb",
+    "available": true,
+    "missingConfigurationKeys": [],
+    "unavailableReason": null
+  },
+  "capabilitiesUnavailable": {
+    "providerKey": "identomat",
+    "flowKind": "kyb",
+    "available": false,
+    "missingConfigurationKeys": ["Kyb__ConfigId"],
+    "unavailableReason": "Business verification is not configured."
+  },
+  "pending": {
+    "attemptId": "6f1c2b0e-3d9a-4c47-9a51-2f8e0c7d4b11",
+    "status": "PENDING",
+    "verified": false,
+    "expiresAt": "2026-10-19T12:00:00+00:00",
+    "reviewedAt": null,
+    "beneficiaryCount": 0
+  },
+  "approved": {
+    "attemptId": "6f1c2b0e-3d9a-4c47-9a51-2f8e0c7d4b11",
+    "status": "APPROVED",
+    "verified": true,
+    "expiresAt": "2027-10-16T12:00:00+00:00",
+    "reviewedAt": "2026-10-16T12:05:00+00:00",
+    "beneficiaryCount": 1
+  },
+  "sessionStarted": {
+    "verification": {
+      "attemptId": "6f1c2b0e-3d9a-4c47-9a51-2f8e0c7d4b11",
+      "status": "PENDING",
+      "verified": false,
+      "expiresAt": "2026-10-19T12:00:00+00:00",
+      "reviewedAt": null,
+      "beneficiaryCount": 0
+    },
+    "verificationUrl": "https://widget.identomat.com/?session_token=fixture-child-session",
+    "resumed": false
+  }
+}

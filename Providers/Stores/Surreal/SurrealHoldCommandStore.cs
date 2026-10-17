@@ -66,18 +66,29 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
     private async Task<HoldCommandReceipt?> CommitLocalCoreAsync(HoldCommandIntent intent, HoldCommandAuthority authority,
         WorkflowOpeningCommit? opening, CancellationToken ct, ExchangeOpeningCommit? exchange = null)
     {
+        for (var attempt = 1; ; attempt++)
+        {
+            var outcome = await CommitLocalAttemptAsync(intent, authority, opening, ct, exchange);
+            if (!outcome.Contended || attempt >= MaxReplans) return outcome.Result;
+        }
+    }
+
+    /// <summary>One read-plan-commit pass; reports contention when a counted row moved and no receipt proves a winner.</summary>
+    private async Task<Attempt<HoldCommandReceipt>> CommitLocalAttemptAsync(HoldCommandIntent intent, HoldCommandAuthority authority,
+        WorkflowOpeningCommit? opening, CancellationToken ct, ExchangeOpeningCommit? exchange)
+    {
         if (intent.Asset is null || intent.ActorUserId == Guid.Empty || intent.OwnerUserId == Guid.Empty
-            || string.IsNullOrWhiteSpace(intent.RequestKey)) return null;
+            || string.IsNullOrWhiteSpace(intent.RequestKey)) return default;
         var id = HoldCommandIdentity.Operation(intent);
         var hash = CanonicalJson.Hash(intent);
         var prior = await GetReceiptAsync(id, ct);
-        if (prior is not null) return Matches(prior, intent, hash) ? prior : null;
-        if (opening is null && exchange is null && (intent.Definition?.AutoRelease == true || intent.NextAutoRelease)) return null;
+        if (prior is not null) return new(Matches(prior, intent, hash) ? prior : null, false);
+        if (opening is null && exchange is null && (intent.Definition?.AutoRelease == true || intent.NextAutoRelease)) return default;
         var fences = exchange is null ? LocalAuthority(intent, authority) : ExchangeOpeningFence(exchange, intent, authority);
-        if (fences is null) return null;
+        if (fences is null) return default;
         var reserveId = PlatformReserveLedger.RecordIdFor(intent.Asset.ChainType, intent.Asset.Network.ToString(), intent.Asset.AssetId);
         var reserve = await executor.QuerySingleAsync<PlatformReserveLedger>(SurrealQuery<PlatformReserveLedger>.Key(reserveId), ct);
-        if (reserve is null) return null;
+        if (reserve is null) return default;
         if (intent.Kind == "Open")
         {
             var credential = exchange?.Authority.Tenant.Credential ?? authority.Direct?.Credential ?? authority.Workflow!.Credential;
@@ -85,27 +96,35 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
                 ? credential.ActorUserId : (Guid?)null);
             var drawAuthority = credential.TokenUse == AzoaClaims.TokenUseNodeOperator
                 ? ReserveDrawAuthority.NodeOperator : ReserveDrawAuthority.ForTenant(tenant);
-            if (ReservePartitionScope.Refuse(reserve, drawAuthority, reserve.AssetId, options) is not null) return null;
+            if (ReservePartitionScope.Refuse(reserve, drawAuthority, reserve.AssetId, options) is not null) return default;
         }
         var current = await GetHoldAsync(HoldCommandIdentity.Hold(intent), ct);
         HoldCommandReceipt? original = null;
+        HoldReleaseMandate? closedMandate = null;
         if (current is not null)
         {
-            if (current.OpeningCommandId is null) return null;
+            if (current.OpeningCommandId is null) return default;
             original = await GetReceiptAsync(current.OpeningCommandId, ct);
-            if (original is null || !ProvesLiability(original, current, intent)) return null;
+            if (original is null || !ProvesLiability(original, current, intent)) return default;
+            if (current.ActiveReleaseMandateId is { } mandateId)
+            {
+                closedMandate = await executor.QuerySingleAsync<HoldReleaseMandate>(SurrealQuery<HoldReleaseMandate>.Key(mandateId), ct);
+                if (closedMandate is null || SurrealRecordGuid.BareId(closedMandate.HoldRecordId) != SurrealRecordGuid.BareId(current.Id)
+                    || closedMandate.Status != "Active"
+                    || closedMandate.Version is < 0 or long.MaxValue) return default;
+            }
         }
         var now = DateTimeOffset.UtcNow;
         var planned = HoldLocalCommandPlan.Create(intent, current, reserve, now);
         if (planned.IsError || planned.Result is not { } plan)
         {
             prior = await GetReceiptAsync(id, ct);
-            return prior is not null && Matches(prior, intent, hash) ? prior : null;
+            return new(prior is not null && Matches(prior, intent, hash) ? prior : null, false);
         }
         var openingComposition = opening is null ? null : ComposeWorkflowOpening(intent, authority, opening, plan, now);
-        if (opening is not null && openingComposition is null) return null;
+        if (opening is not null && openingComposition is null) return default;
         var exchangeComposition = exchange?.Intent.ReleaseConsent is null ? null : ComposeExchangeMandate(exchange, plan, now);
-        if (exchange?.Intent.Opening.Definition?.AutoRelease == true && exchangeComposition is null) return null;
+        if (exchange?.Intent.Opening?.Definition?.AutoRelease == true && exchangeComposition is null) return default;
         if (exchange is not null)
         {
             plan.Result.EconomicSourceId = exchange.Source.Id;
@@ -131,12 +150,13 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
         if (plan.Reserve is { } mutation)
             reserveWrite = reserveWrite.Set(row => row.Partitions, mutation.Partitions).Set(row => row.UpdatedAt, now);
         statements.Add(SurrealGeneratedStatementScope.Assign(reserveWrite.Build(), "hold_reserve", "_hold_reserve"));
-        statements.Add(SurrealQuery.Of("IF $_hold_reserve = NONE OR $_hold_reserve = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
+        statements.Add(SurrealGeneratedStatementScope.RequireResult("_hold_reserve", Conflict));
         if (current is null)
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(plan.Result), "hold_open"));
         else
         {
-            statements.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<HoldCommandReceipt>.Key(current.OpeningCommandId!),
+            // lock: the opening receipt is create-only; the liability version CAS below serializes this command.
+            statements.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<HoldCommandReceipt>.Key(current.OpeningCommandId!),
                 "hold_original_receipt", "_hold_original_receipt"));
             statements.Add(SurrealQuery.Of("""
                 IF $_hold_original_receipt = NONE OR $_hold_original_receipt.intent_hash != $_hold_original_hash
@@ -146,15 +166,22 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
                 .Where(row => row.Version == current.Version && row.State == "Held" && row.ActiveCommandId == null
                     && row.DefinitionHash == current.DefinitionHash && row.DefinitionJson == current.DefinitionJson
                     && row.OpeningCommandId == current.OpeningCommandId && row.OwnerUserId == current.OwnerUserId
-                    && row.TenantId == current.TenantId)
+                    && row.TenantId == current.TenantId && row.EconomicSourceId == null
+                    && row.ActiveReleaseMandateId == current.ActiveReleaseMandateId)
                 .Set(row => row.Version, plan.Result.Version).Set(row => row.State, plan.Result.State)
                 .Set(row => row.UpdatedAt, now).Set(row => row.SettledAt, now);
+            if (closedMandate is not null)
+            {
+                update = update.Unset(row => row.ActiveReleaseMandateId);
+                statements.AddRange(CloseMandate(closedMandate, now,
+                    "The owner settled this custody liability locally; its delayed release permission is closed.", "hold_closed_mandate"));
+            }
             update = plan.Result.SettlementReason is null ? update.Unset(row => row.SettlementReason)
                 : update.Set(row => row.SettlementReason, plan.Result.SettlementReason);
             update = plan.Result.ChildHoldId is null ? update.Unset(row => row.ChildHoldId)
                 : update.Set(row => row.ChildHoldId, plan.Result.ChildHoldId);
             statements.Add(SurrealGeneratedStatementScope.Assign(update.Build(), "hold_transition", "_hold_transition"));
-            statements.Add(SurrealQuery.Of("IF $_hold_transition = NONE OR $_hold_transition = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
+            statements.Add(SurrealGeneratedStatementScope.RequireResult("_hold_transition", Conflict));
         }
         if (plan.Child is not null) statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(plan.Child), "hold_child"));
         if (opening is null) statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(command), "hold_command"));
@@ -166,7 +193,7 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
                     && row.AuthorityJson == expected.AuthorityJson && row.WorkflowMandateDraftJson == expected.WorkflowMandateDraftJson)
                 .Set(row => row.Version, expected.Version + 1).Set(row => row.State, "Completed").Set(row => row.UpdatedAt, now)
                 .Set(row => row.CurrentAuthorizationId, opening.AuditId).Build(), "hold_open_accepted", "_hold_open_accepted"));
-            statements.Add(SurrealQuery.Of("IF $_hold_open_accepted = NONE OR $_hold_open_accepted = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
+            statements.Add(SurrealGeneratedStatementScope.RequireResult("_hold_open_accepted", Conflict));
         }
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(plan.Receipt), "hold_receipt"));
         statements.Add(SurrealQuery.Of("COMMIT"));
@@ -179,7 +206,7 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
                 response.EnsureAllOk();
                 return response;
             }, ct);
-            return plan.Receipt;
+            return new(plan.Receipt, false);
         }
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message)
             || exception.Message.Contains(Conflict, StringComparison.Ordinal)
@@ -188,7 +215,8 @@ public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, R
             || exception.Message.Contains(ActionExecutionFence.FailureMarker, StringComparison.Ordinal))
         {
             prior = await GetReceiptAsync(id, ct);
-            return prior is not null && Matches(prior, intent, hash) ? prior : null;
+            return prior is not null ? new(Matches(prior, intent, hash) ? prior : null, false)
+                : new(null, exception.Message.Contains(Conflict, StringComparison.Ordinal));
         }
     }
 

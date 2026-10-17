@@ -56,8 +56,36 @@ public sealed class FakeEthereumPreparationStore : IEthereumPreparationStore
         lock (_gate)
         {
             if (_rows.TryGetValue(candidate.Id, out var existing)) return Task.FromResult<EthereumPreparation?>(Clone(existing));
-            if (_rows.Values.Any(row => row.ProtocolIdentity == candidate.ProtocolIdentity && row.Sender == candidate.Sender && row.Nonce == candidate.Nonce))
+            if (LiveNonceTaken(candidate)) return Task.FromResult<EthereumPreparation?>(null);
+            _rows.Add(candidate.Id, Clone(candidate));
+            return Task.FromResult<EthereumPreparation?>(Clone(candidate));
+        }
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<EthereumPreparation>> ListReleasedAsync(string protocol, string sender, int limit, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_gate) return Task.FromResult<IReadOnlyList<EthereumPreparation>>(_rows.Values
+            .Where(row => row.ProtocolIdentity == protocol && row.Sender == sender && row.State == "Released")
+            .OrderBy(row => row.Nonce, StringComparer.Ordinal).Take(Math.Clamp(limit, 1, 50)).Select(Clone).ToArray());
+    }
+
+    /// <inheritdoc/>
+    public Task<EthereumPreparation?> TryClaimReleasedAsync(EthereumPreparation released, EthereumPreparation candidate, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            if (!_rows.TryGetValue(released.Id, out var current) || current.State != "Released" || current.Version != released.Version ||
+                current.SignedTransactionBase64 is not null || current.Nonce != candidate.Nonce || current.Sender != candidate.Sender ||
+                current.ProtocolIdentity != candidate.ProtocolIdentity || current.NonceSlot.Length != 0 || candidate.NonceSlot.Length != 0 ||
+                _rows.ContainsKey(candidate.Id))
                 return Task.FromResult<EthereumPreparation?>(null);
+            current.State = "ReleasedRefilled";
+            current.NonceSlot = current.Id;
+            current.Version++;
+            current.UpdatedAt = DateTimeOffset.UtcNow;
             _rows.Add(candidate.Id, Clone(candidate));
             return Task.FromResult<EthereumPreparation?>(Clone(candidate));
         }
@@ -115,6 +143,11 @@ public sealed class FakeEthereumPreparationStore : IEthereumPreparationStore
             return Task.FromResult(Clone(_checkpoints[candidate.Id]));
         }
     }
+
+    /// <summary>Mirrors the unique (protocol, sender, nonce, nonce slot) index: only the empty-slot live owner occupies a nonce.</summary>
+    private bool LiveNonceTaken(EthereumPreparation candidate)
+        => _rows.Values.Any(row => row.ProtocolIdentity == candidate.ProtocolIdentity && row.Sender == candidate.Sender &&
+            row.Nonce == candidate.Nonce && row.NonceSlot == candidate.NonceSlot);
 
     private static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
 }

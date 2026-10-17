@@ -11,6 +11,14 @@ public partial class EthereumProvider
     private async Task<DexEvmFinalized?> ReadDexFinalizedAsync(SwapIntent intent, SwapStagePlan plan,
         string transactionId, CancellationToken ct)
     {
+        var found = await ReadDexFinalizedCoreAsync(intent, plan, transactionId, sameCallEnvelope: false, ct);
+        return found is { Candidate: { } candidate } exact ? new(candidate, exact.Receipt) : null;
+    }
+
+    /// <summary>Full finality proof (genesis, block body, code pins, stable receipt) for the exact plan or, for operator settlement, its same call.</summary>
+    private async Task<(PreparedSwapStage? Candidate, EthereumFinalizedReceipt Receipt)?> ReadDexFinalizedCoreAsync(SwapIntent intent,
+        SwapStagePlan plan, string transactionId, bool sameCallEnvelope, CancellationToken ct)
+    {
         var saved = ReadEthereumDexPlan(intent, plan);
         var quote = ReadDexAcceptedIntent(intent);
         var chain = await GetChainIdAsync(ct);
@@ -20,13 +28,28 @@ public partial class EthereumProvider
             return null;
         var response = await RpcReadAsync("eth_getTransactionByHash", [transactionId], ct);
         if (response.IsError || response.IsNullResult) return null;
-        var wire = EthereumRpcEnvelope.Read(response.Value, DexUnsigned(saved), intent.Terms.Owner.Address);
-        var candidate = ValidateSignedSwapStage(intent, plan, JsonSerializer.Serialize(Convert.ToBase64String(wire)));
-        if (candidate.IsError || candidate.Result is not { } prepared || !SameDexHash(prepared.TransactionIds[0], transactionId)) return null;
+        PreparedSwapStage? prepared = null;
+        if (sameCallEnvelope)
+        {
+            // The owner's own signature over the same to/value/input at the reserved nonce; fees and gas are the wallet's choice.
+            EthereumRpcEnvelope.ReadOwnEnvelope(response.Value, intent.Terms.Owner.Address);
+            if (!TryReadStringProperty(response.Value, "hash", out var reported) || !SameDexHash(reported, transactionId) ||
+                !SameDexCall(response.Value, saved) || !TryReadQuantityProperty(response.Value, "nonce", out var nonce) ||
+                nonce != EthereumDexExecutionCodec.Amount(saved.Nonce) || !TryReadQuantityProperty(response.Value, "chainId", out var signedChain) ||
+                signedChain != chain.Result) return null;
+        }
+        else
+        {
+            var wire = EthereumRpcEnvelope.Read(response.Value, DexUnsigned(saved), intent.Terms.Owner.Address);
+            var candidate = ValidateSignedSwapStage(intent, plan, JsonSerializer.Serialize(Convert.ToBase64String(wire)));
+            if (candidate.IsError || candidate.Result is not { } exact || !SameDexHash(exact.TransactionIds[0], transactionId)) return null;
+            prepared = exact;
+        }
         var receipt = await ReadFinalizedReceiptAsync(transactionId, ct);
-        if (receipt is null || EthereumDexExecutionCodec.Amount(receipt.NetworkFee) > EthereumDexExecutionCodec.Amount(plan.ReservedNetworkFee) ||
-            !TryReadQuantityProperty(receipt.Receipt, "gasUsed", out var gas) || gas > EthereumDexExecutionCodec.Amount(saved.Call.GasLimit) ||
-            !TryReadQuantityProperty(receipt.Receipt, "effectiveGasPrice", out var price) || price > EthereumDexExecutionCodec.Amount(saved.Call.MaxFee) ||
+        if (receipt is null || !sameCallEnvelope && (
+                EthereumDexExecutionCodec.Amount(receipt.NetworkFee) > EthereumDexExecutionCodec.Amount(plan.ReservedNetworkFee) ||
+                !TryReadQuantityProperty(receipt.Receipt, "gasUsed", out var gas) || gas > EthereumDexExecutionCodec.Amount(saved.Call.GasLimit) ||
+                !TryReadQuantityProperty(receipt.Receipt, "effectiveGasPrice", out var price) || price > EthereumDexExecutionCodec.Amount(saved.Call.MaxFee)) ||
             !TryReadQuantityProperty(receipt.Receipt, "transactionIndex", out var index) || index > int.MaxValue ||
             !TryReadQuantityProperty(response.Value, "transactionIndex", out var txIndex) || txIndex != index ||
             !TryReadQuantityProperty(response.Value, "blockNumber", out var txBlock) || txBlock != receipt.BlockNumber ||
@@ -53,6 +76,6 @@ public partial class EthereumProvider
         if (repeated is null || repeated.BlockHash != receipt.BlockHash || repeated.BlockNumber != receipt.BlockNumber ||
             repeated.Succeeded != receipt.Succeeded || repeated.NetworkFee != receipt.NetworkFee ||
             CanonicalJson.Hash(repeated.Receipt) != CanonicalJson.Hash(receipt.Receipt)) return null;
-        return new(prepared, receipt);
+        return (prepared, receipt);
     }
 }

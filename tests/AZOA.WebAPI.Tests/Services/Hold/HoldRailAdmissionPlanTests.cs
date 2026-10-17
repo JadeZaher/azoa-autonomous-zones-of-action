@@ -79,6 +79,36 @@ public sealed class HoldRailAdmissionPlanTests
         HoldRailAdmissionPlan.Create(intent, plan, new(1), null, reserve, DateTimeOffset.UtcNow).IsError.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("Release", "own-login", false)]
+    [InlineData("Release", "custody-tenant", false)]
+    [InlineData("Release", "other-tenant", true)]
+    [InlineData("FundedRefund", "own-login", false)]
+    [InlineData("FundedRefund", "other-tenant", true)]
+    public void AnotherTenantCannotSettleACustodyLiabilityItDoesNotHold(string kind, string caller, bool refused)
+    {
+        var (opening, funding, reserve) = Funding();
+        var custody = Guid.NewGuid();
+        opening = opening with { TenantId = custody, CustodyTenantId = custody };
+        funding = funding with { CommandId = HoldCommandIdentity.Operation(opening) };
+        var held = HoldRailAdmissionPlan.Create(opening, funding, new(1), null, reserve, DateTimeOffset.UtcNow).Result!.Aggregate;
+        held.State = "Held";
+        held.ActiveCommandId = null;
+        held.OpeningCommandId = funding.CommandId;
+        var definition = opening.Definition!;
+        var recipientOwner = kind == "Release" ? definition.BeneficiaryUserId : opening.ActorUserId;
+        var settle = opening with { RequestKey = "settle", Kind = kind == "Release" ? "Release" : "Refund", Definition = null,
+            ActorUserId = kind == "Release" ? definition.BeneficiaryUserId : opening.ActorUserId,
+            TenantId = caller switch { "own-login" => null, "custody-tenant" => custody, _ => Guid.NewGuid() } };
+        var recipient = new SigningWalletWitness(Guid.NewGuid(), recipientOwner, "recipient", "Algorand");
+        var quote = funding.Quote with { Request = funding.Quote.Request with { Sender = "holding", Recipient = "recipient" }, QuoteId = "" };
+        quote = quote with { QuoteId = ValueCustodyIdentity.QuoteId(quote) };
+        var plan = new HoldRailPlan(1, kind, HoldCommandIdentity.Operation(settle), 0, quote, null, recipient,
+            SigningContext.PlatformFor("Algorand"));
+
+        HoldRailAdmissionPlan.Create(settle, plan, new(1), held, reserve, DateTimeOffset.UtcNow).IsError.Should().Be(refused);
+    }
+
     private static (HoldCommandIntent, HoldRailPlan, PlatformReserveLedger) Funding()
     {
         var actor = Guid.NewGuid();

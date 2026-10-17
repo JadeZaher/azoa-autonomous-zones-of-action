@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+using System.Text.Json;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Interfaces;
@@ -8,6 +10,29 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
 public partial class AlgorandProvider
 {
+    /// <inheritdoc cref="IDexTransactionModule.DexCapability"/>
+    public DexCapability DexCapability { get; } = new("Tinyman", "2", ExactInput: true, ExactOutput: false,
+        NativeInput: true, NativeOutput: true, SelfRecipientOnly: true,
+        ["One pinned Tinyman V2 validator pool proven from the pool logic signature; ASA/ASA or ASA/ALGO fixed-input swaps only.",
+         "Self-recipient: the validator pays the app-call sender, so a different recipient is not offered.",
+         "A missing output opt-in is a separate signed prerequisite whose minimum balance stays disclosed until separately consented cleanup.",
+         "Rekeyed or delegated owner accounts are outside the single-key grammar."],
+        CleanupSemantics: [SwapCleanupContract.CloseCurrentZeroHolding]);
+
+    /// <inheritdoc cref="IDexTransactionModule.DescribeDexNetworkAsync"/>
+    public async Task<AZOAResult<DexNetwork>> DescribeDexNetworkAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var parameters = await AlgodHttpClient.GetFromJsonAsync<AlgodSuggestedParams>("/v2/transactions/params", ct);
+            return parameters is { LastRound: > 0, GenesisHashB64.Length: > 0 }
+                ? AZOAResult<DexNetwork>.Success(new(ChainType, ActiveNetwork.ToString(), "algorand:" + parameters.GenesisHashB64))
+                : AZOAResult<DexNetwork>.FailureWithCode("Algorand genesis identity is unavailable.", AzoaErrorCodes.DependencyUnavailable);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException)
+        { return AZOAResult<DexNetwork>.FailureWithCode("Algorand genesis identity is unavailable.", AzoaErrorCodes.DependencyUnavailable); }
+    }
+
     /// <inheritdoc cref="IDexTransactionModule.GetNextSwapStageAsync"/>
     public async Task<AZOAResult<SwapNextStage>> GetNextSwapStageAsync(SwapIntent intent,
         IReadOnlyList<SwapStageHistory> history, CancellationToken ct = default)

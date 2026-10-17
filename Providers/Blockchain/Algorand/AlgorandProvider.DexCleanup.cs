@@ -17,7 +17,8 @@ public partial class AlgorandProvider
         IReadOnlyList<SwapStageHistory> history, SwapCleanupConsent consent, string stage, int generation,
         CancellationToken ct = default)
     {
-        if (stage != "CloseOptIn" || generation < 0 || !SwapCleanupContract.IsValid(intent, consent) ||
+        if (stage != "CloseOptIn" || generation < 0 || consent.Semantics != SwapCleanupContract.CloseCurrentZeroHolding ||
+            !SwapCleanupContract.IsValid(intent, consent) ||
             !UInt64Text.TryParse(intent.Terms.OutputAsset.Id, out var assetId) || assetId == 0 || history.Count == 0 ||
             history.Any(item => item.Plan.Purpose is not ("Effect" or "Cleanup")))
             return AZOAResult<SwapStagePlan>.Failure("Explicit current-zero-holding cleanup consent and original opt-in history are required.");

@@ -20,7 +20,8 @@ public partial class SolanaProvider
         IReadOnlyList<SwapStageHistory> history, SwapCleanupConsent consent, string stage, int generation,
         CancellationToken ct = default)
     {
-        if (stage != "CloseAta" || generation < 0 || !SwapCleanupContract.IsValid(intent, consent) ||
+        if (stage != "CloseAta" || generation < 0 || consent.Semantics != SwapCleanupContract.CloseCurrentZeroHolding ||
+            !SwapCleanupContract.IsValid(intent, consent) ||
             history.Count == 0 || history.Any(item => item.Plan.Purpose is not ("Effect" or "Cleanup")))
             return AZOAResult<SwapStagePlan>.Failure("Cleanup requires exact owner consent and terminal original history.");
         var effects = history.Where(item => item.Plan.Purpose == "Effect").ToArray();

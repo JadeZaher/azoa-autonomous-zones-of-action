@@ -4,6 +4,7 @@ using AZOA.WebAPI.Models.Blockchain;
 using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
@@ -62,8 +63,7 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
             SurrealQuery.Of("COMMIT"));
         try
         {
-            var response = await executor.ExecuteAsync(query, ct);
-            response.EnsureAllOk();
+            await ExecuteRetryingAsync(query, ct);
             return true;
         }
         catch (SurrealStatementException exception) when (exception.Message.Contains("NFT_RESERVATION_CONFLICT", StringComparison.Ordinal))
@@ -82,8 +82,7 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         if (!NftProtocolCostAdmissionFence.Matches(candidate, command)) return null;
         try
         {
-            var response = await executor.ExecuteAsync(Fenced(SurrealWriter.Create(candidate), candidate, true, freshAdmission: true).Query, ct);
-            response.EnsureAllOk();
+            await ExecuteRetryingAsync(Fenced(SurrealWriter.Create(candidate), candidate, NftLifecycleWrite.FreshAdmission).Query, ct);
             return await GetAsync(candidate.Id, ct) ?? throw new InvalidOperationException("NFT admission disappeared.");
         }
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
@@ -112,11 +111,17 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         var before = await GetAsync(row.Id, ct);
         if (before is null || before.Version != expectedVersion) return null;
         var consentAdded = before.StageConsentsJson != row.StageConsentsJson;
-        if (consentAdded && (!requireActionAuthority || !AZOA.WebAPI.Helpers.NftStageConsentIdentity.CanAppend(before, row))) return null;
+        var participantRenewal = consentAdded && NftStageConsentIdentity.CanRenew(before, row);
+        if (consentAdded && (!requireActionAuthority || !(participantRenewal || NftStageConsentIdentity.CanAppend(before, row)))) return null;
         var costsAdded = before.ReplacementCostConsentsJson != row.ReplacementCostConsentsJson;
         if (costsAdded && (!requireActionAuthority || !AZOA.WebAPI.Helpers.NftReplacementCostContract.CanAppend(before, row))) return null;
         var costsRetired = before.ReplacementCostRetirementsJson != row.ReplacementCostRetirementsJson;
         if (costsRetired && !AZOA.WebAPI.Helpers.NftReplacementCostContract.CanRetire(before, row)) return null;
+        var renewed = before.ActorContinuationsJson != row.ActorContinuationsJson;
+        if (renewed && (!requireActionAuthority || !NftActorContinuationIdentity.CanAppend(before, row))) return null;
+        // A renewal-only write re-checks just the new credential; signing steps later fence every authority again.
+        NftLifecycleWrite? write = !requireActionAuthority ? null : renewed ? NftLifecycleWrite.RequesterRenewal
+            : participantRenewal ? NftLifecycleWrite.ParticipantRenewal : costsAdded ? NftLifecycleWrite.CostAcceptance : NftLifecycleWrite.Effect;
         var update = SurrealWriter.UpdateOnly<NftLifecycle>(row.Id).Where(item => item.Version == expectedVersion
             && item.RequestHash == row.RequestHash && item.RequestJson == row.RequestJson)
             .Set(item => item.State, row.State).Set(item => item.Stage, row.Stage)
@@ -125,6 +130,7 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
             .Set(item => item.StageConsentsJson, row.StageConsentsJson)
             .Set(item => item.ReplacementCostConsentsJson, row.ReplacementCostConsentsJson)
             .Set(item => item.ReplacementCostRetirementsJson, row.ReplacementCostRetirementsJson)
+            .Set(item => item.ActorContinuationsJson, row.ActorContinuationsJson)
             .Set(item => item.PreparationGeneration, row.PreparationGeneration)
             .Set(item => item.Version, expectedVersion + 1).Set(item => item.UpdatedAt, row.UpdatedAt);
         update = row.PreparedTransactionJson is null ? update.Unset(item => item.PreparedTransactionJson) : update.Set(item => item.PreparedTransactionJson, row.PreparedTransactionJson);
@@ -137,87 +143,105 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         update = row.Detail is null ? update.Unset(item => item.Detail) : update.Set(item => item.Detail, row.Detail);
         try
         {
-            var fenced = Fenced(update.Build(), row, requireActionAuthority, freshReplacementCost: costsAdded,
-                replacementCostRetirement: costsRetired);
-            var response = await executor.ExecuteAsync(fenced.Query, ct);
-            response.EnsureAllOk();
+            var fenced = Fenced(update.Build(), row, write, costsRetired);
+            var response = await ExecuteRetryingAsync(fenced.Query, ct);
             return response.GetValues<NftLifecycle>(fenced.ResultIndex).SingleOrDefault();
         }
         catch (ActionEffectAuthorityChangedException) { return null; }
         catch (SurrealStatementException exception) when (exception.Message.Contains(ActionExecutionFence.FailureMarker, StringComparison.Ordinal)
             || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal)
-            || exception.Message.Contains(NftProtocolCostAdmissionFence.FailureMarker, StringComparison.Ordinal))
+            || exception.Message.Contains(NftProtocolCostAdmissionFence.FailureMarker, StringComparison.Ordinal)
+            || exception.Message.Contains(ParticipantConsentLive, StringComparison.Ordinal))
         {
             return null;
         }
     }
 
+    private const string ParticipantConsentLive = "NFT_PARTICIPANT_CONSENT_LIVE";
+
+    // raw: advisory reads of the superseded participant credential; renewal is allowed only once it lapsed or was revoked,
+    // and the renewing credential itself is fenced in the same batch. See AGENTS.md §NFT effect authorities.
+    private static IReadOnlyList<SurrealQuery> SupersededConsentLapsed(SigningCredentialWitness held) =>
+    [
+        SurrealQuery.Of("LET $_nft_held_user = (SELECT is_active, auth_not_before FROM ONLY type::record('user', $_nft_held_actor))")
+            .WithParam("_nft_held_actor", held.ActorUserId.ToString("N")),
+        SurrealQuery.Of("LET $_nft_held_key = (SELECT is_active, revoked_at, expires_at FROM ONLY type::record('api_key', $_nft_held_key_id))")
+            .WithParam("_nft_held_key_id", held.ApiKeyId?.ToString("N") ?? "none"),
+        SurrealQuery.Of("""
+            IF $_nft_held_user != NONE AND $_nft_held_user.is_active = true
+                AND (($_nft_held_watermark_present AND $_nft_held_user.auth_not_before = $_nft_held_watermark)
+                    OR (!$_nft_held_watermark_present AND $_nft_held_user.auth_not_before = NONE))
+                AND (!$_nft_held_expires_present OR $_nft_held_expires > time::now())
+                AND (!$_nft_held_is_key OR ($_nft_held_key != NONE AND $_nft_held_key.is_active = true AND $_nft_held_key.revoked_at = NONE
+                    AND ($_nft_held_key.expires_at = NONE OR $_nft_held_key.expires_at > time::now())))
+            { THROW 'NFT_PARTICIPANT_CONSENT_LIVE' }
+            """).WithParam("_nft_held_watermark_present", held.AuthNotBefore.HasValue)
+            .WithParam("_nft_held_watermark", held.AuthNotBefore ?? DateTimeOffset.UnixEpoch)
+            .WithParam("_nft_held_expires_present", held.ExpiresAt.HasValue)
+            .WithParam("_nft_held_expires", held.ExpiresAt ?? DateTimeOffset.UnixEpoch)
+            .WithParam("_nft_held_is_key", held.Kind == "ApiKey"),
+    ];
+
     // raw: workflow authority and NFT admission or new-signature/egress authorization commit atomically; see AGENTS.md.
-    private static (SurrealQuery Query, int ResultIndex) Fenced(SurrealQuery mutation, NftLifecycle row, bool required, bool freshAdmission = false,
-        bool freshReplacementCost = false, bool replacementCostRetirement = false)
+    private static (SurrealQuery Query, int ResultIndex) Fenced(SurrealQuery mutation, NftLifecycle row, NftLifecycleWrite? write,
+        bool replacementCostRetirement = false)
     {
         var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)
             ?? throw new InvalidOperationException("NFT intent is unreadable.");
         var guards = new List<SurrealQuery>();
         if (replacementCostRetirement)
         {
-            var retired = AZOA.WebAPI.Helpers.NftReplacementCostContract.Retirements(row).Last();
-            var retirementFence = SigningAuthorityFence.Create(retired.Authority, [AzoaScopes.NftMint], "nft_cost_retirement");
-            if (retirementFence is null) throw new ActionEffectAuthorityChangedException();
-            guards.AddRange(retirementFence);
+            var retired = NftReplacementCostContract.Retirements(row).Last();
+            guards.AddRange(SigningAuthorityFence.Create(retired.Authority, [AzoaScopes.NftMint], "nft_cost_retirement")
+                ?? throw new ActionEffectAuthorityChangedException());
         }
-        if (required
-            && !(freshAdmission && (AZOA.WebAPI.Helpers.NftCancellationTombstone.Matches(row, command)
-                || AZOA.WebAPI.Helpers.NftCancellationTombstone.MatchesWorkflowRejection(row, command))))
+        if (write is { } kind)
         {
-            var original = command.ActorAuthority;
-            if (original is null || original.Credential.ActorUserId != command.Actor
-                || original.Action != command.ActionAuthority
-                || (original.Credential.TenantId ?? Guid.Empty) != command.ActingTenantId
-                || original.Wallet.Id != command.ActorWalletId || original.Wallet.Address != command.ActorAddress
-                || original.Wallet.ChainType != row.ChainType || row.ActorUserId != command.Actor.ToString("N"))
-                throw new ActionEffectAuthorityChangedException();
-            var actorFence = SigningAuthorityFence.Create(original, [AZOA.WebAPI.Helpers.NftSigningScope.ForOperation(row.Operation)], "nft_original_actor");
-            if (actorFence is null) throw new ActionEffectAuthorityChangedException();
-            guards.AddRange(actorFence);
-            if (!freshAdmission && row.ChainType == "Solana" && row.Stage == "Create" && row.PreparationGeneration > 0)
+            if (kind == NftLifecycleWrite.ParticipantRenewal)
+                guards.AddRange(SupersededConsentLapsed((NftStageConsentIdentity.Superseded(row)
+                    ?? throw new ActionEffectAuthorityChangedException()).Authority.Credential));
+            var requirements = NftEffectAuthorities.Select(row, command, kind) ?? throw new ActionEffectAuthorityChangedException();
+            foreach (var requirement in requirements)
+                guards.AddRange(SigningAuthorityFence.Create(requirement.Authority, [requirement.Scope], requirement.Prefix)
+                    ?? throw new ActionEffectAuthorityChangedException());
+            if (kind == NftLifecycleWrite.FreshAdmission)
             {
-                var costs = AZOA.WebAPI.Helpers.NftReplacementCostContract.Current(row);
-                if (costs is null || !AZOA.WebAPI.Helpers.NftReplacementCostContract.Matches(row, command, costs))
-                    throw new ActionEffectAuthorityChangedException();
-                var costFence = SigningAuthorityFence.Create(costs.Authority, [AzoaScopes.NftMint], "nft_replacement_cost");
-                if (costFence is null) throw new ActionEffectAuthorityChangedException();
-                guards.AddRange(costFence);
-                if (freshReplacementCost) guards.AddRange(NftProtocolCostAdmissionFence.Create(costs.Quote));
+                if (row.StageConsentsJson != "[]" || row.ReplacementCostConsentsJson != "[]" || row.ReplacementCostRetirementsJson != "[]"
+                    || row.ActorContinuationsJson != "[]") throw new ActionEffectAuthorityChangedException();
+                if (command.ProtocolCostQuote is { } quote) guards.AddRange(NftProtocolCostAdmissionFence.Create(quote));
             }
-            if (!freshAdmission && AZOA.WebAPI.Helpers.NftStageConsentIdentity.Required(row, command))
+            if (kind == NftLifecycleWrite.CostAcceptance)
+                guards.AddRange(NftProtocolCostAdmissionFence.Create((NftReplacementCostContract.Current(row)
+                    ?? throw new ActionEffectAuthorityChangedException()).Quote));
+            if (kind is NftLifecycleWrite.FreshAdmission or NftLifecycleWrite.Effect or NftLifecycleWrite.CostAcceptance
+                && command.ActionAuthority is { } authority)
             {
-                var consent = AZOA.WebAPI.Helpers.NftStageConsentIdentity.Current(row);
-                if (consent is null || !AZOA.WebAPI.Helpers.NftStageConsentIdentity.Matches(row, command, consent))
-                    throw new ActionEffectAuthorityChangedException();
-                var participantFence = SigningAuthorityFence.Create(consent.Authority,
-                    [AZOA.WebAPI.Helpers.NftSigningScope.ForOperation(row.Operation)], "nft_stage_participant");
-                if (participantFence is null) throw new ActionEffectAuthorityChangedException();
-                guards.AddRange(participantFence);
+                if (command.ProtocolCostQuote is not null || command.WorkflowCostAcceptance is not null)
+                    guards.AddRange(NftWorkflowCostAuthorityFence.Create(row, command));
+                if (command.Actor != authority.ActorUserId || command.ActingTenantId != (authority.ActingTenantId ?? Guid.Empty)
+                    || row.ActorUserId != authority.ActorUserId.ToString("N")) throw new InvalidOperationException("NFT action authority conflicts with its parties.");
+                guards.AddRange(ActionExecutionFence.Create(authority.RunId.ToString("N"), authority.NodeId.ToString("N"),
+                    authority.ActorUserId.ToString("N"), authority.ActingTenantId?.ToString("N"), authority.IntentHash));
             }
-        }
-        if (freshAdmission && row.StageConsentsJson != "[]") throw new ActionEffectAuthorityChangedException();
-        if (freshAdmission && row.ReplacementCostConsentsJson != "[]") throw new ActionEffectAuthorityChangedException();
-        if (freshAdmission && row.ReplacementCostRetirementsJson != "[]") throw new ActionEffectAuthorityChangedException();
-        if (freshAdmission && command.ProtocolCostQuote is { } quote) guards.AddRange(NftProtocolCostAdmissionFence.Create(quote));
-        if (required && command.ActionAuthority is { } authority)
-        {
-            if (command.ProtocolCostQuote is not null || command.WorkflowCostAcceptance is not null)
-                guards.AddRange(NftWorkflowCostAuthorityFence.Create(row, command));
-            if (command.Actor != authority.ActorUserId || command.ActingTenantId != (authority.ActingTenantId ?? Guid.Empty)
-                || row.ActorUserId != authority.ActorUserId.ToString("N")) throw new InvalidOperationException("NFT action authority conflicts with its parties.");
-            guards.AddRange(ActionExecutionFence.Create(authority.RunId.ToString("N"), authority.NodeId.ToString("N"),
-                authority.ActorUserId.ToString("N"), authority.ActingTenantId?.ToString("N"), authority.IntentHash));
         }
         if (guards.Count == 0) return (mutation, 0);
-        return (SurrealQuery.Combine(new[] { SurrealQuery.Of("BEGIN") }.Concat(guards)
-            .Append(SurrealGeneratedStatementScope.Apply(mutation, "nft_effect")).Append(SurrealQuery.Of("COMMIT")).ToArray()), guards.Count + 1);
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(guards);
+        statements.Add(SurrealGeneratedStatementScope.Assign(mutation, "nft_effect", "_nft_effect_row"));
+        var resultIndex = statements.Count;
+        statements.Add(SurrealQuery.Of("RETURN $_nft_effect_row"));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        return (SurrealQuery.Combine(statements.ToArray()), resultIndex);
     }
+
+    /// <summary>Retries only engine transaction conflicts; a retried batch loses cleanly on its own version predicates.</summary>
+    private Task<SurrealResponse> ExecuteRetryingAsync(SurrealQuery query, CancellationToken ct)
+        => SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var response = await executor.ExecuteAsync(query, ct);
+            response.EnsureAllOk();
+            return response;
+        }, ct);
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<NftLifecycle>> ListPendingAsync(int limit, CancellationToken ct = default)
@@ -257,8 +281,7 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         var query = SurrealQuery.Combine(statements.ToArray());
         try
         {
-            var response = await executor.ExecuteAsync(query, ct);
-            response.EnsureAllOk();
+            await ExecuteRetryingAsync(query, ct);
             return true;
         }
         catch (SurrealStatementException exception) when (exception.Message.Contains("NFT_LIFECYCLE_CHANGED", StringComparison.Ordinal))
@@ -268,28 +291,33 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
     }
 
     /// <inheritdoc/>
-    public async Task<bool> CancelUnsentAsync(NftLifecycle expected, NftAssetAuthority? authority, CancellationToken ct = default)
+    public async Task<bool> CancelUnsentAsync(NftLifecycle expected, NftAssetAuthority? authority, SigningConsentWitness consent, CancellationToken ct = default)
     {
-        // raw: unsent cancellation and its asset reservation release must commit together; see AGENTS.md.
+        var command = JsonSerializer.Deserialize<NftLifecycleCommand>(expected.RequestJson)
+            ?? throw new InvalidOperationException("NFT intent is unreadable.");
+        if (consent.Credential.ActorUserId.ToString("N") != expected.ActorUserId || command.Actor != consent.Credential.ActorUserId
+            || (consent.Credential.TenantId ?? Guid.Empty) != command.ActingTenantId) return false;
+        var fence = SigningAuthorityFence.ForConsent(consent, [NftSigningScope.ForOperation(expected.Operation)], "nft_cancel");
+        if (fence is null) return false;
+        // raw: current requester consent, unsent cancellation and its asset reservation release commit together; see AGENTS.md.
         var guard = SurrealQuery.Of("LET $_cancelled = (UPDATE type::record($_cancel_table, $_cancel_id) SET state = 'Cancelled', version = version + 1 WHERE version = $_cancel_version AND state IN ['Preparing', 'Prepared', 'AwaitingRecipientAcceptance', 'AwaitingRefundAuthorization', 'AwaitingRefundDestinationAcceptance'] AND confirmed_stage_count = 0 RETURN AFTER)")
             .WithParam("_cancel_table", NftLifecycle.SchemaNameConst).WithParam("_cancel_id", expected.Id)
             .WithParam("_cancel_version", expected.Version);
-        var statements = new List<SurrealQuery>
-        {
-            SurrealQuery.Of("BEGIN"), guard,
-            SurrealQuery.Of("IF array::len($_cancelled) != 1 { THROW 'NFT_LIFECYCLE_CHANGED' }"),
-        };
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(fence);
+        statements.Add(guard);
+        statements.Add(SurrealQuery.Of("IF array::len($_cancelled) != 1 { THROW 'NFT_LIFECYCLE_CHANGED' }"));
         if (authority is not null)
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NftAssetAuthority>(authority.Id)
                 .Where(row => row.ActiveLifecycleId == expected.Id).Unset(row => row.ActiveLifecycleId).Build(), "cancel_release"));
         statements.Add(SurrealQuery.Of("COMMIT"));
         try
         {
-            var response = await executor.ExecuteAsync(SurrealQuery.Combine(statements.ToArray()), ct);
-            response.EnsureAllOk();
+            await ExecuteRetryingAsync(SurrealQuery.Combine(statements.ToArray()), ct);
             return true;
         }
-        catch (SurrealStatementException exception) when (exception.Message.Contains("NFT_LIFECYCLE_CHANGED", StringComparison.Ordinal))
+        catch (SurrealStatementException exception) when (exception.Message.Contains("NFT_LIFECYCLE_CHANGED", StringComparison.Ordinal)
+            || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal))
         {
             return false;
         }

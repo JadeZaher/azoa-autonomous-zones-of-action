@@ -25,6 +25,8 @@ function ScopedCosts({ actor, value, onChange }: {
   const [error, setError] = useState<string | null>(null)
   const alive = useRef(false)
   const inFlight = useRef(false)
+  const settled = status === 'Applied' || status === 'Obsolete'
+  const canQuote = value.needsReplacementCosts === true && (!saved?.acceptance || settled)
   useEffect(() => {
     alive.current = true
     try {
@@ -47,7 +49,7 @@ function ScopedCosts({ actor, value, onChange }: {
     inFlight.current = true; setBusy(true); setError(null)
     try {
       if (kind === 'quote') {
-        if (!value.needsReplacementCosts || (saved?.acceptance && status !== 'Obsolete')) return
+        if (!canQuote) return
         const stage: NftStageAcceptance = { requestId: crypto.randomUUID(), expectedVersion: value.version,
           state: value.state, stage: value.stage, generation: value.preparationGeneration }
         const result = await azoa.api.quoteNftReplacementCosts(value.operationId, stage)
@@ -95,15 +97,16 @@ function ScopedCosts({ actor, value, onChange }: {
     <p>Review fresh creation costs for the replacement attempt. Accepting costs saves permission; use the lifecycle controls to continue.</p>
     {saved && <NftProtocolCostReview offer={saved.offer} accepted={status === 'Applied'} />}
     <div className="flex flex-wrap gap-2">
-      {value.needsReplacementCosts && (!saved?.acceptance || status === 'Obsolete') &&
+      {canQuote &&
         <Button disabled={!ready || busy} onClick={() => perform('quote')}>Review replacement costs</Button>}
-      {saved && status !== 'Applied' && status !== 'Obsolete' &&
+      {saved && !settled &&
         <Button disabled={!ready || busy} onClick={() => perform('accept')}>{saved.acceptance ? 'Retry saved cost acceptance' : 'Accept replacement costs'}</Button>}
       {saved?.acceptance && <Button variant="outline" disabled={!ready || busy} onClick={() => perform('reconcile')}>Reconcile cost acceptance</Button>}
-      {saved?.acceptance && status !== 'Applied' && status !== 'Obsolete' &&
+      {saved?.acceptance && !settled &&
         <Button variant="outline" disabled={!ready || busy} onClick={() => perform('retire')}>Retire uncommitted cost acceptance</Button>}
     </div>
-    {status === 'Applied' && <p>Replacement costs were accepted. Continue the recorded lifecycle to prepare this attempt.</p>}
+    {status === 'Applied' && !value.needsReplacementCosts && <p>Replacement costs were accepted. Continue the recorded lifecycle to prepare this attempt.</p>}
+    {status === 'Applied' && value.needsReplacementCosts && <p>The saved acceptance covered an earlier attempt. This attempt needs its own cost review.</p>}
     {status === 'Unresolved' && <p>Acceptance remains unresolved. Retry the saved request or retire it before choosing another offer.</p>}
     {status === 'Obsolete' && <p>The old acceptance can no longer commit. Its saved record is retained; review the current replacement costs.</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

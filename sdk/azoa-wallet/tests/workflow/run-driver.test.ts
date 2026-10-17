@@ -454,11 +454,15 @@ describe("nodeConfig builders match the C# config POCO shapes", () => {
     });
   });
 
-  it("swap → { request: { chain, quoteId, walletAddress } }", () => {
-    const out = JSON.parse(
-      nodeConfig.swap({ request: { chain: "algorand", quoteId: "q1", walletAddress: "ADDR" } })
-    );
-    expect(out).toEqual({ request: { chain: "algorand", quoteId: "q1", walletAddress: "ADDR" } });
+  it("swap → { quote: frozen exact-input request } with full-width decimal text and no caller quote id", () => {
+    const quote = { walletId: "w1", network: { chainType: "Ethereum", network: "Devnet", protocolIdentity: "eip155:31337" },
+      inputAsset: { id: "0x6", symbol: "IN", decimals: 18, native: false }, outputAsset: { id: "ETH", symbol: "ETH", decimals: 18, native: true },
+      grossInput: "115792089237316195423570985008687907853269984665640564039457584007913129639935", slippageBps: 50,
+      budget: { maximumNetworkFee: "1000", maximumLockedBalance: "0", maximumCleanupFee: "10" } };
+    const out = JSON.parse(nodeConfig.swap({ quote }));
+    expect(out).toEqual({ quote });
+    expect(typeof out.quote.grossInput).toBe("string");
+    expect(out.quote.quoteId).toBeUndefined();
   });
 
   it("grant → { request: NftMintRequest, holonId? }; amounts stay strings", () => {

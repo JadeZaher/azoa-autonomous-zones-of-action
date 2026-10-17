@@ -31,6 +31,7 @@ public partial class NftLifecycle : ISurrealRecord
     public string StageConsentsJson { get; set; } = "[]";
     public string ReplacementCostConsentsJson { get; set; } = "[]";
     public string ReplacementCostRetirementsJson { get; set; } = "[]";
+    public string ActorContinuationsJson { get; set; } = "[]";
     public string? AssetId { get; set; }
     public string? ProtocolIdentity { get; set; }
     public string? ContractAddress { get; set; }

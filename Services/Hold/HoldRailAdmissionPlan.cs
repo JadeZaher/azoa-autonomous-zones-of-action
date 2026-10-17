@@ -53,6 +53,7 @@ internal sealed record HoldRailAdmissionPlan(HoldCommand Command, HoldLedger Agg
                 || SurrealRecordGuid.BareId(current.Id) != HoldCommandIdentity.Hold(intent)
                 || current.OwnerUserId != intent.OwnerUserId.ToString("N")
                 || SurrealRecordGuid.ParseOptional(current.TenantId) != intent.CustodyTenantId
+                || !HoldCustodyScope.AdmitsSettlement(intent)
                 || current.ProtocolIdentity != intent.Asset.ProtocolIdentity || current.AssetId != intent.Asset.AssetId
                 || current.HoldingAddress != intent.Asset.HoldingAddress || current.Amount != plan.Quote.Request.QuantityBaseUnits
                 || current.DefinitionJson is null || current.DefinitionHash != CanonicalJson.HashCanonical(current.DefinitionJson)

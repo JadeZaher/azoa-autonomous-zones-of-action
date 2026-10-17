@@ -8,7 +8,7 @@ public interface IEthereumDexAllowanceStore
     /// <summary>Reads the exact allowance resource without granting signing authority.</summary>
     Task<EthereumDexAllowance?> GetAsync(string id, CancellationToken ct = default);
 
-    /// <summary>Claims or replays ownership; only released or provably never-exposed canceled owners may be replaced.</summary>
+    /// <summary>Claims or replays ownership; a holder is replaced only after release (first retried from its saved confirmed stage) or provable never-exposed cancellation.</summary>
     Task<EthereumDexAllowance?> ClaimAsync(EthereumDexAllowance candidate, CancellationToken ct = default);
 
     /// <summary>Releases ownership only against a saved confirmed swap or allowance-revocation receipt.</summary>

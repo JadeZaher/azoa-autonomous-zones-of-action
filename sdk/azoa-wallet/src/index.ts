@@ -1,6 +1,7 @@
 export type * from "./api/webhooks.js";
 export type * from "./api/hold-commands.js";
 export type * from "./api/dex.js";
+export type * from "./api/wtt.js";
 export type * from "./api/consent.js";
 // Core
 export type * from "./api/deployments.js";
@@ -111,9 +112,6 @@ export type {
   TenantKycDocumentReference,
   TenantKycSubmission,
   NftQueryParams,
-  SwapQuoteParams,
-  SwapExecuteParams,
-  SwapQuoteResponse,
   // Fungible mint + render-model portfolio (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,
@@ -173,12 +171,6 @@ export type {
   ExchangeParams,
   ExchangeReceiptState,
   ExchangeReceipt,
-  // Hold rails (HoldController, D14 / W3.4)
-  HoldState,
-  HoldOpenParams,
-  HoldSettlementParams,
-  HoldChainParams,
-  HoldView,
   // Fiat on-ramp checkout (FiatCheckoutController)
   FiatCheckoutStatus,
   FiatSettlementState,

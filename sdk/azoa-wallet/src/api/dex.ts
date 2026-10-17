@@ -29,8 +29,29 @@ export interface SwapStageCommand extends SwapVersionCommand { stageId: string; 
 export interface SwapCleanupStageCommand extends SwapVersionCommand { stage: string }
 export interface SwapBrowserStageCommand extends SwapStageCommand { signedPayloadJson: string }
 export interface SwapExposureCommand extends SwapStageCommand { acceptPotentialExternalSubmission: boolean }
+/** Exactly one consent flag: close the current zero output holding, or revoke the current input-token allowance to the quoted spender. */
 export interface SwapCleanupRequest extends SwapVersionCommand {
   requestKey: string; assetId: string; maximumNetworkFee: string; acceptCurrentZeroHoldingReplacement: boolean;
+  acceptCurrentAllowanceRevocation?: boolean;
+}
+export interface DexCapability {
+  provider: string; protocolVersion: string; exactInput: boolean; exactOutput: boolean; nativeInput: boolean;
+  nativeOutput: boolean; selfRecipientOnly: boolean; restrictions: string[];
+}
+export interface DexCapabilityView { network: DexNetwork; capability: DexCapability; ready: boolean; detail?: string | null }
+/** Node-governance fee entry update; omitted fields keep their current value. */
+export interface NodeFeeScheduleEntryUpdate { flatBaseUnits?: string; bps?: number }
+/** Versioned node fee schedule update; DEX quoting needs an explicit swap flat-fee denomination. */
+export interface NodeFeeScheduleUpdateRequest {
+  expectedVersion?: number; mint?: NodeFeeScheduleEntryUpdate; transfer?: NodeFeeScheduleEntryUpdate;
+  swap?: NodeFeeScheduleEntryUpdate; swapFlatDenomination?: "input-base-units-v1"; actionComplete?: NodeFeeScheduleEntryUpdate;
+  federationPublish?: NodeFeeScheduleEntryUpdate;
+}
+/** Flat workflow Swap node output, projected only from the confirmed settlement receipt. */
+export interface SwapActionOutput {
+  OperationId: string; ChainType: string; Network: string; Provider: string; InputAssetId: string; OutputAssetId: string;
+  ActualInput: string; ActualOutput: string; PlatformFeePaid: string; TransactionIds: string[]; TransactionId: string;
+  RetainedEffects: DexEffectDisclosure[];
 }
 export interface SwapExternalSigningView {
   operationId: string; stageId: string; operationVersion: number; stageVersion: number; network: DexNetwork;
@@ -42,6 +63,10 @@ export interface SwapStageReceipt {
   actualInput?: string | null; actualOutput?: string | null; platformFeePaid?: string | null;
   networkFeePaid?: string | null; lockedBalance?: string | null; submissionAuthorized: boolean;
   externalSigningExposed: boolean; serverSubmissionWithdrawn: boolean;
+  /** Durable stage preparation identity; matches the provider's reservation list for sequence recovery. */
+  preparationKey?: string | null;
+  /** A signed candidate exists server-side even if it was never sent. */
+  signedCandidateSaved?: boolean;
 }
 export interface SwapAccountingView {
   complete: boolean; confirmedExecutionNetworkFee: string; confirmedCleanupNetworkFee: string;

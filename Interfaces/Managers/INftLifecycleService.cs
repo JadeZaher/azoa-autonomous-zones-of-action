@@ -19,6 +19,9 @@ public interface INftLifecycleService
     /// <summary>Fences an unanswered exact acceptance version before its offer can be discarded.</summary>
     Task<AZOAResult<NftReplacementCostReconciliation>> RetireReplacementCostsAsync(string operationId, NftReplacementCostAcceptance request,
         AZOA.WebAPI.Models.Signing.SigningCredentialWitness credential, CancellationToken ct = default);
+    /// <summary>Records the original requester's fresh direct authority for the reviewed stage without signing or changing the command.</summary>
+    Task<AZOAResult<NftLifecycleView>> RenewActorAuthorityAsync(string operationId, NftStageAcceptance request,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness credential, CancellationToken ct = default);
     /// <summary>Admits the exact explicitly accepted workflow mint and audit atomically without signing.</summary>
     Task<AZOAResult<NftLifecycleView>> AdmitWorkflowMintAsync(UserNFTMintModel request,
         NftWorkflowCostAcceptanceReceipt receipt, CancellationToken ct = default);
@@ -41,20 +44,24 @@ public interface INftLifecycleService
         AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null, NftStageAcceptance? acceptance = null);
     /// <summary>Proves current application and chain ownership for authorization.</summary>
     Task<bool> IsCurrentOwnerAsync(Guid actor, Guid nftId, CancellationToken ct = default);
-    /// <summary>Cancels an unsent request owned by the caller; dispatched transactions must be reconciled.</summary>
-    Task<AZOAResult<NftLifecycleView>> CancelAsync(Guid actor, string operationId, CancellationToken ct = default);
+    /// <summary>Cancels an unsent request owned by the caller under its admitted tenant with current requester consent.</summary>
+    Task<AZOAResult<NftLifecycleView>> CancelAsync(Guid actor, string operationId, CancellationToken ct = default,
+        Guid actingTenantId = default, AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null);
     /// <summary>Starts an issuer-authorized clawback using confirmed issuance provenance.</summary>
     Task<AZOAResult<NftLifecycleView>> RevokeAsync(Guid actor, Guid nftId, string requestKey, CancellationToken ct = default, Guid actingTenantId = default, NftFeeAuthorization? feeAuthorization = null, string? reason = null, AZOA.WebAPI.Models.Actions.ActionEffectAuthority? actionAuthority = null, AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null);
-    /// <summary>Reads the public lifecycle state for either participant without signing or submitting.</summary>
-    Task<AZOAResult<NftLifecycleView>> GetAsync(Guid actor, string operationId, CancellationToken ct = default);
+    /// <summary>Reads lifecycle state for the requester under its admitted tenant or the counterparty under its consent tenant.</summary>
+    Task<AZOAResult<NftLifecycleView>> GetAsync(Guid actor, string operationId, CancellationToken ct = default, Guid actingTenantId = default);
     /// <summary>Returns the explicit platform-fee quote before any signing or admission.</summary>
-    Task<AZOAResult<NftFeeQuote>> QuoteFeeAsync(Guid actor, string chainType, string operation, CancellationToken ct = default, Guid? nftId = null, string? sourceOperationId = null);
+    Task<AZOAResult<NftFeeQuote>> QuoteFeeAsync(Guid actor, string chainType, string operation, CancellationToken ct = default, Guid? nftId = null, string? sourceOperationId = null,
+        Guid actingTenantId = default);
     /// <summary>Discovers the caller's pending lifecycles with an opaque snapshot cursor.</summary>
-    Task<AZOAResult<NftLifecyclePage>> ListPendingAsync(Guid actor, string? cursor, int limit = 25, CancellationToken ct = default);
+    Task<AZOAResult<NftLifecyclePage>> ListPendingAsync(Guid actor, string? cursor, int limit = 25, CancellationToken ct = default,
+        Guid actingTenantId = default);
     /// <summary>Resolves an authenticated request key; absence does not prove a delayed admission cannot arrive.</summary>
     Task<AZOAResult<NftLifecycleView>> GetRequestAsync(Guid actor, string operation, string requestKey, Guid actingTenantId = default, CancellationToken ct = default);
     /// <summary>Atomically fences a never-admitted key or cancels its existing unsent lifecycle.</summary>
-    Task<AZOAResult<NftLifecycleView>> CancelRequestAsync(Guid actor, string operation, string requestKey, Guid actingTenantId = default, CancellationToken ct = default);
+    Task<AZOAResult<NftLifecycleView>> CancelRequestAsync(Guid actor, string operation, string requestKey, Guid actingTenantId = default, CancellationToken ct = default,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null);
     /// <summary>Requests return of the exact original confirmed transfer; its current holder must authorize.</summary>
     Task<AZOAResult<NftLifecycleView>> RefundAsync(Guid actor, string sourceLifecycleId, string requestKey,
         CancellationToken ct = default, Guid actingTenantId = default, NftFeeAuthorization? feeAuthorization = null,

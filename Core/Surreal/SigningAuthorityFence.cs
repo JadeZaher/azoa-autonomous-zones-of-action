@@ -169,7 +169,8 @@ public static class SigningAuthorityFence
         return true;
     }
 
-    private static SurrealQuery Sql(string template, string prefix) => SurrealQuery.Of(template.Replace("$_sa_", "$_" + prefix + "_", StringComparison.Ordinal));
+    // Rewritten names must equal the WithParam keys (prefix + "_x"); see Core/Surreal/AGENTS.md §Signing authority transaction fences.
+    private static SurrealQuery Sql(string template, string prefix) => SurrealQuery.Of(template.Replace("$_sa_", "$" + prefix + "_", StringComparison.Ordinal));
     private static void ValidatePrefix(string prefix)
     {
         if (string.IsNullOrWhiteSpace(prefix) || prefix.Length > 48 || prefix.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_'))
