@@ -44,8 +44,9 @@ public sealed class GovernanceCommandValidationTests
             case "null-description": config.Description = null!; break;
         }
         var executor = new Mock<ISurrealExecutor>(MockBehavior.Strict);
-        executor.Setup(value => value.QueryAsync<GovernanceCommandReceipt>(It.IsAny<SurrealQuery>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<GovernanceCommandReceipt>());
+        // Receipt replay is a keyed single-record read; Strict refuses every write, so "without writing" holds.
+        executor.Setup(value => value.QuerySingleAsync<GovernanceCommandReceipt>(It.IsAny<SurrealQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((GovernanceCommandReceipt?)null);
         var users = new Mock<IUserStore>();
         users.Setup(value => value.GetByIdAsync(actor, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<IUser>.Success(new AZOA.WebAPI.Models.User { Id = actor, IsActive = true }));
@@ -57,6 +58,7 @@ public sealed class GovernanceCommandValidationTests
         var context = Context(actor, actor, config);
         var result = await new GovernanceProposalCreateNodeHandler(service).HandleAsync(context);
         result.IsError.Should().BeTrue();
+        result.Message.Should().MatchRegex("^(Provide|Declare) ", "the refusal must come from validation, not from authority or storage");
     }
 
     [Fact]

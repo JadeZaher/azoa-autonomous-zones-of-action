@@ -234,15 +234,17 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
         var mutation = _store.MutateAsync(tenant, command, authority);
         var withdrawal = _store.WithdrawAsync(tenant, command, authority);
         await Task.WhenAll(mutation, withdrawal);
-        withdrawal.Result.IsError.Should().BeFalse(withdrawal.Result.Message);
+        var mutated = await mutation;
+        var withdrawn = await withdrawal;
+        withdrawn.IsError.Should().BeFalse(withdrawn.Message);
         var row = (await _store.GetByTenantAsync(tenant)).Result;
-        if (withdrawal.Result.Result!.AlreadyApplied)
+        if (withdrawn.Result!.AlreadyApplied)
         {
-            mutation.Result.IsError.Should().BeFalse(); row.Should().NotBeNull();
+            mutated.IsError.Should().BeFalse(); row.Should().NotBeNull();
         }
         else
         {
-            mutation.Result.IsError.Should().BeTrue(); row.Should().BeNull();
+            mutated.IsError.Should().BeTrue(); row.Should().BeNull();
         }
         var audits = await _executor.QueryAsync<AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistrationAudit>(
             SurrealQuery<AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistrationAudit>.From());

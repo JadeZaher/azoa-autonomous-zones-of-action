@@ -26,6 +26,7 @@ public sealed partial class SurrealGovernanceStore
             SurrealQuery.Of("""
                 IF $_finalizing = NONE { THROW 'GOVERNANCE_CONCURRENT_OR_UNAUTHORIZED' }
                 """),
+            // lock: every vote CAS-bumps the proposal row this batch bumps above, so no ballot commits between this read and COMMIT.
             SurrealQuery.Of("""
                 LET $_decisions = (SELECT decision_option, governance_decision_hash, governance_eligibility_json, decided_at
                 FROM person_operation_claim WHERE governance_proposal_id = $_proposal_id AND governance_definition_hash = $_definition

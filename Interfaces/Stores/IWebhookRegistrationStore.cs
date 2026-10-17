@@ -20,7 +20,4 @@ public interface IWebhookRegistrationStore
 
     /// <summary>Read protected registration metadata without decrypting or returning plaintext secrets.</summary>
     Task<AZOAResult<WebhookRegistration>> GetByTenantAsync(Guid tenantId, CancellationToken ct = default);
-
-    /// <summary>Rotate a secret against the currently read version; management routes require a separate audited expected-version command.</summary>
-    Task<AZOAResult<bool>> RotateSecretAsync(Guid tenantId, string newSecret, DateTime now, CancellationToken ct = default);
 }

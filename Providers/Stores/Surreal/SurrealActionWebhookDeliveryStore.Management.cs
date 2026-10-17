@@ -80,6 +80,7 @@ public sealed partial class SurrealActionWebhookDeliveryStore
                 && current.DestinationRevision == row.DestinationRevision && current.Url == row.DestinationUrl)
             .Set(current => current.Version, registration.Version).Build(), "retry_registration", "_retry_registration"));
         statements.Add(SurrealQuery.Of("IF $_retry_registration = NONE OR $_retry_registration = [] { THROW 'WEBHOOK_DELIVERY_CHANGED' }"));
+        // lock: the event row read here is CAS-updated below in this batch, so a concurrent claim or finish conflicts.
         statements.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<Event>.Key(id), "retry_read", "_retry_before"));
         statements.Add(SurrealQuery.Of("""
             IF $_retry_before = NONE OR ($_retry_before.lease_expires_at != NONE AND $_retry_before.lease_expires_at > time::now())
