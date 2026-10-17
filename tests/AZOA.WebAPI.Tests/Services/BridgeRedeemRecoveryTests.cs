@@ -18,6 +18,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 /// <summary>
@@ -515,7 +517,8 @@ public class BridgeRedeemRecoveryTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true, StaleClaimTakeoverSeconds = _staleSeconds }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         /// <summary>Seeds a VAAReady bridge and returns its ID.</summary>
         public string SeedVaaReady(string vaaBytes, int emitterChainId, string emitterAddress, long sequence)

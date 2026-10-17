@@ -280,6 +280,8 @@ public static class ActionNodeOutputSchema
         ("IsConfirmed", OutputFieldType.Boolean),
         ("TxHash", OutputFieldType.String),
         ("OperationId", OutputFieldType.String),         // Guid → JSON string
+        ("LifecycleId", OutputFieldType.String),         // durable NFT lifecycle id
+        ("LifecycleState", OutputFieldType.String),
         ("Replayed", OutputFieldType.Boolean));
 
     /// <summary>

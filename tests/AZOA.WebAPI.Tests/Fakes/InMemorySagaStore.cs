@@ -520,6 +520,18 @@ public sealed class InMemorySagaStore : ISagaStore
         return moved;
     }
 
+    /// <summary>Makes every TIMER park (no gate) due now, as wall-clock time eventually would; signal parks stay parked.</summary>
+    public int ElapseTimerParks()
+    {
+        var now = DateTime.UtcNow;
+        var moved = 0;
+        foreach (var rec in _steps.Values.ToList())
+            if (rec.Status == StepStatus.Parked && rec.GateId is null
+                && MutateIf(rec.Id, r => r.Status == StepStatus.Parked && r.GateId is null, r => r.NextRunAt = now) is not null)
+                moved++;
+        return moved;
+    }
+
     // ── Internals ─────────────────────────────────────────────────────────────
 
     /// <summary>

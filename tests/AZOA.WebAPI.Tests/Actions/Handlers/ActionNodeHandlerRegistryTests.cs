@@ -7,8 +7,10 @@ using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores;
+using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Tests.Fakes;
+using AZOA.WebAPI.Tests.TestSupport;
 using Xunit;
 using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
@@ -24,13 +26,15 @@ public class ActionNodeHandlerRegistryTests
     }
 
     [Fact]
-    public void Registry_ResolvesRegisteredHandlerByType()
+    public void Registry_ResolvesRegisteredHandlerByType_AndWrapsReadNodesForRecovery()
     {
-        var holonGet = Handler(ActionNodeType.HolonGet);
-        var registry = new ActionNodeHandlerRegistry(new[] { holonGet, Handler(ActionNodeType.NftMint) });
+        var nftMint = Handler(ActionNodeType.NftMint);
+        var registry = new ActionNodeHandlerRegistry(new[] { Handler(ActionNodeType.HolonGet), nftMint });
 
-        registry.TryGet(ActionNodeType.HolonGet, out var resolved).Should().BeTrue();
-        resolved.Should().BeSameAs(holonGet);
+        registry.TryGet(ActionNodeType.NftMint, out var resolved).Should().BeTrue();
+        resolved.Should().BeSameAs(nftMint);
+        registry.TryGet(ActionNodeType.HolonGet, out var read).Should().BeTrue();
+        read.Should().BeOfType<ActionReadHandler>("read nodes run behind the read-recovery decorator");
     }
 
     [Fact]
@@ -56,14 +60,10 @@ public class ActionNodeHandlerRegistryTests
     }
 
     [Fact]
-    public async Task ActionManager_UnknownNodeType_RegistryMiss_FailsExecutionRow()
+    public async Task Durable_step_with_no_registered_handler_fails_the_execution_row()
     {
-        // Registry with no handler for the node's type => TryGet false =>
-        // ActionManager records a Failed ActionNodeExecution with the
-        // "Unsupported node type" error message (preserves the former
-        // default-case Fail behaviour, now keyed by (runId, nodeId)).
-        var emptyRegistry = new ActionNodeHandlerRegistry(Array.Empty<IActionNodeHandler>());
-
+        // A registry miss is refused at the durable step: the node's execution row records
+        // the "Unsupported node type" failure instead of dispatching anything.
         var node = new ActionNode
         {
             Id = Guid.NewGuid(),
@@ -72,40 +72,29 @@ public class ActionNodeHandlerRegistryTests
             IsEntry = true,
             IsTerminal = true
         };
-        var actionId = Guid.NewGuid();
         var action = new ActionEntity
         {
-            Id = actionId,
+            Id = Guid.NewGuid(),
             UserId = Guid.NewGuid(),
+            Status = ActionStatus.Active,
+            PublishedVersionHash = "hash-v1",
             Nodes = new List<ActionNode> { node }
         };
-
-        var store = new Mock<IActionStore>();
-        store.Setup(s => s.GetActionAsync(actionId, It.IsAny<CancellationToken>()))
-             .ReturnsAsync(new AZOAResult<ActionEntity> { Result = action });
-        store.Setup(s => s.UpsertActionAsync(It.IsAny<ActionEntity>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync((ActionEntity q, CancellationToken _) => new AZOAResult<ActionEntity> { Result = q });
-
-        var validator = new Mock<IActionDagValidator>();
+        var store = new InMemoryActionStore();
+        await store.UpsertActionAsync(action);
         var execStore = new InMemoryActionNodeExecutionStore();
-        var manager = new ActionManager(
-            store.Object,
-            new InMemoryActionRunStore(),
-            execStore,
-            validator.Object,
-            new Mock<IActionDagExecutabilityValidator>().Object,
-            emptyRegistry,
-            new InMemorySagaStore(),
-            WalletManagerMocks.Empty(),
-            BlockchainProviderFactoryFakes.Returning(),
-            BindingResolverFakes.PassThrough());
+        var harness = new DurableActionExecutionHarness(
+            store, new InMemoryActionRunStore(), execStore,
+            new ActionDagValidator(), new ActionDagExecutabilityValidator(),
+            new ActionNodeHandlerRegistry(Array.Empty<IActionNodeHandler>()),
+            new InMemorySagaStore(), WalletManagerMocks.Empty(),
+            BlockchainProviderFactoryFakes.Returning(), BindingResolverFakes.PassThrough());
 
-        var result = await manager.ExecuteNodeAsync(actionId, node.Id, action.UserId);
+        var run = await harness.ExecuteAsync(action.Id, action.UserId);
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Be($"Unsupported node type: {ActionNodeType.BlockchainExecute}");
-        result.Result.Should().NotBeNull();
-        result.Result!.State.Should().Be(ActionNodeState.Failed);
-        result.Result.Error.Should().Be($"Unsupported node type: {ActionNodeType.BlockchainExecute}");
+        run.IsError.Should().BeFalse(run.Message);
+        var execution = (await execStore.GetByRunAndNodeAsync(run.Result!.Id, node.Id)).Result!;
+        execution.State.Should().Be(ActionNodeState.Failed);
+        execution.Error.Should().Be($"Unsupported node type: {ActionNodeType.BlockchainExecute}");
     }
 }

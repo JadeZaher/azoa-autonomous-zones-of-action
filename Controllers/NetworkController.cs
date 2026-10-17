@@ -94,7 +94,7 @@ public class NetworkController : ControllerBase
         // ApiToken, ApiKey, PrivateKey are intentionally never included.
         return new ChainEndpointConfig
         {
-            NodeUrl = PublicEndpoint(net.NodeUrl),
+            NodeUrl = PublicEndpoint(net.NodeUrl) ?? string.Empty,
             IndexerUrl = PublicEndpoint(net.IndexerUrl),
             IsEnabled = net.IsEnabled,
             ExplorerUrl = chain.Metadata.TryGetValue("ExplorerUrl", out var explorer) ? explorer : null,

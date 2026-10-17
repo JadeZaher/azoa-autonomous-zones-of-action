@@ -110,6 +110,7 @@ public sealed class ReconcileBeforeRetryWiringTests
             services.AddSingleton<IWalletManager>(WalletManager);
             services.AddSingleton(ProviderFactory);
             services.AddSingleton(BindingResolverFakes.PassThrough());
+            services.AddSingleton(DurableActionExecutionHarness.OwnerSigningAuthority());
             services.AddScoped<IStepHandler<ActionStepPayload>, ActionNodeStepHandler>();
             services.AddScoped<IStepHandler<ActionCompensatePayload>, ActionCompensateStepHandler>();
 
@@ -183,7 +184,7 @@ public sealed class ReconcileBeforeRetryWiringTests
         var grant = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -213,7 +214,7 @@ public sealed class ReconcileBeforeRetryWiringTests
         var action = BuildSingleChainNodeAction(h);
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -240,7 +241,7 @@ public sealed class ReconcileBeforeRetryWiringTests
         var grant = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         var runId = start.Result!.Id;
 
         var (processor, scope) = h.NewProcessor();
@@ -271,7 +272,7 @@ public sealed class ReconcileBeforeRetryWiringTests
         var grant = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         var runId = start.Result!.Id;
 
         // Phase 1 — park.
@@ -289,6 +290,8 @@ public sealed class ReconcileBeforeRetryWiringTests
         sweep.Result!.Should().ContainSingle()
             .Which.ReconciledConfirmed.Should().Be(1, "the parked node's tx confirmed");
 
+        // The node parked on a 20 s re-observation timer; let it elapse so the step replays the reconciled row.
+        h.SagaStore.ElapseTimerParks();
         var (p2, s2) = h.NewProcessor();
         await h.PumpAsync(p2);
         s2.Dispose();
@@ -307,7 +310,7 @@ public sealed class ReconcileBeforeRetryWiringTests
         var action = BuildSingleChainNodeAction(h);
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         var runId = start.Result!.Id;
 
         var reconcile = await manager.ReconcileRunAsync(runId, UserId);

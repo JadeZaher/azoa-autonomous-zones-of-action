@@ -33,7 +33,7 @@ public class WalletAuthTokenParityTests
 {
     private const string SigningKey = "wallet-parity-test-signing-key-at-least-32-chars";
     private const string Password = "C0rrectHorse1!";
-    private const string Addr = "ALGOADDRESSXYZ";
+    private static readonly string Addr = new Algorand.Address(new byte[32]).ToString();
     private const string Chain = "algorand";
 
     private readonly Mock<IWalletAuthChallengeStore> _challenges = new();
@@ -63,7 +63,8 @@ public class WalletAuthTokenParityTests
     private void GivenLiveChallengeAndValidSignature()
     {
         const string nonce = "nonce-parity-1";
-        var msg = $"AZOA-AUTH-v1\nissuer:AZOA.WebAPI\naudience:AZOA.Client\nchain:{Chain}\naddress:{Addr}\nnonce:{nonce}\nexpiry:2099-01-01T00:00:00Z";
+        var expires = DateTime.UtcNow.AddMinutes(4);
+        var msg = $"AZOA-AUTH-v1\nissuer:AZOA.WebAPI\naudience:AZOA.Client\nchain:{Chain}\naddress:{Addr}\nnonce:{nonce}\nexpires:{expires:O}";
         _challenges
             .Setup(c => c.GetLatestLiveByAddressAsync(Addr, Chain, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthChallenge>
@@ -74,7 +75,7 @@ public class WalletAuthTokenParityTests
                     ChainType = Chain,
                     Nonce = nonce,
                     DomainMessage = msg,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(4),
+                    ExpiresAt = expires,
                 },
             });
         _challenges
