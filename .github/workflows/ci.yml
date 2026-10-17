@@ -68,7 +68,7 @@ jobs:
         with:
           node-version: "20.x"
 
-      - name: Ethereum contracts: install, build, unit tests
+      - name: "Ethereum contracts: install, build, unit tests"
         working-directory: contracts/ethereum
         run: |
           npm ci
