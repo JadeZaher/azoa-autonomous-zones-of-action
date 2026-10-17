@@ -97,8 +97,9 @@ public sealed class ClientSignedOperationService(
             || (observation.Verdict == ClientSigningVerdicts.NonceConsumed && !Attributable(operation, observation)))
         {
             // An unexpiring signature (Ethereum) or an unattributed nonce: only an operator, or the signer submitting, settles it.
-            var park = operation.Status == OperationStatus.AwaitingSignature && stale
-                && (plan.ValidThroughHeight is null || observation.Verdict == ClientSigningVerdicts.NonceConsumed);
+            var unattributed = observation.Verdict == ClientSigningVerdicts.NonceConsumed;
+            var park = operation.Status == OperationStatus.AwaitingSignature && stale && (plan.ValidThroughHeight is null || unattributed)
+                || operation.Status == OperationStatus.PendingConfirmation && unattributed;
             if (!park) return ClientSigningReconcileOutcome.Unchanged;
             var parked = await transitions.TryTransitionAsync(operation.Id, operation.Status, ClientSigningStatus.NeedsOperator,
                 With(operation, (ClientSigningParameters.Error, observation.Detail ?? "The signature has not reached the chain and never expires.")),
@@ -140,10 +141,14 @@ public sealed class ClientSignedOperationService(
             return Refused($"The operation is {operation.Status}; there is nothing to resolve.", AzoaErrorCodes.Conflict);
         if (Module(plan) is not { } module)
             return Refused("Client signing is unavailable on this operation's network.", AzoaErrorCodes.DependencyUnavailable);
-        // Submitted rows are always judged by their own signed bytes; a supplied id only attributes an unsubmitted plan.
-        var transactionId = operation.Parameters.GetValueOrDefault(ClientSigningParameters.TransactionHash)
-            ?? (string.IsNullOrWhiteSpace(resolution.TransactionId) ? null : resolution.TransactionId.Trim());
-        var observation = await ObserveAsync(module, plan, transactionId, ct);
+        // A submitted row is judged by its own bytes first; an operator-supplied id can only attribute a consumed nonce to a
+        // different transaction from the same signer at the same nonce (re-proven by the module).
+        var own = operation.Parameters.GetValueOrDefault(ClientSigningParameters.TransactionHash);
+        var supplied = string.IsNullOrWhiteSpace(resolution.TransactionId) ? null : resolution.TransactionId.Trim();
+        var observation = await ObserveAsync(module, plan, own ?? supplied, ct);
+        if (observation is { Verdict: ClientSigningVerdicts.NonceConsumed, TransactionId: null } && own is not null && supplied is not null
+            && !string.Equals(own, supplied, StringComparison.OrdinalIgnoreCase))
+            observation = await ObserveAsync(module, plan, supplied, ct);
         if (observation is null || observation.Verdict == ClientSigningVerdicts.Pending
             || (observation.Verdict == ClientSigningVerdicts.NonceConsumed && !Attributable(operation, observation)))
             return Refused("Chain evidence does not settle this operation yet"
@@ -195,10 +200,12 @@ public sealed class ClientSignedOperationService(
         return confirmed ? ClientSigningReconcileOutcome.Completed : ClientSigningReconcileOutcome.Failed;
     }
 
-    /// <summary>A consumed nonce settles the row only when the consumer is a found, different transaction, or when the row's own
-    /// submitted bytes are provably not on chain.</summary>
+    /// <summary>
+    /// A consumed nonce settles the row only when the consumer is a found, different transaction. An unattributed consumer might be
+    /// the plan's own transaction (a node that cannot look it up), and failing it then would invite a double payment.
+    /// </summary>
     private static bool Attributable(IBlockchainOperation operation, ClientSigningObservation observation)
-        => observation.TransactionId is not null || operation.Parameters.ContainsKey(ClientSigningParameters.SignedTransaction);
+        => observation.TransactionId is not null;
 
     private async Task<ClientSigningObservation?> ObserveAsync(IClientSignedTransferModule module, ClientSigningPlan plan, string? transactionId,
         CancellationToken ct)

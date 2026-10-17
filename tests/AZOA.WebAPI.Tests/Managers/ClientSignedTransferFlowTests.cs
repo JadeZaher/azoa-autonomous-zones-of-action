@@ -172,7 +172,7 @@ public sealed class ClientSignedTransferFlowTests
     }
 
     [Fact]
-    public async Task Ethereum_submitted_bytes_whose_nonce_another_transaction_finalized_close_as_superseded()
+    public async Task Ethereum_submitted_bytes_whose_nonce_another_transaction_finalized_close_as_superseded_only_once_attributed()
     {
         var key = EthECKey.GenerateKey();
         var sender = key.GetPublicAddress();
@@ -187,10 +187,14 @@ public sealed class ClientSignedTransferFlowTests
         var submitted = await service.SubmitAsync(operationId, _owner, null, signed, default);
         submitted.Result!.Status.Should().Be(OperationStatus.PendingConfirmation, "the signed bytes are persisted even when the node refuses them");
         (await service.ReconcileAsync(_log.Row(operationId), DateTime.UtcNow, default)).Should().Be(ClientSigningReconcileOutcome.Unchanged);
+        var foreign = chain.MineForeign(nonce: 7);
         chain.FinalizedNonce = 8;
 
-        (await service.ReconcileAsync(_log.Row(operationId), DateTime.UtcNow, default)).Should().Be(ClientSigningReconcileOutcome.Failed);
+        (await service.ReconcileAsync(_log.Row(operationId), DateTime.UtcNow, default)).Should().Be(ClientSigningReconcileOutcome.Parked,
+            "an unattributed consumer might be the plan itself; failing it could invite a double payment");
+        var resolved = await service.ResolveAsync(operationId, Guid.NewGuid(), new("explorer shows the replacement", foreign), default);
 
+        resolved.IsError.Should().BeFalse(resolved.Message);
         _log.Row(operationId).Parameters[ClientSigningParameters.Outcome].Should().Be("Superseded");
     }
 

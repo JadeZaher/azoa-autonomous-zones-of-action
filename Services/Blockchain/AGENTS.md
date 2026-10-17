@@ -21,7 +21,8 @@ sign, with no plan, fails closed (nothing to verify a later signature against). 
   signatures of one Solana message are two transactions).
 - **Reconcile** (sweep + receipt-triggered): `ReconciliationService` delegates any row carrying a plan. Terminal outcomes
   come only from chain proof: `Confirmed` → `Completed`; `FailedOnChain`, `Expired` (validity window passed and the chain
-  proves the plan never landed), or `NonceConsumed` by an attributed different transaction → `Failed` with
+  proves the plan never landed), or `NonceConsumed` by an attributed different transaction (submitted or not; an
+  unattributed consumer parks as `NeedsOperator`, since it might be the plan itself) → `Failed` with
   `ClientSigningOutcome` = `FailedOnChain|Abandoned|Superseded`. Every terminal state settles both the derived key and
   any parent `IdempotencyKey`, so a retry is never answered "still in progress" forever.
 - **Stuck rows** (`Reconciliation:ClientSignatureTtlSeconds`, default 1800): the chain is re-observed first, because the
