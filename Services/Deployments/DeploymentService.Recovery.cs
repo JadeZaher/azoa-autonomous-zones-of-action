@@ -137,8 +137,6 @@ public sealed partial class DeploymentService
             if (access.IsError) return Fail<DeploymentReceipt>(access.Message);
             var allowed = await governance.EnsureChainAllowedAsync(intent.ChainType, "native-deployment", ct);
             if (!allowed.IsAllowed) return Fail<DeploymentReceipt>(allowed.ConsumerMessage);
-            var signers = await BindNativeAuthorityAsync(intent, actor, tenant, row.ActionRunId, credential, ct);
-            if (signers.IsError) return Fail<DeploymentReceipt>(signers.Message);
             var history = Read<List<NativeStageHistory>>(row.HistoryJson);
             var next = await NextNativeStageAsync(module, intent, history, row, ct);
             if (next.IsError || next.Result is null) return Fail<DeploymentReceipt>(next.Message);
@@ -164,6 +162,8 @@ public sealed partial class DeploymentService
                 row = await store.UpdateAsync(row, row.Version, ct) ?? await RequireCurrentAsync(row.Id, ct);
                 return AZOAResult<DeploymentReceipt>.Success(View(row));
             }
+            var signers = await BindNativeAuthorityAsync(intent, actor, tenant, row.ActionRunId, credential, ct);
+            if (signers.IsError) return Fail<DeploymentReceipt>(signers.Message);
             row.Stage = next.Result.Stage;
             row.State = "Preparing";
             var preparing = await store.UpdateAsync(row, row.Version, ct, requireActionAuthority: true, signers.Result);

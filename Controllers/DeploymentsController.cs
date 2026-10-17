@@ -26,7 +26,7 @@ public sealed class DeploymentsController(IDeploymentService deployments,
 
     [HttpPost]
     [Authorize(Policy = "DappManage")]
-    [DelegatedChildCredential(AzoaScopes.DappManage)]
+    [DelegatedChildCredential(AzoaScopes.DappManage, AzoaScopes.ContractDeploySign, AzoaScopes.ContractCallSign, AzoaScopes.SolanaAccountSign)]
     [RequestSizeLimit(3 * 1024 * 1024)]
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.StartWithCredentialAsync(actor, User.GetActingTenantId(),
@@ -71,7 +71,7 @@ public sealed class DeploymentsController(IDeploymentService deployments,
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.CancelRequestAsync(request, actor, User.GetActingTenantId(), ct));
 
     [HttpPost("{id}/continue")]
-    [DelegatedChildCredential(AzoaScopes.DappManage)]
+    [DelegatedChildCredential(AzoaScopes.DappManage, AzoaScopes.ContractDeploySign, AzoaScopes.ContractCallSign, AzoaScopes.SolanaAccountSign)]
     [Authorize(Policy = "DappManage")]
     public async Task<IActionResult> Continue(string id, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.ContinueAsync(id, actor, User.GetActingTenantId(), ct, await CredentialAsync(ct)));

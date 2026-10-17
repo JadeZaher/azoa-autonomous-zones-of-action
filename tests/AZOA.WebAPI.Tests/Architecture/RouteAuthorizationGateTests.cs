@@ -59,18 +59,26 @@ public sealed class RouteAuthorizationGateTests
     public void Child_credential_allowlist_equals_the_inventory_allowlist()
     {
         var declared = DelegatedChildCredentialCatalog.Endpoints()
-            .Select(endpoint => $"{Key(endpoint.Controller.Name, endpoint.Action.Name)} -> {endpoint.Policy.Scope}")
+            .Select(endpoint => Describe(Key(endpoint.Controller.Name, endpoint.Action.Name), endpoint.Policy.Scope, endpoint.Policy.SigningScopes))
             .Order(StringComparer.Ordinal).ToArray();
         var inventoried = Rows().Where(row => !string.IsNullOrWhiteSpace(row.Text("childCredentialScope")))
-            .Select(row => $"{Key(row.Text("controller"), row.Text("action"))} -> {row.Text("childCredentialScope")}")
+            .Select(row => Describe(Key(row.Text("controller"), row.Text("action")), row.Text("childCredentialScope")!, SigningScopes(row)))
             .Order(StringComparer.Ordinal).ToArray();
 
         declared.Should().Equal(inventoried,
-            "an endpoint accepts a tenant child JWT only when its [DelegatedChildCredential] scope is recorded as childCredentialScope in its lane inventory");
-        DelegatedChildCredentialCatalog.Scopes.Should().BeEquivalentTo(
-            inventoried.Select(entry => entry[(entry.IndexOf(" -> ", StringComparison.Ordinal) + 4)..]).Distinct(),
-            "the delegable scope vocabulary is exactly the allowlisted endpoints' scopes");
+            "an endpoint accepts a tenant child JWT only when its [DelegatedChildCredential] scopes are recorded in its lane inventory");
+        DelegatedChildCredentialCatalog.Scopes.Should().BeEquivalentTo(Rows()
+            .Where(row => !string.IsNullOrWhiteSpace(row.Text("childCredentialScope")))
+            .SelectMany(row => SigningScopes(row).Prepend(row.Text("childCredentialScope")!)).Distinct(),
+            "the delegable scope vocabulary is exactly what the inventoried allowlist declares");
     }
+
+    private static string Describe(string key, string scope, IEnumerable<string> signing)
+        => $"{key} -> {scope} [{string.Join(",", signing.Order(StringComparer.Ordinal))}]";
+
+    private static IEnumerable<string> SigningScopes(GateInventory.Row row)
+        => row.Value.TryGetProperty("childSigningScopes", out var scopes) && scopes.ValueKind == System.Text.Json.JsonValueKind.Array
+            ? scopes.EnumerateArray().Select(scope => scope.GetString()!).ToArray() : [];
 
     private static IReadOnlyList<GateInventory.Row> Rows() => GateInventory.Load("RouteAuthorization");
 

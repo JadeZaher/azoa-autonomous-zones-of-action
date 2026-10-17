@@ -4,11 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AZOA.WebAPI.Services.Consent;
 
-/// <summary>The delegable child-credential scope vocabulary: exactly the scopes some allowlisted endpoint accepts.</summary>
+/// <summary>The delegable child-credential scope vocabulary: exactly the endpoint and signing scopes allowlisted endpoints declare.</summary>
 public static class DelegatedChildCredentialCatalog
 {
     private static readonly Lazy<IReadOnlySet<string>> AllowlistedScopes = new(() => Endpoints()
-        .Select(endpoint => endpoint.Policy.Scope).ToHashSet(StringComparer.Ordinal));
+        .SelectMany(endpoint => endpoint.Policy.SigningScopes.Prepend(endpoint.Policy.Scope)).ToHashSet(StringComparer.Ordinal));
 
     /// <summary>Scopes a tenant may delegate onto a child credential.</summary>
     public static IReadOnlySet<string> Scopes => AllowlistedScopes.Value;

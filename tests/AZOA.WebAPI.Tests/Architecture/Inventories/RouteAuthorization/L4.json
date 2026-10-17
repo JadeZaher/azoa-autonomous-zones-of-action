@@ -525,7 +525,7 @@
     "action": "Resolve",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "RecentNodeOperatorSession policy; re-observes first, closes only an unresolvable observation with reason + AcknowledgeNoFurtherEffect; version-fenced CAS; operator id logged and stored in EvidenceJson"
   },
   {
     "route": "GET /api/deployments/artifacts/{artifactId}",
@@ -542,7 +542,7 @@
     "action": "Cancel",
     "class": "non-value",
     "scope": null,
-    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "enforcement": "DappManage policy; owned row (actor + acting tenant); no-effect CAS only before submission authority",
     "childCredentialScope": "dapp:manage"
   },
   {
@@ -560,7 +560,12 @@
     "class": "value-moving",
     "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
     "enforcement": "DappManage policy; caller credential captured and every native signer bound via SigningAdmissionAuthorityFactory.BindDirectAsync(..., [ForNativeIntent(kind)]) and locked by SigningAuthorityFence in the Preparing/Submitted CAS (DeploymentService.BindNativeAuthorityAsync); actor + acting tenant from claims",
-    "childCredentialScope": "dapp:manage"
+    "childCredentialScope": "dapp:manage",
+    "childSigningScopes": [
+      "contract:deploy:sign",
+      "contract:call:sign",
+      "solana:account:sign"
+    ]
   },
   {
     "route": "POST /api/deployments/bundles/{bundleid}/generate",
@@ -568,7 +573,7 @@
     "action": "Generate",
     "class": "non-value",
     "scope": null,
-    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "enforcement": "DappManage policy; bundle owned by actor; artifact stamped with actor + acting tenant; no signing",
     "childCredentialScope": "dapp:manage"
   },
   {
@@ -636,7 +641,7 @@
     "action": "Quote",
     "class": "non-value",
     "scope": null,
-    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "enforcement": "DappManage policy; artifact owned by actor + acting tenant; ValidAuthority(kind scope); server-issued quote, no signing",
     "childCredentialScope": "dapp:manage"
   },
   {
@@ -662,7 +667,12 @@
     "class": "value-moving",
     "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
     "enforcement": "DappManage policy; caller credential captured and every native signer bound via SigningAdmissionAuthorityFactory.BindDirectAsync(..., [ForNativeIntent(kind)]) and locked by SigningAuthorityFence in the Preparing/Submitted CAS (DeploymentService.BindNativeAuthorityAsync); actor + acting tenant from claims",
-    "childCredentialScope": "dapp:manage"
+    "childCredentialScope": "dapp:manage",
+    "childSigningScopes": [
+      "contract:deploy:sign",
+      "contract:call:sign",
+      "solana:account:sign"
+    ]
   },
   {
     "route": "POST /api/deployments/{id}/recovery/start",
@@ -838,7 +848,7 @@
     "action": "IssueChildCredential",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy (tenant:provision API key, never a child or acting-tenant principal); node switch Tenant:DelegatedChildCredentials:Enabled; scopes = tenant key ∩ live grant ∩ request ∩ DelegatedChildCredentialCatalog; tenant:provision never delegated; no-store"
   },
   {
     "route": "POST /api/tenant/users",
