@@ -17,9 +17,13 @@ public class ActionGraphBundleController : ControllerBase
 {
     private readonly IActionGraphBundleManager _manager;
 
-    public ActionGraphBundleController(IActionGraphBundleManager manager)
+    private readonly AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? _signingAuthority;
+
+    public ActionGraphBundleController(IActionGraphBundleManager manager,
+        AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null)
     {
         _manager = manager;
+        _signingAuthority = signingAuthority;
     }
 
     [HttpGet("{id:guid}")]
@@ -95,7 +99,10 @@ public class ActionGraphBundleController : ControllerBase
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
 
-        var result = await _manager.DeployAsync(id, request, Request.Headers["Idempotency-Key"].ToString(), userId.Value, ActingTenantId(), ct);
+        // Audit-1 H1: native signers bind to the caller's captured credential; none ⇒ native signing fails closed.
+        var credential = _signingAuthority is null ? null : await _signingAuthority.CaptureCredentialAsync(User, ct);
+        var result = await _manager.DeployAsync(id, request, Request.Headers["Idempotency-Key"].ToString(), userId.Value, ActingTenantId(), ct,
+            credential is { IsError: false } ? credential.Result : null);
         if (result.IsError) return BadRequest(result);
         return result.Result?.State is "Confirmed" or "Failed" or "Cancelled" ? Ok(result) : StatusCode(202, result);
     }

@@ -364,7 +364,8 @@ public sealed class DappCompositionManager : IDappCompositionManager
     }
 
     public async Task<AZOAResult<DeploymentReceipt>> DeployAsync(
-        Guid seriesId, Guid userId, DeploymentStartRequest request, string requestKey, Guid? actingTenantId = null, CancellationToken ct = default)
+        Guid seriesId, Guid userId, DeploymentStartRequest request, string requestKey, Guid? actingTenantId = null, CancellationToken ct = default,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null)
     {
         var seriesLoad = await GetAsync(seriesId, userId, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null) return Fail<DeploymentReceipt>(seriesLoad.Message);
@@ -376,7 +377,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (bundleId is null)
             return Fail<DeploymentReceipt>("Series has no associated ActionGraphBundle; call Generate first.");
 
-        var deployed = await _bundleManager.DeployAsync(bundleId.Value, request, requestKey, userId, actingTenantId, ct);
+        var deployed = await _bundleManager.DeployAsync(bundleId.Value, request, requestKey, userId, actingTenantId, ct, credential);
         if (deployed.IsError || deployed.Result is null) return Fail<DeploymentReceipt>(deployed.Message);
 
         series.DeploymentOperationId = deployed.Result.OperationId;

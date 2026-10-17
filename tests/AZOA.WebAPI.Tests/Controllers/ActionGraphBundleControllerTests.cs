@@ -159,7 +159,7 @@ public class ActionGraphBundleControllerTests
     public async Task Deploy_Pending_ReturnsAccepted()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeployAsync(id, It.IsAny<DeploymentStartRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _manager.Setup(m => m.DeployAsync(id, It.IsAny<DeploymentStartRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
                 .ReturnsAsync(AZOAResult<DeploymentReceipt>.Success(new("operation", "artifact", "hash", new("NativeContract", "Solana", "Devnet"), "Prepared", "CreateBuffer", null, null, [], null, 1)));
 
         var result = await _controller.Deploy(id, new("artifact", "hash", new("NativeContract", "Solana", "Devnet")), default);
@@ -171,7 +171,7 @@ public class ActionGraphBundleControllerTests
     public async Task Deploy_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeployAsync(id, It.IsAny<DeploymentStartRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _manager.Setup(m => m.DeployAsync(id, It.IsAny<DeploymentStartRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
                 .ReturnsAsync(AZOAResult<DeploymentReceipt>.Failure("Invalid artifact"));
 
         var result = await _controller.Deploy(id, new("artifact", "hash", new("NativeContract", "Solana", "Devnet")), default);

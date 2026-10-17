@@ -251,8 +251,11 @@ public class ActionGraphBundleManagerTests
 
         var request = Start();
         var receipt = new DeploymentReceipt("operation", "artifact", "hash", request.Target, "Prepared", "Execute", null, null, [], null, 1);
-        _deployments.Setup(service => service.StartAsync(owner, null, "key", request, default)).ReturnsAsync(AZOAResult<DeploymentReceipt>.Success(receipt));
-        var result = await _manager.DeployAsync(bundle.Id, request, "key", owner);
+        var credential = new AZOA.WebAPI.Models.Signing.SigningCredentialWitness(1, "Jwt", owner, null, null, DateTimeOffset.UtcNow.AddSeconds(-5),
+            DateTimeOffset.UtcNow.AddHours(1), null, null, [], true, TokenUse: AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin);
+        _deployments.Setup(service => service.StartWithCredentialAsync(owner, null, "key", request, credential, default))
+            .ReturnsAsync(AZOAResult<DeploymentReceipt>.Success(receipt));
+        var result = await _manager.DeployAsync(bundle.Id, request, "key", owner, credential: credential);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().Be(receipt);

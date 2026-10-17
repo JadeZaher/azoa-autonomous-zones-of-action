@@ -133,7 +133,8 @@ may name only the runner's OWN holons, never a public one owned by someone else)
 - Internal cycle-detection (`HolonManager.EnsureNotDescendantAsync`) uses an
   UNFILTERED subtree walk (`CollectDescendantsAsync`) — a cycle can run through a
   private cross-tenant descendant, so the guard must see the full tree.
-- Holon `Clone` cross-user template mechanic — already own-or-public gated.
+- Holon `Clone` cross-user template mechanic — own-or-public gated on the root, and the subtree copy
+  skips descendants the caller cannot read (round 4; see `Managers/AGENTS.md` §holon-owned-parent).
 
 ## §dapp-composition-rbac
 
@@ -151,6 +152,10 @@ surface into two buckets:
   (`/compose`, `/generate`, `/deploy`) use `Authorize(Policy = "DappManage")`.
   API-key policies require both the key scope and the owning user's current
   DApp role, so a stale key cannot keep DApp authority after a role downgrade.
+- The same `DappDevelop` gate covers the action authoring routes (publish/unpublish,
+  node/edge/dependency edits, instantiate) and ActionGraphBundle create/update/delete (round 4).
+- `/deploy` (series and bundle) captures the caller's signing credential and passes it down to
+  `IDeploymentService.StartWithCredentialAsync`; without one, native signing fails closed.
 
 ## user-dapp-rbac — role-assignment endpoint (`UserController`)
 

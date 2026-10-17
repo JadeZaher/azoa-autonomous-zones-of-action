@@ -145,7 +145,8 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
 
     /// <inheritdoc/>
     public async Task<AZOAResult<DeploymentReceipt>> DeployAsync(Guid id, DeploymentStartRequest request, string requestKey,
-        Guid userId, Guid? actingTenantId = null, CancellationToken ct = default)
+        Guid userId, Guid? actingTenantId = null, CancellationToken ct = default,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null)
     {
         var existing = await _bundleStore.GetByIdAsync(id, ct);
         if (existing.IsError || existing.Result is null || !IsOwnedBy(existing.Result, userId))
@@ -160,7 +161,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
                 return AZOAResult<DeploymentReceipt>.Failure("Selected artifact is not this bundle's generated revision; regenerate or select its exact artifact.");
         }
         catch (JsonException) { return AZOAResult<DeploymentReceipt>.Failure("Legacy deployment configuration must be regenerated."); }
-        return await _deployments.StartAsync(userId, actingTenantId, requestKey, request, ct);
+        return await _deployments.StartWithCredentialAsync(userId, actingTenantId, requestKey, request, credential, ct);
     }
 
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
