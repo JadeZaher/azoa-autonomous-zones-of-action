@@ -39,9 +39,11 @@ public static class HoldRegistration
         services.TryAddScoped<SurrealHoldCommandStore>();
         services.TryAddScoped<IHoldCommandStore>(provider => provider.GetRequiredService<SurrealHoldCommandStore>());
         services.TryAddScoped<IExchangeHoldSourceStore>(provider => provider.GetRequiredService<SurrealHoldCommandStore>());
+        services.TryAddScoped<IHoldLiabilityReadStore>(provider => provider.GetRequiredService<SurrealHoldCommandStore>());
         services.TryAddScoped<IHoldReleaseMandateStore, SurrealHoldReleaseMandateStore>();
         services.TryAddScoped<HoldRailExecutor>();
         services.TryAddScoped<HoldCommandService>();
+        services.TryAddScoped<HoldLiabilityReadService>();
         services.TryAddScoped<HoldReleaseMandateService>();
         services.TryAddScoped<ActionHoldOperationService>();
         services.AddScoped<IActionExternalOperationResolver>(provider => provider.GetRequiredService<ActionHoldOperationService>());
