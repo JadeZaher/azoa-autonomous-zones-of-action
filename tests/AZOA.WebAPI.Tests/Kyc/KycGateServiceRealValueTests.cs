@@ -4,7 +4,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 using AZOA.WebAPI.Tests.TestSupport;
@@ -15,7 +14,7 @@ using Moq;
 
 namespace AZOA.WebAPI.Tests.Kyc;
 
-public sealed class RealValueKycGateTests
+public sealed class KycGateServiceRealValueTests
 {
     private readonly Mock<IKycStore> _store = new();
     private readonly InMemoryKycScreeningStore _screening = new();
@@ -119,7 +118,7 @@ public sealed class RealValueKycGateTests
                 profile)));
         var settings = TrustedSettings("manual-v1", "development-manual", "manual");
         settings.ApprovalPolicy.AllowManualInDevelopment = true;
-        var gate = new RealValueKycGate(
+        var gate = new KycGateService(
             _store.Object,
             _screening,
             provider.Object,
@@ -150,7 +149,7 @@ public sealed class RealValueKycGateTests
                 profile)));
         var settings = TrustedSettings("manual-v1", "development-manual", "manual");
         settings.ApprovalPolicy.AllowManualInDevelopment = true;
-        var gate = new RealValueKycGate(
+        var gate = new KycGateService(
             _store.Object,
             _screening,
             provider.Object,
@@ -174,7 +173,7 @@ public sealed class RealValueKycGateTests
                 CurrentProfile())));
     }
 
-    private RealValueKycGate Gate() => new(
+    private KycGateService Gate() => new(
         _store.Object,
         _screening,
         _provider.Object,

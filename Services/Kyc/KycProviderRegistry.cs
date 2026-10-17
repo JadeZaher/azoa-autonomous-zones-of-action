@@ -8,6 +8,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Settings;
 using AZOA.WebAPI.Services.Admin;
+using AZOA.WebAPI.Services.HostedSessions;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Kyc;
@@ -499,9 +500,14 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
         string providerKey,
         IKycProviderService inner,
         IHostedSessionProvider hosted)
-        : ProfileBoundKycProviderService(providerKey, inner), IHostedSessionProvider
+        : ProfileBoundKycProviderService(providerKey, inner), IHostedSessionProvider, IDeletableHostedSessionProvider
     {
         public string FlowKind => hosted.FlowKind;
+
+        public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
+            => hosted is IDeletableHostedSessionProvider deletable
+                ? deletable.DeleteProviderSessionAsync(providerSessionId, ct)
+                : Task.FromResult(AZOAResult<bool>.Failure("This provider cannot delete vendor sessions."));
 
         public HostedSessionCapabilities GetHostedCapabilities()
         {

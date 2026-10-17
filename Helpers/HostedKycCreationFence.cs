@@ -22,8 +22,8 @@ public static class HostedKycCreationFence
             .WithParam("_send_user", session.SubjectUserId).WithParam("_send_tenant", session.TenantId ?? string.Empty).WithParam("_send_has_tenant", session.TenantId is not null),
         SurrealQuery.Of("IF array::len($_send_attempt) != 1 { THROW 'HOSTED_CREATION_AUTHORITY_CHANGED' }"),
         SurrealQuery.Of("""
-            LET $_send_selection = (SELECT * FROM type::record('tenant_kyc_provider_selection', $_send_tenant)
-                WHERE $_send_has_tenant)
+            LET $_send_selection = (SELECT * FROM (IF $_send_has_tenant
+                { [type::record('tenant_kyc_provider_selection', $_send_tenant)] } ELSE { [] }))
             """).WithParam("_send_tenant", session.TenantId ?? string.Empty).WithParam("_send_has_tenant", session.TenantId is not null),
         SurrealQuery.Of("""
             LET $_send_profile = (SELECT * FROM type::record('kyc_provider_profile', $_send_provider)

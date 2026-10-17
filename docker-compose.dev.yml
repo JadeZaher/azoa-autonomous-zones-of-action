@@ -134,15 +134,18 @@ services:
       NodeOperator__SessionMinutes: "${AZOA_NODE_OPERATOR_SESSION_MINUTES:-20}"
       AdminBootstrap__SeedEmail: "${AZOA_ADMIN_BOOTSTRAP_EMAIL:-}"
       AdminBootstrap__SeedSecret: "${AZOA_ADMIN_BOOTSTRAP_SECRET:-}"
-      # Manual verification is allowed only because this process runs in
-      # Development. External adapters remain unavailable until all matching
-      # host metadata/secrets are supplied; the dashboard never returns them.
+      # Identomat is the dev default (round-4 A-4: value gates never accept MANUAL). The
+      # adapter stays UNAVAILABLE until the secrets below are supplied. Return URLs are
+      # forwarded only when they are public HTTPS (a tunnel), so the default sends none and
+      # the dashboard configuration applies; point KYC at /verify-identity, KYB at
+      # /business-verification.
       Kyc__Identomat__CompanyKey: "${IDENTOMAT_API_KEY:-}"
-      Kyc__Identomat__ReturnUrl: "${Kyc__Identomat__ReturnUrl:-http://localhost:${AZOA_FRONTEND_HOST_PORT:-3000}/business-verification}"
+      Kyc__Identomat__ReturnUrl: "${Kyc__Identomat__ReturnUrl:-}"
       Kyc__Identomat__ConfigId: "${Kyc__Identomat__ConfigId:-}"
       Kyc__Identomat__CallbackApiKey: "${Kyc__Identomat__CallbackApiKey:-}"
+      Kyc__Identity__PersonKeySecret: "${Kyc__Identity__PersonKeySecret:-}"
       Kyb__ConfigId: "${Kyb__ConfigId:-}"
-      Kyb__ReturnUrl: "${Kyb__ReturnUrl:-http://localhost:${AZOA_FRONTEND_HOST_PORT:-3000}/business-verification}"
+      Kyb__ReturnUrl: "${Kyb__ReturnUrl:-}"
       Fiat__Environment: "test"
       Fiat__Checkout__AllowedReturnOrigins__0: "http://localhost:${AZOA_FRONTEND_HOST_PORT:-3000}"
       Fiat__Checkout__DefaultSuccessUrl: "${Fiat__Checkout__DefaultSuccessUrl:-http://localhost:${AZOA_FRONTEND_HOST_PORT:-3000}/wallets}"
@@ -152,7 +155,7 @@ services:
       Fiat__Test__SecretKey: "${STRIPE_SECRET_API_KEY_DEV:-}"
       Fiat__Test__WebhookSecret: "${Fiat__Test__WebhookSecret:-}"
       Fiat__Test__ConnectWebhookSecret: "${Fiat__Test__ConnectWebhookSecret:-}"
-      Kyc__Provider: "${AZOA_KYC_PROVIDER:-manual}"
+      Kyc__Provider: "${AZOA_KYC_PROVIDER:-identomat}"
       Kyc__VeriffApiKey: "${AZOA_KYC_VERIFF_API_KEY:-}"
       Kyc__VeriffBaseUrl: "${AZOA_KYC_VERIFF_BASE_URL:-}"
       Kyc__VeriffSharedSecret: "${AZOA_KYC_VERIFF_SHARED_SECRET:-}"
@@ -165,10 +168,10 @@ services:
       Kyc__Hosted__WebhookKeyId: "${AZOA_KYC_HOSTED_WEBHOOK_KEY_ID:-}"
       Kyc__Hosted__ReturnUrl: "${AZOA_KYC_HOSTED_RETURN_URL:-}"
       Kyc__Hosted__RedirectOrigins__0: "${AZOA_KYC_HOSTED_REDIRECT_ORIGIN:-}"
-      Kyc__ApprovalPolicy__PolicyVersion: "${AZOA_KYC_POLICY_VERSION:-dev-manual-v1}"
-      Kyc__ApprovalPolicy__AssuranceLevel: "${AZOA_KYC_ASSURANCE_LEVEL:-development-manual}"
-      Kyc__ApprovalPolicy__TrustedProviderKeys__0: "${AZOA_KYC_TRUSTED_PROVIDER_KEY:-manual}"
-      Kyc__ApprovalPolicy__AllowManualInDevelopment: "${AZOA_KYC_ALLOW_MANUAL_IN_DEVELOPMENT:-true}"
+      Kyc__ApprovalPolicy__PolicyVersion: "${AZOA_KYC_POLICY_VERSION:-identomat-hosted-v1}"
+      Kyc__ApprovalPolicy__AssuranceLevel: "${AZOA_KYC_ASSURANCE_LEVEL:-document-and-liveness}"
+      Kyc__ApprovalPolicy__TrustedProviderKeys__0: "${AZOA_KYC_TRUSTED_PROVIDER_KEY:-identomat}"
+      Kyc__ApprovalPolicy__AllowManualInDevelopment: "${AZOA_KYC_ALLOW_MANUAL_IN_DEVELOPMENT:-false}"
       Kyc__SubmissionExpiryDays: "${AZOA_KYC_SUBMISSION_EXPIRY_DAYS:-30}"
       Kyc__SessionExpiryMinutes: "${AZOA_KYC_SESSION_EXPIRY_MINUTES:-30}"
     ports:

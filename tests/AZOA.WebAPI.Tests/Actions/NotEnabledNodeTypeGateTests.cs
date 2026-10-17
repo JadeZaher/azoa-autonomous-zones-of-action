@@ -82,8 +82,14 @@ public sealed class NotEnabledNodeTypeGateTests
     [Fact]
     public void EveryBlockedType_IsANamedTrackedException()
     {
-        NotEnabledActionNodeTypes.All.Should().HaveCount(1,
-            "each blocked type is tracked by a design track; adding one without a track "
+        NotEnabledActionNodeTypes.All.Should().BeSubsetOf(new[]
+            {
+                ActionNodeType.CredentialRevoke,
+                ActionNodeType.GovernanceProposalCreate,
+                ActionNodeType.GovernanceVote,
+                ActionNodeType.GovernanceTally,
+            },
+            "each blocked type is tracked by a design track or verdict; adding one without a track "
             + "turns a temporary gate into silent dead surface");
 
         var source = SourceOf("Services", "Actions", "NotEnabledActionNodeTypes.cs");

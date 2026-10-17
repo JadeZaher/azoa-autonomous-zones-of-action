@@ -16,6 +16,7 @@ using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
+using AZOA.WebAPI.Services.Kyb;
 using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;
@@ -183,6 +184,7 @@ public sealed partial class OffRampService : IOffRamp
     private readonly IIdempotencyStore _idempotency;
     private readonly IRealValueKycGate _kycGate;
     private readonly ISagaCoordinator _sagas;
+    private readonly IKybGate _kyb;
     private readonly ILogger<OffRampService> _logger;
     private readonly TimeProvider _clock;
     private BankPayoutProcessor BankPayouts => new(_fiat, _payouts, _connect, _logger, _clock);
@@ -203,6 +205,7 @@ public sealed partial class OffRampService : IOffRamp
         IIdempotencyStore idempotency,
         IRealValueKycGate kycGate,
         ISagaCoordinator sagas,
+        IKybGate kyb,
         ILogger<OffRampService> logger,
         TimeProvider? clock = null)
     {
@@ -221,6 +224,7 @@ public sealed partial class OffRampService : IOffRamp
         _idempotency = idempotency ?? throw new ArgumentNullException(nameof(idempotency));
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
         _sagas = sagas ?? throw new ArgumentNullException(nameof(sagas));
+        _kyb = kyb ?? throw new ArgumentNullException(nameof(kyb));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _clock = clock ?? TimeProvider.System;
     }
@@ -328,7 +332,8 @@ public sealed partial class OffRampService : IOffRamp
         var resolved = await ResolveContextAsync(request.TenantId, ct);
         if (resolved.IsError || resolved.Result is not { } context)
             return AZOAResult<CashOutView>.FailureWithCode(
-                resolved.Message, FiatPayoutErrors.PayoutBusyCode);
+                resolved.Message,
+                resolved.Code == KybGate.RequiredCode ? AzoaErrorCodes.Forbidden : FiatPayoutErrors.PayoutBusyCode);
 
         if (!OffRampAging.TryQuoteUnits(
                 request.AmountMinorUnits, context.UnitsPerMinorUnit, out var quantity, out var quoteError))
@@ -904,6 +909,17 @@ public sealed partial class OffRampService : IOffRamp
         if (schedule is not { IsActive: true })
             return AZOAResult<OffRampContext?>.Failure(
                 "Cashing out is paused on this node while the current price is being updated.");
+
+        // D-6: a payout priced by a tenant's schedule needs that tenant's current KYB approval, so a
+        // lapsed approval stops payouts priced by an already-published schedule.
+        if (!PriceScheduleScope.IsNode(schedule.ScopeKey))
+        {
+            var kyb = schedule.TenantId is { } pricingTenant
+                ? await _kyb.RequireVerifiedTenantAsync(pricingTenant, KybCapability.PayoutPriceSchedule, ct)
+                : AZOAResult<bool>.FailureWithCode(KybGate.RequiredMessage, KybGate.RequiredCode);
+            if (kyb.IsError)
+                return AZOAResult<OffRampContext?>.FailureWithCode(kyb.Message, KybGate.RequiredCode);
+        }
 
         var now = _clock.GetUtcNow();
         if (schedule.DeclaredAt > now + PriceScheduleLimits.FutureDeclarationTolerance

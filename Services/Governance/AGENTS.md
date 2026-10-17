@@ -152,6 +152,25 @@ The active closeout track records remaining source review and runtime verificati
 
 Deterministically invalid frozen commands also receive an atomic failed receipt. Recovery cannot convert invalid input into endless ambiguity, nor can a stale successful plan commit after rejection has won the command identity. A previously committed success wins replay. Authority/transaction conflicts remain recoverable rather than being mislabeled as proof of no effect.
 
+## §governance-gate
+
+`GovernanceProposalCreate`, `GovernanceVote` and `GovernanceTally` are implemented **and gated**
+(`Services/Actions/NotEnabledActionNodeTypes.cs`). Round 3 checkpoint `3d08ace` lifted them on the
+source verdict alone; round 4 re-blocked them (plan §0.2: lift only on a verdict recorded after
+green race fixtures). The gate now stands on two lines:
+
+- `SOURCE_VERDICT: ACCEPTED` in `round2-governance-source-review.md` (source review, done);
+- `RUNTIME_VERDICT: PENDING|ACCEPTED|REJECTED` in `round4-governance-runtime-verdict.md`.
+
+`tests/AZOA.WebAPI.Tests/Actions/NotEnabledActionNodeTypesTests.cs` fails unless the three types
+are blocked exactly while either verdict is not `ACCEPTED`, so a code-only lift and a doc-only lift
+both go red. The lift procedure (sweep evidence → independent refuting reviewer with a mutation
+check → verdict line → remove the three members in the same change) and the fixture inventory live
+in the verdict file. Race fixtures: `SurrealGovernanceTests.Races.cs` (cancellation vs vote,
+cancellation vs creation, participation revocation vs vote, vote vs finalization across the cutoff,
+membership change vs creation snapshot) beside the existing duplicate-creation, concurrent-finalizer
+and AML-append races. Each asserts the outcome of every serial order, never which order won.
+
 ## node-fee-recovery — hosted settlement recovery (round 4, L3)
 
 `NodeFeeSettlementRecoveryWorker` is a hosted `BackgroundService` (registered beside the settlement

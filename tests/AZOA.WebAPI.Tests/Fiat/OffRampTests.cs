@@ -697,6 +697,18 @@ public class OffRampTests
 
         public int SagasStarted { get; private set; }
 
+        /// <summary>The KYB gate (D-6); approves by default, as an APPROVED kyb_verification row would.</summary>
+        public Mock<AZOA.WebAPI.Services.Kyb.IKybGate> Kyb { get; } = ApprovingKyb();
+
+        private static Mock<AZOA.WebAPI.Services.Kyb.IKybGate> ApprovingKyb()
+        {
+            var gate = new Mock<AZOA.WebAPI.Services.Kyb.IKybGate>();
+            gate.Setup(g => g.RequireVerifiedTenantAsync(It.IsAny<Guid>(),
+                    It.IsAny<AZOA.WebAPI.Services.Kyb.KybCapability>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<bool>.Success(true));
+            return gate;
+        }
+
         /// <summary>Built on first use: the object initialiser runs AFTER the constructor.</summary>
         public OffRampService Service => _service ??= BuildService();
 
@@ -971,6 +983,7 @@ public class OffRampTests
                 Idempotency,
                 kyc.Object,
                 sagas.Object,
+                Kyb.Object,
                 NullLogger<OffRampService>.Instance,
                 new FixedClock(Now));
         }

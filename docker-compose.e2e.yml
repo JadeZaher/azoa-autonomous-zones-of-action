@@ -45,7 +45,8 @@ services:
     # host.docker.internal: the host-run fake vendors (Desktop and podman add it themselves).
     # webhook-receiver.e2e.azoa.test: the journeys' webhook destination, pinned without DNS to a
     # public-range address so the SSRF guard (which refuses the private gateway) admits it.
-    # Delivery is disabled, so it is never dialled.
+    # Delivery is on; nothing listens at that TEST-NET-2 address, so attempts time out and the
+    # event dead-letters visibly (Services/Webhooks/AGENTS.md §activation).
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "webhook-receiver.e2e.azoa.test:198.51.99.10"
@@ -107,8 +108,8 @@ services:
       Fiat__OffRamp__OnboardingReturnUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
       Fiat__OffRamp__OnboardingRefreshUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
 
-      # Registered webhook destinations are never dialled during a journey.
-      Webhooks__Enabled: "false"
+      # Delivery workers run in e2e (Services/Webhooks/AGENTS.md §activation).
+      Webhooks__Enabled: "true"
     ports:
       - "${AZOA_E2E_API_PORT:-5200}:5000"
     volumes:
