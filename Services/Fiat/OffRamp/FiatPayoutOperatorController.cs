@@ -224,6 +224,39 @@ public sealed class FiatPayoutOperatorController : ControllerBase
         return result.IsError ? Conflict(result) : Ok(AZOAResult<FiatPayoutView>.Success(FiatPayoutView.From(result.Result!)));
     }
 
+    /// <summary>
+    /// Audited exit for a parked or reversed cash-out: <c>record-paid</c> or <c>return-units</c>,
+    /// each allowed only when re-read Stripe (and chain) evidence supports it.
+    /// </summary>
+    [HttpPost("{id}/resolve")]
+    [EnableRateLimiting("financial")]
+    [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Resolve(string id, [FromBody] FiatPayoutResolveRequest body, CancellationToken ct)
+    {
+        var identity = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        if (!Guid.TryParse(identity, out var actor) || actor == Guid.Empty) return Forbid();
+        PayoutResolution? resolution = body?.Resolution switch
+        {
+            "record-paid" => PayoutResolution.RecordPaid,
+            "return-units" => PayoutResolution.ReturnUnits,
+            _ => null,
+        };
+        if (resolution is null)
+            return BadRequest(AZOAResult<FiatPayoutView>.FailureWithCode(
+                "Resolution must be 'record-paid' or 'return-units'.", AzoaErrorCodes.InvalidRequest));
+
+        var result = await _offRamp.ResolveForOperatorAsync(id, resolution.Value, actor, body!.Reason ?? string.Empty, ct);
+        if (!result.IsError)
+            return Ok(AZOAResult<FiatPayoutView>.Success(FiatPayoutView.From(result.Result!), "Resolved."));
+        return result.Code switch
+        {
+            AzoaErrorCodes.NotFound => NotFound(result),
+            AzoaErrorCodes.InvalidRequest => BadRequest(result),
+            AzoaErrorCodes.Conflict => Conflict(result),
+            _ => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+        };
+    }
+
     /// <summary>Parks the cash-out for a person, with the reason recorded on the row.</summary>
     [HttpPost("{id}/park")]
     [EnableRateLimiting("financial")]
@@ -285,5 +318,15 @@ public sealed class FiatPayoutOperatorController : ControllerBase
 /// <summary>The operator's own words for why they acted. Recorded verbatim on the row.</summary>
 public sealed class FiatPayoutOperatorReason
 {
+    public string? Reason { get; set; }
+}
+
+/// <summary>Body of <c>POST /api/admin/fiat-payouts/{id}/resolve</c>.</summary>
+public sealed class FiatPayoutResolveRequest
+{
+    /// <summary><c>record-paid</c> or <c>return-units</c>.</summary>
+    public string? Resolution { get; set; }
+
+    /// <summary>Required, 1–512 characters; appended to the cash-out's audit.</summary>
     public string? Reason { get; set; }
 }

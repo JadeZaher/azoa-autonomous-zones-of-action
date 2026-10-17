@@ -127,6 +127,40 @@ public sealed class FiatReversalOperatorController : ControllerBase
     }
 
     /// <summary>
+    /// Settles a reversal parked on an ambiguous move with chain evidence: the node re-reads the
+    /// move's transaction, records it landed or absent, and re-queues the unwind.
+    /// </summary>
+    [HttpPost("{id}/resolve")]
+    [EnableRateLimiting("financial")]
+    [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Resolve(string id, [FromBody] ClearReversalFlagRequest? body, CancellationToken ct)
+    {
+        var operatorUserId = GetUserIdFromClaims();
+        if (operatorUserId is null)
+            return Forbid();
+
+        var resolved = await _compensation.ResolveParkedAsync(id, operatorUserId.Value, body?.Reason ?? string.Empty, ct);
+        if (resolved.IsError)
+            return resolved.Code switch
+            {
+                AzoaErrorCodes.NotFound => NotFound(resolved),
+                AzoaErrorCodes.InvalidRequest => BadRequest(resolved),
+                AzoaErrorCodes.Conflict => Conflict(resolved),
+                _ => StatusCode(StatusCodes.Status503ServiceUnavailable, resolved),
+            };
+
+        var row = resolved.Result!;
+        await _sagas.StartAsync(
+            FiatCompensationSaga.Name,
+            FiatCompensationSaga.CorrelationKeyFor(row.Id),
+            new FiatCompensationPayload(row.Id, row.ChargeId, row.LotId),
+            ct);
+
+        return Ok(AZOAResult<FiatReversalView>.Success(
+            FiatReversalView.From(row), "The move was resolved and the unwind was queued."));
+    }
+
+    /// <summary>
     /// Starts (or restarts) the durable unwind for a reversal whose saga was never enqueued or
     /// was cancelled. The saga is idempotent per reversal, so a second run replays rather than
     /// recovering twice.
@@ -236,6 +270,9 @@ public sealed class FiatReversalView
 
     public string? StatusReason { get; init; }
 
+    /// <summary>The ambiguous move this reversal is parked on; resolve it with chain evidence.</summary>
+    public string? PendingMoveKey { get; init; }
+
     /// <summary>The provider event that last moved this reversal.</summary>
     public string LastEventType { get; init; } = string.Empty;
 
@@ -292,6 +329,7 @@ public sealed class FiatReversalView
         Kind = row.Kind,
         Status = row.Status,
         StatusReason = row.StatusReason,
+        PendingMoveKey = row.PendingMoveKey,
         LastEventType = row.LastEventType,
         ChargeId = row.ChargeId,
         SubjectUserId = SurrealLink.FromLink(row.SubjectUserId),

@@ -136,6 +136,10 @@ public interface IOffRamp
     Task<AZOAResult<FiatPayout>> ParkForOperatorAsync(
         string payoutId, string reason, CancellationToken ct = default);
 
+    /// <summary>Audited operator exit for a parked or reversed cash-out, decided by re-read Stripe and chain evidence.</summary>
+    Task<AZOAResult<FiatPayout>> ResolveForOperatorAsync(
+        string payoutId, PayoutResolution resolution, Guid actor, string reason, CancellationToken ct = default);
+
     /// <summary>One person's own cash-out history, newest first; a tenant sees only cash-outs it drove.</summary>
     Task<AZOAResult<IReadOnlyList<CashOutView>>> ListForUserAsync(
         Guid subjectUserId, int limit, Guid? tenantId = null, CancellationToken ct = default);
@@ -152,7 +156,7 @@ public interface IOffRamp
 /// (<see cref="FiatPayoutStatuses.UnitsCollected"/>), durable, and compensated by giving the units
 /// straight back.</para>
 /// </summary>
-public sealed class OffRampService : IOffRamp
+public sealed partial class OffRampService : IOffRamp
 {
     /// <summary>Idempotency operation type stamped on every cash-out value move.</summary>
     public const string PayoutOperationType = "fiat-off-ramp";
@@ -516,7 +520,7 @@ public sealed class OffRampService : IOffRamp
 
         if (IsPendingConfirmation(moved.Message))
         {
-            await _idempotency.FailAsync(key, AmbiguousMoveReason, ct);
+            await _idempotency.FailAsync(key, AmbiguousWithTransaction(moved.Result), ct);
             return await ParkAsync(row, AmbiguousMoveReason, ct);
         }
 
@@ -1328,11 +1332,11 @@ public sealed class OffRampService : IOffRamp
         _ => ClaimReplay.Retryable,
     };
 
-    /// <summary>The account a row belongs to, or empty when the row names one this node cannot read.</summary>
     /// <summary>True when <paramref name="tenantId"/> (null = first-party) is the party that drove the cash-out.</summary>
     private static bool DroveBy(FiatPayout row, Guid? tenantId)
         => SurrealRecordGuid.ParseOptional(row.TenantId) == tenantId;
 
+    /// <summary>The account a row belongs to, or empty when the row names one this node cannot read.</summary>
     private static Guid SubjectOf(FiatPayout row)
         => Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) ? subjectUserId : Guid.Empty;
 

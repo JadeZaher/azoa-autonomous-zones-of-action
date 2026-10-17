@@ -53,6 +53,13 @@ public interface IReversalCompensation
     /// </summary>
     Task<AZOAResult<FiatReversal>> ParkForOperatorAsync(
         string reversalId, string reason, CancellationToken ct = default);
+
+    /// <summary>
+    /// Operator exit for a reversal parked on an ambiguous move: re-reads that move's transaction on
+    /// chain, records landed/absent, and returns the reversal to <c>Recovering</c>.
+    /// </summary>
+    Task<AZOAResult<FiatReversal>> ResolveParkedAsync(
+        string reversalId, Guid actor, string reason, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -109,7 +116,7 @@ public static class ReversalMath
 /// performing a second one — and a move whose outcome could not be established parks the reversal
 /// for a person rather than being tried again blind.</para>
 /// </summary>
-public sealed class ReversalCompensationService : IReversalCompensation
+public sealed partial class ReversalCompensationService : IReversalCompensation
 {
     /// <summary>Idempotency operation type stamped on every recovery claim.</summary>
     public const string RecoveryOperationType = "fiat-reversal-recovery";
@@ -220,11 +227,17 @@ public sealed class ReversalCompensationService : IReversalCompensation
             ? await _purchases.ListReversalRecoveriesAsync(row.Id, reversalSubject, ct)
             : Array.Empty<ExchangePurchaseRecoveryResult>();
         var committedTotal = BigInteger.Zero;
+        var pendingClawback = BigInteger.Zero;
         var clawbackCounted = false;
         foreach (var step in committed)
         {
-            if (step.Clawback && (await _idempotency.GetAsync(ClawbackClaimKey(row, step), ct))?.State != IdempotencyState.Completed)
+            // A reserved clawback whose move has not completed is not recovered yet, but its units are
+            // spoken for: rung 1 must not take them again while rung 2 finishes it (A-2 MUST-FIX).
+            if (step.Clawback && !await IsMoveCompletedAsync(ClawbackClaimKey(row, step), ct))
+            {
+                pendingClawback += ReversalMath.ParseBaseUnits(step.CreditedSourceUnits);
                 continue;
+            }
             committedTotal += ReversalMath.ParseBaseUnits(step.CreditedSourceUnits);
             clawbackCounted |= step.Clawback;
         }
@@ -250,11 +263,12 @@ public sealed class ReversalCompensationService : IReversalCompensation
         }
 
         // ── Rung 1: the units are still in the payer's own account ──
-        if (policy.RecoverFromBalance && outstanding > BigInteger.Zero)
+        var balanceTarget = outstanding - pendingClawback;
+        if (policy.RecoverFromBalance && balanceTarget > BigInteger.Zero)
         {
-            var balance = await RecoverFromBalanceAsync(row, outstanding, balanceRecorded, ct);
+            var balance = await RecoverFromBalanceAsync(row, balanceTarget, balanceRecorded, ct);
             if (balance.Ambiguous)
-                return await ParkAmbiguousAsync(row, balance.Detail, ct);
+                return await ParkAmbiguousAsync(row, balance.Detail, ct, balance.MoveKey);
             if (!balance.Definite)
                 return Indeterminate(row, balance.Detail);
 
@@ -277,7 +291,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         {
             var purchases = await RecoverFromPurchasesAsync(row, policy, outstanding, committed, ct);
             if (purchases.Ambiguous)
-                return await ParkAmbiguousAsync(row, purchases.Detail, ct);
+                return await ParkAmbiguousAsync(row, purchases.Detail, ct, purchases.MoveKey);
             if (!purchases.Definite)
                 return Indeterminate(row, purchases.Detail);
 
@@ -411,8 +425,13 @@ public sealed class ReversalCompensationService : IReversalCompensation
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<FiatReversal>> ParkForOperatorAsync(
+    public Task<AZOAResult<FiatReversal>> ParkForOperatorAsync(
         string reversalId, string reason, CancellationToken ct = default)
+        => ParkForOperatorAsync(reversalId, reason, ct, moveKey: null);
+
+    /// <summary>Parks, recording the ambiguous move's claim key so the operator resolution can re-read its evidence.</summary>
+    private async Task<AZOAResult<FiatReversal>> ParkForOperatorAsync(
+        string reversalId, string reason, CancellationToken ct, string? moveKey)
     {
         var read = await _reversals.GetAsync(reversalId, ct);
         if (read.IsError)
@@ -425,6 +444,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
 
         row.Status = FiatReversalStatuses.NeedsOperator;
         row.StatusReason = Truncate(reason, MaxReasonLength);
+        row.PendingMoveKey = moveKey;
         row.AccountFlagged = true;
         row.FlagReason ??= Truncate(
             "A reversal against this account could not be unwound automatically.", MaxReasonLength);
@@ -471,8 +491,10 @@ public sealed class ReversalCompensationService : IReversalCompensation
         string? transactionId = null;
         for (var move = 0; move < MaxBalanceMovesPerPass && recoveredHere < outstanding; move++)
         {
-            var key = RecoveryIdempotencyKey(row, "balance", balanceRecorded + recoveredHere);
-            var existing = await _idempotency.GetAsync(key, ct);
+            var (key, existing) = await ResolveMoveSlotAsync(
+                RecoveryIdempotencyKey(row, "balance", balanceRecorded + recoveredHere), ct);
+            if (key is null)
+                return RungResult.Unconfirmed(MoveAttemptsExhaustedReason);
             if (existing is not null)
             {
                 var replayed = ReplayRecord(existing, FiatReversalRecoveryPaths.Balance);
@@ -545,8 +567,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
         {
             // Submitted, outcome unknown. Retrying blind could take the units twice, so this is
             // where the reversal stops and asks for a person.
-            await _idempotency.FailAsync(key, AmbiguousRecoveryReason, ct);
-            return RungResult.Unconfirmed(AmbiguousRecoveryReason);
+            await _idempotency.FailAsync(key, AmbiguousMoveError(row.ChainType!, recoverable, clawback.Result), ct);
+            return RungResult.Unconfirmed(AmbiguousRecoveryReason, key);
         }
 
         await _idempotency.CompleteAsync(key, RecoveryPayload(recoverable, clawback.Result), ct);
@@ -716,8 +738,14 @@ public sealed class ReversalCompensationService : IReversalCompensation
         // A reservation an earlier pass made but whose move never completed is finished before anything new is reserved.
         foreach (var pending in fromClaim.Where(step => step.Clawback))
         {
-            if ((await _idempotency.GetAsync(ClawbackClaimKey(row, pending), ct))?.State == IdempotencyState.Completed)
+            if (await IsMoveCompletedAsync(ClawbackClaimKey(row, pending), ct))
                 continue;
+            // Never finish past this payment's attributable share (A-2 MUST-FIX: the finish was uncapped).
+            // A reservation that does not fit also blocks new ones, so the two can never stack.
+            if (recovered + ReversalMath.ParseBaseUnits(pending.CreditedSourceUnits) > attributable)
+                return recovered > BigInteger.Zero
+                    ? RungResult.Recovered(recovered, FiatReversalRecoveryPaths.Purchase, transactionId)
+                    : RungResult.Refused("A reserved take-back exceeds what is still attributable to this payment.");
             var finished = await SendClawbackAsync(row, claim, pending, asa!, reserveAccount.Result.Address, ct);
             if (finished.Ambiguous || !finished.Definite || finished.Amount <= BigInteger.Zero)
                 return recovered > BigInteger.Zero && finished.Definite && !finished.Ambiguous
@@ -755,7 +783,11 @@ public sealed class ReversalCompensationService : IReversalCompensation
     private async Task<RungResult> SendClawbackAsync(FiatReversal row, ReversedPurchaseClaim claim,
         ExchangePurchaseRecoveryResult step, IAlgorandASAModule asa, string reserveAddress, CancellationToken ct)
     {
-        var key = ClawbackClaimKey(row, step);
+        var (key, existing) = await ResolveMoveSlotAsync(ClawbackClaimKey(row, step), ct);
+        if (key is null)
+            return RungResult.Unconfirmed(MoveAttemptsExhaustedReason);
+        if (existing is not null)
+            return ReplayRecord(existing, FiatReversalRecoveryPaths.Purchase);
         var units = ReversalMath.ParseBaseUnits(step.RecoveredHoldUnits);
         var credited = ReversalMath.ParseBaseUnits(step.CreditedSourceUnits);
         var idempotencyClaim = await _idempotency.TryClaimAsync(key, RecoveryOperationType, ct);
@@ -779,8 +811,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
 
         if (IsPendingConfirmation(clawback.Message))
         {
-            await _idempotency.FailAsync(key, AmbiguousRecoveryReason, ct);
-            return RungResult.Unconfirmed(AmbiguousRecoveryReason);
+            await _idempotency.FailAsync(key, AmbiguousMoveError(claim.ChainType!, credited, clawback.Result), ct);
+            return RungResult.Unconfirmed(AmbiguousRecoveryReason, key);
         }
 
         await _idempotency.CompleteAsync(key, RecoveryPayload(credited, clawback.Result), ct);
@@ -799,6 +831,53 @@ public sealed class ReversalCompensationService : IReversalCompensation
     /// </summary>
     public static string RecoveryIdempotencyKey(FiatReversal row, string rung, BigInteger recordedBefore)
         => $"{RecoveryOperationType}:{row.Id}:{rung}:{ReversalMath.Format(recordedBefore)}";
+
+    /// <summary>Claim attempts per recovery move before a person must reconcile it.</summary>
+    public const int MaxMoveAttempts = 5;
+
+    /// <summary>Reason recorded when every attempt key of one move failed definitively.</summary>
+    public const string MoveAttemptsExhaustedReason =
+        "Every attempt to make this recovery move was refused; a person must reconcile it.";
+
+    /// <summary>Attempt-suffixed claim key (A-2); attempt 0 is the original key.</summary>
+    public static string MoveAttemptKey(string baseKey, int attempt)
+        => attempt == 0 ? baseKey : $"{baseKey}:attempt:{attempt.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// The live claim slot of one move: the first attempt key that is absent or is not a definitive
+    /// failure, with its record; see Reversal/AGENTS.md §attempt-keys. Null key = attempts exhausted.
+    /// </summary>
+    private async Task<(string? Key, IdempotencyRecord? Existing)> ResolveMoveSlotAsync(string baseKey, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < MaxMoveAttempts; attempt++)
+        {
+            var key = MoveAttemptKey(baseKey, attempt);
+            var record = await _idempotency.GetAsync(key, ct);
+            if (record is null)
+                return (key, null);
+            if (record.State == IdempotencyState.Failed
+                && !(record.Error ?? string.Empty).Contains(AmbiguousRecoveryReason, StringComparison.Ordinal))
+                continue;
+            if (record.State == IdempotencyState.Failed)
+            {
+                // An ambiguous move an operator has since resolved against chain evidence.
+                var resolution = await _idempotency.GetAsync(ResolutionKey(key), ct);
+                if (resolution?.State == IdempotencyState.Completed)
+                {
+                    if (resolution.ResultPayload == ResolvedAbsentPayload)
+                        continue;
+                    return (key, resolution);
+                }
+            }
+            return (key, record);
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>True when any attempt of the move completed.</summary>
+    private async Task<bool> IsMoveCompletedAsync(string baseKey, CancellationToken ct)
+        => (await ResolveMoveSlotAsync(baseKey, ct)).Existing?.State == IdempotencyState.Completed;
 
     /// <summary>The claim key of one reserved clawback step: its immutable store receipt id.</summary>
     public static string ClawbackClaimKey(FiatReversal row, ExchangePurchaseRecoveryResult step)
@@ -828,7 +907,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         {
             var error = record.Error ?? string.Empty;
             return error.Contains(AmbiguousRecoveryReason, StringComparison.Ordinal)
-                ? RungResult.Unconfirmed(AmbiguousRecoveryReason)
+                ? RungResult.Unconfirmed(AmbiguousRecoveryReason, record.Key)
                 : RungResult.Retry($"A previous recovery attempt failed: {error}");
         }
 
@@ -939,9 +1018,9 @@ public sealed class ReversalCompensationService : IReversalCompensation
     }
 
     private async Task<AZOAResult<ReversalStepOutcome>> ParkAmbiguousAsync(
-        FiatReversal row, string? detail, CancellationToken ct)
+        FiatReversal row, string? detail, CancellationToken ct, string? moveKey = null)
     {
-        var parked = await ParkForOperatorAsync(row.Id, detail ?? AmbiguousRecoveryReason, ct);
+        var parked = await ParkForOperatorAsync(row.Id, detail ?? AmbiguousRecoveryReason, ct, moveKey);
         return parked.IsError
             ? Indeterminate(row, parked.Message)
             : Definite(parked.Result!);
@@ -1019,7 +1098,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
 
     /// <summary>What one rung concluded, before it is folded into the reversal row.</summary>
     private readonly record struct RungResult(
-        BigInteger Amount, string? Path, string? TransactionId, bool Definite, bool Ambiguous, string? Detail)
+        BigInteger Amount, string? Path, string? TransactionId, bool Definite, bool Ambiguous, string? Detail,
+        string? MoveKey = null)
     {
         /// <summary>The rung took units back.</summary>
         public static RungResult Recovered(BigInteger amount, string path, string? transactionId)
@@ -1036,7 +1116,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         /// <summary>A value move may have landed and could not be confirmed. Only a person may decide.</summary>
         /// <remarks>Named apart from the <c>Ambiguous</c> property it sets: C# forbids a
         /// member and a positional record property sharing one name.</remarks>
-        public static RungResult Unconfirmed(string detail)
-            => new(BigInteger.Zero, null, null, Definite: true, Ambiguous: true, Detail: detail);
+        public static RungResult Unconfirmed(string detail, string? moveKey = null)
+            => new(BigInteger.Zero, null, null, Definite: true, Ambiguous: true, Detail: detail, MoveKey: moveKey);
     }
 }
