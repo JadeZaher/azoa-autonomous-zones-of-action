@@ -6,7 +6,6 @@
 
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Providers.Stores.Surreal;
-using AZOA.WebAPI.Services.Custody;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AZOA.WebAPI.Services.Reserve;
@@ -44,10 +43,6 @@ public static class ExchangeRailRegistration
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddScoped<IBuyBackBackstop, ReserveToTreasuryBuyBackBackstop>();
-
-        // A direct-delivery purchase or sale readies the participant's account before journaling its source.
-        if (services.All(descriptor => descriptor.ServiceType != typeof(ICustodialRecipientPreparer)))
-            services.AddCustodialRecipientPreparation();
 
         // Retired post-submit exchange rows are surfaced for operator recovery, never settled from the row.
         services.TryAddScoped<IExchangeSettlementReconciler, ExchangeSettlementReconciler>();

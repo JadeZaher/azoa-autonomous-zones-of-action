@@ -125,6 +125,36 @@ public sealed partial class SurrealHoldCommandTests
             .Should().Be("AwaitingSourceSettlement", "the release cannot run before the purchase settles");
     }
 
+    [Theory]
+    [InlineData(false, false, "101000", null)]
+    [InlineData(false, false, "500000", ConsumerSafeErrorCodes.RecipientNotReady)]
+    [InlineData(false, true, "0", ConsumerSafeErrorCodes.NotPermitted)]
+    public async Task UnreadyParticipantAcceptanceIsFoldedIntoTheExactGroupOrRefusedBeforeAnyCommitment(
+        bool canReceive, bool blocked, string shortfall, string? refusal)
+    {
+        var flow = await FlowAsync();
+        flow.Chain.Readiness = new(canReceive, blocked, shortfall);
+
+        var result = await flow.Manager.ExchangeAsync(flow.Request(), flow.Caller("purchase-1"));
+
+        if (refusal is not null)
+        {
+            result.Code.Should().Be(refusal);
+            (await _executor.QueryAsync<ExchangeHoldSource>(SurrealQuery<ExchangeHoldSource>.From())).Should().BeEmpty();
+            (await Counters()).Held.Should().Be(0);
+            flow.Chain.Prepared.Should().Be(0);
+            return;
+        }
+        result.Result!.State.Should().Be(ExchangeReceiptState.AwaitingReconciliation, result.Message);
+        var source = (await _store.GetExchangeSourceAsync(result.Result.SourceId!))!;
+        JsonSerializer.Deserialize<ExchangeHoldSourceIntent>(source.IntentJson)!.Units!.RecipientFundingBaseUnits.Should().Be(shortfall);
+        var readiness = flow.Chain.LastIntent!.Readiness!;
+        readiness.AssetId.Should().Be("42");
+        readiness.FundingBaseUnits.Should().Be(shortfall);
+        readiness.Recipient.Should().Be(flow.Chain.LastIntent.Legs[0].Sender, "only the participant who signs a leg is readied");
+        (await flow.Settlement.ReconcileAsync(result.Result.SourceId!)).Result!.State.Should().Be("Completed");
+    }
+
     [Fact]
     public async Task AnotherApiKeyCannotReadTheReceipt()
     {
@@ -168,7 +198,7 @@ public sealed partial class SurrealHoldCommandTests
         var platformUnit = new PlatformTokenState(
             new("Algorand", "Devnet", "7", "Platform", "PLAT", 0, new BigInteger(1_000_000), "reserve", DateTimeOffset.UtcNow),
             new(new BigInteger(1_000_000), BigInteger.Zero, BigInteger.Zero, new BigInteger(1_000_000)));
-        var options = new ExchangeOptions { MaximumGroupNetworkFeeBaseUnits = "10000" };
+        var options = new ExchangeOptions { MaximumGroupNetworkFeeBaseUnits = "10000", MaximumRecipientFundingBaseUnits = "201000" };
         var settlement = new ExchangeHoldSourceService(_store, providers, options);
         var signing = new SigningAdmissionAuthorityFactory(users, wallets, _executor);
         var manager = new ReserveExchangeManager(
@@ -177,8 +207,6 @@ public sealed partial class SurrealHoldCommandTests
             new SurrealPlatformReserveLedgerStore(_executor), treasury,
             Fake<IPlatformTokenGenesis>("GetStateAsync", Task.FromResult(AZOAResult<PlatformTokenState>.Success(platformUnit))),
             wallets,
-            Fake<ICustodialRecipientPreparer>("PrepareAsync",
-                Task.FromResult(AZOAResult<CustodialRecipientReadiness>.Success(new(true, null, false, "0")))),
             Fake<IExchangeRatePolicy>("EvaluateAsync", Task.FromResult(AZOAResult<ExchangeRateDecision>.Success(new(null, "policy-v1")))),
             Fake<IExchangeDeclaredRateWriter>("RecordAsync", null),
             _store, settlement, new ExchangeAuthorityFactory(signing, users, wallets, _executor), signing, providers, options);
@@ -206,8 +234,18 @@ public sealed partial class SurrealHoldCommandTests
     }
 
     /// <summary>Chain process edge: signs what it is given and confirms the exact group once it has been sent.</summary>
-    private sealed class FakeExchangeChain : IExchangeTransactionModule, IValueCustodyModule
+    private sealed class FakeExchangeChain : IExchangeTransactionModule, IValueCustodyModule, IRecipientPreparationModule
     {
+        public RecipientAssetReadiness Readiness { get; set; } = new(true, false, "0");
+        public ExchangeWireIntent? LastIntent { get; private set; }
+        public bool SupportsRecipientPreparation => true;
+
+        public Task<AZOAResult<RecipientAssetReadiness>> GetRecipientAssetReadinessAsync(string assetId, string recipientAddress,
+            CancellationToken ct = default) => Task.FromResult(AZOAResult<RecipientAssetReadiness>.Success(Readiness));
+
+        public Task<AZOAResult<RecipientPreparationReceipt>> PrepareRecipientForAssetAsync(RecipientPreparationRequest request,
+            CancellationToken ct = default) => throw new NotSupportedException("Readiness is folded into the exact group, never signed apart.");
+
         public string CapabilityName => "exchange";
         public string ChainType => "Algorand";
         public int Prepared { get; private set; }
@@ -219,6 +257,7 @@ public sealed partial class SurrealHoldCommandTests
         public Task<AZOAResult<PreparedExchangeWire>> PrepareExchangeAsync(ExchangeWireIntent intent, CancellationToken ct = default)
         {
             Prepared++;
+            LastIntent = intent;
             var ids = TransactionIds.Take(intent.Legs.Count).Append("tx-fee").ToArray();
             return Task.FromResult(AZOAResult<PreparedExchangeWire>.Success(new(intent, "preparation-" + intent.SourceId[..8], "group",
                 ids, Enumerable.Repeat("c2lnbmVk", ids.Length).ToArray())));

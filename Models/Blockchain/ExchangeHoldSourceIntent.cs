@@ -13,8 +13,10 @@ public sealed record ExchangeHoldSourceIntent(int Version, string RequestKey, Gu
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ExchangeUnitsCommitment? Units = null);
 
 /// <summary>Project-unit leg settled directly against the reserve: <c>Issue</c> delivers to the participant, <c>Return</c> receives a sale.</summary>
+/// <remarks>A non-null <paramref name="RecipientFundingBaseUnits"/> folds the participant's asset acceptance (and that much reserve-paid native funding) into the same atomic group; see Services/Reserve/AGENTS.md §recipient-readiness.</remarks>
 public sealed record ExchangeUnitsCommitment(string Kind, HoldAssetIdentity Asset, string QuantityBaseUnits,
-    string ReservePartition);
+    string ReservePartition,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RecipientFundingBaseUnits = null);
 
 /// <summary>Exact accepted future release disclosure and separately scoped actual tenant authority.</summary>
 public sealed record ExchangeReleaseConsent(Guid RequestId, HoldReleaseMandateTerms Terms, ValueCustodyQuote Quote,
