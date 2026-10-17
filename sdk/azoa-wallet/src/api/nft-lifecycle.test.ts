@@ -37,7 +37,7 @@ it("supports credential issuance and durable lookup with separate read/mutate co
   const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ isError: false, result: {} })));
   vi.stubGlobal("fetch", fetch);
   const client = new AzoaApiClient({ baseUrl: "https://node.example", token: "user" });
-  await client.issueCredential("recipient", { chainType: "Algorand", name: "Credential", metadataURI: "ipfs://metadata" }, "issue-key");
+  await client.issueCredential("00000000-0000-0000-0000-000000000002", { chainType: "Algorand", name: "Credential", metadataURI: "ipfs://metadata" }, "issue-key");
   expect(new Headers(fetch.mock.calls[0][1].headers).get("Idempotency-Key")).toBe("issue-key");
   await client.getNftLifecycle(operationId);
   expect(fetch.mock.calls[1][1].method).toBe("GET");

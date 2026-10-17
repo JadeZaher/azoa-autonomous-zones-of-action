@@ -245,6 +245,18 @@ export interface WorkflowReconciliationResult {
   stillIndeterminate: number;
 }
 
+/**
+ * `POST /api/action/runs/reconcile-sweep`: one operator re-probe over every parked run.
+ * `scanned` is how many runs the sweep looked at; `errors` runs threw and stay parked; `hardStuck`
+ * runs are past the hard-stuck threshold. Zero scanned is "nothing waiting", never a success.
+ */
+export interface WorkflowReconciliationSweep {
+  scanned: number;
+  results: WorkflowReconciliationResult[];
+  errors: number;
+  hardStuck: number;
+}
+
 /** Per-call options for value-moving advances (`.step` / `.signal`). */
 export interface AdvanceOptions {
   /**

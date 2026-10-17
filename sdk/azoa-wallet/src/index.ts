@@ -5,6 +5,10 @@ export type * from "./api/wtt.js";
 export type * from "./api/consent.js";
 // Core
 export type * from "./api/deployments.js";
+export type * from "./api/identity.js";
+export type * from "./api/money.js";
+export type * from "./api/operations.js";
+export type * from "./api/operator.js";
 export { AzoaWallet } from "./wallet.js";
 export {
   ok,
@@ -17,6 +21,8 @@ export {
   SdkError,
   SdkErrorCode,
   isActionConflict,
+  isKybRequired,
+  KYB_REQUIRED,
   toHex,
   fromHex,
   concatBytes,
@@ -253,6 +259,7 @@ export type {
   WorkflowNodeExecution,
   WorkflowExecutionState,
   WorkflowReconciliationResult,
+  WorkflowReconciliationSweep,
   AdvanceParams,
   SignalParams,
   StartRunParams,

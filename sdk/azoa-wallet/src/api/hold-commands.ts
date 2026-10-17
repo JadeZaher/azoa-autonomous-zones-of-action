@@ -63,3 +63,15 @@ export interface ExchangeReleaseMandateRequest {
 export interface ExchangeReleaseDisclosure { terms: HoldMandateTerms; quote: HoldCostQuote; disclosureHash: string }
 /** Explicit acceptance of one previewed disclosure; a revised disclosure needs a new requestId. */
 export interface ExchangeReleaseAcceptance { requestId: string; disclosure: ExchangeReleaseDisclosure }
+
+/** `GET /api/hold-commands/liabilities[/{holdRecordId}]`: custody liabilities visible to the caller. */
+export interface HoldLiabilityView {
+  holdRecordId: string; holdId: string; asset: HoldAssetIdentity; quantityBaseUnits: string; state: string;
+  ownerUserId: string; beneficiaryUserId: string; funderUserId?: string | null; custodyTenantId?: string | null;
+  fundingSource: string; reservePartition: string; releaseNotBefore?: string | null; autoRelease: boolean;
+  activeReleaseMandateId?: string | null; purchased: boolean; openingCommandId?: string | null; createdAt: string; updatedAt: string;
+}
+export interface HoldLiabilityPage { items: HoldLiabilityView[]; nextOffset?: number | null }
+/** `GET /api/hold-commands/reserve-assets`: exactly what a hold intent's `asset` must name, with drawable partitions. */
+export interface HoldReservePartitionView { name: string; declaredBaseUnits: string; availableBaseUnits: string }
+export interface HoldReserveAssetView { asset: HoldAssetIdentity; unitName: string; decimals: number; partitions: HoldReservePartitionView[] }

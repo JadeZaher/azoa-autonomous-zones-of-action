@@ -1,6 +1,6 @@
 export { ok, err, isOk, isErr, unwrap, map, mapErr } from "./result.js";
 export type { Result } from "./result.js";
-export { SdkError, SdkErrorCode, isActionConflict } from "./errors.js";
+export { SdkError, SdkErrorCode, isActionConflict, isKybRequired, KYB_REQUIRED } from "./errors.js";
 export type { SdkErrorDetail, SdkErrorOptions } from "./errors.js";
 export { toHex, fromHex, concatBytes, equalsBytes } from "./bytes.js";
 export { withRetry } from "./retry.js";
