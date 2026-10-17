@@ -78,7 +78,15 @@ static-review verdict, not runtime proof.
 - **Round 4, in flight at handoff** (background agents of the previous session; they may not
   survive the session ending):
   - adversarial assessment → `tracks/platform-stub-closeout_20261015/round4-assessment-adversarial.md`
-  - optimism-challenge assessment → `.../round4-assessment-optimism.md`
+  - optimism-challenge assessment → `.../round4-assessment-optimism.md` — **DONE 2026-10-17.** Headlines:
+    "KYC/KYB set up", "Stripe complete", "exactly-once" and "lanes A/C closed" are not yet true (KYC
+    stores and WTT quotes don't compile; `OffRampService.cs:452` uses an undeclared `requestedQuantity`;
+    Jupiter fee-cap has 9 unassigned locals; Tinyman parser reads a nonexistent SDK property).
+    Probe-backed: Ganache 7.9.2 rejects EIP-1898 (switch fixtures to Hardhat); `surrealforge up` won't
+    drop the stale index without `--allow-destructive`. It challenges IDENTOMAT-RECOVERY as a deferral
+    (retry plus `/delete/` of late arrivals works without the vendor). Ten carry-forwards are unrecorded
+    deferrals. Proposed sequencing: one fix batch → compile-until-clean (6–8 builds) → one full sweep →
+    ≤3–4 targeted fix batches; ~9–12 waves total.
   - SurrealForge pre-publish re-review of `3aacd25..2067ae4` (opus reviewer; verdict pending)
 
 ### Review ledger
@@ -171,8 +179,9 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
   new POCO field (lanes A/B/C/N); `npm run build` the SDK before any frontend typecheck (frontend
   imports the *built* `azoa-sdk`).
 - **DEPLOY-BLOCKING:** don't deploy this branch to Railway until `ethereum_preparation_nonce` is
-  confirmed removed there (verify `surrealforge up` drops it, or ship an explicit `REMOVE INDEX`).
-  Otherwise every new nonce reservation for a sender fails.
+  removed there. **Verified 2026-10-17: `surrealforge up` skips index drops without
+  `--allow-destructive`**, so ship an explicit `REMOVE INDEX ethereum_preparation_nonce ON
+  ethereum_preparation` migration step. Otherwise every new nonce reservation for a sender fails.
 - **Root `AZOA.WebAPI.csproj` compiles every `**/*.cs` in the repo**, including under `frontend/` —
   lane V's .NET egress probe is a `.csx` file for that reason.
 - **Codex trace tools:** `.omc/research/claude-resume/codex-tail.mjs <rollout.jsonl> N` prints the last
@@ -221,7 +230,11 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
    - **Optimism-challenge:** audit every completion claim against the evidence that actually exists;
      find a "do it now" path for each deferral and carry-forward; check that one sweep is realistic;
      produce a three-way table (done / built-but-unverified / not done).
-4. **Reconcile both into `round4-plan.md`** (OKF frontmatter). Seed it from the ledger in this order:
+4. **Reconcile both into `round4-plan.md`** (OKF frontmatter). **Put one decision to the owner in
+   the plan:** the optimism assessment's sequencing (compile-until-clean over 6–8 builds, then one full
+   sweep, then ≤3–4 targeted batches) bends the one-sweep rule; ask whether compile iterations count
+   as "the sweep". Also decide each of the ten unrecorded deferrals it lists: do it in round 4, or
+   record it in `deferred.md` with evidence. Seed the plan from the ledger in this order:
    1. Compile convergence. Root causes: `Helpers.Encoding` vs `System.Text.Encoding` (50),
       `Algorand.Utils.Encoder` vs `System.Text.Encoder` (17), `ValidateAddressFormat` never written (17),
       missing `using SurrealForge.Client` for `SurrealLink` (11), then the long tail.
