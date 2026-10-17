@@ -3,7 +3,8 @@ type: lane-checkpoint
 lane: L1-core
 wave: W0
 branch: r4/core
-status: ready-to-merge
+status: merged
+merged: 4d665ec
 ---
 
 # Round 4 — L1 core (W0 `r4/core`)
