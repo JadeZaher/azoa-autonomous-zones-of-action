@@ -37,7 +37,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
         if (string.IsNullOrWhiteSpace(_settings.ConfigId)) missing.Add("Kyb__ConfigId");
         if (string.IsNullOrWhiteSpace(_settings.PolicyVersion)) missing.Add("Kyb__PolicyVersion");
         if (!IdentomatKycProviderService.IsUsableCallbackSecret(_credentials.CallbackApiKey)) missing.Add("Kyc__Identomat__CallbackApiKey");
-        if (_settings.ReturnUrl is not null && !ValidPublicUrl(_settings.ReturnUrl, false)) missing.Add("Kyb__ReturnUrl");
+        if (!string.IsNullOrWhiteSpace(_settings.ReturnUrl) && !ValidPublicUrl(_settings.ReturnUrl, false)) missing.Add("Kyb__ReturnUrl");
         return new HostedSessionCapabilities
         {
             ProviderKey = ProviderKey, FlowKind = FlowKind, Available = missing.Count == 0,
@@ -57,7 +57,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
             ["companyKey"] = _credentials.CompanyKey!.Trim(), ["configId"] = _settings.ConfigId!.Trim(),
             ["clientUserId"] = request.AdmissionKey,
         };
-        if (_settings.ReturnUrl is not null)
+        if (!string.IsNullOrWhiteSpace(_settings.ReturnUrl))
             body["general"] = new Dictionary<string, string> { ["returnUrl"] = _settings.ReturnUrl };
         var response = await transport.PostAsync<Dictionary<string, object>, IdentomatBeginResponse>(
             _credentials.BeginBaseUrl!, "/begin", body, "kyb-begin", ct);

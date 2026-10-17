@@ -18,8 +18,11 @@ namespace AZOA.WebAPI.Services.Kyb;
 /// <inheritdoc/>
 public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider provider,
     IHostedSessionFlow flow, IKycTenantQuota quota, IOptions<KybSettings> options,
-    TimeProvider clock, IUserStore users, IApiKeyStore apiKeys, IHostedSessionStore sessions) : IKybService
+    TimeProvider clock, IUserStore users, IApiKeyStore apiKeys, IHostedSessionStore sessions,
+    IHostedSessionRecoveryStore? recovery = null, IOptions<KycSettings>? kycOptions = null) : IKybService
 {
+    private readonly IdentomatKycSettings _identomat = kycOptions?.Value.Identomat ?? new IdentomatKycSettings();
+
     /// <inheritdoc/>
     public HostedSessionCapabilities GetCapabilities() => provider.GetHostedCapabilities();
 
@@ -56,6 +59,11 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
             || current.AuthorityRevision != provider.AuthorityRevision || current.ExpiresAt <= now)
             return AZOAResult<KybSessionResponse>.FailureWithCode(
                 "A different or completed business verification attempt exists. Read its status before starting another.", AzoaErrorCodes.Conflict);
+
+        var superseded = await SupersedeOrphanAsync(tenantId, current, requestHash, now, ct);
+        if (superseded.IsError || superseded.Result is null)
+            return AZOAResult<KybSessionResponse>.FailureWithCode(superseded.Message, superseded.Code ?? AzoaErrorCodes.Conflict);
+        current = superseded.Result;
 
         var started = await flow.BeginAsync(provider, new HostedSessionRequest
         {
@@ -117,6 +125,43 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
         if (refreshed.IsError)
             return AZOAResult<KybStatusResponse?>.FailureWithCode("Business verification could not be refreshed.", AzoaErrorCodes.DependencyUnavailable);
         return await GetStatusAsync(tenantId, ct);
+    }
+
+    /// <summary>
+    /// IDENTOMAT-RECOVERY for KYB: a possibly-sent create past the bounded wait is superseded by a fresh
+    /// attempt, at most <c>OrphanSupersedesPerDay</c> per tenant. Returns <paramref name="current"/> unchanged
+    /// when its admission is not an orphan. See Services/HostedSessions/AGENTS.md §recovery.
+    /// </summary>
+    private async Task<AZOAResult<KybVerification>> SupersedeOrphanAsync(Guid tenantId, KybVerification current,
+        string requestHash, DateTimeOffset now, CancellationToken ct)
+    {
+        if (recovery is null)
+            return AZOAResult<KybVerification>.Success(current);
+        var admission = await sessions.GetByAdmissionAsync(HostedSessionFlowKinds.Kyb, provider.ProviderKey, current.AdmissionKey, ct);
+        if (admission.IsError || admission.Result is not { State: HostedSessionStates.Claimed, ProviderSessionId: null, CreationStartedAt: not null } orphan
+            || (orphan.CreationQuarantinedAt is null
+                && (orphan.CreationClaimedAt ?? orphan.CreatedDate) > now.AddMinutes(-Math.Clamp(_identomat.OrphanWaitMinutes, 1, 1440))))
+            return AZOAResult<KybVerification>.Success(current);
+
+        var used = await recovery.CountSupersededSinceAsync(HostedSessionFlowKinds.Kyb, tenantId, now.AddDays(-1), ct);
+        if (used >= Math.Clamp(_identomat.OrphanSupersedesPerDay, 0, 10))
+            return AZOAResult<KybVerification>.FailureWithCode(
+                "NeedsOperator: the previous business verification request is unresolved; retry tomorrow or contact support.",
+                AzoaErrorCodes.Conflict);
+        var closed = await recovery.TrySupersedeOrphanAsync(orphan, now, ct);
+        if (closed.IsError || closed.Result is null)
+            return AZOAResult<KybVerification>.FailureWithCode("Business verification changed. Read its current status.", AzoaErrorCodes.Conflict);
+
+        var attempt = Guid.NewGuid().ToString("N");
+        var replacement = await store.TryStartAsync(current, new KybVerification
+        {
+            Id = tenantId.ToString("N"), AttemptId = attempt, AdmissionKey = $"kyb:{tenantId:N}:{attempt}",
+            RequestKeyHash = requestHash, AuthorityRevision = provider.AuthorityRevision, CreatedAt = now,
+            ExpiresAt = now.AddHours(Math.Clamp(options.Value.AttemptLifetimeHours, 1, 720)), Version = current.Version + 1,
+        }, ct);
+        return replacement is { Status: "PENDING" } && replacement.AttemptId == attempt
+            ? AZOAResult<KybVerification>.Success(replacement)
+            : AZOAResult<KybVerification>.FailureWithCode("Business verification changed. Read its current status.", AzoaErrorCodes.Conflict);
     }
 
     private KybStatusResponse Project(KybVerification verification)
