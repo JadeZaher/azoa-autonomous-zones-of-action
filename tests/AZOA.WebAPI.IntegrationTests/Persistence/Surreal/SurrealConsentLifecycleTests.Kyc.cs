@@ -20,7 +20,7 @@ public sealed partial class SurrealConsentLifecycleTests
     public async Task Custodial_kyc_mutations_and_first_send_reject_changed_authority(string change)
     {
         var provisioning = new SigningConsentWitness(1, Authority() with { ActorUserId = _tenant }, [AzoaScopes.TenantProvision], []);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(value => value.OwnerTenantId, "user:" + _tenant.ToString("N")).Set(value => value.ExternalUserId, "kyc-child").Build())).EnsureAllOk();
         var enrolled = (await _store.AdmitProvisionedAsync(_actor, "kyc-child", provisioning))!;
         var access = new TenantCustodialAccess(_executor);
@@ -58,7 +58,7 @@ public sealed partial class SurrealConsentLifecycleTests
             return;
         }
         if (change == "claimed")
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
                 .Unset(value => value.OwnerTenantId).Set(value => value.AuthNotBefore, now.AddSeconds(1)).Build())).EnsureAllOk();
         else if (change == "offboarded")
             (await _store.OffboardAsync(_tenant, enrolled.ParticipationRef!, provisioning)).Should().NotBeNull();

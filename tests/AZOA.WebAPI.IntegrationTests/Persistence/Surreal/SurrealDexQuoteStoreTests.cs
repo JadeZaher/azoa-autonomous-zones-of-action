@@ -66,7 +66,7 @@ public sealed class SurrealDexQuoteStoreTests : IAsyncLifetime
         var candidate = Candidate();
         await _store.ClaimAsync(candidate);
         var operation = Guid.NewGuid().ToString("N");
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DexQuoteRecord>(candidate.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DexQuoteRecord>(candidate.Id).Where(seed => true)
             .Set(row => row.ConsumedByOperationId, operation).Build())).EnsureAllOk();
         (await _store.ClaimAsync(candidate))!.ConsumedByOperationId.Should().Be(operation);
         var forged = Clone(candidate);

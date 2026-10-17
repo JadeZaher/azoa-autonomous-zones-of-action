@@ -31,7 +31,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
             RequestJson = json, RequestHash = NftLifecycleIdentity.Fingerprint(json), PreparedTransactionJson = prepared ? "{}" : null,
             CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
         if (canceled)
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(receipt.OriginalAuthority.Action.RunId.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(receipt.OriginalAuthority.Action.RunId.ToString("N")).Where(seed => true)
                 .Set(run => run.Status, ActionRun.ActionRunStatusKind.Cancelled).Build())).EnsureAllOk();
         NftLifecycle? claimed = null;
         try { claimed = await _store.ClaimAsync(rejected); }
@@ -83,11 +83,11 @@ public sealed partial class SurrealNftLifecycleStoreTests
     {
         var (row, receipt) = await WorkflowCostCandidate();
         var acceptances = new SurrealNftWorkflowCostAcceptanceStore(_executor);
-        (await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<NftProtocolCostQuoteRecord>(receipt.Quote.QuoteId).Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<NftProtocolCostQuoteRecord>(receipt.Quote.QuoteId).Where(seed => true).Build())).EnsureAllOk();
         (await acceptances.RetireAsync(receipt.Request, receipt.AcceptingAuthority)).Should().BeTrue();
         (await _store.GetAsync(row.Id)).Should().BeNull();
         (await acceptances.ClaimAsync(row, receipt)).Should().BeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N")).Where(seed => true)
             .Set(user => user.IsActive, false).Build())).EnsureAllOk();
         (await acceptances.RetireAsync(receipt.Request, receipt.AcceptingAuthority)).Should().BeTrue();
         (await acceptances.RetireAsync(receipt.Request with { ExpectedExecutionVersion = 999 }, receipt.AcceptingAuthority)).Should().BeFalse();
@@ -120,7 +120,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         stored.Detail = "Authorized preparation checkpoint";
         stored = (await _store.UpdateAsync(stored, stored.Version, requireActionAuthority: true))!;
         stored.Should().NotBeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N")).Where(seed => true)
             .Set(user => user.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         stored.State = targetState;
         (await _store.UpdateAsync(stored, stored.Version, requireActionAuthority: true)).Should().BeNull();
@@ -156,9 +156,9 @@ public sealed partial class SurrealNftLifecycleStoreTests
         (await _store.GetAsync(row.Id))!.RequestJson.Should().Be(row.RequestJson);
         var execution = await _executor.QuerySingleAsync<ActionNodeExecution>(SurrealQuery<ActionNodeExecution>.Key(receipt.Request.ExecutionId.ToString("N")));
         execution!.Version.Should().Be(receipt.Request.ExpectedExecutionVersion + 1);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N")).Where(seed => true)
             .Set(user => user.IsActive, false).Build())).EnsureAllOk();
-        (await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<NftProtocolCostQuoteRecord>(receipt.Quote.QuoteId).Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<NftProtocolCostQuoteRecord>(receipt.Quote.QuoteId).Where(seed => true).Build())).EnsureAllOk();
         (await acceptances.ClaimAsync(row, receipt))!.ReceiptJson.Should().Be(accepted!.ReceiptJson);
         (await acceptances.ClaimAsync(row, receipt with { Request = receipt.Request with { ExpectedExecutionVersion = 9 } })).Should().BeNull();
     }
@@ -185,22 +185,22 @@ public sealed partial class SurrealNftLifecycleStoreTests
     {
         var (row, receipt) = await WorkflowCostCandidate();
         if (change == "cancel")
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(receipt.OriginalAuthority.Action.RunId.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(receipt.OriginalAuthority.Action.RunId.ToString("N")).Where(seed => true)
                 .Set(run => run.Status, ActionRun.ActionRunStatusKind.Cancelled).Build())).EnsureAllOk();
         else if (change == "revoked")
         {
             var cutoff = DateTimeOffset.UtcNow.AddSeconds(-10);
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(receipt.Reference.ActorUserId.ToString("N")).Where(seed => true)
                 .Set(user => user.AuthNotBefore, cutoff).Build())).EnsureAllOk();
             receipt = receipt with { AcceptingAuthority = receipt.AcceptingAuthority with {
                 Credential = receipt.AcceptingAuthority.Credential with { AuthNotBefore = cutoff, IssuedAt = cutoff.AddSeconds(1) } } };
             row = WithAcceptance(row, receipt);
         }
         else if (change == "reference")
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionNodeExecution>(receipt.Request.ExecutionId.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionNodeExecution>(receipt.Request.ExecutionId.ToString("N")).Where(seed => true)
                 .Set(execution => execution.ExternalOperationJson, "{}").Build())).EnsureAllOk();
         else
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionNodeExecution>(receipt.Request.ExecutionId.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionNodeExecution>(receipt.Request.ExecutionId.ToString("N")).Where(seed => true)
                 .Set(execution => execution.Version, receipt.Request.ExpectedExecutionVersion + 1).Build())).EnsureAllOk();
         var acceptances = new SurrealNftWorkflowCostAcceptanceStore(_executor);
         (await acceptances.ClaimAsync(row, receipt)).Should().BeNull();
@@ -216,7 +216,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         var accepting = acceptances.ClaimAsync(row, receipt);
         var cancelling = SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
-            var result = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(receipt.OriginalAuthority.Action.RunId.ToString("N"))
+            var result = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(receipt.OriginalAuthority.Action.RunId.ToString("N")).Where(seed => true)
                 .Set(run => run.Status, ActionRun.ActionRunStatusKind.Cancelled).Build());
             result.EnsureAllOk();
             return result;

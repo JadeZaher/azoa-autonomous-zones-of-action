@@ -87,12 +87,12 @@ public sealed class SurrealActionRecoveryTests : IAsyncLifetime
         var stepId = ActionWorkflowIdentity.StepId(execution.RunId, execution.NodeId);
         var query = change switch
         {
-            "cancel" => SurrealWriter.UpdateOnly<RunRow>(execution.RunId.ToString("N")).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build(),
-            "version" => SurrealWriter.UpdateOnly<ExecutionRow>(execution.Id.ToString("N")).Set(row => row.Version, 1L).Build(),
-            "payload" => SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.SagaSteps>(stepId)
+            "cancel" => SurrealWriter.UpdateOnly<RunRow>(execution.RunId.ToString("N")).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build(),
+            "version" => SurrealWriter.UpdateOnly<ExecutionRow>(execution.Id.ToString("N")).Where(seed => true).Set(row => row.Version, 1L).Build(),
+            "payload" => SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.SagaSteps>(stepId).Where(seed => true)
                 .Set(row => row.Payload, SagaStep<ActionStepPayload>.Serialize(new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()))).Build(),
-            "gate" => SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.SagaSteps>(stepId).Set(row => row.GateId, SagaOpaqueKey.Encode("another-gate")).Build(),
-            _ => SurrealWriter.UpdateOnly<ExecutionRow>(execution.Id.ToString("N")).Set(row => row.FrozenInput, "{}").Build()
+            "gate" => SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.SagaSteps>(stepId).Where(seed => true).Set(row => row.GateId, SagaOpaqueKey.Encode("another-gate")).Build(),
+            _ => SurrealWriter.UpdateOnly<ExecutionRow>(execution.Id.ToString("N")).Where(seed => true).Set(row => row.FrozenInput, "{}").Build()
         };
         (await _executor.ExecuteAsync(query)).EnsureAllOk();
         (await _service.RetryAsync(execution.Id, _operator, request, default)).IsError.Should().BeTrue();
@@ -104,7 +104,7 @@ public sealed class SurrealActionRecoveryTests : IAsyncLifetime
     public async Task LegacyUncorrelatedExecution_IsInspectableButCannotBeReset()
     {
         var execution = await ParkedAsync();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ExecutionRow>(execution.Id.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ExecutionRow>(execution.Id.ToString("N")).Where(seed => true)
             .Unset(row => row.FrozenInput).Unset(row => row.ExternalOperationJson).Build())).EnsureAllOk();
         (await _service.GetAsync(execution.Id, default)).Result!.CanRetry.Should().BeFalse();
         (await _service.RetryAsync(execution.Id, _operator, Request(execution), default)).IsError.Should().BeTrue();

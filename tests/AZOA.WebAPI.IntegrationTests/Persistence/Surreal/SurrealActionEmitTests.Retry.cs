@@ -55,7 +55,7 @@ public sealed partial class SurrealActionEmitTests
         (await events.GetAsync(other, Guid.ParseExact(eventId, "N"))).Should().BeNull();
         (await events.ListAsync(other, 0, 25)).Should().BeEmpty();
         (await events.RetryAsync(tenant, Guid.ParseExact(eventId, "N"), command, TenantManagement(other))).Should().BeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(registration.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(registration.Id).Where(seed => true)
             .Set(row => row.Version, 2L).Set(row => row.DestinationRevision, 2L)
             .Set(row => row.Url, "https://replacement.example/events").Build())).EnsureAllOk();
         (await events.RetryAsync(tenant, Guid.ParseExact(eventId, "N"), command, TenantManagement(tenant))).Should().BeNull();
