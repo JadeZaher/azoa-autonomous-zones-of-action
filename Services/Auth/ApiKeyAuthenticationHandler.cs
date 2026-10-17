@@ -136,12 +136,12 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
     public static string HashKey(string rawKey)
     {
         var bytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rawKey));
-        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(bytes);
+        return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(bytes);
     }
 
     public static string GenerateRawKey()
     {
         var bytes = RandomNumberGenerator.GetBytes(32);
-        return $"azoa_{AZOA.WebAPI.Helpers.Encoding.ToLowerHex(bytes)}";
+        return $"azoa_{AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(bytes)}";
     }
 }

@@ -2,6 +2,7 @@ using System.Text;
 using Algorand;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
+using AlgorandEncoder = Algorand.Utils.Encoder;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Blockchain;
 
@@ -66,8 +67,8 @@ public partial class AlgorandProvider
             expected.GenesisId = first.GenesisId;
             expected.Note = note;
             expected.Group = first.Group;
-            var canonical = Encoder.EncodeToMsgPackOrdered(expected);
-            if (!canonical.AsSpan().SequenceEqual(Encoder.EncodeToMsgPackOrdered(actual))
+            var canonical = AlgorandEncoder.EncodeToMsgPackOrdered(expected);
+            if (!canonical.AsSpan().SequenceEqual(AlgorandEncoder.EncodeToMsgPackOrdered(actual))
                 || saved is not null && !canonical.AsSpan().SequenceEqual(Convert.FromBase64String(saved.TransactionsBase64[index])))
                 throw new InvalidOperationException("Exchange member has substituted semantics or hidden effects.");
         }

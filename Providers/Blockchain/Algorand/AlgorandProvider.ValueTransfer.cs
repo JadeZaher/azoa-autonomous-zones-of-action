@@ -6,6 +6,7 @@ using Algorand;
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
+using AlgorandEncoder = Algorand.Utils.Encoder;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Helpers;
@@ -60,7 +61,7 @@ public partial class AlgorandProvider : IValueTransferTransactionModule
                 {
                     Id = identity, IntentHash = hash, Stage = "ValueTransfer", Generation = 0,
                     PlanJson = JsonSerializer.Serialize(new ValueTransferPlan(
-                        Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(transaction)), "algorand:" + parameters.GenesisHashB64)),
+                        Convert.ToBase64String(AlgorandEncoder.EncodeToMsgPackOrdered(transaction)), "algorand:" + parameters.GenesisHashB64)),
                     CreatedAt = DateTimeOffset.UtcNow,
                 }, ct);
             }
@@ -72,7 +73,7 @@ public partial class AlgorandProvider : IValueTransferTransactionModule
                 var transaction = ValidatePreparedValueTransfer(recovered);
                 var savedPlan = JsonSerializer.Deserialize<ValueTransferPlan>(row.PlanJson)!;
                 if (CanonicalJson.Hash(recovered.Intent) != hash || recovered.ProtocolIdentity != savedPlan.ProtocolIdentity
-                    || !Encoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(savedPlan.UnsignedBase64)))
+                    || !AlgorandEncoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(savedPlan.UnsignedBase64)))
                     throw new InvalidOperationException("Recovered value transfer conflicts with its durable plan.");
                 return AZOAResult<PreparedValueTransfer>.Success(recovered);
             }
@@ -82,7 +83,7 @@ public partial class AlgorandProvider : IValueTransferTransactionModule
             var signed = await SignViaCustodyAsync(unsigned, "prepare value transfer", intent.SigningContext);
             if (signed.IsError || signed.Result is null) return AZOAResult<PreparedValueTransfer>.Failure(signed.Message);
             var envelope = AlgorandSignedEnvelope.DecodeCanonical(Convert.ToBase64String(signed.Result));
-            if (!Encoder.EncodeToMsgPackOrdered(envelope.Tx).AsSpan().SequenceEqual(unsigned))
+            if (!AlgorandEncoder.EncodeToMsgPackOrdered(envelope.Tx).AsSpan().SequenceEqual(unsigned))
                 throw new InvalidOperationException("Custody changed the saved value-transfer plan.");
             AlgorandSignedEnvelope.RequireSingleSender(envelope, intent.Sender);
             var prepared = new PreparedValueTransfer(envelope.Tx.TxID(), Convert.ToBase64String(signed.Result), plan.ProtocolIdentity, intent);
@@ -105,7 +106,7 @@ public partial class AlgorandProvider : IValueTransferTransactionModule
             throw new InvalidOperationException("Value transfer is not the saved prepared candidate.");
         var plan = JsonSerializer.Deserialize<ValueTransferPlan>(row.PlanJson)!;
         if (plan.ProtocolIdentity != prepared.ProtocolIdentity
-            || !Encoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
+            || !AlgorandEncoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
             throw new InvalidOperationException("Value-transfer wire conflicts with its original plan.");
         await RequireValueTransferNetworkAsync(prepared, ct);
         var status = await AlgodHttpClient.GetFromJsonAsync<AlgodStatus>("/v2/status", ct)

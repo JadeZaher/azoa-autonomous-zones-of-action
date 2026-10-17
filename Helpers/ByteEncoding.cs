@@ -1,13 +1,7 @@
 namespace AZOA.WebAPI.Helpers;
 
-/// <summary>
-/// Shared byte/hex/text encoding helpers, promoted from identical private forks
-/// across the wallet, custody, wormhole, and DEX layers. NOTE: this type
-/// deliberately shadows <see cref="System.Text.Encoding"/> by short name — inside
-/// this file the BCL type is referenced fully-qualified as
-/// <c>System.Text.Encoding</c>.
-/// </summary>
-public static class Encoding
+/// <summary>Shared byte/hex/text encoding helpers (see <c>Helpers/AGENTS.md</c> §BCL names).</summary>
+public static class ByteEncoding
 {
     /// <summary>Lowercase hex string of a byte buffer (canonical for the
     /// repo-wide <c>Convert.ToHexString(x).ToLowerInvariant()</c> idiom).</summary>

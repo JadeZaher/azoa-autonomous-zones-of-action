@@ -7,6 +7,7 @@ using Algorand;
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
+using AlgorandEncoder = Algorand.Utils.Encoder;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
@@ -58,7 +59,7 @@ public partial class AlgorandProvider : IFungibleCreationModule
                 row = await store.ClaimAsync(new NativePreparation
                 {
                     Id = identity, IntentHash = hash, Stage = "FungibleCreate", Generation = intent.Generation,
-                    PlanJson = JsonSerializer.Serialize(new FungiblePlan(Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(tx)), intent.Quote.ProtocolIdentity)),
+                    PlanJson = JsonSerializer.Serialize(new FungiblePlan(Convert.ToBase64String(AlgorandEncoder.EncodeToMsgPackOrdered(tx)), intent.Quote.ProtocolIdentity)),
                     CreatedAt = DateTimeOffset.UtcNow,
                 }, ct);
             }
@@ -74,7 +75,7 @@ public partial class AlgorandProvider : IFungibleCreationModule
             if (signed.IsError || signed.Result is null)
                 return AZOAResult<PreparedFungibleCreation>.Failure(signed.Message);
             var envelope = AlgorandSignedEnvelope.DecodeCanonical(Convert.ToBase64String(signed.Result));
-            if (!Encoder.EncodeToMsgPackOrdered(envelope.Tx).AsSpan().SequenceEqual(unsigned))
+            if (!AlgorandEncoder.EncodeToMsgPackOrdered(envelope.Tx).AsSpan().SequenceEqual(unsigned))
                 throw new InvalidOperationException("Custody changed the saved creation plan.");
             AlgorandSignedEnvelope.RequireSingleSender(envelope, intent.CreatorAddress);
             var prepared = new PreparedFungibleCreation(identity, envelope.Tx.TxID(), Convert.ToBase64String(signed.Result), plan.ProtocolIdentity, intent);
@@ -113,13 +114,13 @@ public partial class AlgorandProvider : IFungibleCreationModule
         var signed = AlgorandSignedEnvelope.DecodeCanonical(prepared.SignedTransactionBase64);
         if (signed.Tx is not AssetCreateTransaction tx || tx.TxID() != prepared.TransactionId
             || plan.ProtocolIdentity != prepared.ProtocolIdentity || prepared.Intent.Quote!.ProtocolIdentity != prepared.ProtocolIdentity
-            || !Encoder.EncodeToMsgPackOrdered(tx).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
+            || !AlgorandEncoder.EncodeToMsgPackOrdered(tx).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
             throw new InvalidOperationException("Creation wire differs from its immutable plan.");
         var intent = prepared.Intent;
         var expected = BuildAssetParams(intent.Name, intent.UnitName, UInt64Text.Parse(intent.TotalBaseUnits), (ulong)intent.Decimals,
             intent.DefaultFrozen, intent.ManagerAddress, intent.ReserveAddress, intent.FreezeAddress, intent.ClawbackAddress,
             intent.Url, intent.MetadataHashBase64 is null ? null : Convert.FromBase64String(intent.MetadataHashBase64));
-        if (!Encoder.EncodeToMsgPackOrdered(tx.AssetParams).AsSpan().SequenceEqual(Encoder.EncodeToMsgPackOrdered(expected))
+        if (!AlgorandEncoder.EncodeToMsgPackOrdered(tx.AssetParams).AsSpan().SequenceEqual(AlgorandEncoder.EncodeToMsgPackOrdered(expected))
             || tx.GenesisHash is null || prepared.ProtocolIdentity != "algorand:" + Convert.ToBase64String(tx.GenesisHash.Bytes)
             || tx.Fee != UInt64Text.Parse(intent.Quote!.NetworkFeeBaseUnits) || tx.FirstValid is null || tx.LastValid is null
             || tx.FirstValid > tx.LastValid || tx.Group is not null || tx.RekeyTo is not null

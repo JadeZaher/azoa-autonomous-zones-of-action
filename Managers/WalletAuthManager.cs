@@ -467,7 +467,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        if (!AZOA.WebAPI.Helpers.Encoding.TryDecodeSignature(signature, out var signatureBytes))
+        if (!AZOA.WebAPI.Helpers.ByteEncoding.TryDecodeSignature(signature, out var signatureBytes))
         {
             result.IsError = true;
             result.Message = "Signature is not valid base64 or hex.";

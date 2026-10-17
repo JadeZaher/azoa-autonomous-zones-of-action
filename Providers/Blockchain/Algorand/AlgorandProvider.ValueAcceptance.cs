@@ -6,6 +6,7 @@ using Algorand;
 using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
+using AlgorandEncoder = Algorand.Utils.Encoder;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
@@ -53,7 +54,7 @@ public partial class AlgorandProvider : IValueCustodyModule
                     return AZOAResult<PreparedValueAcceptance>.Failure("The recipient needs the accepted native fee and additional account minimum before acceptance.");
                 row = await store.ClaimAsync(new NativePreparation { Id = id, IntentHash = hash,
                     Stage = "ValueAcceptance", Generation = intent.Cost.Generation,
-                    PlanJson = JsonSerializer.Serialize(new ValueTransferPlan(Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(transaction)),
+                    PlanJson = JsonSerializer.Serialize(new ValueTransferPlan(Convert.ToBase64String(AlgorandEncoder.EncodeToMsgPackOrdered(transaction)),
                         "algorand:" + parameters.GenesisHashB64)), CreatedAt = DateTimeOffset.UtcNow }, ct);
             }
             if (row.IntentHash != hash || row.Stage != "ValueAcceptance" || row.Generation != intent.Cost.Generation)
@@ -65,7 +66,7 @@ public partial class AlgorandProvider : IValueCustodyModule
                 var recovered = JsonSerializer.Deserialize<PreparedValueAcceptance>(row.PreparedJson)!;
                 var transaction = ValidatePreparedValueAcceptance(recovered);
                 if (CanonicalJson.Hash(recovered.Intent) != hash || recovered.ProtocolIdentity != plan.ProtocolIdentity
-                    || !Encoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
+                    || !AlgorandEncoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
                     throw new InvalidDataException("Recovered acceptance conflicts with its original preparation.");
                 return AZOAResult<PreparedValueAcceptance>.Success(recovered);
             }
@@ -73,7 +74,7 @@ public partial class AlgorandProvider : IValueCustodyModule
             var signed = await SignViaCustodyAsync(unsigned, "prepare recipient acceptance", intent.SigningContext);
             if (signed.IsError || signed.Result is null) return AZOAResult<PreparedValueAcceptance>.Failure(signed.Message);
             var envelope = AlgorandSignedEnvelope.DecodeCanonical(Convert.ToBase64String(signed.Result));
-            if (!Encoder.EncodeToMsgPackOrdered(envelope.Tx).AsSpan().SequenceEqual(unsigned))
+            if (!AlgorandEncoder.EncodeToMsgPackOrdered(envelope.Tx).AsSpan().SequenceEqual(unsigned))
                 throw new InvalidDataException("Custody changed the saved acceptance plan.");
             var prepared = new PreparedValueAcceptance(envelope.Tx.TxID(), Convert.ToBase64String(signed.Result), plan.ProtocolIdentity, intent);
             ValidatePreparedValueAcceptance(prepared);
@@ -93,7 +94,7 @@ public partial class AlgorandProvider : IValueCustodyModule
             throw new InvalidDataException("Acceptance is not the journaled signed candidate.");
         var plan = JsonSerializer.Deserialize<ValueTransferPlan>(row.PlanJson)!;
         if (plan.ProtocolIdentity != prepared.ProtocolIdentity
-            || !Encoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
+            || !AlgorandEncoder.EncodeToMsgPackOrdered(transaction).AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedBase64)))
             throw new InvalidDataException("Acceptance bytes conflict with the original plan.");
         var parameters = await ValidatedTransactionParametersAsync(ct);
         if (prepared.ProtocolIdentity != "algorand:" + parameters.GenesisHashB64)

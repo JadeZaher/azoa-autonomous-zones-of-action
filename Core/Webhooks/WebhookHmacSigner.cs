@@ -97,6 +97,6 @@ public sealed class WebhookHmacSigner
 
         using var hmac = new HMACSHA256(keyBytes);
         var hash = hmac.ComputeHash(preimage);
-        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(hash);
+        return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(hash);
     }
 }
