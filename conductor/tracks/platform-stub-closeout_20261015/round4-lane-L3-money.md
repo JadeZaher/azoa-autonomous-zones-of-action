@@ -137,6 +137,17 @@ schedule never reads back tenant-less.
 shape; `inheritdoc` on new interface members' implementations; IDE0005 clean (app project gate on);
 narrowly-typed catch only in `ResolveParkedAsync` (provider-factory refusal → conflict).
 
+## Helper
+
+`r4/money-hold` @ `9fce0a2` (`r4(money-hold): ready — …`) merged `--no-ff` into `r4/money` as
+`7fd3c91`, no conflicts. Record: `round4-lane-money-hold.md` (SQL-04, hold liability reads, folded
+recipient readiness, durable buy-back top-up, retired-row resolution, consent-gated previews, D-7
+gate, operator-only platform-unit partitions; inventories `RouteAuthorization/L3-hold.json`,
+`CrossTenant/L3-hold.json`; its `appsettings.json` hunk is recorded there). Merged tree: solution
+0 errors / 22 warnings; Fiat + Exchange + Reserve + NodeFee unit tests 507/507 green. The helper's
+`Needs other lane` items are carried below. Lead note from the helper: `AllocationManager` still uses
+the synchronous `ICustodialRecipientPreparer` for allocation issuance (out of round-4 scope; recorded).
+
 ## Residuals (recorded, not hidden)
 
 - An **InProgress** collect claim or reversal move after a crash (no transaction id recorded) has no
@@ -161,3 +172,9 @@ narrowly-typed catch only in `ResolveParkedAsync` (provider-factory refusal → 
   view; SDK `FiatPayoutView` ids are now bare.
 - **L6:** real-DB fixtures for the payout resolution evidence paths and the reversal resolution; the
   bare-id source rule should include `CONTENT $_body` POCO writes (SQL sweep recommendation).
+- **From the helper (`round4-lane-money-hold.md` §Needs other lane):** L5 —
+  `Providers/Blockchain/Algorand/AlgorandGroupReceipt.cs:64` must treat a null `AssetAmount` as 0
+  (blocking real-chain exchange settlement) and declare `IExchangeTransactionModule` only on pinned
+  networks; L1 — `Controllers/Admin/ProjectTreasuryController.cs:242` should project the bare tenant id;
+  L7 — SDK/console for the helper's five routes; L6 — run the helper's captured-null negatives in the
+  sweep.
