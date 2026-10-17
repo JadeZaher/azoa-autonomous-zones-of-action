@@ -223,7 +223,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         /// <summary>Purchase-recovery units this row has counted; reconciles against the immutable recovery receipts.</summary>
         [Column(Order = 42)]
-        [Default("\"0\"")]
+        [Default("ALWAYS \"0\"")]
         public string PurchaseRecoveredBaseUnits { get; set; } = "0";
 
         /// <summary>Scope word for a refund reversal; part of the record id.</summary>

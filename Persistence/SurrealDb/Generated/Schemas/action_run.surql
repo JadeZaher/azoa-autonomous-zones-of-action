@@ -15,7 +15,7 @@ DEFINE PARAM IF NOT EXISTS $action_run_status VALUE ["Pending", "Running", "Succ
 DEFINE TABLE IF NOT EXISTS action_run SCHEMAFULL;
 
 DEFINE FIELD IF NOT EXISTS version ON TABLE action_run TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS definition_snapshot_json ON TABLE action_run TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS definition_snapshot_hash ON TABLE action_run TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS invocation_identity ON TABLE action_run TYPE option<string>;

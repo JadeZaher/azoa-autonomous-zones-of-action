@@ -81,28 +81,28 @@ DEFINE FIELD IF NOT EXISTS updated_at ON TABLE fiat_payout TYPE datetime;
 DEFINE FIELD IF NOT EXISTS provider_payout_id ON TABLE fiat_payout TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS bank_payout_started_at ON TABLE fiat_payout TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS bank_payout_attempt ON TABLE fiat_payout TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS environment ON TABLE fiat_payout TYPE string
-    DEFAULT "unbound";
+    DEFAULT ALWAYS "unbound";
 DEFINE FIELD IF NOT EXISTS chain_network ON TABLE fiat_payout TYPE string
-    DEFAULT "unbound";
+    DEFAULT ALWAYS "unbound";
 DEFINE FIELD IF NOT EXISTS recovery_requested ON TABLE fiat_payout TYPE bool
-    DEFAULT false;
+    DEFAULT ALWAYS false;
 DEFINE FIELD IF NOT EXISTS recovery_reversal_amount ON TABLE fiat_payout TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS recovery_started_at ON TABLE fiat_payout TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS provider_transfer_reversal_id ON TABLE fiat_payout TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS restored_quantity_base_units ON TABLE fiat_payout TYPE string
-    DEFAULT "0";
+    DEFAULT ALWAYS "0";
 DEFINE FIELD IF NOT EXISTS restitution_key ON TABLE fiat_payout TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS restitution_target_base_units ON TABLE fiat_payout TYPE string
-    DEFAULT "0";
+    DEFAULT ALWAYS "0";
 DEFINE FIELD IF NOT EXISTS recovery_audit_json ON TABLE fiat_payout TYPE string
-    DEFAULT "[]";
+    DEFAULT ALWAYS "[]";
 DEFINE FIELD IF NOT EXISTS return_pending_transaction_id ON TABLE fiat_payout TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS return_pending_idempotency_key ON TABLE fiat_payout TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS recovery_reversal_attempt ON TABLE fiat_payout TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

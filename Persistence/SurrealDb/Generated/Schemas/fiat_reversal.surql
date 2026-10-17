@@ -100,7 +100,7 @@ DEFINE FIELD IF NOT EXISTS created_at ON TABLE fiat_reversal TYPE datetime
     READONLY;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE fiat_reversal TYPE datetime;
 DEFINE FIELD IF NOT EXISTS purchase_recovered_base_units ON TABLE fiat_reversal TYPE string
-    DEFAULT "0";
+    DEFAULT ALWAYS "0";
 
 -- ── Indexes ──────────────────────────────────────────────────
 

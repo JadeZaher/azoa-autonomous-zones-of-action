@@ -23,6 +23,9 @@ the admission row alone grants neither signing nor broadcast.
 
 `wtt_stage_key` stores authenticated ciphertext and the immutable public key/binding, never a seed or custody secret. Its content-hash record identity is unique per operation/role/generation and authority scope. Encryption-version changes are exact-envelope CAS updates. The table has no generic user read or delete surface; retention requires the old decrypt version until rewrapped. Generate its schema with the integrated schema sweep before enabling WTT.
 
+Schema generation, the deploy path, the unique-index audit and the old-row rule (new fields on
+existing tables are `option<>` or `[Default("ALWAYS …")]`): see `../AGENTS.md`.
+
 Design rationale / cross-cutting invariants for the hand-authored SurrealDB
 POCOs in this directory. Code carries terse one-line doc-comments; the WHY
 lives here. Goldens under `Generated/Schemas/*.surql` are GENERATED — never

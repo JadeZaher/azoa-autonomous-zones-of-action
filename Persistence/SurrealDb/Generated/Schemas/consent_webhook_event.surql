@@ -24,11 +24,11 @@ DEFINE FIELD IF NOT EXISTS registration_id ON TABLE consent_webhook_event TYPE o
 DEFINE FIELD IF NOT EXISTS destination_revision ON TABLE consent_webhook_event TYPE option<int>;
 DEFINE FIELD IF NOT EXISTS destination_url ON TABLE consent_webhook_event TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS version ON TABLE consent_webhook_event TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS retry_generation ON TABLE consent_webhook_event TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS cycle_attempt_count ON TABLE consent_webhook_event TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS lease_id ON TABLE consent_webhook_event TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS lease_expires_at ON TABLE consent_webhook_event TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS attempt_secret_revision ON TABLE consent_webhook_event TYPE option<int>;

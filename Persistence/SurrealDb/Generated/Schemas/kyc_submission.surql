@@ -67,3 +67,7 @@ DEFINE INDEX IF NOT EXISTS kyc_submission_user_id
 DEFINE INDEX IF NOT EXISTS kyc_submission_status
     ON TABLE kyc_submission
     FIELDS status;
+
+DEFINE INDEX IF NOT EXISTS kyc_submission_tenant_id
+    ON TABLE kyc_submission
+    FIELDS tenant_id;

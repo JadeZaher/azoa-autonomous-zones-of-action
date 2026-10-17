@@ -58,7 +58,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? EffectDisposition { get; set; }
 
         public string? PreparedTransactionJson { get; set; }
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long PreparationGeneration { get; set; }
 
         [FieldGroup("Timestamps")]

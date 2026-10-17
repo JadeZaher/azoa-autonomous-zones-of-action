@@ -75,20 +75,20 @@ DEFINE FIELD IF NOT EXISTS updated_at ON TABLE on_ramp_lot TYPE datetime;
 DEFINE FIELD IF NOT EXISTS provider_refund_id ON TABLE on_ramp_lot TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS refund_started_at ON TABLE on_ramp_lot TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS recovery_audit_json ON TABLE on_ramp_lot TYPE string
-    DEFAULT "[]";
+    DEFAULT ALWAYS "[]";
 DEFINE FIELD IF NOT EXISTS environment ON TABLE on_ramp_lot TYPE string
-    DEFAULT "unbound";
+    DEFAULT ALWAYS "unbound";
 DEFINE FIELD IF NOT EXISTS chain_network ON TABLE on_ramp_lot TYPE string
-    DEFAULT "unbound";
+    DEFAULT ALWAYS "unbound";
 DEFINE FIELD IF NOT EXISTS refund_attempt ON TABLE on_ramp_lot TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS refunded_minor_units ON TABLE on_ramp_lot TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS provider_refund_status ON TABLE on_ramp_lot TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS reversed_base_units ON TABLE on_ramp_lot TYPE string
-    DEFAULT "0";
+    DEFAULT ALWAYS "0";
 DEFINE FIELD IF NOT EXISTS reversal_marks_json ON TABLE on_ramp_lot TYPE string
-    DEFAULT "{}";
+    DEFAULT ALWAYS "{}";
 
 -- ── Indexes ──────────────────────────────────────────────────
 

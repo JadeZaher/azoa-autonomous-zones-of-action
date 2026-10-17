@@ -17,11 +17,11 @@ DEFINE FIELD IF NOT EXISTS destination_revision ON TABLE action_webhook_event TY
 DEFINE FIELD IF NOT EXISTS destination_url ON TABLE action_webhook_event TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS body_json ON TABLE action_webhook_event TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS version ON TABLE action_webhook_event TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS retry_generation ON TABLE action_webhook_event TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS cycle_attempt_count ON TABLE action_webhook_event TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 DEFINE FIELD IF NOT EXISTS lease_id ON TABLE action_webhook_event TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS lease_expires_at ON TABLE action_webhook_event TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS attempt_secret_revision ON TABLE action_webhook_event TYPE option<int>;

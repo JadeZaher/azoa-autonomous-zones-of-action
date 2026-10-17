@@ -39,7 +39,7 @@ DEFINE FIELD IF NOT EXISTS error ON TABLE idempotency_key_store TYPE option<stri
 DEFINE FIELD IF NOT EXISTS effect_disposition ON TABLE idempotency_key_store TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS prepared_transaction_json ON TABLE idempotency_key_store TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS preparation_generation ON TABLE idempotency_key_store TYPE int
-    DEFAULT 0;
+    DEFAULT ALWAYS 0;
 
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE idempotency_key_store TYPE datetime

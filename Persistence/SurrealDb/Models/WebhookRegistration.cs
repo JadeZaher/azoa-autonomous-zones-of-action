@@ -14,11 +14,11 @@ public partial class WebhookRegistration : ISurrealRecord
     [Id] [Required(NotEmpty = true)] public string Id { get; set; } = string.Empty;
     [JsonPropertyName("tenant_id")] [References(typeof(User))] public string TenantId { get; set; } = string.Empty;
     [JsonPropertyName("url")] [Required(NotEmpty = true)] public string Url { get; set; } = string.Empty;
-    [JsonPropertyName("secret")] public string? LegacySecret { get; set; }
-    [JsonPropertyName("encrypted_secret")] public string EncryptedSecret { get; set; } = string.Empty;
-    [JsonPropertyName("version")] public long Version { get; set; }
-    [JsonPropertyName("destination_revision")] public long DestinationRevision { get; set; }
-    [JsonPropertyName("secret_revision")] public long SecretRevision { get; set; }
+    [JsonPropertyName("secret")] [Column(Name = "secret")] public string? LegacySecret { get; set; }
+    [JsonPropertyName("encrypted_secret")] [Default("ALWAYS \"\"")] public string EncryptedSecret { get; set; } = string.Empty;
+    [JsonPropertyName("version")] [Default("ALWAYS 0")] public long Version { get; set; }
+    [JsonPropertyName("destination_revision")] [Default("ALWAYS 0")] public long DestinationRevision { get; set; }
+    [JsonPropertyName("secret_revision")] [Default("ALWAYS 0")] public long SecretRevision { get; set; }
     [JsonPropertyName("secret_rotated_at")] public DateTimeOffset? SecretRotatedAt { get; set; }
     [JsonPropertyName("is_active")] [Default("true")] public bool IsActive { get; set; }
     [JsonPropertyName("created_at")] [ReadOnly] public DateTimeOffset CreatedAt { get; set; }
