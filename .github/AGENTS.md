@@ -5,7 +5,7 @@
 `.gitleaks.toml` (repo root) extends the default gitleaks rules; the CI job passes it with
 `--config` for both the history and working-tree passes.
 
-- Allowlist **exact secret values** (`regexTarget = "secret"`, anchored `^…$`) or a **history-only
+- Allowlist **exact secret values** (`regexTarget = "secret"`, anchored `^…$`), a **pin manifest** that by construction holds only public hashes, or a **history-only
   file** that no longer exists in the tree. Never a directory, never a rule id, never a glob over
   source — a blanket path hides the next real credential that lands there.
 - Each entry carries a one-line reason: published test vector, public on-chain address,

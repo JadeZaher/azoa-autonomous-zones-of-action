@@ -135,7 +135,9 @@ services:
     # API trusts through the per-run CA; the published port is the journeys' control plane only.
     volumes:
       - ./frontend/e2e/support/webhook-receiver:/receiver:ro
-      - ./frontend/e2e/.generated:/certs:ro
+      # Only the leaf certificate and key, never the per-run CA key beside them.
+      - ./frontend/e2e/.generated/vendor.pem:/certs/vendor.pem:ro
+      - ./frontend/e2e/.generated/vendor-key.pem:/certs/vendor-key.pem:ro
     networks:
       # default: carries only the published loopback control-plane port.
       default: {}
