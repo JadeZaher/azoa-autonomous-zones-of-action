@@ -101,6 +101,7 @@ DEFINE FIELD IF NOT EXISTS created_at ON TABLE fiat_reversal TYPE datetime
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE fiat_reversal TYPE datetime;
 DEFINE FIELD IF NOT EXISTS purchase_recovered_base_units ON TABLE fiat_reversal TYPE string
     DEFAULT ALWAYS "0";
+DEFINE FIELD IF NOT EXISTS pending_move_key ON TABLE fiat_reversal TYPE option<string>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 
