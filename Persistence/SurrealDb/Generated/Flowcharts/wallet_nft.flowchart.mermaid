@@ -16,7 +16,6 @@ graph LR
     nft_protocol_cost_quote["nft_protocol_cost_quote: Node"]:::nodeClass
     nft_workflow_cost_acceptance["nft_workflow_cost_acceptance: Node"]:::nodeClass
     nft_workflow_cost_retirement["nft_workflow_cost_retirement: Node"]:::nodeClass
-    swap_state["swap_state: Node"]:::nodeClass
     wallet["wallet: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
@@ -25,7 +24,6 @@ graph LR
     %% Edges (outbound from this slice)
     nft_ownership -- "issuer_user_id [N:0..1]" --> user
     nft_ownership -- "user_id [N:1]" --> user
-    swap_state -- "user_id [N:1]" --> user
     wallet -- "user_id [N:1]" --> user
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
