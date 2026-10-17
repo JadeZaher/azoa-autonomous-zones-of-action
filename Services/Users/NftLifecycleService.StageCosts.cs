@@ -20,7 +20,7 @@ public sealed partial class NftLifecycleService
         if (row is null) return CostRefused("NFT operation not found.");
         var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!;
         var payer = await PayerAuthorityAsync(row, command, credential, ct);
-        if (payer is null) return CostRefused("Only the participant who pays this NFT stage can review its costs.");
+        if (payer is null) return CostRefused("NFT operation not found.");
         if (!NftStageCostContract.Eligible(row, command) || !NftStageCostContract.Reviews(row, stage))
             return CostRefused("Review the current unsigned NFT stage before requesting its costs.");
         var tenant = payer.Value.Tenant;
@@ -61,9 +61,10 @@ public sealed partial class NftLifecycleService
         var prior = old.SingleOrDefault(item => item.Request.Stage.RequestId == request.Stage.RequestId);
         if (prior is not null)
             return prior.Request == request && prior.Authority.Credential.ActorUserId == credential.ActorUserId
+                && prior.Authority.Credential.TenantId == credential.TenantId
                 ? AZOAResult<NftLifecycleView>.Success(View(row)) : Refused("The stage cost acceptance key belongs to a different request.");
         var payer = await PayerAuthorityAsync(row, command, credential, ct);
-        if (payer is null) return Refused("Only the participant who pays this NFT stage can accept its costs.");
+        if (payer is null) return Refused("NFT operation not found.");
         if (!NftStageCostContract.Eligible(row, command) || !NftStageCostContract.Reviews(row, request.Stage))
             return Refused("Review the current unsigned NFT stage before accepting its costs.");
         var quote = await protocolCosts.GetAsync(request.Costs.QuoteId, credential.ActorUserId, payer.Value.Tenant, ct);
