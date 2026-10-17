@@ -1643,8 +1643,36 @@ export interface CashOutQuote {
   statusMessage: string;
 }
 
+/** One cash-out as the operator board sees it (mirrors backend `FiatPayoutView`); base-unit quantities are strings. */
+export interface FiatPayoutView {
+  id: string;
+  status: string;
+  statusReason?: string | null;
+  subjectUserId: string;
+  tenantId?: string | null;
+  amountMinorUnits: number;
+  currencyCode: string;
+  quantityBaseUnits: string;
+  agedQuantityBaseUnits: string;
+  unitsOwedBaseUnits: string;
+  reversedMinorUnits: number;
+  consumedLotCount: number;
+  connectedAccountId?: string | null;
+  providerTransferId?: string | null;
+  unitsCollectedTransactionId?: string | null;
+  unitsReturnedTransactionId?: string | null;
+  reversalId?: string | null;
+  attemptCount: number;
+  requestedAt: string;
+  unitsCollectedAt?: string | null;
+  paidAt?: string | null;
+  reversedAt?: string | null;
+  providerPayoutId?: string | null;
+}
+
 /** What a person's payout account can do right now, in the words they read on the page. */
 export interface PayoutAccountStatus {
+
   /** Whether this node offers cashing out at all. */
   available: boolean;
   /** Whether a payout account exists for this person yet. */

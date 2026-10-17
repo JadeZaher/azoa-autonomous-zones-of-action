@@ -149,6 +149,7 @@ export type {
   ActionEdgeType,
   ActionNodeType,
   ActionResult,
+  ActionRunResult,
   ActionCreateParams,
   ActionUpdateParams,
   ActionNodeResult,
