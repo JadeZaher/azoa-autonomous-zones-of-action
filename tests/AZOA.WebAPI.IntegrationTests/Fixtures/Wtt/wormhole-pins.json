@@ -1,0 +1,108 @@
+{
+  "upstream": {
+    "repository": "wormhole-foundation/wormhole",
+    "commit": "bb5957f321b0a9d168f52e906699ee77baa82a28",
+    "tree": "6e61447f80281c3e765691cf4c0ed5387b868bb3",
+    "provenance": ".omc/research/round3-wtt-upstream-{commit,tree}-2026-10-15.json (main checkout)",
+    "gitBlobs": {
+      "algorand/TmplSig.py": "8ed3c991dde0b221cceba16417f74b17587d6565",
+      "algorand/admin.py": "6d6d3dbab05709eb516e8a97b7450345bfb5ba12",
+      "algorand/globals.py": "bc77d9d171da12f75bcc996afb1d5c5b63a9217a",
+      "algorand/inlineasm.py": "565cb26cc1fb13da3040b3920ede1e3829a871f3",
+      "algorand/local_blob.py": "ceb1dda8847b0695853a78e8318d0f4507341683",
+      "algorand/requirements.txt": "636e371cc281e036d928270cf61cd680cdbe869b",
+      "algorand/token_bridge.py": "7c479ad0d611a61de71d57afb236434b4d63d463",
+      "algorand/vaa_verify.py": "db2a61df1d4008c6f416c5af3d4e6ec1d2f45a68",
+      "algorand/wormhole_core.py": "a66fe406a7b6ab7ad650b36838bb5e097e5cd6f6",
+      "ethereum/contracts/Getters.sol": "627b641509a7e2cbfc8148a59aa1628e1399d39e",
+      "ethereum/contracts/Governance.sol": "cc01fb473cd1a0846ec4c9fa2abbf961bd10ef7b",
+      "ethereum/contracts/GovernanceStructs.sol": "88d9be2f14435bfec9441f546d7df1d474652526",
+      "ethereum/contracts/Implementation.sol": "5bb98cf87b22d23b85f29a94d1c924db11a9c6c3",
+      "ethereum/contracts/Messages.sol": "c70efbb6a15a1be9afa03fd45e2ad6a487b72c37",
+      "ethereum/contracts/Setters.sol": "17f8828278c075129d15e83fff71ea076440d0c4",
+      "ethereum/contracts/Setup.sol": "abcd3a645fa7c28094b9ae51f0db1b76f5b0a72e",
+      "ethereum/contracts/Shutdown.sol": "ca4a31f53be4ba0984a63cbdb71940c280f3d774",
+      "ethereum/contracts/State.sol": "7fa5a5c7f05261a19b4361beab22522f5532897a",
+      "ethereum/contracts/Structs.sol": "d61155c55130ca764d32ba96c9ff3af910247c76",
+      "ethereum/contracts/Wormhole.sol": "a091789442f4788301ad588f72cd8b0beef4e51a",
+      "ethereum/contracts/bridge/Bridge.sol": "264f0e5d49648e651799603c35b34ea7ed7a7563",
+      "ethereum/contracts/bridge/BridgeGetters.sol": "0ec2b4af6dea309483f757b5f4d0af96404071ac",
+      "ethereum/contracts/bridge/BridgeGovernance.sol": "6bfe5de91e0d6beef63f99c6d434130908c231b2",
+      "ethereum/contracts/bridge/BridgeImplementation.sol": "42a1041b82c88a860219d9b8c0eaa453ffbd6695",
+      "ethereum/contracts/bridge/BridgePauserStorage.sol": "f8931dd737250a1af4a097d96416f0a8950797df",
+      "ethereum/contracts/bridge/BridgeSetters.sol": "6e7a423bcd4b9ed2e43d4b6d46208eca6ed5c870",
+      "ethereum/contracts/bridge/BridgeSetup.sol": "9732fb96a3aa55f8864c77d9bff0f0d6db179244",
+      "ethereum/contracts/bridge/BridgeShutdown.sol": "11c5c5d93de7ea52c0d13a83575833f716cb9bb7",
+      "ethereum/contracts/bridge/BridgeState.sol": "32ccaf89535a44119f87bedb67a052380c20c720",
+      "ethereum/contracts/bridge/BridgeStructs.sol": "e5be20a32e17e20566a2dc249bd583aa00323571",
+      "ethereum/contracts/bridge/TokenBridge.sol": "bc7e0ec002ba195a52c61bc09969391619c03db4",
+      "ethereum/contracts/bridge/interfaces/ITokenBridge.sol": "aba30a7b9e553d6076add4d2bd384e8cf2e470bc",
+      "ethereum/contracts/bridge/interfaces/IWETH.sol": "dbea14135c6479f3b556255fad5e3ac328a4441c",
+      "ethereum/contracts/bridge/token/Token.sol": "5f6488c079c8cef979769d1d55377684f50838e1",
+      "ethereum/contracts/bridge/token/TokenImplementation.sol": "ec153f54b72eca46a80d36a0d6fc9bf972991e9d",
+      "ethereum/contracts/bridge/token/TokenState.sol": "ef875bc63dbbd1a29bad376f91c1051be2fb1037",
+      "ethereum/contracts/interfaces/IWormhole.sol": "eba9f6f2eaaa595ccb2a828876a16f79079f60a4",
+      "ethereum/contracts/libraries/external/BytesLib.sol": "532897a6473e63ba77ee218a67739a512a8e63dd",
+      "sdk/js/src/solana/tokenBridge/accounts/config.ts": "df29ef9f3c3745ae47e938d052e3ba4ab1815429",
+      "sdk/js/src/solana/tokenBridge/instructions/initialize.ts": "a019c40886f0e231cd41962c9a2595c37fc97717",
+      "sdk/js/src/solana/wormhole/accounts/config.ts": "4f05b0f7239f6ed16a8fdc138d90493af659176f",
+      "sdk/js/src/solana/wormhole/accounts/feeCollector.ts": "a53b6e5b6aa4afc5d7694e9bd4ca7c0097c31488",
+      "sdk/js/src/solana/wormhole/accounts/guardianSet.ts": "1c953ed0904d7c020ccf505083b5c5293734b919",
+      "sdk/js/src/solana/wormhole/instructions/initialize.ts": "02cb1d93acfca1100bceb1d82097088af22ee7e3",
+      "solana/bridge/program/src/api/initialize.rs": "199b66a73c251437920a4e575ffeb16e194620e5",
+      "solana/bridge/program/src/lib.rs": "c5e2f8317b3ec85ccf8417cf41b41e4b17db1bf6",
+      "solana/modules/token_bridge/program/src/api/initialize.rs": "c214c920ffbaa7f063abb6922776b557ac193550",
+      "solana/modules/token_bridge/program/src/lib.rs": "bd8bbe073917c2422ce96220fc02dd23a156c174"
+    }
+  },
+  "evm": {
+    "solc": "0.8.4",
+    "evmVersion": "istanbul",
+    "optimizerRuns": 200,
+    "openzeppelin": {
+      "version": "4.3.1",
+      "integrity": "sha512-QjgbPPlmDK2clK1hzjw2ROfY8KA5q+PfhDUUxZFEBCZP9fi6d5FuNoh/Uq0oCTMEKPmue69vhX2jcl0N/tFKGw=="
+    },
+    "hardhat": "2.26.3",
+    "chainId": 31337,
+    "wormholeChainId": 2,
+    "weth9": {
+      "artifact": "contracts/ethereum/test/fixtures/WETH9.json",
+      "sha256": "67f36a6b7174cc41af5e6e2bcf393d5da253c380c8de72becbe8c3173e34c8da"
+    }
+  },
+  "solana": {
+    "agave": "3.1.8",
+    "image": "tests/AZOA.WebAPI.IntegrationTests/Fixtures/Solana/Containerfile",
+    "wormholeChainId": 1,
+    "programs": {
+      "core": {
+        "programId": "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth",
+        "programData": "DUw5YjHpxeTVP5UZu39eoScMWDN5QnNnSrrBj68pFLHt",
+        "deploymentSlot": "425583168",
+        "length": 973360,
+        "sha256": "a9ce97f30d37f905ee55c7e72d3777c9fc6c5108a501d9e790526a9ffb3a5af1"
+      },
+      "tokenBridge": {
+        "programId": "wormDTUJ6AWPNvk59vGQbDvGJmqbDTdgWgAqcLBCgUb",
+        "programData": "7ek4EpFaoForoFzzx8wBVQzN9oYP5reNK9JkYHMnTxo9",
+        "deploymentSlot": "377952237",
+        "length": 1198528,
+        "sha256": "0eee4584fb7b8d2cb8718cc87b060843a5fe5c9a44899776ee7ded9d52c644a4"
+      }
+    }
+  },
+  "algorand": {
+    "python": "3.10",
+    "pyteal": "0.11.1",
+    "pyAlgorandSdk": "1.10.0b1",
+    "wormholeChainId": 8,
+    "localnet": "tests/AZOA.WebAPI.IntegrationTests/Fixtures/Algorand/compose.yml",
+    "teal": {}
+  },
+  "guardian": {
+    "governanceChainId": 1,
+    "governanceEmitter": "0000000000000000000000000000000000000000000000000000000000000004",
+    "guardianSetIndex": 0
+  }
+}
