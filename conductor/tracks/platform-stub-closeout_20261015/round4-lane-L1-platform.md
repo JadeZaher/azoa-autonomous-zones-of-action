@@ -3,7 +3,8 @@ type: lane-checkpoint
 lane: L1-platform
 wave: W2
 branch: r4/platform
-status: ready
+status: merged
+merged: c56a8cbd
 ---
 
 # Round 4 — L1 platform (W2 `r4/platform`, merge #3)
