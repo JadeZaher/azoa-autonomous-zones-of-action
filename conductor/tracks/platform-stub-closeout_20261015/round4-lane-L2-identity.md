@@ -4,7 +4,8 @@ round: 4
 wave: W2
 lane: L2
 branch: r4/identity
-status: ready
+status: merged
+merged: 5f1aa515
 ---
 
 # Round 4 · L2 identity lane (`r4/identity`, merge #4)
@@ -149,6 +150,8 @@ the A-4 default applies) — a deletion has no verbatim hunk to keep.
   tests green after regeneration. No unique index added; the audit table in
   `Persistence/SurrealDb/AGENTS.md` is unchanged (poll claims are single-record CAS).
 - No change to baselined `kyc_submission`.
+- Owner decision (after lane start): schema moves by generation reset (fresh DB), so no baseline or
+  forward migration is needed for the `hosted_session` fields.
 
 ## Compile result
 
