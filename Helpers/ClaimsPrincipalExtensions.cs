@@ -60,6 +60,27 @@ public static class ClaimsPrincipalExtensions
     public static bool HasDappManagerRole(this ClaimsPrincipal principal)
         => AZOA.WebAPI.Core.AzoaDappRoles.CanManage(principal?.FindFirst("dapp_role")?.Value);
 
+    /// <summary>True for a first-party login JWT: <c>token_use=login</c>, no acting tenant, not an API key.</summary>
+    public static bool IsFirstPartyLogin(this ClaimsPrincipal principal)
+        => principal is not null
+            && string.Equals(principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value, AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin, StringComparison.Ordinal)
+            && principal.GetActingTenantId() is null
+            && !principal.IsApiKey();
+
+    /// <summary>True when the principal authenticated with an API key.</summary>
+    public static bool IsApiKey(this ClaimsPrincipal principal)
+        => string.Equals(principal?.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Non-operator DApp-role assignment authority: a current manager's first-party login, or an API key
+    /// that explicitly carries <c>dapp:manage</c> and whose owner is a current manager (see `Controllers/AGENTS.md` §user-dapp-rbac).</summary>
+    public static bool CanAssignDappRoles(this ClaimsPrincipal principal)
+    {
+        if (principal is null || !principal.HasDappManagerRole()) return false;
+        if (!principal.IsApiKey()) return principal.IsFirstPartyLogin();
+        return !string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase)
+            && principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage);
+    }
+
     public static bool CanSelfIssueApiKeyScope(this ClaimsPrincipal principal, string scope)
     {
         if (!AZOA.WebAPI.Core.AzoaScopes.IsIssuableByUser(scope))

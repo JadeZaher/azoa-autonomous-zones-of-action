@@ -227,6 +227,7 @@ public sealed class SurrealUserStore : IUserStore
         try
         {
             SurrealQuery query = update.Build();
+            var resultIndex = 0;
             if (claimOwnership)
             {
                 var revocations = await new SurrealConsentLifecycleStore(_executor).ClaimRevocationsAsync(
@@ -246,6 +247,7 @@ public sealed class SurrealUserStore : IUserStore
                     SurrealGeneratedStatementScope.Assign(update.Build(), "claim_user", "_claim_user"),
                     SurrealQuery.Of("IF $_claim_user = NONE OR $_claim_user = [] { THROW 'CONSENT_CLAIM_CHANGED' }") };
                 statements.AddRange(revocations);
+                resultIndex = statements.Count;
                 statements.Add(SurrealQuery.Of("RETURN $_claim_user"));
                 statements.Add(SurrealQuery.Of("COMMIT"));
                 query = SurrealQuery.Combine(statements.ToArray());
@@ -254,7 +256,7 @@ public sealed class SurrealUserStore : IUserStore
             {
                 var response = await _executor.ExecuteAsync(query, ct); response.EnsureAllOk(); return response;
             }, ct);
-            var saved = result.GetValues<GeneratedUser>(claimOwnership ? result.Statements.Count - 2 : 0).SingleOrDefault();
+            var saved = result.GetValues<GeneratedUser>(resultIndex).SingleOrDefault();
             return saved is null ? AZOAResult<IUser>.FailureWithCode("Authentication changed concurrently.", AzoaErrorCodes.Conflict)
                 : AZOAResult<IUser>.Success(FromPoco(saved));
         }

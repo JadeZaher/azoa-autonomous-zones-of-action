@@ -42,6 +42,11 @@ public interface IWalletAuthManager
         Guid authedUserId, string address, string chainType, string signature, string? message,
         CancellationToken ct = default);
 
+    /// <summary>Consumes the live challenge for the address and verifies its signature; returns the canonical
+    /// <c>(Address, ChainType)</c> that the caller now proved control of. No identity is created or changed.</summary>
+    Task<AZOAResult<(string Address, string ChainType)>> VerifyAddressControlAsync(
+        string address, string chainType, string signature, string? message, CancellationToken ct = default);
+
     /// <summary>
     /// AC4: a tenant mints a single-use, short-TTL claim token for a child it owns
     /// (ownership asserted; cross-tenant/unowned target → NotFound). The token alone

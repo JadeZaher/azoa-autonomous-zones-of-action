@@ -40,7 +40,6 @@ public class WalletAuthTokenParityTests
     private readonly Mock<IWalletAuthClaimTokenStore> _claimTokens = new();
     private readonly Mock<IUserStore> _users = new();
     private readonly Mock<IWalletSignatureVerifier> _verifier = new();
-    private readonly Mock<IConsentGrantStore> _consentGrants = new();
     private readonly IConfiguration _config;
     private readonly WalletAuthManager _walletMgr;
 
@@ -52,10 +51,6 @@ public class WalletAuthTokenParityTests
             ["Jwt:Issuer"] = "AZOA.WebAPI",
             ["Jwt:Audience"] = "AZOA.Client",
         }).Build();
-
-        _consentGrants
-            .Setup(c => c.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<int> { Result = 0 });
 
         _walletMgr = new WalletAuthManager(
             _challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, _config);

@@ -128,7 +128,9 @@ public class TenantManagerTests
             OwnerTenantId = null,
             ExternalUserId = "user-42",
             PasswordHash = "claimed-password-hash",
-            AuthWalletAddress = "claimed-wallet"
+            AuthWalletAddress = "claimed-wallet",
+            Username = "owner-chosen-name",
+            Email = "owner@example.test"
         };
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(
                 tenantId, "user-42", It.IsAny<CancellationToken>()))
@@ -142,6 +144,9 @@ public class TenantManagerTests
 
         result.IsError.Should().BeFalse();
         result.Result!.UserId.Should().Be(deterministicId);
+        result.Result.Email.Should().BeEmpty("a claimed account's contact identity is no longer the tenant's (audit-1 M1)");
+        result.Result.Username.Should().BeEmpty();
+        (await _manager.ResolveChildAsync(tenantId, "user-42")).Result!.Email.Should().BeEmpty();
         claimed.PasswordHash.Should().Be("claimed-password-hash");
         claimed.AuthWalletAddress.Should().Be("claimed-wallet");
         _store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
