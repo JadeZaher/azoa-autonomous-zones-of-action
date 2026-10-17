@@ -5,7 +5,10 @@
     "action": "Retry",
     "class": "non-value",
     "scope": "tenant:provision",
-    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST api/operator/tenants/{tenantId}/webhook-events/{eventId}/retry",
@@ -13,7 +16,10 @@
     "action": "Retry",
     "class": "non-value",
     "scope": "operator",
-    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
   },
   {
     "route": "POST api/tenant/consent-webhook-events/{eventId}/retry",
@@ -21,7 +27,10 @@
     "action": "Retry",
     "class": "non-value",
     "scope": "tenant:provision",
-    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST api/operator/tenants/{tenantId}/consent-webhook-events/{eventId}/retry",
@@ -29,7 +38,10 @@
     "action": "Retry",
     "class": "non-value",
     "scope": "operator",
-    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
   },
   {
     "route": "PUT api/tenant/webhook-registration",
@@ -37,7 +49,10 @@
     "action": "Put",
     "class": "non-value",
     "scope": "tenant:provision",
-    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; versioned registration CAS; persisted command identity"
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; versioned registration CAS; persisted command identity",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST api/tenant/webhook-registration/withdraw",
@@ -45,7 +60,10 @@
     "action": "Withdraw",
     "class": "non-value",
     "scope": "tenant:provision",
-    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; versioned registration CAS; persisted command identity"
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; versioned registration CAS; persisted command identity",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "PUT api/operator/tenants/{tenantId}/webhook-registration",
@@ -53,7 +71,10 @@
     "action": "Put",
     "class": "non-value",
     "scope": "operator",
-    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; versioned registration CAS; persisted command identity"
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; versioned registration CAS; persisted command identity",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
   },
   {
     "route": "POST api/operator/tenants/{tenantId}/webhook-registration/withdraw",
@@ -61,7 +82,10 @@
     "action": "Withdraw",
     "class": "non-value",
     "scope": "operator",
-    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; versioned registration CAS; persisted command identity"
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; versioned registration CAS; persisted command identity",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
   },
   {
     "route": "PUT api/node-governance/parameters",
@@ -69,7 +93,10 @@
     "action": "UpdateParameters",
     "class": "non-value",
     "scope": "node:govern",
-    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row"
+    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row",
+    "policies": [
+      "NodeGovern"
+    ]
   },
   {
     "route": "PUT api/node-governance/fee-schedule",
@@ -77,7 +104,10 @@
     "action": "UpdateFeeSchedule",
     "class": "value-moving",
     "scope": "node:govern",
-    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row; fee changes the amount taken from future value operations"
+    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row; fee changes the amount taken from future value operations",
+    "policies": [
+      "NodeGovern"
+    ]
   },
   {
     "route": "PUT api/node-governance/treasury",
@@ -85,6 +115,137 @@
     "action": "UpdateTreasuryDestination",
     "class": "value-moving",
     "scope": "node:govern",
-    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row; destination receives future node fees"
+    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row; destination receives future node fees",
+    "policies": [
+      "NodeGovern"
+    ]
+  },
+  {
+    "route": "POST /api/admin/platform-token/genesis",
+    "controller": "PlatformTokenController",
+    "action": "Genesis",
+    "class": "value-moving",
+    "scope": "token:create:sign (captured node-operator credential)",
+    "enforcement": "Operator policy (class) + RecentNodeOperatorSession; credential captured from the operator session; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/admin/platform-token/creation/{id}/refresh",
+    "controller": "PlatformGenesisRecoveryController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy; node-operator subject and an operator-owned genesis row (OwnsGenesisAsync: NodeOperatorIdentity, no acting tenant, row actor = operator, GenesisAuthority set); re-observes chain state, authorizes no stage",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/admin/platform-token/creation/{id}/quote",
+    "controller": "PlatformGenesisRecoveryController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (class) + RecentNodeOperatorSession; node-operator subject and an operator-owned genesis row (OwnsGenesisAsync: NodeOperatorIdentity, no acting tenant, row actor = operator, GenesisAuthority set); offers a cost quote only",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/admin/platform-token/creation/{id}/accept-quote",
+    "controller": "PlatformGenesisRecoveryController",
+    "action": "Accept",
+    "class": "value-moving",
+    "scope": "token:create:sign (accepted budget bounds the genesis spend)",
+    "enforcement": "Operator policy (class) + RecentNodeOperatorSession; node-operator subject and an operator-owned genesis row (OwnsGenesisAsync: NodeOperatorIdentity, no acting tenant, row actor = operator, GenesisAuthority set); version + quote id CAS",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/admin/platform-token/creation/{id}/continue",
+    "controller": "PlatformGenesisRecoveryController",
+    "action": "Continue",
+    "class": "value-moving",
+    "scope": "token:create:sign (captured node-operator credential)",
+    "enforcement": "Operator policy (class) + RecentNodeOperatorSession; node-operator subject and an operator-owned genesis row (OwnsGenesisAsync: NodeOperatorIdentity, no acting tenant, row actor = operator, GenesisAuthority set); credential captured per request",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/admin/platform-token/creation/{id}/replace",
+    "controller": "PlatformGenesisRecoveryController",
+    "action": "Replace",
+    "class": "value-moving",
+    "scope": "token:create:sign (captured node-operator credential)",
+    "enforcement": "Operator policy (class) + RecentNodeOperatorSession; node-operator subject and an operator-owned genesis row (OwnsGenesisAsync: NodeOperatorIdentity, no acting tenant, row actor = operator, GenesisAuthority set); credential captured per request",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/admin/project-treasuries/resolve",
+    "controller": "ProjectTreasuryController",
+    "action": "Resolve",
+    "class": "value-moving",
+    "scope": "Operator (creates the project treasury account that later holds project value; no transfer)",
+    "enforcement": "Operator policy (JWT node operator, operator:admin scope, no acting tenant); idempotent resolve-or-create keyed by (chain, tenant, project)",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/admin/project-treasuries/close",
+    "controller": "ProjectTreasuryController",
+    "action": "Close",
+    "class": "value-moving",
+    "scope": "Operator (retires a treasury; refused while any asset shows available or held units)",
+    "enforcement": "Operator policy; operator id from claims; close refused while units remain",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/admin/backfill/apply",
+    "controller": "BackfillController",
+    "action": "Apply",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (API keys never reach it); applies registered IBackfill data migrations (ledgered, idempotent per id); no chain effect; financial limiter",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/operator/session",
+    "controller": "NodeOperatorSessionController",
+    "action": "Login",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous credential-free endpoint (class NodeOperatorSession is overridden by AllowAnonymous); reserved operator credential check; operator-login limiter",
+    "policies": [
+      "NodeOperatorSession",
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/operator/session/revoke",
+    "controller": "NodeOperatorSessionController",
+    "action": "Revoke",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeOperatorSession (class) + RecentNodeOperatorSession; bumps the session revision so every operator session dies",
+    "policies": [
+      "NodeOperatorSession",
+      "RecentNodeOperatorSession"
+    ]
   }
 ]

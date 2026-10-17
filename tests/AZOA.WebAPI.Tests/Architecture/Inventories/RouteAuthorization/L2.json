@@ -1,16 +1,230 @@
 [
-  { "route": "POST api/kyc/session", "controller": "KycController", "action": "BeginSession", "class": "non-value", "scope": "FirstPartyLogin (no acting tenant)", "enforcement": "policy FirstPartyLogin + acting-tenant Forbid; rate limit financial; subject from claim" },
-  { "route": "POST api/kyc/refresh", "controller": "KycController", "action": "Refresh", "class": "non-value", "scope": "FirstPartyLogin (no acting tenant)", "enforcement": "policy FirstPartyLogin + acting-tenant Forbid; rate limit financial; only the caller's own open attempt" },
-  { "route": "POST api/kyc/submit", "controller": "KycController", "action": "Submit", "class": "non-value", "scope": "FirstPartyLogin (no acting tenant)", "enforcement": "policy FirstPartyLogin + acting-tenant Forbid; subject from claim" },
-  { "route": "GET api/kyc/status/summary", "controller": "KycController", "action": "GetStatusSummary", "class": "non-value", "scope": "kyc:read for API keys and acting tenants", "enforcement": "scope check; an acting tenant reads only its tenant-scoped attempt" },
-  { "route": "POST api/kyc/callback/identomat", "controller": "KycCallbackController", "action": "Identomat", "class": "non-value", "scope": "anonymous (vendor)", "enforcement": "constant-time callbackApiKey; body is a trigger only, verdict re-fetched from /result/; fixed 202; rate limit kyc-callback" },
-  { "route": "POST api/kyc/callback/veriff", "controller": "HostedIdentityCallbackController", "action": "Callback", "class": "non-value", "scope": "anonymous (vendor)", "enforcement": "adapter signature verification; attempt-bound receipt; verdict re-fetched" },
-  { "route": "POST api/kyc/callback/generic-hosted", "controller": "HostedIdentityCallbackController", "action": "Callback", "class": "non-value", "scope": "anonymous (vendor)", "enforcement": "adapter signature verification; attempt-bound receipt; verdict re-fetched" },
-  { "route": "POST api/kyb/identomat/callback", "controller": "IdentomatKybCallbackController", "action": "Receive", "class": "non-value", "scope": "anonymous (vendor)", "enforcement": "constant-time callbackApiKey; verdict re-fetched from /result" },
-  { "route": "POST api/operator/hosted-sessions/{sessionId}/reconcile", "controller": "HostedSessionReconciliationController", "action": "Reconcile", "class": "non-value", "scope": "RecentNodeOperatorSession", "enforcement": "operator policy; 20-1000 char evidence; vendor existence proven by /result/; audited CAS" },
-  { "route": "POST api/operator/hosted-sessions/{sessionId}/refresh", "controller": "HostedSessionReconciliationController", "action": "Refresh", "class": "non-value", "scope": "RecentNodeOperatorSession", "enforcement": "operator policy; authoritative re-fetch only; audited as OperatorRefresh" },
-  { "route": "POST api/tenant/business-verification/session", "controller": "TenantBusinessVerificationController", "action": "Begin", "class": "non-value", "scope": "TenantBusinessVerification; kyc:submit for API keys", "enforcement": "policy + scope; tenant from claim; Idempotency-Key" },
-  { "route": "POST api/tenant/business-verification/refresh", "controller": "TenantBusinessVerificationController", "action": "Refresh", "class": "non-value", "scope": "TenantBusinessVerification; kyc:read for API keys", "enforcement": "policy + scope; tenant from claim" },
-  { "route": "PUT api/tenant/kyc/provider", "controller": "TenantKycConfigurationController", "action": "SelectProvider", "class": "non-value", "scope": "RecentFirstPartyLogin", "enforcement": "recent first-party login; tenant from claim; override allow-list" },
-  { "route": "POST api/operator/kyc/aml-reviews/{userId}/decision", "controller": "AmlReviewController", "action": "Decide", "class": "non-value", "scope": "RecentNodeOperatorSession", "enforcement": "operator policy; audited decision" }
+  {
+    "route": "POST api/kyc/session",
+    "controller": "KycController",
+    "action": "BeginSession",
+    "class": "non-value",
+    "scope": "FirstPartyLogin (no acting tenant)",
+    "enforcement": "policy FirstPartyLogin + acting-tenant Forbid; rate limit financial; subject from claim",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/kyc/refresh",
+    "controller": "KycController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": "FirstPartyLogin (no acting tenant)",
+    "enforcement": "policy FirstPartyLogin + acting-tenant Forbid; rate limit financial; only the caller's own open attempt",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/kyc/submit",
+    "controller": "KycController",
+    "action": "Submit",
+    "class": "non-value",
+    "scope": "FirstPartyLogin (no acting tenant)",
+    "enforcement": "policy FirstPartyLogin + acting-tenant Forbid; subject from claim",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/kyc/status/summary",
+    "controller": "KycController",
+    "action": "GetStatusSummary",
+    "class": "non-value",
+    "scope": "kyc:read for API keys and acting tenants",
+    "enforcement": "scope check; an acting tenant reads only its tenant-scoped attempt",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/kyc/callback/identomat",
+    "controller": "KycCallbackController",
+    "action": "Identomat",
+    "class": "non-value",
+    "scope": "anonymous (vendor)",
+    "enforcement": "constant-time callbackApiKey; body is a trigger only, verdict re-fetched from /result/; fixed 202; rate limit kyc-callback",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST api/kyc/callback/veriff",
+    "controller": "HostedIdentityCallbackController",
+    "action": "Callback",
+    "class": "non-value",
+    "scope": "anonymous (vendor)",
+    "enforcement": "adapter signature verification; attempt-bound receipt; verdict re-fetched",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST api/kyc/callback/generic-hosted",
+    "controller": "HostedIdentityCallbackController",
+    "action": "Callback",
+    "class": "non-value",
+    "scope": "anonymous (vendor)",
+    "enforcement": "adapter signature verification; attempt-bound receipt; verdict re-fetched",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST api/kyb/identomat/callback",
+    "controller": "IdentomatKybCallbackController",
+    "action": "Receive",
+    "class": "non-value",
+    "scope": "anonymous (vendor)",
+    "enforcement": "constant-time callbackApiKey; verdict re-fetched from /result",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST api/operator/hosted-sessions/{sessionId}/reconcile",
+    "controller": "HostedSessionReconciliationController",
+    "action": "Reconcile",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; 20-1000 char evidence; vendor existence proven by /result/; audited CAS",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/operator/hosted-sessions/{sessionId}/refresh",
+    "controller": "HostedSessionReconciliationController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; authoritative re-fetch only; audited as OperatorRefresh",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/tenant/business-verification/session",
+    "controller": "TenantBusinessVerificationController",
+    "action": "Begin",
+    "class": "non-value",
+    "scope": "TenantBusinessVerification; kyc:submit for API keys",
+    "enforcement": "policy + scope; tenant from claim; Idempotency-Key",
+    "policies": [
+      "TenantBusinessVerification"
+    ]
+  },
+  {
+    "route": "POST api/tenant/business-verification/refresh",
+    "controller": "TenantBusinessVerificationController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": "TenantBusinessVerification; kyc:read for API keys",
+    "enforcement": "policy + scope; tenant from claim",
+    "policies": [
+      "TenantBusinessVerification"
+    ]
+  },
+  {
+    "route": "PUT api/tenant/kyc/provider",
+    "controller": "TenantKycConfigurationController",
+    "action": "SelectProvider",
+    "class": "non-value",
+    "scope": "RecentFirstPartyLogin",
+    "enforcement": "recent first-party login; tenant from claim; override allow-list",
+    "policies": [
+      "FirstPartyLogin",
+      "RecentFirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST api/operator/kyc/aml-reviews/{userId}/decision",
+    "controller": "AmlReviewController",
+    "action": "Decide",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; audited decision",
+    "policies": [
+      "NodeOperatorSession",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "PUT /api/operator/kyc/providers/{providerKey}",
+    "controller": "NodeOperatorController",
+    "action": "UpdateProvider",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeOperatorSession (class) + RecentNodeOperatorSession; audited KYC provider profile change; financial limiter",
+    "policies": [
+      "NodeOperatorSession",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "PUT /api/operator/tenants/{tenantId}/kyc-provider",
+    "controller": "NodeOperatorController",
+    "action": "SelectTenantProvider",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeOperatorSession (class) + RecentNodeOperatorSession; audited per-tenant KYC provider selection; financial limiter",
+    "policies": [
+      "NodeOperatorSession",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/operator/kyc/submissions/{id}/decision",
+    "controller": "NodeOperatorController",
+    "action": "Decide",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeOperatorSession (class) + RecentNodeOperatorSession; operator KYC decision opens or closes the value gate (audited); financial limiter",
+    "policies": [
+      "NodeOperatorSession",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /auth/oauth/exchange",
+    "controller": "ExternalAuthController",
+    "action": "Exchange",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous; single-use exchange ticket minted by the provider callback; financial limiter",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /auth/oauth/{provider}/link/start",
+    "controller": "ExternalAuthController",
+    "action": "StartLink",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin; link ticket bound to the authenticated user; financial limiter",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "DELETE /auth/oauth/links/{provider}",
+    "controller": "ExternalAuthController",
+    "action": "Unlink",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin; removes only the caller's own provider link",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  }
 ]
