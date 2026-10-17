@@ -267,3 +267,11 @@ partial indexer history never permits projection or replacement. AlgorandGroupRe
 is the unchanged shared finalized-group verifier extracted from WTT, including
 contiguity and every expected outer transaction body. Exchange capability remains
 unadvertised until its coordinator and source-review gates are complete.
+
+## Application call identity
+
+Algorand2 2.0.0.2024051911 declares `ApplicationId` on each on-completion subclass (`ApplicationNoopTransaction`, `ApplicationOptInTransaction`, …), not on the `ApplicationCallTransaction` base. `AlgorandApplicationCall.Id` is the one switch over those subclasses; a create or any unrecognized shape returns null, and every caller (`AlgorandGroupReceipt`, `TinymanSwapReceipt`, the two WTT observations) treats null as a mismatch or an unknown-application error. Never cast the base to a guessed subclass.
+
+## Asset acceptance wire
+
+`AssetAcceptTransaction` (zero-amount self opt-in) has no close-to field in the SDK. Acceptance validation relies on `AlgorandSignedEnvelope.DecodeCanonical`: a wire carrying `aclose` either decodes to a different subclass (rejected by the `is AssetAcceptTransaction` pattern) or loses the field on re-encode (rejected by the byte-exact round trip). The acceptance cost `Generation` is a `long` on the contract and an `int` on `native_preparation`; values outside `0..int.MaxValue` are refused before the claim, never truncated.

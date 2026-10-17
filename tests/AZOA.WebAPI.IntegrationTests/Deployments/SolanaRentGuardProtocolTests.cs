@@ -45,8 +45,8 @@ public sealed class SolanaRentGuardProtocolTests(ITestOutputHelper output)
             switch (mutation)
             {
                 case "rent": bad.Data[1] ^= 1; break;
-                case "short": bad.Data = bad.Data[..^1]; break;
-                case "trailing": bad.Data = [.. bad.Data, 0]; break;
+                case "short": bad = new TransactionInstruction { ProgramId = bad.ProgramId, Keys = bad.Keys, Data = bad.Data[..^1] }; break;
+                case "trailing": bad = new TransactionInstruction { ProgramId = bad.ProgramId, Keys = bad.Keys, Data = [.. bad.Data, 0] }; break;
                 case "opcode": bad.Data[0] = 7; break;
                 case "account": bad.Keys[0] = AccountMeta.ReadOnly(rail.Actor.PublicKey, true); break;
                 case "extra": bad.Keys.Add(AccountMeta.ReadOnly(SysVars.ClockKey, false)); break;
