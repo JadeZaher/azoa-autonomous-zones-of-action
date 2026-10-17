@@ -47,7 +47,7 @@ public partial class AlgorandProvider
             for (var index = 0; index < expected.Count; index++)
             {
                 if (expected[index] is not ApplicationCallTransaction app) continue;
-                var application = app.ApplicationId!.Value;
+                if (AlgorandApplicationCall.Id(app) is not { } application) return Error<WttStageObservation>("Unknown application in saved WTT group.");
                 var core = application == plan.CoreApplication;
                 if (!core && application != plan.TokenApplication) return Error<WttStageObservation>("Unknown application in saved WTT group.");
                 var transaction = receipt.Transactions[index];

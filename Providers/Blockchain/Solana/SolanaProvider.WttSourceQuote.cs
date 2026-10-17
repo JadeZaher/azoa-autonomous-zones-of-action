@@ -126,10 +126,10 @@ public partial class SolanaProvider : IWttSourceModule
 
     private bool ValidWttSourceIntent(WttOperationIntent intent)
         => intent is { Version: 1, Source: not null, Target: not null, Asset: not null, Amount: not null,
-                SourceAuthority.Context: not null, SourceBudget: not null }
+                SourceAuthority: not null, SourceBudget: not null }
             && !string.IsNullOrWhiteSpace(intent.OperationId) && intent.ActorUserId != Guid.Empty
             && intent.Source.Network == ActiveNetwork && intent.Source.ChainType == ChainType && intent.Source.ProtocolChain == 1
-            && intent.Target.ProtocolChain is not (0 or 1) && ValidateAddressFormat(intent.SourceAuthority.Address)
+            && intent.Target.ProtocolChain is not (0 or 1) && SolanaAddress.IsSigner(intent.SourceAuthority.Address)
             && intent.SourceAuthority.Context.IsResolvableUserContext && !intent.SourceAuthority.Context.IsPlatform
             && intent.SourceAuthority.Context.UserId == intent.ActorUserId && intent.SourceAuthority.Context.ChainType == ChainType
             && intent.SourceAuthority.Context.ActingTenantId == intent.TenantId.GetValueOrDefault()

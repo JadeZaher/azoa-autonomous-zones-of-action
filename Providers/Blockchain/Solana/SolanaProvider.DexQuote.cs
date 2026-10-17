@@ -40,13 +40,13 @@ public partial class SolanaProvider
             requested.Payer is null || requested.InputAsset is null || requested.OutputAsset is null || requested.PlatformFee is null ||
             requested.Budget is null || requested.Network.ChainType != ChainType || requested.Network.Network != ActiveNetwork.ToString() ||
             requested.Owner != requested.Payer || requested.Owner.UserId != requested.ActorUserId ||
-            requested.RecipientAddress != requested.Owner.Address || !ValidateAddressFormat(requested.Owner.Address) ||
+            requested.RecipientAddress != requested.Owner.Address || !SolanaAddress.IsSigner(requested.Owner.Address) ||
             !JupiterAsset(requested.InputAsset, out var inputMint) || !JupiterAsset(requested.OutputAsset, out var outputMint) ||
             inputMint == outputMint || !UInt64Text.TryParse(requested.GrossInput, out var gross) ||
             !UInt64Text.TryParse(requested.SwapInput, out var input) || input == 0 ||
             !UInt64Text.TryParse(requested.PlatformFee.Amount, out var platformFee) || (UInt128)input + platformFee != gross ||
             requested.PlatformFee.Denomination != NodeFeeSchedule.InputBaseUnitsV1 ||
-            platformFee > 0 && (!ValidateAddressFormat(requested.PlatformFee.TreasuryAddress) || requested.PlatformFee.TreasuryAddress == requested.Owner.Address) ||
+            platformFee > 0 && (!SolanaAddress.IsAccount(requested.PlatformFee.TreasuryAddress) || requested.PlatformFee.TreasuryAddress == requested.Owner.Address) ||
             requested.SlippageBps is < 0 or >= 10000 ||
             !UInt64Text.TryParse(requested.Budget.MaximumNetworkFee, out var networkCap) ||
             !UInt64Text.TryParse(requested.Budget.MaximumLockedBalance, out var rentCap) ||
@@ -57,7 +57,7 @@ public partial class SolanaProvider
             !uint.TryParse(_config[prefix + "MaximumComputeUnits"], NumberStyles.None, CultureInfo.InvariantCulture, out var computeUnits) ||
             computeUnits is 0 or > 1_400_000 || !UInt64Text.TryParse(_config[prefix + "MicroLamportsPerUnit"], out var computePrice) ||
             !IsNativeHash(_config[prefix + "JupiterProgramDataHash"]) || !IsNativeHash(_config[prefix + "WhirlpoolProgramDataHash"]) ||
-            !IsNativeHash(_config[prefix + "CostGuardProgramDataHash"]) || !ValidateAddressFormat(_config[prefix + "CostGuardProgram"] ?? ""))
+            !IsNativeHash(_config[prefix + "CostGuardProgramDataHash"]) || !SolanaAddress.IsAccount(_config[prefix + "CostGuardProgram"]))
             return JupiterAssemblyUnavailable("Jupiter requires explicit network readiness, bounded compute policy and reviewed executable pins.");
         var genesis = await VerifyGenesisAsync(ct);
         if (requested.Network.ProtocolIdentity != "solana:" + genesis)
@@ -154,7 +154,7 @@ public partial class SolanaProvider
     {
         mint = asset.Native ? JupiterNativeAccount.Mint.Key : asset.Id;
         return asset.Native ? asset.Id == JupiterNativeAssetId && asset.Decimals == 9
-            : ValidateAddressFormat(asset.Id) && asset.Decimals is >= 0 and <= 255;
+            : SolanaAddress.IsAccount(asset.Id) && asset.Decimals is >= 0 and <= 255;
     }
 
     private static AZOAResult<DexQuoteTerms> JupiterUnavailable(string message)

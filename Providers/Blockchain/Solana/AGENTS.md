@@ -366,3 +366,27 @@ Cleanup preparation uses a fresh direct original-wallet WttCleanupSign context a
 Native-output quotation reobserves exact original Redeem finality and binds its receipt hash, mint, net recipient amount and persistent ATA. It requires original UnwrapNative intent, native mint origin, fresh recipient funding, exact Rent and the independently pinned immutable guard. Actual unsigned simulation and fee RPC price the whole closed instruction sequence. A distinct domain-separated seeded token account receives only the accepted net amount and is atomically closed to the recipient; the original ATA remains open. The shared SolanaSeededNativeAccount preserves Jupiter's original fixed domain through its thin wrapper.
 
 Recipient preparation persists one canonical unsigned winner without custody and accepts only its real recipient signature. Original-token redemption does not grant target-payer authority over this wallet. The journal records exposure before disclosing the message, requires fresh recipient cost ceilings, allows no competing generation while exposure is unresolved, and separately authorizes first egress. Submitted recovery validates exact saved bytes, finality, persistent ATA token/native debit, recipient net SOL credit and complete temporary-rent return; missing expired history remains unresolved. Only an originally requested native-output operation waits for this stage; settlement then records both the redemption and the native output.
+
+## Address roles
+
+`SolanaAddress` is the single address-admission helper (`TryParsePublicKey` delegates to it). `TryParse` accepts only canonical base58 that decodes to exactly 32 bytes and re-encodes to the same text. Two role predicates sit on top:
+
+- `IsSigner` — the key must produce an Ed25519 signature, so it must lie on the curve. Program-derived addresses (PDAs) are deliberately off-curve and have no private key; admitting one as a signer would only fail later inside custody or simulation, so it is refused at the boundary.
+- `IsAccount` — any 32-byte key. Recipients, token accounts, mints, programs and refund destinations may legitimately be PDAs (vaults, ATAs, program-owned wallets).
+
+| Call site | Field | Rule | Why |
+|---|---|---|---|
+| `SolanaProvider.DexQuote.cs` `BuildJupiterQuoteAsync` | `Owner.Address` (owner = payer = recipient) | signer | signs the swap transaction as fee payer and transfer authority |
+| same | `PlatformFee.TreasuryAddress` | account | fee destination owner; only its derived ATA receives value |
+| same | `CostGuardProgram` (config) | account | executable program id |
+| `JupiterAsset` | SPL mint id | account | mint |
+| `SolanaProvider.NativeAccounts.cs` CloseTokenAccount | `TokenAccount`, `Destination` | account | closed account and lamport destination never sign |
+| `SolanaProvider.NativeArtifact.cs` `ValidateArtifactAsync` | instruction `ProgramId`, every instruction account | account | instruction signers are separately matched to custody authorities in `PlanSolanaNativeAsync` |
+| same | account artifact `Mint`, `Owner` | account | an ATA owner may be a PDA |
+| `TrySolanaNativeIntent` | `Payer`, `Authority`, every `Authorities[].Address` | signer | each resolves to user custody and signs |
+| same | `RentRecipient` | account | lamport destination |
+| `SolanaProvider.WttSourceQuote.cs` | `SourceAuthority.Address` | signer | source wallet signs approval/funding |
+| `SolanaProvider.WttTargetProof.cs` | `TargetAuthority.Address` | signer | target payer signs post/redeem stages |
+| same | `RecipientAddress` | account | the transfer credits the derived ATA; the recipient signs only the optional native-output stage, which custody gates separately |
+
+A new call site picks the rule by asking "does this key sign?" — never by the field name.

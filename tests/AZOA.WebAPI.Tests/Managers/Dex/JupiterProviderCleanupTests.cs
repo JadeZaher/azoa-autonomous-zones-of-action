@@ -56,7 +56,7 @@ public sealed partial class JupiterProviderQuoteTests
             var owner = fixture.Actor.PublicKey;
             var account = new PublicKey(fixture.Route.Destination);
             var externalMessage = new TransactionBuilder().SetFeePayer(owner).SetRecentBlockHash(Fixture.BlockHash(110))
-                .AddInstruction(TokenProgram.CloseAccount(account, owner, owner))
+                .AddInstruction(TokenProgram.CloseAccount(account, owner, owner, TokenProgram.ProgramIdKey))
                 .AddInstruction(JupiterCompiledMessage.ToInstruction(JupiterSetupInstructions.CreateOwnerAta(owner.Key, fixture.Route.Output)))
                 .CompileMessage();
             var externalWire = SolanaMessageEnvelope.Populate(externalMessage, [fixture.Actor.Sign(externalMessage)]);

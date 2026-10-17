@@ -106,7 +106,7 @@ internal static class TinymanSwapReceipt
     private static bool Application(JsonElement tx, ApplicationCallTransaction expected)
     {
         if (!Text(tx, "tx-type", "appl") || !OnlyBody(tx, "application-transaction") ||
-            !Object(tx, "application-transaction", out var body) || !Number(body, "application-id", out var id) || id != expected.ApplicationId ||
+            !Object(tx, "application-transaction", out var body) || !Number(body, "application-id", out var id) || AlgorandApplicationCall.Id(expected) is not { } expectedId || id != expectedId ||
             !Text(body, "on-completion", "noop") || !Array(body, "application-args", out var args) ||
             !Strings(args, expected.ApplicationArgs.Select(Convert.ToBase64String)) ||
             !Array(body, "accounts", out var accounts) || !Strings(accounts, expected.Accounts.Select(address => address.EncodeAsString())) ||

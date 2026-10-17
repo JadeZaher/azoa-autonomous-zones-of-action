@@ -70,13 +70,13 @@ public sealed class AlgorandGroupReceiptTests
         else if (tx is AssetTransferTransaction transfer)
         {
             value["tx-type"] = "axfer";
-            value["asset-transfer-transaction"] = new Dictionary<string, object> { ["amount"] = transfer.AssetAmount!.Value,
-                ["receiver"] = transfer.AssetReceiver.ToString(), ["asset-id"] = transfer.XferAsset!.Value };
+            value["asset-transfer-transaction"] = new Dictionary<string, object> { ["amount"] = transfer.AssetAmount,
+                ["receiver"] = transfer.AssetReceiver.ToString(), ["asset-id"] = transfer.XferAsset };
         }
         else if (tx is ApplicationCallTransaction app)
         {
             value["tx-type"] = "appl";
-            value["application-transaction"] = new Dictionary<string, object> { ["application-id"] = app.ApplicationId!.Value,
+            value["application-transaction"] = new Dictionary<string, object> { ["application-id"] = (tx switch { ApplicationOptInTransaction optIn => optIn.ApplicationId, ApplicationNoopTransaction noop => noop.ApplicationId, _ => null })!.Value,
                 ["on-completion"] = tx is ApplicationOptInTransaction ? "optin" : "noop",
                 ["application-args"] = (app.ApplicationArgs ?? []).Select(Convert.ToBase64String).ToArray(),
                 ["accounts"] = (app.Accounts ?? []).Select(address => address.ToString()).ToArray(),
