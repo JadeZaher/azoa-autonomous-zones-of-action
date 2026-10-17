@@ -86,7 +86,7 @@ public sealed class SurrealUserStore : IUserStore
         update = poco.LastBeamedInDate is null ? update.Unset(row => row.LastBeamedInDate) : update.Set(row => row.LastBeamedInDate, poco.LastBeamedInDate);
         update = poco.ExternalUserId is null ? update.Unset(row => row.ExternalUserId) : update.Set(row => row.ExternalUserId, poco.ExternalUserId);
         update = poco.ExternalRef is null ? update.Unset(row => row.ExternalRef) : update.Set(row => row.ExternalRef, poco.ExternalRef);
-        var resp = await _executor.ExecuteAsync(update, ct);
+        var resp = await _executor.ExecuteAsync(update.Build(), ct);
         resp.EnsureAllOk();
         var saved = resp.GetValues<GeneratedUser>(0).FirstOrDefault();
         return saved is null ? AZOAResult<IUser>.FailureWithCode("Account authority changed concurrently.", AzoaErrorCodes.Conflict)
@@ -151,7 +151,7 @@ public sealed class SurrealUserStore : IUserStore
         if (existing is null) return AZOAResult<bool>.Success(false);
         if (!await WalletAuthIdentityGate.IsReadyAsync(_executor, ct)) return NotReady<bool>();
         var response = await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<GeneratedUser>(SurrealId.ToSurrealId(id))
-            .Where(row => row.PasswordHash == existing.PasswordHash), ct);
+            .Where(row => row.PasswordHash == existing.PasswordHash).Build(), ct);
         response.EnsureAllOk();
         return AZOAResult<bool>.Success(response.GetValues<GeneratedUser>(0).Any());
     }
@@ -287,7 +287,7 @@ public sealed class SurrealUserStore : IUserStore
         if (userId == NodeOperatorIdentity.UserId) return AZOAResult<bool>.Failure("Reserved identity.");
         var instant = new DateTimeOffset(DateTime.SpecifyKind(notBefore, DateTimeKind.Utc));
         var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<GeneratedUser>(SurrealId.ToSurrealId(userId))
-            .Where(row => row.AuthNotBefore == null || row.AuthNotBefore < instant).Set(row => row.AuthNotBefore, instant), ct);
+            .Where(row => row.AuthNotBefore == null || row.AuthNotBefore < instant).Set(row => row.AuthNotBefore, instant).Build(), ct);
         response.EnsureAllOk();
         if (response.GetValues<GeneratedUser>(0).Any()) return AZOAResult<bool>.Success(true);
         var current = await _executor.QuerySingleAsync<GeneratedUser>(SurrealQuery<GeneratedUser>.Key(SurrealId.ToSurrealId(userId)), ct);
@@ -300,7 +300,7 @@ public sealed class SurrealUserStore : IUserStore
         if (userId == NodeOperatorIdentity.UserId || !AzoaDappRoles.IsAssignableRole(role))
             return AZOAResult<IUser>.Failure("Invalid role assignment.");
         var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<GeneratedUser>(SurrealId.ToSurrealId(userId))
-            .Where(row => row.DappRole == expectedRole).Set(row => row.DappRole, AzoaDappRoles.Normalize(role)), ct);
+            .Where(row => row.DappRole == expectedRole).Set(row => row.DappRole, AzoaDappRoles.Normalize(role)).Build(), ct);
         response.EnsureAllOk();
         var saved = response.GetValues<GeneratedUser>(0).SingleOrDefault();
         return saved is null ? AZOAResult<IUser>.FailureWithCode("Role changed concurrently.", AzoaErrorCodes.Conflict)
@@ -312,7 +312,7 @@ public sealed class SurrealUserStore : IUserStore
     {
         if (userId == NodeOperatorIdentity.UserId) return AZOAResult<IUser>.Failure("Reserved identity.");
         var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<GeneratedUser>(SurrealId.ToSurrealId(userId))
-            .Where(row => row.IsActive == expectedActive).Set(row => row.IsActive, active), ct);
+            .Where(row => row.IsActive == expectedActive).Set(row => row.IsActive, active).Build(), ct);
         response.EnsureAllOk();
         var saved = response.GetValues<GeneratedUser>(0).SingleOrDefault();
         return saved is null ? AZOAResult<IUser>.FailureWithCode("Account activation changed concurrently.", AzoaErrorCodes.Conflict)

@@ -12,6 +12,7 @@ using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Actions.Handlers;
 using AZOA.WebAPI.Services.Kyc;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Governance;
 

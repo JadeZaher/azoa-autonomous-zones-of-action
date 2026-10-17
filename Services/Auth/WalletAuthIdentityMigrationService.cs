@@ -45,7 +45,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
             .Where(row => row.LeaseExpiresAt == null || row.LeaseExpiresAt <= now)
             .Set(row => row.Status, "Migrating").Set(row => row.LeaseToken, token)
             .Set(row => row.LeaseExpiresAt, now.AddMinutes(2)).Set(row => row.Version, current.Version + 1);
-        var admission = await executor.ExecuteAsync(claim, ct);
+        var admission = await executor.ExecuteAsync(claim.Build(), ct);
         admission.EnsureAllOk();
         if (!admission.GetValues<WalletAuthIdentityMigration>(0).Any()) return;
 
@@ -122,7 +122,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
             {
                 var renewed = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthIdentityMigration>("v1")
                     .Where(row => row.Status == "Migrating" && row.LeaseToken == token && row.LeaseExpiresAt > DateTimeOffset.UtcNow)
-                    .Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(2)), ct);
+                    .Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(2)).Build(), ct);
                 renewed.EnsureAllOk();
                 if (!renewed.GetValues<WalletAuthIdentityMigration>(0).Any()) return;
                 var page = await executor.QueryAsync<User>(SurrealQuery<User>.From()
@@ -143,7 +143,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
             .Set(row => row.Status, "Conflict").Set(row => row.DiagnosticsJson,
                 JsonSerializer.Serialize(diagnostics))
             .Unset(row => row.LeaseToken).Unset(row => row.LeaseExpiresAt).Set(row => row.UpdatedAt, now)
-            .Set(row => row.Version, current.Version + 1), ct);
+            .Set(row => row.Version, current.Version + 1).Build(), ct);
         response.EnsureAllOk();
     }
 

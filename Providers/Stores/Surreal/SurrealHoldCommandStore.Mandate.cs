@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -35,8 +36,8 @@ public sealed partial class SurrealHoldCommandStore
             .Where(row => row.ActiveReleaseMandateId == mandateId && row.State == "Held"
                 && row.DefinitionHash == terms.DefinitionHash && row.Amount == terms.QuantityBaseUnits)
             .Set(row => row.ActiveReleaseMandateId, mandateId).Build(), "hold_mandate_liability", "_hold_mandate_liability"));
-        // raw: delayed custody authority is usable only while its exact original liability remains reserved to this mandate.
-        result.Add(SurrealQuery.Of("IF $_hold_mandate_liability = NONE OR $_hold_mandate_liability = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
+        // Delayed custody authority is usable only while its exact original liability remains reserved to this mandate.
+        result.Add(SurrealGeneratedStatementScope.RequireResult("_hold_mandate_liability", "HOLD_COMMAND_CHANGED"));
         return result;
     }
 }

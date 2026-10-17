@@ -65,7 +65,7 @@ public sealed class SurrealWalletAuthChallengeStore(ISurrealExecutor executor) :
         var instant = new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc));
         var response = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthChallengePoco>(SurrealId.ToSurrealId(found.Result.Id))
             .Where(row => row.Nonce == nonce && row.ConsumedAt == null && row.ExpiresAt > instant)
-            .Set(row => row.ConsumedAt, instant), ct);
+            .Set(row => row.ConsumedAt, instant).Build(), ct);
         response.EnsureAllOk();
         return AZOAResult<bool>.Success(response.GetValues<WalletAuthChallengePoco>(0).Count() == 1);
     }
@@ -112,7 +112,7 @@ public sealed class SurrealWalletAuthChallengeStore(ISurrealExecutor executor) :
             live.Add(new(challenge.Nonce, new DateTimeOffset(DateTime.SpecifyKind(challenge.ExpiresAt, DateTimeKind.Utc))));
             var result = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthChallengeBudget>(id)
                 .Where(item => item.Version == row.Version).Set(item => item.SlotsJson, JsonSerializer.Serialize(live))
-                .Set(item => item.Version, row.Version + 1), ct);
+                .Set(item => item.Version, row.Version + 1).Build(), ct);
             result.EnsureAllOk();
             if (result.GetValues<WalletAuthChallengeBudget>(0).Any()) return true;
         }
