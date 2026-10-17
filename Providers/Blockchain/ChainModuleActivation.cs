@@ -20,6 +20,13 @@ public static class ChainModuleActivation
     public static bool IsActive(IConfiguration config, string module, string chainType, ChainNetwork network)
         => bool.TryParse(config[Key(module, chainType, network)], out var active) && active;
 
+    /// <summary>The provider's module regardless of its pin; only for work already admitted while the pin was on (RV-L5-11).</summary>
+    public static bool TryGetUngated<T>(IBlockchainProvider provider, out T? module) where T : class
+    {
+        module = provider as T;
+        return module is not null;
+    }
+
     /// <summary>The provider's module of type <typeparamref name="T"/> when it implements it AND, for a gated module, its pin is on.</summary>
     public static bool TryGetGated<T>(IBlockchainProvider provider, IConfiguration config, out T? module) where T : class
     {

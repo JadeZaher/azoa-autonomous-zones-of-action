@@ -12,7 +12,7 @@ public sealed class SwapRecoveryService(ISwapOperationStore operations, DexModul
         var operation = await operations.GetAsync(operationId, ct);
         if (operation is null) return;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return;
         await stages.RecoverAuthorizedAsync(operationId, module, ct);
         await stages.FinalizeObservedAsync(operationId, module, ct);
