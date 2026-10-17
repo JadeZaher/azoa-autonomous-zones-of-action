@@ -46,7 +46,7 @@ def program_sha256(app_id):
 
 genesis = portal.client.versions()
 state = {
-    "algod": algod_url, "wormholeChainId": 8, "genesisId": genesis["genesis_id"], "genesisHash": genesis["genesis_hash_b64"],
+    "algod": algod_url, "hostAlgod": "http://127.0.0.1:4001", "wormholeChainId": 8, "genesisId": genesis["genesis_id"], "genesisHash": genesis["genesis_hash_b64"],
     "coreAppId": str(portal.coreid), "tokenBridgeAppId": str(portal.tokenid),
     "coreApprovalSha256": program_sha256(portal.coreid), "tokenBridgeApprovalSha256": program_sha256(portal.tokenid),
     "vaaVerifyHash": portal.vaa_verify["hash"],
