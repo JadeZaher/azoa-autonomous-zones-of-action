@@ -26,4 +26,9 @@ public interface IWttNativeOutputModule : IBlockchainProviderModule
     /// <summary>Proves exact token debit and native credit while preserving the original recipient ATA and unrelated funds.</summary>
     Task<AZOAResult<WttNativeOutputObservation>> ObserveWttNativeOutputAsync(WttOperationIntent intent,
         WttNativeOutputQuote quote, WttNativeOutputConsent consent, WttStagePreparation prepared, CancellationToken ct = default);
+
+    /// <summary>Observes a disclosed recipient message the server never authorized; see
+    /// <see cref="IWttParticipantModule.ObserveExposedWttParticipantAsync"/>.</summary>
+    Task<AZOAResult<WttExposedObservation>> ObserveExposedWttNativeOutputAsync(WttOperationIntent intent, WttNativeOutputQuote quote,
+        WttNativeOutputConsent consent, WttParticipantPreparation participant, string? previousEvidenceJson, CancellationToken ct = default);
 }

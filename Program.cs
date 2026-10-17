@@ -1256,6 +1256,11 @@ builder.Services.AddScoped<WttProofVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttStageKeyStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttStageKeyStore>();
 builder.Services.AddScoped<WttStageKeyVault>();
 builder.Services.AddScoped<WttStageKeyReadiness>();
+builder.Services.AddSingleton<WttStageKeyReadinessState>();
+builder.Services.AddHostedService<WttStageKeyReadinessWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWttRecipientDirectory, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttRecipientDirectory>();
+// Replaced in place by the wallet ownership challenge's persisted proof (L4); fail-closed until then.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWalletOwnershipProof, NoWalletOwnershipProof>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttBodyClaimStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttBodyClaimStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttOperationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttOperationStore>();
@@ -1265,6 +1270,9 @@ builder.Services.AddHttpClient<WttGuardianTransport>()
 builder.Services.AddScoped<WttRecoveryService>();
 builder.Services.AddScoped<WttLifecycleService>();
 builder.Services.AddHostedService<WttRecoveryWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.WttActionResolver>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.WttActionResolver>());
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INftProtocolCostQuoteStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftProtocolCostQuoteStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumDexAllowanceStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumDexAllowanceStore>();

@@ -41,7 +41,8 @@ public sealed partial class SurrealWttOperationStore
             originalPhase = original.Phase;
         }
         else if (stage.OriginalStageId is not null) return null;
-        var guards = WttSigningAuthorityFence.Stage(Intent(operation), FencePhase(stage), originalPhase, authority, "wtt_fence_stage");
+        var guards = WttSigningAuthorityFence.Stage(Intent(operation), FencePhase(stage), originalPhase, authority, "wtt_fence_stage",
+            Action(operation));
         if (guards is null) return null;
         var now = Now;
         var candidate = Clone(stage);
@@ -115,7 +116,7 @@ public sealed partial class SurrealWttOperationStore
         if (stage.ExposedAt is not null) return stage.ParticipantJson == participantJson ? stage : null;
         if (operation.Version != expectedVersion || operation.State != "Active" || stage.Version != expectedStageVersion
             || stage.State != "Planned" || stage.PreparedJson is not null || stage.AuthorizedAt is not null) return null;
-        var guards = WttSigningAuthorityFence.Stage(Intent(operation), "Participant", null, authority, "wtt_fence_exposure");
+        var guards = WttSigningAuthorityFence.Stage(Intent(operation), "Participant", null, authority, "wtt_fence_exposure", Action(operation));
         if (guards is null) return null;
         var now = Now;
         var operationMutation = SurrealWriter.UpdateOnly<WttOperation>(operationId)
@@ -168,7 +169,7 @@ public sealed partial class SurrealWttOperationStore
             originalPhase = original.Phase;
         }
         var guards = WttSigningAuthorityFence.Stage(Intent(operation), stage.ExposedAt is null ? FencePhase(stage) : "Participant",
-            originalPhase, authority, "wtt_fence_send");
+            originalPhase, authority, "wtt_fence_send", Action(operation));
         if (guards is null) return null;
         var now = Now;
         var stageState = stage.State;
@@ -231,14 +232,15 @@ public sealed partial class SurrealWttOperationStore
 
     /// <inheritdoc/>
     public async Task<WttOperationStage?> RetireStageAsync(string operationId, long expectedVersion, string stageId,
-        long expectedStageVersion, string detail, CancellationToken ct = default)
+        long expectedStageVersion, string detail, bool reservationProbedFree = false, CancellationToken ct = default)
     {
         var (operation, stage) = await CurrentAsync(operationId, stageId, ct);
         if (operation is null || stage is null) return null;
         if (stage.State == "Retired") return stage;
+        // Preparing may hold a durable nonce: only a caller whose reservation probe read none may retire it.
         if (operation.Version != expectedVersion || operation.State != "Active" || stage.Version != expectedStageVersion
             || stage.State is not ("Planned" or "Preparing") || stage.PreparedJson is not null || stage.ExposedAt is not null
-            || stage.AuthorizedAt is not null) return null;
+            || stage.AuthorizedAt is not null || stage.State == "Preparing" && !reservationProbedFree) return null;
         var now = Now;
         var stageState = stage.State;
         var reason = string.IsNullOrWhiteSpace(detail) ? "Unsigned stage retired before any signature or disclosure." : detail[..Math.Min(detail.Length, 512)];

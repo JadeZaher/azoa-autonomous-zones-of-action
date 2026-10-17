@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Interfaces.Wtt;
+using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
@@ -30,10 +31,12 @@ public sealed class WttRecoveryService(IWttOperationStore store, WttModuleResolv
         }
     }
 
-    /// <summary>Operator retry of guardian verification for a parked operation whose source publication is final; signs nothing.</summary>
+    /// <summary>Operator retry after a parked proof or publication; re-observes and re-verifies only, never signs.</summary>
     public async Task<bool> ResumeProofAsync(string operationId, CancellationToken ct = default)
     {
         var operation = await store.GetAsync(operationId, ct);
+        if (operation is { State: "NeedsOperator", Phase: "Source", TransferPublicationJson: null, CurrentStageId: not null })
+            return await ReattributePublicationAsync(operationId, operation, ct);
         if (operation is not { State: "NeedsOperator", ProofsJson: null, TransferPublicationJson: not null, CurrentStageId: { } stageId })
             return false;
         var stage = await store.GetStageAsync(stageId, ct);
@@ -42,15 +45,38 @@ public sealed class WttRecoveryService(IWttOperationStore store, WttModuleResolv
             Detail: "Operator resumed guardian proof verification.", NextAttemptAt: DateTimeOffset.UtcNow), ct) is not null;
     }
 
+    /// <summary>Re-observes a confirmed source Transfer parked without its attributed publication (publication-mismatch exit).</summary>
+    private async Task<bool> ReattributePublicationAsync(string operationId, WttOperation operation, CancellationToken ct)
+    {
+        var stages = await store.ReadStagesAsync(operationId, ct);
+        var current = stages.LastOrDefault(stage => SurrealRecordGuid.BareId(stage.Id) == operation.CurrentStageId);
+        var transfer = stages.LastOrDefault(stage => stage.Phase == "Source" && stage.Stage == "Transfer" && stage.State == "Confirmed");
+        if (current is null || !WttStageStates.IsTerminal(current.State) || transfer?.PreparedJson is null) return false;
+        var intent = WttLifecycleService.Intent(operation);
+        var prepared = WttLifecycleService.Read<WttStagePreparation>(transfer.PreparedJson);
+        var observed = await ObserveAsync(operation, transfer, prepared, ct);
+        if (observed is not { Observation: { Verdict: "Confirmed" } observation } || observation.TransactionId != prepared.TransactionId
+            || observation.ProtocolIdentity != prepared.ProtocolIdentity)
+            return false;
+        var completion = await CompletionAsync(operationId, intent, observation, ct);
+        if (completion is null) return false;
+        return await store.UpdateAsync(operationId, operation.Version, new(State: "AwaitingProof",
+            TransferPublicationJson: completion.TransferPublicationJson, AttestationPublicationJson: completion.AttestationPublicationJson,
+            Detail: "Operator re-observed the confirmed transfer; its exact attributed publication is recorded.",
+            NextAttemptAt: DateTimeOffset.UtcNow), ct) is not null;
+    }
+
     private async Task<bool> ObserveCurrentAsync(string operationId, WttOperation operation, CancellationToken ct)
     {
         if (operation.CurrentStageId is not { } stageId) return false;
         var stage = await store.GetStageAsync(stageId, ct);
+        if (stage is { State: "Exposed", AuthorizedAt: null, ParticipantJson: not null } && operation.State == "Active")
+            return await ObserveExposedAsync(operationId, operation, stage, ct);
         if (stage is null || stage.AuthorizedAt is null || stage.PreparedJson is null || stage.State is not ("SubmissionAuthorized" or "NeedsOperator"))
             return false;
         var intent = WttLifecycleService.Intent(operation);
         var prepared = WttLifecycleService.Read<WttStagePreparation>(stage.PreparedJson);
-        var observed = await ObserveAsync(operation, intent, stage, prepared, ct);
+        var observed = await ObserveAsync(operation, stage, prepared, ct);
         if (observed is null) return false;
         var (observation, json) = observed.Value;
         var verdict = observation.TransactionId != prepared.TransactionId || observation.ProtocolIdentity != prepared.ProtocolIdentity
@@ -66,11 +92,57 @@ public sealed class WttRecoveryService(IWttOperationStore store, WttModuleResolv
         if (recorded is null) return false;
         if (verdict == "Pending" && recorded.State == "SubmissionAuthorized")
         {
-            await SubmitAsync(operation, intent, recorded, prepared, ct);
+            await SubmitAsync(operation, recorded, prepared, ct);
             return false;
         }
         return TerminalVerdicts.Contains(verdict);
     }
+
+    /// <summary>Resolves a disclosed, never-authorized participant message from provider evidence: landed, expired unsigned, or scan progress.</summary>
+    private async Task<bool> ObserveExposedAsync(string operationId, WttOperation operation, WttOperationStage stage, CancellationToken ct)
+    {
+        var intent = StageIntent(operation, stage);
+        var participant = WttLifecycleService.Read<WttParticipantPreparation>(stage.ParticipantJson!);
+        var previous = WttLifecycleService.Observation(stage)?.EvidenceJson;
+        AZOAResult<WttExposedObservation> observed;
+        if (stage.Phase == "NativeOutput")
+        {
+            var module = modules.Resolve<IWttNativeOutputModule>(intent.Target.ChainType, intent.Target.Network);
+            if (module is null || stage.ConsentJson is null) return false;
+            observed = await module.ObserveExposedWttNativeOutputAsync(intent, WttLifecycleService.Read<WttNativeOutputQuote>(stage.QuoteJson),
+                WttLifecycleService.Read<WttNativeOutputConsent>(stage.ConsentJson), participant, previous, ct);
+        }
+        else
+        {
+            var module = modules.Resolve<IWttParticipantModule>(intent.Target.ChainType, intent.Target.Network);
+            if (module is null) return false;
+            observed = await module.ObserveExposedWttParticipantAsync(intent, WttLifecycleService.Read<WttStageQuote>(stage.QuoteJson),
+                participant, previous, ct);
+        }
+        if (observed.IsError || observed.Result is not { } result)
+        {
+            logger.LogInformation("WTT exposed participant {Stage} for {OperationId} is unobservable: {Reason}", stage.Stage, operationId, observed.Message);
+            return false;
+        }
+        if (result.Verdict == "Landed" && (result.Landed is not { } landed || landed.Stage != stage.Stage || landed.Generation != stage.Generation
+                || landed.Reservation != participant.Reservation))
+            return false;
+        var evidence = new WttStageObservation(result.Verdict, result.Landed?.TransactionId ?? "", participant.ProtocolIdentity,
+            result.EvidenceJson, Detail: result.Detail);
+        var json = stage.Phase == "NativeOutput" ? Canonical(new WttNativeOutputObservation(evidence, null, null)) : Canonical(evidence);
+        var resolved = await store.ResolveExposedAsync(operationId, operation.Version, SurrealRecordGuid.BareId(stage.Id), stage.Version, json,
+            result.Verdict, result.Landed is { } signed ? Canonical(signed) : null, ct);
+        return resolved is not null && result.Verdict is "Landed" or "ExpiredNoEffect";
+    }
+
+    /// <summary>The exact intent a stage's saved quote is bound to; stages quoted before an owner takeover keep the admitted intent.</summary>
+    private static WttOperationIntent StageIntent(WttOperation operation, WttOperationStage stage)
+        => WttLifecycleService.IntentFor(operation, stage.Phase switch
+        {
+            "NativeOutput" => WttLifecycleService.Read<WttNativeOutputQuote>(stage.QuoteJson).IntentHash,
+            "Cleanup" => WttLifecycleService.Read<WttCleanupQuote>(stage.QuoteJson).IntentHash,
+            _ => WttLifecycleService.Read<WttStageQuote>(stage.QuoteJson).IntentHash,
+        });
 
     private async Task<bool> AdvanceReadyAsync(string operationId, WttOperation operation, CancellationToken ct)
     {
@@ -258,9 +330,10 @@ public sealed class WttRecoveryService(IWttOperationStore store, WttModuleResolv
             ? publication : null;
     }
 
-    private async Task<(WttStageObservation Observation, string Json)?> ObserveAsync(WttOperation operation, WttOperationIntent intent,
+    private async Task<(WttStageObservation Observation, string Json)?> ObserveAsync(WttOperation operation,
         WttOperationStage stage, WttStagePreparation prepared, CancellationToken ct)
     {
+        var intent = StageIntent(operation, stage);
         switch (stage.Phase)
         {
             case "Source":
@@ -300,9 +373,9 @@ public sealed class WttRecoveryService(IWttOperationStore store, WttModuleResolv
         }
     }
 
-    private async Task SubmitAsync(WttOperation operation, WttOperationIntent intent, WttOperationStage stage, WttStagePreparation prepared,
-        CancellationToken ct)
+    private async Task SubmitAsync(WttOperation operation, WttOperationStage stage, WttStagePreparation prepared, CancellationToken ct)
     {
+        var intent = StageIntent(operation, stage);
         try
         {
             switch (stage.Phase)

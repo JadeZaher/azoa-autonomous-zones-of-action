@@ -13,9 +13,26 @@ namespace AZOA.WebAPI.Controllers;
 [Route("api/operator/wtt")]
 [Authorize(Policy = "RecentNodeOperatorSession")]
 [EnableRateLimiting("financial")]
-public sealed class WttOperatorController(WttLifecycleService lifecycle, WttRecoveryService recovery,
+public sealed class WttOperatorController(WttLifecycleService lifecycle, WttRecoveryService recovery, WttStageKeyReadiness stageKeys,
     ILogger<WttOperatorController> logger) : ControllerBase
 {
+    /// <summary>Live keyring readiness; a degraded keyring refuses new stage-key WTT admissions until restored.</summary>
+    [HttpGet("stage-keys/readiness")]
+    public async Task<IActionResult> StageKeyReadiness(CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return Ok(AZOAResult<WttStageKeyReadinessReport>.Success(await stageKeys.CheckAsync(ct)));
+    }
+
+    /// <summary>One bounded CAS rewrap pass onto the active key; repeat until no rewrap is pending, then retire old keys.</summary>
+    [HttpPost("stage-keys/rewrap")]
+    public async Task<IActionResult> RewrapStageKeys(CancellationToken ct)
+    {
+        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
+        logger.LogWarning("Operator {OperatorId} started a WTT stage-key rewrap pass", actor);
+        return Ok(AZOAResult<WttStageKeyRewrapReport>.Success(await stageKeys.RewrapAsync(ct)));
+    }
+
     [HttpGet("operations/{id}")]
     public async Task<IActionResult> Inspect(string id, CancellationToken ct)
     {
@@ -54,8 +71,8 @@ public sealed class WttOperatorController(WttLifecycleService lifecycle, WttReco
         logger.LogWarning("Operator {OperatorId} resumed WTT proof verification for {OperationId}", actor, id);
         if (await lifecycle.InspectAsync(id, ct) is null) return NotFound();
         if (!await recovery.ResumeProofAsync(id, ct))
-            return Conflict(AZOAResult<object>.FailureWithCode("Only a parked operation with a final source publication and no verified proof can resume.",
-                AzoaErrorCodes.Conflict));
+            return Conflict(AZOAResult<object>.FailureWithCode("Only a parked operation whose confirmed source transfer now has an attributed "
+                + "publication, or whose final publication lacks a verified proof, can resume.", AzoaErrorCodes.Conflict));
         await recovery.ReconcileAsync(id, ct);
         return Ok(AZOAResult<WttOperationView>.Success((await lifecycle.InspectAsync(id, ct))!));
     }

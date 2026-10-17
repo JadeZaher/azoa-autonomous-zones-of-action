@@ -5,6 +5,9 @@ namespace AZOA.WebAPI.Interfaces.Wtt;
 /// <summary>Versioned at-rest encryption only; callers must independently enforce live custody authority.</summary>
 public interface IWttStageKeyProtector
 {
+    /// <summary>False when the <c>Wtt:StageKeys</c> keyring is absent or invalid; every protect/use then refuses (degrade).</summary>
+    bool IsConfigured { get; }
+    string? ConfigurationError { get; }
     string ActiveKeyId { get; }
     IReadOnlyCollection<string> AvailableKeyVersions { get; }
     /// <summary>Protects a 32-byte stage seed, binding the exact public key and operation identity.</summary>
