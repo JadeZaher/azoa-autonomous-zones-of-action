@@ -74,3 +74,23 @@ it("keeps the server refusal code so a page can explain KYB_REQUIRED", async () 
   const other = await api().getTenantPayoutBalance();
   expect(!other.ok && isKybRequired(other.error)).toBe(false);
 });
+
+// Real server bodies (not the `{isError:false,result:{}}` default): bare-vs-envelope drift must go red here.
+it.each([
+  ["operator ethereum list (bare IReadOnlyList)", (c: AzoaApiClient) => c.listEthereumPreparations("Devnet", true),
+    [{ id: "prep-1", network: "Devnet", sender: "0x" + "a".repeat(40), state: "Prepared", nonce: "7", transactionId: null, preparationKey: "k", updatedAt: "2026-10-17T00:00:00Z" }]],
+  ["user ethereum list (bare IReadOnlyList)", (c: AzoaApiClient) => c.listEthereumPreparations("Devnet"), []],
+  ["wallet identity migration (bare View)", (c: AzoaApiClient) => c.getWalletIdentityMigration(),
+    { status: "Blocked", version: 3, conflicts: [{ userId: "u1", expectedIdentity: "algorand:ADDR", problem: "Claimed by two accounts" }] }],
+])("%s resolves to the exact server body", async (_name, call, body) => {
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => body });
+  const result = await call(api());
+  expect(result.ok && result.value).toEqual(body);
+});
+
+it("clears a wallet identity conflict as the server's AZOAResult<bool>", async () => {
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ isError: false, message: "Success", result: true }) });
+  const result = await api().clearWalletIdentityConflict({ version: 3, userId: "u1", expectedIdentity: "algorand:ADDR", reason: "Stale binding confirmed" });
+  expect(result.ok && result.value).toBe(true);
+  expect(fetchMock.mock.calls[0][0]).toBe(`${base}/api/operator/wallet-identities/clear-conflicting-binding`);
+});

@@ -2229,8 +2229,9 @@ export class AzoaApiClient {
     return this.request<FiatPayoutView>("POST", `/api/admin/fiat-payouts/${encodeURIComponent(payoutId)}/recover`, { reason });
   }
 
+  /** Both recovery controllers answer a bare list (not an `AZOAResult`). */
   async listEthereumPreparations(network: "Devnet" | "Testnet" | "Mainnet", operator = false): Promise<Result<EthereumPreparationView[], SdkError>> {
-    return this.request("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
+    return this.requestBare("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
   }
 
   async activateEthereumSigner(network: "Devnet" | "Testnet" | "Mainnet", walletId: string): Promise<Result<boolean, SdkError>> {
@@ -4274,13 +4275,13 @@ export class AzoaApiClient {
     return this.request("POST", API_PATHS.EXCHANGE_RETIRED_ROW_RESOLVE(operationId), resolution);
   }
 
-  /** Operator: wallet-identity migration status and conflicts. */
+  /** Operator: wallet-identity migration status and conflicts (the controller answers a bare view). */
   async getWalletIdentityMigration(): Promise<Result<WalletIdentityMigrationView, SdkError>> {
-    return this.request("GET", API_PATHS.OPERATOR_WALLET_IDENTITIES);
+    return this.requestBare("GET", API_PATHS.OPERATOR_WALLET_IDENTITIES);
   }
 
-  /** Operator: clears one conflicting wallet binding at the observed migration version. */
-  async clearWalletIdentityConflict(repair: WalletIdentityConflictRepair): Promise<Result<WalletIdentityMigrationView, SdkError>> {
+  /** Operator: clears one conflicting wallet binding at the observed migration version; re-read the view afterwards. */
+  async clearWalletIdentityConflict(repair: WalletIdentityConflictRepair): Promise<Result<boolean, SdkError>> {
     assertNonEmpty(repair.reason, "reason");
     return this.request("POST", API_PATHS.OPERATOR_WALLET_IDENTITY_CLEAR, repair);
   }
