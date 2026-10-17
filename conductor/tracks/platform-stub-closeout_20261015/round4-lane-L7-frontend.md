@@ -13,6 +13,8 @@ L3-D8/L4/L5) so every backend contract below was checked against merged source, 
 Closing vocabulary: **Built** (compiled, unit/slice-covered and run) at most; no E2E, no live stack.
 L7 adds no backend routes, so it ships no route/cross-tenant inventory file (plan §4 L7).
 
+**Merge order:** swapped ahead of L6 — L6 not ready, no shared hot files (orchestrator signal, plan §3.3).
+
 ## Scope closed
 
 | Item | Where |
