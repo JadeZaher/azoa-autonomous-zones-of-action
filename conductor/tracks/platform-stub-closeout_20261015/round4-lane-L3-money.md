@@ -4,7 +4,8 @@ round: 4
 wave: W2
 lane: L3
 branch: r4/money
-status: ready
+status: merged
+merged: f6b9e04a
 ---
 
 # Round 4 · L3 money lane (`r4/money`, merge #5)
