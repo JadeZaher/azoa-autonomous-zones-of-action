@@ -180,6 +180,13 @@ Full evidence for every row, with file:line, is in the [join ledger](tracks/plat
 - **Tenant-priced payouts are tenant-funded** (owner chose this over the min-price default): a tenant
   price schedule is allowed, but a payout at a tenant price is funded from the tenant's own balance, not
   the node's. Needs a tenant-funded payout source and a balance-coverage check before any send.
+- **D-8 owner decisions (2026-10-17):** float credited net of Stripe fees; tenant-funded collects go to a
+  tenant-attributed reserve partition; cross-scope arbitrage capped via `on_ramp_lot.pricing_scope_key`. D-8 critic verdict
+  ACCEPT-WITH-CHANGES, all 7 changes built (merged `9f484c6b`).
+- **Schema generation reset (2026-10-17):** fresh DB instead of baselines + forward migrations. **Owner step before the next
+  Railway deploy: reset the SurrealDB volume** (drops what is there today; pre-launch, no customer data).
+- **Merged to `main` + pushed once mid-round (owner, 2026-10-17):** `main` = `e0deb11` (W0). First CI run red as expected;
+  Railway waits for green CI, so production stayed on `c6c55dd`. Next push only after the sweep.
 - Defaults taken (not asked): Identomat recovery closed via retry + `/delete/`; Veriff → `deferred.md`
   unless test credentials arrive; Eth/Sol custody parity stays design-only (accepted-with-changes
   amendment) with an owner line in `deferred.md`; minimal first-party UI (verify identity, add funds,

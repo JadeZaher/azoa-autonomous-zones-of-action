@@ -34,6 +34,10 @@ compiled. "Approved at source review" is never written as "closed".
 | D-6 | **KYB gates** custodial accounts / custodial KYC, tenant-on-behalf value scopes (at `ITenantConsentGate`), and payout price schedules | L2 |
 | D-7 | **Exchange/DEX**: declare the modules; production on per chain only after that chain's fixture passes; anything still off at the end → `deferred.md` | L5 (+L3 exchange semantics) |
 | D-8 | **Tenant-priced payouts are funded from the tenant's own balance, not the node's** (min-price default rejected) | L3: tenant-funded payout source, balance-coverage check before any send, exactly-once accounting of the tenant debit |
+| D-8a | Tenant float is credited with Stripe `balance_transaction.net` — tenants bear their own processing/dispute fees (2026-10-17) | L3 D-8, merged `9f484c6b` |
+| D-8b | Tenant-funded collects return units to a tenant-attributed reserve partition `tenant-payout:{tenant}` (2026-10-17) | L3 D-8, merged `9f484c6b` |
+| D-8c | Cross-scope arbitrage closed: `on_ramp_lot.pricing_scope_key` caps a node-funded exit at the lot's sold price (2026-10-17) | L3 D-8, merged `9f484c6b` |
+| D-9 | **Schema moves by generation reset**: fresh DB (`dev-up -ResetDb`; Railway SurrealDB volume reset before the next deploy); no baselines/forward migrations for round-4 changes; deploy path `surrealforge up --no-reconcile`; P2 becomes a sandbox data-compatibility rehearsal (2026-10-17) | W1/L1p/L6; Railway reset is an owner step at deploy time |
 
 **Defaults recorded (owner accepted):** IDENTOMAT-RECOVERY closed via retry + `/external-api/delete/`;
 Veriff/generic live → `deferred.md` unless test credentials arrive; Ethereum/Solana value-custody parity stays
