@@ -37,10 +37,12 @@ public sealed class SurrealOperationLogClientSigningStore(ISurrealExecutor execu
     public async Task<IReadOnlyList<Guid>> ListStuckAsync(DateTimeOffset awaitingBefore, int limit, CancellationToken ct = default)
     {
         const OperationLog.StatusKind awaiting = OperationLog.StatusKind.AwaitingSignature;
+        const OperationLog.StatusKind unconfirmed = OperationLog.StatusKind.PendingConfirmation;
         const OperationLog.StatusKind parked = OperationLog.StatusKind.NeedsOperator;
+        // PendingConfirmation is shared with custodial rows, so the page over-fetches and the service keeps rows with a saved plan.
         var rows = await executor.QueryAsync<OperationLog>(SurrealQuery<OperationLog>.From()
-            .Where(row => (row.Status == awaiting && row.CreatedDate < awaitingBefore) || row.Status == parked)
-            .OrderBy(row => row.CreatedDate).Limit(Math.Clamp(limit, 1, MaxStuckPage)), ct);
+            .Where(row => ((row.Status == awaiting || row.Status == unconfirmed) && row.CreatedDate < awaitingBefore) || row.Status == parked)
+            .OrderBy(row => row.CreatedDate).Limit(Math.Clamp(limit * 4, 1, MaxStuckPage)), ct);
         return rows.Select(row => SurrealId.FromSurrealId(row.Id)).ToArray();
     }
 }

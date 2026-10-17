@@ -1,4 +1,6 @@
-using System.Text.Json;
+            var root = upperSlot is { } known ? default : await DurableRpcAsync("getSlot", [new { commitment = "finalized" }], ct);
+            var upper = upperSlot ?? 0;
+            if (upperSlot is null && (root.ValueKind != JsonValueKind.Number || !root.TryGetUInt64(out upper)) || upper < (ulong)recovery.ContextSlot)using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Interfaces.Wtt;
 using AZOA.WebAPI.Models.Responses;
@@ -61,9 +63,10 @@ public partial class SolanaProvider
         { return Error<WttExposedObservation>(exception.Message); }
     }
 
-    /// <summary>Walks finalized parent links from a block past the blockhash expiry down to the context slot, matching exact message bytes.</summary>
+    /// <summary>Walks finalized parent links from a block past the blockhash expiry down to the context slot, matching exact message bytes.
+    /// <paramref name="upperSlot"/> names a known finalized start block (default: the current finalized slot).</summary>
     private async Task<(WttMessageHistoryCursor? Cursor, string? SignedWireBase64)> ScanWttMessageHistoryAsync(byte[] message,
-        DurableSolanaPlan recovery, WttMessageHistoryCursor? cursor, CancellationToken ct)
+        DurableSolanaPlan recovery, WttMessageHistoryCursor? cursor, CancellationToken ct, ulong? upperSlot = null, int blocksPerPass = 8)
     {
         var messageHash = CanonicalJson.Hash(new { Domain = "wtt-message/1", Message = Convert.ToBase64String(message) });
         if (cursor is not null) RequireWttMessageCursor(cursor, messageHash, recovery);
@@ -71,8 +74,14 @@ public partial class SolanaProvider
         JsonElement? firstBlock = null;
         if (cursor is null)
         {
-            var root = await DurableRpcAsync("getSlot", [new { commitment = "finalized" }], ct);
-            if (root.ValueKind != JsonValueKind.Number || !root.TryGetUInt64(out var upper) || upper < (ulong)recovery.ContextSlot)
+            var upper = upperSlot ?? 0;
+            if (upperSlot is null)
+            {
+                var root = await DurableRpcAsync("getSlot", [new { commitment = "finalized" }], ct);
+                if (root.ValueKind != JsonValueKind.Number || !root.TryGetUInt64(out upper))
+                    throw new InvalidDataException("Finalized message history boundary is unreadable.");
+            }
+            if (upper < (ulong)recovery.ContextSlot)
                 throw new InvalidDataException("Finalized message history boundary precedes preparation.");
             var block = await ReadJupiterHistoryBlockAsync(upper, ct);
             var header = JupiterBlockHeader(block, upper);
@@ -82,7 +91,7 @@ public partial class SolanaProvider
                 false);
             firstBlock = block;
         }
-        for (var count = 0; count < 8 && !cursor.Complete; count++)
+        for (var count = 0; count < blocksPerPass && !cursor.Complete; count++)
         {
             var block = firstBlock ?? await ReadJupiterHistoryBlockAsync(cursor.NextSlot, ct);
             firstBlock = null;
