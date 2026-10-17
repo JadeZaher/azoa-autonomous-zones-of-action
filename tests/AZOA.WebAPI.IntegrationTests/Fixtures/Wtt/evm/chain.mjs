@@ -3,10 +3,10 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { cacheRoot, fixtureRoot, pins, readState, requireLoopback, upstreamAll, writeState } from '../lib/upstream.mjs';
-import { governanceVaa, registerChainPayload, restoreGuardianSet } from '../lib/guardian.mjs';
+import { restoreGuardianSet } from '../lib/guardian.mjs';
 
 // Deploys the pinned Wormhole core + token bridge on a loopback Hardhat node and registers foreign emitters
-// with locally signed governance VAAs. Usage: `compile` | `deploy --rpc <url>` | `register --chain <id> --emitter <hex32>`.
+// with locally signed governance VAAs. Usage: `compile` | `deploy --rpc <url>` | `register --vaa <hex>` (from ../lib/vaa.mjs register-chain).
 // See ../AGENTS.md §EVM.
 const require = createRequire(path.join(fixtureRoot, 'package.json'));
 const solc = require('solc');
@@ -82,27 +82,30 @@ async function deploy(rpc) {
   writeState('evm.json', { rpc, chainId: pins.evm.chainId, wormholeChainId: pins.evm.wormholeChainId, genesisHash: genesis.hash,
     core: await core.getAddress(), coreImplementation: await implementation.getAddress(),
     coreImplementationCodeSha256: await codeHash(await implementation.getAddress()),
-    tokenBridge: await tokenBridge.getAddress(), tokenBridgeImplementation: await bridgeImplementation.getAddress(),
+    tokenBridge: await tokenBridge.getAddress(), tokenBridgeEmitterHex: (await tokenBridge.getAddress()).slice(2).toLowerCase().padStart(64, '0'),
+    tokenBridgeImplementation: await bridgeImplementation.getAddress(),
     tokenBridgeImplementationCodeSha256: await codeHash(await bridgeImplementation.getAddress()),
-    weth: await weth.getAddress(), registered: {}, governanceSequence: 0 });
+    weth: await weth.getAddress(), registered: {} });
   console.log(JSON.stringify(readState('evm.json')));
 }
 
-async function register(chain, emitter) {
+async function register(vaaHex) {
   const state = readState('evm.json');
   const provider = new JsonRpcProvider(requireLoopback(state.rpc), state.chainId, { staticNetwork: true });
   const deployer = new NonceManager(new Wallet(hardhatDeployerKey, provider));
-  const guardians = restoreGuardianSet(readState('guardians.json'));
+  const vaa = Buffer.from(vaaHex, 'hex');
+  const payload = vaa.subarray(6 + vaa[5] * 66 + 51);
+  const chain = payload.readUInt16BE(35);
+  const emitter = '0x' + payload.subarray(37, 69).toString('hex');
   const bridge = new Contract(state.tokenBridge, ['function registerChain(bytes)', 'function bridgeContracts(uint16) view returns (bytes32)'], deployer);
-  const sequence = state.governanceSequence + 1;
-  await (await bridge.registerChain(governanceVaa(guardians, registerChainPayload(chain, emitter), sequence))).wait();
+  await (await bridge.registerChain(vaa)).wait();
   const recorded = await bridge.bridgeContracts(chain);
-  if (BigInt(recorded) !== BigInt('0x' + emitter.replace(/^0x/, ''))) throw new Error(`Chain ${chain} emitter registration did not land.`);
-  writeState('evm.json', { ...state, governanceSequence: sequence, registered: { ...state.registered, [chain]: recorded } });
+  if (recorded !== emitter) throw new Error(`Chain ${chain} emitter registration did not land.`);
+  writeState('evm.json', { ...state, registered: { ...state.registered, [chain]: recorded } });
 }
 
 const command = process.argv[2];
 if (command === 'compile') console.log(Object.entries(await compile()).map(([name, artifact]) => `${name}:${(artifact.bytecode.length - 2) / 2}`).join(' '));
 else if (command === 'deploy') await deploy(argument('--rpc'));
-else if (command === 'register') await register(Number(argument('--chain')), argument('--emitter'));
-else throw new Error('Usage: chain.mjs compile | deploy --rpc <url> | register --chain <id> --emitter <hex32>');
+else if (command === 'register') await register(argument('--vaa'));
+else throw new Error('Usage: chain.mjs compile | deploy --rpc <url> | register --vaa <hex>');

@@ -55,6 +55,14 @@ export function registerChainPayload(emitterChain, emitterAddress) {
   return Buffer.concat([module, Buffer.from([1]), u16(0), u16(emitterChain), bytes32(emitterAddress)]);
 }
 
+/** Core GuardianSetUpgrade payload (module "Core", action 2, chain 0); Algorand `init` bootstraps from it. */
+export function guardianSetUpgradePayload(newIndex, addresses) {
+  const module = Buffer.alloc(32); Buffer.from('Core').copy(module, 32 - 'Core'.length);
+  const index = Buffer.alloc(4); index.writeUInt32BE(newIndex);
+  return Buffer.concat([module, Buffer.from([2]), u16(0), index, Buffer.from([addresses.length]),
+    ...addresses.map(address => Buffer.from(getBytes(address)))]);
+}
+
 /** Serializes a guardian set for the private state handover to the C# parent. */
 export const guardianState = guardians => ({ index: guardians.index, addresses: guardians.addresses,
   privateKeys: guardians.keys.map(key => key.privateKey) });

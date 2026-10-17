@@ -5,12 +5,15 @@
     "tree": "6e61447f80281c3e765691cf4c0ed5387b868bb3",
     "provenance": ".omc/research/round3-wtt-upstream-{commit,tree}-2026-10-15.json (main checkout)",
     "gitBlobs": {
+      "algorand/Pipfile.lock": "6f34036f40deb09653677f5a98dd647d4d49adaa",
       "algorand/TmplSig.py": "8ed3c991dde0b221cceba16417f74b17587d6565",
       "algorand/admin.py": "6d6d3dbab05709eb516e8a97b7450345bfb5ba12",
+      "algorand/gentest.py": "2ff52016fff77795c4b5bdc9a275496c0ed34bd0",
       "algorand/globals.py": "bc77d9d171da12f75bcc996afb1d5c5b63a9217a",
       "algorand/inlineasm.py": "565cb26cc1fb13da3040b3920ede1e3829a871f3",
       "algorand/local_blob.py": "ceb1dda8847b0695853a78e8318d0f4507341683",
       "algorand/requirements.txt": "636e371cc281e036d928270cf61cd680cdbe869b",
+      "algorand/test_contract.py": "1eca3995985ff575dcf96700481bad0d6c6e5f4f",
       "algorand/token_bridge.py": "7c479ad0d611a61de71d57afb236434b4d63d463",
       "algorand/vaa_verify.py": "db2a61df1d4008c6f416c5af3d4e6ec1d2f45a68",
       "algorand/wormhole_core.py": "a66fe406a7b6ab7ad650b36838bb5e097e5cd6f6",
@@ -98,7 +101,9 @@
     "pyAlgorandSdk": "1.10.0b1",
     "wormholeChainId": 8,
     "localnet": "tests/AZOA.WebAPI.IntegrationTests/Fixtures/Algorand/compose.yml",
-    "teal": {}
+    "teal": {},
+    "pythonImage": "docker.io/library/python:3.10-slim@sha256:6ff506466f8b1e981719b468cc0023b8ef000b983cdec0eafe119d01f379e31d",
+    "requirements": "algorand/requirements.txt (pinned upstream blob; exact == versions)"
   },
   "guardian": {
     "governanceChainId": 1,
