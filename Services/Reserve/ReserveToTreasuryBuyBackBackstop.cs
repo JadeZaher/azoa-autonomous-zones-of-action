@@ -188,7 +188,7 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
                 return Unavailable("A backstop movement for this request did not complete and needs an operator.");
         }
 
-        // Durable exact-wire transfer (Services/Reserve/AGENTS.md §buy-back durable top-up): prepare
+        // Durable exact-wire transfer (Services/Reserve/AGENTS.md §three-outcomes): prepare
         // and save signed bytes once, then only observe or rebroadcast those bytes.
         var quantity = request.ShortfallBaseUnits.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var encoded = await receipts.GetPreparedAsync(moveKey, ct);
