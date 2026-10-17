@@ -64,3 +64,28 @@ A participant's stage consent credential can lapse between acceptance and prepar
 ### NFT tenant scope
 
 A requester sees, refreshes and cancels only lifecycles admitted under the same tenant context (`RequesterOwns`), mirroring `FungibleCreationService.Matches`; a refund and a refund fee quote must name a source transfer the requester owns under that same tenant. A counterparty (recipient, holder or creator) sees an incoming lifecycle until its first stage consent; afterwards only under the tenant that consent bound. Cancelling admitted work requires the requester's current credential and its operation signing scope, fenced with `SigningAuthorityFence.ForConsent` in the cancellation transaction. Only the exact never-admitted cancellation marker is written without authority.
+
+### NFT owner takeover (F-H12, round 4)
+
+A lifecycle admitted by a tenant (child credential) or by a workflow run past a confirmed stage cannot be cancelled and
+could not be renewed once the tenant grant was revoked or the run stopped, stranding paid rent. The owner's own direct
+credential (no tenant) may now renew it through `RenewActorAuthorityAsync`: the renewal is recorded as an owner takeover
+(`NftActorContinuationIdentity.IsOwnerTakeover`). From then on `RequesterOwns` admits only the owner outside any tenant,
+the tenant can neither see, cancel nor renew back in, the store stops fencing the original workflow run, and later effects
+fence the owner's renewal. `RequestJson` and the original intent never change.
+
+### Ownership rows are record links (SQL-05, round 4)
+
+`nft_ownership.user_id` / `issuer_user_id` are `record<user>`; `CommitAsync` writes `SurrealLink.ToLink("user", …)`.
+A bare id was refused by the schema, so every confirmed lifecycle failed to finalize.
+
+### Bindings across a transfer (audit-2 M7, round 4)
+
+A holon/wallet binding outlives an NFT transfer. It grants nothing, and cannot be edited, unless the binding's target is
+owned by the current NFT holder; the target's owner may remove a binding left behind.
+
+### Revocation refusals (round 4)
+
+The lifecycle revoke path refuses before any clawback or admission when the issuer is unrecorded, the asset is not
+soulbound, the holder address is unrecorded, or the issuer has no wallet on the chain; a lookup failure propagates
+(fails closed). Covered by `Credentials/CredentialRevokeRefusalTests`.

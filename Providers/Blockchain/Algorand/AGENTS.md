@@ -288,3 +288,12 @@ Algorand2 2.0.0.2024051911 declares `ApplicationId` on each on-completion subcla
 ## Asset acceptance wire
 
 `AssetAcceptTransaction` (zero-amount self opt-in) has no close-to field in the SDK. Acceptance validation relies on `AlgorandSignedEnvelope.DecodeCanonical`: a wire carrying `aclose` either decodes to a different subclass (rejected by the `is AssetAcceptTransaction` pattern) or loses the field on re-encode (rejected by the byte-exact round trip). The acceptance cost `Generation` is a `long` on the contract and an `int` on `native_preparation`; values outside `0..int.MaxValue` are refused before the claim, never truncated.
+
+## Exact-bytes signing and zero-amount members (round 4)
+
+The Algorand2 SDK decodes every zero-amount `axfer` as `AssetAcceptTransaction` and drops `aclose`, and omits zero
+fields (`fee`, `amt`, `aamt`) on encode, so they decode as null. Therefore: `AlgorandTransactionSigner` signs the
+provider's exact bytes (`"TX" || txn`) and frames the canonical `{sig, txn}` envelope instead of re-encoding a decoded
+object; `AlgorandSignedEnvelope.MatchExact` verifies a signed envelope by re-encoding the *expected* transaction under the
+submitted signature; receipt/group checks compare `Fee ?? 0`, `Amount ?? 0` and treat a zero-amount member's absent
+`amount` as zero (`AlgorandGroupReceipt`).
