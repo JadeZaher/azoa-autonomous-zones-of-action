@@ -3,7 +3,8 @@ type: lane-checkpoint
 lane: L1-schema
 wave: W1
 branch: r4/schema
-status: ready-to-merge
+status: merged
+merged: 1912e86
 ---
 
 # Round 4 — L1 schema (W1 `r4/schema`)
