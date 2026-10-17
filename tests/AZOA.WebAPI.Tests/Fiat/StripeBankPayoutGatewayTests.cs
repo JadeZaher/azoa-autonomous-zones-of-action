@@ -81,7 +81,7 @@ public sealed class StripeBankPayoutGatewayTests
         var id = Guid.NewGuid().ToString("N");
         var envelope = StripeEventEnvelope.TryParse($$"""
             {"id":"evt_bank","type":"payout.paid","account":"acct_owner","data":{"object":{
-              "id":"po_bank","object":"payout","metadata":{"azoa_intent_id":"{{id}}"}}}}
+              "id":"po_bank","object":"payout","metadata":{"azoa_intent_id":"{{id}}"} } } }
             """);
         envelope!.ProviderAccountId.Should().Be("acct_owner");
         envelope.ObjectId.Should().Be("po_bank");

@@ -379,6 +379,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
             SurrealGeneratedStatementScope.Assign(mutation, "attach", "_attached"),
             SurrealGeneratedStatementScope.RequireResult("_attached", "HOSTED_ATTACHMENT_CHANGED") };
         statements.AddRange(HostedSessionAliasFence.Reserve(expected, providerSessionId, correlationId));
+        // Absolute slot: a top-level RETURN drops the statements after it from the result array.
+        var resultIndex = statements.Count;
         statements.Add(SurrealQuery.Of("RETURN $_attached"));
         statements.Add(SurrealQuery.Of("COMMIT"));
         var query = SurrealQuery.Combine(statements.ToArray());
@@ -386,7 +388,7 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         {
             var response = await _executor.ExecuteAsync(query, ct);
             response.EnsureAllOk();
-            var row = response.GetValues<HostedSession>(response.Statements.Count - 2).SingleOrDefault();
+            var row = response.GetValues<HostedSession>(resultIndex).SingleOrDefault();
             return AZOAResult<HostedSession>.Success(row is null ? null! : FromStorage(row));
         }
         catch (SurrealStatementException exception) when (
