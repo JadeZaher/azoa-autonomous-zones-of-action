@@ -48,8 +48,9 @@ public interface IHostedSessionStore
     Task<AZOAResult<HostedSession>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
-    /// Attaches the provider session created after admission. Conditional on the
-    /// session still being in <c>CLAIMED</c> with the original creator token; a late response can resolve quarantine.
+    /// Attaches the provider session created after admission: compare-and-swap on
+    /// <paramref name="expectedStateVersion"/> plus <c>CLAIMED</c>, the creator token and a begun creation.
+    /// The one tolerated intervening write is an operator quarantine, which a late original response resolves.
     /// </summary>
     Task<AZOAResult<HostedSession>> TryAttachProviderSessionAsync(
         Guid id,

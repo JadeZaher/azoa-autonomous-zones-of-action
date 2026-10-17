@@ -120,8 +120,9 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
     {
         lock (_gate)
         {
-            // Mirrors the SurrealQL WHERE: CLAIMED or AWAITING_SUBJECT, exact version.
+            // Mirrors the store: caller-version CAS (a quarantine may intervene), CLAIMED, creator token, creation started.
             if (!_sessions.TryGetValue(id.ToString("N"), out var session)
+                || (session.StateVersion != expectedStateVersion && session.CreationQuarantinedAt is null)
                 || session.State != HostedSessionStates.Claimed || session.ProviderSessionId is not null
                 || session.CreationToken != creationToken || session.CreationStartedAt is null)
             {
