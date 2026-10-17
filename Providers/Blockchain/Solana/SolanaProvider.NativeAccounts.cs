@@ -28,13 +28,12 @@ public partial class SolanaProvider
                     if (info.GetProperty("mint").GetString() != mint.Key || info.GetProperty("owner").GetString() != owner.Key)
                         throw new ArgumentException("Existing associated token account differs from the requested owner and mint.");
                 }
-                var instruction = AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(payer, owner, mint);
-                instruction.Data = [1];
+                var instruction = SolanaAssociatedTokenAccount.CreateIdempotent(payer, owner, mint);
                 return new(address.Key, [NativeStage("CreateAta", await NativeRentAsync(165, ct), instruction)]);
             }
             case "CloseTokenAccount":
             {
-                if (!ValidateAddressFormat(artifact.TokenAccount) || !ValidateAddressFormat(artifact.Destination)
+                if (!SolanaAddress.IsAccount(artifact.TokenAccount) || !SolanaAddress.IsAccount(artifact.Destination)
                     || artifact.TokenAccount == artifact.Destination) throw new ArgumentException("Exact token account and refund destination are required.");
                 var account = await ReadParsedAccountAsync(artifact.TokenAccount!, ct) ?? throw new ArgumentException("Token account is absent.");
                 var info = TokenInfo(account, "account");
@@ -78,7 +77,7 @@ public partial class SolanaProvider
                 if (account.Owner != SolanaNftMetadata.Program.Key || !IsNativeHash(artifact.ExpectedMetadataHash)
                     || NativeHash(account.Data) != artifact.ExpectedMetadataHash) throw new ArgumentException("Metadata snapshot changed.");
                 var existing = SolanaNativeMetadata.Read(account.Data);
-                return new(address.Key, [NativeStage("UpdateMetadata", 0, SolanaNativeMetadata.Update(mint, authority, existing, artifact))], Disclosure: new(
+                return new(address.Key, [NativeStage("UpdateMetadata", 0, SolanaNativeMetadata.Update(mint, authority, artifact, existing))], Disclosure: new(
                     "Replace metadata with the complete values shown. The current snapshot is checked before preparation; other changes made before execution can be replaced.",
                     ResultingMetadata: JsonSerializer.SerializeToElement(new
                     {

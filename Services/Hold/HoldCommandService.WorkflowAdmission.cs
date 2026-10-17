@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
@@ -61,7 +60,7 @@ public sealed partial class HoldCommandService
         var recipient = new SigningWalletWitness(wallet.Id, wallet.UserId, wallet.Address, wallet.ChainType);
         var quantity = intent.Definition?.QuantityBaseUnits ?? current?.Amount;
         if (quantity is null) return Refuse();
-        var quote = await custody.QuoteValueCustodyAsync(new(intent.Asset.ChainType, intent.Asset.Network, intent.Asset.AssetId,
+        var quote = await custody!.QuoteValueCustodyAsync(new(intent.Asset.ChainType, intent.Asset.Network, intent.Asset.AssetId,
             intent.Asset.HoldingAddress, recipient.Address, quantity, intent.Asset.HoldingAddress), ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<HoldCommandView>.Failure(quote.Message);
         if (local)

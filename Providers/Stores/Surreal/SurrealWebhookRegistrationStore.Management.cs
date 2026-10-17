@@ -1,7 +1,6 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Signing;
@@ -118,6 +117,7 @@ public sealed partial class SurrealWebhookRegistrationStore
             {
                 var response = await executor.ExecuteAsync(atomic, ct);
                 response.EnsureAllOk();
+                return response;
             }, ct);
             return AZOAResult<WebhookRegistrationMutationResult>.Success(new(receipt, newSecret, false));
         }

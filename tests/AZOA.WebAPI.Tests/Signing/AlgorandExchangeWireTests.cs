@@ -15,6 +15,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using AZOA.WebAPI.Core.Signing;
 using AlgoAccount = Algorand.Algod.Model.Account;
 
 namespace AZOA.WebAPI.Tests.Signing;
@@ -264,7 +265,7 @@ public sealed class AlgorandExchangeWireTests
             {
                 var payment = (PaymentTransaction)transaction;
                 result["tx-type"] = "pay";
-                result["payment-transaction"] = new Dictionary<string, object> { ["receiver"] = payment.Receiver.ToString(), ["amount"] = payment.Amount };
+                result["payment-transaction"] = new Dictionary<string, object> { ["receiver"] = payment.Receiver.ToString(), ["amount"] = payment.Amount! };
             }
             return result;
         }

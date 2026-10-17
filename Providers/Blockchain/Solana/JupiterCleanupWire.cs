@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Models.Dex;
 using Solnet.Programs;
@@ -29,7 +28,7 @@ internal static class JupiterCleanupWire
             SolanaComputeBudget.Limit(pins.ComputeUnits), SolanaComputeBudget.Price(pins.ComputePrice),
             MemoProgram.NewMemoV2(CanonicalJson.Hash(new { Domain = "azoa:jupiter-stage/1", Identity = preparationKey }), owner),
             JupiterZeroHoldingGuard.Build(new PublicKey(pins.GuardProgram), new PublicKey(account), mint, owner),
-            TokenProgram.CloseAccount(new PublicKey(account), owner, owner)
+            TokenProgram.CloseAccount(new PublicKey(account), owner, owner, TokenProgram.ProgramIdKey)
         ];
     }
 }

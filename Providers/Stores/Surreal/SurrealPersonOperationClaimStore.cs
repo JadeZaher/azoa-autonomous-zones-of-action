@@ -4,7 +4,6 @@ using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;

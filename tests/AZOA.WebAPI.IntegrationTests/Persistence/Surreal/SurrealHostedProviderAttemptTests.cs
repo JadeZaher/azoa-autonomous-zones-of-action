@@ -79,7 +79,7 @@ public sealed class SurrealHostedProviderAttemptTests : IAsyncLifetime
         (await _attempts.ClaimAsync(session, true, now, default)).Should().BeNull();
         var winner = claims.Single(claim => claim is not null)!;
         (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<HostedProviderAttempt>(id)
-            .Set(row => row.LeaseExpiresAt, now.AddMinutes(-1)))).EnsureAllOk();
+            .Set(row => row.LeaseExpiresAt, now.AddMinutes(-1)).Build())).EnsureAllOk();
         var resumed = await _attempts.ClaimAsync(session, true, now, default);
         resumed.Should().NotBeNull(); resumed!.RequestJson.Should().Be(attempt.RequestJson);
         var creation = new HostedSessionCreation { ProviderSessionId = "remote", RedirectUrl = "https://verify.example/visit" };

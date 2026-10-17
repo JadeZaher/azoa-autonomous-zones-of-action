@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 

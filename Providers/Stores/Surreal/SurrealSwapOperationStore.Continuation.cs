@@ -1,10 +1,8 @@
 using System.Text.Json;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;

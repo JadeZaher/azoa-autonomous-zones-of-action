@@ -11,7 +11,7 @@ public sealed partial class SurrealHoldCommandStore
         => await executor.QueryAsync<HoldCommand>(SurrealQuery<HoldCommand>.From()
             .Where(row => row.State == "Submitted" || ((row.State == "Admitted" || row.State == "Preparing") && row.AcceptanceState == "Submitted"))
             .Where(row => row.NextReconcileAt == null || row.NextReconcileAt <= now)
-            .OrderBy(row => row.NextReconcileAt).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
+            .OrderBy(row => row.NextReconcileAt!).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
 
     /// <inheritdoc/>
     public async Task<bool> ScheduleReconciliationAsync(HoldCommand expected, DateTimeOffset next, CancellationToken ct = default)

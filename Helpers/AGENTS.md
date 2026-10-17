@@ -22,6 +22,16 @@ must make those decisions before persisting its result.
 SHA-256-derived wallet id used by both wallet creation and tenant status reads.
 Changing its v1 input is an identity migration, not a formatting refactor.
 
+## BCL names
+
+Never give a helper type the short name of a BCL type (`Encoding`, `Encoder`,
+`Convert`, `Path`, `File`, `Random`, …). The byte/hex helper was once called
+`Encoding`; every file importing both `AZOA.WebAPI.Helpers` and `System.Text`
+then failed with CS0104, and inside this namespace `Encoding.UTF8` silently bound
+to the helper (CS0117). It is `ByteEncoding` since round 4. Third-party clashes
+(`Algorand.Utils.Encoder` vs `System.Text.Encoder`) use a file-local alias
+(`using AlgorandEncoder = Algorand.Utils.Encoder;`), never a renamed BCL import.
+
 ## §rail-amount-json
 
 `RailAmountBaseUnitStringJsonConverter` is the HTTP/replay boundary converter for

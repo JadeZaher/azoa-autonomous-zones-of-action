@@ -158,7 +158,7 @@ public sealed class TinymanSwapReceiptTests
                 ["intra-round-offset"] = (ulong)txs.Count * 2, ["note"] = Convert.ToBase64String(original.Note),
             };
             if (original.Group is not null) tx["group"] = Convert.ToBase64String(original.Group.Bytes);
-            if (original is ApplicationCallTransaction app)
+            if (original is ApplicationNoopTransaction app)
             {
                 tx["tx-type"] = "appl";
                 tx["application-transaction"] = new JsonObject

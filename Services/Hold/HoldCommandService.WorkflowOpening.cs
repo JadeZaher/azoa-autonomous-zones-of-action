@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
@@ -57,7 +56,7 @@ public sealed partial class HoldCommandService
         var provider = providers.GetProvider(draft.Terms.Asset.ChainType, draft.Terms.Asset.Network);
         if (!provider.TryGetModule<IValueCustodyModule>(out var custody))
             return AZOAResult<HoldCommandView>.Failure("Current complete custody costs are unavailable.");
-        var quote = await custody.QuoteValueCustodyAsync(draft.Quote.Request, ct);
+        var quote = await custody!.QuoteValueCustodyAsync(draft.Quote.Request, ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<HoldCommandView>.Failure(quote.Message);
         var replacement = await store.ReplaceWorkflowOpeningAsync(row, draft with { Quote = quote.Result }, request, authority.Result, ct);
         return replacement is null ? AZOAResult<HoldCommandView>.Failure("The original execution, immutable mandate bounds or disclosure version changed.")

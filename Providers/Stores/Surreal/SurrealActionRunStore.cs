@@ -1,5 +1,4 @@
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
@@ -53,10 +52,10 @@ public sealed class SurrealActionRunStore(ISurrealExecutor executor) : IActionRu
     {
         var update = SurrealWriter.UpdateOnly<Row>(run.Id.ToString("N"))
             .Where(row => row.Version == run.Version).Set(row => row.Version, run.Version + 1)
-            .Set(row => row.Status, (Row.ActionRunStatusKind)(int)run.Status);
+            .Set(row => row.Status, ToKind(run.Status));
         if (expectedStatus is { } expected)
         {
-            var status = (Row.ActionRunStatusKind)(int)expected;
+            var status = ToKind(expected);
             update = update.Where(row => row.Status == status);
         }
         update = run.EndedAt is null ? update.Unset(row => row.EndedAt)
@@ -89,7 +88,7 @@ public sealed class SurrealActionRunStore(ISurrealExecutor executor) : IActionRu
     /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<ActionRun>>> GetByStatusAsync(ActionRunStatus status, CancellationToken ct = default)
     {
-        var stored = (Row.ActionRunStatusKind)(int)status;
+        var stored = ToKind(status);
         var rows = await executor.QueryAsync<Row>(SurrealQuery<Row>.From().Where(row => row.Status == stored).OrderBy(row => row.StartedAt), ct);
         return AZOAResult<IEnumerable<ActionRun>>.Success(rows.Select(ToDomain).ToArray());
     }
@@ -115,7 +114,7 @@ public sealed class SurrealActionRunStore(ISurrealExecutor executor) : IActionRu
     internal static Row ToRow(ActionRun row) => new()
     {
         Id = row.Id.ToString("N"), ActionId = SurrealLink.ToLink("action", row.ActionId.ToString("N"))!, UserId = SurrealLink.ToLink("user", row.UserId.ToString("N"))!,
-        ActingTenantId = SurrealLink.ToLink("user", row.ActingTenantId?.ToString("N")), Status = (Row.ActionRunStatusKind)(int)row.Status,
+        ActingTenantId = SurrealLink.ToLink("user", row.ActingTenantId?.ToString("N")), Status = ToKind(row.Status),
         Version = row.Version, StartedAt = new DateTimeOffset(DateTime.SpecifyKind(row.StartedAt, DateTimeKind.Utc)),
         EndedAt = row.EndedAt is { } ended ? new DateTimeOffset(DateTime.SpecifyKind(ended, DateTimeKind.Utc)) : null,
         ParentRunId = SurrealLink.ToLink("action_run", row.ParentRunId?.ToString("N")), ForkedAtNodeId = SurrealLink.ToLink("action_node", row.ForkedAtNodeId?.ToString("N")),
@@ -129,7 +128,7 @@ public sealed class SurrealActionRunStore(ISurrealExecutor executor) : IActionRu
     internal static ActionRun ToDomain(Row row) => new()
     {
         Id = SurrealRecordGuid.Parse(row.Id), ActionId = SurrealRecordGuid.Parse(row.ActionId), UserId = SurrealRecordGuid.Parse(row.UserId),
-        ActingTenantId = SurrealRecordGuid.ParseOptional(row.ActingTenantId), Status = (ActionRunStatus)(int)row.Status,
+        ActingTenantId = SurrealRecordGuid.ParseOptional(row.ActingTenantId), Status = FromKind(row.Status),
         Version = row.Version, StartedAt = row.StartedAt.UtcDateTime, EndedAt = row.EndedAt?.UtcDateTime,
         ParentRunId = SurrealRecordGuid.ParseOptional(row.ParentRunId), ForkedAtNodeId = SurrealRecordGuid.ParseOptional(row.ForkedAtNodeId),
         ForkReason = row.ForkReason, FailReason = row.FailReason, SourceActionId = SurrealRecordGuid.ParseOptional(row.SourceActionId),
@@ -138,4 +137,9 @@ public sealed class SurrealActionRunStore(ISurrealExecutor executor) : IActionRu
         InvocationIdentity = row.InvocationIdentity, InternalDependenciesJson = row.InternalDependenciesJson, OccurrenceBoundariesJson = row.OccurrenceBoundariesJson,
         InitialInputJson = row.InitialInputJson, AuthenticationWitnessJson = row.AuthenticationWitnessJson,
     };
+
+    // Name mapping (never ordinal): a reordered or missing member throws instead of persisting the wrong state.
+    private static Row.ActionRunStatusKind ToKind(ActionRunStatus status) => Enum.Parse<Row.ActionRunStatusKind>(status.ToString());
+    private static ActionRunStatus FromKind(Row.ActionRunStatusKind status) => Enum.Parse<ActionRunStatus>(status.ToString());
 }
+

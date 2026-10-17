@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 
 namespace AZOA.WebAPI.Core.Diagnostics;
 

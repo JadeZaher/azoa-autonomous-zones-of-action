@@ -4,7 +4,6 @@ using SurrealForge.Client;
 using AZOA.WebAPI.Models.Signing;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;

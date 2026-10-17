@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using AZOA.WebAPI.Helpers;
+using AZOA.WebAPI.Core.Surreal;
+
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
@@ -45,7 +46,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
             .Where(row => row.LeaseExpiresAt == null || row.LeaseExpiresAt <= now)
             .Set(row => row.Status, "Migrating").Set(row => row.LeaseToken, token)
             .Set(row => row.LeaseExpiresAt, now.AddMinutes(2)).Set(row => row.Version, current.Version + 1);
-        var admission = await executor.ExecuteAsync(claim, ct);
+        var admission = await executor.ExecuteAsync(claim.Build(), ct);
         admission.EnsureAllOk();
         if (!admission.GetValues<WalletAuthIdentityMigration>(0).Any()) return;
 
@@ -122,7 +123,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
             {
                 var renewed = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthIdentityMigration>("v1")
                     .Where(row => row.Status == "Migrating" && row.LeaseToken == token && row.LeaseExpiresAt > DateTimeOffset.UtcNow)
-                    .Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(2)), ct);
+                    .Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(2)).Build(), ct);
                 renewed.EnsureAllOk();
                 if (!renewed.GetValues<WalletAuthIdentityMigration>(0).Any()) return;
                 var page = await executor.QueryAsync<User>(SurrealQuery<User>.From()
@@ -143,7 +144,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
             .Set(row => row.Status, "Conflict").Set(row => row.DiagnosticsJson,
                 JsonSerializer.Serialize(diagnostics))
             .Unset(row => row.LeaseToken).Unset(row => row.LeaseExpiresAt).Set(row => row.UpdatedAt, now)
-            .Set(row => row.Version, current.Version + 1), ct);
+            .Set(row => row.Version, current.Version + 1).Build(), ct);
         response.EnsureAllOk();
     }
 
@@ -163,7 +164,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
 
     // raw: these guards are used only inside the atomic lease/user or repair transactions above.
     private static SurrealQuery LeaseGuard(string token) => SurrealQuery.Of("LET $_migration = (UPDATE wallet_auth_identity_migration:v1 SET updated_at = time::now() WHERE status = 'Migrating' AND lease_token = $_migration_token AND lease_expires_at > time::now() RETURN AFTER)").WithParam("_migration_token", token);
-    private static SurrealQuery AssertLease() => SurrealQuery.Of($"IF array::len($_migration) != 1 {{ THROW '{Lost}' }}");
-    private static SurrealQuery ExactMutation(SurrealQuery query) => SurrealQuery.Of($"LET $_identity = ({query.Sql.TrimEnd(';')})").WithParams(query.Params);
-    private static SurrealQuery AssertUser() => SurrealQuery.Of($"IF $_identity = NONE OR $_identity = NULL {{ THROW '{Lost}' }}");
+    private static SurrealQuery AssertLease() => SurrealIdentifierTemplate.Of($"IF array::len($_migration) != 1 {{ {SurrealIdentifierTemplate.Throw(Lost)} }}");
+    private static SurrealQuery ExactMutation(SurrealQuery query) => SurrealGeneratedStatementScope.Assign(query, "identity", "_identity");
+    private static SurrealQuery AssertUser() => SurrealIdentifierTemplate.Of($"IF $_identity = NONE OR $_identity = NULL {{ {SurrealIdentifierTemplate.Throw(Lost)} }}");
 }

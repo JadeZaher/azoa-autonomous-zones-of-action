@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.HostedSessions;
@@ -33,7 +32,7 @@ public sealed class SurrealHostedProviderAttemptStore(ISurrealExecutor executor)
     public async Task CompleteCallbackAsync(string id, CancellationToken ct)
     {
         var response = await KycEvidenceFence.ExecuteAsync(executor, SurrealWriter.UpdateOnly<HostedProviderCallback>(id)
-            .Where(row => !row.Processed).Set(row => row.Processed, true), ct);
+            .Where(row => !row.Processed).Set(row => row.Processed, true).Build(), ct);
         response.EnsureAllOk();
     }
 
@@ -76,7 +75,7 @@ public sealed class SurrealHostedProviderAttemptStore(ISurrealExecutor executor)
     {
         var response = await KycEvidenceFence.ExecuteAsync(executor, SurrealWriter.UpdateOnly<HostedProviderAttempt>(id)
             .Where(row => !row.RecoveryCompleted).Set(row => row.NextAttemptAt, nextAttemptAt)
-            .Set(row => row.RecoveryCompleted, completed), ct);
+            .Set(row => row.RecoveryCompleted, completed).Build(), ct);
         response.EnsureAllOk();
     }
 
@@ -87,7 +86,7 @@ public sealed class SurrealHostedProviderAttemptStore(ISurrealExecutor executor)
         if (existing is null || session.CreationStartedAt is null || session.State != HostedSessionStates.Claimed || session.FlowKind != HostedSessionFlowKinds.Kyc
             || existing.ProviderKey != session.ProviderKey || existing.SubjectId != session.SubjectUserId || existing.TenantId != session.TenantId) return null;
         var scheduled = await KycEvidenceFence.ExecuteAsync(executor, SurrealWriter.UpdateOnly<HostedProviderAttempt>(existing.Id)
-            .Where(row => row.Version == existing.Version).Set(row => row.NextAttemptAt, now.AddMinutes(2)), ct);
+            .Where(row => row.Version == existing.Version).Set(row => row.NextAttemptAt, now.AddMinutes(2)).Build(), ct);
         scheduled.EnsureAllOk();
         var update = SurrealWriter.UpdateOnly<HostedProviderAttempt>(existing.Id)
             .Where(row => row.Version == existing.Version && !row.Quarantined)
@@ -126,7 +125,7 @@ public sealed class SurrealHostedProviderAttemptStore(ISurrealExecutor executor)
             .Set(row => row.RemoteSessionId, creation.ProviderSessionId).Set(row => row.RedirectUrl, creation.RedirectUrl)
             .Unset(row => row.LeaseToken).Unset(row => row.LeaseExpiresAt).Set(row => row.Version, lease.Version + 1);
         update = creation.ExpiresAt is null ? update.Unset(row => row.ExpiresAt) : update.Set(row => row.ExpiresAt, creation.ExpiresAt);
-        var result = await KycEvidenceFence.ExecuteAsync(executor, update, ct);
+        var result = await KycEvidenceFence.ExecuteAsync(executor, update.Build(), ct);
         result.EnsureAllOk();
         return result.GetValues<HostedProviderAttempt>(0).SingleOrDefault();
     }
@@ -137,7 +136,7 @@ public sealed class SurrealHostedProviderAttemptStore(ISurrealExecutor executor)
         var pin = await KycEvidenceFence.ExecuteAsync(executor, SurrealWriter.UpdateOnly<HostedSession>(hostedSessionId)
             .Where(row => row.ProviderSessionId == remoteSessionId && row.ProviderDecisionId == null)
             .Set(row => row.ProviderDecisionId, decisionId).Set(row => row.ProviderEvidenceDigest, digest)
-            .Set(row => row.ProviderEvidenceConflict, false), ct);
+            .Set(row => row.ProviderEvidenceConflict, false).Build(), ct);
         pin.EnsureAllOk();
         var current = await executor.QuerySingleAsync<HostedSession>(SurrealQuery<HostedSession>.Key(hostedSessionId), ct);
         if (current is null || current.ProviderSessionId != remoteSessionId) return false;
@@ -145,7 +144,7 @@ public sealed class SurrealHostedProviderAttemptStore(ISurrealExecutor executor)
             return current.ProviderEvidenceConflict != true;
         var conflict = await KycEvidenceFence.ExecuteAsync(executor, SurrealWriter.UpdateOnly<HostedSession>(hostedSessionId)
             .Where(row => row.ProviderSessionId == remoteSessionId && row.ProviderDecisionId != null)
-            .Set(row => row.ProviderEvidenceConflict, true), ct);
+            .Set(row => row.ProviderEvidenceConflict, true).Build(), ct);
         conflict.EnsureAllOk();
         return false;
     }

@@ -47,9 +47,9 @@ public sealed class WalletSignatureVerifierTests
     public void Signature_hex_is_not_misread_as_base64(int size)
     {
         var original = Enumerable.Repeat((byte)0xab, size).ToArray();
-        AZOA.WebAPI.Helpers.Encoding.TryDecodeSignature(Convert.ToHexString(original), out var bare).Should().BeTrue();
-        AZOA.WebAPI.Helpers.Encoding.TryDecodeSignature("0x" + Convert.ToHexString(original), out var prefixed).Should().BeTrue();
-        AZOA.WebAPI.Helpers.Encoding.TryDecodeSignature(Convert.ToBase64String(original), out var encoded).Should().BeTrue();
+        AZOA.WebAPI.Helpers.ByteEncoding.TryDecodeSignature(Convert.ToHexString(original), out var bare).Should().BeTrue();
+        AZOA.WebAPI.Helpers.ByteEncoding.TryDecodeSignature("0x" + Convert.ToHexString(original), out var prefixed).Should().BeTrue();
+        AZOA.WebAPI.Helpers.ByteEncoding.TryDecodeSignature(Convert.ToBase64String(original), out var encoded).Should().BeTrue();
         bare.Should().Equal(original);
         prefixed.Should().Equal(original);
         encoded.Should().Equal(original);

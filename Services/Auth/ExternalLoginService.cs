@@ -3,7 +3,6 @@
 using System.Security.Cryptography;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
-using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Auth;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;

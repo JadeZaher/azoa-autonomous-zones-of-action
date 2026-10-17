@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Helpers;
 using SurrealForge.Client.Query;
 using Event = AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentWebhookEvent;
 using Transition = AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentLifecycleTransition;

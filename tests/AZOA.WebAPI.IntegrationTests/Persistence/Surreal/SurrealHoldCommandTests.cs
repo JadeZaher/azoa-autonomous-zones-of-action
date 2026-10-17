@@ -132,6 +132,6 @@ public sealed partial class SurrealHoldCommandTests : IAsyncLifetime
         return ReservePartitionCodec.Decode(row!.Partitions, out _)!["contributors"];
     }
 
-    private async Task Save<T>(T row) where T : class, ISurrealRecord => await Execute(SurrealWriter.Create(row));
+    private async Task Save<T>(T row) where T : class, ISurrealRecord, new() => await Execute(SurrealWriter.Create(row));
     private async Task Execute(SurrealQuery query) => (await _executor.ExecuteAsync(query)).EnsureAllOk();
 }

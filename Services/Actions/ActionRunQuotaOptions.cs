@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 
 namespace AZOA.WebAPI.Services.Actions;
 

@@ -15,7 +15,7 @@ public sealed partial class SurrealHoldCommandStore
         => await executor.QueryAsync<ExchangeHoldSource>(SurrealQuery<ExchangeHoldSource>.From()
             .Where(row => ExchangeReconcilableStates.Contains(row.State))
             .Where(row => row.NextReconcileAt == null || row.NextReconcileAt <= now)
-            .OrderBy(row => row.NextReconcileAt).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
+            .OrderBy(row => row.NextReconcileAt!).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
 
     /// <inheritdoc/>
     public async Task<bool> ScheduleExchangeReconciliationAsync(ExchangeHoldSource expected, DateTimeOffset next,

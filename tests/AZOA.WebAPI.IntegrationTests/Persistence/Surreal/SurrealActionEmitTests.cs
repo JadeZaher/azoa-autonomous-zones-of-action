@@ -144,6 +144,6 @@ public sealed partial class SurrealActionEmitTests : IAsyncLifetime
             [AzoaScopes.ActionExecute], grant is null ? [] : [grant]));
     }
 
-    private async Task Save<T>(T row) where T : ISurrealRecord
+    private async Task Save<T>(T row) where T : ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 }

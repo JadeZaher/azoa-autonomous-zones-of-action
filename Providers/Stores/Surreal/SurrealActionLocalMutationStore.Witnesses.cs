@@ -72,15 +72,18 @@ public sealed partial class SurrealActionLocalMutationStore
         IReadOnlyDictionary<string, object?>? fields, int index)
     {
         var name = Name("row_witness", index);
+        var scope = SurrealIdentifierTemplate.Token(name);
+        var tableToken = SurrealIdentifierTemplate.Token(table);
         if (fields is null)
-            return [SurrealQuery.Of($"IF (SELECT * FROM ONLY type::record('{table}', ${name}_id)) != NONE {{ THROW 'ACTION_LOCAL_WITNESS_CHANGED' }}")
+            return [SurrealIdentifierTemplate.Of($"IF (SELECT * FROM ONLY type::record('{tableToken}', ${scope}_id)) != NONE {{ THROW 'ACTION_LOCAL_WITNESS_CHANGED' }}")
                 .WithParam(name + "_id", id.ToString("N"))];
         var parameters = new Dictionary<string, object?>();
         var conditions = Conditions(fields, name, parameters);
-        var statement = SurrealQuery.Of($"LET ${name} = (UPDATE ONLY type::record('{table}', ${name}_id) SET {lockColumn} = {lockColumn} WHERE {string.Join(" AND ", conditions)} RETURN AFTER)")
+        var lockToken = SurrealIdentifierTemplate.Token(lockColumn);
+        var statement = SurrealIdentifierTemplate.Of($"LET ${scope} = (UPDATE ONLY type::record('{tableToken}', ${scope}_id) SET {lockToken} = {lockToken} WHERE {SurrealIdentifierTemplate.And(conditions)} RETURN AFTER)")
             .WithParam(name + "_id", id.ToString("N"));
         foreach (var (key, value) in parameters) statement = statement.WithParam(key, value!);
-        return [statement, SurrealQuery.Of($"IF ${name} = NONE {{ THROW 'ACTION_LOCAL_WITNESS_CHANGED' }}")];
+        return [statement, SurrealIdentifierTemplate.Of($"IF ${scope} = NONE {{ THROW 'ACTION_LOCAL_WITNESS_CHANGED' }}")];
     }
 
     // raw: a table mutation lock protects this query-membership comparison from insert/delete phantoms.
@@ -88,31 +91,37 @@ public sealed partial class SurrealActionLocalMutationStore
         string? nameFilter, IReadOnlyList<Guid> ids, int index)
     {
         var name = Name("query_witness", index);
+        var scope = SurrealIdentifierTemplate.Token(name);
         var parameters = new Dictionary<string, object?>();
         var conditions = Conditions(fields, name, parameters);
         if (!string.IsNullOrEmpty(nameFilter))
         {
-            conditions.Add($"string::contains(name, <string>${name}_name)");
+            conditions.Add(SurrealIdentifierTemplate.Fragment($"string::contains(name, <string>${scope}_name)"));
             parameters[name + "_name"] = nameFilter;
         }
-        var predicate = conditions.Count == 0 ? "" : " WHERE " + string.Join(" AND ", conditions);
-        var statement = SurrealQuery.Of($"IF array::sort((SELECT VALUE <string>record::id(id) FROM {table}{predicate})) != ${name}_ids {{ THROW 'ACTION_LOCAL_WITNESS_CHANGED' }}")
+        var predicate = conditions.Count == 0 ? SurrealTemplateFragment.Empty
+            : SurrealIdentifierTemplate.Fragment($" WHERE {SurrealIdentifierTemplate.And(conditions)}");
+        var statement = SurrealIdentifierTemplate.Of($"IF array::sort((SELECT VALUE <string>record::id(id) FROM {SurrealIdentifierTemplate.Token(table)}{predicate})) != ${scope}_ids {{ THROW 'ACTION_LOCAL_WITNESS_CHANGED' }}")
             .WithParam(name + "_ids", ids.Select(id => id.ToString("N")).Order(StringComparer.Ordinal).ToArray());
         foreach (var (key, value) in parameters) statement = statement.WithParam(key, value!);
         return statement;
     }
 
-    private static List<string> Conditions(IReadOnlyDictionary<string, object?> fields, string prefix,
+    private static List<SurrealTemplateFragment> Conditions(IReadOnlyDictionary<string, object?> fields, string prefix,
         IDictionary<string, object?> parameters)
     {
-        var conditions = new List<string>();
+        var conditions = new List<SurrealTemplateFragment>();
         foreach (var (column, value) in fields)
         {
-            if (value is null) conditions.Add(column + " = NONE");
+            var columnToken = SurrealIdentifierTemplate.Token(column);
+            if (value is null) conditions.Add(SurrealIdentifierTemplate.Fragment($"{columnToken} = NONE"));
             else
             {
                 var parameter = prefix + "_" + column;
-                conditions.Add(value is string ? $"<string>{column} = <string>${parameter}" : $"{column} = ${parameter}");
+                var parameterToken = SurrealIdentifierTemplate.Token(parameter);
+                conditions.Add(value is string ? SurrealIdentifierTemplate.Fragment($"<string>{columnToken} = <string>${parameterToken}")
+                    : SurrealIdentifierTemplate.Fragment($"{columnToken} = ${parameterToken}"));
+
                 parameters[parameter] = value is JsonElement element ? element.Clone() : value;
             }
         }

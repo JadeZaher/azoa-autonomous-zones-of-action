@@ -21,6 +21,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 using AlgoAccount = Algorand.Algod.Model.Account;
 
 namespace AZOA.WebAPI.IntegrationTests.Deployments;

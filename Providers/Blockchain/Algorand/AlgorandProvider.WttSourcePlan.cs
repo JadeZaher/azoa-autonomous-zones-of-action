@@ -4,7 +4,6 @@ using System.Text.Json;
 using Algorand;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Services.Wormhole;
 

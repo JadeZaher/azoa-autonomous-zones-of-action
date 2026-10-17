@@ -3,7 +3,6 @@ using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Services.Wormhole;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
@@ -47,11 +46,11 @@ public partial class SolanaProvider
 
     private bool ValidWttTargetIntent(WttOperationIntent intent)
         => intent is { Version: 1, Source: not null, Target: not null, Asset: not null, Amount: not null,
-                TargetAuthority.Context: not null, TargetBudget: not null }
+                TargetAuthority: not null, TargetBudget: not null }
             && intent.ActorUserId != Guid.Empty && !string.IsNullOrWhiteSpace(intent.OperationId)
             && intent.Target.ChainType == ChainType && intent.Target.Network == ActiveNetwork && intent.Target.ProtocolChain == 1
-            && intent.Source.ProtocolChain is not (0 or 1) && ValidateAddressFormat(intent.TargetAuthority.Address)
-            && ValidateAddressFormat(intent.RecipientAddress) && intent.RecipientProtocolAddress is { Length: 64 }
+            && intent.Source.ProtocolChain is not (0 or 1) && SolanaAddress.IsSigner(intent.TargetAuthority.Address)
+            && SolanaAddress.IsAccount(intent.RecipientAddress) && intent.RecipientProtocolAddress is { Length: 64 }
             && intent.TargetAuthority.Context.IsResolvableUserContext && !intent.TargetAuthority.Context.IsPlatform
             && intent.TargetAuthority.Context.UserId == intent.ActorUserId && intent.TargetAuthority.Context.ChainType == ChainType
             && intent.TargetAuthority.Context.ActingTenantId == intent.TenantId.GetValueOrDefault()

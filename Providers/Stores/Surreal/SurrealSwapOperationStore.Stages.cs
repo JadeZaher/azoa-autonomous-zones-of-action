@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Signing;
@@ -147,14 +146,14 @@ public sealed partial class SurrealSwapOperationStore
     private async Task<SwapStageRecord?> CommitStageAsync(IReadOnlyList<SurrealQuery> guards,
         SurrealQuery operationMutation, SurrealQuery stageMutation, CancellationToken ct)
     {
-        var operation = SurrealGeneratedStatementScope.Apply(operationMutation, "swap_operation");
-        var stage = SurrealGeneratedStatementScope.Apply(stageMutation, "swap_stage");
+        var operation = SurrealGeneratedStatementScope.Assign(operationMutation, "swap_operation", "_swap_operation_saved");
+        var stage = SurrealGeneratedStatementScope.Assign(stageMutation, "swap_stage", "_swap_stage_saved");
         // raw: current authority, operation epoch and stage transition commit together or all roll back.
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
         statements.AddRange(guards);
-        statements.Add(SurrealQuery.Of("LET $_swap_operation_saved = (" + operation.Sql + ")").WithParams(operation.Params));
+        statements.Add(operation);
         statements.Add(SurrealQuery.Of("IF $_swap_operation_saved = NONE OR $_swap_operation_saved = [] { THROW 'SWAP_ADMISSION_CONFLICT' }"));
-        statements.Add(SurrealQuery.Of("LET $_swap_stage_saved = (" + stage.Sql + ")").WithParams(stage.Params));
+        statements.Add(stage);
         statements.Add(SurrealQuery.Of("IF $_swap_stage_saved = NONE OR $_swap_stage_saved = [] { THROW 'SWAP_ADMISSION_CONFLICT' }"));
         statements.Add(SurrealQuery.Of("RETURN $_swap_stage_saved"));
         statements.Add(SurrealQuery.Of("COMMIT"));

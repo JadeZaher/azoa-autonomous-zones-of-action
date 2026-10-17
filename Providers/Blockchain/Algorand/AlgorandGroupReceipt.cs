@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Algorand.Algod.Model.Transactions;
-using AZOA.WebAPI.Helpers;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
@@ -68,7 +67,7 @@ internal static class AlgorandGroupReceipt
         if (expected is not ApplicationCallTransaction app) return false;
         if (!Text(actual, "tx-type", "appl") || !OnlyBody(actual, "application-transaction")
             || !Object(actual, "application-transaction", out var application)
-            || !Number(application, "application-id", out var appId) || appId != app.ApplicationId
+            || !Number(application, "application-id", out var appId) || AlgorandApplicationCall.Id(app) is not { } expectedId || appId != expectedId
             || !Text(application, "on-completion", expected is ApplicationOptInTransaction ? "optin" : "noop")
             || !Strings(application, "application-args", (app.ApplicationArgs ?? []).Select(Convert.ToBase64String))
             || !Strings(application, "accounts", (app.Accounts ?? []).Select(address => address.ToString()))

@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Services.Wormhole;
 using Solnet.Programs;

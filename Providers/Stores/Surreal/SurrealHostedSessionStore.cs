@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using System.Text.Json;
-using AZOA.WebAPI.Helpers;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using SurrealForge.Client.Idempotency;
@@ -112,7 +111,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         IReadOnlyList<SurrealQuery> custodyGuards = [];
         if (custody is not null)
         {
-            if (!fenced || SurrealRecordGuid.Parse(observed.Result.SubjectUserId) != custody.UserId
+            if (!fenced || observed.Result.SubjectUserId is not { } subjectUserId
+                || SurrealRecordGuid.Parse(subjectUserId) != custody.UserId
                 || SurrealRecordGuid.ParseOptional(observed.Result.TenantId) != custody.Authority.Credential.ActorUserId)
                 return AZOAResult<HostedSession>.Success(null!);
             var guards = TenantCustodialAuthorityFence.Create(custody, AzoaScopes.KycSubmit);
@@ -229,9 +229,12 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
     {
         var observed = await GetByIdAsync(id, ct);
         if (observed.Result is null) return AZOAResult<HostedSession>.Success(null!);
-        expectedStateVersion = observed.Result.StateVersion;
+        // CAS on the caller's version; only an operator quarantine may intervene, which a late original response resolves.
+        var currentVersion = observed.Result.StateVersion;
+        if (currentVersion != expectedStateVersion && observed.Result.CreationQuarantinedAt is null)
+            return AZOAResult<HostedSession>.Success(null!);
         var query = SurrealWriter.UpdateOnly<HostedSession>(id.ToString("N"))
-            .Where(row => row.StateVersion == expectedStateVersion)
+            .Where(row => row.StateVersion == currentVersion)
             .Where(row => row.State == HostedSessionStates.Claimed && row.CreationToken == creationToken
                 && row.CreationStartedAt != null)
             .Where(row => row.ProviderSessionId == null)
@@ -239,7 +242,7 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
             .Set(row => row.RedirectUrl, redirectUrl)
             .Set(row => row.CreationCompletedAt, (DateTimeOffset?)DateTimeOffset.UtcNow)
             .Set(row => row.State, HostedSessionStates.AwaitingSubject)
-            .Set(row => row.StateVersion, expectedStateVersion + 1)
+            .Set(row => row.StateVersion, currentVersion + 1)
             .Set(row => row.ModifiedDate, (DateTimeOffset?)DateTimeOffset.UtcNow);
         query = providerCorrelationId is null ? query.Unset(row => row.ProviderCorrelationId) : query.Set(row => row.ProviderCorrelationId, providerCorrelationId);
         query = expiresAt is null ? query.Unset(row => row.ExpiresAt) : query.Set(row => row.ExpiresAt, expiresAt);
@@ -372,10 +375,12 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         HostedSession expected, string providerSessionId, string? correlationId, SurrealQuery mutation, CancellationToken ct)
     {
         // raw: typed session CAS and provider-alias reservations must commit together; see AGENTS.md.
-        var capture = SurrealQuery.Of("LET $_attached = (" + mutation.Sql + ")").WithParams(mutation.Params);
-        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"), capture,
-            SurrealQuery.Of("IF $_attached = NONE { THROW 'HOSTED_ATTACHMENT_CHANGED' }") };
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"),
+            SurrealGeneratedStatementScope.Assign(mutation, "attach", "_attached"),
+            SurrealGeneratedStatementScope.RequireResult("_attached", "HOSTED_ATTACHMENT_CHANGED") };
         statements.AddRange(HostedSessionAliasFence.Reserve(expected, providerSessionId, correlationId));
+        // Absolute slot: a top-level RETURN drops the statements after it from the result array.
+        var resultIndex = statements.Count;
         statements.Add(SurrealQuery.Of("RETURN $_attached"));
         statements.Add(SurrealQuery.Of("COMMIT"));
         var query = SurrealQuery.Combine(statements.ToArray());
@@ -383,7 +388,7 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         {
             var response = await _executor.ExecuteAsync(query, ct);
             response.EnsureAllOk();
-            var row = response.GetValues<HostedSession>(response.Statements.Count - 2).SingleOrDefault();
+            var row = response.GetValues<HostedSession>(resultIndex).SingleOrDefault();
             return AZOAResult<HostedSession>.Success(row is null ? null! : FromStorage(row));
         }
         catch (SurrealStatementException exception) when (

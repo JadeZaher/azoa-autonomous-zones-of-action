@@ -1,5 +1,4 @@
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Core.Surreal;

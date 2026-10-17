@@ -1,5 +1,4 @@
 using System.Text.Json;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Blockchain;
@@ -34,7 +33,7 @@ public sealed class HoldRailExecutor(IHoldCommandStore store, IBlockchainProvide
             if (row.StageIntentJson is null) return AZOAResult<HoldCommand>.Failure("Explicit quote consent is required.");
             if (!provider.TryGetModule<IValueCustodyModule>(out var custody))
                 return AZOAResult<HoldCommand>.Failure("Current custody mechanics and recipient readiness are unavailable.");
-            var current = await custody.QuoteValueCustodyAsync(plan.Quote.Request, ct);
+            var current = await custody!.QuoteValueCustodyAsync(plan.Quote.Request, ct);
             if (current.IsError || current.Result is null)
                 return AZOAResult<HoldCommand>.Failure(current.Message);
             if (current.Result.ProtocolIdentity != plan.Quote.ProtocolIdentity
@@ -48,8 +47,8 @@ public sealed class HoldRailExecutor(IHoldCommandStore store, IBlockchainProvide
             var claimed = await store.BeginPreparationAsync(row, ct);
             if (claimed is null) return await ReloadAsync(row.Id, ct);
             row = claimed;
-            var intent = JsonSerializer.Deserialize<ValueTransferIntent>(row.StageIntentJson)!;
-            var prepared = await module.PrepareValueTransferAsync(intent, ct);
+            var intent = JsonSerializer.Deserialize<ValueTransferIntent>(row.StageIntentJson!)!;
+            var prepared = await module!.PrepareValueTransferAsync(intent, ct);
             if (prepared.IsError || prepared.Result is null) return AZOAResult<HoldCommand>.Failure(prepared.Message);
             var saved = await store.SavePreparedAsync(row, prepared.Result, ct);
             if (saved is null) return await ReloadAsync(row.Id, ct);
@@ -65,7 +64,7 @@ public sealed class HoldRailExecutor(IHoldCommandStore store, IBlockchainProvide
         if (row.State != "Submitted") return AZOAResult<HoldCommand>.Success(row);
         if (row.PreparedJson is null) return AZOAResult<HoldCommand>.Failure("Authorized egress is missing its original signed bytes.");
         var wire = JsonSerializer.Deserialize<PreparedValueTransfer>(row.PreparedJson)!;
-        var observed = await module.ObserveValueTransferAsync(wire, ct);
+        var observed = await module!.ObserveValueTransferAsync(wire, ct);
         if (observed.IsError) return AZOAResult<HoldCommand>.Failure(observed.Message);
         if (observed.Result == ChainConfirmation.Confirmed)
         {
@@ -102,7 +101,7 @@ public sealed class HoldRailExecutor(IHoldCommandStore store, IBlockchainProvide
             var claimed = await store.AdvanceAcceptanceAsync(row, "Preparing", ct: ct);
             if (claimed is null) return await ReloadAsync(row.Id, ct);
             row = claimed;
-            var prepared = await module.PrepareValueAcceptanceAsync(intent, ct);
+            var prepared = await module!.PrepareValueAcceptanceAsync(intent, ct);
             if (prepared.IsError || prepared.Result is null) return AZOAResult<HoldCommand>.Failure(prepared.Message);
             var saved = await store.AdvanceAcceptanceAsync(row, "Prepared", prepared.Result, ct: ct);
             if (saved is null) return await ReloadAsync(row.Id, ct);
@@ -118,7 +117,7 @@ public sealed class HoldRailExecutor(IHoldCommandStore store, IBlockchainProvide
         if (row.AcceptanceState != "Submitted") return AZOAResult<HoldCommand>.Success(row);
         if (row.AcceptancePreparedJson is null) return AZOAResult<HoldCommand>.Failure("The original recipient wire is missing.");
         var wire = JsonSerializer.Deserialize<PreparedValueAcceptance>(row.AcceptancePreparedJson)!;
-        var observed = await module.ObserveValueAcceptanceAsync(wire, ct);
+        var observed = await module!.ObserveValueAcceptanceAsync(wire, ct);
         if (observed.IsError) return AZOAResult<HoldCommand>.Failure(observed.Message);
         if (observed.Result == ChainConfirmation.Confirmed)
         {

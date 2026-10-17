@@ -1,6 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;

@@ -4,7 +4,6 @@ using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
 using Algorand.Utils;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Responses;
@@ -75,22 +74,22 @@ public partial class AlgorandProvider : INativeOperationModule
         if (artifact.Format != "avm-application/1") return false;
         try
         {
-            application = artifact.Content.Deserialize<AvmApplicationArtifact>(AvmJson)!;
-            if (application is null || application.Approval is null || application.ClearState is null
-                || application.GlobalSchema is null || application.LocalSchema is null
-                || application.ArgumentsBase64 is null || application.Accounts is null || application.Boxes is null
-                || application.ForeignApplications is null || application.ForeignAssets is null
-                || application.ExtraPages > 3 || application.GlobalSchema.Integers > 64 || application.GlobalSchema.Bytes > 64
-                || application.GlobalSchema.Integers + application.GlobalSchema.Bytes > 64
-                || application.LocalSchema.Integers > 16 || application.LocalSchema.Bytes > 16
-                || application.LocalSchema.Integers + application.LocalSchema.Bytes > 16
-                || application.ArgumentsBase64.Count > 16 || application.Accounts.Count > 4
-                || application.ForeignApplications.Count + application.ForeignAssets.Count + application.Accounts.Count + application.Boxes.Count > 8
-                || application.ForeignApplications.Any(value => !UInt64Text.TryParse(value, out var id) || id == 0)
-                || application.ForeignAssets.Any(value => !UInt64Text.TryParse(value, out var id) || id == 0)
-                || application.ArgumentsBase64.Sum(value => Convert.FromBase64String(value).Length) > 2048
-                || application.Boxes.Any(box => box is null || Convert.FromBase64String(box.NameBase64).Length > 64 || box.AppIndex > (ulong)application.ForeignApplications.Count)) return false;
-            foreach (var program in new[] { application.Approval, application.ClearState })
+            var parsed = artifact.Content.Deserialize<AvmApplicationArtifact>(AvmJson)!;
+            if (parsed is null || parsed.Approval is null || parsed.ClearState is null
+                || parsed.GlobalSchema is null || parsed.LocalSchema is null
+                || parsed.ArgumentsBase64 is null || parsed.Accounts is null || parsed.Boxes is null
+                || parsed.ForeignApplications is null || parsed.ForeignAssets is null
+                || parsed.ExtraPages > 3 || parsed.GlobalSchema.Integers > 64 || parsed.GlobalSchema.Bytes > 64
+                || parsed.GlobalSchema.Integers + parsed.GlobalSchema.Bytes > 64
+                || parsed.LocalSchema.Integers > 16 || parsed.LocalSchema.Bytes > 16
+                || parsed.LocalSchema.Integers + parsed.LocalSchema.Bytes > 16
+                || parsed.ArgumentsBase64.Count > 16 || parsed.Accounts.Count > 4
+                || parsed.ForeignApplications.Count + parsed.ForeignAssets.Count + parsed.Accounts.Count + parsed.Boxes.Count > 8
+                || parsed.ForeignApplications.Any(value => !UInt64Text.TryParse(value, out var id) || id == 0)
+                || parsed.ForeignAssets.Any(value => !UInt64Text.TryParse(value, out var id) || id == 0)
+                || parsed.ArgumentsBase64.Sum(value => Convert.FromBase64String(value).Length) > 2048
+                || parsed.Boxes.Any(box => box is null || Convert.FromBase64String(box.NameBase64).Length > 64 || box.AppIndex > (ulong)parsed.ForeignApplications.Count)) return false;
+            foreach (var program in new[] { parsed.Approval, parsed.ClearState })
             {
                 if (program.Kind == "Bytecode")
                 {
@@ -99,10 +98,11 @@ public partial class AlgorandProvider : INativeOperationModule
                 }
                 else if (compiled || program.Kind != "Teal" || string.IsNullOrWhiteSpace(program.Data) || program.Data.Length > 131072) return false;
             }
-            if (application.Approval.Kind == "Bytecode" && application.ClearState.Kind == "Bytecode"
-                && Convert.FromBase64String(application.Approval.Data).Length + Convert.FromBase64String(application.ClearState.Data).Length
-                    > 2048 * (1 + application.ExtraPages)) return false;
-            foreach (var account in application.Accounts) _ = new Address(account);
+            if (parsed.Approval.Kind == "Bytecode" && parsed.ClearState.Kind == "Bytecode"
+                && Convert.FromBase64String(parsed.Approval.Data).Length + Convert.FromBase64String(parsed.ClearState.Data).Length
+                    > 2048 * (1 + parsed.ExtraPages)) return false;
+            foreach (var account in parsed.Accounts) _ = new Address(account);
+            application = parsed;
             return true;
         }
         catch (JsonException) { return false; }

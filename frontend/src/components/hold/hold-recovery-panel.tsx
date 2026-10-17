@@ -10,7 +10,12 @@ type SavedCommand = { operationId: string } & (
   | { kind: 'Replace' | 'Cancel' | 'WorkflowOpeningReplace' | 'WorkflowOpeningWithdraw'; request: HoldRecoveryCommand }
   | { kind: 'WorkflowOpeningAccept'; request: HoldOpeningAcceptance })
 
-export function HoldRecoveryPanel({ actorId, scope }: { actorId: string; scope: string }) {
+function unknownCommand(): never {
+  throw new Error('Unknown saved Hold command kind.')
+}
+
+export function HoldRecoveryPanel(
+{ actorId, scope }: { actorId: string; scope: string }) {
   return <ScopedHoldRecoveryPanel key={scope} actorId={actorId} scope={scope} />
 }
 
@@ -73,7 +78,8 @@ function ScopedHoldRecoveryPanel({ actorId, scope }: { actorId: string; scope: s
       : command.kind === 'WorkflowOpeningReplace' ? await azoa.api.replaceHoldOpening(id, command.request)
       : command.kind === 'WorkflowOpeningWithdraw' ? await azoa.api.withdrawHoldOpening(id, command.request)
       : command.kind === 'Replace' ? await azoa.api.replaceHoldCommand(id, command.request)
-      : await azoa.api.cancelHoldCommand(id, command.request)
+      : command.kind === 'Cancel' ? await azoa.api.cancelHoldCommand(id, command.request)
+      : unknownCommand()
     if (!alive.current) return
     if (!isOk(result)) { setError(result.error.message); return }
     if (result.value.operationId !== id) throw new Error('Response does not match the saved Hold operation.')
@@ -86,7 +92,9 @@ function ScopedHoldRecoveryPanel({ actorId, scope }: { actorId: string; scope: s
         ? await azoa.api.reconcileHoldOpeningRecovery(id, { kind: command.kind, request: command.request })
         : command.kind === 'Transfer' || command.kind === 'Acceptance'
           ? await azoa.api.reconcileHoldCommand(id, { kind: command.kind, consent: command.request })
-          : await azoa.api.reconcileHoldCommand(id, { kind: command.kind, recovery: command.request })
+          : command.kind === 'Replace' || command.kind === 'Cancel'
+            ? await azoa.api.reconcileHoldCommand(id, { kind: command.kind, recovery: command.request })
+            : unknownCommand()
     if (!alive.current) return
     if (!isOk(result)) { setError(result.error.message); return }
     const value: HoldRequestResolution = result.value

@@ -5,7 +5,6 @@ using AZOA.WebAPI.Interfaces.Signing;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Services.Wormhole;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 

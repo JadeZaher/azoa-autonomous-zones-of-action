@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
@@ -32,7 +31,7 @@ public sealed partial class HoldReleaseMandateService
         var provider = providers.GetProvider(terms.Asset.ChainType, terms.Asset.Network);
         if (!provider.TryGetModule<IValueCustodyModule>(out var custody))
             return AZOAResult<HoldCommand>.Failure("Complete custody costs are unavailable for this mandate.");
-        var quote = await custody.QuoteValueCustodyAsync(new(hold.Chain, terms.Asset.Network, hold.AssetId,
+        var quote = await custody!.QuoteValueCustodyAsync(new(hold.Chain, terms.Asset.Network, hold.AssetId,
             hold.HoldingAddress, terms.Recipient.Address, hold.Amount, hold.HoldingAddress), ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<HoldCommand>.Failure(quote.Message);
         if (!HoldReleaseMandateIdentity.CostsWithin(quote.Result, terms.MaximumCosts))

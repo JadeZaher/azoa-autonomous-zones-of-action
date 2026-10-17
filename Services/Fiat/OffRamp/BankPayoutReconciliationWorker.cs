@@ -1,6 +1,5 @@
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
-using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;

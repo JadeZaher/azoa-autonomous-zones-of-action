@@ -91,7 +91,7 @@ public sealed class SurrealEthereumPreparationStore(ISurrealExecutor executor) :
             .Set(item => item.UpdatedAt, row.UpdatedAt);
         update = row.SignedTransactionBase64 is null ? update.Unset(item => item.SignedTransactionBase64) : update.Set(item => item.SignedTransactionBase64, row.SignedTransactionBase64);
         update = row.TransactionId is null ? update.Unset(item => item.TransactionId) : update.Set(item => item.TransactionId, row.TransactionId);
-        var result = await executor.ExecuteAsync(update, ct);
+        var result = await executor.ExecuteAsync(update.Build(), ct);
         result.EnsureAllOk();
         return result.GetValues<EthereumPreparation>(0).SingleOrDefault();
     }

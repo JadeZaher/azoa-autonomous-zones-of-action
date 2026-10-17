@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core.Surreal;

@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Algorand.Algod.Model.Transactions;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;

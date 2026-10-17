@@ -19,6 +19,7 @@ using FluentAssertions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Interfaces.Managers;
 using UserRow = AZOA.WebAPI.Persistence.SurrealDb.Models.User;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;

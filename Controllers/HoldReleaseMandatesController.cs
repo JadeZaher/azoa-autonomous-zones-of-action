@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Signing;

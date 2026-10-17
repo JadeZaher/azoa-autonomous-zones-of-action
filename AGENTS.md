@@ -53,7 +53,26 @@ dotnet build azoa.sln    -c Debug           # whole solution (incl. test project
 - Frontend gates are `npm run typecheck`, `npm run lint`, `npm run build`, and `npm audit`; the Docker build uses the committed lockfile with `npm ci`.
 - No EF Core migrations. Schema changes are POCO edits + re-emitting `.surql` via `SurrealForge.Schema`.
 
+## Program.cs registration order
+
+`Program.cs` order is load-bearing; `scripts/round4/merge-check.mjs` enforces the static parts at every merge.
+
+1. A registration that replaces or decorates an existing service is edited **in place**, never appended.
+2. Order-dependent sequence, top to bottom: the single `IRealValueKycGate` registration → `AddFiatOnRamp` →
+   `AddOnRampValueRateSource` → `AddFiatReversalPipeline` → `AddReversalRiskValueGate`. The fiat block's
+   internal order is asserted by its own boot guards. `AddReversalRiskValueGate` wraps the last-registered
+   KYC gate into `RiskHoldValueGate` (`ReversalRegistration.cs`); a KYC-gate registration appended after it
+   replaces the wrapper and silently bypasses the reversal risk hold. Swap the KYC-gate implementation where
+   it stands.
+3. `IWormholeAdapter` stays registered (`WormholeProtocol` needs it); remove only dead methods behind it.
+4. Child-credential JWT setup and the `DappRoleAssignment` policy are edited in place.
+5. New registrations go inside their domain block, never at the end of the file.
+6. Host tests (`tests/AZOA.WebAPI.IntegrationTests/Hosting/ProgramCompositionTests.cs`) build the real
+   Development host with `ValidateOnBuild` + `ValidateScopes` and assert the KYC-gate wrapper, the Wormhole
+   adapter and the fungible creation service/store/worker resolve.
+
 ## Test
+
 
 ```powershell
 dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug # Unit suite

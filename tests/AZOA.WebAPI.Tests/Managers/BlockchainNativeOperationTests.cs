@@ -11,6 +11,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Providers.Blockchain;
 
 namespace AZOA.WebAPI.Tests.Managers;
 

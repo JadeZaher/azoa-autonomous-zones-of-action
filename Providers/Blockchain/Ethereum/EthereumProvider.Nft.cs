@@ -3,13 +3,11 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Nethereum.ABI;
 using Nethereum.Signer;
 

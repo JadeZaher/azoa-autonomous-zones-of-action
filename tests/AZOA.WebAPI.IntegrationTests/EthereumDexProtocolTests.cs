@@ -25,6 +25,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nethereum.Signer;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests;
 
@@ -47,7 +48,7 @@ public sealed class EthereumDexProtocolTests : IAsyncLifetime
 
     private EthereumProvider NewProvider() => new(_config, NullLogger<EthereumProvider>.Instance,
         new TransactionSignerFactory(new ITransactionSigner[] { new EthereumTransactionSigner() }), new OwnerCustody(_keys[1], _actor, _wallet),
-        _services!.GetRequiredService<IServiceScopeFactory>(), null, _services.GetRequiredService<IEthereumPreparationStore>());
+        _services!.GetRequiredService<IServiceScopeFactory>(), null, _services!.GetRequiredService<IEthereumPreparationStore>());
 
     public async Task InitializeAsync()
     {
@@ -206,7 +207,7 @@ public sealed class EthereumDexProtocolTests : IAsyncLifetime
         return document.RootElement.GetProperty("result").Clone();
     }
 
-    private async Task Save<T>(T row) where T : class, ISurrealRecord
+    private async Task Save<T>(T row) where T : class, ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 
     private string Text(string name) => _setup.GetProperty(name).GetString()!;

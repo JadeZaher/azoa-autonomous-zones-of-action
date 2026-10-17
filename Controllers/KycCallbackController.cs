@@ -3,8 +3,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using AZOA.WebAPI.Interfaces.HostedSessions;
-using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Services.HostedSessions;

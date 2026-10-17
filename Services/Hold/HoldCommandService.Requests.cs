@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 

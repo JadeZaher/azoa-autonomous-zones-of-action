@@ -10,6 +10,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using Receipt = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionLocalReceipt;
 
 namespace AZOA.WebAPI.Tests.Actions;

@@ -108,10 +108,10 @@ public sealed class SurrealActionAdmissionSafetyTests : IAsyncLifetime
             NftId = Guid.NewGuid().ToString("N"), Operation = "Mint", ChainType = "Algorand", Network = "Devnet", State = "Prepared",
             RequestJson = json, RequestHash = NftLifecycleIdentity.Fingerprint(json), CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
         var nfts = new SurrealNftLifecycleStore(_executor);
-        row = await nfts.ClaimAsync(row);
+        row = (await nfts.ClaimAsync(row))!;
         var sent = JsonSerializer.Deserialize<NftRow>(JsonSerializer.Serialize(row))!;
         sent.Id = Guid.NewGuid().ToString("N");
-        sent = await nfts.ClaimAsync(sent);
+        sent = (await nfts.ClaimAsync(sent))!;
         sent.State = "Submitted";
         sent = (await nfts.UpdateAsync(sent, sent.Version, requireActionAuthority: true))!;
         sent.Should().NotBeNull();

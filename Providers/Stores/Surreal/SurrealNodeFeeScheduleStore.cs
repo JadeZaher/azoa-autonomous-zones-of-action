@@ -57,11 +57,12 @@ public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
                 : update.Set(row => row.UpdatedByUserId, schedule.UpdatedByUserId);
             mutation = update.Build();
         }
-        mutation = SurrealGeneratedStatementScope.Apply(mutation, "fee_policy");
+        var captured = SurrealGeneratedStatementScope.Assign(mutation, "fee_policy", "_fee_saved");
         var appendAudit = SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "fee_audit");
         // raw: captured typed policy CAS and immutable audit append commit or roll back together.
         var atomic = SurrealQuery.Combine(SurrealQuery.Of("BEGIN"),
-            SurrealQuery.Of("LET $_fee_saved = (" + mutation.Sql + ")").WithParams(mutation.Params),
+            captured,
+
             SurrealQuery.Of("IF $_fee_saved = NONE OR $_fee_saved = [] { THROW 'Node fee schedule version conflict' }"),
             appendAudit, SurrealQuery.Of("RETURN $_fee_saved"), SurrealQuery.Of("COMMIT"));
         try

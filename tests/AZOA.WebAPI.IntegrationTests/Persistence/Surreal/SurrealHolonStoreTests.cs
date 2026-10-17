@@ -472,11 +472,11 @@ public sealed class SurrealHolonStoreTests : IAsyncLifetime
             .WithParam("_t", "holon")
             .WithParam("_id", holon.Id.ToString("N"));
         var reservedAt = (await executor.QuerySingleAsync<TransferReservationProjection>(
-            reservationTimeQuery)).TransferReservedAt;
+            reservationTimeQuery))!.TransferReservedAt;
         var reservationReplay = await _store.TryReserveNftTransferAsync(
             holon.Id, source, winningTarget, winningKey);
         var replayedReservedAt = (await executor.QuerySingleAsync<TransferReservationProjection>(
-            reservationTimeQuery)).TransferReservedAt;
+            reservationTimeQuery))!.TransferReservedAt;
         reservationReplay.Result.Should().BeTrue();
         replayedReservedAt.Should().Be(reservedAt,
             "idempotent reservation replay must not refresh the original timestamp");

@@ -2,10 +2,9 @@ using System.Text;
 using System.Text.Json;
 using Algorand;
 using Algorand.Algod.Model.Transactions;
-using Algorand.Utils;
+using AlgorandEncoder = Algorand.Utils.Encoder;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Signing;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
@@ -59,7 +58,7 @@ public partial class AlgorandProvider
                 saved = await store.ClaimAsync(new NativePreparation { Id = preparationId, IntentHash = hash,
                     Stage = "Exchange", Generation = checked((int)intent.Generation), CreatedAt = DateTimeOffset.UtcNow,
                     PlanJson = JsonSerializer.Serialize(new ExchangeUnsignedPlan(transactions.Select(transaction =>
-                        Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(transaction))).ToArray())) }, ct);
+                        Convert.ToBase64String(AlgorandEncoder.EncodeToMsgPackOrdered(transaction))).ToArray())) }, ct);
             }
             if (saved.IntentHash != hash || saved.Stage != "Exchange" || saved.Generation != intent.Generation)
                 return AZOAResult<PreparedExchangeWire>.Failure("This exchange generation already belongs to another intent.");
@@ -71,7 +70,7 @@ public partial class AlgorandProvider
                 ValidateExchangePrepared(recovered, plan);
                 return AZOAResult<PreparedExchangeWire>.Success(recovered);
             }
-            var unsigned = plan.TransactionsBase64.Select(value => Encoder.DecodeFromMsgPack<Transaction>(Convert.FromBase64String(value))).ToArray();
+            var unsigned = plan.TransactionsBase64.Select(value => AlgorandEncoder.DecodeFromMsgPack<Transaction>(Convert.FromBase64String(value))).ToArray();
             ValidateExchangeUnsigned(intent, unsigned, plan);
             var signed = new List<string>();
             for (var index = 0; index < unsigned.Length; index++)

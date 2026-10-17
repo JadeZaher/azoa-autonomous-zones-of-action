@@ -4,6 +4,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using Xunit;
+using AZOA.WebAPI.Services.Wormhole;
 
 namespace AZOA.WebAPI.Tests.Services;
 

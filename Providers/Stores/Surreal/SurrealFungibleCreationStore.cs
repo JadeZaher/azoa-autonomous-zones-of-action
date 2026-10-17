@@ -1,6 +1,5 @@
 using System.Text.Json;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -270,8 +269,10 @@ public sealed partial class SurrealFungibleCreationStore(ISurrealExecutor execut
             statements.Add(SurrealQuery.Of("""
                 UPDATE ONLY type::record('fungible_creation_operation', $_fungible_id)
                     SET state = IF $_fungible_link_result = NONE { 'AttachmentPending' } ELSE { 'Completed' },
-                        detail = IF $_fungible_link_result = NONE { 'Issuance is finalized and accounted for; the requested Holon requires current owner attachment authorization.' } ELSE { NONE }
-                """).WithParam("_fungible_id", expected.Id));
+                        detail = IF $_fungible_link_result = NONE { $_fungible_pending_detail } ELSE { NONE }
+                """).WithParam("_fungible_id", expected.Id)
+                .WithParam("_fungible_pending_detail", "Issuance is finalized and accounted for; the requested Holon requires current owner attachment authorization."));
+
         }
         statements.Add(SurrealQuery.Of("COMMIT"));
         var transaction = SurrealQuery.Combine(statements.ToArray());

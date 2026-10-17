@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 

@@ -1,9 +1,7 @@
 using TextEncoding = System.Text.Encoding;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;
-using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;

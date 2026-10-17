@@ -5,6 +5,8 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using KycIdentity = AZOA.WebAPI.Persistence.SurrealDb.Models.KycIdentity;
 using PersonOperationClaim = AZOA.WebAPI.Persistence.SurrealDb.Models.PersonOperationClaim;
+using KycSubmission = AZOA.WebAPI.Persistence.SurrealDb.Models.KycSubmission;
+using HostedSession = AZOA.WebAPI.Persistence.SurrealDb.Models.HostedSession;
 
 namespace AZOA.WebAPI.Tests.Governance;
 

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
@@ -9,7 +8,6 @@ using AZOA.WebAPI.Core.Networking;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using System.Reflection;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Extensions;
@@ -32,11 +30,9 @@ using FluentValidation.AspNetCore;
 using AZOA.WebAPI.Observability;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using AZOA.WebAPI.Providers.Blockchain.Solana;
-using AZOA.WebAPI.Providers.Stores;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Mcp;
-using AZOA.WebAPI.Services.Actions.Handlers;
 using AZOA.WebAPI.Services.Wormhole;
 using AZOA.WebAPI.Services.Conformance;
 
@@ -224,6 +220,7 @@ builder.Services.AddAuthentication(options =>
                 var operatorPolicies = context.HttpContext.GetEndpoint()?.Metadata
                     .GetOrderedMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
                     .Select(metadata => metadata.Policy)
+                    .OfType<string>()
                     .Where(policy => !string.IsNullOrWhiteSpace(policy))
                     .ToHashSet(StringComparer.Ordinal)
                     ?? new HashSet<string>(StringComparer.Ordinal);
@@ -244,7 +241,7 @@ builder.Services.AddAuthentication(options =>
                     || operatorUserId != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
                     || principal!.GetActingTenantId() is not null
                     || !long.TryParse(
-                        principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
+                        principal!.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
                         System.Globalization.NumberStyles.None,
                         System.Globalization.CultureInfo.InvariantCulture,
                         out var tokenRevision)
@@ -1160,7 +1157,7 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentManager,
     AZOA.WebAPI.Managers.ConsentManager>();
 // user-sovereign-identity: wallet-challenge auth + claim flow.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.IWalletSignatureVerifier,
-    AZOA.WebAPI.Services.Signing.Ed25519SignatureVerifier>();
+    AZOA.WebAPI.Services.Signing.WalletSignatureVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IWalletAuthManager,
     AZOA.WebAPI.Managers.WalletAuthManager>();
 // Webhook bridge (AC7/AC8): SSRF guard + timestamped HMAC signer (singletons) +
@@ -1350,6 +1347,15 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationReceiptMan
 builder.Services.AddScoped<AZOA.WebAPI.Managers.FungibleTokenManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager>(
     sp => sp.GetRequiredService<AZOA.WebAPI.Managers.FungibleTokenManager>());
+// Durable fungible creation lifecycle (store, service, action resolver, recovery worker); see Services/Fungible.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IFungibleCreationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealFungibleCreationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleCreationService,
+    AZOA.WebAPI.Services.Fungible.FungibleCreationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>());
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Fungible.FungibleCreationRecoveryWorker>();
 // D19 soulbound-credential revocation (Algorand AssetClawback). Backs both
 // CredentialController and CredentialRevokeNodeHandler -- and the handler set is
 // constructed EAGERLY (ActionNodeHandlerRegistry takes IEnumerable<IActionNodeHandler>

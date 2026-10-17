@@ -2,7 +2,6 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Governance;

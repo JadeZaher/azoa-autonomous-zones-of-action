@@ -3,7 +3,6 @@
 using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
@@ -12,7 +11,6 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
-using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
 

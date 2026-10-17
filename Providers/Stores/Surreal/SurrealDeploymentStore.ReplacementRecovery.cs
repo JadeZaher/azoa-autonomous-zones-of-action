@@ -60,9 +60,9 @@ public sealed partial class SurrealDeploymentStore
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
         foreach (var entry in new[] { ("replacement_quote", quoteMutation), ("replacement_old", oldMutation), ("replacement_parent", parentMutation) })
         {
-            var mutation = SurrealGeneratedStatementScope.Apply(entry.Item2, entry.Item1);
-            statements.Add(SurrealQuery.Of("LET $_" + entry.Item1 + " = (" + mutation.Sql + ")").WithParams(mutation.Params));
-            statements.Add(SurrealQuery.Of("IF $_" + entry.Item1 + " = NONE OR $_" + entry.Item1 + " = [] { THROW 'DEPLOYMENT_RECOVERY_CONFLICT' }"));
+            statements.Add(SurrealGeneratedStatementScope.Assign(entry.Item2, entry.Item1, "_" + entry.Item1));
+            statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + entry.Item1, "DEPLOYMENT_RECOVERY_CONFLICT"));
+
             if (entry.Item1 == "replacement_quote")
                 statements.Add(SurrealQuery.Of("IF $_replacement_quote.expires_at <= time::now() { THROW 'DEPLOYMENT_RECOVERY_CONFLICT' }"));
         }

@@ -12,6 +12,7 @@ using Moq;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Interfaces;
 using DomainHolon = AZOA.WebAPI.Models.Holon;
 using RunRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionRun;
 using ExecutionRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionNodeExecution;
@@ -149,6 +150,6 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
         return (input, new(1, "nft", key, id, hash, _actor, null), confirmed, holon);
     }
 
-    private async Task Save<T>(T row) where T : ISurrealRecord
+    private async Task Save<T>(T row) where T : ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 }

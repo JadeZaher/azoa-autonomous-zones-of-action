@@ -210,8 +210,8 @@ public sealed class OnRampLotView
         return new OnRampLotView
         {
             Id = row.Id,
-            IntentId = SurrealLink.FromLink(row.IntentId),
-            SubjectUserId = SurrealLink.FromLink(row.SubjectUserId),
+            IntentId = SurrealLink.FromLink(row.IntentId)!,
+            SubjectUserId = SurrealLink.FromLink(row.SubjectUserId)!,
             TenantId = row.TenantId is null ? null : SurrealLink.FromLink(row.TenantId),
             ChainType = row.ChainType,
             AssetId = row.AssetId,

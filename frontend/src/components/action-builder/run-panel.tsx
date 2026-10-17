@@ -10,7 +10,8 @@ import { JsonViewer } from '@/components/shared/json-viewer'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { azoa, isOk } from '@/lib/azoa'
 import { useAzoa } from '@/lib/azoa-context'
-import { isTerminal, type WorkflowExecutionState, type WorkflowNodeExecution, type WorkflowReconciliationResult, type WorkflowRunResult, type ActionEconomicManifest, type StartWorkflowOptions } from 'azoa-sdk'
+import { isTerminal, type Result, type WorkflowExecutionState,
+ type WorkflowNodeExecution, type WorkflowReconciliationResult, type WorkflowRunResult, type ActionEconomicManifest, type StartWorkflowOptions } from 'azoa-sdk'
 import { DagFlow } from './dag-flow'
 import { getOutputShapeMirror } from './node-output-schema'
 import { NftWorkflowCosts } from './nft-workflow-costs'
@@ -100,7 +101,7 @@ function ScopedRunPanel({ action, scope }: { action: RunPanelAction; scope: stri
   const pollOnce = useCallback(async (runId: string) => {
     const expected = selection.current
     if (expected.runId !== runId) return
-    const res = await azoa.workflow.getExecutionState(runId).catch((e: unknown) => ({
+    const res: Result<WorkflowExecutionState, { message: string }> = await azoa.workflow.getExecutionState(runId).catch((e: unknown) => ({
       ok: false as const, error: { message: e instanceof Error ? e.message : 'Unable to poll run' },
     }))
     if (!alive.current || selection.current !== expected) return

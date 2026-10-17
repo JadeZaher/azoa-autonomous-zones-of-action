@@ -1,5 +1,4 @@
 using FluentValidation;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Validators;

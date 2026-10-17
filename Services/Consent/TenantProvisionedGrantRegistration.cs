@@ -2,7 +2,6 @@
 
 using System.Security.Cryptography;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Providers.Stores.Surreal;

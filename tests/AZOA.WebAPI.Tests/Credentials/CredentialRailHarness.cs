@@ -1,5 +1,6 @@
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Blockchain;

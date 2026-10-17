@@ -10,6 +10,7 @@ using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
 using Grant = AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentGrant;
 using Event = AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentWebhookEvent;
+using User = AZOA.WebAPI.Persistence.SurrealDb.Models.User;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 

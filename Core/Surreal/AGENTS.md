@@ -165,6 +165,33 @@ the record or `NONE`, and refuses non-`SELECT` statements. `RequireResult`
 accepts both shapes (`NONE` or `[]`). Found 2026-10-16 by the lane B review;
 14 `Assign(Key(…))` sites existed at the time.
 
+## identifier-template
+
+`SurrealIdentifierTemplate` is the one home for raw SurrealQL whose *text* (not its
+values) varies at runtime: per-index scope names, table/column names chosen by code,
+optional predicates. The SurrealForge analyzer (SRDB0001) rejects every interpolated or
+concatenated `SurrealQuery.Of` argument, so before round 4 ~36 sites either failed the
+build or hid behind per-site `#pragma`s. The template keeps the old call-site shape:
+
+```csharp
+var scope = SurrealIdentifierTemplate.Token("_deployment_bundle_" + index);
+SurrealIdentifierTemplate.Of($"IF array::len(${scope}) != 1 {{ {SurrealIdentifierTemplate.Throw(Marker)} }}");
+```
+
+Safety comes from types, not review: `SurrealIdentifierTemplateHandler` is an
+interpolated-string handler whose only `AppendFormatted` overloads take a
+`SurrealTemplateToken` (validated `^[a-z0-9_]+$` at construction) or a
+`SurrealTemplateFragment` (constructible only through `Fragment($"…")`, `And(…)`,
+`Throw(marker)` or `Empty`). A `string`, number or `Guid` hole is a compile error, so no
+caller value can reach the text; values still travel only as `WithParam` bindings.
+`Throw` validates markers as uppercase letters and underscores (the same rule as
+`SurrealGeneratedStatementScope.RequireResult`). The single SRDB0001 suppression is in
+`Of`. Migration rule: a rewrite must render byte-identical SQL with identical binding
+names — the template only changes how the text is assembled, never what it says. Do not
+call `AppendLiteral` by hand. Captures of a typed-generated statement (`LET $v = (<sql>)`)
+use `SurrealGeneratedStatementScope.Assign`, not this template. A SurrealForge
+identifier-template builder would replace this helper (round-4 plan A-1).
+
 ## Policy-sensitive local commits
 
 NodeGovernancePolicyFence reads the singleton version before manager validation. Its
@@ -203,6 +230,7 @@ No synthetic participant credential or inferred tenant ownership is created.
 captured conditional mutation that matched no row (`IF $v = NONE OR $v = [] { THROW 'MARKER' }`).
 It validates both tokens, so a raw composition needs no interpolated SQL of its own.
 `ExchangeAuthorityFence` uses it for `$_<prefix>_participant`, `_wallet` and `_grant`. Its only
-other raw assertion (grant expiry against database time) is a `$$"""` raw string whose single
-interpolation is the caller-fixed lowercase prefix. In a single-`$` raw string, `{{` is not an
-escape, so literal SurrealQL braces need `$$`.
+other raw assertion (grant expiry against database time) is a `$$"""` template
+(§identifier-template) whose single hole is the caller-fixed prefix token. In a single-`$` raw
+string, `{{` is not an escape, so literal SurrealQL braces need `$$`.
+

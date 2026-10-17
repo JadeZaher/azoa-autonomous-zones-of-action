@@ -1,7 +1,6 @@
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -12,7 +11,6 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Kyc;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
 

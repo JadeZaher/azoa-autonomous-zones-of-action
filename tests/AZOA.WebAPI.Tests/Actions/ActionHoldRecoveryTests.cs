@@ -12,6 +12,7 @@ using AZOA.WebAPI.Services.Reserve;
 using AZOA.WebAPI.Providers.Blockchain;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Models.Responses;
 using HoldCommand = AZOA.WebAPI.Persistence.SurrealDb.Models.HoldCommand;
 using HoldCommandReceipt = AZOA.WebAPI.Persistence.SurrealDb.Models.HoldCommandReceipt;
 

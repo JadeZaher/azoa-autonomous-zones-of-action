@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -65,12 +64,12 @@ public sealed partial class SurrealSwapOperationStore
             allocationMutation = allocationMutation.Set(row => row.ReleasedLockedBalance, progress.ReleasedLockedBalance!)
                 .Set(row => row.RentReleaseEvidenceJson, evidence!);
         }
-        var cleanupMutation = SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<SwapStageRecord>(cleanupStageId)
+        var cleanupMutation = SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<SwapStageRecord>(cleanupStageId)
             .Where(row => row.Version == expectedCleanupVersion && row.State == "Confirmed")
-            .Set(row => row.Version, expectedCleanupVersion + 1).Set(row => row.UpdatedAt, now).Build(), "swap_release_cleanup");
+            .Set(row => row.Version, expectedCleanupVersion + 1).Set(row => row.UpdatedAt, now).Build(), "swap_release_cleanup", "_swap_release_cleanup");
         // raw: original allocation, finalized cleanup witness and release aggregate share one atomic epoch transition.
         SurrealQuery[] guards = [
-            SurrealQuery.Of("LET $_swap_release_cleanup = (" + cleanupMutation.Sql + ")").WithParams(cleanupMutation.Params),
+            cleanupMutation,
             SurrealQuery.Of("IF $_swap_release_cleanup = NONE OR $_swap_release_cleanup = [] { THROW 'SWAP_ADMISSION_CONFLICT' }")];
         return await CommitStageAsync(guards, opMutation.Build(), allocationMutation.Build(), ct);
     }

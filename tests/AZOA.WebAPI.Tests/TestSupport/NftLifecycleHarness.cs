@@ -127,7 +127,7 @@ internal sealed class NftLifecycleHarness
         var governance = new Mock<INodeGovernanceGuard>();
         governance.Setup(item => item.EnsureAllowedAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(NodeGovernanceDecision.Allowed);
         var authorities = new AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), Wallets.Object,
-            Mock.Of<SurrealForge.Client.ISurrealExecutor>());
+            Mock.Of<SurrealForge.Client.Query.ISurrealExecutor>());
         Service = new(Store, Wallets.Object, Nfts.Object, Factory.Object, Access.Object, governance.Object, Configuration, Clock, ProtocolCosts.Object, WorkflowCosts.Object, authorities, ActionExecutions.Object);
     }
 

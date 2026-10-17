@@ -101,14 +101,27 @@ which is what covers KYB at the payout boundary.
 
 It rides the hosted-session seam rather than a table of its own: the admission key is derived
 (`{userId:N}:payout-account`), the provider session id IS the connected account, and the redirect
-is the onboarding link. That is what `hosted_session` is for, and it means the claim is
-create-if-absent, so a double-tap cannot open two accounts.
+is the onboarding link. That is what `hosted_session` is for. The claim is create-if-absent, and
+the Stripe create runs behind the shared creation fence (`Providers/Fiat/AGENTS.md`
+§creation-fence): one creation token per claim keys both the Stripe idempotency key and the attach,
+so a double-tap, a crash or a lost response cannot open two accounts. Reading status
+(`GetStatusAsync`, `RequireReadyAccountAsync`) is a read-only admission lookup and claims nothing.
 
 **Readiness is never stored.** `payouts_enabled` can be withdrawn by the provider at any moment —
 a missing document, a failed verification — so a cached "onboarded" flag would be a lie the
 instant that happens, and the node would learn about it by sending money that bounces. Every
 decision re-reads the account server-side, and the check is `payouts_enabled` specifically: not
 "details submitted", not "charges enabled".
+
+## §collect-quantity — collect always takes the claimed quantity (round 4)
+
+`CollectUnitsAsync` once read `requestedQuantity ?? row.QuantityBaseUnits` with no
+`requestedQuantity` in scope (CS0103). History (`git log -S requestedQuantity`, `3d08ace`) shows the
+optional `requestedQuantity` parameter was added only to `ReturnUnitsAsync`, for the partial
+restitution path (`RestoreReservedUnitsAsync` returns a reserved slice). The collect line was a
+copy of that edit. **Decision:** collect has no partial form — it moves exactly the quantity that
+was claimed and checked against `cashable` in `RequestAsync`. Accepting an override there would
+let the saga take a different amount than the availability check approved.
 
 ## §reversal — `transfer.reversed` runs the other way
 

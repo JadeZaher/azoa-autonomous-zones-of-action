@@ -49,7 +49,7 @@ public sealed class JupiterCleanupEvidenceTests
         var owner = Key(1); var mint = Key(2);
         var account = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(owner, mint);
         var wire = new TransactionBuilder().SetFeePayer(owner).SetRecentBlockHash(Key(3).Key)
-            .AddInstruction(TokenProgram.CloseAccount(account, owner, owner)).CompileMessage();
+            .AddInstruction(TokenProgram.CloseAccount(account, owner, owner, TokenProgram.ProgramIdKey)).CompileMessage();
         var parsed = SolanaMessageEnvelope.Read(wire);
         var keys = parsed.StaticKeys;
         var ownerIndex = keys.ToList().FindIndex(key => key.Key == owner.Key);

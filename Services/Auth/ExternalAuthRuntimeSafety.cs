@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using AZOA.WebAPI.Models.Auth;
 
 namespace AZOA.WebAPI.Services.Auth;

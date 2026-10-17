@@ -1,6 +1,4 @@
-using System.Net.Http.Json;
 using System.Security.Cryptography;
-using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Interfaces;
@@ -31,9 +29,6 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
     /// <summary>Ed25519 signature length; also the wire-transaction signature slot size.</summary>
     private const int SolanaSignatureLength = 64;
 
-    /// <summary>Raw byte length of a base58 Solana account address.</summary>
-    private const int SolanaPublicKeyLength = 32;
-
     /// <summary>Max length of a <c>createAccountWithSeed</c> seed, in bytes.</summary>
     private const int MaxAccountSeedLength = 32;
 
@@ -47,8 +42,6 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
     private const string ConfirmationPollDelayMsConfigPath = "AZOA:Solana:ConfirmationPollDelayMs";
     private const string RpcRetryMaxAttemptsConfigPath = "AZOA:Solana:RpcRetryMaxAttempts";
     private const string RpcRetryInitialDelayMsConfigPath = "AZOA:Solana:RpcRetryInitialDelayMs";
-
-    private const string Base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
     private HttpClient _rpcHttpClient = null!;
     private readonly BlockchainConfigurationManager _configManager;
@@ -1031,29 +1024,8 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
 
     // --- Address helpers ---
 
-    /// <summary>Parses a base58 Solana address, failing closed on anything that is not a 32-byte key.</summary>
-    private static bool TryParsePublicKey(string? address, out PublicKey publicKey)
-    {
-        publicKey = null!;
-        if (string.IsNullOrWhiteSpace(address) || address.Length is < 32 or > 44)
-            return false;
-        if (!address.All(Base58Alphabet.Contains))
-            return false;
-
-        try
-        {
-            var decoded = Encoders.Base58.DecodeData(address);
-            if (decoded.Length != SolanaPublicKeyLength)
-                return false;
-
-            publicKey = new PublicKey(decoded);
-            return true;
-        }
-        catch (Exception ex) when (ex is ArgumentException or FormatException)
-        {
-            return false;
-        }
-    }
+    /// <summary>Parses a base58 Solana address, failing closed on anything that is not a canonical 32-byte key.</summary>
+    private static bool TryParsePublicKey(string? address, out PublicKey publicKey) => SolanaAddress.TryParse(address, out publicKey);
 
     /// <summary>A fresh 32-character seed, so every mint derives a distinct account address.</summary>
     private static string NewAccountSeed() => Guid.NewGuid().ToString("N")[..MaxAccountSeedLength];

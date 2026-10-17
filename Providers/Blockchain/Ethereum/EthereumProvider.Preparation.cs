@@ -6,7 +6,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Nethereum.Model;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;

@@ -1,6 +1,5 @@
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
-using AZOA.WebAPI.Models.Kyb;
 using AZOA.WebAPI.Models.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

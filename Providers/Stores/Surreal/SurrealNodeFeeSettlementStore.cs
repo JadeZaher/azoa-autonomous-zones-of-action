@@ -2,7 +2,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Models.Blockchain;
-using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;

@@ -135,8 +135,8 @@ public class WalletKeyService
         var privateKeyBytes = account.KeyPair.ClearTextPrivateKey;
         var publicKeyBytes = account.KeyPair.ClearTextPublicKey;
 
-        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
-        var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
+        var privateKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(privateKeyBytes);
+        var publicKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(publicKeyBytes);
         var address = account.Address.EncodeAsString();   // real SHA-512/256 checksum + base32
         var seedPhrase = includeSeedPhrase ? account.ToMnemonic() : null;
 
@@ -160,8 +160,8 @@ public class WalletKeyService
         var secretBytes = account.PrivateKey.KeyBytes;   // 64 bytes
         var publicKeyBytes = account.PublicKey.KeyBytes; // 32 bytes
 
-        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(secretBytes);
-        var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
+        var privateKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(secretBytes);
+        var publicKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(publicKeyBytes);
         var address = account.PublicKey.Key;             // real base58-encoded public key
         var seedPhrase = mnemonic.ToString();            // restorable 12-word BIP39 mnemonic
 
@@ -201,8 +201,8 @@ public class WalletKeyService
             // referenced package provides. Null is the honest answer — the phrase this
             // used to return restored nothing AND leaked scalar bytes (each word was an
             // index over the key). See Services/Signing/AGENTS.md §ethereum-derivation.
-            return (AZOA.WebAPI.Helpers.Encoding.ToLowerHex(uncompressedPublicKey),
-                    AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes),
+            return (AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(uncompressedPublicKey),
+                    AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(privateKeyBytes),
                     address,
                     null);
         }
@@ -254,7 +254,7 @@ public class WalletKeyService
         Array.Copy(tag, 0, result, 12, 16);
         Array.Copy(ciphertext, 0, result, 28, ciphertext.Length);
 
-        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(result);
+        return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(result);
     }
 
     private string AesGcmDecrypt(string encryptedHex)

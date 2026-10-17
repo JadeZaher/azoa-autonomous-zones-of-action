@@ -95,6 +95,10 @@ export type {
   BusinessVerificationStatus,
   BusinessVerificationSession,
   FiatPayoutView,
+  ActionRecoveryView,
+  ActionRecoveryRequest,
+  ActionRecoveryReceipt,
+  ActionRecoveryAudit,
   EthereumPreparationView,
   EthereumRecoveryRequest,
   OnRampLotView,
@@ -128,6 +132,7 @@ export type {
   NftHolding,
   // Action + Holon AssetType registry (final-hardening Phase C)
   ActionResult,
+  ActionRunResult,
   // Action invitations + request/approval (action-invitations-approval)
   ActionRunAccess,
   ActionAccessRequestStatus,

@@ -3,6 +3,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Tests.Credentials;
 

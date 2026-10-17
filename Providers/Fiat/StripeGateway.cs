@@ -439,7 +439,7 @@ public static class StripeWebhookSignature
         var preimage = System.Text.Encoding.UTF8.GetBytes(
             unixTimestampSeconds.ToString(CultureInfo.InvariantCulture) + "." + rawBody);
         using var hmac = new HMACSHA256(System.Text.Encoding.UTF8.GetBytes(webhookSecret));
-        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(hmac.ComputeHash(preimage));
+        return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(hmac.ComputeHash(preimage));
     }
 }
 

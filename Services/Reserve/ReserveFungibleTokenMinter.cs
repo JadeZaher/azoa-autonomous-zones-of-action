@@ -1,6 +1,5 @@
 using System.Globalization;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Blockchain;
@@ -44,7 +43,7 @@ public sealed class ReserveFungibleTokenMinter(IFungibleCreationService lifecycl
         var intent = new FungibleCreationIntent(id, 0, operatorUserId, null, row.Chain, network, row.ReserveAddress,
             SigningContext.PlatformFor(row.Chain) with { Scope = AzoaScopes.TokenCreateSign }, row.Name, row.UnitName, row.TotalSupply,
             row.Decimals, false, row.ReserveAddress, row.ReserveAddress, row.ReserveAddress, row.ReserveAddress);
-        var quote = await module.QuoteFungibleCreationAsync(intent, ct);
+        var quote = await module!.QuoteFungibleCreationAsync(intent, ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<FungibleTokenResult>.Failure(quote.Message);
         var purpose = new PlatformGenesisAuthority(1, credential, row.Id, operationKey,
             PlatformGenesisIdentity.DefinitionHash(intent, operationKey), quote.Result.ProtocolIdentity);

@@ -6,6 +6,8 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Interfaces.Managers;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
@@ -42,7 +44,7 @@ public class NftManagerTests
     {
         var result = await _manager.MintAsync(Request(), _actor, Key());
         result.IsError.Should().BeFalse();
-        result.Result!.Status.Should().Be(OperationStatus.Confirmed);
+        result.Result!.Status.Should().Be(OperationStatus.Completed);
         return Guid.Parse(result.Result.Parameters["holonId"]);
     }
 

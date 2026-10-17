@@ -1,7 +1,6 @@
 using System.Text.Json;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace AZOA.WebAPI.Mcp.Tools;
 

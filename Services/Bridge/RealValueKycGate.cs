@@ -6,7 +6,6 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Bridge;

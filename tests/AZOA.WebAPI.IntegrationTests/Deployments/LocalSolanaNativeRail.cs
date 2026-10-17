@@ -20,6 +20,7 @@ using Solnet.Rpc.Builders;
 using Solnet.Rpc.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests.Deployments;
 

@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 

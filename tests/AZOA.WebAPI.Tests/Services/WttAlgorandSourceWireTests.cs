@@ -23,7 +23,7 @@ public sealed class WttAlgorandSourceWireTests
         payment.Receiver.ToString().Should().Be(Address.ForApplication(9).ToString());
         var call = wire[^1].Should().BeOfType<ApplicationNoopTransaction>().Subject;
         call.ApplicationId.Should().Be(9);
-        BinaryPrimitives.ReadUInt64BigEndian(call.ApplicationArgs[1]).Should().Be(ulong.MaxValue);
+        BinaryPrimitives.ReadUInt64BigEndian(call.ApplicationArgs.ElementAt(1)).Should().Be(ulong.MaxValue);
         call.ForeignAssets.Should().Equal(ulong.MaxValue);
         call.ForeignApps.Should().Equal(7UL);
         var signed = Sign(wire, signer);
@@ -69,7 +69,7 @@ public sealed class WttAlgorandSourceWireTests
         }
         if (mutation == "trailing") signed[0] = Convert.ToBase64String([.. Convert.FromBase64String(signed[0]), 0]);
         Action validate = () => WttAlgorandSourceWire.ValidateSigned(input, signed);
-        validate.Should().Throw<Exception>().Where(error => error is InvalidDataException or InvalidOperationException);
+        validate.Should().Throw<Exception>().Where(error => error is InvalidDataException || error is InvalidOperationException);
     }
 
     private static WttAlgorandSourceParameters Parameters(AlgoAccount signer)

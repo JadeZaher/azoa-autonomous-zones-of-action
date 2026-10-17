@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores.Surreal;

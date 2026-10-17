@@ -4,7 +4,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using SurrealForge.Client.Idempotency;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Core.Webhooks;
 using AZOA.WebAPI.Services.Webhooks;
 using Row = AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistration;
