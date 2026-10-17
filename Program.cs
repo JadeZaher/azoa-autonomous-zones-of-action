@@ -242,7 +242,6 @@ builder.Services.AddAuthentication(options =>
                     || principal!.GetActingTenantId() is not null
                     || !long.TryParse(
                         principal!.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
-
                         System.Globalization.NumberStyles.None,
                         System.Globalization.CultureInfo.InvariantCulture,
                         out var tokenRevision)
@@ -1357,7 +1356,6 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionFungibleCreationSe
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
     sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>());
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Fungible.FungibleCreationRecoveryWorker>();
-
 // D19 soulbound-credential revocation (Algorand AssetClawback). Backs both
 // CredentialController and CredentialRevokeNodeHandler -- and the handler set is
 // constructed EAGERLY (ActionNodeHandlerRegistry takes IEnumerable<IActionNodeHandler>

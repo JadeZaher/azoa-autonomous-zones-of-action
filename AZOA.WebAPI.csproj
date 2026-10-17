@@ -15,7 +15,6 @@
          the doc file exists to give the rule teeth, so XML-doc diagnostics stay silent (round 4 W0). -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591;CS1573;CS1572;CS1734;CS0419;CS1574;CS1570</NoWarn>
-
     <!-- Alpha version stamp (final-hardening-cutover Phase H, H5). Bump per
          CHANGELOG.md entry; see docs/NODE-HOST.md for the release process. -->
     <Version>0.1.0-alpha</Version>
@@ -122,5 +121,4 @@
     <InternalsVisibleTo Include="AZOA.WebAPI.Tests" />
     <InternalsVisibleTo Include="AZOA.WebAPI.IntegrationTests" />
   </ItemGroup>
-
 </Project>

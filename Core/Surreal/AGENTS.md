@@ -230,6 +230,7 @@ No synthetic participant credential or inferred tenant ownership is created.
 captured conditional mutation that matched no row (`IF $v = NONE OR $v = [] { THROW 'MARKER' }`).
 It validates both tokens, so a raw composition needs no interpolated SQL of its own.
 `ExchangeAuthorityFence` uses it for `$_<prefix>_participant`, `_wallet` and `_grant`. Its only
-other raw assertion (grant expiry against database time) is a `$$"""` raw string whose single
-interpolation is the caller-fixed lowercase prefix. In a single-`$` raw string, `{{` is not an
-escape, so literal SurrealQL braces need `$$`.
+other raw assertion (grant expiry against database time) is a `$$"""` template
+(§identifier-template) whose single hole is the caller-fixed prefix token. In a single-`$` raw
+string, `{{` is not an escape, so literal SurrealQL braces need `$$`.
+
