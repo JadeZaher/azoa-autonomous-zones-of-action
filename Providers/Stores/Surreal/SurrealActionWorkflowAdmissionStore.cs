@@ -73,19 +73,22 @@ public sealed class SurrealActionWorkflowAdmissionStore(ISurrealExecutor executo
         foreach (var source in admission.Sources.DistinctBy(item => item.ActionId))
         {
             var scope = Scope("source", source.ActionId);
-            var hashGuard = source.PublishedHash is null ? "published_version_hash = NONE" : $"published_version_hash = ${scope}_hash";
-            var sourceGuard = SurrealQuery.Of($"LET ${scope} = (UPDATE type::record('action', ${scope}_id) SET version = version WHERE version = ${scope}_version AND status = 'Active' AND {hashGuard} AND (user_id = type::record('user', $_actor) OR (is_public = true AND (run_access = 'Open' OR invited_user_ids CONTAINS $_actor_link))) RETURN AFTER)")
+            var token = SurrealIdentifierTemplate.Token(scope);
+            var hashGuard = source.PublishedHash is null ? SurrealIdentifierTemplate.Fragment($"published_version_hash = NONE")
+                : SurrealIdentifierTemplate.Fragment($"published_version_hash = ${token}_hash");
+            var sourceGuard = SurrealIdentifierTemplate.Of($"LET ${token} = (UPDATE type::record('action', ${token}_id) SET version = version WHERE version = ${token}_version AND status = 'Active' AND {hashGuard} AND (user_id = type::record('user', $_actor) OR (is_public = true AND (run_access = 'Open' OR invited_user_ids CONTAINS $_actor_link))) RETURN AFTER)")
                 .WithParam(scope + "_id", source.ActionId.ToString("N")).WithParam(scope + "_version", source.Version)
                 .WithParam("_actor", run.UserId.ToString("N"))
                 .WithParam("_actor_link", SurrealLink.ToLink("user", run.UserId.ToString("N"))!);
             if (source.PublishedHash is not null) sourceGuard = sourceGuard.WithParam(scope + "_hash", source.PublishedHash);
             statements.Add(sourceGuard);
-            statements.Add(SurrealQuery.Of($"IF array::len(${scope}) != 1 {{ THROW 'ACTION_ADMISSION_AUTHORITY_CHANGED' }}"));
+            statements.Add(SurrealIdentifierTemplate.Of($"IF array::len(${token}) != 1 {{ THROW 'ACTION_ADMISSION_AUTHORITY_CHANGED' }}"));
             if (source.ConcurrentLimit is { } limit)
             {
-                statements.Add(SurrealQuery.Of($"LET ${scope}_active = (SELECT VALUE id FROM action_run WHERE user_id = type::record('user', $_actor) AND status NOT IN ['Succeeded', 'Failed', 'Cancelled', 'Forked'] AND (action_id = type::record('action', ${scope}_id) OR id IN (SELECT VALUE run_id FROM action_run_source WHERE action_id = type::record('action', ${scope}_id))))")
+                statements.Add(SurrealIdentifierTemplate.Of($"LET ${token}_active = (SELECT VALUE id FROM action_run WHERE user_id = type::record('user', $_actor) AND status NOT IN ['Succeeded', 'Failed', 'Cancelled', 'Forked'] AND (action_id = type::record('action', ${token}_id) OR id IN (SELECT VALUE run_id FROM action_run_source WHERE action_id = type::record('action', ${token}_id))))")
                     .WithParam("_actor", run.UserId.ToString("N")).WithParam(scope + "_id", source.ActionId.ToString("N")));
-                statements.Add(SurrealQuery.Of($"IF array::len(${scope}_active) >= ${scope}_limit {{ THROW 'ACTION_ADMISSION_QUOTA' }}")
+                statements.Add(SurrealIdentifierTemplate.Of($"IF array::len(${token}_active) >= ${token}_limit {{ THROW 'ACTION_ADMISSION_QUOTA' }}")
+
                     .WithParam(scope + "_limit", limit));
             }
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(new SourceRow

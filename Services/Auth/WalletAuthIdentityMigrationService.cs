@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Helpers;
+
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
@@ -163,7 +165,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
 
     // raw: these guards are used only inside the atomic lease/user or repair transactions above.
     private static SurrealQuery LeaseGuard(string token) => SurrealQuery.Of("LET $_migration = (UPDATE wallet_auth_identity_migration:v1 SET updated_at = time::now() WHERE status = 'Migrating' AND lease_token = $_migration_token AND lease_expires_at > time::now() RETURN AFTER)").WithParam("_migration_token", token);
-    private static SurrealQuery AssertLease() => SurrealQuery.Of($"IF array::len($_migration) != 1 {{ THROW '{Lost}' }}");
-    private static SurrealQuery ExactMutation(SurrealQuery query) => SurrealQuery.Of($"LET $_identity = ({query.Sql.TrimEnd(';')})").WithParams(query.Params);
-    private static SurrealQuery AssertUser() => SurrealQuery.Of($"IF $_identity = NONE OR $_identity = NULL {{ THROW '{Lost}' }}");
+    private static SurrealQuery AssertLease() => SurrealIdentifierTemplate.Of($"IF array::len($_migration) != 1 {{ {SurrealIdentifierTemplate.Throw(Lost)} }}");
+    private static SurrealQuery ExactMutation(SurrealQuery query) => SurrealGeneratedStatementScope.Assign(query, "identity", "_identity");
+    private static SurrealQuery AssertUser() => SurrealIdentifierTemplate.Of($"IF $_identity = NONE OR $_identity = NULL {{ {SurrealIdentifierTemplate.Throw(Lost)} }}");
 }

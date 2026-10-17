@@ -76,13 +76,13 @@ public sealed class SurrealDeploymentRecoveryAuditStore(ISurrealExecutor executo
                     && row.ReplacedByOperationId == witness.ReplacedByOperationId && row.ReplacesOperationId == witness.ReplacesOperationId
                     && row.RequestJson == witness.RequestJson && row.HistoryJson == witness.HistoryJson)
                 .Set(row => row.Version, witness.Version).Build();
-            var scoped = SurrealGeneratedStatementScope.Apply(guard, "audit_witness" + index);
-            statements.Add(SurrealQuery.Of("LET $_audit_witness = (" + scoped.Sql + ")").WithParams(scoped.Params));
+            var scoped = SurrealGeneratedStatementScope.Assign(guard, "audit_witness" + index, "_audit_witness");
+            statements.Add(scoped);
             statements.Add(SurrealQuery.Of("IF $_audit_witness = NONE OR $_audit_witness = [] { THROW 'DEPLOYMENT_RECOVERY_AUDIT_CONFLICT' }"));
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(entries[index]), "audit_entry" + index));
         }
-        var mutation = SurrealGeneratedStatementScope.Apply(update.Build(), "audit_cursor");
-        statements.Add(SurrealQuery.Of("LET $_audit_saved = (" + mutation.Sql + ")").WithParams(mutation.Params));
+        var mutation = SurrealGeneratedStatementScope.Assign(update.Build(), "audit_cursor", "_audit_saved");
+        statements.Add(mutation);
         statements.Add(SurrealQuery.Of("IF $_audit_saved = NONE OR $_audit_saved = [] { THROW 'DEPLOYMENT_RECOVERY_AUDIT_CONFLICT' }"));
         var resultIndex = statements.Count;
         statements.Add(SurrealQuery.Of("RETURN $_audit_saved")); statements.Add(SurrealQuery.Of("COMMIT"));

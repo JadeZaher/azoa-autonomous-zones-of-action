@@ -50,13 +50,13 @@ public static class ExchangeAuthorityFence
         statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_participant", FailureMarker));
         statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_wallet", FailureMarker));
         statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_grant", FailureMarker));
-        // raw: prefix is a caller-fixed lowercase token (validated by Assign above); no value is interpolated.
-#pragma warning disable SRDB0001
-        statements.Add(SurrealQuery.Of($$"""
-            IF $_{{prefix}}_grant.expires_at != NONE AND $_{{prefix}}_grant.expires_at <= time::now()
+        // raw: prefix is a caller-fixed token; see AGENTS.md §identifier-template.
+        var token = SurrealIdentifierTemplate.Token(prefix);
+        statements.Add(SurrealIdentifierTemplate.Of($$"""
+            IF $_{{token}}_grant.expires_at != NONE AND $_{{token}}_grant.expires_at <= time::now()
                 { THROW 'EXCHANGE_PARTICIPANT_AUTHORITY_CHANGED' }
             """));
-#pragma warning restore SRDB0001
+
         return statements;
     }
 }
