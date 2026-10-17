@@ -39,7 +39,8 @@ Base `feat/platform-stub-closeout` @ `beae947`; base re-merged after L4 (#6, `d4
 | D6 | `EthereumRecoveryController`, `EthereumOperatorRecoveryController` (`RecoveryModule`), `EthereumProvider.Recovery.cs` | Unknown network and refused/unconfirmed resume send → 409 |
 | D9 | `Providers/Blockchain/ChainRpcHttp.cs`; three providers; `Program.cs` Algorand registration | `IHttpClientFactory` named clients `chain-rpc:{chain}` |
 | RPC URL scrub | `EthereumProvider.GetChainInfoAsync`, `SolanaProvider.GetChainInfoAsync` | `rpcEndpoint` removed |
-| Prune `swap_state` | `Persistence/SurrealDb/Models/SwapState.cs`, `Generated/Schemas/swap_state.surql` deleted | Baseline file + old migration untouched (L1/sweep; generation reset) |
+| Prune `swap_state` | `Models/SwapState.cs`, `Generated/Schemas/swap_state.surql`, `CompatibilityBaselines/swap_state.surql` (+ README row) deleted; `swap_state` half removed from `Migrations/20260718_136000` | L1 ask taken at the merge signal (generation reset makes the migration checksum change safe); `SurrealDeploymentLeastPrivilegeContractTests` updated |
+| `OperationStatus.NeedsOperator` | `Models/OperationStatus.cs` | L1 ask taken at the merge signal; `ClientSigningStatus.NeedsOperator` now aliases it |
 | CI-failing tests in my globs | see Tests | Production fixes: zero-amount NFT fee authorization (`AlgorandProvider.Nft.cs`), exact-bytes Algorand signer (`AlgorandTransactionSigner.cs`), `AlgorandSignedEnvelope.MatchExact` (Tinyman), pooled zero fee/amount in `AlgorandGroupReceipt` (also L3 Hold ask), zero-scalar framing in `EthereumSignedEnvelope` |
 | L3 ask: null-amount group receipt | `Providers/Blockchain/Algorand/AlgorandGroupReceipt.cs` | zero-amount axfer/pay members match an absent amount; SDK-decoded zero axfer (`AssetAcceptTransaction`) handled |
 | L4 asks | `Services/Actions/WttActionResolver.cs` implements `IActionWttRoute` (registered); `WalletOwnershipProofAdapter` replaces `NoWalletOwnershipProof`; `Models/Actions/NodeConfigs.cs` `Wtt` on Bridge/Back (L1 file, taken per coordinator) | — |
@@ -105,8 +106,7 @@ in place by the adapter line above.)
 
 ## Needs other lane
 
-- **L1** `Models/OperationStatus.cs`: add `NeedsOperator` (today `ClientSigningStatus.NeedsOperator`); `Models/Actions/NodeConfigs.cs` edited by L5 per coordinator (Bridge/Back `Wtt`).
-- **L1/sweep**: drop `CompatibilityBaselines/swap_state.surql` and the `swap_state` half of `20260718_136000` at the generation reset.
+- **Declared out-of-glob edits (L1 closed):** `Models/OperationStatus.cs` (`NeedsOperator`), `Models/Actions/NodeConfigs.cs` (Bridge/Back `Wtt`), `Persistence/SurrealDb/CompatibilityBaselines/**`, `Migrations/20260718_136000`, `tests/.../Core/SurrealDeploymentLeastPrivilegeContractTests.cs`.
 - **L7**: SDK + UI for submit-signed (fetch plan → wallet signs exact bytes → submit), operator stuck list/resolve; holon mint/exchange removal; WTT helper routes.
 - **L6**: real-DB fixture for `SurrealOperationLogClientSigningStore` CAS race (two submits, submit vs expiry reconcile); protocol fixtures decide the D-7 production pins.
 - **Other lanes' gate rows**: CrossTenant/RouteAuthorization gate failures remaining after this merge are L1/L2/L3 stale or missing rows (none L5).

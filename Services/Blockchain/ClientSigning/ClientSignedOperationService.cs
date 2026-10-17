@@ -289,9 +289,9 @@ public sealed class ClientSignedOperationService(
         => AZOAResult<IBlockchainOperation>.FailureWithCode(message, code);
 }
 
-/// <summary>Operation statuses introduced by D-3 that the shared <see cref="OperationStatus"/> set does not list yet.</summary>
+/// <summary>Alias kept for call-site readability; the canonical constant is <see cref="OperationStatus.NeedsOperator"/>.</summary>
 public static class ClientSigningStatus
 {
-    /// <summary>Parked: only an operator (re-proving chain state) or the signer submitting can settle the row.</summary>
-    public const string NeedsOperator = "NeedsOperator";
+    /// <inheritdoc cref="OperationStatus.NeedsOperator"/>
+    public const string NeedsOperator = OperationStatus.NeedsOperator;
 }

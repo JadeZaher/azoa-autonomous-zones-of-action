@@ -53,6 +53,9 @@ public static class OperationStatus
     /// </summary>
     public const string PendingConfirmationMarker = "Submitted, pending confirmation";
 
+    /// <summary>D-3: parked; only an operator (re-proving chain state) or the signer submitting can settle the row.</summary>
+    public const string NeedsOperator = "NeedsOperator";
+
     // ─── Per-operation-type terminal success verbs ───
 
     public const string Minted = "Minted";

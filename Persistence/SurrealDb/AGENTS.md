@@ -66,7 +66,7 @@ Known limits (SurrealForge, owner repo; harmless while nothing reconciles or pas
 
 A baselined table's generated golden is **not** what a deployment applies; only baseline +
 migrations are. Every POCO change to `admin_bootstrap_state`, `bridge_tx`, `holon`,
-`kyc_submission`, `operation_log` or `swap_state` therefore needs a forward migration in the same
+`kyc_submission` or `operation_log` (`swap_state` was pruned in round 4) therefore needs a forward migration in the same
 change. W1 found `kyc_submission` had drifted (Identomat missing from `$kyc_submission_provider`, so
 every Identomat KYC write failed its ASSERT; `aml_lineage_key` absent) and added
 `Migrations/20261017_121000`. `KycSubmission` gained the `kyc_submission_tenant_id` index that
@@ -126,7 +126,7 @@ therefore partial uniqueness by design, or a fail-open gap.
 
 No invariant in the list relies on a unique violation with nothing behind it; W1 added no index.
 Partial (NONE-escaping) indexes by design: `bridge_tx_*`, `holon_transfer_reservation`,
-`operation_log_idempotency_key`, `swap_state_idempotency_key`, `user_tenant_extuser`,
+`operation_log_idempotency_key`, `user_tenant_extuser`,
 `user_auth_wallet`, `hosted_session_provider_session`, `hosted_provider_remote`.
 
 ## §old-row-rule
