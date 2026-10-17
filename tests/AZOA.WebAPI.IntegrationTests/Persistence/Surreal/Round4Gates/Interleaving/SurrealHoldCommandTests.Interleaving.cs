@@ -22,8 +22,10 @@ public sealed partial class SurrealHoldCommandTests
         var (intent, authority) = await ExchangeAsync();
         var source = (await _store.AdmitExchangeSourceAsync(intent, authority))!;
         var revocation = revoked == "participant-grant"
-            ? SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build()
-            : SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build();
+            ? SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N")).Where(row => row.RevokedAt == null)
+                .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build()
+            : SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Where(row => row.RevokedAt == null)
+                .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build();
 
         var consume = _store.CommitExchangeOpeningAsync(source.Id);
         var revoke = SurrealTransientConflict.RetryOnConflictAsync(async () =>
