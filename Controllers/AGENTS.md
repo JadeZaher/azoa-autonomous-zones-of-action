@@ -253,18 +253,32 @@ NFT mint-cost-quote endpoints require the same authenticated NftMint scope and r
 
 NFT workflow cost endpoints bind authenticated actor/tenant to the exact persisted execution. Quote and accept capture actual credentials; acceptance checks original workflow and current participant authority transactionally. Reconcile is an authenticated receipt read and does not demand new signing consent. Accept returns 202 because admission alone is not mint completion. See `Services/Actions/AGENTS.md` for saved-request and recovery semantics.
 
-## Wallet ownership proof (round 4, audit-1 M2)
+## Wallet ownership proof (round 4, audit-1 M2; RV-L4-03)
 
-`POST /api/wallet/{id}/ownership-challenge` issues an ordinary wallet-auth challenge for
-the caller's own External wallet; `POST /api/wallet/{id}/ownership-proof` consumes it,
-verifies the signature (`WalletAuthManager.VerifyAddressControlAsync`) and records a
-`wallet_ownership_proof` row (record id = sha256 of the canonical chain:address, so one
-current prover per address; a newer verified proof supersedes). `connect` with
-`SignedMessage` does the same inline. Unproven External rows grant nothing: create/connect
-no longer refuse an address another user merely *registered* (that was the squat), only one
-another user has *proven*. Consumers that trust an External address (WTT recipient, bridge
-reversal, NFT recipient resolution) must require `IWalletOwnershipProofStore.GetAsync(...)
-.UserId == actor` or a Platform wallet.
+`POST /api/wallet/{id}/ownership-challenge` issues a purpose-bound challenge for the caller's own External
+wallet. Its signed text starts `AZOA-WALLET-OWNERSHIP-v1` and names `purpose:wallet-ownership-proof`, the
+AZOA user id, the wallet id, the chain and address, a nonce and the expiry.
+`POST /api/wallet/{id}/ownership-proof` consumes it (the challenge named by the echoed message's nonce,
+else the latest live one), checks the stored text equals the ownership text for exactly this user and
+wallet, then verifies the signature (`WalletAuthManager.VerifyOwnershipProofAsync`). A login challenge
+(`AZOA-AUTH-v1`, no user or wallet) never satisfies a proof, and an ownership challenge never logs in, so a
+signature relayed from a wallet sign-in, or from another account's proof, is refused. `connect` no longer
+accepts an inline `SignedMessage`; prove after connecting.
+
+The `wallet_ownership_proof` row (record id = sha256 of the canonical chain:address) has one current
+prover per address. Supersession rule: a new proof by another user is refused while the current holder's
+proof is still valid, meaning the wallet it names is still that holder's External wallet for the same
+canonical identity. Once the holder removes or loses that wallet, the proof is stale and the next verified
+proof replaces it in a CAS on the old (user, wallet) pair, and `WalletManager` logs the supersession with
+both user ids. Unproven External rows grant nothing: create/connect refuse only an address another user has
+*proven*. Consumers that trust an External address (WTT recipient, bridge reversal, NFT recipient
+resolution) must require `IWalletOwnershipProofStore.GetAsync(...).UserId == actor` or a Platform wallet.
+
+## Public network endpoints (RV-L4-07)
+
+The anonymous `GET /api/network` publishes a configured node or indexer URL as scheme, host and port only.
+A URL with any path (keys hide there in every encoding) or a key-shaped host label (16+ characters, or 10+
+with a digit) is withheld (`null`), and the frontend keeps its own default endpoint.
 
 ## Legacy bridge value routes (round 4, audit-2 M8)
 

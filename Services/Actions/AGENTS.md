@@ -903,3 +903,11 @@ quote). The output catalog's Bridge/Back shape is the union of the legacy `Bridg
 and the flat `WttActionOutput` receipt. Inert until L5 makes `WttActionResolver : IActionWttRoute`
 (registered as `IActionWttRoute`) and L1 adds `WttActionConfig? Wtt` to `BridgeNodeConfig` /
 `BackNodeConfig` (strict publish-time config parsing rejects the key until then).
+
+Signing scopes have one source (X-1): `ActionSigningScopes.Required` returns `wtt:source:sign` +
+`wtt:target:sign` for a Bridge/Back node whose config parses as a `wtt` request (the same
+`WttActionResolver.ReadConfig` test `Applies` uses) and `transfer:sign` for a legacy trusted-bridge node.
+The engine handler, the admission fence in `SurrealActionNodeExecutionStore` and participant
+re-authorization (`ActionSigningAuthorizationService`) all read it, so a parked WTT node can be
+re-authorized with exactly the witness `WttLifecycleService` demands. `ActionSigningScopeTests` pins the
+agreement with `TryGetFor(node).ResolveSigningScopes` and `WttSigningAuthorityFence.WorkflowScopes`.

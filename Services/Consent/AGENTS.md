@@ -16,13 +16,23 @@ That catalog is every scope declared by an endpoint's `[DelegatedChildCredential
 attribute, so a tenant cannot delegate a scope that no endpoint accepts. `tenant:provision` is never
 delegated (TenantManager).
 
-`DelegatedChildCredentialGate` runs inside `JwtBearerEvents.OnTokenValidated` on every request that
-presents a child JWT. It admits the token only when all of these hold: the node switch
+`DelegatedChildCredentialGate.AdmitAsync` runs inside `JwtBearerEvents.OnTokenValidated` on every request
+that presents a child JWT. It admits the token only when all of these hold: the node switch
 `Tenant:DelegatedChildCredentials:Enabled` is on; the endpoint carries the attribute; the token carries
-the endpoint scope; the issuing tenant (`act_as_tenant`) is still an active user; and the user still has
-a live grant to that tenant covering the endpoint scope. The generic `AuthNotBefore` watermark check
-still runs after it. Consequences:
+the endpoint scope; the issuing tenant (`act_as_tenant`) is still an active user; the tenant API key that
+minted it (`issuing_key_id`) is still active, unrevoked, unexpired and still carries the endpoint scope;
+the user is still active; the user's live dApp role grants a role-bound endpoint scope (`dapp:manage`,
+`dapp:develop`); and the user still has a live grant to that tenant covering the endpoint scope. On
+admission the gate adds an `azoa-live-role` identity holding the store-loaded role, which is the only role
+the `DappManage`/`DappDevelop` policies trust for a delegated principal (`Helpers/AGENTS.md` §Role-bound
+dApp policies). The generic `AuthNotBefore` watermark check still runs after it. A refusal fails
+authentication (401). Consequences:
 
+- *Role-bound scopes (RV-L4-01):* issuance drops `dapp:manage`/`dapp:develop` unless the user's live role
+  holds it, and a demotion after issuance kills the credential on its next request. A tenant can never
+  make a consenting user a DApp manager.
+- *Key revoke or rotation (RV-L4-06):* revoking or rotating the minting tenant key kills its child
+  credentials on their next request instead of at their 15-minute expiry.
 - *Issuing-tenant revoke:* a tenant offboarding (`DELETE /api/tenant/consent/...`) or a user revoking the
   grant kills every outstanding child JWT on its next request, not at its natural expiry.
 - *Acting-tenant reads:* allowlisted endpoints read with `User.GetActingTenantId()`, so rows created under
