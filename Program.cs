@@ -211,8 +211,16 @@ builder.Services.AddAuthentication(options =>
             var principal = context.Principal;
             if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
             {
-                context.Fail("Delegated child credentials are disabled until accepting endpoints are explicitly scope-allowlisted.");
-                return;
+                // D-5: allowlisted endpoint + scope + live consent + active issuing tenant; see Services/Consent/AGENTS.md.
+                var childGate = ActivatorUtilities.CreateInstance<AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate>(
+                    context.HttpContext.RequestServices);
+                var childRejection = await childGate.RejectAsync(
+                    principal!, context.HttpContext.GetEndpoint(), context.HttpContext.RequestAborted);
+                if (childRejection is not null)
+                {
+                    context.Fail(childRejection);
+                    return;
+                }
             }
 
             if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))

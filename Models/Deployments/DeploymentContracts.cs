@@ -78,3 +78,5 @@ public sealed record DeploymentReceipt(string OperationId, string ArtifactId, st
 public sealed record DeploymentInvokeRequest(string ExpectedPayloadHash, JsonElement Input,
     bool AcknowledgeEconomicEffects);
 public sealed record DeploymentPage(IReadOnlyList<DeploymentReceipt> Items, string? NextCursor);
+/// <summary>Operator exit for a parked native operation: re-observe, or close as terminal Failed after an unresolvable observation.</summary>
+public sealed record DeploymentOperatorResolution(long ExpectedVersion, string Action, string? Reason = null, bool AcknowledgeNoFurtherEffect = false);

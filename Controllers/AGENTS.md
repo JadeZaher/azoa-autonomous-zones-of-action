@@ -33,9 +33,9 @@ and ignores arbitrary scope input by having none: it always stamps exactly
 `tenant:provision,wallet:manage,kyc:read,kyc:submit`. It returns the raw key once
 under `Cache-Control: no-store`; no value-signing or operator scope can enter.
 
-Delegated child JWTs are temporarily disabled at validation and issuance. They
-remain default-deny until every future accepting endpoint has an explicit scope
-policy. Consent, user ownership mutations, API-key management, and wallet
+Delegated child JWTs are default-deny: only endpoints carrying
+`[DelegatedChildCredential]` accept them, behind a node switch, with live consent
+(see `Services/Consent/AGENTS.md` §Delegated child credentials). Consent, user ownership mutations, API-key management, and wallet
 ownership mutations require a first-party login JWT. Service-to-service wallet
 setup uses the tenant custodial-account routes instead.
 
