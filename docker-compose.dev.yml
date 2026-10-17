@@ -151,6 +151,7 @@ services:
       Fiat__OffRamp__OnboardingRefreshUrl: "${Fiat__OffRamp__OnboardingRefreshUrl:-http://localhost:${AZOA_FRONTEND_HOST_PORT:-3000}/wallets}"
       Fiat__Test__SecretKey: "${STRIPE_SECRET_API_KEY_DEV:-}"
       Fiat__Test__WebhookSecret: "${Fiat__Test__WebhookSecret:-}"
+      Fiat__Test__ConnectWebhookSecret: "${Fiat__Test__ConnectWebhookSecret:-}"
       Kyc__Provider: "${AZOA_KYC_PROVIDER:-manual}"
       Kyc__VeriffApiKey: "${AZOA_KYC_VERIFF_API_KEY:-}"
       Kyc__VeriffBaseUrl: "${AZOA_KYC_VERIFF_BASE_URL:-}"

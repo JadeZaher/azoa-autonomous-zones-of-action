@@ -136,9 +136,9 @@ public interface IOffRamp
     Task<AZOAResult<FiatPayout>> ParkForOperatorAsync(
         string payoutId, string reason, CancellationToken ct = default);
 
-    /// <summary>One person's own cash-out history, newest first.</summary>
+    /// <summary>One person's own cash-out history, newest first; a tenant sees only cash-outs it drove.</summary>
     Task<AZOAResult<IReadOnlyList<CashOutView>>> ListForUserAsync(
-        Guid subjectUserId, int limit, CancellationToken ct = default);
+        Guid subjectUserId, int limit, Guid? tenantId = null, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -265,14 +265,19 @@ public sealed class OffRampService : IOffRamp
 
     /// <inheritdoc />
     public async Task<AZOAResult<IReadOnlyList<CashOutView>>> ListForUserAsync(
-        Guid subjectUserId, int limit, CancellationToken ct = default)
+        Guid subjectUserId, int limit, Guid? tenantId = null, CancellationToken ct = default)
     {
         var rows = await _payouts.ListForUserAsync(subjectUserId, limit, ct);
         if (rows.IsError)
             return AZOAResult<IReadOnlyList<CashOutView>>.Failure(rows.Message);
 
+        // F-H8: a tenant reads only the cash-outs it drove for this person, never another tenant's
+        // or the person's own first-party ones.
+        var visible = tenantId is null
+            ? rows.Result!
+            : rows.Result!.Where(row => DroveBy(row, tenantId)).ToList();
         return AZOAResult<IReadOnlyList<CashOutView>>.Success(
-            rows.Result!.Select(CashOutView.From).ToList(), "Success");
+            visible.Select(CashOutView.From).ToList(), "Success");
     }
 
     // ─── Claim ───
@@ -358,9 +363,14 @@ public sealed class OffRampService : IOffRamp
             return FiatPayoutErrors.RailBusy<CashOutView>();
 
         // A repeat of the same key resumes the cash-out that already exists. Returning it verbatim
-        // — rather than re-planning it — is what makes a double-tapped button one payment.
+        // — rather than re-planning it — is what makes a double-tapped button one payment. The
+        // replay is honoured only for the same driver (F-H8): another tenant, or the person
+        // themself, reusing the key gets a conflict rather than somebody else's cash-out.
         if (!claim.Result.Created)
-            return AZOAResult<CashOutView>.Success(CashOutView.From(claim.Result.Row), "Success");
+            return DroveBy(claim.Result.Row, request.TenantId)
+                ? AZOAResult<CashOutView>.Success(CashOutView.From(claim.Result.Row), "Success")
+                : AZOAResult<CashOutView>.FailureWithCode(
+                    "That request key is already in use.", AzoaErrorCodes.Conflict);
 
         var row = claim.Result.Row;
 
@@ -1319,6 +1329,10 @@ public sealed class OffRampService : IOffRamp
     };
 
     /// <summary>The account a row belongs to, or empty when the row names one this node cannot read.</summary>
+    /// <summary>True when <paramref name="tenantId"/> (null = first-party) is the party that drove the cash-out.</summary>
+    private static bool DroveBy(FiatPayout row, Guid? tenantId)
+        => SurrealRecordGuid.ParseOptional(row.TenantId) == tenantId;
+
     private static Guid SubjectOf(FiatPayout row)
         => Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) ? subjectUserId : Guid.Empty;
 
