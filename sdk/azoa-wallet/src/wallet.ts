@@ -1,7 +1,6 @@
 import type {
   ChainProvider,
   ChainProviderRegistration,
-  DexAdapter,
   BalanceInfo,
   AssetInfo,
   TransactionResult,
@@ -9,8 +8,6 @@ import type {
   TransferParams,
   MintParams,
   BurnParams,
-  SwapParams,
-  SwapQuote,
   Signer,
 } from "./core/types.js";
 import type { Result } from "./core/result.js";
@@ -27,7 +24,6 @@ import { SdkError, SdkErrorCode } from "./core/errors.js";
  */
 export class AzoaWallet {
   private readonly providers = new Map<string, ChainProvider>();
-  private readonly dexAdapters = new Map<string, DexAdapter>();
 
   /** Create a wallet and register providers in one call. */
   static create(registrations: Record<string, ChainProviderRegistration>): AzoaWallet {
@@ -38,22 +34,18 @@ export class AzoaWallet {
     return wallet;
   }
 
-  /** Register a chain provider (and optional DEX adapter). */
+  /** Register a chain provider. */
   register(registration: ChainProviderRegistration): void {
     this.providers.set(registration.provider.chainId, registration.provider);
-    if (registration.dex) {
-      this.dexAdapters.set(registration.dex.chainId, registration.dex);
-    }
   }
 
   /**
-   * Remove every registered provider and DEX adapter. Used when switching the
+   * Remove every registered provider. Used when switching the
    * active network so no stale-network provider can service an operation —
    * this is what structurally prevents cross-network (dev/test/main) asset ops.
    */
   clear(): void {
     this.providers.clear();
-    this.dexAdapters.clear();
   }
 
   /** List all registered chain IDs. */
@@ -64,11 +56,6 @@ export class AzoaWallet {
   /** Get a provider by chain ID — useful for chain-specific operations. */
   getProvider<T extends ChainProvider = ChainProvider>(chainId: string): T | undefined {
     return this.providers.get(chainId) as T | undefined;
-  }
-
-  /** Get a DEX adapter by chain ID. */
-  getDex(chainId: string): DexAdapter | undefined {
-    return this.dexAdapters.get(chainId);
   }
 
   // ─── Unified query methods ───
@@ -133,19 +120,5 @@ export class AzoaWallet {
     const provider = this.providers.get(chainId);
     if (!provider) return err(new SdkError(SdkErrorCode.PROVIDER_NOT_FOUND, `No provider for chain: ${chainId}`));
     return provider.submitTransaction(signedTx);
-  }
-
-  // ─── Unified DEX methods ───
-
-  async getSwapQuote(chainId: string, params: SwapParams): Promise<Result<SwapQuote, SdkError>> {
-    const dex = this.dexAdapters.get(chainId);
-    if (!dex) return err(new SdkError(SdkErrorCode.PROVIDER_NOT_FOUND, `No DEX adapter for chain: ${chainId}`));
-    return dex.getQuote(params);
-  }
-
-  async buildSwap(chainId: string, quote: SwapQuote, sender: string): Promise<Result<UnsignedTransaction, SdkError>> {
-    const dex = this.dexAdapters.get(chainId);
-    if (!dex) return err(new SdkError(SdkErrorCode.PROVIDER_NOT_FOUND, `No DEX adapter for chain: ${chainId}`));
-    return dex.buildSwapTransaction(quote, sender);
   }
 }

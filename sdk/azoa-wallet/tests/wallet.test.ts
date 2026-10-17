@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AzoaWallet } from "../src/wallet.js";
 import { isOk, isErr } from "../src/core/result.js";
 import { SdkErrorCode } from "../src/core/errors.js";
-import type { ChainProvider, DexAdapter, SwapQuote } from "../src/core/types.js";
+import type { ChainProvider } from "../src/core/types.js";
 import { createMockSigner } from "./builders/index.js";
 
 function createMockProvider(chainId: string): ChainProvider {
@@ -25,34 +25,17 @@ function createMockProvider(chainId: string): ChainProvider {
   };
 }
 
-function createMockDex(chainId: string): DexAdapter {
-  return {
-    chainId,
-    dexName: "mock-dex",
-    getQuote: vi.fn().mockResolvedValue({
-      ok: true,
-      value: { chain: chainId, tokenIn: "A", tokenOut: "B", amountIn: "100", expectedAmountOut: "95", priceImpact: 0.5, fee: "5" },
-    }),
-    buildSwapTransaction: vi.fn().mockResolvedValue({
-      ok: true,
-      value: { chain: chainId, format: "native", bytes: new Uint8Array([20, 21]) },
-    }),
-  };
-}
-
 describe("AzoaWallet", () => {
   let wallet: AzoaWallet;
   let algoProvider: ChainProvider;
   let solProvider: ChainProvider;
-  let algoDex: DexAdapter;
 
   beforeEach(() => {
     algoProvider = createMockProvider("algorand");
     solProvider = createMockProvider("solana");
-    algoDex = createMockDex("algorand");
 
     wallet = AzoaWallet.create({
-      algorand: { provider: algoProvider, dex: algoDex },
+      algorand: { provider: algoProvider },
       solana: { provider: solProvider },
     });
   });
@@ -65,11 +48,6 @@ describe("AzoaWallet", () => {
     it("gets provider by chainId", () => {
       expect(wallet.getProvider("algorand")).toBe(algoProvider);
       expect(wallet.getProvider("ethereum")).toBeUndefined();
-    });
-
-    it("gets dex adapter by chainId", () => {
-      expect(wallet.getDex("algorand")).toBe(algoDex);
-      expect(wallet.getDex("solana")).toBeUndefined();
     });
   });
 
@@ -121,27 +99,6 @@ describe("AzoaWallet", () => {
       const signed = new Uint8Array([1, 2, 3]);
       await wallet.submitTransaction("algorand", signed);
       expect(algoProvider.submitTransaction).toHaveBeenCalledWith(signed);
-    });
-  });
-
-  describe("unified DEX", () => {
-    it("delegates getSwapQuote to dex adapter", async () => {
-      const params = { tokenIn: "A", tokenOut: "B", amountIn: "100", slippageBps: 50, sender: "ADDR" };
-      const result = await wallet.getSwapQuote("algorand", params);
-      expect(isOk(result)).toBe(true);
-      expect(algoDex.getQuote).toHaveBeenCalledWith(params);
-    });
-
-    it("returns error for chain without dex", async () => {
-      const params = { tokenIn: "A", tokenOut: "B", amountIn: "100", slippageBps: 50, sender: "ADDR" };
-      const result = await wallet.getSwapQuote("solana", params);
-      expect(isErr(result)).toBe(true);
-    });
-
-    it("delegates buildSwap", async () => {
-      const quote: SwapQuote = { chain: "algorand", tokenIn: "A", tokenOut: "B", amountIn: "100", expectedAmountOut: "95", priceImpact: 0.5, fee: "5" };
-      await wallet.buildSwap("algorand", quote, "SENDER");
-      expect(algoDex.buildSwapTransaction).toHaveBeenCalledWith(quote, "SENDER");
     });
   });
 });

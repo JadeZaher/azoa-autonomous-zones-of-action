@@ -26,9 +26,5 @@ export type {
   TransferParams,
   MintParams,
   BurnParams,
-  SwapQuote,
-  SwapRouteStep,
-  SwapParams,
-  DexAdapter,
   ChainProviderRegistration,
 } from "./types.js";

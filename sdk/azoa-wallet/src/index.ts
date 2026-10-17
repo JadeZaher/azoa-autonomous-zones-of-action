@@ -47,10 +47,6 @@ export type {
   TransferParams,
   MintParams,
   BurnParams,
-  SwapQuote,
-  SwapRouteStep,
-  SwapParams,
-  DexAdapter,
   ChainProviderRegistration,
   RetryOptions,
 } from "./core/index.js";
@@ -60,11 +56,6 @@ export { AlgorandProvider } from "./algorand/index.js";
 export type { AlgorandProviderConfig } from "./algorand/index.js";
 export { SolanaProvider } from "./solana/index.js";
 export type { SolanaProviderConfig } from "./solana/index.js";
-
-// DEX adapters
-export { TinymanAdapter, JupiterAdapter } from "./dex/index.js";
-export type { TinymanConfig, AlgodClientConfig } from "./dex/tinyman.js";
-export type { JupiterConfig } from "./dex/jupiter.js";
 
 // API client
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./api/index.js";
