@@ -449,7 +449,8 @@ public sealed class OffRampService : IOffRamp
         if (!Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) || subjectUserId == Guid.Empty)
             return await ParkAsync(row, "This cash-out names no account to take units from.", ct);
 
-        var quantity = requestedQuantity ?? OffRampAging.ParseBaseUnits(row.QuantityBaseUnits);
+        // Collect always takes the full claimed, availability-checked quantity; see AGENTS.md §saga.
+        var quantity = OffRampAging.ParseBaseUnits(row.QuantityBaseUnits);
         if (quantity <= BigInteger.Zero)
             return await ParkAsync(row, "This cash-out names no units to take.", ct);
 

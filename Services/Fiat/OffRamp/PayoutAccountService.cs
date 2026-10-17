@@ -103,6 +103,9 @@ public sealed class PayoutAccountService : IPayoutAccountService
     public const string BlockedMessage =
         "Your payout details need attention before money can be sent.";
 
+    /// <summary>Prefix of the claim-bound Stripe idempotency key for opening a connected account.</summary>
+    public const string IdempotencyKeyPrefix = "azoa-payout-account-";
+
     private readonly FiatOptions _fiat;
     private readonly OffRampOptions _options;
     private readonly IStripeConnectGateway _connect;
@@ -182,6 +185,8 @@ public sealed class PayoutAccountService : IPayoutAccountService
                 FlowKind = PayoutAccountFlow.FlowKind,
                 ProviderKey = FiatRailIds.StripeProviderKey,
                 AdmissionKey = PayoutAccountFlow.AdmissionKeyFor(subjectUserId),
+                CreationToken = Guid.NewGuid().ToString("N"),
+                CreationClaimedAt = now,
                 SubjectUserId = subjectUserId.ToString("N"),
                 TenantId = tenantId?.ToString("N"),
                 State = HostedSessionStates.Claimed,
@@ -194,68 +199,21 @@ public sealed class PayoutAccountService : IPayoutAccountService
         if (claimed.IsError || claimed.Result is null)
             return FiatPayoutErrors.RailBusy<PayoutAccountStatus>();
 
-        var session = claimed.Result;
-
         // The admission row is keyed on (flow, provider, admission key) alone. The key is DERIVED
         // from the subject here rather than taken from a caller, so this can only ever disagree
         // if a row was written by something else — refuse rather than hand back another person's
         // payout account.
-        if (!string.Equals(session.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(claimed.Result.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogError("A payout-account admission is claimed by a different account than its key names.");
             return FiatPayoutErrors.RailBusy<PayoutAccountStatus>();
         }
 
-        var accountId = session.ProviderSessionId;
-        if (string.IsNullOrWhiteSpace(accountId))
-        {
-            var created = await _connect.CreateConnectedAccountAsync(
-                _fiat.CredentialsFor(_fiat.ActiveEnvironment),
-                new StripeConnectedAccountRequest
-                {
-                    SubjectUserId = subjectUserId.ToString("N"),
-                    Country = _options.ConnectedAccountCountry,
-                    // Stable across retries, so a retried create returns the provider's existing
-                    // account instead of opening a second one for the same person.
-                    IdempotencyKey = "azoa-payout-account-" + subjectUserId.ToString("N"),
-                },
-                ct);
-
-            if (created.IsError || created.Result is null)
-                return AZOAResult<PayoutAccountStatus>.FailureWithCode(
-                    created.Message, created.Code ?? FiatPayoutErrors.PayoutBusyCode);
-
-            accountId = created.Result.AccountId;
-
-            if (!Guid.TryParseExact(session.Id, "N", out var sessionId))
-            {
-                _logger.LogError("A payout-account admission row carries an unusable identifier.");
-                return FiatPayoutErrors.RailBusy<PayoutAccountStatus>();
-            }
-
-            var attached = await _sessions.TryAttachProviderSessionAsync(
-                sessionId,
-                session.StateVersion,
-                accountId,
-                providerCorrelationId: null,
-                // The redirect column takes the first link. It expires within minutes, so it is
-                // provenance rather than something to hand out again; every later call mints a
-                // fresh one below.
-                redirectUrl: returnUrl!.ToString(),
-                expiresAt: null,
-                ct);
-
-            if (attached.IsError || attached.Result is null)
-            {
-                // Another concurrent setup won the attach. Re-read and use the winner's account
-                // rather than opening a second one.
-                var reread = await FindAccountIdAsync(subjectUserId, ct);
-                if (reread.IsError || string.IsNullOrWhiteSpace(reread.Result))
-                    return FiatPayoutErrors.RailBusy<PayoutAccountStatus>();
-
-                accountId = reread.Result;
-            }
-        }
+        var opened = await OpenAccountAsync(claimed.Result, subjectUserId, returnUrl!.ToString(), now, ct);
+        if (opened.IsError || string.IsNullOrWhiteSpace(opened.Result))
+            return AZOAResult<PayoutAccountStatus>.FailureWithCode(
+                opened.Message, opened.Code ?? FiatPayoutErrors.PayoutBusyCode);
+        var accountId = opened.Result;
 
         var link = await _connect.CreateAccountLinkAsync(
             _fiat.CredentialsFor(_fiat.ActiveEnvironment),
@@ -323,32 +281,87 @@ public sealed class PayoutAccountService : IPayoutAccountService
         if (subjectUserId == Guid.Empty)
             return AZOAResult<string?>.Success(null, "Success");
 
-        // The hosted-session store has no read-by-admission-key, so the only lookup available is
-        // the create-if-absent claim itself. That is acceptable HERE and only here: it can leave
-        // an empty admission row behind for somebody who merely looked at the page, but it opens
-        // no connected account and makes no external call — the provider is only touched by
-        // BeginSetupAsync. The admission key is derived from the subject, never caller-supplied.
-        var found = await _sessions.ClaimAdmissionAsync(
-            new HostedSession
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                FlowKind = PayoutAccountFlow.FlowKind,
-                ProviderKey = FiatRailIds.StripeProviderKey,
-                AdmissionKey = PayoutAccountFlow.AdmissionKeyFor(subjectUserId),
-                SubjectUserId = subjectUserId.ToString("N"),
-                State = HostedSessionStates.Claimed,
-                StateVersion = 0,
-                CreatedDate = _clock.GetUtcNow(),
-                ModifiedDate = _clock.GetUtcNow(),
-            },
-            ct);
+        var found = await _sessions.GetByAdmissionAsync(
+            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subjectUserId), ct);
 
-        if (found.IsError || found.Result is null)
+        if (found.IsError)
             return AZOAResult<string?>.Failure(found.Message);
+        if (found.Result is null)
+            return AZOAResult<string?>.Success(null, "Success");
 
         return !string.Equals(found.Result.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase)
             ? AZOAResult<string?>.Failure("The payout account for this person could not be resolved.")
             : AZOAResult<string?>.Success(found.Result.ProviderSessionId, "Success");
+    }
+
+    /// <summary>
+    /// Opens (or resumes opening) the one connected account for this claim behind the creation
+    /// fence; see <c>Services/Fiat/OffRamp/AGENTS.md</c> §account.
+    /// </summary>
+    private async Task<AZOAResult<string>> OpenAccountAsync(
+        HostedSession claimed, Guid subjectUserId, string redirectUrl, DateTimeOffset now, CancellationToken ct)
+    {
+        var turn = await FiatHostedCreation.BeginOrResumeAsync(_sessions, claimed, now, ct);
+        switch (turn.Verdict)
+        {
+            case FiatCreationVerdict.Attached:
+                return AZOAResult<string>.Success(turn.Session!.ProviderSessionId!, "Success");
+            case FiatCreationVerdict.NeedsOperator:
+                _logger.LogError(
+                    "Payout-account admission {SessionId} has an unattached creation the node can no longer replay; operator reconciliation is required.",
+                    turn.Session?.Id);
+                return AZOAResult<string>.FailureWithCode(
+                    "Your payout account setup needs a manual check before it can continue.", AzoaErrorCodes.Conflict);
+            case FiatCreationVerdict.Busy:
+                return FiatPayoutErrors.RailBusy<string>();
+        }
+
+        var session = turn.Session!;
+        var sessionId = Guid.ParseExact(session.Id, "N");
+        var created = await _connect.CreateConnectedAccountAsync(
+            _fiat.CredentialsFor(_fiat.ActiveEnvironment),
+            new StripeConnectedAccountRequest
+            {
+                SubjectUserId = subjectUserId.ToString("N"),
+                ClaimId = session.Id,
+                Country = _options.ConnectedAccountCountry,
+                IdempotencyKey = FiatHostedCreation.IdempotencyKey(IdempotencyKeyPrefix, session),
+            },
+            ct);
+
+        // The fence stays held: the next call replays the same claim-keyed create, which Stripe
+        // answers with the account it already opened (or opens the first one).
+        if (created.IsError || created.Result is null || string.IsNullOrWhiteSpace(created.Result.AccountId))
+            return AZOAResult<string>.FailureWithCode(
+                created.Message, created.Code ?? FiatPayoutErrors.PayoutBusyCode);
+
+        var accountId = created.Result.AccountId;
+        var attached = await _sessions.TryAttachProviderSessionAsync(
+            sessionId,
+            session.StateVersion,
+            accountId,
+            providerCorrelationId: null,
+            // Provenance only: the onboarding link expires within minutes and every call mints a fresh one.
+            redirectUrl,
+            expiresAt: null,
+            session.CreationToken!,
+            ct);
+        if (!attached.IsError && attached.Result is not null)
+            return AZOAResult<string>.Success(accountId, "Success");
+
+        // A concurrent replay of the same claim attached first; it can only carry this account.
+        var reread = await _sessions.GetByIdAsync(sessionId, ct);
+        if (!reread.IsError && reread.Result?.ProviderSessionId is { } winner)
+        {
+            if (string.Equals(winner, accountId, StringComparison.Ordinal))
+                return AZOAResult<string>.Success(accountId, "Success");
+            _logger.LogError(
+                "Payout-account admission {SessionId} is attached to a different account than its claim-keyed create returned.",
+                session.Id);
+        }
+
+        return FiatPayoutErrors.RailBusy<string>();
     }
 
     /// <summary>Re-reads the account with the active environment's credentials and verifies its identity.</summary>

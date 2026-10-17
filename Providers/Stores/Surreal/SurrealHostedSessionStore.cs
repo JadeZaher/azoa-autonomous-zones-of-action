@@ -228,8 +228,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         string redirectUrl, DateTimeOffset? expiresAt, string creationToken, CancellationToken ct = default)
     {
         var observed = await GetByIdAsync(id, ct);
-        if (observed.Result is null) return AZOAResult<HostedSession>.Success(null!);
-        expectedStateVersion = observed.Result.StateVersion;
+        if (observed.Result is null || observed.Result.StateVersion != expectedStateVersion)
+            return AZOAResult<HostedSession>.Success(null!);
         var query = SurrealWriter.UpdateOnly<HostedSession>(id.ToString("N"))
             .Where(row => row.StateVersion == expectedStateVersion)
             .Where(row => row.State == HostedSessionStates.Claimed && row.CreationToken == creationToken
@@ -372,9 +372,9 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         HostedSession expected, string providerSessionId, string? correlationId, SurrealQuery mutation, CancellationToken ct)
     {
         // raw: typed session CAS and provider-alias reservations must commit together; see AGENTS.md.
-        var capture = SurrealQuery.Of("LET $_attached = (" + mutation.Sql + ")").WithParams(mutation.Params);
-        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"), capture,
-            SurrealQuery.Of("IF $_attached = NONE { THROW 'HOSTED_ATTACHMENT_CHANGED' }") };
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"),
+            SurrealGeneratedStatementScope.Assign(mutation, "attach", "_attached"),
+            SurrealGeneratedStatementScope.RequireResult("_attached", "HOSTED_ATTACHMENT_CHANGED") };
         statements.AddRange(HostedSessionAliasFence.Reserve(expected, providerSessionId, correlationId));
         statements.Add(SurrealQuery.Of("RETURN $_attached"));
         statements.Add(SurrealQuery.Of("COMMIT"));

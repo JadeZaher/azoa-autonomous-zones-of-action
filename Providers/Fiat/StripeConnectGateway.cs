@@ -50,6 +50,9 @@ public sealed class StripeConnectedAccountRequest
     /// <summary>The person the account belongs to, as a compact Guid.</summary>
     public string SubjectUserId { get; init; } = string.Empty;
 
+    /// <summary>The payout-account admission row this create is fenced by; recorded for operator reconciliation.</summary>
+    public string ClaimId { get; init; } = string.Empty;
+
     /// <summary>Two-letter country the account is registered in.</summary>
     public string Country { get; init; } = "US";
 
@@ -216,6 +219,8 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
             new("capabilities[transfers][requested]", "true"),
             new("metadata[azoa_user_id]", request.SubjectUserId),
         };
+        if (!string.IsNullOrWhiteSpace(request.ClaimId))
+            form.Add(new("metadata[azoa_payout_claim]", request.ClaimId));
 
         return SendAsync(
             credentials,
