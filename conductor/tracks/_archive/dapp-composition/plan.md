@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Dapp Composition — Plan"
+tags: [dapp-composition, archived]
+---
+
 # Dapp Composition — Plan
 
 ## Tasks
@@ -10,14 +16,14 @@
 6. [x] Create `Interfaces/Managers/IDappCompositionManager.cs`.
 7. [x] Create `Managers/DappCompositionManager.cs` with series CRUD, action management, composition.
 8. [x] Implement `ComposeAsync` with 5 validation rules (AllActionsCompleted, ChainCompleteness, InputMappingConsistency, NoCircularDependencies, HolonBindingsResolved) + DappManifest emission.
-9. [x] Implement `GenerateAsync` — calls `ISTARManager.CreateOrUpdateAsync` + `GenerateAsync` with `STARDappGenerationRequest`. Spec showed `TargetChain`/`BoundHolonIds` fields on `STARODKCreateModel` that don't actually exist on the runtime API; those flow via `STARDappGenerationRequest` instead.
-10. [x] Implement `DeployAsync` — Ready-status guardrail + `ISTARManager.DeployAsync` delegation + status → Deployed.
-11. [x] Register `IDappSeriesStore` (Singleton, InMemory) + `IDappCompositionManager` (Scoped) in `Program.cs` DI. Depends on `IDappSeriesStore`, `IActionStore`, `IActionRunStore`, `IHolonStore`, `ISTARManager`.
+9. [x] Implement `GenerateAsync` — calls `IActionGraphBundleManager.CreateOrUpdateAsync` + `GenerateAsync` with `ActionGraphBundleDappGenerationRequest`. Spec showed `TargetChain`/`BoundHolonIds` fields on `ActionGraphBundleCreateModel` that don't actually exist on the runtime API; those flow via `ActionGraphBundleDappGenerationRequest` instead.
+10. [x] Implement `DeployAsync` — Ready-status guardrail + `IActionGraphBundleManager.DeployAsync` delegation + status → Deployed.
+11. [x] Register `IDappSeriesStore` (Singleton, InMemory) + `IDappCompositionManager` (Scoped) in `Program.cs` DI. Depends on `IDappSeriesStore`, `IActionStore`, `IActionRunStore`, `IHolonStore`, `IActionGraphBundleManager`.
 12. [x] Create `Controllers/DappSeriesController.cs` with series CRUD + action management endpoints (`/api/dapp-series/...`).
 13. [x] Create `Controllers/DappCompositionController.cs` with compose, validate, manifest, generate, deploy, status endpoints (`/api/dapp-series/{id}/...`).
 14. [x] ~~EF Core migration~~ — DEFERRED to surrealdb-migration wave-2.
 15. [x] Unit tests for composition validation rules — `tests/AZOA.WebAPI.Tests/DappCompositionManagerTests.cs` covers all 5 rules + status-machine guardrails + user scoping. 12 tests, all green.
-16. [x] Integration tests for full pipeline (series → compose → generate → deploy) — `tests/AZOA.WebAPI.IntegrationTests/Controllers/DappSeriesControllerIntegrationTests.cs`, 18 tests covering series CRUD, action management, compose/validate/manifest/generate/deploy/status endpoints, auth probes (401 paths), and the Swagger smoke. `ISTARManager` is not mocked; generate/deploy are exercised through their BadRequest paths (Draft → not-Ready), which proves the wiring end-to-end without requiring a real STAR backend. The success-path generate/deploy assertions are covered by `DappCompositionManagerTests` with Moq.
+16. [x] Integration tests for full pipeline (series → compose → generate → deploy) — `tests/AZOA.WebAPI.IntegrationTests/Controllers/DappSeriesControllerIntegrationTests.cs`, 18 tests covering series CRUD, action management, compose/validate/manifest/generate/deploy/status endpoints, auth probes (401 paths), and the Swagger smoke. `IActionGraphBundleManager` is not mocked; generate/deploy are exercised through their BadRequest paths (Draft → not-Ready), which proves the wiring end-to-end without requiring a real Action Graph Bundle backend. The success-path generate/deploy assertions are covered by `DappCompositionManagerTests` with Moq.
 17. [x] `dotnet build` — zero warnings.
 18. [x] Tests — **567 unit + 18 integration = 585 passing** (567/567 unit, 18/18 integration via filter).
 19. [x] Verify Swagger UI lists all dApp composition endpoints — automated via `SwaggerJson_ShouldListAllDappCompositionEndpoints` integration test (asserts all 12 routes present in `/swagger/v1/swagger.json`). Required broadening `Program.cs:527` Swagger gate to `Development` OR `IntegrationTest` env.
@@ -25,7 +31,7 @@
 ## Closeout harness fixes (2026-06-11)
 Two pre-existing infra issues blocked the integration test fleet (not just dapp-composition):
 
-1. **Factory env name mismatch.** `AZOATestWebApplicationFactory.cs:34` and `McpAuthScopingIntegrationTests.cs:88` set `UseEnvironment("Testing")`, but `Program.cs:549` skips the SurrealDB boot probe only when env is `"IntegrationTest"`. Switched both factory call sites to `"IntegrationTest"` — unblocks the entire integration test fleet (STARODK, Holon, User, ...), not just dApp tests.
+1. **Factory env name mismatch.** `AZOATestWebApplicationFactory.cs:34` and `McpAuthScopingIntegrationTests.cs:88` set `UseEnvironment("Testing")`, but `Program.cs:549` skips the SurrealDB boot probe only when env is `"IntegrationTest"`. Switched both factory call sites to `"IntegrationTest"` — unblocks the entire integration test fleet (ActionGraphBundle, Holon, User, ...), not just dApp tests.
 
 2. **Swagger middleware gate.** `Program.cs:527` only mounted Swagger in `Development` env; the integration host (now `IntegrationTest`) got 404 on `/swagger/v1/swagger.json`. Broadened to `IsDevelopment() || IsEnvironment("IntegrationTest")`. Production/Staging behavior unchanged.
 
@@ -33,7 +39,7 @@ Two pre-existing infra issues blocked the integration test fleet (not just dapp-
 
 - **Source-gen'd POCOs are canonical for new entities.** `DappSeries` + `DappSeriesAction` are emitted from `.mermaid` schemas; no hand-written models. This implements the user directive to "have POCOs being generated from the surreal package."
 - **DappManifest stays as JSON-on-row.** Persisted in `dapp_series.manifest` as string; not promoted to a separate table because it's always read whole alongside its parent series.
-- **STARODKCreateModel is the authoritative shape.** Spec text at `spec.md:179-186` shows fields (`TargetChain`, `BoundHolonIds`) on the create model that don't exist on the runtime `ISTARManager.CreateOrUpdateAsync` surface. Those fields flow via `STARDappGenerationRequest` to `GenerateAsync` instead. Spec is outdated; runtime API is the truth.
+- **ActionGraphBundleCreateModel is the authoritative shape.** Spec text at `spec.md:179-186` shows fields (`TargetChain`, `BoundHolonIds`) on the create model that don't exist on the runtime `IActionGraphBundleManager.CreateOrUpdateAsync` surface. Those fields flow via `ActionGraphBundleDappGenerationRequest` to `GenerateAsync` instead. Spec is outdated; runtime API is the truth.
 - **EF/DbContext removed from scope.** Per the in-flight surrealdb-migration wave-2 + the `greenfield-prelaunch-no-compat` project memory.
 - **User scoping enforced inside the manager.** `OwnedBy` check on every operation; returns "Forbidden" when user mismatch. Matches the spec's user-scoped access control requirement.
 - **`ActionDefinition`/`ActionNode`/`ActionRun`/`ActionDependency` name collisions** between hand-written (`Models.Actions.*`) and source-gen'd (`Generated.SurrealDb.*`) handled with `using *Def = ...` aliases inside `DappCompositionManager.cs` and its tests. Eliminated once the broader ActionDefinition aggregate cuts over to source-gen POCOs (see partial-class extension convention discussion in `tracks.md`).

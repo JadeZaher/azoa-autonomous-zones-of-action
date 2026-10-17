@@ -35,6 +35,22 @@ public sealed class AmlReviewQueueTests
     private const string Reason =
         "Date of birth and nationality both differ from the listed person.";
 
+    [Fact]
+    public async Task Review_of_an_obsolete_attempt_cannot_clear_the_current_approval()
+    {
+        var userId = Guid.NewGuid();
+        var screening = new InMemoryKycScreeningStore();
+        screening.SeedResult(userId, null, KycScreeningDecision.HIT,
+            DateTimeOffset.UtcNow.AddHours(-1), lineageKey: "review-lineage");
+        var obsolete = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW,
+            lineageKey: "obsolete-attempt");
+        var result = await NewManager(ApprovedStore(userId).Object, screening)
+            .DecideAmlReviewAsync(userId, ClearRequest(obsolete.Id), OperatorId);
+        result.IsError.Should().BeTrue();
+        result.Code.Should().Be(AzoaErrorCodes.Conflict);
+        screening.SavedResults.Should().HaveCount(2);
+    }
+
     // -- The queue ----------------------------------------------------------
 
     [Fact]
@@ -44,7 +60,7 @@ public sealed class AmlReviewQueueTests
         var screening = new InMemoryKycScreeningStore();
         var flagged = screening.SeedResult(
             userId, null, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-4));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-4), lineageKey: "review-lineage");
         var manager = NewManager(ApprovedStore(userId).Object, screening);
 
         var page = await manager.ListAmlReviewsAsync(25, null, OperatorId);
@@ -66,7 +82,7 @@ public sealed class AmlReviewQueueTests
     {
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT);
+        screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT, lineageKey: "review-lineage");
 
         var page = await NewManager(ApprovedStore(userId).Object, screening)
             .ListAmlReviewsAsync(25, null, OperatorId);
@@ -101,7 +117,7 @@ public sealed class AmlReviewQueueTests
         // them, so listing them would send an operator to a door that is not the one.
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW);
+        screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW, lineageKey: "review-lineage");
         var store = ApprovedStore(userId, expiresAt: DateTimeOffset.UtcNow.AddMinutes(-1));
 
         var page = await NewManager(store.Object, screening).ListAmlReviewsAsync(25, null, OperatorId);
@@ -115,7 +131,7 @@ public sealed class AmlReviewQueueTests
     {
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore { FailReads = true };
-        screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW);
+        screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW, lineageKey: "review-lineage");
 
         var page = await NewManager(ApprovedStore(userId).Object, screening)
             .ListAmlReviewsAsync(25, null, OperatorId);
@@ -139,7 +155,7 @@ public sealed class AmlReviewQueueTests
     {
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(userId, null, KycScreeningDecision.HIT);
+        screening.SeedResult(userId, null, KycScreeningDecision.HIT, lineageKey: "review-lineage");
         var configuration = Configure("compliance@node.example");
 
         var page = await NewManager(ApprovedStore(userId).Object, screening, configuration)
@@ -161,7 +177,7 @@ public sealed class AmlReviewQueueTests
         var screening = new InMemoryKycScreeningStore();
         var flagged = screening.SeedResult(
             userId, null, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-4));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-4), lineageKey: "review-lineage");
         var store = ApprovedStore(userId);
 
         (await NewGate(store.Object, screening).RequireVerifiedAsync(userId))
@@ -197,7 +213,7 @@ public sealed class AmlReviewQueueTests
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
         var flagged = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-1));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-1), lineageKey: "review-lineage");
         flagged.QueryFullName.Should().NotBeNull("the seeded row carries the query shape");
         flagged.TopScore = 74;
         flagged.HitCount = 3;
@@ -226,7 +242,7 @@ public sealed class AmlReviewQueueTests
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
         var flagged = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-1));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-1), lineageKey: "review-lineage");
         var store = ApprovedStore(userId);
 
         var decided = await NewManager(store.Object, screening).DecideAmlReviewAsync(
@@ -254,9 +270,9 @@ public sealed class AmlReviewQueueTests
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
         var read = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-4));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-4), lineageKey: "review-lineage");
         screening.SeedResult(userId, null, KycScreeningDecision.HIT,
-            screenedAt: DateTimeOffset.UtcNow.AddMinutes(-1));
+            screenedAt: DateTimeOffset.UtcNow.AddMinutes(-1), lineageKey: "review-lineage");
 
         var decided = await NewManager(ApprovedStore(userId).Object, screening)
             .DecideAmlReviewAsync(userId, ClearRequest(read.Id), OperatorId);
@@ -287,7 +303,7 @@ public sealed class AmlReviewQueueTests
     {
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        var clear = screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT);
+        var clear = screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT, lineageKey: "review-lineage");
 
         var decided = await NewManager(ApprovedStore(userId).Object, screening)
             .DecideAmlReviewAsync(userId, ClearRequest(clear.Id), OperatorId);
@@ -304,7 +320,7 @@ public sealed class AmlReviewQueueTests
     {
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        var flagged = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW);
+        var flagged = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW, lineageKey: "review-lineage");
 
         var decided = await NewManager(ApprovedStore(userId).Object, screening)
             .DecideAmlReviewAsync(
@@ -332,9 +348,9 @@ public sealed class AmlReviewQueueTests
         var tenantId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
         var tenantRow = screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-2));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-2), lineageKey: "review-lineage");
         screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW,
-            screenedAt: DateTimeOffset.UtcNow.AddHours(-2));
+            screenedAt: DateTimeOffset.UtcNow.AddHours(-2), lineageKey: "review-lineage");
 
         var decided = await NewManager(ApprovedStore(userId, tenantId).Object, screening)
             .DecideAmlReviewAsync(
@@ -378,7 +394,7 @@ public sealed class AmlReviewQueueTests
         // injects, so the identity is demanded here and not inherited from the route.
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        screening.SeedResult(userId, null, KycScreeningDecision.HIT);
+        screening.SeedResult(userId, null, KycScreeningDecision.HIT, lineageKey: "review-lineage");
 
         var page = await NewManager(ApprovedStore(userId).Object, screening)
             .ListAmlReviewsAsync(25, null, Guid.NewGuid());
@@ -393,7 +409,7 @@ public sealed class AmlReviewQueueTests
     {
         var userId = Guid.NewGuid();
         var screening = new InMemoryKycScreeningStore();
-        var flagged = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW);
+        var flagged = screening.SeedResult(userId, null, KycScreeningDecision.MANUAL_REVIEW, lineageKey: "review-lineage");
 
         var decided = await NewManager(ApprovedStore(userId).Object, screening)
             .DecideAmlReviewAsync(userId, ClearRequest(flagged.Id), Guid.NewGuid());
@@ -447,6 +463,7 @@ public sealed class AmlReviewQueueTests
         var submission = new KycSubmission
         {
             Id = Guid.NewGuid().ToString("N"),
+            AmlLineageKey = "review-lineage",
             UserId = userId.ToString("N"),
             TenantId = tenantId?.ToString("N"),
             Provider = KycProvider.VERIFF,

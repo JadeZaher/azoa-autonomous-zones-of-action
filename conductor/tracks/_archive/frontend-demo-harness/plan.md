@@ -1,8 +1,14 @@
+---
+type: Implementation Plan
+title: "Implementation Plan: frontend-demo-harness"
+tags: [frontend-demo-harness, archived]
+---
+
 # Implementation Plan: frontend-demo-harness
 
 ## Overview
 
-6 phases building from shadcn/ui foundation through entity pages, blockchain operations, search/STAR/workflow, a functional test dashboard, and polish. Phases 2-4 can partially overlap. Phase 5 (test dashboard) depends on all prior pages.
+6 phases building from shadcn/ui foundation through entity pages, blockchain operations, search/Action Graph Bundle/workflow, a functional test dashboard, and polish. Phases 2-4 can partially overlap. Phase 5 (test dashboard) depends on all prior pages.
 
 ---
 
@@ -14,7 +20,7 @@
   Run `npx shadcn@latest init` in frontend/. Configure: New York style, zinc base color, CSS variables enabled. Install components: button, card, input, label, dialog, table, tabs, badge, toast, separator, skeleton, dropdown-menu, sheet, command, user, scroll-area, form, select, checkbox, switch, textarea, popover, tooltip.
 
 - [ ] Task 1.2: Build dashboard layout
-  Create `app/(dashboard)/layout.tsx` with collapsible sidebar (`components/layout/sidebar.tsx`) and header (`components/layout/header.tsx`). Sidebar nav items map to all pages in the spec. Header shows: auth status (user name), chain selector dropdown (Algorand/Solana), theme toggle (dark/light). Nav list: /overview, /users, /holons, /wallets, /nfts, /user-nfts, /blockchain, /swap, /bridge, /search, /star-odk, /workflow, /settings.
+  Create `app/(dashboard)/layout.tsx` with collapsible sidebar (`components/layout/sidebar.tsx`) and header (`components/layout/header.tsx`). Sidebar nav items map to all pages in the spec. Header shows: auth status (user name), chain selector dropdown (Algorand/Solana), theme toggle (dark/light). Nav list: /overview, /users, /holons, /wallets, /nfts, /user-nfts, /blockchain, /swap, /bridge, /search, /action-graph-bundle, /workflow, /settings.
 
 - [ ] Task 1.3: Build auth pages
   Create `app/(auth)/login/page.tsx` and `app/(auth)/register/page.tsx` using shadcn form components. Wire to `useAzoaAuth()`. Redirect to dashboard on success. Show validation errors from API.
@@ -111,21 +117,21 @@
 
 ---
 
-## Phase 4: Search, STAR, Settings
+## Phase 4: Search, Action Graph Bundle, Settings
 
 **Goal:** Complete feature coverage.
 
 - [ ] Task 4.1: Search page
   - Search input with debounced query.
-  - Entity type checkboxes (User, Holon, Wallet, BlockchainOperation, STARODK).
+  - Entity type checkboxes (User, Holon, Wallet, BlockchainOperation, ActionGraphBundle).
   - Chain filter, asset type filter, date range filter.
   - Sort controls (field + direction).
   - Paginated results table with entity type badge per row.
   - Facets sidebar showing available filter values.
 
-- [ ] Task 4.2: STAR ODK page
-  - ODK list table.
-  - Create ODK form: name, description, publicKey, target chain.
+- [ ] Task 4.2: Action Graph Bundle page
+  - Bundle list table.
+  - Create bundle form: name, description, publicKey, target chain.
   - Generate dialog: bound holon selector, config options, shows generated code in code block.
   - Deploy button (stub — shows mock tx hash).
   - Delete with confirmation.
@@ -197,8 +203,8 @@
 - [ ] Task 5.5: DEX + Bridge test suite
   Tests: getSwapQuote for both chains, getBridgeRoutes, initiateBridge (trusted mode), getBridgeStatus.
 
-- [ ] Task 5.6: Search + STAR test suite
-  Tests: search with various filters, getFacets, STARODK CRUD + generate.
+- [ ] Task 5.6: Search + Action Graph Bundle test suite
+  Tests: search with various filters, getFacets, ActionGraphBundle CRUD + generate.
 
 - [ ] Task 5.7: Workflow test suite
   Tests (mirrors the 13 workflow rows in the Functional Test Matrix):
@@ -235,6 +241,6 @@
 | 1 | Foundation (shadcn/ui + layout + auth) | 1 day | No (sequential) |
 | 2 | Core entity pages (User, Holon, Wallet) | 2 days | Yes (pages independent) |
 | 3 | Blockchain ops (NFT, Swap, Bridge) | 2-3 days | Yes (pages independent) |
-| 4 | Search, STAR, Settings, Workflow | 2 days | Yes (pages independent) |
+| 4 | Search, Action Graph Bundle, Settings, Workflow | 2 days | Yes (pages independent) |
 | 5 | Functional test dashboard | 1-2 days | Depends on phases 2-4 |
 | 6 | Polish | 1 day | Yes |

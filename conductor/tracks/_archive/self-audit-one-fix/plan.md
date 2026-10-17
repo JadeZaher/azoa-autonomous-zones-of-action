@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Self Audit One Fix — Plan"
+tags: [self-audit-one-fix, archived]
+---
+
 # Self Audit One Fix — Plan
 
 Source spec: [spec.md](spec.md)  
@@ -13,7 +19,7 @@ the corresponding phase.
 |---------|-------------------|
 | 2 — Swap page | **Add typed `getSwapQuote()` / `executeSwap()` to `AzoaApiClient`** and wire the swap page to those. `SwapController` already exists (`GET /api/swap/quote`, `POST /api/swap/execute` via `ISwapManager`) — the audit's "endpoint does not exist" claim was wrong; the real gap is the missing typed SDK methods, which is why the page used a raw `request()` + a mock build. Backend dispatches to the right DEX adapter (Tinyman / Jupiter) internally, so the frontend should stay thin. |
 | 5 — Algorand msgpack | **Implement canonical msgpack encoding** (overridden 2026-06-11). Add a pure-JS msgpack library and complete `encodeAlgorandTransaction()` so native Ed25519 signing produces a submittable `encoded` payload. Removes the `encoded = undefined` hole; raw-key signing becomes real. |
-| 7 — updateSTARODK | **Add `PUT /api/starodk/:id` endpoint + matching `updateSTARODK(id, model)` SDK method** (overridden 2026-06-11). Note: existing `[HttpPost] CreateOrUpdate` at `STARODKController.cs:39` is upsert-by-id; the new PUT must reuse `_manager.CreateOrUpdateAsync` so the two routes share write semantics. SDK gains a typed `updateSTARODK` separate from `createSTARODK`. |
+| 7 — updateActionGraphBundle | **Add `PUT /api/actiongraphbundle/:id` endpoint + matching `updateActionGraphBundle(id, model)` SDK method** (overridden 2026-06-11). Note: existing `[HttpPost] CreateOrUpdate` at `ActionGraphBundleController.cs:39` is upsert-by-id; the new PUT must reuse `_manager.CreateOrUpdateAsync` so the two routes share write semantics. SDK gains a typed `updateActionGraphBundle` separate from `createActionGraphBundle`. |
 
 ---
 
@@ -36,10 +42,10 @@ Findings 1, 3, 5, 6, 7, 8.
   `AZOAResult<IEnumerable<NftResult>>` with `[FromQuery] NftQueryRequest`. Add
   `listNfts(params?: NftQueryParams)` to `sdk/azoa-wallet/src/api/client.ts`
   mirroring `NftQueryRequest`'s shape; return `Result<NftResult[], SdkError>`.
-- [ ] **Finding 7** — Confirmed: `STARODKController.CreateOrUpdate` is
-  `[HttpPost] /api/starodk` (upsert). Add `updateSTARODK(id: string, model: STARODKCreateParams)`
+- [ ] **Finding 7** — Confirmed: `ActionGraphBundleController.CreateOrUpdate` is
+  `[HttpPost] /api/actiongraphbundle` (upsert). Add `updateActionGraphBundle(id: string, model: ActionGraphBundleCreateParams)`
   alias on `AzoaApiClient` that POSTs to the same endpoint; add a doc comment
-  to `createSTARODK` clarifying upsert-by-id semantics. (No backend change.)
+  to `createActionGraphBundle` clarifying upsert-by-id semantics. (No backend change.)
 - [ ] **Finding 8** — Confirmed: `HolonController.Compose` at
   `[HttpGet("{id:guid}/compose")]` exists. The SDK path `/api/holon/${id}/compose`
   in `holon-query.ts:150` is correct — no 404. Fix is just consistency: add
@@ -84,13 +90,13 @@ Findings 2, 4, 9, 10.
 - [x] `cd sdk/azoa-wallet && pnpm build` — green (CJS + ESM + DTS).
 - [x] `cd sdk/azoa-wallet && pnpm test` — 123 passed / 7 pre-existing `assertUuid` failures in `tests/api/client.test.ts` (literal IDs `"abc"`, `"nft-guid-123"` — branch-level test debt, unrelated). 17/17 new self-audit-one-fix tests pass. 20/20 algorand-msgpack tests pass.
 - [x] `dotnet build` — green (0 errors, 44 pre-existing warnings).
-- [x] STARODK IDOR closed (PUT and POST both scope upsert by route id + authenticated user). 36 unit tests cover the closure (`STARManagerTests` + `STARODKControllerTests`).
+- [x] ActionGraphBundle IDOR closed (PUT and POST both scope upsert by route id + authenticated user). 36 unit tests cover the closure (`ActionGraphBundleManagerTests` + `ActionGraphBundleControllerTests`).
 
 ## Phase 4 — Multi-architect validation
 
 - [x] Functional completeness: **APPROVED** (all 10 findings verified file:line).
 - [x] Code quality: **APPROVED** (0 blockers; 4 nits, 3 cleaned, 1 deferred — `request<T>` arity drift).
-- [x] Security: **APPROVED after IDOR fix** (initial verdict was BLOCKED on the pre-existing STARODK IDOR; PUT widened the surface and forced the fix).
+- [x] Security: **APPROVED after IDOR fix** (initial verdict was BLOCKED on the pre-existing ActionGraphBundle IDOR; PUT widened the surface and forced the fix).
 
 ## Known follow-ups (filed separately)
 

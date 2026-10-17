@@ -8,10 +8,9 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
-using AZOA.WebAPI.Managers;
-using AZOA.WebAPI.Models.Idempotency;
-using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Blockchain;
+using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
@@ -286,7 +285,7 @@ public class PlatformReserveTests
     // ── Mint-into-reserve on the fungible-token seam (Q-X3) ───────────────────
 
     [Fact]
-    public async Task FungibleCreate_into_the_reserve_stamps_the_reserve_on_every_asa_authority()
+    public async Task FungibleAdmission_freezes_the_real_reserve_on_every_asset_authority()
     {
         var harness = ReserveHarness.WithPlatformKey();
         var mint = new FungibleMintHarness(harness);
@@ -303,18 +302,16 @@ public class PlatformReserveTests
     }
 
     [Fact]
-    public async Task FungibleCreate_into_the_reserve_opens_the_asset_ledger_row()
+    public async Task FungibleAdmission_does_not_register_an_asset_before_authoritative_confirmation()
     {
         var harness = ReserveHarness.WithPlatformKey();
         var mint = new FungibleMintHarness(harness);
-
         var created = await mint.CreateAsync();
-
-        created.Code.Should().BeNull("the ledger row was written, so there is nothing to flag");
-        var ledger = await harness.Reserve.GetLedgerAsync(Chain, created.Result!.AssetId);
-        ledger.IsError.Should().BeFalse(ledger.Message);
-        ledger.Result!.ReserveAddress.Should().Be(harness.ExpectedAddress);
-        ledger.Result.TotalSupply.Should().Be(FungibleMintHarness.TotalSupply.ToString());
+        created.IsError.Should().BeFalse(created.Message);
+        created.Result!.Operation!.State.Should().Be("AwaitingConsent");
+        created.Result.AssetId.Should().BeEmpty();
+        (await harness.Reserve.GetLedgerAsync(Chain, AssetId)).IsError.Should().BeTrue();
+        mint.VerifyNoProviderEgress();
     }
 
     [Fact]
@@ -326,8 +323,8 @@ public class PlatformReserveTests
         var created = await mint.CreateAsync();
 
         created.IsError.Should().BeTrue();
-        mint.CreateAsaCallCount.Should().Be(0, "an unresolvable reserve must refuse before any broadcast");
-        mint.FailedIdempotencyKeys.Should().ContainSingle();
+        mint.AdmissionCount.Should().Be(0);
+        mint.VerifyNoProviderEgress();
     }
 
     [Fact]
@@ -351,7 +348,7 @@ public class PlatformReserveTests
     //
     // The first pass asked the ownership question at two of the SEVEN doors that reach
     // these counters, and answered it with "no acting tenant means the operator" — which
-    // is exactly the shape a user-driven quest run arrives in (ActionNodeStepHandler
+    // is exactly the shape a user-driven action run arrives in (ActionNodeStepHandler
     // builds its context with ActingTenantId = null). The question is now asked HERE,
     // where the counter actually moves, so no door can skip it.
 
@@ -656,111 +653,22 @@ public class PlatformReserveTests
         }
     }
 
-    /// <summary>
-    /// Drives <see cref="FungibleTokenManager"/> with every dependency doubled, capturing the
-    /// five addresses handed to <c>CreateASAAsync</c> — the addresses that decide who holds
-    /// authority over a project's asset.
-    /// </summary>
     private sealed class FungibleMintHarness
     {
-        public const string CallerWalletAddress = "CALLERWALLETADDRESSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        public const long TotalSupply = 1_000_000;
-
-        private readonly FungibleTokenManager _manager;
-
+        public const string CallerWalletAddress = "caller-wallet";
+        public const ulong TotalSupply = 1_000_000;
+        private readonly FungibleAdmissionHarness _admission;
         public FungibleMintHarness(ReserveHarness harness)
-        {
-            var valueAccess = new Mock<IValueAccessService>();
-            valueAccess
-                .Setup(v => v.RequireValueAccessAsync(
-                    It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new AZOAResult<bool> { Result = true });
-
-            var wallet = new AZOA.WebAPI.Models.Wallet
-            {
-                Id = Guid.NewGuid(),
-                UserId = UserId,
-                ChainType = Chain,
-                Address = CallerWalletAddress,
-            };
-            var walletStore = new Mock<IWalletStore>();
-            walletStore
-                .Setup(s => s.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new IWallet[] { wallet } });
-
-            var asa = new Mock<IAlgorandASAModule>();
-            asa.Setup(m => m.CreateASAAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ulong>(), It.IsAny<int>(),
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<string>(), It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new AZOAResult<string> { Result = AssetId })
-                .Callback<string, string, ulong, int, string, string, string, string, string,
-                    SigningContext, CancellationToken>(
-                    (_, _, _, _, manager, reserve, freeze, clawback, creator, _, _) =>
-                    {
-                        CreateAsaCallCount++;
-                        CapturedManagerAddress = manager;
-                        CapturedReserveAddress = reserve;
-                        CapturedFreezeAddress = freeze;
-                        CapturedClawbackAddress = clawback;
-                        CapturedCreatorAddress = creator;
-                    });
-
-            IAlgorandASAModule? asaModule = asa.Object;
-            var provider = new Mock<IBlockchainProvider>();
-            provider.Setup(p => p.TryGetModule(out asaModule)).Returns(true);
-
-            var factory = new Mock<IBlockchainProviderFactory>();
-            factory.SetupGet(f => f.DefaultNetwork).Returns(ChainNetwork.Devnet);
-            factory.Setup(f => f.GetProvider(It.IsAny<string>(), It.IsAny<ChainNetwork>()))
-                .Returns(provider.Object);
-
-            var idempotency = new Mock<IIdempotencyStore>();
-            idempotency
-                .Setup(s => s.TryClaimAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new IdempotencyClaim(true, new IdempotencyRecord()));
-            idempotency
-                .Setup(s => s.FailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Callback<string, string, CancellationToken>((key, _, _) => FailedIdempotencyKeys.Add(key))
-                .Returns(Task.CompletedTask);
-            idempotency
-                .Setup(s => s.CompleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-
-            _manager = new FungibleTokenManager(
-                valueAccess.Object,
-                new Mock<IWalletManager>().Object,
-                walletStore.Object,
-                factory.Object,
-                idempotency.Object,
-                harness.Reserve,
-                harness.Options);
-        }
-
-        public static Guid UserId { get; } = Guid.NewGuid();
-
-        public int CreateAsaCallCount { get; private set; }
-        public string? CapturedManagerAddress { get; private set; }
-        public string? CapturedReserveAddress { get; private set; }
-        public string? CapturedFreezeAddress { get; private set; }
-        public string? CapturedClawbackAddress { get; private set; }
-        public string? CapturedCreatorAddress { get; private set; }
-        public List<string> FailedIdempotencyKeys { get; } = new();
-
-        public Task<AZOAResult<FungibleTokenResult>> CreateAsync() =>
-            _manager.CreateAsync(
-                UserId,
-                new FungibleTokenCreateRequest
-                {
-                    ChainType = Chain,
-                    Name = "Project Units",
-                    UnitName = "PU",
-                    Total = TotalSupply,
-                    Decimals = 2,
-                },
-                UserId,
-                clientIdempotencyKey: null,
-                apiKeyId: "api-key-1");
+            => _admission = new(harness.Options.FungibleMintTarget, reserve: harness.Reserve);
+        private FungibleCreationIntent? Intent => _admission.Commands.Values.SingleOrDefault()?.Intent;
+        public int AdmissionCount => _admission.Commands.Count;
+        public string? CapturedManagerAddress => Intent?.ManagerAddress;
+        public string? CapturedReserveAddress => Intent?.ReserveAddress;
+        public string? CapturedFreezeAddress => Intent?.FreezeAddress;
+        public string? CapturedClawbackAddress => Intent?.ClawbackAddress;
+        public string? CapturedCreatorAddress => Intent?.CreatorAddress;
+        public Task<AZOAResult<FungibleTokenResult>> CreateAsync() => _admission.AdmitAsync(_admission.Request(TotalSupply));
+        public void VerifyNoProviderEgress() => _admission.Module.VerifyNoOtherCalls();
     }
 
     /// <summary>

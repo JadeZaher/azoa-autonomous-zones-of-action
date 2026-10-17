@@ -1,151 +1,118 @@
-using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
-using SurrealForge.Client.Schema;
-using AZOA.WebAPI.Core.Surreal;
+using SurrealForge.Client.Idempotency;
+using AZOA.WebAPI.Core.Webhooks;
+using AZOA.WebAPI.Services.Webhooks;
+using Row = AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistration;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
-/// <summary>
-/// SurrealDB-backed <see cref="IWebhookRegistrationStore"/> (tenant-consent-delegation
-/// §4, AC7). Inline-POCO style of <see cref="SurrealConsentGrantStore"/>: Guid("N")
-/// lowercase-hex record ids, a record-link column for the tenant. Tenant-scoped — every
-/// read/write is keyed by the tenant's own id (H5 — strict per-tenant isolation). One
-/// active registration per tenant for v1 (the unique <c>tenant_id</c> index enforces it
-/// at the schema level).
-///
-/// <para><b>No-throw.</b> Every method captures exceptions into an
-/// <see cref="AZOAResult{T}"/> rather than throwing.</para>
-/// </summary>
-public sealed class SurrealWebhookRegistrationStore : IWebhookRegistrationStore
+public sealed partial class SurrealWebhookRegistrationStore(ISurrealExecutor executor, WebhookSecretProtector secrets,
+    WebhookSsrfGuard urls) : IWebhookRegistrationStore
 {
-    private const string Table = "webhook_registration";
-
-    private readonly ISurrealExecutor _executor;
-
-    public SurrealWebhookRegistrationStore(ISurrealExecutor executor)
-    {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
-    }
-
+    /// <inheritdoc/>
     public async Task<AZOAResult<WebhookRegistration>> UpsertAsync(WebhookRegistration registration, CancellationToken ct = default)
     {
-        try
+        if (registration.Id == Guid.Empty || registration.TenantId == Guid.Empty || !urls.IsAllowed(registration.Url, out _))
+            return new() { IsError = true, Message = "A tenant, registration identity and permitted HTTPS destination are required." };
+        if (!string.IsNullOrEmpty(registration.Secret) && (string.IsNullOrWhiteSpace(registration.Secret)
+            || registration.Secret.Length is < 32 or > 512))
+            return new() { IsError = true, Message = "Webhook secrets must contain 32 to 512 characters." };
+        var current = await ReadAsync(registration.TenantId, ct);
+        if (current is not null && IsLegacy(current))
+            return new() { IsError = true, Message = "Legacy registration requires explicit replacement before use." };
+        if (current is not null && (SurrealRecordGuid.Parse(current.Id) != registration.Id
+            || current.Version != registration.Version))
+            return new() { IsError = true, Message = "Registration changed; reload before updating." };
+        if (current is null && registration.Version != 0)
+            return new() { IsError = true, Message = "Registration no longer exists." };
+        var secretRevision = current?.SecretRevision ?? 1;
+        var encrypted = current?.EncryptedSecret;
+        if (!string.IsNullOrEmpty(registration.Secret))
         {
-            if (registration.Id == Guid.Empty) registration.Id = Guid.NewGuid();
-            var poco = FromDomain(registration);
-            var q = SurrealWriter.Upsert(poco);
-            var resp = await _executor.ExecuteAsync(q, ct);
-            resp.EnsureAllOk();
-            var saved = resp.GetValues<WebhookRegistrationPoco>(0).FirstOrDefault();
-            return new AZOAResult<WebhookRegistration>
+            if (current is not null) secretRevision++;
+            encrypted = secrets.Protect(registration.TenantId, registration.Id, secretRevision, registration.Secret);
+        }
+        if (string.IsNullOrEmpty(encrypted))
+            return new() { IsError = true, Message = "A new registration requires a secret." };
+        var row = new Row
+        {
+            Id = registration.Id.ToString("N"), TenantId = SurrealLink.ToLink("user", registration.TenantId.ToString("N"))!,
+            Url = registration.Url, EncryptedSecret = encrypted, Version = (current?.Version ?? 0) + 1,
+            DestinationRevision = current is null ? 1 : current.DestinationRevision + (current.Url == registration.Url ? 0 : 1),
+            SecretRevision = secretRevision, IsActive = registration.IsActive,
+            SecretRotatedAt = current is not null && secretRevision != current.SecretRevision ? DateTimeOffset.UtcNow : current?.SecretRotatedAt,
+            CreatedAt = current?.CreatedAt ?? DateTimeOffset.UtcNow,
+        };
+        if (current is null)
+        {
+            try
             {
-                Result = saved is not null ? ToDomain(saved) : registration,
-                Message = "Saved.",
-            };
+                var create = SurrealWriter.Create(row);
+                var created = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+                {
+                    var response = await executor.ExecuteAsync(create, ct);
+                    response.EnsureAllOk();
+                    return response;
+                }, ct);
+                return new() { Result = ToDomain(created.GetValues<Row>(0).Single()) };
+            }
+            catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
+            {
+                return new() { IsError = true, Message = "Registration was created concurrently; reload." };
+            }
         }
-        catch (Exception ex)
+        var update = SurrealWriter.UpdateOnly<Row>(row.Id).Where(item => item.Version == current.Version && item.TenantId == current.TenantId)
+            .Set(item => item.Url, row.Url).Set(item => item.EncryptedSecret, row.EncryptedSecret)
+            .Set(item => item.Version, row.Version).Set(item => item.DestinationRevision, row.DestinationRevision)
+            .Set(item => item.SecretRevision, row.SecretRevision).Set(item => item.IsActive, row.IsActive);
+        update = row.SecretRotatedAt is null ? update.Unset(item => item.SecretRotatedAt) : update.Set(item => item.SecretRotatedAt, row.SecretRotatedAt);
+        var mutation = update.Build();
+        var result = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
-            return new AZOAResult<WebhookRegistration>().CaptureException(ex, $"SurrealWebhookRegistrationStore.UpsertAsync failed: {ex.Message}");
-        }
+            var response = await executor.ExecuteAsync(mutation, ct);
+            response.EnsureAllOk();
+            return response;
+        }, ct);
+        var saved = result.GetValues<Row>(0).SingleOrDefault();
+        return saved is null ? new() { IsError = true, Message = "Registration changed; reload before updating." } : new() { Result = ToDomain(saved) };
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<WebhookRegistration>> GetByTenantAsync(Guid tenantId, CancellationToken ct = default)
     {
-        try
-        {
-            // Tenant-scoped lookup — keyed by the tenant's own id. There is no way to
-            // read another tenant's registration through this seam (H5).
-            var q = SurrealQuery
-                .Of("SELECT * FROM webhook_registration WHERE tenant_id = $_tenant LIMIT 1")
-                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)));
-            var row = await _executor.QuerySingleAsync<WebhookRegistrationPoco>(q, ct);
-            return new AZOAResult<WebhookRegistration>
-            {
-                Result = row is null ? null : ToDomain(row),
-                Message = row is null ? "No registration." : "Success",
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<WebhookRegistration>().CaptureException(ex, $"SurrealWebhookRegistrationStore.GetByTenantAsync failed: {ex.Message}");
-        }
+        var row = await ReadAsync(tenantId, ct);
+        return new() { Result = row is null ? null : ToDomain(row) };
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> RotateSecretAsync(Guid tenantId, string newSecret, DateTime now, CancellationToken ct = default)
     {
-        try
-        {
-            var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
-            // Tenant-scoped conditional UPDATE — only the tenant's own row is touched.
-            // A rotation re-keys all SUBSEQUENT deliveries; in-flight retries pick up
-            // the new secret on their next attempt (the worker reloads per delivery).
-            var q = SurrealQuery
-                .Of("UPDATE webhook_registration SET secret = $_secret, secret_rotated_at = $_now WHERE tenant_id = $_tenant RETURN AFTER")
-                .WithParam("_secret", newSecret)
-                .WithParam("_now", nowUtc)
-                .WithParam("_tenant", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId)));
-
-            var resp = await _executor.ExecuteAsync(q, ct);
-            if (resp.Count == 0 || !resp[0].IsOk)
-                return new AZOAResult<bool> { Result = false, Message = "No-op." };
-            return new AZOAResult<bool> { Result = resp[0].AffectedCount() == 1, Message = "Success" };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<bool>().CaptureException(ex, $"SurrealWebhookRegistrationStore.RotateSecretAsync failed: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(newSecret) || newSecret.Length is < 32 or > 512)
+            return new() { IsError = true, Message = "Webhook secrets must contain 32 to 512 characters." };
+        var current = await GetByTenantAsync(tenantId, ct);
+        if (current.Result is null) return new() { Result = false };
+        current.Result.Secret = newSecret;
+        var result = await UpsertAsync(current.Result, ct);
+        return new() { Result = !result.IsError, IsError = result.IsError, Message = result.Message };
     }
 
-    // ── Mapping ────────────────────────────────────────────────────────────────
-
-
-    private static WebhookRegistrationPoco FromDomain(WebhookRegistration r) => new()
+    private Task<Row?> ReadAsync(Guid tenantId, CancellationToken ct)
     {
-        Id              = SurrealId.ToSurrealId(r.Id),
-        TenantId        = SurrealLink.ToLink("user", SurrealId.ToSurrealId(r.TenantId)) ?? string.Empty,
-        Url             = r.Url ?? string.Empty,
-        Secret          = r.Secret ?? string.Empty,
-        SecretRotatedAt = r.SecretRotatedAt.HasValue
-                          ? new DateTimeOffset(DateTime.SpecifyKind(r.SecretRotatedAt.Value, DateTimeKind.Utc))
-                          : null,
-        IsActive        = r.IsActive,
-        CreatedAt       = new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt, DateTimeKind.Utc)),
+        var tenant = SurrealLink.ToLink("user", tenantId.ToString("N"))!;
+        return executor.QuerySingleAsync<Row>(SurrealQuery<Row>.From().Where(row => row.TenantId == tenant).Limit(1), ct);
+    }
+
+    private WebhookRegistration ToDomain(Row row) => new()
+    {
+        Id = SurrealRecordGuid.Parse(row.Id),
+        TenantId = SurrealRecordGuid.Parse(row.TenantId),
+        LegacyFingerprint = IsLegacy(row) ? LegacyFingerprint(row) : null,
+        Url = row.Url, EncryptedSecret = row.EncryptedSecret, Version = row.Version,
+        DestinationRevision = row.DestinationRevision, SecretRevision = row.SecretRevision,
+        SecretRotatedAt = row.SecretRotatedAt?.UtcDateTime, IsActive = row.IsActive, CreatedAt = row.CreatedAt.UtcDateTime,
     };
-
-    private static WebhookRegistration ToDomain(WebhookRegistrationPoco p) => new()
-    {
-        Id              = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
-        TenantId        = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
-        Url             = p.Url ?? string.Empty,
-        Secret          = p.Secret ?? string.Empty,
-        SecretRotatedAt = p.SecretRotatedAt?.UtcDateTime,
-        IsActive        = p.IsActive,
-        CreatedAt       = p.CreatedAt.UtcDateTime,
-    };
-
-    private static string StripIdPrefix(string raw)
-    {
-        if (string.IsNullOrEmpty(raw)) return raw;
-        var colon = raw.IndexOf(':');
-        return colon >= 0 && colon < raw.Length - 1 ? raw[(colon + 1)..] : raw;
-    }
-
-    // ── POCO (private; inline until source-gen catches up) ─────────────────────
-
-    private sealed class WebhookRegistrationPoco : SurrealForge.Client.ISurrealRecord
-    {
-        public string SchemaName => Table;
-
-        [JsonPropertyName("id")]                public string Id { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))] [JsonPropertyName("tenant_id")]         public string TenantId { get; set; } = string.Empty;
-        [JsonPropertyName("url")]               public string Url { get; set; } = string.Empty;
-        [JsonPropertyName("secret")]            public string Secret { get; set; } = string.Empty;
-        [JsonPropertyName("secret_rotated_at")] public DateTimeOffset? SecretRotatedAt { get; set; }
-        [JsonPropertyName("is_active")]         public bool IsActive { get; set; }
-        [JsonPropertyName("created_at")]        public DateTimeOffset CreatedAt { get; set; }
-    }
 }

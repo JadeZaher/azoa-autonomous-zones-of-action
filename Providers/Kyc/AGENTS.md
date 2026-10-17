@@ -18,8 +18,8 @@ Hosted adapters return non-sensitive session/redirect metadata from `Begin`; no
 provider credentials belong in that response. Note that the tenant projection does
 NOT omit `ProviderSessionId` — `KycManager.ToSessionStart` copies that field
 straight through — so an adapter must place an AZOA-side correlation id there and
-keep the vendor's session id server-side. The Veriff adapter remains an explicit
-unavailable stub until a reviewed integration exists.
+keep the vendor's session id server-side. Veriff and the versioned generic adapter
+use the same durable admission and authoritative-outcome flow as Identomat.
 
 Provider selection is strict: `manual`, `veriff`, `hosted`/`generic-hosted`, and
 `identomat` are the only registered keys. Any other `Kyc:Provider` selects
@@ -89,16 +89,15 @@ monitoring polls at once — they are one budget, and exceeding it bans the node
 for an hour, taking the node's own KYC offline. An observed HTTP 529 opens a
 circuit for the configured cooldown.
 
-`GenericHostedKycProviderService` is an operator-configurable, unavailable
-scaffold. Even complete configuration does not advertise availability. A real
-adapter must first add a durable, idempotent verification-attempt record,
-persist the hosted session before returning a redirect, verify signed webhook
-headers over the raw body, deduplicate provider event ids, map events to the
-attempt/user, and CAS terminal status. Until that lifecycle exists the stub
-prevents the current begin/submit shapes from creating two provider sessions.
+`GenericHostedKycProviderService` implements the explicit version-one protocol in
+`conductor/tracks/platform-stub-closeout_20261015/round2-generic-hosted-protocol.md`.
+Fixed endpoints, exact persisted request bytes, permanent idempotency and an
+authoritative attempt lookup are required vendor capabilities. Old configurable
+session/status paths are removed. Setting credentials alone does not activate the
+adapter: protocol version, origins, return URL and callback key ID are required.
 
 Only `MANUAL` submissions may be decided by Azoa operator approve/reject.
-External providers must decide through their future verified-event path. An
+External providers decide through authenticated triggers and authoritative refetch. An
 expired approval is not verified and expired active submissions can be replaced.
 Submission plus document rows are created in one Surreal transaction.
 
@@ -114,5 +113,40 @@ pending attempt with secret-bearing provider correlation kept server-side and
 returns only safe flow metadata. An unexpired attempt is resumed; rejection or
 expiry allows the node to create the next attempt while the tenant keeps one
 stable idempotency key forever. Manual approval is refused until documents have
-been atomically attached. Hosted providers remain disabled because their future
-adapter must claim durable admission before making an external create call.
+been atomically attached. Hosted providers persist their request and claim durable
+admission before making an external create call.
+
+## Veriff and generic recovery
+
+`HostedProviderAttempt` stores normalized request bytes, digest, profile, policy,
+subject, tenant and original origin before any egress. Generic recovery first
+looks up the original attempt and replays exactly those bytes under the same key
+only on a documented linearizable 404. Return-URL changes do not reconstruct a
+different body. Current profile/policy authority is checked before replay, with
+the same database attempt/tenant fences as initial creation.
+
+Veriff uses its documented v1 session and decision endpoints, X-AUTH-CLIENT and
+HMAC response authentication. Its API does not document permanent create
+idempotency or a lookup by AZOA attempt. An ambiguous POST is never repeated.
+A signed callback or operator-supplied UUID can trigger an authoritative decision
+fetch; terminal decision correlation must match both vendorData and endUserId.
+The recovered terminal session uses the original application return URL with an
+expired redirect lifetime, because the lost vendor resume URL cannot be invented.
+Null/pending decision responses cannot establish lost-session ownership.
+
+Callbacks are bounded strict UTF-8 JSON with duplicate fields rejected. Receipts
+store only event identity and body hash. Generic callback key IDs select the
+current key or an explicitly retired key with at most 24 hours of grace; a
+five-minute timestamp window still applies. First terminal decision identity and
+evidence digest are pinned before domain effects. Conflicting terminal evidence
+blocks later completion; an already accepted outcome is not silently reversed.
+Provider-neutral person keys and the shared AML/one-person gates are preserved.
+
+Configure Veriff with VeriffApiKey, VeriffSharedSecret, VeriffBaseUrl,
+VeriffReturnUrl and allowed VeriffRedirectOrigins; register
+`/api/kyc/callback/veriff` at the vendor. Generic v1 uses Hosted.ProtocolVersion,
+ProviderName, BaseUrl, ApiKey, WebhookSecret, WebhookKeyId, ReturnUrl,
+RedirectOrigins and optional bounded RetiredWebhookKeys; callbacks target
+`/api/kyc/callback/generic-hosted`. Credentials stay in deployment configuration.
+Source implementation and local synthetic HTTP fixtures do not establish vendor
+dashboard activation or live verification evidence.

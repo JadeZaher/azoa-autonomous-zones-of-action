@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Action API — Plan"
+tags: [action-api, archived]
+---
+
 # Action API — Plan
 
 ## Tasks
@@ -15,7 +21,7 @@
 11. [ ] Implement `ExecuteNextAsync` — topological order, find next ready node(s), dispatch
 12. [ ] Implement `InstantiateFromTemplateAsync` — parameterized action creation
 13. [ ] Implement `CreateNodeTemplateAsync` / `CreateActionTemplateAsync`
-14. [ ] Register `ActionManager` in `Program.cs` DI with all injected managers: `IHolonManager`, `INftManager`, `IWalletManager`, `ISTARManager`, `ISearchManager`, `IUserNFTService`, `IBlockchainOperationManager`
+14. [ ] Register `ActionManager` in `Program.cs` DI with all injected managers: `IHolonManager`, `INftManager`, `IWalletManager`, `IActionGraphBundleManager`, `ISearchManager`, `IUserNFTService`, `IBlockchainOperationManager`
 15. [ ] Create `Controllers/ActionController.cs` — CRUD + template instantiation, `[Authorize]`, `GetUserIdFromClaims()`
 16. [ ] Create `Controllers/ActionNodesController.cs` — node/edge/dependency endpoints
 17. [ ] Create `Controllers/ActionExecutionController.cs` — activate, execute-next, execute-node, complete, fail, execution-state

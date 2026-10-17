@@ -11,6 +11,7 @@ using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Reserve;
+using AZOA.WebAPI.Services.Signing;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -39,16 +40,20 @@ public sealed class ExchangeController : ControllerBase
 
     private readonly IReserveExchangeManager _exchange;
     private readonly ITenantConsentGate? _consentGate;
+    private readonly SigningAdmissionAuthorityFactory? _signing;
 
     /// <param name="consentGate">
     /// The live consent check (registered in <c>Program.cs</c>). Optional only so the type still
     /// constructs without a container; a request that reaches the exchange with no gate is
     /// REFUSED, never waved through.
     /// </param>
-    public ExchangeController(IReserveExchangeManager exchange, ITenantConsentGate? consentGate = null)
+    /// <param name="signing">Captures the authenticated API-key credential an effectful exchange is journaled under.</param>
+    public ExchangeController(IReserveExchangeManager exchange, ITenantConsentGate? consentGate = null,
+        SigningAdmissionAuthorityFactory? signing = null)
     {
         _exchange = exchange ?? throw new ArgumentNullException(nameof(exchange));
         _consentGate = consentGate;
+        _signing = signing;
     }
 
     /// <summary>
@@ -76,13 +81,33 @@ public sealed class ExchangeController : ControllerBase
 
         var caller = identity.Caller!;
 
-        // A preview claims nothing and moves nothing, so it is exempt from the consent check
-        // for a signature it will never make. Everything that DOES move is gated below.
-        if (!request.PreviewOnly)
+        // A plain preview claims nothing and moves nothing, so it is exempt from the consent check.
+        // A preview carrying a release mandate discloses the participant's wallet and readiness, so it is gated.
+        if (!request.PreviewOnly || request.ReleaseMandate is not null)
         {
             var consentRefusal = await RequireLiveConsentAsync(userId, caller.ActingTenantId, ct);
             if (consentRefusal is not null)
                 return consentRefusal;
+        }
+
+        if (!request.PreviewOnly)
+        {
+            var captured = _signing is null ? null : await _signing.CaptureCredentialAsync(User, ct);
+            if (captured is null || captured.IsError || captured.Result is null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, AZOAResult<ExchangeReceipt>.FailureWithCode(
+                    "The authenticated API-key credential could not be captured.", AzoaErrorCodes.Forbidden));
+            }
+
+            caller = new ExchangeCallerContext
+            {
+                ApiKeyId = caller.ApiKeyId,
+                CallerUserId = caller.CallerUserId,
+                ActingTenantId = caller.ActingTenantId,
+                TargetUserId = caller.TargetUserId,
+                ClientIdempotencyKey = caller.ClientIdempotencyKey,
+                Credential = captured.Result,
+            };
         }
 
         var result = await _exchange.ExchangeAsync(request, caller, ct);

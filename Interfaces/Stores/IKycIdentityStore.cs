@@ -20,6 +20,11 @@ public interface IKycIdentityStore
         KycIdentity candidate,
         CancellationToken ct = default);
 
+    /// <summary>Binds only while the exact KYC attempt and hosted lease remain current in the same transaction.</summary>
+    Task<AZOAResult<KycIdentity>> BindVerifiedUserAsync(
+        KycIdentity candidate, KycSubmission expected, HostedSession lease,
+        CancellationToken ct = default);
+
     /// <summary>Looks a binding up by uniqueness scope and person key.</summary>
     Task<AZOAResult<KycIdentity>> GetByPersonKeyAsync(
         string tenantScope,

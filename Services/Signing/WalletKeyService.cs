@@ -28,6 +28,9 @@ public class WalletKeyService
                      ?? throw new InvalidOperationException(
                          "AZOA:WalletEncryptionKey is required for platform wallet generation.");
 
+        if (string.IsNullOrWhiteSpace(secret))
+            throw new InvalidOperationException("AZOA:WalletEncryptionKey cannot be empty.");
+
         // Derive a 256-bit key from the secret using SHA-256
         _encryptionKey = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret));
     }
@@ -57,6 +60,16 @@ public class WalletKeyService
         var generated = GenerateAlgorandKeypair(includeSeedPhrase: false);
         return (generated.publicKey, generated.privateKeyHex, generated.address);
     }
+
+    /// <summary>Authenticates a purpose-qualified secret envelope without exposing its contents.</summary>
+    public string FingerprintSecretEnvelope(string envelope)
+        => Convert.ToHexString(HMACSHA256.HashData(_encryptionKey, System.Text.Encoding.UTF8.GetBytes(envelope))).ToLowerInvariant();
+
+    /// <summary>Encrypt an authenticated application secret envelope with the platform key.</summary>
+    public string EncryptSecretEnvelope(string envelope) => AesGcmEncrypt(envelope);
+
+    /// <summary>Decrypt an application secret envelope; the caller must validate its purpose and identity.</summary>
+    public string DecryptSecretEnvelope(string encryptedEnvelope) => AesGcmDecrypt(encryptedEnvelope);
 
     /// <summary>Encrypt a private key hex string for storage.</summary>
     public string EncryptPrivateKey(string privateKeyHex)
@@ -122,8 +135,8 @@ public class WalletKeyService
         var privateKeyBytes = account.KeyPair.ClearTextPrivateKey;
         var publicKeyBytes = account.KeyPair.ClearTextPublicKey;
 
-        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes);
-        var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
+        var privateKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(privateKeyBytes);
+        var publicKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(publicKeyBytes);
         var address = account.Address.EncodeAsString();   // real SHA-512/256 checksum + base32
         var seedPhrase = includeSeedPhrase ? account.ToMnemonic() : null;
 
@@ -147,8 +160,8 @@ public class WalletKeyService
         var secretBytes = account.PrivateKey.KeyBytes;   // 64 bytes
         var publicKeyBytes = account.PublicKey.KeyBytes; // 32 bytes
 
-        var privateKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(secretBytes);
-        var publicKeyHex = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(publicKeyBytes);
+        var privateKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(secretBytes);
+        var publicKeyHex = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(publicKeyBytes);
         var address = account.PublicKey.Key;             // real base58-encoded public key
         var seedPhrase = mnemonic.ToString();            // restorable 12-word BIP39 mnemonic
 
@@ -188,8 +201,8 @@ public class WalletKeyService
             // referenced package provides. Null is the honest answer — the phrase this
             // used to return restored nothing AND leaked scalar bytes (each word was an
             // index over the key). See Services/Signing/AGENTS.md §ethereum-derivation.
-            return (AZOA.WebAPI.Helpers.Encoding.ToLowerHex(uncompressedPublicKey),
-                    AZOA.WebAPI.Helpers.Encoding.ToLowerHex(privateKeyBytes),
+            return (AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(uncompressedPublicKey),
+                    AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(privateKeyBytes),
                     address,
                     null);
         }
@@ -241,7 +254,7 @@ public class WalletKeyService
         Array.Copy(tag, 0, result, 12, 16);
         Array.Copy(ciphertext, 0, result, 28, ciphertext.Length);
 
-        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(result);
+        return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(result);
     }
 
     private string AesGcmDecrypt(string encryptedHex)

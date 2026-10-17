@@ -1,19 +1,5 @@
-// ─── DI registration (orchestrator applies to Program.cs — do NOT edit here) ───
-//
-//   builder.Services.AddScoped<IWalletAuthManager, WalletAuthManager>();
-//
-// Depends on (all already registered, or registered by the sibling store/verifier
-// comment blocks in this track):
-//   - IWalletAuthChallengeStore   → SurrealWalletAuthChallengeStore (Scoped)
-//   - IWalletAuthClaimTokenStore  → SurrealWalletAuthClaimTokenStore (Scoped)
-//   - IUserStore                → SurrealUserStore (Scoped, already wired)
-//   - IWalletSignatureVerifier    → Ed25519SignatureVerifier (Singleton)
-//   - IConfiguration              → ambient
-// Scoped lifetime matches UserManager/TenantManager. Register near them.
-
 using System.Security.Cryptography;
 using System.Text;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -23,61 +9,21 @@ using AZOA.WebAPI.Services.Admin;
 
 namespace AZOA.WebAPI.Managers;
 
-/// <summary>
-/// Wallet-challenge authentication + claim orchestration (user-sovereign-identity §1/§2).
-///
-/// <para><b>The no-TOCTOU verify pipeline (AC1).</b> Verify resolves the live challenge
-/// for <c>(address, chainType)</c>, ATOMICALLY consumes the nonce
-/// (<see cref="IWalletAuthChallengeStore.TryConsumeAsync"/>), and only AFTER a winning
-/// consume checks the ed25519 signature over the stored domain message. A spent nonce
-/// can never be re-presented; a losing concurrent verify gets <c>false</c> from the
-/// consume and fails. A bad signature still leaves the nonce consumed — single-use even
-/// on failure is safe and prevents grind-on-one-nonce attacks.</para>
-///
-/// <para><b>Domain separation (AC1b).</b> The signed message is the server-stored
-/// <see cref="WalletAuthChallenge.DomainMessage"/> — a fixed prefix
-/// (<see cref="DomainPrefix"/>) + issuer/audience + chainType + address + nonce +
-/// expiry. A client-supplied echo is accepted ONLY as an exact-equality cross-check;
-/// any mismatch rejects. This blocks cross-chain / cross-address / cross-instance /
-/// cross-app replay.</para>
-///
-/// <para><b>Create-or-login ONLY (AC2/AC2b).</b> A never-seen wallet mints a NEW
-/// self-owned user (<c>OwnerTenantId == null</c>); a wallet-bound address logs into
-/// THAT user. It NEVER matches on email/username/externalUserId, so an
-/// unauthenticated verify can never take over an account created another way. Linking a
-/// wallet to an existing account is the separate, authenticated
-/// <see cref="LinkWalletAsync"/>.</para>
-///
-/// <para><b>JWT primitive.</b> Delegates to
-/// <see cref="AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer"/> — the same shared
-/// mint <see cref="AZOA.WebAPI.Managers.UserManager"/> uses — so the verify result
-/// carries the identical claim set (including <c>dapp_role</c>/<c>scope</c>) and is
-/// indistinguishable from a password login downstream. This used to be a hand-copied
-/// mirror of <c>UserManager.GenerateJwt</c> that drifted; see
-/// <see cref="GenerateLoginJwt"/>.</para>
-/// </summary>
+/// <inheritdoc/>
 public sealed class WalletAuthManager : IWalletAuthManager
 {
-    /// <summary>Domain-separation prefix baked into every signed message (AC1b, C4).</summary>
     private const string DomainPrefix = "AZOA-AUTH-v1";
 
-    /// <summary>Challenge TTL ceiling (AC1: ≤5 min).</summary>
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(5);
 
-    /// <summary>Claim-invite token TTL (short-lived, AC4).</summary>
     private static readonly TimeSpan ClaimTokenLifetime = TimeSpan.FromMinutes(15);
 
-    /// <summary>
-    /// Per-(address, chainType) live-challenge cap (H1). Bounds nonce-flooding /
-    /// storage-exhaustion above the per-IP rate limiter on the controller.
-    /// </summary>
     private const int MaxLiveChallengesPerAddress = 5;
 
     private readonly IWalletAuthChallengeStore _challenges;
     private readonly IWalletAuthClaimTokenStore _claimTokens;
     private readonly IUserStore _userStore;
     private readonly IWalletSignatureVerifier _signatureVerifier;
-    private readonly IConsentGrantStore _consentGrants;
     private readonly IConfiguration _config;
 
     public WalletAuthManager(
@@ -85,39 +31,34 @@ public sealed class WalletAuthManager : IWalletAuthManager
         IWalletAuthClaimTokenStore claimTokens,
         IUserStore userStore,
         IWalletSignatureVerifier signatureVerifier,
-        IConsentGrantStore consentGrants,
         IConfiguration config)
     {
         _challenges = challenges ?? throw new ArgumentNullException(nameof(challenges));
         _claimTokens = claimTokens ?? throw new ArgumentNullException(nameof(claimTokens));
         _userStore = userStore ?? throw new ArgumentNullException(nameof(userStore));
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
-        _consentGrants = consentGrants ?? throw new ArgumentNullException(nameof(consentGrants));
         _config = config ?? throw new ArgumentNullException(nameof(config));
     }
 
-    // ── AC1/AC1b: challenge issuance ──────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<WalletChallengeResponse>> CreateChallengeAsync(
         string address, string chainType, CancellationToken ct = default)
     {
         var result = new AZOAResult<WalletChallengeResponse>();
 
-        var addr = (address ?? string.Empty).Trim();
-        var chain = ChainNames.NormalizeChain(chainType);
-        if (string.IsNullOrWhiteSpace(addr) || string.IsNullOrWhiteSpace(chain))
+        if (!AZOA.WebAPI.Helpers.WalletAuthIdentity.TryCreate(address, chainType, out var addr, out var chain))
         {
             result.IsError = true;
             result.Message = "address and chainType are required.";
             return result;
         }
 
-        var now = DateTime.UtcNow;
+        var now = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).UtcDateTime;
 
-        // H1: per-address live-challenge cap (the per-IP limiter lives on the
-        // controller). A flood of unconsumed nonces for one address is rejected.
         var liveCount = await _challenges.CountLiveByAddressAsync(addr, chain, now, ct);
-        if (!liveCount.IsError && liveCount.Result >= MaxLiveChallengesPerAddress)
+        if (liveCount.IsError) return AZOAResult<WalletChallengeResponse>.Failure(liveCount.Message);
+        if (liveCount.Result >= MaxLiveChallengesPerAddress)
         {
             result.IsError = true;
             result.Message = "Too many active challenges for this wallet. Try again shortly.";
@@ -161,8 +102,8 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return result;
     }
 
-    // ── AC1/AC2: verify → create-or-login ─────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthTokenResponse>> VerifyAsync(
         string address, string chainType, string signature, string? message, CancellationToken ct = default)
     {
@@ -180,8 +121,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var addr = proof.Result.Address;
         var chain = proof.Result.ChainType;
 
-        // AC2/AC2b: create-or-login ONLY. Resolve the user bound to EXACTLY this
-        // wallet — never by email/username/externalUserId.
         var bound = await _userStore.GetByAuthWalletAsync(addr, chain, ct);
         if (bound.IsError)
         {
@@ -194,7 +133,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         IUser user;
         if (bound.Result is not null)
         {
-            if (bound.Result.Id == NodeOperatorIdentity.UserId)
+            if (bound.Result.Id == NodeOperatorIdentity.UserId || !bound.Result.IsActive)
             {
                 result.IsError = true;
                 result.Message = "Wallet authentication is not available for this identity.";
@@ -204,7 +143,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
         }
         else
         {
-            // First-ever verify for this wallet → mint a brand-new self-owned user.
             var createdUser = await CreateSelfOwnedWalletUserAsync(addr, chain, ct);
             if (createdUser.IsError || createdUser.Result is null)
             {
@@ -225,8 +163,8 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return result;
     }
 
-    // ── AC2b: authenticated wallet link ───────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> LinkWalletAsync(
         Guid authedUserId, string address, string chainType, string signature, string? message,
         CancellationToken ct = default)
@@ -252,8 +190,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var addr = proof.Result.Address;
         var chain = proof.Result.ChainType;
 
-        // Reject if this wallet is already bound to a DIFFERENT user (no silent
-        // takeover / no duplicate binding).
         var existingBinding = await _userStore.GetByAuthWalletAsync(addr, chain, ct);
         if (existingBinding.IsError)
         {
@@ -269,7 +205,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        // Load the authenticated user (id is from the JWT, never the body).
         var loaded = await _userStore.GetByIdAsync(authedUserId, ct);
         if (loaded.IsError || loaded.Result is null)
         {
@@ -280,10 +215,14 @@ public sealed class WalletAuthManager : IWalletAuthManager
         }
 
         var user = loaded.Result;
+        var expectedAddress = user.AuthWalletAddress;
+        var expectedChain = user.AuthWalletChainType;
+        var expectedTenant = user.OwnerTenantId;
+        var expectedAuthNotBefore = user.AuthNotBefore;
         user.AuthWalletAddress = addr;
         user.AuthWalletChainType = chain;
 
-        var saved = await _userStore.UpsertAsync(user, ct);
+        var saved = await _userStore.TryUpdateAuthenticationAsync(user, expectedAddress, expectedChain, expectedTenant, expectedAuthNotBefore, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
@@ -297,15 +236,13 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return result;
     }
 
-    // ── AC4: tenant-minted claim invite ───────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<ClaimInviteResponse>> CreateClaimInviteAsync(
         Guid tenantId, Guid childUserId, CancellationToken ct = default)
     {
         var result = new AZOAResult<ClaimInviteResponse>();
 
-        // Assert ownership. A cross-tenant or unowned target is reported as NotFound
-        // (404), never Forbidden — the isolation crux (AC5, mirrors TenantManager).
         var loaded = await _userStore.GetByIdAsync(childUserId, ct);
         if (loaded.IsError || loaded.Result is null
             || loaded.Result.OwnerTenantId is null
@@ -348,10 +285,10 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return result;
     }
 
-    // ── AC3/AC3b/AC4: claim a tenant-provisioned user ───────────────────────
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthTokenResponse>> ClaimAsync(
-        Guid? authedUserId,
+        Guid expectedUserId,
         string? claimToken,
         string? newPassword,
         string? address,
@@ -363,44 +300,16 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var result = new AZOAResult<WalletAuthTokenResponse>();
         var now = DateTime.UtcNow;
 
-        // ── 1. Resolve the target user id from a SERVER-TRUSTED principal only ──
-        // (a single-use claim token OR the authenticated child-JWT subject). NEVER a
-        // body field — the IDOR sever (AC5). A claim-token path also atomically
-        // redeems the token so it can be used exactly once (AC4).
-        Guid targetUserId;
-        if (!string.IsNullOrWhiteSpace(claimToken))
-        {
-            var tokenRow = await _claimTokens.GetByTokenAsync(claimToken!.Trim(), ct);
-            if (tokenRow.IsError || tokenRow.Result is null)
-            {
-                result.IsError = true;
-                result.Message = TenantAuthorizationError.NotFound + "Invalid or expired claim token.";
-                result.Exception = tokenRow.Exception;
-                return result;
-            }
-
-            // Atomic single-use redeem — a losing/expired/replayed token gets false.
-            var consumed = await _claimTokens.TryConsumeAsync(claimToken!.Trim(), now, ct);
-            if (consumed.IsError || !consumed.Result)
-            {
-                result.IsError = true;
-                result.Message = TenantAuthorizationError.NotFound + "Invalid or expired claim token.";
-                result.Exception = consumed.Exception;
-                return result;
-            }
-
-            targetUserId = tokenRow.Result.TargetUserId;
-        }
-        else if (authedUserId.HasValue)
-        {
-            targetUserId = authedUserId.Value;
-        }
-        else
-        {
-            result.IsError = true;
-            result.Message = "A claim token or an authenticated principal is required.";
-            return result;
-        }
+        if (string.IsNullOrWhiteSpace(claimToken))
+            return AZOAResult<WalletAuthTokenResponse>.Failure("A live claim invite is required.");
+        var tokenRow = await _claimTokens.GetByTokenAsync(claimToken.Trim(), ct);
+        if (tokenRow.IsError) return AZOAResult<WalletAuthTokenResponse>.Failure(tokenRow.Message);
+        if (tokenRow.Result is not { } invite || !invite.IsLiveAt(now))
+            return AZOAResult<WalletAuthTokenResponse>.Failure(TenantAuthorizationError.NotFound + "Invalid or expired claim token.");
+        if (expectedUserId == Guid.Empty || invite.TargetUserId != expectedUserId)
+            return AZOAResult<WalletAuthTokenResponse>.Failure(TenantAuthorizationError.NotFound + "Invalid or expired claim token.");
+        var targetUserId = invite.TargetUserId;
+        var invitedTenant = invite.TenantId;
 
         if (targetUserId == NodeOperatorIdentity.UserId)
         {
@@ -409,8 +318,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        // ── 2. Load the target. A miss is NotFound (indistinguishable from
-        // cross-tenant, the isolation crux). ──
         var loaded = await _userStore.GetByIdAsync(targetUserId, ct);
         if (loaded.IsError || loaded.Result is null)
         {
@@ -420,10 +327,13 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
         var user = loaded.Result;
+        var expectedAddress = user.AuthWalletAddress;
+        var expectedChain = user.AuthWalletChainType;
+        var expectedTenant = user.OwnerTenantId;
+        var expectedAuthNotBefore = user.AuthNotBefore;
 
-        // ── 3. Set the USER-SIDE credential (M1). Exactly one of {password,
-        // wallet-challenge} — strictly user-controlled, never derivable from a tenant
-        // child JWT. ──
+        if (!expectedTenant.HasValue || invitedTenant != expectedTenant || !user.IsActive)
+            return AZOAResult<WalletAuthTokenResponse>.FailureWithCode("The user is no longer claimable.", AzoaErrorCodes.Conflict);
         var hasPassword = !string.IsNullOrWhiteSpace(newPassword);
         var hasWallet = !string.IsNullOrWhiteSpace(address)
                         || !string.IsNullOrWhiteSpace(chainType)
@@ -439,12 +349,11 @@ public sealed class WalletAuthManager : IWalletAuthManager
         if (hasPassword)
         {
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+            user.AuthWalletAddress = null;
+            user.AuthWalletChainType = null;
         }
         else
         {
-            // Wallet credential: prove control of the wallet via the standard
-            // challenge+consume+verify, then bind it (rejecting a wallet already bound
-            // elsewhere).
             var proof = await ConsumeAndVerifyAsync(address ?? string.Empty, chainType ?? string.Empty, signature ?? string.Empty, message, ct);
             if (proof.IsError || proof.Result is null)
             {
@@ -474,14 +383,14 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
             user.AuthWalletAddress = addr;
             user.AuthWalletChainType = chain;
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(Convert.ToBase64String(RandomNumberGenerator.GetBytes(48)));
         }
 
-        // ── 4. Sever tenant custody + cut the residual child-JWT window (AC3/AC3b). ──
         user.OwnerTenantId = null;          // IDOR-safe sever (AC3)
-        user.AuthNotBefore = now;           // H2/AC3b: reject any pre-claim tenant token
+        user.AuthNotBefore = expectedAuthNotBefore > now ? expectedAuthNotBefore : now;
         user.IsActive = true;
 
-        var saved = await _userStore.UpsertAsync(user, ct);
+        var saved = await _userStore.TryClaimAuthenticationAsync(user, expectedAddress, expectedChain, expectedTenant.Value, expectedAuthNotBefore, invite, ct);
         if (saved.IsError || saved.Result is null)
         {
             result.IsError = true;
@@ -490,45 +399,23 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        // ── 4b. Revoke ALL outstanding consent grants this user made (AC3b, security
-        // review). The AuthNotBefore watermark is the primary cut (the JWT validator
-        // rejects any pre-claim token), but a still-live grant + a stale child JWT is
-        // belt-and-suspenders risk: revoking grants makes the signing seam fail closed
-        // for ANY residual tenant credential, independent of the watermark check. This
-        // is the robust half of the defense-in-depth fix. A revoke failure does NOT
-        // fail the claim — the watermark already cut the window — but it IS surfaced.
-        var revoked = await _consentGrants.RevokeAllByGrantorAsync(saved.Result.Id, now, ct);
 
         result.Result = new WalletAuthTokenResponse
         {
             Token = GenerateLoginJwt(saved.Result),
             UserId = saved.Result.Id,
         };
-        result.Message = revoked.IsError
-            ? "User claimed (warning: outstanding consent grants could not be auto-revoked; they remain subject to the post-claim watermark cut)."
-            : "User claimed.";
+        result.Message = "User claimed.";
         return result;
     }
 
-    // ── Shared verify primitive ───────────────────────────────────────────────
 
-    /// <summary>
-    /// The no-TOCTOU proof step shared by verify / link / wallet-claim. Resolves the
-    /// live challenge for <c>(address, chainType)</c>, re-validates the domain message
-    /// (and any client echo), ATOMICALLY consumes the nonce, then verifies the ed25519
-    /// signature over the STORED domain message. Returns the resolved challenge on
-    /// success. Any failure (no live challenge, field mismatch, lost/expired consume,
-    /// bad signature) is an error — and a consumed-but-bad-signature nonce stays
-    /// consumed (single-use even on failure).
-    /// </summary>
     private async Task<AZOAResult<WalletAuthChallenge>> ConsumeAndVerifyAsync(
         string address, string chainType, string signature, string? clientMessage, CancellationToken ct)
     {
         var result = new AZOAResult<WalletAuthChallenge>();
 
-        var addr = (address ?? string.Empty).Trim();
-        var chain = ChainNames.NormalizeChain(chainType);
-        if (string.IsNullOrWhiteSpace(addr) || string.IsNullOrWhiteSpace(chain) || string.IsNullOrWhiteSpace(signature))
+        if (!AZOA.WebAPI.Helpers.WalletAuthIdentity.TryCreate(address, chainType, out var addr, out var chain) || string.IsNullOrWhiteSpace(signature))
         {
             result.IsError = true;
             result.Message = "address, chainType and signature are required.";
@@ -537,7 +424,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         var now = DateTime.UtcNow;
 
-        // Resolve the latest live challenge for this exact (address, chainType).
         var lookup = await _challenges.GetLatestLiveByAddressAsync(addr, chain, now, ct);
         if (lookup.IsError)
         {
@@ -554,28 +440,16 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        // AC1b: re-validate the embedded fields server-side against the EXACT bytes
-        // we will verify the signature over. The stored DomainMessage is the
-        // authoritative signed payload (built once at issuance and never reconstructed
-        // from round-tripped timestamps, so there is no precision-drift hazard). We
-        // confirm the request's (address, chainType) matches the challenge's, and that
-        // the stored message actually embeds the bound prefix/chain/address/nonce — so
-        // a tampered row can never be honoured.
         var boundChain = string.Equals(challenge.ChainType, chain, StringComparison.Ordinal);
         var boundAddress = string.Equals(challenge.Address, addr, StringComparison.Ordinal);
         var msg = challenge.DomainMessage;
-        var wellFormed = msg.StartsWith(DomainPrefix + "\n", StringComparison.Ordinal)
-                         && msg.Contains("chain:" + challenge.ChainType + "\n", StringComparison.Ordinal)
-                         && msg.Contains("address:" + challenge.Address + "\n", StringComparison.Ordinal)
-                         && msg.Contains("nonce:" + challenge.Nonce + "\n", StringComparison.Ordinal);
+        var wellFormed = string.Equals(msg, BuildDomainMessage(chain, addr, challenge.Nonce, challenge.ExpiresAt), StringComparison.Ordinal);
         if (!boundChain || !boundAddress || !wellFormed)
         {
             result.IsError = true;
             result.Message = "Challenge validation failed.";
             return result;
         }
-        // A client echo of the signed bytes must match the stored message EXACTLY
-        // (byte-for-byte) — any divergence in any field rejects the verify (AC1b).
         if (clientMessage is not null && !string.Equals(clientMessage, challenge.DomainMessage, StringComparison.Ordinal))
         {
             result.IsError = true;
@@ -583,7 +457,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        // ATOMIC single-use consume (no-TOCTOU). A lost/expired race gets false → fail.
         var consumed = await _challenges.TryConsumeAsync(challenge.Nonce, now, ct);
         if (consumed.IsError || !consumed.Result)
         {
@@ -593,8 +466,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
             return result;
         }
 
-        // Decode the signature (accept base64 or hex) and verify over the STORED bytes.
-        if (!AZOA.WebAPI.Helpers.Encoding.TryDecodeSignature(signature, out var signatureBytes))
+        if (!AZOA.WebAPI.Helpers.ByteEncoding.TryDecodeSignature(signature, out var signatureBytes))
         {
             result.IsError = true;
             result.Message = "Signature is not valid base64 or hex.";
@@ -618,7 +490,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         if (!ok)
         {
-            // The nonce is already consumed — single-use even on a bad signature.
             result.IsError = true;
             result.Message = "Signature verification failed.";
             return result;
@@ -629,58 +500,44 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return result;
     }
 
-    // ── User creation ───────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Mints a brand-new self-owned user bound to the wallet (AC2). Synthesizes a
-    /// unique username/email from the chain+address (NEVER matched on login) and a
-    /// random non-usable password hash — there is no password login path for a
-    /// wallet-only user. <c>OwnerTenantId == null</c> by construction.
-    /// </summary>
     private async Task<AZOAResult<IUser>> CreateSelfOwnedWalletUserAsync(
         string address, string chainType, CancellationToken ct)
     {
-        // A short, unique-ish suffix keeps the synthesized handle readable while the
-        // full address guarantees global uniqueness.
         var prefix = address.Length <= 12 ? address : address[..12];
-        var unique = Guid.NewGuid().ToString("N")[..8];
+        var digest = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"azoa-auth-wallet:v1:{chainType}:{address}"));
+        var userId = new Guid(digest.AsSpan(0, 16));
+        var unique = userId.ToString("N")[..8];
         var handle = $"wallet-{chainType}-{prefix}-{unique}".ToLowerInvariant();
 
         var user = new User
         {
-            Id = Guid.NewGuid(),
+            Id = userId,
             Username = handle,
             Email = $"{handle}@wallet.azoa.local",
-            // No password login for a wallet-only user; random hash keeps the column
-            // non-empty without granting a usable password.
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")),
             IsActive = true,
             IsVerified = false,
-            // Self-owned by construction — the durable state for all users (AC2/§3).
             OwnerTenantId = null,
             AuthWalletAddress = address,
             AuthWalletChainType = chainType,
         };
 
-        return await _userStore.UpsertAsync(user, ct);
+        var created = await _userStore.CreateIfAbsentAsync(user, ct);
+        if (!created.IsError)
+            return created.Result is { IsActive: true } existing && existing.AuthWalletAddress == address && existing.AuthWalletChainType == chainType
+                ? created : AZOAResult<IUser>.Failure("The wallet identity admission conflicts with an existing account.");
+        var winner = await _userStore.GetByAuthWalletAsync(address, chainType, ct);
+        return !winner.IsError && winner.Result is { IsActive: true } ? winner : created;
     }
 
-    // ── Domain message + crypto helpers ───────────────────────────────────────
 
-    /// <summary>
-    /// Builds the EXACT domain-separated message bytes-to-sign (AC1b, C4). Deterministic
-    /// and human-readable: a fixed prefix, the AZOA issuer/audience (cross-instance /
-    /// cross-app separation), the chainType, the address, the nonce, and the ISO-8601
-    /// expiry. Every field is re-validated on verify.
-    /// </summary>
     private string BuildDomainMessage(string chainType, string address, string nonce, DateTime expiresAtUtc)
     {
         var issuer = _config["Jwt:Issuer"] ?? string.Empty;
         var audience = _config["Jwt:Audience"] ?? string.Empty;
         var expiryIso = expiresAtUtc.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
 
-        // One field per line, label-prefixed, so the signer can read what they sign and
-        // verify reconstructs it byte-for-byte.
         var sb = new StringBuilder();
         sb.Append(DomainPrefix).Append('\n');
         sb.Append("issuer:").Append(issuer).Append('\n');
@@ -692,22 +549,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return sb.ToString();
     }
 
-    // ── Login JWT — delegates to the single shared issuer ─────────────────────
 
-    /// <summary>Mints the wallet path's login token via the one shared issuer.</summary>
-    /// <remarks>
-    /// This used to be a hand-copied mirror of <c>UserManager.GenerateJwt</c> that
-    /// had silently drifted: it never stamped the dApp-role/scope claims, so a
-    /// wallet-authenticated user's token carried no <c>dapp_role</c> and no
-    /// <c>scope</c> claims while a password login for the SAME user got both — a
-    /// deny-by-default under-privilege (every claim-gated policy here reads absence as
-    /// "no authority", never as "allow"), not a fail-open. Delegating to
-    /// <see cref="AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer"/> (the same
-    /// primitive <see cref="AZOA.WebAPI.Managers.UserManager"/> now uses) makes claim
-    /// parity structural instead of hoped-for: there is exactly one JWT-minting
-    /// implementation for every interactive login path, so this class of drift can no
-    /// longer recur.
-    /// </remarks>
     private string GenerateLoginJwt(IUser user)
         => AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer.BuildLoginToken(_config, user);
 }

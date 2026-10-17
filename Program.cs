@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
@@ -9,10 +8,8 @@ using AZOA.WebAPI.Core.Networking;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using System.Reflection;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Core.Blockchain;
 using AZOA.WebAPI.Extensions;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
 using AZOA.WebAPI.Interfaces;
@@ -33,15 +30,15 @@ using FluentValidation.AspNetCore;
 using AZOA.WebAPI.Observability;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using AZOA.WebAPI.Providers.Blockchain.Solana;
-using AZOA.WebAPI.Providers.Stores;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Mcp;
-using AZOA.WebAPI.Services.Actions.Handlers;
 using AZOA.WebAPI.Services.Wormhole;
 using AZOA.WebAPI.Services.Conformance;
 
 var builder = WebApplication.CreateBuilder(args);
+DevelopmentProviderSecrets.Apply(builder.Configuration, builder.Environment);
+EthereumLocalConfiguration.Apply(builder.Configuration, builder.Environment);
 
 // Optional JSONL diagnostic sink; each environment must enable it explicitly.
 builder.AddJsonlExceptionLogging();
@@ -223,6 +220,7 @@ builder.Services.AddAuthentication(options =>
                 var operatorPolicies = context.HttpContext.GetEndpoint()?.Metadata
                     .GetOrderedMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
                     .Select(metadata => metadata.Policy)
+                    .OfType<string>()
                     .Where(policy => !string.IsNullOrWhiteSpace(policy))
                     .ToHashSet(StringComparer.Ordinal)
                     ?? new HashSet<string>(StringComparer.Ordinal);
@@ -243,7 +241,7 @@ builder.Services.AddAuthentication(options =>
                     || operatorUserId != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
                     || principal!.GetActingTenantId() is not null
                     || !long.TryParse(
-                        principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
+                        principal!.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
                         System.Globalization.NumberStyles.None,
                         System.Globalization.CultureInfo.InvariantCulture,
                         out var tokenRevision)
@@ -322,20 +320,12 @@ builder.Services.AddAuthentication(options =>
             if (watermark is null)
                 return; // never claimed / no watermark — nothing to enforce.
 
-            // The token's issued-at / not-before must be at/after the watermark. A
-            // token minted before the user's last claim is stale and rejected,
-            // closing the post-claim residual-credential window. ValidFrom surfaces the
-            // token's nbf (falling back to iat) as a UTC DateTime; if neither is present
-            // ValidFrom is DateTime.MinValue, which is always stale against a watermark.
-            var jwt = context.SecurityToken as System.IdentityModel.Tokens.Jwt.JwtSecurityToken;
-            // Payload.IssuedAt surfaces the token's iat as a UTC DateTime (DateTime.MinValue
-            // when absent), superseding the deprecated int? Payload.Iat. Fall back to nbf
-            // (ValidFrom) when iat is unset so a nbf-only token still watermarks correctly.
-            var issuedAt = jwt?.Payload?.IssuedAt ?? DateTime.MinValue;
-            var tokenInstant = issuedAt != DateTime.MinValue
-                ? issuedAt
-                : (jwt?.ValidFrom ?? DateTime.MinValue);
-
+            if (!AZOA.WebAPI.Helpers.ValidatedTokenTime.TryRead(principal, out var tokenIssuedAt, out _))
+            {
+                context.Fail("Token lacks valid authentication timestamp evidence.");
+                return;
+            }
+            var tokenInstant = tokenIssuedAt.UtcDateTime;
             if (AZOA.WebAPI.Core.AuthWatermark.IsTokenStale(tokenInstant, watermark))
                 context.Fail("Token was issued before the user's authentication watermark (post-claim cut).");
         }
@@ -598,6 +588,14 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("TenantScope", p =>
         p.RequireAssertion(ctx =>
             ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)));
+    o.AddPolicy("TenantBusinessVerification", p =>
+    {
+        p.RequireAuthenticatedUser();
+        p.RequireAssertion(ctx => ctx.User.GetActingTenantId() is null &&
+            (ctx.User.FindFirst("AuthMethod")?.Value == "ApiKey"
+                ? ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)
+                : ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value == AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin));
+    });
     // DappDevelop gates authoring writes; DappManage gates lifecycle writes.
     // API keys inherit only the owner's current dApp role and, when scoped, must
     // also carry the matching explicit dapp capability.
@@ -937,7 +935,7 @@ builder.Services.AddScoped<IBlockchainOperationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<IActionGraphBundleStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionGraphBundleStore>();
-// star-odk-ecosystem-tree (D2): tree of DappSeries/ActionGraphBundle nodes owned by an ActionGraphBundle.
+// action-graph-bundle-ecosystem-tree (D2): tree of DappSeries/ActionGraphBundle nodes owned by an ActionGraphBundle.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEcosystemStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealEcosystemStore>();
 // kyc-module: KYC submission/document persistence (SurrealDB).
@@ -1011,6 +1009,10 @@ builder.Services.AddScoped<IActionAccessRequestStore,
 
 // ─── user-self-sovereignty: consent + wallet-auth + webhook stores ───────────
 // user-sovereign-identity: wallet-challenge auth nonce + tenant claim-invite token.
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Stores.Surreal.SurrealGovernanceStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Governance.ConsumerGovernanceService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Auth.WalletAuthIdentityMigrationService>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Auth.WalletAuthIdentityMigrationWorker>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
@@ -1036,15 +1038,23 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentGrantStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentGrantStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentAuditStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentAuditStore>();
-builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentWebhookOutboxStore,
-    AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentWebhookOutboxStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IConsentWebhookDeliveryStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentWebhookDeliveryStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Stores.Surreal.SurrealConsentLifecycleStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Consent.ConsentLifecycleService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantCustodialAccess, AZOA.WebAPI.Services.Consent.TenantCustodialAccess>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWebhookRegistrationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWebhookRegistrationStore>();
 // final-hardening F3: generic action.emit webhook transactional outbox — a parallel
 // outbox to the consent one that SHARES the registration store (above) + SSRF guard +
 // HMAC signer + WebhookOptions (all registered on the consent path below).
-builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionWebhookOutboxStore,
-    AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionWebhookOutboxStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionEmitStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionEmitStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionWebhookDeliveryStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionWebhookDeliveryStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionEmitService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionEmitService>());
 
 // <surrealdb-client-package>
 // Homebake SurrealDB client (Phase 6, sub-wave 1.5a). Replaces direct
@@ -1073,9 +1083,8 @@ builder.Services.AddSurrealForge(builder.Configuration, surrealRuntimeConfigSect
 }
 // </surrealdb-client-package>
 
-// SwapManager's quote cache is now an injected, bounded IMemoryCache (was a
-// process-static dictionary). SizeLimit is required because every cache write
-// sets per-entry Size=1; without a limit the SetSize call throws.
+// Bounded shared IMemoryCache. SizeLimit requires every cache write to set an
+// entry Size; without a limit the SetSize call throws.
 builder.Services.AddMemoryCache(o => o.SizeLimit = 1024);
 
 builder.Services.AddScoped<IUserManager, UserManager>();
@@ -1093,6 +1102,11 @@ builder.Services.AddHostedService<AZOA.WebAPI.Services.Admin.SeedAdminHostedServ
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeOperatorManager,
     AZOA.WebAPI.Managers.NodeOperatorManager>();
 builder.Services.AddSingleton<WalletKeyService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Webhooks.WebhookSecretProtector>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Webhooks.WebhookRegistrationManagement>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Webhooks.WebhookEventManagement>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Webhooks.ConsentWebhookEventManagement>();
 builder.Services.AddSingleton<IAlgorandFaucet, AlgorandFaucet>();
 builder.Services.AddScoped<IWalletManager, WalletManager>();
 builder.Services.AddScoped<ITenantCustodialAccountManager, TenantCustodialAccountManager>();
@@ -1141,11 +1155,9 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ITenantConsentGate,
 // The consent authority (grant/revoke/list) + the thin outbox emitter it calls.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentManager,
     AZOA.WebAPI.Managers.ConsentManager>();
-builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentWebhookEmitter,
-    AZOA.WebAPI.Services.Consent.ConsentWebhookEmitter>();
 // user-sovereign-identity: wallet-challenge auth + claim flow.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.IWalletSignatureVerifier,
-    AZOA.WebAPI.Services.Signing.Ed25519SignatureVerifier>();
+    AZOA.WebAPI.Services.Signing.WalletSignatureVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IWalletAuthManager,
     AZOA.WebAPI.Managers.WalletAuthManager>();
 // Webhook bridge (AC7/AC8): SSRF guard + timestamped HMAC signer (singletons) +
@@ -1156,33 +1168,26 @@ builder.Services.AddSingleton<AZOA.WebAPI.Core.Webhooks.WebhookHmacSigner>();
 builder.Services.AddOptions<AZOA.WebAPI.Services.Webhooks.WebhookOptions>()
     .Bind(builder.Configuration.GetSection(AZOA.WebAPI.Services.Webhooks.WebhookOptions.SectionName));
 builder.Services.AddHttpClient(AZOA.WebAPI.Services.Webhooks.WebhookOptions.HttpClientName)
-    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
-    {
-        AllowAutoRedirect = false,
-        ConnectCallback = AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard.CreateGuardedConnectCallback(),
-    });
+    .ConfigurePrimaryHttpMessageHandler(AZOA.WebAPI.Core.Webhooks.WebhookHttpTransport.CreateHandler);
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Webhooks.ConsentWebhookDeliveryWorker>();
-// final-hardening F3: the GENERIC action.emit webhook path. The Emit node's enqueue seam
-// (ActionWebhookEmitter) + a named HttpClient using the SAME SSRF-guarded, no-auto-redirect
-// primary handler as the consent client + the parallel hosted delivery worker. Reuses the
-// shared WebhookSsrfGuard / WebhookHmacSigner / WebhookOptions / IWebhookRegistrationStore
-// registered above — a tenant's ONE registration receives both consent and action.emit events.
-builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IActionWebhookEmitter,
-    AZOA.WebAPI.Services.Actions.ActionWebhookEmitter>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Consent.ConsentExpiryWorker>();
 builder.Services.AddHttpClient(AZOA.WebAPI.Services.Webhooks.WebhookOptions.ActionHttpClientName)
-    .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
-    {
-        AllowAutoRedirect = false,
-        ConnectCallback = AZOA.WebAPI.Core.Webhooks.WebhookSsrfGuard.CreateGuardedConnectCallback(),
-    });
+    .ConfigurePrimaryHttpMessageHandler(AZOA.WebAPI.Core.Webhooks.WebhookHttpTransport.CreateHandler);
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Webhooks.ActionWebhookDeliveryWorker>();
 // KYC selection is explicit and fail-closed. Unknown values never inherit the
-// manual provider; hosted and Veriff remain unavailable until reviewed adapters land.
+// Manual review is Development-only; external providers enforce their explicit trust configuration.
 builder.Services.Configure<AZOA.WebAPI.Settings.KycSettings>(
     builder.Configuration.GetSection(AZOA.WebAPI.Settings.KycSettings.SectionName));
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.ManualKycProviderService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.VeriffKycProviderService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.GenericHostedKycProviderService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.HostedSessions.IHostedProviderAttemptStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealHostedProviderAttemptStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.HostedIdentityHttp>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.HostedIdentityRecovery>();
+builder.Services.AddHttpClient(AZOA.WebAPI.Providers.Kyc.HostedIdentityHttp.ClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddHostedService<AZOA.WebAPI.Services.HostedSessions.HostedIdentityRecoveryWorker>();
 // ─── Identomat hosted KYC + AML screening ───
 // The named client has NO base address: the adapter genuinely spans two hosts
 // (external-api for /begin and screening, widget for the authoritative /result/),
@@ -1223,8 +1228,47 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IPersonUniquenessGate
     AZOA.WebAPI.Services.Kyc.PersonUniquenessGate>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IKycIdentityErasureService,
     AZOA.WebAPI.Services.Kyc.KycIdentityErasureService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.KycHostedSessionOutcomeHandler>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyb.KybHostedSessionOutcomeHandler>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionOutcomeHandler,
-    AZOA.WebAPI.Services.Kyc.KycHostedSessionOutcomeHandler>();
+    AZOA.WebAPI.Services.HostedSessions.HostedSessionOutcomeRouter>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<AZOA.WebAPI.Settings.KybSettings>(builder.Configuration.GetSection(AZOA.WebAPI.Settings.KybSettings.SectionName));
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyb.IdentomatKybProvider>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKybVerificationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealKybVerificationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKybService, AZOA.WebAPI.Services.Kyb.KybService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Users.NftLifecycleService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.NftWorkflowCostConsentService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INftLifecycleService>(sp => sp.GetRequiredService<AZOA.WebAPI.Services.Users.NftLifecycleService>());
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INftLifecycleReconciler>(sp => sp.GetRequiredService<AZOA.WebAPI.Services.Users.NftLifecycleService>());
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Users.NftLifecycleRecoveryWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INftLifecycleStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftLifecycleStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INftWorkflowCostAcceptanceStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftWorkflowCostAcceptanceStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttEvidenceProgressStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttEvidenceProgressStore>();
+// ─── Wormhole Token Transfer journal (lane A; see Services/Wormhole/AGENTS.md §Operation journal) ───
+builder.Services.AddOptions<AZOA.WebAPI.Models.Wtt.WttFinalityOptions>().Bind(builder.Configuration.GetSection("Wtt:Finality"));
+builder.Services.AddOptions<AZOA.WebAPI.Models.Wtt.WttStageKeyOptions>().Bind(builder.Configuration.GetSection("Wtt:StageKeys"));
+builder.Services.AddOptions<WttGuardianOptions>().Bind(builder.Configuration.GetSection(WttGuardianOptions.SectionName));
+builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.Wtt.IWttStageKeyProtector, WttStageKeyProtector>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWttGuardianSignatureVerifier, Secp256k1VaaSignatureVerifier>();
+builder.Services.AddScoped<WttProofVerifier>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttStageKeyStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttStageKeyStore>();
+builder.Services.AddScoped<WttStageKeyVault>();
+builder.Services.AddScoped<WttStageKeyReadiness>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttPreparationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttBodyClaimStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttBodyClaimStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttOperationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttOperationStore>();
+builder.Services.AddScoped<WttModuleResolver>();
+builder.Services.AddHttpClient<WttGuardianTransport>()
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<WttRecoveryService>();
+builder.Services.AddScoped<WttLifecycleService>();
+builder.Services.AddHostedService<WttRecoveryWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INftProtocolCostQuoteStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftProtocolCostQuoteStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumPreparationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumDexAllowanceStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumDexAllowanceStore>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Ethereum.EthereumPreparationRecoveryWorker>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionFlow,
     AZOA.WebAPI.Services.HostedSessions.HostedSessionFlow>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IIdentomatScreeningService,
@@ -1303,6 +1347,15 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationReceiptMan
 builder.Services.AddScoped<AZOA.WebAPI.Managers.FungibleTokenManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager>(
     sp => sp.GetRequiredService<AZOA.WebAPI.Managers.FungibleTokenManager>());
+// Durable fungible creation lifecycle (store, service, action resolver, recovery worker); see Services/Fungible.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IFungibleCreationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealFungibleCreationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleCreationService,
+    AZOA.WebAPI.Services.Fungible.FungibleCreationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>());
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Fungible.FungibleCreationRecoveryWorker>();
 // D19 soulbound-credential revocation (Algorand AssetClawback). Backs both
 // CredentialController and CredentialRevokeNodeHandler -- and the handler set is
 // constructed EAGERLY (ActionNodeHandlerRegistry takes IEnumerable<IActionNodeHandler>
@@ -1314,31 +1367,56 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.ICredentialManager,
 // log that backs AnalyticsController. No writes, no chain reach.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAnalyticsReadService,
     AZOA.WebAPI.Services.Analytics.AnalyticsReadService>();
-// Bind Jupiter DEX configuration
-builder.Services.Configure<JupiterConfig>(
-    builder.Configuration.GetSection(JupiterConfig.SectionName));
-
-// DEX adapters — one IDexAdapter per chain. Adding a new chain = add one
-// IDexAdapter implementation + one registration line here; SwapManager (the
-// dispatcher) never changes. The Jupiter adapter uses a typed HttpClient that
-// preserves the prior Jupiter HttpClient config (15s timeout + User-Agent)
-// that previously lived on AddHttpClient<ISwapManager, SwapManager>.
-builder.Services.AddHttpClient<JupiterDexAdapter>(client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(15);
-    client.DefaultRequestHeaders.Add("User-Agent", "AZOA-SwapManager/1.0");
-});
-builder.Services.AddScoped<IDexAdapter>(sp => sp.GetRequiredService<JupiterDexAdapter>());
-// Tinyman creates its own short-lived Algod HttpClient internally (no typed client needed).
-builder.Services.AddScoped<IDexAdapter, TinymanDexAdapter>();
-builder.Services.AddScoped<ISwapManager, SwapManager>();
+// Durable DEX: provider-owned IDexTransactionModule grammar behind one quote/operation journal (Services/Dex/AGENTS.md).
+builder.Services.AddScoped<IDexQuoteStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealDexQuoteStore>();
+builder.Services.AddScoped<ISwapOperationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealSwapOperationStore>();
+builder.Services.AddScoped<DexModuleResolver>();
+builder.Services.AddScoped<DexQuoteService>();
+builder.Services.AddScoped<SwapStageCoordinator>();
+builder.Services.AddScoped<SwapOperationService>();
+builder.Services.AddScoped<SwapRecoveryService>();
+builder.Services.AddHostedService<SwapRecoveryWorker>();
+builder.Services.AddScoped<SwapActionResolver>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp => sp.GetRequiredService<SwapActionResolver>());
 builder.Services.AddScoped<IBlockchainOperationManager, BlockchainOperationManager>();
 builder.Services.AddScoped<IActionGraphBundleManager, ActionGraphBundleManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IUserNFTService, UserNFTService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionConfigBindingResolver>();
-builder.Services.AddScoped<IActionManager, ActionManager>();
+builder.Services.AddScoped<ActionManager>();
+builder.Services.AddScoped<IActionManager>(sp => sp.GetRequiredService<ActionManager>());
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFrozenActionRuntime>(sp => sp.GetRequiredService<ActionManager>());
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionWorkflowAdmissionStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionWorkflowAdmissionStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionLocalMutationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionLocalMutationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionLocalMutationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionNftOperationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionNftHolonLinkService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionReadRecovery>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionReadRecovery>());
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionNftOperationService>());
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionRecoveryStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionOperationRecoveryService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionLocalMutationService>());
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver,
+    AZOA.WebAPI.Services.Governance.GovernanceActionResolver>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IDeploymentStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealDeploymentStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IDeploymentRecoveryAuditStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealDeploymentRecoveryAuditStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INativePreparationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealNativePreparationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Deployments.DeploymentArtifactCompiler>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IDeploymentService,
+    AZOA.WebAPI.Services.Deployments.DeploymentService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver,
+    AZOA.WebAPI.Services.Deployments.DeploymentActionResolver>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Deployments.DeploymentRecoveryWorker>();
 
 // <dapp-composition>
 // IDappSeriesStore + IDappCompositionManager are the dapp-composition track's
@@ -1463,7 +1541,7 @@ var reserveOptions = builder.Configuration
     ?? new AZOA.WebAPI.Services.Reserve.ReserveOptions();
 builder.Services.AddSingleton(reserveOptions);
 builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IPlatformReserveLedgerStore,
-    AZOA.WebAPI.Services.Reserve.SurrealPlatformReserveLedgerStore>();
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealPlatformReserveLedgerStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IPlatformReserve,
     AZOA.WebAPI.Services.Reserve.PlatformReserveService>();
 
@@ -1516,6 +1594,8 @@ builder.Services.AddSingleton(fiatOptions);
 builder.Services.AddHttpClient(AZOA.WebAPI.Providers.Fiat.StripeGateway.HttpClientName);
 builder.Services.AddSingleton<AZOA.WebAPI.Providers.Fiat.IStripeGateway,
     AZOA.WebAPI.Providers.Fiat.StripeGateway>();
+builder.Services.AddSingleton<AZOA.WebAPI.Providers.Fiat.IStripeRefundGateway,
+    AZOA.WebAPI.Providers.Fiat.StripeGateway>();
 
 // Transient on purpose: the factory caches one BOUND instance per (rail, environment) and a
 // pre-bound instance is refused, exactly as for a chain provider.
@@ -1523,6 +1603,8 @@ builder.Services.AddTransient<AZOA.WebAPI.Providers.Fiat.FiatRailProvider>();
 
 builder.Services.AddScoped<AZOA.WebAPI.Services.Fiat.IStripeWebhookInbox,
     AZOA.WebAPI.Services.Fiat.StripeWebhookInbox>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Fiat.FiatEventRecovery>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Fiat.FiatEventRecoveryWorker>();
 
 // Intent bookkeeping: it moves the funding intent through its states and credits NOTHING, which
 // is why it implements IFiatEventHandler and NOT IFiatSettlementHandler. That distinction is
@@ -1704,12 +1786,10 @@ AZOA.WebAPI.Services.Fiat.OffRamp.OffRampRegistration.AddFiatOffRamp(builder.Ser
 // ─── Wave 5 composition: the treasury-rate exchange (W5.1 / N-X1 / D50) ───
 // The sponsorship moment. A sponsor spends the platform unit, the PROJECT receives it on chain
 // (never the platform reserve), and the sponsor's units either arrive or are held for a window —
-// all in one atomic group. It is composed from primitives registered above, so it sits here and
-// not in the Wave 3/4 blocks: it needs the reserve, the project treasury, the hold primitive,
-// platform-unit genesis, the recipient preparer, the idempotency store and the D16 rate seam.
+// all in one atomic group journaled as a durable exchange source. It needs the reserve, the project
+// treasury, the hold command store, platform-unit genesis, the recipient preparer and the D16 rate seam.
 //
-// This is NOT a swap. The existing Swap node and SwapManager stay on the DEX path; nothing below
-// touches ISwapManager.
+// This is NOT a DEX swap: no pool or price discovery, and nothing below resolves a DEX service.
 var exchangeOptions = builder.Configuration
     .GetSection(AZOA.WebAPI.Services.Reserve.ExchangeOptions.SectionName)
     .Get<AZOA.WebAPI.Services.Reserve.ExchangeOptions>()
@@ -1729,34 +1809,9 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IExchangeRatePolicy,
 AZOA.WebAPI.Services.Reserve.BuyBackLiquidityRegistration
     .AddBuyBackLiquidityPolicy(builder.Services, builder.Configuration);
 
-// The Algorand exchange rail (OI-31). THIS is what lets an exchange actually settle: it
-// assembles the plan's legs into one atomic group — two assets, two signers — signs each leg
-// through the custody door that account actually has (the sponsor's custodial key, the
-// reserve's platform key, a project treasury's derived key), pools the whole group's chain fee
-// onto the reserve, broadcasts once and reads the group back. It never sends the legs one at a
-// time. Scoped, because IKeyCustodyService is.
-//
-// Registered BEFORE the TryAdd below, which is what makes it win. Its own options resolve every
-// blank value to a working one in code (see AlgorandExchangeGroupSubmitterOptions): .Get<T>()
-// REPLACES a C# default, so an environment variable set to "" would otherwise bind a zero
-// validity window and expire every group before it could be mined.
-var algorandExchangeRailOptions = builder.Configuration
-    .GetSection(AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitterOptions.SectionName)
-    .Get<AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitterOptions>()
-    ?? new AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitterOptions();
-builder.Services.AddSingleton(algorandExchangeRailOptions);
-builder.Services.AddHttpClient(
-    AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitter.AlgodHttpClientName);
-builder.Services.AddScoped<AZOA.WebAPI.Services.Reserve.IExchangeGroupSubmitter,
-    AZOA.WebAPI.Services.Reserve.AlgorandExchangeGroupSubmitter>();
-
-// The fail-closed fallback. It settles NOTHING and says so, and TryAdd means it only takes
-// effect on a node where no real adapter was registered above — a chain this node has no rail
-// for refuses rather than degrading into two separate transfers, which is precisely the
-// funds-taken / units-undelivered failure atomicity exists to prevent.
-Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
-    .TryAddScoped<AZOA.WebAPI.Services.Reserve.IExchangeGroupSubmitter,
-        AZOA.WebAPI.Services.Reserve.UnavailableExchangeGroupSubmitter>(builder.Services);
+// Exchange settlement is durable: AddExchangeRail (below) registers the exchange source journal, its
+// coordinator and reconciliation worker; the provider-owned IExchangeTransactionModule signs and sends
+// only exact saved groups. See Services/Reserve/AGENTS.md §durable-exchange.
 
 // The durable declared-rate store, composing whatever AddValueRateSources / AddOnRampValueRateSource
 // left in place as the fallback. It must run AFTER both, or the on-ramp's price schedule — which
@@ -1978,7 +2033,7 @@ app.UseAzoaRequestCorrelation();
 // before MCP request dispatch.
 app.UseMcpAuth();
 app.MapMcp();
-// ISwapManager + IDexAdapter registrations are above (DEX adapters block)
+// Durable DEX registrations are above (Durable DEX block)
 app.MapControllers();
 app.MapNodeConformanceDocument();
 app.MapAzoaHealth(app.Environment);

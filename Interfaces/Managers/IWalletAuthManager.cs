@@ -50,16 +50,9 @@ public interface IWalletAuthManager
     Task<AZOAResult<ClaimInviteResponse>> CreateClaimInviteAsync(
         Guid tenantId, Guid childUserId, CancellationToken ct = default);
 
-    /// <summary>
-    /// AC3/AC3b/AC4: claims a tenant-provisioned user with a USER-SIDE credential
-    /// (a fresh wallet challenge OR a user-chosen password). Resolves the target from a
-    /// single-use claim token OR the authenticated child-JWT subject (never a body
-    /// field). On success: sets the user's own credential, clears
-    /// <c>OwnerTenantId</c> to null, stamps <c>AuthNotBefore = now</c> (closes the
-    /// residual child-JWT window), and returns a fresh login JWT.
-    /// </summary>
+    /// <summary>Claims the exact invited identity with a new user credential; use normal login to recover a lost successful response.</summary>
     Task<AZOAResult<WalletAuthTokenResponse>> ClaimAsync(
-        Guid? authedUserId,
+        Guid expectedUserId,
         string? claimToken,
         string? newPassword,
         string? address,

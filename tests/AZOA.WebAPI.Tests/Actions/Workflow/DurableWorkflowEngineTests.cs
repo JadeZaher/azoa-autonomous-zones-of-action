@@ -1,3 +1,5 @@
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -78,6 +80,9 @@ public sealed class DurableWorkflowEngineTests
         public IBlockchainProviderFactory ProviderFactory { get; init; } =
             BlockchainProviderFactoryFakes.Returning();
 
+        private InMemoryActionWorkflowAdmissionStore? _admission;
+        private InMemoryActionWorkflowAdmissionStore Admission => _admission ??= new(RunStore, ExecutionStore, SagaStore);
+
         public ActionManager NewManager() => new(
             ActionStore,
             RunStore,
@@ -87,7 +92,7 @@ public sealed class DurableWorkflowEngineTests
             SagaStore,
             WalletManager,
             ProviderFactory,
-            BindingResolverFakes.PassThrough());
+            BindingResolverFakes.PassThrough(), workflowAdmission: Admission);
 
         /// <summary>
         /// Build a FRESH <see cref="SagaProcessor"/> over a FRESH DI scope, all
@@ -100,23 +105,15 @@ public sealed class DurableWorkflowEngineTests
             var services = new ServiceCollection();
             services.AddLogging();
 
-            // The SAME in-memory store instances the manager uses — the handlers
-            // resolved from this scope read/write the identical durable state.
             services.AddSingleton<ISagaStore>(SagaStore);
             services.AddSingleton<IActionStore>(ActionStore);
             services.AddSingleton<IActionRunStore>(RunStore);
             services.AddSingleton<IActionNodeExecutionStore>(ExecutionStore);
+            services.AddSingleton<IActionWorkflowAdmissionStore>(Admission);
             services.AddSingleton<IActionNodeHandlerRegistry>(
                 new ActionNodeHandlerRegistry(new[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
-            // ActionNodeStepHandler resolves a provider factory for reconcile-before-retry.
-            // Use the SAME factory the manager's re-probe uses so a reconcile test sets a
-            // single verdict for both the live park (step handler) and the sweep (manager).
-            // The default fake returns Unknown (conservative) and is never reached by the
-            // non-chain / Tier-1 runs.
             services.AddSingleton(ProviderFactory);
-            // ActionNodeStepHandler depends on the binding resolver (holon-path $from
-            // resolution); register the pass-through fake so the scope can build it.
             services.AddSingleton(BindingResolverFakes.PassThrough());
 
             // The two typed step handlers the ActionWorkflow saga dispatches.
@@ -255,9 +252,6 @@ public sealed class DurableWorkflowEngineTests
 
     private const string Manual = "{\"_workflow\":{\"advance\":\"manual\"}}";
 
-    // ════════════════════════════════════════════════════════════════════════
-    // CASE 1 — Auto DAG runs to completion
-    // ════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public async Task AutoDag_RunsToCompletion()
@@ -268,7 +262,7 @@ public sealed class DurableWorkflowEngineTests
             ("A", null), ("B", null), ("C", null));
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -281,9 +275,6 @@ public sealed class DurableWorkflowEngineTests
         h.RunStatus(runId).Should().Be(ActionRunStatus.Succeeded);
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // CASE 2 — Suspend at a gate, RESTART the engine, resume on signal
-    // ════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public async Task GatedRun_SuspendsThenSurvivesRestart_ThenResumesOnSignal()
@@ -298,7 +289,7 @@ public sealed class DurableWorkflowEngineTests
         var nodeC = action.Nodes[2];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -312,12 +303,8 @@ public sealed class DurableWorkflowEngineTests
         node.CountFor(nodeGate.Id).Should().Be(0, "the gate parks BEFORE doing its work");
         node.CountFor(nodeC.Id).Should().Be(0, "C is downstream of the parked gate");
 
-        // ── RESTART: discard the processor + its scope entirely. Durability now
-        // lives ONLY in the saga rows held by the harness's SagaStore. ──
         scope1.Dispose();
 
-        // Deliver the signal through a fresh manager (the parked row is the only
-        // state). Then build a BRAND NEW processor + scope over the same stores.
         var signal = await manager.SignalAsync(runId, "phase-met", "phase-met", UserId);
         signal.IsError.Should().BeFalse(signal.Message);
 
@@ -330,40 +317,27 @@ public sealed class DurableWorkflowEngineTests
         h.RunStatus(runId).Should().Be(ActionRunStatus.Succeeded);
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // CASE 3 — Compensation on failure
-    // ════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public async Task FailingNode_ExhaustsRetries_RoutesToCompensation()
     {
-        // The single node ("Grant") fails every attempt. The action-workflow forward
-        // node-step declares ActionWorkflowSaga.CompensateStepName as its
-        // compensation, so once RetryPolicy.Default's budget (5 attempts) is
-        // exhausted the saga routes to the compensation handler, which projects the
-        // run Cancelled. PumpAsync pulls retry backoff forward each tick so the
-        // budget is consumed without real delays.
         var failing = new FailingNodeHandler(ActionNodeType.Search);
         var h = new Harness { NodeHandler = failing };
         var action = BuildLinearAction(h, ActionNodeType.Search, ("Grant", null));
         var grant = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
-        // Enough ticks to exhaust the 5-attempt budget AND run the compensation
-        // step. PumpAsync returns early once quiescent.
         var (processor, scope) = h.NewProcessor();
         await h.PumpAsync(processor, maxTicks: 40);
         scope.Dispose();
 
-        failing.Attempts.Should().BeGreaterThanOrEqualTo(1,
-            "the failing node must have been dispatched");
+        failing.Attempts.Should().Be(1,
+            "saga retries must replay the recorded failure without repeating the handler");
 
-        // The saga rows prove the route: the forward node-step is Compensating, and
-        // a compensation step exists and Completed.
         var steps = h.SagaStore.Snapshot();
         var nodeStep = steps.FirstOrDefault(s => s.StepName == grant.Id.ToString());
         nodeStep.Should().NotBeNull();
@@ -376,20 +350,11 @@ public sealed class DurableWorkflowEngineTests
         compStep.Status.Should().Be(StepStatus.Completed,
             "the compensation handler ran and settled the saga");
 
-        // The run settles terminal CANCELLED — the refund-on-cancel outcome of
-        // the worked example. The forward node-step does NOT pre-empt with a
-        // terminal Failed on its failing attempt (it always declares a
-        // compensation, so a failing attempt is not yet the run's verdict); the
-        // run stays Running through retries, then the compensation handler owns
-        // the terminal projection and settles it Cancelled.
-        h.RunStatus(runId).Should().Be(ActionRunStatus.Cancelled,
-            "compensation owns the terminal projection: the failing node retries " +
-            "(run stays in flight), then the compensate handler settles it Cancelled");
+        h.RunStatus(runId).Should().Be(ActionRunStatus.Failed,
+            "read-only failure closes without claiming a value reversal: " +
+            "the compensation handler records the failed run");
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // CASE 4 — Manual advance (the step() primitive)
-    // ════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public async Task ManualNode_SuspendsUntilAdvance_ThenCompletes()
@@ -404,7 +369,7 @@ public sealed class DurableWorkflowEngineTests
         var nodeC = action.Nodes[2];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -412,8 +377,6 @@ public sealed class DurableWorkflowEngineTests
         await h.PumpAsync(processor1);
         scope1.Dispose();
 
-        // A manual node DOES its work then suspends the run (it is the step()
-        // boundary): B has run, but the run is Suspended and C has not run.
         h.RunStatus(runId).Should().Be(ActionRunStatus.Suspended);
         node.CountFor(nodeA.Id).Should().Be(1);
         node.CountFor(nodeB.Id).Should().Be(1, "the manual node runs, then suspends");
@@ -431,25 +394,19 @@ public sealed class DurableWorkflowEngineTests
         h.RunStatus(runId).Should().Be(ActionRunStatus.Succeeded);
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // CASE 5 — A gated node resumes to its single Control successor (branch select)
-    // ════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public async Task GatedNode_ResumesToSingleSuccessor_OnSignal()
     {
         var node = new RecordingNodeHandler(ActionNodeType.Condition);
         var h = new Harness { NodeHandler = node };
-        // Gate(gated "decision") -> Continue(auto, terminal). The fan-out guard
-        // forbids two Control successors from a gate, so a "branch" is modelled as
-        // signal-selected resumption into the gate's single successor.
         var action = BuildLinearAction(h, ActionNodeType.Condition,
             ("Gate", Gated("decision")), ("Continue", null));
         var gate = action.Nodes[0];
         var cont = action.Nodes[1];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -471,19 +428,10 @@ public sealed class DurableWorkflowEngineTests
         h.RunStatus(runId).Should().Be(ActionRunStatus.Succeeded);
     }
 
-    // ════════════════════════════════════════════════════════════════════════
-    // CASE 6 — Compensation payload type-pun is field-bound (regression guard)
-    // ════════════════════════════════════════════════════════════════════════
 
     [Fact]
     public void ForwardPayloadJson_DeserializesIntoCompensationPayload_FieldsPreserved()
     {
-        // The saga's CompensateStepAsync flows the FORWARD step's ActionStepPayload
-        // JSON verbatim into the compensation step, where SagaStep<ActionCompensatePayload>
-        // deserializes it by matching property names. This guards that the shared
-        // identity triple (RunId/ActionId/UserId) survives that round-trip: a
-        // rename of any shared field would make these assertions fail loudly
-        // instead of silently yielding Guid.Empty (a refund that no-ops).
         var forward = new ActionStepPayload(
             RunId: Guid.NewGuid(),
             ActionId: Guid.NewGuid(),
@@ -499,8 +447,6 @@ public sealed class DurableWorkflowEngineTests
         comp.ActionId.Should().Be(forward.ActionId, "ActionId must survive the type-pun round-trip");
         comp.UserId.Should().Be(forward.UserId, "UserId must survive the type-pun round-trip");
 
-        // The ToCompensation() projection is the compile-time witness of the same
-        // correspondence — it must agree with the JSON round-trip.
         forward.ToCompensation().Should().Be(comp);
     }
 }

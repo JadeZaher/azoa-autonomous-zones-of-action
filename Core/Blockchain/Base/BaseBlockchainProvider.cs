@@ -1,6 +1,5 @@
 using System.Net.Sockets;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Core.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
@@ -294,19 +293,7 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
         }
     }
 
-    public virtual Task<AZOAResult<string>> DeployContractAsync(
-        byte[] contractCode, string walletAddress,
-        Dictionary<string, object>? args = null, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>($"{ChainType} DeployContractAsync not implemented"));
-    }
 
-    public virtual Task<AZOAResult<object>> CallContractAsync(
-        string contractAddress, string method, Dictionary<string, object> args,
-        string walletAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<object>($"{ChainType} CallContractAsync not implemented"));
-    }
 
     public virtual Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)

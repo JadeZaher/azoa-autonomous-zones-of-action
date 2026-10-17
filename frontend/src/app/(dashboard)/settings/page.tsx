@@ -9,6 +9,9 @@ import { Separator } from '@/components/ui/separator'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { useAzoa } from '@/lib/azoa-context'
 import { azoa } from '@/lib/azoa'
+import { WebhookRegistrationPanel } from '@/components/webhooks/webhook-registration'
+import { WebhookEventsPanel } from '@/components/webhooks/webhook-events'
+import { ConsentGrantsPanel } from '@/components/consent/consent-grants'
 import { JsonViewer } from '@/components/shared/json-viewer'
 
 const PROVIDER_KEY = 'azoa_provider_name'
@@ -73,6 +76,11 @@ export default function SettingsPage() {
           <div className="flex justify-between items-center"><span className="text-muted-foreground">Token</span><span className="font-mono text-[11px] max-w-[55%] break-all text-right">{maskToken(token)}</span></div>
         </CardContent>
       </Card>
+
+      {isAuthenticated && userId && <WebhookRegistrationPanel userId={userId} />}
+      {isAuthenticated && userId && <ConsentGrantsPanel userId={userId} />}
+      {isAuthenticated && userId && <WebhookEventsPanel userId={userId} />}
+      {isAuthenticated && userId && <WebhookEventsPanel userId={userId} family="consent" />}
 
       <Card>
         <CardHeader className="pb-3"><CardTitle className="text-sm">SDK Configuration</CardTitle><CardDescription>Registered chains and API endpoint</CardDescription></CardHeader>

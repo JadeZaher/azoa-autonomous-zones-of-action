@@ -1,80 +1,41 @@
-/**
- * Example: NFT Lifecycle — Mint, Transfer, Burn
- *
- * Demonstrates the full NFT lifecycle via the SDK.
- * Run: npx tsx examples/nft-lifecycle.ts
- */
+// Run with real wallet, metadata and a stable request key; reuse that key after interruptions.
 import { AzoaClient } from "../src/client/index.js";
 import { isOk } from "../src/core/result.js";
 
-const API_URL = process.env.AZOA_API_URL || "http://localhost:5000";
-const API_KEY = process.env.AZOA_API_KEY!;
-
-async function main() {
-  const azoa = new AzoaClient({ apiUrl: API_URL, apiKey: API_KEY });
-
-  const WALLET_ID = "00000000-0000-0000-0000-000000000001"; // replace with real
-
-  // Mint an NFT
-  const minted = await azoa.api.mintNft({
-    walletId: WALLET_ID,
-    name: "Cosmic Dragon #42",
-    description: "A rare cosmic dragon",
-    chainId: "algorand",
-    imageUri: "ipfs://QmExample",
-    metadata: { rarity: "legendary" },
-  });
-  if (!isOk(minted)) return console.error("Mint failed:", minted.error.message);
-  console.log("Minted NFT");
-
-  // Get NFT details
-  // const nft = await azoa.api.getNft(nftId);
-
-  // Get metadata (public, no auth needed)
-  // const metadata = await azoa.api.getNftMetadata(nftId);
-
-  // Transfer to another user
-  // const transferred = await azoa.api.transferNft(nftId, {
-  //   targetUserId: "recipient-user-id",
-  //   walletId: WALLET_ID,
-  // });
-
-  // Burn
-  // const burned = await azoa.api.burnNft(nftId, { walletId: WALLET_ID });
-
-  // --- User NFT (richer model with bindings) ---
-
-  // Mint a User NFT with holon + wallet bindings
-  const userNft = await azoa.api.mintUserNFT({
-    chainType: "Solana",
-    name: "Soul Badge",
-    description: "Soulbound identity badge",
-    isSoulbound: true,
-    isTransferable: false,
-    holonBindings: [
-      { holonId: "holon-uuid-here", role: "owner", permissionLevel: "full" },
-    ],
-  });
-  if (isOk(userNft)) {
-    console.log("Minted User NFT:", userNft.value.id);
-
-    // Get composite view (NFT + all bindings)
-    const composite = await azoa.api.getUserNFTComposite(userNft.value.id);
-    if (isOk(composite)) {
-      console.log("Holon bindings:", composite.value.holonBindings?.length);
-      console.log("Wallet bindings:", composite.value.walletBindings?.length);
-    }
-
-    // Verify ownership on-chain
-    const verified = await azoa.api.verifyNFTOwnership({
-      chainType: "Solana",
-      nftContractAddress: "contract-address",
-      tokenId: "token-id",
-    });
-    if (isOk(verified)) {
-      console.log("Ownership verified:", verified.value.isOwner);
-    }
-  }
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Set ${name} before running this example.`);
+  return value;
 }
 
-main().catch(console.error);
+async function main() {
+  const azoa = new AzoaClient({ apiUrl: process.env.AZOA_API_URL || "http://localhost:5000", apiKey: required("AZOA_API_KEY") });
+  const operationId = process.env.AZOA_NFT_OPERATION_ID;
+  const chainType = operationId ? '' : required("AZOA_NFT_CHAIN");
+  const quote = operationId ? null : await azoa.api.getNftFeeQuote(chainType, "Mint");
+  if (quote && !isOk(quote)) throw new Error(quote.error.message);
+  const fee = quote && isOk(quote) ? quote.value : null;
+  if (fee) {
+    console.log("Platform fee:", fee.nativeBaseUnits, "base units of", fee.currency, "on", fee.network, "; chain fees additional");
+    if (required("AZOA_NFT_APPROVED_FEE_BASE_UNITS") !== fee.nativeBaseUnits)
+      throw new Error("Review the quote, then set the approved fee amount before submitting.");
+  }
+  const result = operationId
+    ? await azoa.api.refreshNftLifecycle(operationId)
+    : await azoa.api.mintUserNFT({
+        chainType,
+        feeAuthorization: fee ? { revision: fee.revision, maxNativeBaseUnits: fee.nativeBaseUnits, quoteId: fee.quoteId } : undefined, walletId: required("AZOA_NFT_WALLET_ID"),
+        name: required("AZOA_NFT_NAME"), metadataURI: required("AZOA_NFT_METADATA_URI"),
+      }, required("AZOA_NFT_REQUEST_KEY"));
+  if (!isOk(result)) throw new Error(result.error.message);
+  console.log("Operation:", result.value.operationId, "State:", result.value.state, "Stage:", result.value.stage);
+  if (result.value.state !== "Completed") {
+    console.log("Keep this operation reference. Confirmation or participant authorization is still required.");
+    return;
+  }
+  console.log("Confirmed asset:", result.value.assetId, "Transaction:", result.value.transactionId);
+  const nft = await azoa.api.getUserNFT(result.value.nftId);
+  if (isOk(nft)) console.log("Recorded NFT:", nft.value.id);
+}
+
+main().catch(error => { console.error(error.message); process.exitCode = 1; });

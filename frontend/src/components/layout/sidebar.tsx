@@ -18,7 +18,8 @@ import {
   ArrowLeftRight,
   Globe,
   Search,
-  Star,
+  Package,
+  Workflow,
   KeyRound,
   Settings,
   FlaskConical,
@@ -37,7 +38,7 @@ import {
 import { useState } from 'react'
 
 /**
- * Who a nav entry is shown to. 'all' = every signed-in avatar; 'operator' = hidden unless
+ * Who a nav entry is shown to. 'all' = every signed-in user; 'operator' = hidden unless
  * {@link isOperatorConsole} says this console instance is opted into operator-facing nav
  * (see OI-84). `NavGroup.audience` is REQUIRED (not defaulted) so a new group cannot join
  * the sidebar without a deliberate visibility choice — the compiler enforces it the same
@@ -61,10 +62,10 @@ interface NavGroup {
 }
 
 /**
- * STUB (OI-84): AZOA's regular avatar session carries no role or scope today — `AuthProfile`
+ * STUB (OI-84): AZOA's regular user session carries no role or scope today — `AuthProfile`
  * (frontend/src/lib/azoa-context.tsx) has no field for it, and "operator" is presently a
  * JWT-only backend claim (Controllers/UserController.cs `ActingIsOperator`) with nothing
- * client-visible to read here. Until AuthProfile/AzoaState carries a real per-avatar signal,
+ * client-visible to read here. Until AuthProfile/AzoaState carries a real per-user signal,
  * this resolves to a build-time flag instead of a per-user check, and — per the reserve
  * options precedent (ReserveDrawAuthority.cs ~:180) — an unset or blank value MUST resolve to
  * the narrowest setting, so an unconfigured deployment hides operator-only nav for everyone.
@@ -93,6 +94,7 @@ const navGroups: NavGroup[] = [
       { href: '/users', label: 'Users', icon: Users },
       { href: '/holons', label: 'Holons', icon: Box },
       { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
+      { href: '/business-verification', label: 'Business verification', icon: BadgeCheck },
     ],
   },
   {
@@ -102,6 +104,7 @@ const navGroups: NavGroup[] = [
       { href: '/wallets', label: 'Wallets', icon: Wallet },
       { href: '/nfts', label: 'NFTs', icon: Image },
       { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
+      { href: '/holds', label: 'Hold recovery', icon: Clock },
       { href: '/user-nfts', label: 'User NFTs', icon: UserCircle },
     ],
   },
@@ -123,8 +126,8 @@ const navGroups: NavGroup[] = [
       { href: '/search', label: 'Search', icon: Search },
       // OI-84: raw holon queries are an internals surface, not a builder-facing tool.
       { href: '/holon-query', label: 'Holon Query', icon: Database, audience: 'operator' },
-      { href: '/actions', label: 'Actions', icon: Star },
-      { href: '/action-graph-bundle', label: 'Action Graph Bundles', icon: Star },
+      { href: '/actions', label: 'Actions', icon: Workflow },
+      { href: '/action-graph-bundle', label: 'Action Graph Bundles', icon: Package },
       { href: '/api-keys', label: 'API Keys', icon: KeyRound },
       { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],

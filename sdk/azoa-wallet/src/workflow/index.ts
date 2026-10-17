@@ -32,6 +32,8 @@ export type {
   AdvanceParams,
   SignalParams,
   StartRunParams,
+  StartWorkflowOptions,
+  ActionEconomicManifest,
   AdvanceOptions,
   ChildCredentialResult,
 } from "./types.js";

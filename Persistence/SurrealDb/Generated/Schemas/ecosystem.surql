@@ -1,6 +1,6 @@
 -- ============================================================
 -- Table: ecosystem
--- Aggregate: Ecosystem (star-odk-ecosystem-tree / final-hardening-cutover D2 -- new entity)
+-- Aggregate: Ecosystem (action-graph-bundle-ecosystem-tree / final-hardening-cutover D2 -- new entity)
 -- Guardrail: G6 SCHEMAFULL; greenfield entity. An Ecosystem is the ROOT of a tree of EcosystemNodes; each node references a DappSeries or an ActionGraphBundle. Owned by an ActionGraphBundle + user.
 -- Note: An Ecosystem is a tree whose nodes (ecosystem_node table) each attach a DappSeries (or another ActionGraphBundle) as a composable dApp. The tree is walked by IActionGraphBundleManager.GetEcosystemAsync/codegen to produce the composed multi-dApp GeneratedCode on the owning ActionGraphBundle. Cycle safety is enforced app-side (mirrors the holon parent-cycle guard) -- SurrealDB does not enforce acyclicity.
 -- Note: action_graph_bundle_id is the owning ActionGraphBundle; user_id is the authoritative owner (IDOR-scoped, never trusts caller-supplied owner ids). An ActionGraphBundle owns at most one ecosystem in practice but the schema does not enforce that.

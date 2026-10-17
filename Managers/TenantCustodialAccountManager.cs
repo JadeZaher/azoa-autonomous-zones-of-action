@@ -1,6 +1,6 @@
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -11,7 +11,6 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Kyc;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
 
@@ -25,6 +24,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     private const int LiveClaimReadAttempts = 40;
     private static readonly TimeSpan LiveClaimReadInterval = TimeSpan.FromMilliseconds(25);
     private readonly ITenantManager _tenants;
+    private readonly ITenantCustodialAccess _access;
     private readonly IWalletManager _wallets;
     private readonly IKycManager _kyc;
     private readonly IBlockchainProviderFactory _providers;
@@ -42,10 +42,12 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         IIdempotencyStore idempotency,
         IConfiguration configuration,
         IHostEnvironment environment,
+        ITenantCustodialAccess access,
         IKycScreeningStore? screening = null,
         ILogger<TenantCustodialAccountManager>? logger = null)
     {
         _tenants = tenants;
+        _access = access;
         _wallets = wallets;
         _kyc = kyc;
         _providers = providers;
@@ -125,8 +127,11 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid tenantId,
         string externalSubject,
         string idempotencyKey,
+        SigningConsentWitness authority,
         CancellationToken ct = default)
     {
+        if (authority.Credential.ActorUserId != tenantId || authority.Credential.TenantId is not null)
+            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure("Provisioning authority does not match the tenant.");
         var validation = ValidateResourceIdentity(tenantId, externalSubject, idempotencyKey);
         if (validation is not null)
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(validation);
@@ -155,6 +160,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                     tenantId,
                     externalSubject,
                     capabilities,
+                    authority,
                     ct);
             }
 
@@ -164,6 +170,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 tenantId,
                 externalSubject,
                 capabilities,
+                authority,
                 CancellationToken.None);
             ownsUnsettledClaim = false;
             ct.ThrowIfCancellationRequested();
@@ -180,9 +187,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
 
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LogUnexpected(ex, nameof(EnsureAsync), tenantId);
             await TryFailOwnedClaimAsync(
                 ownsUnsettledClaim,
                 operationKey,
@@ -190,8 +196,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 "EnsureIdempotencyRecovery",
                 tenantId);
 
-            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
-                "TENANT_CUSTODY_UNAVAILABLE: Custodial onboarding is temporarily unavailable.");
+            throw;
         }
     }
 
@@ -199,6 +204,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     public async Task<AZOAResult<TenantCustodialAccountStatusResponse>> GetStatusAsync(
         Guid tenantId,
         string externalSubject,
+        SigningConsentWitness authority,
         CancellationToken ct = default)
     {
         var validation = ValidateResourceIdentity(tenantId, externalSubject, idempotencyKey: null);
@@ -210,6 +216,9 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         if (child.IsError || child.Result is null)
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
                 SafeIdentityMessage(child.Message));
+
+        if (await CaptureAccessAsync(tenantId, child.Result.UserId, externalSubject, authority, AzoaScopes.KycRead, ct) is null)
+            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
 
         var capabilities = (await GetCapabilitiesAsync(tenantId, ct)).Result!;
         var wallet = await FindBootstrapWalletAsync(child.Result.UserId, capabilities.WalletChain);
@@ -223,6 +232,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             child.Result.UserId,
             wallet.Result,
             capabilities,
+            authority,
             ct);
     }
 
@@ -231,6 +241,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid tenantId,
         string externalSubject,
         string idempotencyKey,
+        SigningConsentWitness authority,
         CancellationToken ct = default)
     {
         var validation = ValidateResourceIdentity(tenantId, externalSubject, idempotencyKey);
@@ -238,9 +249,13 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             return AZOAResult<TenantKycSessionResponse>.Failure(validation);
 
         externalSubject = externalSubject.Trim();
-        var child = await ResolveOwnedChildAsync(tenantId, externalSubject, ct);
+        var child = await ResolveCorrelatedChildAsync(tenantId, externalSubject, ct);
         if (child.IsError || child.Result is null)
             return AZOAResult<TenantKycSessionResponse>.Failure(SafeIdentityMessage(child.Message));
+
+        var witness = await CaptureAccessAsync(tenantId, child.Result.UserId, externalSubject, authority, AzoaScopes.KycSubmit, ct);
+        if (witness is null || !await _access.ValidateAsync(witness, AzoaScopes.KycSubmit, ct))
+            return AZOAResult<TenantKycSessionResponse>.Failure(TenantAuthorizationError.NotFound + "Current KYC access is unavailable.");
 
         var operationKey = BuildKycSessionOperationKey(tenantId, idempotencyKey);
         var operationType = BuildKycSessionOperationType(externalSubject);
@@ -261,6 +276,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                     claim.Record,
                     operationKey,
                     operationType,
+                    witness,
                     ct);
             }
 
@@ -275,9 +291,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             // The stable key means "ensure an active session", not "replay one
             // immutable HTTP response". IKycManager owns durable attempt reuse
             // and server-side rollover after rejection/expiry.
-            var started = await _kyc.BeginAsync(
-                child.Result.UserId,
-                tenantId,
+            var started = await _kyc.BeginCustodialAsync(
+                witness,
                 claim.Won ? CancellationToken.None : ct);
             if (started.IsError || started.Result is null)
             {
@@ -310,7 +325,9 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 ownsUnsettledClaim = false;
                 ct.ThrowIfCancellationRequested();
             }
-            return AZOAResult<TenantKycSessionResponse>.Success(response);
+            return await _access.ValidateAsync(witness, AzoaScopes.KycSubmit, ct)
+                ? AZOAResult<TenantKycSessionResponse>.Success(response)
+                : AZOAResult<TenantKycSessionResponse>.Failure(TenantAuthorizationError.NotFound + "Current KYC access is unavailable.");
         }
         catch (OperationCanceledException)
         {
@@ -323,9 +340,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
 
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LogUnexpected(ex, nameof(BeginKycAsync), tenantId);
             await TryFailOwnedClaimAsync(
                 ownsUnsettledClaim,
                 operationKey,
@@ -333,8 +349,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 "KycSessionIdempotencyRecovery",
                 tenantId);
 
-            return AZOAResult<TenantKycSessionResponse>.Failure(
-                "KYC_SESSION_UNAVAILABLE: A KYC verification session could not be started.");
+            throw;
         }
     }
 
@@ -343,11 +358,16 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid tenantId,
         string externalSubject,
         TenantKycSubmissionRequest request,
+        SigningConsentWitness authority,
         CancellationToken ct = default)
     {
-        var child = await ResolveOwnedChildAsync(tenantId, externalSubject, ct);
+        var child = await ResolveCorrelatedChildAsync(tenantId, externalSubject, ct);
         if (child.IsError || child.Result is null)
             return AZOAResult<TenantKycSubmissionResponse>.Failure(SafeIdentityMessage(child.Message));
+
+        var witness = await CaptureAccessAsync(tenantId, child.Result.UserId, externalSubject, authority, AzoaScopes.KycSubmit, ct);
+        if (witness is null || !await _access.ValidateAsync(witness, AzoaScopes.KycSubmit, ct))
+            return AZOAResult<TenantKycSubmissionResponse>.Failure(TenantAuthorizationError.NotFound + "Current KYC access is unavailable.");
 
         if (request?.Documents is null)
             return AZOAResult<TenantKycSubmissionResponse>.Failure("A document reference list is required.");
@@ -364,7 +384,9 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             if (current.Result.Status == KycStatus.APPROVED
                 || current.Result.Documents.Count > 0)
             {
-                return AZOAResult<TenantKycSubmissionResponse>.Success(ToKycSubmission(current.Result));
+                return await _access.ValidateAsync(witness, AzoaScopes.KycSubmit, ct)
+                    ? AZOAResult<TenantKycSubmissionResponse>.Success(ToKycSubmission(current.Result))
+                    : AZOAResult<TenantKycSubmissionResponse>.Failure(TenantAuthorizationError.NotFound + "Current KYC access is unavailable.");
             }
         }
         if (current.IsError
@@ -385,12 +407,14 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 FileSizeBytes = document.FileSizeBytes
             }).ToList()
         };
-        var submitted = await _kyc.SubmitAsync(model, child.Result.UserId, tenantId, ct);
+        var submitted = await _kyc.SubmitCustodialAsync(model, witness, ct);
         if (submitted.IsError || submitted.Result is null)
             return AZOAResult<TenantKycSubmissionResponse>.Failure(
                 SafeKycMessage(submitted.Message, submitted.Exception));
 
-        return AZOAResult<TenantKycSubmissionResponse>.Success(ToKycSubmission(submitted.Result));
+        return await _access.ValidateAsync(witness, AzoaScopes.KycSubmit, ct)
+            ? AZOAResult<TenantKycSubmissionResponse>.Success(ToKycSubmission(submitted.Result))
+            : AZOAResult<TenantKycSubmissionResponse>.Failure(TenantAuthorizationError.NotFound + "Current KYC access is unavailable.");
     }
 
     private async Task<AZOAResult<TenantCustodialAccountStatusResponse>> BuildStatusAsync(
@@ -399,8 +423,12 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid userId,
         IWallet? wallet,
         TenantCustodialCapabilitiesResponse capabilities,
+        SigningConsentWitness authority,
         CancellationToken ct)
     {
+        var witness = await CaptureAccessAsync(tenantId, userId, externalSubject, authority, AzoaScopes.KycRead, ct);
+        if (witness is null) return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
+            TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
         var kyc = await _kyc.GetStatusAsync(userId, tenantId, ct);
         var kycStatus = TenantKycStatus.Unknown;
         if (!kyc.IsError && kyc.Result is not null)
@@ -413,7 +441,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 "TENANT_KYC_UNAVAILABLE: KYC status is temporarily unavailable.");
         }
 
-        var review = await ResolveAmlReviewAsync(userId, tenantId, kycStatus, ct);
+        var review = await ResolveAmlReviewAsync(userId, tenantId, kycStatus, kyc.Result?.AmlLineageKey, ct);
         if (review.IsError)
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(review.Message);
         if (review.Result!.UnderReview)
@@ -437,6 +465,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                     ? "KYC verification is not approved."
                 : null);
 
+        if (!await _access.ValidateAsync(witness, AzoaScopes.KycRead, ct))
+            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
         return AZOAResult<TenantCustodialAccountStatusResponse>.Success(new TenantCustodialAccountStatusResponse
         {
             TenantId = tenantId.ToString("D"),
@@ -475,6 +505,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid userId,
         Guid? tenantId,
         TenantKycStatus kycStatus,
+        string? lineageKey,
         CancellationToken ct)
     {
         if (kycStatus != TenantKycStatus.Approved)
@@ -491,14 +522,16 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 "TENANT_KYC_UNAVAILABLE: KYC status is temporarily unavailable.");
         }
 
-        var screening = await _screening.GetLatestResultAsync(userId, tenantId, ct);
+        var screening = string.IsNullOrWhiteSpace(lineageKey)
+            ? new AZOAResult<AZOA.WebAPI.Persistence.SurrealDb.Models.KycScreeningResult>()
+            : await _screening.GetLatestResultAsync(userId, tenantId, ct, lineageKey);
         if (screening.IsError)
         {
             return AZOAResult<AmlReviewProjection>.Failure(
                 "TENANT_KYC_UNAVAILABLE: KYC status is temporarily unavailable.");
         }
 
-        if (KycAmlClearance.IsClear(screening.Result))
+        if (screening.Result?.LineageKey == lineageKey && KycAmlClearance.IsClear(screening.Result))
             return AZOAResult<AmlReviewProjection>.Success(new AmlReviewProjection(false, null, null));
 
         var sla = KycAmlClearance.ResolveManualReviewSla(_configuration);
@@ -549,7 +582,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             "Success");
     }
 
-    private async Task<AZOAResult<ChildUserResponse>> ResolveOwnedChildAsync(
+    private async Task<AZOAResult<ChildUserResponse>> ResolveCorrelatedChildAsync(
         Guid tenantId,
         string externalSubject,
         CancellationToken ct)
@@ -560,6 +593,12 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
 
         return await _tenants.ResolveChildAsync(tenantId, externalSubject.Trim(), ct);
     }
+
+    private Task<TenantCustodialWitness?> CaptureAccessAsync(Guid tenantId, Guid userId, string externalSubject,
+        SigningConsentWitness authority, string scope, CancellationToken ct)
+        => authority.Credential.ActorUserId != tenantId || authority.Credential.TenantId is not null
+            ? Task.FromResult<TenantCustodialWitness?>(null)
+            : _access.CaptureAsync(userId, externalSubject, authority, scope, ct);
 
     private bool ResolveProviderAvailable(string chain)
     {
@@ -685,6 +724,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid tenantId,
         string externalSubject,
         TenantCustodialCapabilitiesResponse capabilities,
+        SigningConsentWitness authority,
         CancellationToken ct)
     {
         var observedLiveClaim = record.State == IdempotencyState.InProgress;
@@ -730,7 +770,13 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         }
 
         if (observedLiveClaim)
-            return AZOAResult<TenantCustodialAccountStatusResponse>.Success(original);
+        {
+            var witness = Guid.TryParse(original.UserId, out var userId)
+                ? await CaptureAccessAsync(tenantId, userId, externalSubject, authority, AzoaScopes.KycRead, ct) : null;
+            return witness is not null && await _access.ValidateAsync(witness, AzoaScopes.KycRead, ct)
+                ? AZOAResult<TenantCustodialAccountStatusResponse>.Success(original)
+                : AZOAResult<TenantCustodialAccountStatusResponse>.Failure(TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
+        }
 
         // Re-run create-only/idempotent stages so a previously identity-only
         // completion converges once custody becomes available. Cached data binds
@@ -741,13 +787,14 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 UnavailableStatus(tenantId, externalSubject, capabilities.UnavailableReason));
         }
 
-        return await ConvergeAccountAsync(tenantId, externalSubject, capabilities, ct);
+        return await ConvergeAccountAsync(tenantId, externalSubject, capabilities, authority, ct);
     }
 
     private async Task<AZOAResult<TenantKycSessionResponse>> ReplayLiveKycClaimAsync(
         IdempotencyRecord record,
         string operationKey,
         string operationType,
+        TenantCustodialWitness witness,
         CancellationToken ct)
     {
         record = await WaitForTerminalRecordAsync(operationKey, record, ct);
@@ -773,7 +820,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         var original = string.IsNullOrWhiteSpace(record.ResultPayload)
             ? null
             : IdempotencyReplay.DeserializeForReplay<TenantKycSessionResponse>(record.ResultPayload);
-        return original is null
+        return original is null || !await _access.ValidateAsync(witness, AzoaScopes.KycSubmit, ct)
             ? AZOAResult<TenantKycSessionResponse>.Failure(
                 "The original KYC session response could not be replayed.")
             : AZOAResult<TenantKycSessionResponse>.Success(original);
@@ -821,9 +868,10 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid tenantId,
         string externalSubject,
         TenantCustodialCapabilitiesResponse capabilities,
+        SigningConsentWitness authority,
         CancellationToken ct)
     {
-        var status = await ConvergeAccountAsync(tenantId, externalSubject, capabilities, ct);
+        var status = await ConvergeAccountAsync(tenantId, externalSubject, capabilities, authority, ct);
         if (status.IsError || status.Result is null)
             return await FailEnsureAsync(operationKey, status.Message);
 
@@ -838,11 +886,13 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         Guid tenantId,
         string externalSubject,
         TenantCustodialCapabilitiesResponse capabilities,
+        SigningConsentWitness authority,
         CancellationToken ct)
     {
         var provisioned = await _tenants.ProvisionChildAsync(
             tenantId,
             new ProvisionChildModel { ExternalUserId = externalSubject },
+            authority with { RequiredScopes = [AzoaScopes.TenantProvision], Grants = [] },
             ct);
         if (provisioned.IsError || provisioned.Result is null)
         {
@@ -853,14 +903,14 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         IWallet? wallet = null;
         if (capabilities.WalletProvisioningReady)
         {
-            var bootstrapped = await _wallets.BootstrapWalletAsync(
+            var bootstrapped = await _wallets.BootstrapTenantWalletAsync(
                 new WalletGenerateRequest
                 {
                     ChainType = capabilities.WalletChain,
                     Label = $"{capabilities.WalletChain} custodial wallet",
                     IsDefault = true
                 },
-                provisioned.Result.UserId);
+                provisioned.Result.UserId, externalSubject, authority, ct);
             if (bootstrapped.IsError || bootstrapped.Result is null)
             {
                 return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
@@ -875,6 +925,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             provisioned.Result.UserId,
             wallet,
             capabilities,
+            authority,
             ct);
     }
 

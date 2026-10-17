@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 
@@ -50,6 +49,12 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string AdmissionKey { get; set; } = string.Empty;
 
+        public string? CreationToken { get; set; }
+        public DateTimeOffset? CreationClaimedAt { get; set; }
+        public DateTimeOffset? CreationStartedAt { get; set; }
+        public DateTimeOffset? CreationQuarantinedAt { get; set; }
+        public DateTimeOffset? CreationCompletedAt { get; set; }
+
         [FieldGroup("Subject + tenancy")]
         [References(typeof(User), Optional = true)]
         public string? SubjectUserId { get; set; }
@@ -76,8 +81,27 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("0")]
         public long StateVersion { get; set; }
 
+        /// <summary>Opaque owner of the current domain-resumption lease.</summary>
+        public string? ResumeLeaseToken { get; set; }
+
+        /// <summary>Expiry after which a crashed resumption may be reclaimed.</summary>
+        public DateTimeOffset? ResumeLeaseExpiresAt { get; set; }
+
+        /// <summary>Operator identity for the one-time admission reconciliation.</summary>
+        public string? ReconciledByUserId { get; set; }
+
+        public DateTimeOffset? ReconciledAt { get; set; }
+
+        public string? ReconciliationReason { get; set; }
+
+        public string? ReconciliationAuditJson { get; set; }
+
         /// <summary>Authoritative provider verdict, re-fetched server-side; never from a callback body.</summary>
         public string? AuthoritativeOutcome { get; set; }
+
+        public string? ProviderDecisionId { get; set; }
+        public string? ProviderEvidenceDigest { get; set; }
+        public bool? ProviderEvidenceConflict { get; set; }
 
         /// <summary>Non-secret reason a session is non-terminal or failed.</summary>
         public string? OutcomeDetail { get; set; }

@@ -64,13 +64,13 @@ resolving to a truthful record.
 
 **Dashboard pages present** (`frontend/src/app/(dashboard)/`, 16 feature + 1 tests):
 overview, users, user-nfts, wallets, holons, nfts, actions, blockchain, bridge,
-swap, fungible-mint, star-odk, search, api-keys, settings, **tests** (test-runner).
+swap, fungible-mint, action-graph-bundle, search, api-keys, settings, **tests** (test-runner).
 
 **Shipped-this-track features vs pages:**
 
 - **Ecosystem tree (D2)** — ✅ **has a UI**. `components/ecosystem-tree/`
   (`ecosystem-tree-flow.tsx` + `ecosystem-node.tsx`) is rendered inside the
-  **star-odk** page (`EcosystemSection`, GET `/api/starodk/{id}/ecosystem`, plus an
+  **action-graph-bundle** page (`EcosystemSection`, GET `/api/actiongraphbundle/{id}/ecosystem`, plus an
   attach form → `/dapp-series`). No gap.
 - **Fractionalization Bridge/Back nodes (D1)** — covered by the existing
   **actions** builder palette (`components/action-builder/`, `presets.ts` +

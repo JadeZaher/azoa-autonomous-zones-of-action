@@ -121,7 +121,48 @@ describe("status helpers mirror the engine enum", () => {
   });
 });
 
-describe("ordered-call: action(a).start().step(b).step(c)", () => {
+describe("ordered workflow calls", () => {
+  it("reuses the persisted consent and key after a lost start response", async () => {
+    const wf = new WorkflowClient(makeClient());
+    const options = { idempotencyKey: "persisted-start", acknowledgeEconomicEffects: true, expectedPublishedHash: "published-version" };
+    mockFetch.mockRejectedValueOnce(new Error("response lost"))
+      .mockReturnValueOnce(azoaResponse(runResult()));
+    expect(isOk(await wf.startWorkflow(ACTION_ID, options))).toBe(false);
+    expect(isOk(await wf.startWorkflow(ACTION_ID, options))).toBe(true);
+    expect(mockFetch.mock.calls).toHaveLength(2);
+    expect(mockFetch.mock.calls[0][0]).toBe(mockFetch.mock.calls[1][0]);
+    expect(mockFetch.mock.calls[0][1].headers["Idempotency-Key"]).toBe("persisted-start");
+    expect(mockFetch.mock.calls[1][1].headers["Idempotency-Key"]).toBe("persisted-start");
+    const url = new URL(mockFetch.mock.calls[1][0]);
+    expect(url.searchParams.get("acknowledgeEconomicEffects")).toBe("true");
+    expect(url.searchParams.get("expectedPublishedHash")).toBe("published-version");
+  });
+
+  it("rejects missing identity or unbound economic consent before sending", async () => {
+    const wf = new WorkflowClient(makeClient());
+    expect(() => wf.startWorkflow(ACTION_ID, { idempotencyKey: "" })).toThrow("persisted idempotencyKey");
+    expect(() => wf.startWorkflow(ACTION_ID, { idempotencyKey: "key", acknowledgeEconomicEffects: true }))
+      .toThrow("published version hash");
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("reads an existing child run using that child's credential", async () => {
+    const wf = new WorkflowClient(makeTenantClient());
+    mockFetch.mockReturnValueOnce(azoaResponse({ userId: CHILD_USER, token: "CHILD-JWT", expiresAt: "2999-01-01T00:00:00Z", scopes: [] }))
+      .mockReturnValueOnce(azoaResponse(runResult()));
+    expect(isOk(await wf.action.run(RUN_ID).forActor(CHILD_USER).status())).toBe(true);
+    expect(mockFetch.mock.calls[1][1].headers.Authorization).toBe("Bearer CHILD-JWT");
+  });
+
+  it("cannot switch actor while an admitted start is queued", async () => {
+    const wf = new WorkflowClient(makeTenantClient());
+    mockFetch.mockReturnValueOnce(azoaResponse({ userId: CHILD_USER, token: "CHILD-JWT", expiresAt: "2999-01-01T00:00:00Z", scopes: [] }))
+      .mockReturnValueOnce(azoaResponse(runResult()));
+    const handle = wf.action(ACTION_ID).forActor(CHILD_USER).start({ idempotencyKey: "actor-key" });
+    expect(() => handle.forActor(ACTION_ID)).toThrow("actor cannot change");
+    expect(isOk(await handle)).toBe(true);
+  });
+
   it("issues start-workflow → advance{fromNodeId:b} → advance{fromNodeId:c} in order", async () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch
@@ -129,14 +170,15 @@ describe("ordered-call: action(a).start().step(b).step(c)", () => {
       .mockReturnValueOnce(azoaResponse(runResult({ status: "Suspended" }))) // advance b
       .mockReturnValueOnce(azoaResponse(runResult({ status: "Running" })));  // advance c
 
-    const result = await wf.action(ACTION_ID).start().step(NODE_B).step(NODE_C);
+    const result = await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).step(NODE_B).step(NODE_C);
 
     expect(isOk(result)).toBe(true);
     expect(mockFetch.mock.calls).toHaveLength(3);
 
     const [u0, i0] = mockFetch.mock.calls[0];
-    expect(u0).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}`);
+    expect(u0).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}?acknowledgeEconomicEffects=false`);
     expect(i0.method).toBe("POST");
+    expect(i0.headers["Idempotency-Key"]).toBe("start-key");
 
     const [u1, i1] = mockFetch.mock.calls[1];
     expect(u1).toBe(`${BASE}${API_PATHS.ACTION_RUN_ADVANCE(RUN_ID)}`);
@@ -160,7 +202,7 @@ describe("ordered-call: action(a).start().step(b).step(c)", () => {
         })
       ); // advance b fails — chain must stop here
 
-    const result = await wf.action(ACTION_ID).start().step(NODE_B).step(NODE_C);
+    const result = await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).step(NODE_B).step(NODE_C);
 
     expect(isOk(result)).toBe(false);
     // start + advance(b) only — advance(c) never issued.
@@ -175,7 +217,7 @@ describe("hybrid: start → signal{gateId, payload}", () => {
       .mockReturnValueOnce(azoaResponse(runResult({ status: "AwaitingSignal" })))
       .mockReturnValueOnce(azoaResponse(runResult({ status: "Running" })));
 
-    const result = await wf.action(ACTION_ID).start().signal("gate-phase-1", "phase-met");
+    const result = await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).signal("gate-phase-1", "phase-met");
 
     expect(isOk(result)).toBe(true);
     expect(mockFetch.mock.calls).toHaveLength(2);
@@ -194,7 +236,7 @@ describe("hybrid: start → signal{gateId, payload}", () => {
       .mockReturnValueOnce(azoaResponse(runResult()))
       .mockReturnValueOnce(azoaResponse(runResult()));
 
-    await wf.action(ACTION_ID).start().signal("gate-x");
+    await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).signal("gate-x");
 
     const body = JSON.parse(mockFetch.mock.calls[1][1].body);
     expect(body.payload).toBeNull();
@@ -208,13 +250,17 @@ describe("fromTemplate: instantiate → start-workflow", () => {
       .mockReturnValueOnce(azoaResponse({ id: ACTION_ID, name: "q", userId: CHILD_USER, status: "Active", nodes: [], edges: [], dependencies: [], metadata: {}, createdDate: "x" })) // instantiate
       .mockReturnValueOnce(azoaResponse(runResult())); // start-workflow
 
-    const result = await wf.action.fromTemplate(TEMPLATE_ID).start({ params: { amount: "1000" } });
+    const instantiated = await wf.instantiate(TEMPLATE_ID, { amount: "1000" });
+    expect(isOk(instantiated)).toBe(true);
+    if (!isOk(instantiated)) throw new Error("Fixture authoring failed");
+    const persistedActionId = instantiated.value.id;
+    const result = await wf.action(persistedActionId).start({ idempotencyKey: "start-key" });
 
     expect(isOk(result)).toBe(true);
     const [u0] = mockFetch.mock.calls[0];
     expect(u0).toBe(`${BASE}/api/action/templates/${TEMPLATE_ID}/instantiate`);
     const [u1] = mockFetch.mock.calls[1];
-    expect(u1).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}`);
+    expect(u1).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}?acknowledgeEconomicEffects=false`);
   });
 });
 
@@ -225,7 +271,7 @@ describe("idempotency passthrough", () => {
       .mockReturnValueOnce(azoaResponse(runResult()))
       .mockReturnValueOnce(azoaResponse(runResult()));
 
-    await wf.action(ACTION_ID).start().step(NODE_B, { idempotencyKey: "key-123" });
+    await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).step(NODE_B, { idempotencyKey: "key-123" });
 
     const init = mockFetch.mock.calls[1][1];
     expect(init.headers["Idempotency-Key"]).toBe("key-123");
@@ -237,7 +283,7 @@ describe("idempotency passthrough", () => {
       .mockReturnValueOnce(azoaResponse(runResult()))
       .mockReturnValueOnce(azoaResponse(runResult()));
 
-    await wf.action(ACTION_ID).start().signal("gate", "p", { idempotencyKey: "sig-key" });
+    await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).signal("gate", "p", { idempotencyKey: "sig-key" });
 
     expect(mockFetch.mock.calls[1][1].headers["Idempotency-Key"]).toBe("sig-key");
   });
@@ -266,7 +312,7 @@ describe("guards throw before any fetch", () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(azoaResponse(runResult())); // only start
 
-    const result = await wf.action(ACTION_ID).start().step("not-a-uuid");
+    const result = await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).step("not-a-uuid");
 
     expect(isOk(result)).toBe(false);
     if (!isOk(result)) expect(result.error.message).toContain("Invalid fromNodeId");
@@ -278,7 +324,7 @@ describe("guards throw before any fetch", () => {
     const wf = new WorkflowClient(makeClient());
     mockFetch.mockReturnValueOnce(azoaResponse(runResult())); // only start
 
-    const result = await wf.action(ACTION_ID).start().signal("   ");
+    const result = await wf.action(ACTION_ID).start({ idempotencyKey: "start-key" }).signal("   ");
 
     expect(isOk(result)).toBe(false);
     if (!isOk(result)) expect(result.error.message).toContain("Invalid gateId");
@@ -290,7 +336,6 @@ describe("child-credential acquisition (forActor)", () => {
   it("issues the credential POST FIRST (tenant X-Api-Key), then uses the child JWT as Bearer on advance", async () => {
     const wf = new WorkflowClient(makeTenantClient());
     mockFetch
-      .mockReturnValueOnce(azoaResponse(runResult())) // start-workflow (X-Api-Key)
       .mockReturnValueOnce(
         azoaResponse({
           userId: CHILD_USER,
@@ -299,29 +344,30 @@ describe("child-credential acquisition (forActor)", () => {
           scopes: ["action"],
         })
       ) // credential POST (X-Api-Key)
+      .mockReturnValueOnce(azoaResponse(runResult())) // start under child authority
       .mockReturnValueOnce(azoaResponse(runResult())); // advance (child Bearer)
 
     const result = await wf
       .action(ACTION_ID)
       .forActor(CHILD_USER)
-      .start()
+      .start({ idempotencyKey: "start-key" })
       .step(NODE_B);
 
     expect(isOk(result)).toBe(true);
     expect(mockFetch.mock.calls).toHaveLength(3);
 
-    // call 0: start-workflow under tenant X-Api-Key (no Bearer yet)
+    // Credential acquisition uses the tenant principal.
     const i0 = mockFetch.mock.calls[0][1];
-    expect(mockFetch.mock.calls[0][0]).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}`);
+    expect(mockFetch.mock.calls[0][0]).toBe(`${BASE}${API_PATHS.TENANT_CHILD_CREDENTIAL(CHILD_USER)}`);
     expect(i0.headers["X-Api-Key"]).toBe("tenant-api-key");
     expect(i0.headers["Authorization"]).toBeUndefined();
 
-    // call 1: credential acquisition under tenant X-Api-Key (the principal)
+    // Starting the run uses the same child authority as later advances.
     const [u1, i1] = mockFetch.mock.calls[1];
-    expect(u1).toBe(`${BASE}${API_PATHS.TENANT_CHILD_CREDENTIAL(CHILD_USER)}`);
+    expect(u1).toBe(`${BASE}${API_PATHS.ACTION_START_WORKFLOW(ACTION_ID)}?acknowledgeEconomicEffects=false`);
     expect(i1.method).toBe("POST");
     expect(i1.headers["X-Api-Key"]).toBe("tenant-api-key");
-    expect(i1.headers["Authorization"]).toBeUndefined();
+    expect(i1.headers["Authorization"]).toBe("Bearer CHILD-JWT");
 
     // call 2: advance uses the child JWT as Bearer (override wins for this call)
     const i2 = mockFetch.mock.calls[2][1];
@@ -332,14 +378,14 @@ describe("child-credential acquisition (forActor)", () => {
   it("acquires the credential once and reuses the cached child JWT across calls", async () => {
     const wf = new WorkflowClient(makeTenantClient());
     mockFetch
-      .mockReturnValueOnce(azoaResponse(runResult())) // start
       .mockReturnValueOnce(
         azoaResponse({ userId: CHILD_USER, token: "CHILD-JWT", expiresAt: "2999-01-01T00:00:00Z", scopes: [] })
       ) // credential (once)
+      .mockReturnValueOnce(azoaResponse(runResult())) // start
       .mockReturnValueOnce(azoaResponse(runResult())) // advance b
       .mockReturnValueOnce(azoaResponse(runResult())); // advance c
 
-    await wf.action(ACTION_ID).forActor(CHILD_USER).start().step(NODE_B).step(NODE_C);
+    await wf.action(ACTION_ID).forActor(CHILD_USER).start({ idempotencyKey: "start-key" }).step(NODE_B).step(NODE_C);
 
     // start + 1 credential + 2 advances = 4 (NOT 5 — credential not re-fetched)
     expect(mockFetch.mock.calls).toHaveLength(4);
@@ -376,7 +422,7 @@ describe("status() + onSuspend", () => {
     await wf
       .action(ACTION_ID)
       .onSuspend((run) => seen.push(run.status))
-      .start();
+      .start({ idempotencyKey: "start-key" });
 
     expect(seen).toEqual(["Suspended"]);
   });
@@ -386,7 +432,7 @@ describe("status() + onSuspend", () => {
     mockFetch.mockReturnValueOnce(azoaResponse(runResult({ status: "Running" })));
 
     const seen: string[] = [];
-    await wf.action(ACTION_ID).onSuspend((run) => seen.push(run.status)).start();
+    await wf.action(ACTION_ID).onSuspend((run) => seen.push(run.status)).start({ idempotencyKey: "start-key" });
 
     expect(seen).toEqual([]);
   });
@@ -408,22 +454,27 @@ describe("nodeConfig builders match the C# config POCO shapes", () => {
     });
   });
 
-  it("swap → { request: { chain, quoteId, walletAddress } }", () => {
-    const out = JSON.parse(
-      nodeConfig.swap({ request: { chain: "algorand", quoteId: "q1", walletAddress: "ADDR" } })
-    );
-    expect(out).toEqual({ request: { chain: "algorand", quoteId: "q1", walletAddress: "ADDR" } });
+  it("swap → { quote: frozen exact-input request } with full-width decimal text and no caller quote id", () => {
+    const quote = { walletId: "w1", network: { chainType: "Ethereum", network: "Devnet", protocolIdentity: "eip155:31337" },
+      inputAsset: { id: "0x6", symbol: "IN", decimals: 18, native: false }, outputAsset: { id: "ETH", symbol: "ETH", decimals: 18, native: true },
+      grossInput: "115792089237316195423570985008687907853269984665640564039457584007913129639935", slippageBps: 50,
+      budget: { maximumNetworkFee: "1000", maximumLockedBalance: "0", maximumCleanupFee: "10" } };
+    const out = JSON.parse(nodeConfig.swap({ quote }));
+    expect(out).toEqual({ quote });
+    expect(typeof out.quote.grossInput).toBe("string");
+    expect(out.quote.quoteId).toBeUndefined();
   });
 
   it("grant → { request: NftMintRequest, holonId? }; amounts stay strings", () => {
     const out = JSON.parse(
       nodeConfig.grant({
-        request: { walletId: "w1", name: "Reward", chainId: "algorand", metadata: { amount: "1000" } },
+        request: { walletId: "w1", name: "Reward", chainId: "algorand", metadataUri: "ipfs://reward", metadata: { amount: "1000" } },
         holonId: "h1",
       })
     );
     expect(out.holonId).toBe("h1");
     expect(out.request.walletId).toBe("w1");
+    expect(out.request.metadataUri).toBe("ipfs://reward");
     expect(out.request.metadata.amount).toBe("1000");
     expect(typeof out.request.metadata.amount).toBe("string");
   });
@@ -513,7 +564,7 @@ describe("onSuspend fires for AwaitingReconciliation", () => {
     );
 
     const seen: string[] = [];
-    await wf.action(ACTION_ID).onSuspend((run) => seen.push(run.status)).start();
+    await wf.action(ACTION_ID).onSuspend((run) => seen.push(run.status)).start({ idempotencyKey: "start-key" });
 
     expect(seen).toEqual(["AwaitingReconciliation"]);
   });

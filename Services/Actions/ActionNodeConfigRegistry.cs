@@ -50,8 +50,8 @@ public static class ActionNodeConfigRegistry
             [ActionNodeType.WalletGetPortfolio]   = typeof(IdConfig),
 
             // Action graph bundle ops
-            [ActionNodeType.ActionGraphBundleGenerate]         = typeof(ActionGraphBundleGenerateNodeConfig),
-            [ActionNodeType.ActionGraphBundleDeploy]           = typeof(IdConfig),
+            [ActionNodeType.ActionGraphBundleGenerate]         = typeof(AZOA.WebAPI.Models.Deployments.DeploymentGenerationNodeConfig),
+            [ActionNodeType.ActionGraphBundleDeploy]           = typeof(AZOA.WebAPI.Models.Deployments.DeploymentNodeConfig),
 
             // Search / User NFT / Blockchain
             [ActionNodeType.Search]               = null,

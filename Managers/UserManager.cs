@@ -90,10 +90,23 @@ public class UserManager : IUserManager
 
     public async Task<AZOAResult<string>> LoginAsync(UserLoginModel model, AZOARequest? request = null)
     {
-        var all = await _userStore.GetAllAsync(default);
-        var user = ResolveLoginSubject(all.Result, model.Email);
+        if (model.UserId.HasValue && !string.IsNullOrWhiteSpace(model.Email))
+            return AZOAResult<string>.Failure("Provide one login identity.");
+        IUser? user;
+        if (model.UserId is { } userId)
+        {
+            var loaded = await _userStore.GetByIdAsync(userId, default);
+            if (loaded.IsError) return AZOAResult<string>.Failure(loaded.Message);
+            user = loaded.Result;
+        }
+        else
+        {
+            var all = await _userStore.GetAllAsync(default);
+            if (all.IsError) return AZOAResult<string>.Failure(all.Message);
+            user = ResolveLoginSubject(all.Result, model.Email);
+        }
 
-        if (user == null || !BCrypt.Net.BCrypt.Verify(model.Password, user.PasswordHash))
+        if (user == null || !user.IsActive || user.OwnerTenantId is not null || !BCrypt.Net.BCrypt.Verify(model.Password, user.PasswordHash))
             return new AZOAResult<string> { IsError = true, Message = "Invalid credentials." };
         if (user.Id == NodeOperatorIdentity.UserId)
             return new AZOAResult<string> { IsError = true, Message = "Invalid credentials." };
@@ -179,9 +192,9 @@ public class UserManager : IUserManager
         if (model.Title != null) user.Title = model.Title;
         if (model.FirstName != null) user.FirstName = model.FirstName;
         if (model.LastName != null) user.LastName = model.LastName;
-        if (model.IsActive.HasValue) user.IsActive = model.IsActive.Value;
-
-        return await _userStore.UpsertAsync(user, default);
+        var profile = await _userStore.UpsertAsync(user, default);
+        if (profile.IsError || !model.IsActive.HasValue || model.IsActive.Value == user.IsActive) return profile;
+        return await _userStore.TrySetActiveAsync(user.Id, user.IsActive, model.IsActive.Value, default);
     }
 
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid userId, AZOARequest? request = null)
@@ -206,9 +219,7 @@ public class UserManager : IUserManager
 
         // The only stateless-JWT revocation lever: bump the watermark to now so every
         // token minted before this instant fails the OnTokenValidated check (Program.cs).
-        existing.Result.AuthNotBefore = DateTime.UtcNow;
-
-        var saved = await _userStore.UpsertAsync(existing.Result, ct);
+        var saved = await _userStore.AdvanceAuthenticationWatermarkAsync(userId, DateTime.UtcNow, ct);
         if (saved.IsError)
             return new AZOAResult<bool> { IsError = true, Message = saved.Message };
 
@@ -263,8 +274,7 @@ public class UserManager : IUserManager
         if (existing.IsError || existing.Result is null)
             return new AZOAResult<IUser> { IsError = true, Message = "User not found." };
 
-        existing.Result.DappRole = normalized;
-        return await _userStore.UpsertAsync(existing.Result, ct);
+        return await _userStore.TryAssignDappRoleAsync(targetUserId, existing.Result.DappRole, normalized, ct);
     }
 
     /// <summary>Mints the password path's login token via the one shared issuer.</summary>

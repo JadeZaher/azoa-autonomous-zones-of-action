@@ -1,0 +1,50 @@
+{"id": "R0276", "verdict": "keep", "note": "Protected: API_SYNC.md:338 narrates the Avatar→User/Quest→Action rename verbatim (before==after); correct to leave untouched."}
+{"id": "R0277", "verdict": "keep", "note": "CHANGELOG.md:80 historical 0.1.0-alpha entry; D32 renames historical specs too and 'Action Graph Bundle dapp generator, including the ecosystem-tree composition model' reads grammatically fine."}
+{"id": "R0278", "verdict": "keep", "note": "Managers/AGENTS.md:432 'absorbs `action-graph-bundle-ecosystem-tree`' — verified conductor/tracks/_archive/action-graph-bundle-ecosystem-tree/ exists (P2 renamed it) and contains spec.md."}
+{"id": "R0279", "verdict": "keep", "note": "Protected: PROVIDERS.md:7 narrates the Avatar→User/Quest→Action rename verbatim; correct to leave untouched."}
+{"id": "R0280", "verdict": "keep", "note": "conductor/tracks.md:117 'Absorbed 9 tracks' list now says action-graph-bundle-ecosystem-tree; dir confirmed renamed and matches the actual archive path."}
+{"id": "R0281", "verdict": "keep", "note": "conductor/tracks.md:133 link target tracks/_archive/action-graph-bundle-api/spec.md verified to exist (dir + spec.md present); link resolves."}
+{"id": "R0282", "verdict": "revert", "note": "orchestrator, after adversarial review L5: a verbatim quote of the old product.md; evidence must quote what was written"}
+{"id": "R0283", "verdict": "keep"}
+{"id": "R0284", "verdict": "keep"}
+{"id": "R0285", "verdict": "keep"}
+{"id": "R0286", "verdict": "keep"}
+{"id": "R0287", "verdict": "keep"}
+{"id": "R0288", "verdict": "keep"}
+{"id": "R0289", "verdict": "keep"}
+{"id": "R0290", "verdict": "keep"}
+{"id": "R0291", "verdict": "keep"}
+{"id": "R0292", "verdict": "keep"}
+{"id": "R0293", "verdict": "keep"}
+{"id": "R0294", "verdict": "keep"}
+{"id": "R0295", "verdict": "keep"}
+{"id": "R0296", "verdict": "keep"}
+{"id": "R0297", "verdict": "keep"}
+{"id": "R0298", "verdict": "keep"}
+{"id": "R0299", "verdict": "keep"}
+{"id": "R0300", "verdict": "keep"}
+{"id": "R0301", "verdict": "keep"}
+{"id": "R0302", "verdict": "keep"}
+{"id": "R0303", "verdict": "keep", "note": "docs/auth-audit.md:409 range row 'delete_bundle_basic–verify_deleted_bundle (×5)' cross-checked against ActionGraphBundleController_QA.jsonl: the 5 ids (delete_bundle_basic, delete_bundle_advanced, delete_bundle_unicode, delete_bundle_fresh, verify_deleted_bundle) and the ×5 count match exactly."}
+{"id": "R0304", "verdict": "keep", "note": "docs/auth-audit.md:410 '{{bundleUser.id}}' matches ActionGraphBundleController_QA.jsonl saveAs 'bundleUser' (line 8) exactly."}
+{"id": "R0305", "verdict": "keep"}
+{"id": "R0306", "verdict": "keep", "note": "Range row cross-checked against ActionGraphBundleController_Malicious.jsonl sqli_bundle_name..sqli_generate_config — 4 ids, first/last match."}
+{"id": "R0307", "verdict": "keep", "note": "Range row cross-checked: xss_bundle_name..xss_generate_config — 3 ids, first/last match."}
+{"id": "R0308", "verdict": "keep", "note": "Range row cross-checked: get_bundle_path_traversal..delete_invalid_bundle — 6 ids, first/last match."}
+{"id": "R0309", "verdict": "keep", "note": "Range row cross-checked: oversized_bundle_name..oversized_generation_config — 3 ids, first/last match."}
+{"id": "R0310", "verdict": "keep", "note": "Range row cross-checked: null_bundle_name..empty_body — 6 ids, first/last match."}
+{"id": "R0311", "verdict": "keep", "note": "Range row cross-checked: get_bundle_unauth..delete_bundle_unauth — 5 ids, first/last match."}
+{"id": "R0312", "verdict": "keep", "note": "Range row cross-checked: unicode_bundle_name..zwc_bundle_name — 3 ids, first/last match."}
+{"id": "R0313", "verdict": "keep", "note": "'{{targetBundle.id}}' matches ActionGraphBundleController_Malicious.jsonl saveAs 'targetBundle' (line 10) exactly."}
+{"id": "R0314", "verdict": "keep", "note": "'{{bundleMalUser.id}}' matches ActionGraphBundleController_Malicious.jsonl saveAs 'bundleMalUser' (line 8) exactly."}
+{"id": "R0315", "verdict": "keep"}
+{"id": "R0316", "verdict": "keep"}
+{"id": "R0317", "verdict": "keep"}
+{"id": "R0318", "verdict": "keep"}
+{"id": "R0319", "verdict": "keep"}
+{"id": "R0320", "verdict": "keep"}
+{"id": "R0321", "verdict": "keep"}
+{"id": "R0322", "verdict": "keep"}
+{"id": "R0323", "verdict": "keep"}
+{"id": "M-docs-live-1", "verdict": "miss-fixed", "file": "conductor/tracks/ardanova-production-readiness-waves_20260907/OPEN-ITEMS.md", "line": 83, "before": "acting tenant is absent\", which is the same hole one step over: a user-driven quest run", "after": "acting tenant is absent\", which is the same hole one step over: a user-driven action run", "note": "N-rules (quest/avatar) were blanket-skipped for this entire track as consumer vocabulary, but this specific clause is unambiguously AZOA's own primitive: the same sentence names `ActionNodeStepHandler.cs:212` and `ActionManager.cs:834,956` (AZOA's own post-D28 classes), not any ArdaNova identifier. 'quest run' should read 'action run' per D28. Fixed."}
+{"id": "M-docs-live-2", "verdict": "miss-fixed", "file": "docs/auth-audit.md", "line": 397, "before": "| get_all_odks | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |", "after": "| get_all_bundles | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |", "note": "Cross-checked against tests/AZOA.WebAPI.LiveTests/live-tests/ActionGraphBundleController_QA.jsonl:19 — the actual case id there is `get_all_bundles`, not `get_all_odks`. The S13-identifier rule's `\\bodk\\b` boundary does not match inside the plural `_odks` (no word boundary between 'odk' and the trailing 's'), the same way the N-rules' plural guard works for quest/avatar but S13 has no such allowance, so the sweep silently missed this one occurrence. NOTE: the sibling row at docs/auth-audit.md:381 (ActionGraphBundleController.jsonl basic section) correctly KEEPS 'get_all_odks' as-is — that fixture's own literal id (ActionGraphBundleController.jsonl:10) is still 'get_all_odks' (an unrenamed, read-only test fixture), so the doc is right to match it verbatim there. Only the QA-section row was wrong."}

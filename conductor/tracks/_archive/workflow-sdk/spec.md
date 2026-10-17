@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Workflow SDK — Specification"
+tags: [workflow-sdk, archived]
+---
+
 # Workflow SDK — Specification
 
 ## Status
@@ -211,7 +217,7 @@ reusing the existing header plumbing; all ids are guarded; errors are verbose.
 - Every error carries `method + path` (the SDK's verbose-error convention,
   `sdk/azoa-wallet/src/api/client.ts:1202-1217`); methods return
   `Result<T, SdkError>`, never throw (except the synchronous `assertUuid`
-  input-guard throw, matching `updateSTARODK`'s pre-send throw at
+  input-guard throw, matching `updateActionGraphBundle`'s pre-send throw at
   `sdk/azoa-wallet/tests/api/self-audit-one-fix.test.ts:290-295`).
 **Priority:** P0
 

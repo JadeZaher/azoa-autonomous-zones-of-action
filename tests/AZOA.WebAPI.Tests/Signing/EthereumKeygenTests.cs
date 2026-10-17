@@ -235,7 +235,7 @@ public class EthereumKeygenTests
                 ["Blockchain:Chains:0:ChainType"] = "Ethereum",
                 ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
                 ["Blockchain:Chains:0:Devnet:NodeUrl"] = "http://ethereum.test/",
-                ["Blockchain:Chains:0:Metadata:ChainId"] = SepoliaChainId,
+                ["Blockchain:Chains:0:Devnet:ChainId"] = SepoliaChainId,
             })
             .Build();
 

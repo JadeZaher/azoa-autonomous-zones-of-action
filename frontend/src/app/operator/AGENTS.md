@@ -81,3 +81,7 @@ opaque pagination tokens.
 - Rejection requires a reason; the reviewer identity is token-derived.
 - Conflicts refresh canonical state and explain why the draft was reset.
 - Monitoring states when data was generated and never implies a live feed.
+
+## Platform genesis
+
+The genesis console uses the operator-cookie BFF with a narrow platform-token admin-route allowlist. Persist the exact irreversible definition and versioned continuation before egress. Cost consent is separate from admission/signing; all supply/fee values remain decimal strings. No ordinary cancellation is offered: withholding continuation pauses new effects but cannot recall already-authorized bytes. New sessions recover the original operation; observed finality/accounting does not require a renewed signing session. Browser storage contains no credentials.

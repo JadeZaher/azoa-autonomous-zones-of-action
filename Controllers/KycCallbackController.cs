@@ -3,8 +3,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using AZOA.WebAPI.Interfaces.HostedSessions;
-using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Services.HostedSessions;
@@ -40,15 +38,18 @@ public sealed class KycCallbackController : ControllerBase
     private readonly IHostedSessionFlow _flow;
     private readonly IdentomatKycProviderService _identomat;
     private readonly ILogger<KycCallbackController> _logger;
+    private readonly AZOA.WebAPI.Interfaces.Managers.IKybService? _kyb;
 
     public KycCallbackController(
         IHostedSessionFlow flow,
         IdentomatKycProviderService identomat,
-        ILogger<KycCallbackController> logger)
+        ILogger<KycCallbackController> logger,
+        AZOA.WebAPI.Interfaces.Managers.IKybService? kyb = null)
     {
         _flow = flow;
         _identomat = identomat;
         _logger = logger;
+        _kyb = kyb;
     }
 
     /// <summary>
@@ -61,7 +62,7 @@ public sealed class KycCallbackController : ControllerBase
     [Consumes("application/json")]
     public async Task<IActionResult> Identomat(CancellationToken ct)
     {
-        if (!_identomat.GetHostedCapabilities().Available)
+        if (!_identomat.GetHostedCapabilities().Available && _kyb?.GetCapabilities().Available != true)
         {
             // 202, not 503. A distinct status code answers "are this node's Identomat
             // credentials installed?" for any anonymous caller — the same class of
@@ -75,8 +76,10 @@ public sealed class KycCallbackController : ControllerBase
         if (body is null)
             return Accepted(Acknowledgement());
 
-        var handled = await _flow.HandleCallbackAsync(_identomat, body, ct);
-        _ = handled;
+        if (_identomat.GetHostedCapabilities().Available)
+            _ = await _flow.HandleCallbackAsync(_identomat, body, ct);
+        if (_kyb?.GetCapabilities().Available == true)
+            await _kyb.HandleCallbackAsync(body, ct);
 
         // ONE status code, ONE body, on EVERY path: unconfigured adapter, unreadable
         // body, rejected secret, unknown session, parked verdict, applied verdict. An

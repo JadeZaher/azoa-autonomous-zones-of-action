@@ -1,13 +1,8 @@
 "use client";
 
-// OI-27 / OI-65. The two durable money boards the node writes when a payment cleared and nothing
-// finished it. They existed on the API and nothing opened them — a durable write nobody reads,
-// turned into a read nobody opens. This page is the reader.
-//
-// Deliberately read-only. Crediting or refunding a stuck lot moves real money and belongs behind
-// its own reviewed surface; what a person needs FIRST is to know somebody is out of pocket.
-
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { AlertCircle, Inbox, Wallet } from "lucide-react";
 import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -40,6 +35,9 @@ export default function OperatorMoneyPage() {
     const [events, setEvents] = useState<OperatorFiatEvent[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [reason, setReason] = useState("");
+    const [refundReference, setRefundReference] = useState("");
+    const [acting, setActing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
@@ -71,6 +69,17 @@ export default function OperatorMoneyPage() {
         void load();
     }, [load]);
 
+    async function recover(path: string, body: unknown) {
+        setActing(true);
+        setError(null);
+        try {
+            await operatorRequest(path, { method: "POST", body });
+            await load();
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "Recovery could not complete.");
+        } finally { setActing(false); }
+    }
+
     const outOfPocket = lots.filter((lot) => lot.chargedAndUncredited).length;
     const needAPerson = lots.filter((lot) => lot.needsAPersonToMoveIt).length;
     const abandoned = events.filter(
@@ -82,7 +91,7 @@ export default function OperatorMoneyPage() {
             <OperatorPageHeader
                 eyebrow="Money"
                 title="Payments nothing finished"
-                description="Every row here is money this node confirmed as taken. A lot that is neither credited nor given back is somebody who paid and holds nothing for it, and a delivery this node told the provider to stop retrying will never move on its own."
+                description="Every row here is money this node confirmed as taken. A lot that is neither credited nor given back is somebody who paid and holds nothing for it, and unfinished deliveries are retried automatically. Operator recovery preserves the original issuance and refund keys."
                 onRefresh={() => {
                     setRefreshing(true);
                     void load();
@@ -136,6 +145,7 @@ export default function OperatorMoneyPage() {
                                                 <th className="px-6 py-3 font-medium">Status</th>
                                                 <th className="px-6 py-3 font-medium">Why</th>
                                                 <th className="px-6 py-3 font-medium">Taken</th>
+                                                <th className="px-6 py-3 font-medium">Recovery</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -157,6 +167,11 @@ export default function OperatorMoneyPage() {
                                                     </td>
                                                     <td className="px-6 py-3 text-muted-foreground">
                                                         {formatOperatorDate(lot.createdAt)}
+                                                    </td>
+                                                    <td className="px-6 py-3 space-x-2">
+                                                        <Button size="sm" disabled={acting || !reason.trim() || lot.status === "RefundPending"} onClick={() => void recover(`on-ramp-lots/intents/${lot.intentId}/resume`, { reason })}>Resume issuance</Button>
+                                                        <Button size="sm" variant="outline" disabled={acting || !reason.trim()} onClick={() => void recover(`on-ramp-lots/intents/${lot.intentId}/refund`, { reason, ...(refundReference.trim() ? { providerRefundId: refundReference.trim() } : {}) })}>Refund payment</Button>
+                                                        {['failed', 'canceled'].includes(lot.providerRefundStatus ?? '') && <Button size="sm" variant="outline" disabled={acting || !reason.trim()} onClick={() => void recover(`on-ramp-lots/intents/${lot.intentId}/refund`, { reason, retryFailed: true, expectedRefundAttempt: lot.refundAttempt })}>Retry failed refund</Button>}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -188,6 +203,7 @@ export default function OperatorMoneyPage() {
                                                 <th className="px-6 py-3 font-medium">Kind</th>
                                                 <th className="px-6 py-3 font-medium">Status</th>
                                                 <th className="px-6 py-3 font-medium">Attempts</th>
+                                                <th className="px-6 py-3 font-medium">Recovery</th>
                                                 <th className="px-6 py-3 font-medium">Last error</th>
                                             </tr>
                                         </thead>
@@ -210,6 +226,7 @@ export default function OperatorMoneyPage() {
                                                         </StatusPill>
                                                     </td>
                                                     <td className="px-6 py-3 tabular-nums">{event.attemptCount}</td>
+                                                    <td className="px-6 py-3"><Button size="sm" disabled={acting} onClick={() => void recover(`fiat-events/${event.id}/replay`, {})}>Replay delivery</Button></td>
                                                     <td className="px-6 py-3 text-muted-foreground">
                                                         {event.lastError ?? "—"}
                                                     </td>

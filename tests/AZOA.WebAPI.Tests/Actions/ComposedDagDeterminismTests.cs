@@ -12,6 +12,7 @@ using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores;
@@ -42,7 +43,7 @@ namespace AZOA.WebAPI.Tests.Actions;
 /// returns <c>Fail</c> when its predicate is not met, so a <c>Control</c> edge
 /// <c>gate → downstream</c> skips the downstream branch on gate-Fail and runs
 /// it on gate-Pass. The gate's Pass/Fail is itself driven by the upstream Swap
-/// node's serialized output (<c>upstream.Swap.Result.PriceImpact</c>), so the
+/// node's settled receipt (<c>upstream.Swap.ActualOutput</c>), so the
 /// whole run is a pure function of the mocked manager outputs.</para>
 ///
 /// <para>A wallet IS bound (the wallet manager returns one wallet) so the
@@ -56,16 +57,21 @@ public class ComposedDagDeterminismTests
 
     // ── handler/manager mocks ────────────────────────────────────────────────
 
-    private static (SwapNodeHandler Handler, Mock<ISwapManager> Mgr) NewSwap(double priceImpact)
+    // Settled-swap double: the durable swap resolver emits this flat receipt only after finalized settlement
+    // (covered end to end by Managers/Dex/SwapActionResolverTests); a low price impact settles at the quoted output.
+    private static (IActionNodeHandler Handler, string Output) NewSwap(double priceImpact)
     {
-        var mgr = new Mock<ISwapManager>();
-        mgr.Setup(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()))
-           .ReturnsAsync(new AZOAResult<SwapQuoteResponse>
-           {
-               // PriceImpact is the deterministic driver for the downstream gate.
-               Result = new SwapQuoteResponse { PriceImpact = priceImpact },
-           });
-        return (new SwapNodeHandler(mgr.Object), mgr);
+        var output = priceImpact < 0.5 ? "1990" : "1500";
+        return (new SettledSwap(output), output);
+    }
+
+    private sealed class SettledSwap(string output) : IActionNodeHandler
+    {
+        public ActionNodeType NodeType => ActionNodeType.Swap;
+        public bool RequiresChainCapability => true;
+        public Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
+            => Task.FromResult(ActionNodeResults.Ok(JsonSerializer.Serialize(new AZOA.WebAPI.Models.Dex.SwapActionOutput(
+                "operation", "Algorand", "Devnet", "Tinyman", "0", "10458941", "1000", output, "0", ["TX"], "TX", []), ActionNodeJson.Options)));
     }
 
     private static (GrantNodeHandler Handler, Mock<INftManager> Nft) NewGrant()
@@ -76,13 +82,11 @@ public class ComposedDagDeterminismTests
         return (new GrantNodeHandler(nft.Object, new Mock<IHolonManager>().Object), nft);
     }
 
-    private static (RefundNodeHandler Handler, Mock<INftManager> Nft) NewRefund(Guid nftId)
+    private static (RefundNodeHandler Handler, Mock<INftLifecycleService> Nft) NewRefund(Guid nftId)
     {
-        var nft = new Mock<INftManager>();
-        nft.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
-        nft.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
-           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
+        var nft = new Mock<INftLifecycleService>();
+        nft.Setup(service => service.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
+            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, "Completed", "Transfer", "asset", "confirmed-return", null, "Refund")));
         return (new RefundNodeHandler(nft.Object), nft);
     }
 
@@ -99,10 +103,9 @@ public class ComposedDagDeterminismTests
     private static string TransferConfig(Guid nftId) =>
         JsonSerializer.Serialize(new TransferNodeConfig { NftId = nftId, Request = new NftTransferRequest() });
 
-    // The gate reads the upstream Swap node's serialized AZOAResult<SwapQuoteResponse>.
-    // ActionNodeJson.Options applies NO naming policy ⇒ PascalCase members; the
-    // evaluator navigates members case-sensitively, hence "Result.PriceImpact".
-    private const string GatePredicate = "upstream.Swap.Result.PriceImpact < 0.5";
+    // The gate reads the upstream Swap node's flat settled receipt. ActionNodeJson.Options applies
+    // NO naming policy ⇒ PascalCase members; the evaluator navigates members case-sensitively.
+    private const string GatePredicate = "upstream.Swap.ActualOutput == '1990'";
 
     private static ActionNode Node(ActionNodeType type, string name, string config, bool entry = false, bool terminal = false) =>
         new()
@@ -118,7 +121,7 @@ public class ComposedDagDeterminismTests
     private static ActionEdge Edge(ActionNode from, ActionNode to) =>
         new() { Id = Guid.NewGuid(), SourceNodeId = from.Id, TargetNodeId = to.Id, EdgeType = ActionEdgeType.Control };
 
-    private static string SwapConfig() => JsonSerializer.Serialize(new SwapNodeConfig { Request = new SwapExecuteRequest() });
+    private static string SwapConfig() => JsonSerializer.Serialize(new SwapNodeConfig());
     private static string GrantConfig() => JsonSerializer.Serialize(new GrantNodeConfig { Request = new NftMintRequest() });
     private static string GateConfig() => JsonSerializer.Serialize(new GateCheckNodeConfig { Predicate = GatePredicate });
     private static string RefundConfig(Guid nftId) =>
@@ -296,7 +299,7 @@ public class ComposedDagDeterminismTests
 
         grantNft.Verify(m => m.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
             Times.Never, "the success-path mint never broadcasts on gate Fail");
-        refundNft.Verify(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), UserId, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        refundNft.Verify(m => m.RefundAsync(UserId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()),
             Times.Once, "the on-fail refund executes the reverse transfer exactly once");
     }
 

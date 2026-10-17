@@ -5,27 +5,12 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Tests.Credentials;
-
-/// <summary>
-/// D19 authorization proven against a credential the PRODUCTION MINT PATH produced, not one
-/// stubbed into existence.
-///
-/// <para><b>Why that distinction is the whole track.</b>
-/// <c>CredentialRevokeAuthorizationTests</c> already proves "the holder cannot revoke, the
-/// issuer can" — against a hand-written <c>CredentialOwnershipRecord</c> whose issuer and
-/// holder differ and whose <c>HolderAddress</c> is set. Nothing in production can produce
-/// that record. Every test below therefore states its premise as an assertion
-/// (<c>IssuerUserId != HolderUserId</c>, <c>HolderAddress</c> present) so it fails loudly
-/// rather than passing over a one-party credential.</para>
-/// </summary>
 public sealed class IssuedCredentialRevocationTests
 {
     private const string TokenId = "778899";
     private const string OtherTokenId = "112233";
 
     private readonly CredentialRailHarness _rail = new();
-
-    /// <summary>AC2, holder direction. B holds the credential; B may not take it back from themselves.</summary>
     [Fact]
     public async Task TheHolder_CannotRevokeACredentialIssuedToThem()
     {
@@ -36,16 +21,11 @@ public sealed class IssuedCredentialRevocationTests
         result.IsError.Should().BeTrue("the holder is the party a credential is taken FROM");
         result.Code.Should().Be(AzoaErrorCodes.Forbidden);
         _rail.VerifyNoClawback();
-        _rail.Credentials.CurrentHolderOf(TokenId).Should().Be(credential.HolderUserId,
-            "a refused revocation moves nothing");
+        var authority = await _rail.Rail.Store.GetAuthorityAsync(credential.Id.ToString("N"));
+        authority!.HolderUserId.Should().Be(credential.HolderUserId.ToString("N"));
+        authority.Revoked.Should().BeFalse();
+        _rail.Rail.Store.Ownership[credential.Id.ToString("N")].IsActive.Should().BeTrue();
     }
-
-    /// <summary>
-    /// AC2, issuer direction, and AC3 with it: this is the direction that proves the revoke
-    /// precondition is REACHABLE. Today it dies at "has no recorded holder address" because
-    /// no mint writes <c>current_owner</c>, so "the issuer can revoke" has never once been
-    /// true of a real credential.
-    /// </summary>
     [Fact]
     public async Task TheIssuer_CanRevokeACredentialItIssued()
     {
@@ -64,34 +44,22 @@ public sealed class IssuedCredentialRevocationTests
         result.Result.RecipientAddress.Should().Be(_rail.IssuerAddress,
             "a revoked credential returns to the issuer's wallet");
 
-        // AC5, in-line path: chain truth has moved, so AZOA's read surface must follow.
-        _rail.Credentials.CurrentHolderOf(TokenId).Should().Be(_rail.IssuerA,
-            "after a confirmed revocation no AZOA read surface may still report the credential as held by B");
+        var authority = await _rail.Rail.Store.GetAuthorityAsync(credential.Id.ToString("N"));
+        authority!.HolderUserId.Should().Be(_rail.IssuerA.ToString("N"));
+        authority.Revoked.Should().BeTrue();
+        var ownership = _rail.Rail.Store.Ownership[credential.Id.ToString("N")];
+        ownership.UserId.Should().Be(_rail.IssuerA.ToString("N"));
+        ownership.CurrentOwner.Should().Be(_rail.IssuerAddress);
+        ownership.IsActive.Should().BeFalse();
     }
-
-    /// <summary>
-    /// AC1's teeth. A credential whose issuer IS its holder is the vacuous case: authorizing
-    /// "the issuer" then means authorizing the holder to revoke their own credential, which is
-    /// the exact inversion D19 exists to forbid. The manager must refuse it outright rather
-    /// than perform a revocation that proves nothing.
-    ///
-    /// <para>This is the control that stops the vacuous case from silently returning. It is
-    /// deliberately independent of the mint seam, so it keeps holding even if a later change
-    /// re-introduces a self-issuing path.</para>
-    /// </summary>
     [Fact]
     public async Task SelfIssuedCredential_IsRefused_SoTheVacuousCaseCannotSilentlyReturn()
     {
-        _rail.Credentials.Seed(new CredentialOwnershipRecord
-        {
-            Id = Guid.NewGuid(),
-            HolderUserId = _rail.IssuerA,
-            HolderAddress = _rail.RecipientAddress,
-            IssuerUserId = _rail.IssuerA,
-            IsSoulbound = true,
-            ChainType = CredentialRailHarness.Chain,
-            TokenId = OtherTokenId,
-        });
+        var issued = await _rail.IssueAsync(OtherTokenId, _rail.IssuerA);
+        issued.Outcome!.IsError.Should().BeFalse(issued.Outcome.Message);
+        var authority = await _rail.Rail.Store.GetAuthorityAsync(issued.Outcome.Result!.Id.ToString("N"));
+        authority!.IssuerUserId.Should().BeEmpty();
+        authority.HolderUserId.Should().Be(_rail.IssuerA.ToString("N"));
 
         var result = await _rail.RevokeAsync(OtherTokenId, callerUserId: _rail.IssuerA);
 
@@ -99,19 +67,15 @@ public sealed class IssuedCredentialRevocationTests
             "issuer == holder makes the D19 authorization check vacuous; a credential in that "
             + "shape must be refused, not clawed back on the strength of a check that decided nothing");
         _rail.VerifyNoClawback();
-        _rail.Credentials.OwnershipMoves.Should().Be(0);
+        var unchanged = await _rail.Rail.Store.GetAuthorityAsync(authority.NftId);
+        unchanged!.Version.Should().Be(authority.Version);
+        unchanged.Revoked.Should().BeFalse();
     }
-
-    /// <summary>
-    /// AC7. A reused <c>Idempotency-Key</c> must never hand back some OTHER credential's
-    /// outcome: reporting credential 112233 revoked when 778899 was the one that moved is a
-    /// wrong answer, not a duplicate.
-    /// </summary>
     [Fact]
     public async Task ReusedIdempotencyKey_OnADifferentCredential_DoesNotReplayTheFirstResult()
     {
         await IssuedToRecipient(TokenId);
-        await IssuedToRecipient(OtherTokenId);
+        var other = await IssuedToRecipient(OtherTokenId);
 
         var first = await _rail.RevokeAsync(TokenId, _rail.IssuerA, idempotencyKey: "reused-key");
         first.IsError.Should().BeFalse(first.Message);
@@ -123,16 +87,13 @@ public sealed class IssuedCredentialRevocationTests
             "AC7: the first credential's cached result must never be served as the second's");
         second.Result?.Replayed.Should().NotBe(true,
             "a different credential is a different operation, not a duplicate of the first");
-        second.IsError.Should().BeFalse(second.Message);
-        second.Result!.AssetId.Should().Be(OtherTokenId);
+        second.IsError.Should().BeTrue("one request key cannot authorize a second asset");
+        second.Code.Should().Be(AzoaErrorCodes.Conflict);
+        var otherAuthority = await _rail.Rail.Store.GetAuthorityAsync(other.Id.ToString("N"));
+        otherAuthority!.HolderUserId.Should().Be(_rail.RecipientB.ToString("N"));
+        otherAuthority.Revoked.Should().BeFalse();
+        _rail.Rail.Store.Ownership[other.Id.ToString("N")].IsActive.Should().BeTrue();
     }
-
-    // ── Arrangement ───────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Issues one credential through the production mint seam and asserts the premise every
-    /// test above depends on: the recorded issuer and holder are DIFFERENT parties.
-    /// </summary>
     private async Task<CredentialOwnershipRecord> IssuedToRecipient(string tokenId)
     {
         var issued = await _rail.IssueAsync(tokenId);

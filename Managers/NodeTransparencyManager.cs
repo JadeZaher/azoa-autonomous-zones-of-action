@@ -382,7 +382,7 @@ public sealed class NodeTransparencyManager : INodeTransparencyManager
     }
 
     private static NodeFeeScheduleEntryResponse Copy(NodeFeeScheduleEntryResponse source)
-        => new() { FlatBaseUnits = source.FlatBaseUnits, Bps = source.Bps };
+        => new() { FlatBaseUnits = source.FlatBaseUnits, Bps = source.Bps, Denomination = source.Denomination };
 
     private static bool IsValidFeeSchedule(PublicNodeFeeScheduleResponse schedule)
         => schedule.Version >= 0

@@ -7,7 +7,6 @@ using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Hosting;
 
 namespace AZOA.WebAPI.Observability;
 

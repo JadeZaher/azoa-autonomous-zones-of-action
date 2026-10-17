@@ -3,8 +3,6 @@
 
 #nullable enable
 
-using System;
-using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 
@@ -75,6 +73,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? AuthWalletAddress { get; set; }
 
         public string? AuthWalletChainType { get; set; }
+
+        public int? AuthIdentityVersion { get; set; }
 
         // AC3b/H2 post-claim custody-window cut. Tenant-driven tokens (child JWT /
         // claim token) minted before this instant are rejected at the signing seam.

@@ -1,3 +1,9 @@
+---
+type: Track Artifact
+title: "AZOA Provider & API Architecture"
+tags: [blockchain-devnet-providers, archived]
+---
+
 # AZOA Provider & API Architecture
 
 This guide covers the full system architecture: adding new blockchain providers, the complete API surface, and how the SDK mirrors the backend.
@@ -224,16 +230,16 @@ export class <DexName>Adapter implements DexAdapter {
 | `api/blockchainoperation/{id}` | GET | Yes | Get operation |
 | `api/blockchainoperation/user/{userId}` | GET | Yes | Operations by user |
 
-### STAR ODK (dApp Generator)
+### Action Graph Bundle (dApp Generator)
 
 | Endpoint | Method | Auth | Purpose |
 |----------|--------|------|---------|
-| `api/starodk/{id}` | GET | Yes | Get ODK |
-| `api/starodk` | GET | Yes | List all ODKs |
-| `api/starodk` | POST | Yes | Create/update ODK |
-| `api/starodk/{id}` | DELETE | Yes | Delete ODK |
-| `api/starodk/{id}/generate` | POST | Yes | Generate dApp code |
-| `api/starodk/{id}/deploy` | POST | Yes | Deploy dApp |
+| `api/actiongraphbundle/{id}` | GET | Yes | Get bundle |
+| `api/actiongraphbundle` | GET | Yes | List all bundles |
+| `api/actiongraphbundle` | POST | Yes | Create/update bundle |
+| `api/actiongraphbundle/{id}` | DELETE | Yes | Delete bundle |
+| `api/actiongraphbundle/{id}/generate` | POST | Yes | Generate dApp code |
+| `api/actiongraphbundle/{id}/deploy` | POST | Yes | Deploy dApp |
 
 ---
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using System.Text.Json.Serialization;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Models.Responses;
@@ -96,4 +97,13 @@ public sealed class ExchangeReceipt
 
     /// <summary>Bounded terminal error discriminator; never provider detail.</summary>
     public string? FailureCode { get; set; }
+
+    /// <summary>Durable exchange source this receipt reads; safe to retain for discovery.</summary>
+    public string? SourceId { get; set; }
+
+    /// <summary>Server-authored automatic-release disclosure a preview returns for explicit acceptance.</summary>
+    public ExchangeReleaseDisclosure? ReleaseDisclosure { get; set; }
+
+    /// <summary>Release permission created with a held purchase, separate from its settlement.</summary>
+    public string? ReleaseMandateId { get; set; }
 }

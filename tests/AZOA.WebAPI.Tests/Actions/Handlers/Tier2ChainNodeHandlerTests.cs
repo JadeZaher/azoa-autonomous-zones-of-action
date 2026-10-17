@@ -6,6 +6,8 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Blockchain;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions.Handlers;
@@ -13,14 +15,6 @@ using Xunit;
 using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
 namespace AZOA.WebAPI.Tests.Actions.Handlers;
-
-/// <summary>
-/// Tier-2 chain-action node handlers (Swap/Grant/Transfer/Refund). These assert
-/// the mechanism-only contract (deserialize → call manager → serialize, no
-/// economic computation), the run-context-actor invariant (the config body
-/// user is ignored), the <c>RequiresChainCapability == true</c> tier flag, the
-/// Grant Holon↔asset link (opt-in), and the soulbound-refund fail-closed path.
-/// </summary>
 public class Tier2ChainNodeHandlerTests
 {
     private static ActionEntity ActionWithUserAndNode(Guid userId, ActionNode node) =>
@@ -32,50 +26,7 @@ public class Tier2ChainNodeHandlerTests
     private static ActionNodeExecutionContext CtxFor(ActionNode node, Guid userId) =>
         new(Guid.NewGuid(), node.Id, ActionWithUserAndNode(userId, node), actingUserId: userId);
 
-    // ─── T5 Swap ───
-
-    [Fact]
-    public void SwapNodeHandler_DeclaresChainCapabilityAndType()
-    {
-        var handler = new SwapNodeHandler(new Mock<ISwapManager>().Object);
-        handler.NodeType.Should().Be(ActionNodeType.Swap);
-        ((IActionNodeHandler)handler).RequiresChainCapability.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task SwapNodeHandler_ForwardsRequest_NoRateComputedInHandler()
-    {
-        var mgr = new Mock<ISwapManager>();
-        SwapExecuteRequest? captured = null;
-        // The mock returns the quote; the handler must NOT compute a rate itself.
-        mgr.Setup(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()))
-           .Callback<SwapExecuteRequest, string?>((req, _) => captured = req)
-           .ReturnsAsync(new AZOAResult<SwapQuoteResponse> { Result = new SwapQuoteResponse() });
-
-        var handler = new SwapNodeHandler(mgr.Object);
-        var cfg = new SwapNodeConfig { Request = new SwapExecuteRequest() };
-        var node = NodeWith(ActionNodeType.Swap, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
-
-        result.IsError.Should().BeFalse();
-        captured.Should().NotBeNull();
-        mgr.Verify(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task SwapNodeHandler_ManagerError_MapsToFailed()
-    {
-        var mgr = new Mock<ISwapManager>();
-        mgr.Setup(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()))
-           .ReturnsAsync(new AZOAResult<SwapQuoteResponse> { IsError = true, Message = "dex down" });
-
-        var handler = new SwapNodeHandler(mgr.Object);
-        var node = NodeWith(ActionNodeType.Swap, JsonSerializer.Serialize(new SwapNodeConfig()));
-        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
-
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Be("dex down");
-    }
+    // T5 Swap: covered as a durable workflow flow in Managers/Dex/SwapActionResolverTests.
 
     // ─── T6 Grant ───
 
@@ -207,144 +158,56 @@ public class Tier2ChainNodeHandlerTests
     [Fact]
     public void RefundNodeHandler_DeclaresChainCapabilityAndType()
     {
-        var handler = new RefundNodeHandler(new Mock<INftManager>().Object);
+        var handler = new RefundNodeHandler(Mock.Of<INftLifecycleService>());
         handler.NodeType.Should().Be(ActionNodeType.Refund);
-        ((IActionNodeHandler)handler).RequiresChainCapability.Should().BeTrue();
+        handler.RequiresChainCapability.Should().BeTrue();
     }
 
-    [Fact]
-    public async Task RefundNodeHandler_ReverseTransfer_WithRunContextUser()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Refund_UsesExactSucceededSourceLifecycle_RegardlessOfDirectPredecessor(bool multiHop)
     {
-        var runUser = Guid.NewGuid();
-        var nftId = Guid.NewGuid();
-        var debitWalletId = Guid.NewGuid();
-        var mgr = new Mock<INftManager>();
-        // R1 guard: the soulbound read MUST be unscoped (callerUserId == null).
-        // A runner-scoped read fails after the Transfer reassigned holon.UserId to
-        // the recipient — modelled here by returning the NFT ONLY for the null caller.
-        mgr.Setup(m => m.GetAsync(nftId, null, It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
-        mgr.Setup(m => m.GetAsync(nftId, It.Is<Guid?>(a => a != null), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<INft> { IsError = true, Message = "NFT not found." });
-        mgr.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), runUser, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
-           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
-
-        // Drain-vector guard: a Refund may ONLY reverse a REAL succeeded upstream
-        // Transfer of the same NftId in this run. Build that upstream Transfer node +
-        // a Succeeded execution and thread it through the run executions.
-        var transferCfg = new TransferNodeConfig
-        {
-            NftId = nftId,
-            Request = new NftTransferRequest { WalletId = debitWalletId, TargetUserId = Guid.NewGuid() }
-        };
-        var transferNode = NodeWith(ActionNodeType.Transfer, JsonSerializer.Serialize(transferCfg));
-        var refundCfg = new RefundNodeConfig { NftId = nftId, Request = new NftTransferRequest { TargetUserId = Guid.NewGuid() } };
-        var refundNode = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(refundCfg));
-
-        var action = new ActionEntity { Id = Guid.NewGuid(), UserId = runUser, Nodes = { transferNode, refundNode } };
-        // The linkage scans AllRunExecutions (run-wide); the real executors populate
-        // it as a superset of UpstreamExecutions. A direct-predecessor Transfer lands
-        // in both, so seed both here.
-        var executions = new Dictionary<Guid, ActionNodeExecution>
-        {
-            [transferNode.Id] = new ActionNodeExecution { State = ActionNodeState.Succeeded }
-        };
-        var ctx = new ActionNodeExecutionContext(
-            Guid.NewGuid(), refundNode.Id, action, actingUserId: runUser,
-            upstreamExecutions: executions, allRunExecutions: executions);
-
-        var handler = new RefundNodeHandler(mgr.Object);
-        var result = await handler.HandleAsync(ctx);
-
+        var actor = Guid.NewGuid(); var nftId = Guid.NewGuid(); var runId = Guid.NewGuid();
+        var source = NodeWith(ActionNodeType.Transfer, JsonSerializer.Serialize(new TransferNodeConfig { NftId = nftId, Request = new() }));
+        var refund = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = nftId, Request = new() { TargetUserId = Guid.NewGuid() } }));
+        var action = new ActionEntity { Id = Guid.NewGuid(), UserId = actor, Nodes = { source, refund } };
+        var succeeded = new Dictionary<Guid, ActionNodeExecution> { [source.Id] = new() { State = ActionNodeState.Succeeded } };
+        var context = new ActionNodeExecutionContext(runId, refund.Id, action, actingUserId: actor,
+            upstreamExecutions: multiHop ? new Dictionary<Guid, ActionNodeExecution>() : succeeded, allRunExecutions: succeeded);
+        var service = new Mock<INftLifecycleService>();
+        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
+            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, "Completed", "Transfer", "asset", "chain-tx", null, "Refund")));
+        var result = await new RefundNodeHandler(service.Object).HandleAsync(context);
         result.IsError.Should().BeFalse();
-        // Reversal is DERIVED from the debit: recipient forced to the run actor,
-        // wallet reused from the upstream Transfer — never cfg.Request's direction.
-        mgr.Verify(m => m.TransferAsync(
-            nftId,
-            It.Is<NftTransferRequest>(r => r.TargetUserId == runUser && r.WalletId == debitWalletId),
-            runUser, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
+        var expectedSource = NftLifecycleIdentity.ForRequest(actor, "Transfer", $"{runId:N}:{source.Id:N}");
+        service.Verify(item => item.RefundAsync(actor, expectedSource, $"{runId:N}:{refund.Id:N}", It.IsAny<CancellationToken>(), Guid.Empty, null, null, null), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("AwaitingRefundAuthorization")]
+    [InlineData("Submitted")]
+    public async Task Refund_PendingParticipantOrChainEvidence_IsNotSuccess(string state)
+    {
+        var actor = Guid.NewGuid(); var nftId = Guid.NewGuid();
+        var source = NodeWith(ActionNodeType.Transfer, JsonSerializer.Serialize(new TransferNodeConfig { NftId = nftId, Request = new() }));
+        var refund = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = nftId, Request = new() }));
+        var action = new ActionEntity { Id = Guid.NewGuid(), UserId = actor, Nodes = { source, refund } };
+        var all = new Dictionary<Guid, ActionNodeExecution> { [source.Id] = new() { State = ActionNodeState.Succeeded } };
+        var service = new Mock<INftLifecycleService>();
+        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
+            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, state, "Transfer", "asset", null, null, "Refund")));
+        var result = await new RefundNodeHandler(service.Object).HandleAsync(new(Guid.NewGuid(), refund.Id, action, actingUserId: actor, upstreamExecutions: all, allRunExecutions: all));
+        result.IsError.Should().BeTrue(); result.Message.Should().Contain(state);
     }
 
     [Fact]
-    public async Task RefundNodeHandler_ReversesMultiHopTransfer_NotJustDirectPredecessor()
+    public async Task Refund_WithoutSucceededSameAssetSource_NeverCallsLifecycle()
     {
-        // R2 guard: the debit may sit MANY hops upstream (Transfer → GateCheck →
-        // Refund). The linkage scans AllRunExecutions (run-wide), NOT UpstreamExecutions
-        // (direct edges only). Here the Transfer is threaded through allRunExecutions
-        // but deliberately NOT through upstreamExecutions — the refund must still find
-        // it. A direct-edge-only scan would fail closed on this valid action.
-        var runUser = Guid.NewGuid();
-        var nftId = Guid.NewGuid();
-        var debitWalletId = Guid.NewGuid();
-        var mgr = new Mock<INftManager>();
-        mgr.Setup(m => m.GetAsync(nftId, null, It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
-        mgr.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), runUser, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
-           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
-
-        var transferCfg = new TransferNodeConfig
-        {
-            NftId = nftId,
-            Request = new NftTransferRequest { WalletId = debitWalletId, TargetUserId = Guid.NewGuid() }
-        };
-        var transferNode = NodeWith(ActionNodeType.Transfer, JsonSerializer.Serialize(transferCfg));
-        var gateNode = NodeWith(ActionNodeType.GateCheck, "{}");
-        var refundCfg = new RefundNodeConfig { NftId = nftId, Request = new NftTransferRequest { TargetUserId = Guid.NewGuid() } };
-        var refundNode = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(refundCfg));
-
-        var action = new ActionEntity { Id = Guid.NewGuid(), UserId = runUser, Nodes = { transferNode, gateNode, refundNode } };
-        // Refund's DIRECT predecessor is the GateCheck; the Transfer is one hop further.
-        var upstream = new Dictionary<Guid, ActionNodeExecution>
-        {
-            [gateNode.Id] = new ActionNodeExecution { State = ActionNodeState.Succeeded }
-        };
-        var allRun = new Dictionary<Guid, ActionNodeExecution>
-        {
-            [transferNode.Id] = new ActionNodeExecution { State = ActionNodeState.Succeeded },
-            [gateNode.Id] = new ActionNodeExecution { State = ActionNodeState.Succeeded }
-        };
-        var ctx = new ActionNodeExecutionContext(
-            Guid.NewGuid(), refundNode.Id, action, actingUserId: runUser,
-            upstreamExecutions: upstream, allRunExecutions: allRun);
-
-        var handler = new RefundNodeHandler(mgr.Object);
-        var result = await handler.HandleAsync(ctx);
-
-        result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.TransferAsync(
-            nftId,
-            It.Is<NftTransferRequest>(r => r.TargetUserId == runUser && r.WalletId == debitWalletId),
-            runUser, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task RefundNodeHandler_Soulbound_FailsClosed_NoTransfer()
-    {
-        var nftId = Guid.NewGuid();
-        var mgr = new Mock<INftManager>();
-        mgr.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<INft>
-           {
-               Result = new Holon
-               {
-                   Id = nftId,
-                   AssetType = "NFT",
-                   Metadata = new Dictionary<string, string> { ["soulbound"] = "true" }
-               }
-           });
-
-        var handler = new RefundNodeHandler(mgr.Object);
-        var cfg = new RefundNodeConfig { NftId = nftId, Request = new NftTransferRequest() };
-        var node = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
-
+        var service = new Mock<INftLifecycleService>();
+        var node = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = Guid.NewGuid(), Request = new() }));
+        var result = await new RefundNodeHandler(service.Object).HandleAsync(CtxFor(node, Guid.NewGuid()));
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("clawback primitive");
-        // The H2 deferral ENDED: D19 shipped the clawback primitive. What must still
-        // hold is that Refund is not the door to it - reversal is the credential
-        // ISSUER's operation via CredentialRevoke, never the run actor's via Refund.
-        result.Message.Should().Contain("CredentialRevoke");
-        result.Message.Should().Contain("ISSUER");
-        mgr.Verify(m => m.TransferAsync(It.IsAny<Guid>(), It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Never);
+        service.Verify(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()), Times.Never);
     }
 }

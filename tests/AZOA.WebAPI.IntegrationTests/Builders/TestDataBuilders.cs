@@ -1,5 +1,11 @@
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Kyb;
 using AZOA.WebAPI.Models.Requests;
+using KybVerification = AZOA.WebAPI.Persistence.SurrealDb.Models.KybVerification;
+using AZOA.WebAPI.Providers.Kyb;
+using Microsoft.Extensions.DependencyInjection;
+
 
 namespace AZOA.WebAPI.IntegrationTests.Builders;
 
@@ -183,8 +189,8 @@ public class HolonBuilder
 public class ActionGraphBundleBuilder
 {
     private Guid _id = Guid.NewGuid();
-    private string _name = "TestODK";
-    private string _description = "A test ODK";
+    private string _name = "TestBundle";
+    private string _description = "A test bundle";
     private string? _publicKey;
     private Guid? _userId;
     private List<Guid> _boundHolonIds = new();
@@ -263,4 +269,56 @@ public class BlockchainOperationBuilder
             Status = _status,
             Parameters = new Dictionary<string, string>(_parameters)
         };
+}
+
+/// <summary>Entry point for shared and per-lane builders; lanes add <c>TestDataBuilders.&lt;Lane&gt;.cs</c> partials.</summary>
+public static partial class TestDataBuilders
+{
+    /// <summary>A tenant whose business verification is APPROVED and fresh under the configured KYB authority.</summary>
+    public static KybApprovedTenantBuilder KybApprovedTenant(Guid tenantId) => new(tenantId);
+}
+
+/// <summary>Writes an APPROVED <c>kyb_verification</c> row through the real <see cref="IKybVerificationStore"/>.</summary>
+public sealed class KybApprovedTenantBuilder(Guid tenantId)
+{
+    private TimeSpan _validity = TimeSpan.FromDays(365);
+    private string _companyName = "Builder Test Company";
+
+    public KybApprovedTenantBuilder ValidFor(TimeSpan validity) { _validity = validity; return this; }
+    public KybApprovedTenantBuilder WithCompanyName(string companyName) { _companyName = companyName; return this; }
+
+    /// <summary>The approved row for <paramref name="authorityRevision"/>, reviewed at <paramref name="now"/>.</summary>
+    public KybVerification Build(string authorityRevision, DateTimeOffset now)
+    {
+        var attempt = Guid.NewGuid();
+        var evidence = new KybBusinessEvidence(_companyName, $"REG-{tenantId:N}"[..16], "GB",
+            [new KybBeneficiaryLink("builder-beneficiary", "PERSON", ["DIRECTOR"], [])]);
+        return new KybVerification
+        {
+            Id = tenantId.ToString("N"),
+            AttemptId = attempt.ToString("N"),
+            AdmissionKey = $"kyb:{tenantId:N}:{attempt:N}",
+            RequestKeyHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(attempt.ToByteArray())),
+            AuthorityRevision = authorityRevision,
+            Status = "APPROVED",
+            Version = 1,
+            BusinessEvidenceJson = System.Text.Json.JsonSerializer.Serialize(evidence),
+            CreatedAt = now,
+            ReviewedAt = now,
+            ExpiresAt = now.Add(_validity),
+        };
+    }
+
+    /// <summary>Persists the row via the application's KYB store; the tenant must have no verification yet.</summary>
+    public async Task<KybVerification> SeedAsync(IServiceProvider services, CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IKybVerificationStore>();
+        var authority = scope.ServiceProvider.GetRequiredService<IdentomatKybProvider>().AuthorityRevision;
+        if (await store.GetAsync(tenantId, ct) is not null)
+            throw new InvalidOperationException($"Tenant {tenantId:N} already has a business verification row.");
+        var now = scope.ServiceProvider.GetService<TimeProvider>()?.GetUtcNow() ?? DateTimeOffset.UtcNow;
+        return await store.TryStartAsync(null, Build(authority, now), ct)
+            ?? throw new InvalidOperationException($"A concurrent writer created tenant {tenantId:N}'s verification first.");
+    }
 }

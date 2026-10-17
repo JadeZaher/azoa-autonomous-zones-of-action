@@ -4,7 +4,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -25,6 +24,20 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     {
         public const string SchemaNameConst = "consent_webhook_event";
         public string SchemaName => SchemaNameConst;
+
+        public string? TransitionId { get; set; }
+        public string? BodyJson { get; set; }
+        public string? BodyHash { get; set; }
+        public string? RegistrationId { get; set; }
+        public long? DestinationRevision { get; set; }
+        public string? DestinationUrl { get; set; }
+        [Default("0")] public long Version { get; set; }
+        [Default("0")] public long RetryGeneration { get; set; }
+        [Default("0")] public long CycleAttemptCount { get; set; }
+        public string? LeaseId { get; set; }
+        public DateTimeOffset? LeaseExpiresAt { get; set; }
+        public long? AttemptSecretRevision { get; set; }
+        public string? AttemptEncryptedSecret { get; set; }
 
         public enum WebhookEventType
         {

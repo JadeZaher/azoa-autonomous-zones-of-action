@@ -16,4 +16,7 @@ public interface IActionDagExecutabilityValidator
     /// <see cref="DagValidationResult.Errors"/> are populated.
     /// </summary>
     DagValidationResult Validate(ActionDefinition action);
+    /// <summary>Includes only proven prior-occurrence outputs in immutable deployment binding validation.</summary>
+    DagValidationResult ValidateFrozen(ActionDefinition action,
+        IReadOnlyList<AZOA.WebAPI.Models.Deployments.DeploymentOccurrenceBoundary> boundaries);
 }

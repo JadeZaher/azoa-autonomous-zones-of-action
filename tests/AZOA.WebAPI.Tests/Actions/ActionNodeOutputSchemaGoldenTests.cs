@@ -52,7 +52,6 @@ public class ActionNodeOutputSchemaGoldenTests
         [ActionNodeType.Search] = OutputFieldType.Object,
         [ActionNodeType.UserNFTGetComposite] = OutputFieldType.Object,
         [ActionNodeType.BlockchainExecute] = OutputFieldType.Object,
-        [ActionNodeType.Swap] = OutputFieldType.Object,
         [ActionNodeType.Grant] = OutputFieldType.Object,
         [ActionNodeType.Transfer] = OutputFieldType.Object,
         [ActionNodeType.Refund] = OutputFieldType.Object,
@@ -101,6 +100,9 @@ public class ActionNodeOutputSchemaGoldenTests
         [ActionNodeType.Release] = () => Serialize(RepresentativeHold()),
         [ActionNodeType.HoldRefund] = () => Serialize(RepresentativeHold()),
         [ActionNodeType.ReleaseIntoHold] = () => Serialize(RepresentativeHold()),
+        // SwapActionResolver serializes the flat SwapActionOutput from the confirmed receipt only.
+        [ActionNodeType.Swap] = () => Serialize(new AZOA.WebAPI.Models.Dex.SwapActionOutput("op", "Ethereum", "Devnet", "UniswapV3",
+            "0x0000000000000000000000000000000000000006", "ETH", "1010", "1990", "10", ["0xabc"], "0xabc", [])),
     };
 
     /// <summary>Open / anonymous / dynamic-key entries — EXCLUDED from field checks.

@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "SurrealDB Migration — Plan"
+tags: [surrealdb-migration, archived]
+---
+
 # SurrealDB Migration — Plan
 
 > **Amended 2026-05-21.** Wave-1 shipped (618/618 tests green, pass-off gate
@@ -13,7 +19,7 @@
 > plus the Idempotency and Saga stores. Tasks 7 and 8b done; 5, 8 partial.
 > The remaining wave-2/wave-3 work is sequenced in
 > [CLOSEOUT-RUNBOOK.md](CLOSEOUT-RUNBOOK.md) (5 parallel-friendly ultrapilot
-> streams: A=User/Holon/STAR adapters, B=ops guardrails, C=service refactor
+> streams: A=User/Holon/Action Graph Bundle adapters, B=ops guardrails, C=service refactor
 > onto IBridgeStore, D=EF deletion, E=cutover gates + sign-off).
 
 ## Tasks
@@ -53,7 +59,7 @@
    Wallet, NFT, BlockchainOperation, Bridge SurrealDB adapters landed under
    `Providers/Stores/Surreal/` against the generated POCOs at
    `AZOA.WebAPI.Generated.SurrealDb.*`. Wave-2 round 2 (CLOSEOUT-RUNBOOK
-   Stream A, same day): User, Holon, STAR landed with hand-authored
+   Stream A, same day): User, Holon, Action Graph Bundle landed with hand-authored
    090/100/110 `.mermaid` + `.surql` and inline POCOs (mark "replace with
    generated POCO when source-gen catches up"). DI flipped in
    `Program.cs:244-262` for all 7. **Remaining:** Action portion still gated
@@ -162,7 +168,7 @@ A1. [~] **Partial — three of four budgets landed (2026-05-22, CLOSEOUT
     (`--filter "Category!=Perf"`) excludes it; tests use `[SkippableFact]`
     + `Skip.IfNot(_surrealAvailable, ...)` matching the wave-2 store-test
     pattern; namespace isolation via `test{guid}`. **Remaining:** holon
-    traversal budget — blocked on the User/Holon/STAR adapters from
+    traversal budget — blocked on the User/Holon/Action Graph Bundle adapters from
     CLOSEOUT Stream A, follow-up after that lands
 A2. [ ] Document SurrealDB transaction/isolation model for multi-statement
     bridge writes in `Persistence/SurrealDb/Schemas/README.md` (delivered
@@ -191,7 +197,7 @@ A10. [ ] G7 chain-reconciliation as chaos-tested CI gate — insert N ops,
 16. [x] **Done (2026-05-22, CLOSEOUT Stream D).** `Data/` (containing
     `AZOADbContext.cs` + `SeedData.cs`), `Migrations/` (all 5 migration
     files), every `Providers/Stores/Ef*Store.cs` (User, Wallet, Holon,
-    BlockchainOperation, STAR, Action, NFT, Bridge, ActionRunStore stub,
+    BlockchainOperation, Action Graph Bundle, Action, NFT, Bridge, ActionRunStore stub,
     ActionNodeExecutionStore stub), `Core/Idempotency/IdempotencyStore.cs`
     (EF impl), and `Services/Sagas/EfSagaStore.cs` deleted. The
     `Npgsql.EntityFrameworkCore.PostgreSQL` + `Microsoft.EntityFrameworkCore.Design`

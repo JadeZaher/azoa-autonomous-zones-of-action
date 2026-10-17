@@ -594,6 +594,10 @@ public sealed class KycIdentityBindingTests
 
         public KycIdentity? Peek(string id) => _rows.GetValueOrDefault(id);
 
+        public Task<AZOAResult<KycIdentity>> BindVerifiedUserAsync(
+            KycIdentity candidate, KycSubmission expected, HostedSession lease, CancellationToken ct = default)
+            => BindUserAsync(candidate, ct);
+
         public Task<AZOAResult<KycIdentity>> BindUserAsync(
             KycIdentity candidate,
             CancellationToken ct = default)

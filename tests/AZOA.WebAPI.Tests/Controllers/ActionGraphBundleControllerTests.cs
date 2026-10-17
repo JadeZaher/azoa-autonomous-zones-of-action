@@ -9,6 +9,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 
 namespace AZOA.WebAPI.Tests.Controllers;
 
@@ -134,7 +135,7 @@ public class ActionGraphBundleControllerTests
     public async Task Generate_Success_ReturnsOk()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
 
         var result = await _controller.Generate(id, new ActionGraphBundleDappGenerationRequest(), null);
@@ -146,7 +147,7 @@ public class ActionGraphBundleControllerTests
     public async Task Generate_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+        _manager.Setup(m => m.GenerateAsync(id, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true });
 
         var result = await _controller.Generate(id, new ActionGraphBundleDappGenerationRequest(), null);
@@ -155,25 +156,25 @@ public class ActionGraphBundleControllerTests
     }
 
     [Fact]
-    public async Task Deploy_Success_ReturnsOk()
+    public async Task Deploy_Pending_ReturnsAccepted()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
+        _manager.Setup(m => m.DeployAsync(id, It.IsAny<DeploymentStartRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<DeploymentReceipt>.Success(new("operation", "artifact", "hash", new("NativeContract", "Solana", "Devnet"), "Prepared", "CreateBuffer", null, null, [], null, 1)));
 
-        var result = await _controller.Deploy(id, null);
+        var result = await _controller.Deploy(id, new("artifact", "hash", new("NativeContract", "Solana", "Devnet")), default);
 
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(202);
     }
 
     [Fact]
     public async Task Deploy_Error_ReturnsBadRequest()
     {
         var id = Guid.NewGuid();
-        _manager.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-                .ReturnsAsync(new AZOAResult<IActionGraphBundle> { IsError = true });
+        _manager.Setup(m => m.DeployAsync(id, It.IsAny<DeploymentStartRequest>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<DeploymentReceipt>.Failure("Invalid artifact"));
 
-        var result = await _controller.Deploy(id, null);
+        var result = await _controller.Deploy(id, new("artifact", "hash", new("NativeContract", "Solana", "Devnet")), default);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
     }

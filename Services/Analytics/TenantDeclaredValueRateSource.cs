@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;

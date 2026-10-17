@@ -18,7 +18,7 @@ namespace AZOA.WebAPI.Services.Actions.Predicates;
 public static class GatePath
 {
     /// <summary>Valid root prefixes for v1 binding paths.</summary>
-    public static readonly IReadOnlyList<string> ValidRoots = ["upstream", "holon", "run"];
+    public static readonly IReadOnlyList<string> ValidRoots = ["upstream", "holon", "run", "input"];
 
     /// <summary>
     /// Parses a gate path string into its segments. Returns true on success;

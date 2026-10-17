@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using AZOA.WebAPI.Core.Surreal;   // SurrealRecordParam (record<> binding, never a bare hex id)
+
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
@@ -12,6 +12,7 @@ namespace AZOA.WebAPI.Services.Fiat.OffRamp;
 /// <summary>Durable states of one cash-out. Mirrors the POCO allow-list.</summary>
 public static class FiatPayoutStatuses
 {
+    public const string BankPending = "BankPending";
     /// <summary>Claimed. Nothing has moved and nothing has been promised to the provider.</summary>
     public const string Requested = "Requested";
 
@@ -21,7 +22,7 @@ public static class FiatPayoutStatuses
     /// </summary>
     public const string UnitsCollected = "UnitsCollected";
 
-    /// <summary>The transfer exists at the provider. Terminal unless it is reversed.</summary>
+    /// <summary>The bank payout is confirmed paid by the provider.</summary>
     public const string Paid = "Paid";
 
     /// <summary>The provider pulled the money back out again (W4.3 records the fact).</summary>
@@ -42,7 +43,7 @@ public static class FiatPayoutStatuses
     /// <summary>Statuses an operator board must show: in flight, or waiting on a person.</summary>
     public static readonly IReadOnlyList<string> Board = new[]
     {
-        Requested, UnitsCollected, Reversed, NeedsOperator,
+        Requested, UnitsCollected, BankPending, Reversed, NeedsOperator,
     };
 
     /// <summary>True for a status no further automatic step will change.</summary>
@@ -100,221 +101,115 @@ public interface IFiatPayoutLedger
 /// <c>Providers/Stores/Surreal/</c> is outside this item's file boundary; the interface is
 /// <see cref="IFiatPayoutLedger"/>, so moving it later is a file move.
 /// </summary>
-public sealed class SurrealFiatPayoutLedger : IFiatPayoutLedger
+public sealed class SurrealFiatPayoutLedger(ISurrealExecutor executor) : IFiatPayoutLedger
 {
-    private const string Table = FiatPayout.SchemaNameConst;
-
-    private const string ForUserStatement =
-        "SELECT * FROM fiat_payout WHERE subject_user_id = $_user ORDER BY requested_at DESC LIMIT $_limit";
-
-    private const string CommittingForUserStatement =
-        "SELECT * FROM fiat_payout WHERE subject_user_id = $_user AND status INSIDE $_statuses "
-        + "ORDER BY requested_at ASC";
-
-    private const string BoardStatement =
-        "SELECT * FROM fiat_payout WHERE status INSIDE $_statuses ORDER BY requested_at DESC LIMIT $_limit";
-
-    private const string ByTransferStatement =
-        "SELECT * FROM fiat_payout WHERE provider_transfer_id = $_transfer ORDER BY requested_at DESC LIMIT 1";
-
-    private readonly ISurrealExecutor _executor;
-
-    public SurrealFiatPayoutLedger(ISurrealExecutor executor)
-    {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
-    }
-
     /// <inheritdoc />
-    public async Task<AZOAResult<FiatPayoutClaim>> ClaimAsync(
-        FiatPayout candidate, CancellationToken ct = default)
+    public async Task<AZOAResult<FiatPayoutClaim>> ClaimAsync(FiatPayout candidate, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-
         try
         {
-            var create = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", candidate.Id)
-                .WithParam("_body", candidate);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(create, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            var created = response.GetValues<FiatPayout>(0).SingleOrDefault() ?? candidate;
-            return AZOAResult<FiatPayoutClaim>.Success(new FiatPayoutClaim(created, Created: true), "Created.");
+            var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
+            response.EnsureAllOk();
+            var row = response.GetValues<FiatPayout>(0).Single();
+            return AZOAResult<FiatPayoutClaim>.Success(new(row, true));
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
-            // A CREATE that lost to an existing row is the double-tap case, not a fault — but only
-            // when the row really is there now. Re-read before concluding that, so a transport
-            // failure is never reported as "this cash-out already exists" and answered with a
-            // stale row nobody is driving.
             var existing = await GetAsync(candidate.Id, ct);
-            if (!existing.IsError && existing.Result is not null)
-                return AZOAResult<FiatPayoutClaim>.Success(
-                    new FiatPayoutClaim(existing.Result, Created: false), "Already claimed.");
-
-            return new AZOAResult<FiatPayoutClaim>()
-                .CaptureException(ex, $"Cash-out write failed: {ex.Message}");
+            if (existing.Result is null) throw;
+            return AZOAResult<FiatPayoutClaim>.Success(new(existing.Result, false));
         }
     }
 
     /// <inheritdoc />
     public async Task<AZOAResult<FiatPayout?>> GetAsync(string recordId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(recordId))
-            return new AZOAResult<FiatPayout?> { Result = null, Message = "Not found." };
-
-        try
-        {
-            var query = SurrealQuery<FiatPayout>.Key(recordId.Trim());
-            var row = await _executor.QuerySingleAsync<FiatPayout>(query, ct);
-            return new AZOAResult<FiatPayout?> { Result = row, Message = row is null ? "Not found." : "Success" };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<FiatPayout?>()
-                .CaptureException(ex, $"Cash-out read failed: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(recordId)) return new() { Result = null };
+        var row = await executor.QuerySingleAsync<FiatPayout>(SurrealQuery<FiatPayout>.Key(recordId), ct);
+        return new() { Result = row };
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<FiatPayout?>> GetByTransferAsync(
-        string transferId, CancellationToken ct = default)
+    public async Task<AZOAResult<FiatPayout?>> GetByTransferAsync(string transferId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(transferId))
-            return new AZOAResult<FiatPayout?> { Result = null, Message = "Not found." };
-
-        try
-        {
-            var query = SurrealQuery.Of(ByTransferStatement).WithParam("_transfer", transferId.Trim());
-            var rows = await _executor.QueryAsync<FiatPayout>(query, ct);
-            var row = rows?.FirstOrDefault();
-            return new AZOAResult<FiatPayout?> { Result = row, Message = row is null ? "Not found." : "Success" };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<FiatPayout?>()
-                .CaptureException(ex, $"Cash-out read failed: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(transferId)) return new() { Result = null };
+        var row = await executor.QuerySingleAsync<FiatPayout>(SurrealQuery<FiatPayout>.From()
+            .Where(payout => payout.ProviderTransferId == transferId).OrderByDescending(payout => payout.RequestedAt).Limit(1), ct);
+        return new() { Result = row };
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<FiatPayout>> UpdateIfVersionAsync(
-        FiatPayout row, long expectedVersion, CancellationToken ct = default)
+    public async Task<AZOAResult<FiatPayout>> UpdateIfVersionAsync(FiatPayout row, long expectedVersion, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(row);
-
-        try
+        var update = SurrealWriter.UpdateOnly<FiatPayout>(row.Id)
+            .Where(payout => payout.Version == expectedVersion)
+            .Set(payout => payout.AgedQuantityBaseUnits, row.AgedQuantityBaseUnits)
+            .Set(payout => payout.BankPayoutAttempt, row.BankPayoutAttempt)
+            .Set(payout => payout.Status, row.Status)
+            .Set(payout => payout.UnitsOwedBaseUnits, row.UnitsOwedBaseUnits)
+            .Set(payout => payout.ReversedMinorUnits, row.ReversedMinorUnits)
+            .Set(payout => payout.AttemptCount, row.AttemptCount)
+            .Set(payout => payout.Version, row.Version)
+            .Set(payout => payout.UpdatedAt, row.UpdatedAt);
+        update = update.Set(payout => payout.RecoveryRequested, row.RecoveryRequested)
+            .Set(payout => payout.RecoveryReversalAmount, row.RecoveryReversalAmount)
+            .Set(payout => payout.RecoveryReversalAttempt, row.RecoveryReversalAttempt)
+            .Set(payout => payout.RestoredQuantityBaseUnits, row.RestoredQuantityBaseUnits)
+            .Set(payout => payout.RestitutionTargetBaseUnits, row.RestitutionTargetBaseUnits)
+            .Set(payout => payout.RecoveryAuditJson, row.RecoveryAuditJson);
+        update = row.RecoveryStartedAt is null ? update.Unset(payout => payout.RecoveryStartedAt) : update.Set(payout => payout.RecoveryStartedAt, row.RecoveryStartedAt);
+        update = row.ProviderTransferReversalId is null ? update.Unset(payout => payout.ProviderTransferReversalId) : update.Set(payout => payout.ProviderTransferReversalId, row.ProviderTransferReversalId);
+        update = row.ReturnPendingTransactionId is null ? update.Unset(payout => payout.ReturnPendingTransactionId) : update.Set(payout => payout.ReturnPendingTransactionId, row.ReturnPendingTransactionId);
+        update = row.ReturnPendingIdempotencyKey is null ? update.Unset(payout => payout.ReturnPendingIdempotencyKey) : update.Set(payout => payout.ReturnPendingIdempotencyKey, row.ReturnPendingIdempotencyKey);
+        update = row.RestitutionKey is null ? update.Unset(payout => payout.RestitutionKey) : update.Set(payout => payout.RestitutionKey, row.RestitutionKey);
+        update = row.ConsumedLots is null ? update.Unset(payout => payout.ConsumedLots) : update.Set(payout => payout.ConsumedLots, row.ConsumedLots);
+        update = row.ConnectedAccountId is null ? update.Unset(payout => payout.ConnectedAccountId) : update.Set(payout => payout.ConnectedAccountId, row.ConnectedAccountId);
+        update = row.ProviderTransferId is null ? update.Unset(payout => payout.ProviderTransferId) : update.Set(payout => payout.ProviderTransferId, row.ProviderTransferId);
+        update = row.ProviderPayoutId is null ? update.Unset(payout => payout.ProviderPayoutId) : update.Set(payout => payout.ProviderPayoutId, row.ProviderPayoutId);
+        update = row.BankPayoutStartedAt is null ? update.Unset(payout => payout.BankPayoutStartedAt) : update.Set(payout => payout.BankPayoutStartedAt, row.BankPayoutStartedAt);
+        update = row.UnitsCollectedTransactionId is null ? update.Unset(payout => payout.UnitsCollectedTransactionId) : update.Set(payout => payout.UnitsCollectedTransactionId, row.UnitsCollectedTransactionId);
+        update = row.UnitsReturnedTransactionId is null ? update.Unset(payout => payout.UnitsReturnedTransactionId) : update.Set(payout => payout.UnitsReturnedTransactionId, row.UnitsReturnedTransactionId);
+        update = row.StatusReason is null ? update.Unset(payout => payout.StatusReason) : update.Set(payout => payout.StatusReason, row.StatusReason);
+        update = row.ReversalId is null ? update.Unset(payout => payout.ReversalId) : update.Set(payout => payout.ReversalId, row.ReversalId);
+        update = row.UnitsCollectedAt is null ? update.Unset(payout => payout.UnitsCollectedAt) : update.Set(payout => payout.UnitsCollectedAt, row.UnitsCollectedAt);
+        update = row.PaidAt is null ? update.Unset(payout => payout.PaidAt) : update.Set(payout => payout.PaidAt, row.PaidAt);
+        update = row.ReversedAt is null ? update.Unset(payout => payout.ReversedAt) : update.Set(payout => payout.ReversedAt, row.ReversedAt);
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
-            var update = SurrealQuery
-                .Of("UPDATE type::record($_t, $_id) CONTENT $_body WHERE version = $_expected RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", row.Id)
-                .WithParam("_body", row)
-                .WithParam("_expected", expectedVersion);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(update, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            if (response.Count == 0 || !response[0].IsOk || response[0].AffectedCount() != 1)
-                return AZOAResult<FiatPayout>.Failure(
-                    $"Cash-out '{row.Id}' changed underneath this update "
-                    + $"(expected version {expectedVersion}).");
-
-            return AZOAResult<FiatPayout>.Success(
-                response.GetValues<FiatPayout>(0).SingleOrDefault() ?? row, "Saved.");
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<FiatPayout>()
-                .CaptureException(ex, $"Cash-out update failed: {ex.Message}");
-        }
+            var result = await executor.ExecuteAsync(update.Build(), ct);
+            result.EnsureAllOk();
+            return result;
+        }, ct);
+        var saved = response.GetValues<FiatPayout>(0).SingleOrDefault();
+        return saved is null ? AZOAResult<FiatPayout>.Failure("Cash-out changed during this update.")
+            : AZOAResult<FiatPayout>.Success(saved);
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<IReadOnlyList<FiatPayout>>> ListForUserAsync(
-        Guid userId, int limit, CancellationToken ct = default)
+    public Task<AZOAResult<IReadOnlyList<FiatPayout>>> ListForUserAsync(Guid userId, int limit, CancellationToken ct = default)
     {
-        if (userId == Guid.Empty)
-            return AZOAResult<IReadOnlyList<FiatPayout>>.Success(Array.Empty<FiatPayout>(), "Success");
-
-        try
-        {
-            // subject_user_id is a record<user> column, so the parameter has to be bound as a
-            // native record id — a bare string compares equal to nothing and would answer "this
-            // person has never cashed out" with no error at all.
-            var query = SurrealQuery
-                .Of(ForUserStatement)
-                .WithParam("_user", SurrealRecordParam.Of(User.SchemaNameConst, userId.ToString("N")))
-                .WithParam("_limit", Math.Clamp(limit, 1, 500));
-
-            return await ReadAsync(query, ct);
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<IReadOnlyList<FiatPayout>>()
-                .CaptureException(ex, $"Cash-out read failed: {ex.Message}");
-        }
+        var subject = SurrealLink.ToLink(User.SchemaNameConst, userId.ToString("N"));
+        return ReadAsync(SurrealQuery<FiatPayout>.From().Where(row => row.SubjectUserId == subject)
+            .OrderByDescending(row => row.RequestedAt).Limit(Math.Clamp(limit, 1, 500)).AsUntyped(), ct);
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<IReadOnlyList<FiatPayout>>> ListCommittingForUserAsync(
-        Guid userId, CancellationToken ct = default)
+    public Task<AZOAResult<IReadOnlyList<FiatPayout>>> ListCommittingForUserAsync(Guid userId, CancellationToken ct = default)
     {
-        if (userId == Guid.Empty)
-            return AZOAResult<IReadOnlyList<FiatPayout>>.Success(Array.Empty<FiatPayout>(), "Success");
-
-        try
-        {
-            var query = SurrealQuery
-                .Of(CommittingForUserStatement)
-                .WithParam("_user", SurrealRecordParam.Of(User.SchemaNameConst, userId.ToString("N")))
-                .WithParam("_statuses", FiatPayoutStatuses.Committing.ToArray());
-
-            return await ReadAsync(query, ct);
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<IReadOnlyList<FiatPayout>>()
-                .CaptureException(ex, $"Cash-out read failed: {ex.Message}");
-        }
+        var subject = SurrealLink.ToLink(User.SchemaNameConst, userId.ToString("N"));
+        return ReadAsync(SurrealQuery<FiatPayout>.From().Where(row => row.SubjectUserId == subject
+            && (row.Status == FiatPayoutStatuses.Requested || row.Status == FiatPayoutStatuses.UnitsCollected))
+            .OrderBy(row => row.RequestedAt).AsUntyped(), ct);
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<IReadOnlyList<FiatPayout>>> ListBoardAsync(
-        int limit, CancellationToken ct = default)
-    {
-        try
-        {
-            var query = SurrealQuery
-                .Of(BoardStatement)
-                .WithParam("_statuses", FiatPayoutStatuses.Board.ToArray())
-                .WithParam("_limit", Math.Clamp(limit, 1, 500));
+    public Task<AZOAResult<IReadOnlyList<FiatPayout>>> ListBoardAsync(int limit, CancellationToken ct = default)
+        => ReadAsync(SurrealQuery<FiatPayout>.From().Where(row => row.Status == FiatPayoutStatuses.Requested
+            || row.Status == FiatPayoutStatuses.UnitsCollected || row.Status == FiatPayoutStatuses.BankPending
+            || row.Status == FiatPayoutStatuses.Reversed || row.Status == FiatPayoutStatuses.NeedsOperator)
+            .OrderByDescending(row => row.RequestedAt).Limit(Math.Clamp(limit, 1, 500)).AsUntyped(), ct);
 
-            return await ReadAsync(query, ct);
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<IReadOnlyList<FiatPayout>>()
-                .CaptureException(ex, $"Cash-out read failed: {ex.Message}");
-        }
-    }
-
-    private async Task<AZOAResult<IReadOnlyList<FiatPayout>>> ReadAsync(
-        SurrealQuery query, CancellationToken ct)
-    {
-        var rows = await _executor.QueryAsync<FiatPayout>(query, ct);
-        return AZOAResult<IReadOnlyList<FiatPayout>>.Success(
-            rows?.ToList() ?? new List<FiatPayout>(), "Success");
-    }
+    private async Task<AZOAResult<IReadOnlyList<FiatPayout>>> ReadAsync(SurrealQuery query, CancellationToken ct)
+        => AZOAResult<IReadOnlyList<FiatPayout>>.Success((await executor.QueryAsync<FiatPayout>(query, ct)).ToList());
 }

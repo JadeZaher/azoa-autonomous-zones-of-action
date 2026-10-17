@@ -145,8 +145,8 @@ public partial class ActionGraphBundle : ISurrealRecord
 
     [Column(Order = 3, Type = "int")]
     [Default("0")]
-    [JsonPropertyName("karma_score")]
-    public int KarmaScore { get; set; }
+    [JsonPropertyName("display_order")]
+    public int DisplayOrder { get; set; }
 }
 ```
 

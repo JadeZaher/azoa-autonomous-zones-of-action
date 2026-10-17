@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Ecosystem;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -74,24 +75,29 @@ public class ActionGraphBundleController : ControllerBase
     }
 
     [HttpPost("{id:guid}/generate")]
+    [Authorize(Policy = "DappManage")]
     public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Generate(Guid id, [FromBody] ActionGraphBundleDappGenerationRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
 
-        var result = await _manager.GenerateAsync(id, request, userId.Value, providerRequest);
+        var result = await _manager.GenerateAsync(id, request, userId.Value, providerRequest, ActingTenantId());
         return TranslateUpsertResult(result);
     }
 
     [HttpPost("{id:guid}/deploy")]
-    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Deploy(Guid id, [FromQuery] AZOARequest? providerRequest)
+    [Authorize(Policy = "DappManage")]
+    public async Task<ActionResult<AZOAResult<DeploymentReceipt>>> Deploy(Guid id, [FromBody] DeploymentStartRequest request, CancellationToken ct)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
 
-        var result = await _manager.DeployAsync(id, userId.Value, providerRequest);
-        return TranslateUpsertResult(result);
+        var result = await _manager.DeployAsync(id, request, Request.Headers["Idempotency-Key"].ToString(), userId.Value, ActingTenantId(), ct);
+        if (result.IsError) return BadRequest(result);
+        return result.Result?.State is "Confirmed" or "Failed" or "Cancelled" ? Ok(result) : StatusCode(202, result);
     }
+
+    private Guid? ActingTenantId() => Guid.TryParse(User.FindFirst("act_as_tenant")?.Value, out var id) ? id : null;
 
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
 

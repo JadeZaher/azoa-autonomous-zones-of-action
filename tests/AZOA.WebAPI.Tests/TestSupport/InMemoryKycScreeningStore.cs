@@ -37,11 +37,12 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         Guid? tenantId,
         KycScreeningDecision decision,
         DateTimeOffset? screenedAt = null,
-        bool resultsTruncated = false)
+        bool resultsTruncated = false, string? lineageKey = null)
     {
         var result = new KycScreeningResult
         {
             Id = Guid.NewGuid().ToString("N"),
+            LineageKey = lineageKey,
             SubjectUserId = userId.ToString("N"),
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
             QueryFullName = "Ada Lovelace",
@@ -63,11 +64,12 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         Guid? tenantId = null,
         Guid? subjectUserId = null,
         string? lastObserved = null,
-        DateTimeOffset? retentionExpiresAt = null)
+        DateTimeOffset? retentionExpiresAt = null, string? lineageKey = null)
     {
         var monitor = new KycScreeningMonitor
         {
             Id = Guid.NewGuid().ToString("N"),
+            LineageKey = lineageKey,
             ProviderMonitorId = providerMonitorId,
             TenantScope = KycPersonKeyDeriver.ScopeValue(tenantId),
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
@@ -91,12 +93,13 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
     }
 
     public Task<AZOAResult<KycScreeningResult>> GetLatestResultAsync(
-        Guid userId, Guid? tenantId, CancellationToken ct = default)
+        Guid userId, Guid? tenantId, CancellationToken ct = default, string? lineageKey = null)
     {
         if (FailReads)
             return Task.FromResult(AZOAResult<KycScreeningResult>.Failure("store unavailable"));
 
         var row = MatchingResults(userId, tenantId)
+            .Where(item => lineageKey == null || item.LineageKey == lineageKey)
             .OrderByDescending(item => item.ScreenedAt)
             .FirstOrDefault();
         return Task.FromResult(new AZOAResult<KycScreeningResult> { Result = row });
@@ -126,13 +129,14 @@ public sealed class InMemoryKycScreeningStore : IKycScreeningStore
         string tenantScope,
         string? queryFullName,
         string? queryBirthdayTimeFrom,
-        CancellationToken ct = default)
+        CancellationToken ct = default, string? lineageKey = null)
     {
         if (FailReads)
             return Task.FromResult(AZOAResult<KycScreeningMonitor>.Failure("store unavailable"));
 
         var row = _monitors.FirstOrDefault(monitor =>
             monitor.TenantScope == tenantScope
+            && monitor.LineageKey == lineageKey
             && monitor.QueryFullName == queryFullName
             && (monitor.QueryBirthdayTimeFrom ?? string.Empty) == (queryBirthdayTimeFrom ?? string.Empty));
         return Task.FromResult(new AZOAResult<KycScreeningMonitor> { Result = row });

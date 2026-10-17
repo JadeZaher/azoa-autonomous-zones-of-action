@@ -58,7 +58,7 @@ validation. See `tests/AZOA.WebAPI.IntegrationTests/AGENTS.md` §param-binding +
 - Unit: **1235 passed / 0 failed / 1 skipped** (documented-unreachable).
 - SDK: **163 vitest passed**.
 - Integration: every previously-red class green **in isolation** (UserNFT 10/10,
-  MCP 8/8, G5 1/1, Holon/STARODK scoped 41/41). The full-suite **37-failure tail is
+  MCP 8/8, G5 1/1, Holon/ActionGraphBundle scoped 41/41). The full-suite **37-failure tail is
   pre-existing shared-SurrealDB-container parallel contention** — the exact same
   classes pass when run as a scoped group; consistent with the documented
   `integration-test-namespace-isolation` history. NOT regressions from Phase H.

@@ -52,7 +52,7 @@ public class UserNFTControllerIntegrationTests : IntegrationTestBase
             Description         = "Integration test NFT",
             IsSoulbound         = false,
             IsTransferable      = true,
-            Attributes          = new Dictionary<string, string> { { "level", "1" }, { "karma", "100" } }
+            Attributes          = new Dictionary<string, string> { { "tier", "1" }, { "score", "100" } }
         };
 
         var response = await Client.PostAsJsonAsync("/api/UserNFT/mint", mintModel, JsonOptions);

@@ -1,8 +1,4 @@
-using System;
-using System.Net.Http;
 using AZOA.WebAPI.Core.Surreal;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;

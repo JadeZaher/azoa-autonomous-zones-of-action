@@ -7,7 +7,6 @@ using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
-using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Lending;
 
 namespace AZOA.WebAPI.Models.Actions
@@ -86,7 +85,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers
         {
             if (!ActionNodeConfig.TryDeserialize<LoanOpenNodeConfig>(
                     context.Node.Config, nameof(ActionNodeType.LoanOpen), out var cfg, out var cfgError))
-                return ActionNodeResults.Fail(cfgError);
+                return ActionNodeResults.Invalid(cfgError);
 
             if (!LoanAmountMetadata.TryBuildDimension(cfg.CurrencyKind, cfg.CurrencyCode, out var dimension, out var unitError))
                 return ActionNodeResults.Invalid($"[LoanOpen] {unitError}");

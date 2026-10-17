@@ -4,7 +4,7 @@ using AZOA.WebAPI.Models.Responses;
 namespace AZOA.WebAPI.Interfaces.Stores;
 
 /// <summary>
-/// Persistence boundary for the ActionGraphBundle ecosystem tree (star-odk-ecosystem-tree
+/// Persistence boundary for the ActionGraphBundle ecosystem tree (action-graph-bundle-ecosystem-tree
 /// / final-hardening-cutover D2). Operates on the decorated POCOs
 /// <see cref="Ecosystem"/> + <see cref="EcosystemNode"/> — no hand-written
 /// domain model at the storage boundary; the manager maps to the Guid-typed

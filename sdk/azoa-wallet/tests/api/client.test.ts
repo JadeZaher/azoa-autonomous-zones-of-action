@@ -80,7 +80,8 @@ describe("AzoaApiClient", () => {
         name: "My NFT",
         description: "desc",
         chainId: "algorand",
-      });
+        metadataUri: "ipfs://metadata",
+      }, "mint-stable-key");
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.walletId).toBe("wallet-guid");
@@ -94,7 +95,7 @@ describe("AzoaApiClient", () => {
       await client.transferNft(nftId, {
         targetUserId: "bbbbbbbb-2222-4222-8222-222222222222",
         walletId: "cccccccc-3333-4333-8333-333333333333",
-      });
+      }, "transfer-stable-key");
 
       expect(mockFetch).toHaveBeenCalledWith(
         `http://localhost:5000/api/nft/${nftId}/transfer`,
@@ -105,7 +106,7 @@ describe("AzoaApiClient", () => {
     it("burnNft sends to /api/nft/{id}/burn", async () => {
       const nftId = "dddddddd-4444-4444-8444-444444444444";
       mockFetch.mockReturnValueOnce(azoaResponse({ id: "op3" }));
-      await client.burnNft(nftId, { walletId: "cccccccc-3333-4333-8333-333333333333" });
+      await client.burnNft(nftId, { walletId: "cccccccc-3333-4333-8333-333333333333" }, "burn-stable-key");
 
       expect(mockFetch).toHaveBeenCalledWith(
         `http://localhost:5000/api/nft/${nftId}/burn`,
@@ -324,81 +325,6 @@ describe("AzoaApiClient", () => {
 
   // updateActionGraphBundle now uses PUT /api/actiongraphbundle/{id} (finding 7 override) —
   // assertions live in tests/api/self-audit-one-fix.test.ts.
-
-  describe("getSwapQuote (Phase 2 prereq)", () => {
-    it("builds a GET /api/swap/quote URL with the supplied params", async () => {
-      mockFetch.mockReturnValueOnce(azoaResponse({
-        chain: "solana",
-        tokenIn: "INMINT",
-        tokenOut: "OUTMINT",
-        amountIn: "1000",
-        expectedAmountOut: "950",
-        priceImpact: 0.1,
-        fee: "0",
-      }));
-      const result = await client.getSwapQuote({
-        chain: "solana",
-        tokenIn: "INMINT",
-        tokenOut: "OUTMINT",
-        amountIn: "1000",
-        slippageBps: 50,
-        walletAddress: "PUBKEY",
-      });
-      expect(isOk(result)).toBe(true);
-      const url = mockFetch.mock.calls[0][0] as string;
-      expect(url.startsWith("http://localhost:5000/api/swap/quote?")).toBe(true);
-      expect(url).toContain("chain=solana");
-      expect(url).toContain("tokenIn=INMINT");
-      expect(url).toContain("tokenOut=OUTMINT");
-      expect(url).toContain("amountIn=1000");
-      expect(url).toContain("slippageBps=50");
-      expect(url).toContain("walletAddress=PUBKEY");
-      expect(mockFetch.mock.calls[0][1].method).toBe("GET");
-    });
-  });
-
-  describe("executeSwap (Phase 2 prereq)", () => {
-    it("POSTs to /api/swap/execute with the body and no Idempotency-Key by default", async () => {
-      mockFetch.mockReturnValueOnce(azoaResponse({
-        chain: "solana",
-        tokenIn: "A",
-        tokenOut: "B",
-        amountIn: "1",
-        expectedAmountOut: "1",
-        priceImpact: 0,
-        fee: "0",
-      }));
-      await client.executeSwap({ chain: "solana", quoteId: "Q1", walletAddress: "PUBKEY" });
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:5000/api/swap/execute",
-        expect.objectContaining({ method: "POST" })
-      );
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.chain).toBe("solana");
-      expect(body.quoteId).toBe("Q1");
-      expect(body.walletAddress).toBe("PUBKEY");
-      const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
-      expect(headers["Idempotency-Key"]).toBeUndefined();
-    });
-
-    it("includes the Idempotency-Key header when supplied", async () => {
-      mockFetch.mockReturnValueOnce(azoaResponse({
-        chain: "solana",
-        tokenIn: "A",
-        tokenOut: "B",
-        amountIn: "1",
-        expectedAmountOut: "1",
-        priceImpact: 0,
-        fee: "0",
-      }));
-      await client.executeSwap(
-        { chain: "solana", quoteId: "Q1", walletAddress: "PUBKEY" },
-        { idempotencyKey: "my-key-123" }
-      );
-      const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
-      expect(headers["Idempotency-Key"]).toBe("my-key-123");
-    });
-  });
 
   describe("getBaseUrl (Phase 2 prereq for getApiUrl)", () => {
     it("returns the configured base URL", () => {

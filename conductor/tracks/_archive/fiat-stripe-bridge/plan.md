@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Fiat Stripe Bridge — Plan"
+tags: [fiat-stripe-bridge, archived]
+---
+
 # Fiat Stripe Bridge — Plan
 
 Source spec: [spec.md](spec.md)
@@ -53,7 +59,7 @@ phase.
   mirroring the faucet's "never a random per-request key" rule
   (`WalletManager.cs:386-392`).
 - [ ] **IDOR resistance.** The allocation target is the route/contract
-  `userId`; any owner id on the request body is ignored (STARODK precedent in
+  `userId`; any owner id on the request body is ignored (ActionGraphBundle precedent in
   project memory). Caller authority comes from the API-key scope, not the body.
 - [ ] **Execute allocation** via `INftManager.MintAsync`/`TransferAsync`
   (`Interfaces/Managers/INftManager.cs:10-11`) or the fungible equivalent (D4).

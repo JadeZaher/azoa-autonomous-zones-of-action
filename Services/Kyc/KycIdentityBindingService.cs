@@ -31,6 +31,12 @@ public interface IKycIdentityBindingService
         HostedSessionSubjectAttributes attributes,
         CancellationToken ct = default);
 
+    /// <summary>Derives and binds a person while fencing the exact hosted attempt and lease at persistence.</summary>
+    Task<AZOAResult<KycIdentity>> BindHostedAsync(
+        Guid userId, Guid? tenantId, KycProvider provider, string providerKey,
+        HostedSessionSubjectAttributes attributes, KycSubmission expected, HostedSession lease,
+        CancellationToken ct = default);
+
     /// <summary>
     /// Decides whether this user may claim a person-scoped benefit. The result is
     /// intentionally two-valued at the consumer boundary.
@@ -75,13 +81,23 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
         _clock = clock ?? TimeProvider.System;
     }
 
-    public async Task<AZOAResult<KycIdentity>> BindAsync(
-        Guid userId,
-        Guid? tenantId,
-        KycProvider provider,
-        string providerKey,
-        HostedSessionSubjectAttributes attributes,
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycIdentity>> BindAsync(
+        Guid userId, Guid? tenantId, KycProvider provider, string providerKey,
+        HostedSessionSubjectAttributes attributes, CancellationToken ct = default)
+        => BindCoreAsync(userId, tenantId, provider, providerKey, attributes, null, null, ct);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycIdentity>> BindHostedAsync(
+        Guid userId, Guid? tenantId, KycProvider provider, string providerKey,
+        HostedSessionSubjectAttributes attributes, KycSubmission expected, HostedSession lease,
         CancellationToken ct = default)
+        => BindCoreAsync(userId, tenantId, provider, providerKey, attributes, expected, lease, ct);
+
+    private async Task<AZOAResult<KycIdentity>> BindCoreAsync(
+        Guid userId, Guid? tenantId, KycProvider provider, string providerKey,
+        HostedSessionSubjectAttributes attributes, KycSubmission? expected, HostedSession? lease,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(attributes);
         if (userId == Guid.Empty)
@@ -135,7 +151,9 @@ public sealed class KycIdentityBindingService : IKycIdentityBindingService
             ModifiedDate = now,
         };
 
-        var bound = await _store.BindUserAsync(candidate, ct);
+        var bound = expected is not null && lease is not null
+            ? await _store.BindVerifiedUserAsync(candidate, expected, lease, ct)
+            : await _store.BindUserAsync(candidate, ct);
         if (bound.IsError || bound.Result is null)
             return bound;
 

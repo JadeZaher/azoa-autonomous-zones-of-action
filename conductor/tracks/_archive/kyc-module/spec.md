@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "KYC Module — Specification"
+tags: [kyc-module, archived]
+---
+
 # KYC Module — Specification
 
 ## Goal
@@ -60,14 +66,14 @@ Two impedance mismatches drive the port and are the source of every decision in
    `AZOAResult<T>` (`Models/Responses/AZOAResult.cs:38-85`) which carries only
    `IsError` + `Message` + `Result`. The Forbidden/NotFound distinction is
    preserved at the manager boundary using the **message-prefix discriminator
-   pattern** already proven by STARODK (`Interfaces/Managers/ISTARManager.cs:12-19`,
-   `STARODKAuthorizationError`), so the controller can translate to 403/404
+   pattern** already proven by ActionGraphBundle (`Interfaces/Managers/IActionGraphBundleManager.cs:12-19`,
+   `ActionGraphBundleAuthorizationError`), so the controller can translate to 403/404
    without leaking a new result shape.
 
 2. **Persistence + identity.** ArdaNova persists via EF `IRepository<T>` +
    `IUnitOfWork` and keys KYC to `User.id` (string). AZOA persists via
    **SurrealDB only** through a hand-authored store seam
-   (`Interfaces/Stores/ISTARStore.cs`, `Providers/Stores/Surreal/SurrealStarStore.cs`)
+   (`Interfaces/Stores/IActionGraphBundleStore.cs`, `Providers/Stores/Surreal/SurrealActionGraphBundleStore.cs`)
    and keys ownership to `User` (`Persistence/SurrealDb/Models/User.cs:20`).
    ArdaNova's `userId` → AZOA `UserId` throughout.
 
@@ -107,9 +113,9 @@ PROOF_OF_ADDRESS). Enums persist as their string names via `JsonStringEnumConver
 consistent with existing SurrealDB POCO conventions (decision **D4**).
 
 A `SurrealKycStore` (`Providers/Stores/Surreal/`) implementing an `IKycStore`
-seam (`Interfaces/Stores/IKycStore.cs`), mirroring `SurrealStarStore` —
+seam (`Interfaces/Stores/IKycStore.cs`), mirroring `SurrealActionGraphBundleStore` —
 `ToSurrealId` / `FromSurrealId`, `SurrealLink.ToLink("user", …)` for the
-`user_id` link (`SurrealStarStore.cs:180,218`), inline-or-model-POCO mapping,
+`user_id` link (`SurrealActionGraphBundleStore.cs:180,218`), inline-or-model-POCO mapping,
 `UPSERT … CONTENT … RETURN AFTER`. Store surface (User-scoped where it matters
 for IDOR):
 
@@ -181,8 +187,8 @@ DI registration in `Program.cs` alongside the existing manager/store block
   `AZOAResult<KycStatus>`:
   - `RequireVerifiedAsync(Guid userId)` — succeeds when the user has an
     APPROVED KYC submission; otherwise returns a **Forbidden-prefixed** error
-    (mirrors the STARODK discriminator pattern,
-    `ISTARManager.cs:12-19`) carrying a generic message ("KYC verification
+    (mirrors the ActionGraphBundle discriminator pattern,
+    `IActionGraphBundleManager.cs:12-19`) carrying a generic message ("KYC verification
     required. Complete identity verification to unlock this feature.").
   - `GetKycStatusAsync(Guid userId)` — the user's current effective status.
 - `KycGateService : IKycGateService` (`Managers/KycGateService.cs`) — reads via
@@ -190,20 +196,20 @@ DI registration in `Program.cs` alongside the existing manager/store block
   not a `VerificationLevel` enum — decision **D3**).
 - **A reusable gate seam other AZOA managers call.** Provide a
   `KycAuthorizationError` static (Forbidden/NotFound prefixes, exactly like
-  `STARODKAuthorizationError`, `ISTARManager.cs:12-19`) so a calling controller
+  `ActionGraphBundleAuthorizationError`, `IActionGraphBundleManager.cs:12-19`) so a calling controller
   can translate the gate result to 403 without a new result type. The gate is
   injected into a consuming manager and invoked before the sensitive op.
 
 ### 5. `KycController` — User-scoped with IDOR guards
 
 `KycController : ControllerBase` (`Controllers/KycController.cs`), `[Authorize]`,
-mirroring `STARODKController` (`Controllers/STARODKController.cs:14-118`):
+mirroring `ActionGraphBundleController` (`Controllers/ActionGraphBundleController.cs:14-118`):
 
 - Reads the authenticated user via `GetUserIdFromClaims()` (copy the helper
-  at `STARODKController.cs:113-118` — `NameIdentifier`/`sub` claim → `Guid`).
+  at `ActionGraphBundleController.cs:113-118` — `NameIdentifier`/`sub` claim → `Guid`).
 - `POST /api/kyc/submit` — submit for the authenticated user
   (`model.UserId`, if present on the body, is **ignored**; authenticated user
-  is authoritative — the STARODK precedent at `STARManager.cs:62-66`).
+  is authoritative — the ActionGraphBundle precedent at `ActionGraphBundleManager.cs:62-66`).
 - `GET /api/kyc/status` — status for the authenticated user (no `{userId}` in
   the route; the user comes from the token, closing ArdaNova's
   `GET /status/{userId}` IDOR at `KycController.cs:28-33`).
@@ -214,7 +220,7 @@ mirroring `STARODKController` (`Controllers/STARODKController.cs:14-118`):
   `POST /api/kyc/{id:guid}/reject` — gated by an admin policy/role (decision
   **D5**); `reviewerUserId` comes from the admin's token, not the body.
 - A private `TranslateResult(...)` that maps the manager's message-prefix
-  discriminator to 403/404/400, copied from `STARODKController.cs:100-111`.
+  discriminator to 403/404/400, copied from `ActionGraphBundleController.cs:100-111`.
 
 ### 6. Deploy-stub for Veriff secrets + config
 
@@ -246,7 +252,7 @@ zero `ArdaNova` / `Karma`-style brand tokens in the new files.
 - [ ] `KycStatus`, `KycProvider`, `KycDocumentType` enums ported (values only)
   under the AZOA namespace.
 - [ ] `IKycStore` seam + `SurrealKycStore` implementation authored, mirroring
-  `SurrealStarStore` id-encoding + `user` link conventions.
+  `SurrealActionGraphBundleStore` id-encoding + `user` link conventions.
 - [ ] `IKycProviderService` seam + `ManualKycProviderService` (default) +
   `VeriffKycProviderService` (stub) authored; provider selected by `Kyc:Provider`.
 - [ ] `IKycManager` + `KycManager` authored, returning `AZOAResult<T>`, with the

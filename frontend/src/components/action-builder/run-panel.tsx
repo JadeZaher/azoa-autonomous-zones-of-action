@@ -9,13 +9,14 @@ import { Separator } from '@/components/ui/separator'
 import { JsonViewer } from '@/components/shared/json-viewer'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { azoa, isOk } from '@/lib/azoa'
-import { isTerminal, type WorkflowExecutionState, type WorkflowNodeExecution, type WorkflowReconciliationResult, type WorkflowRunResult } from 'azoa-sdk'
+import { useAzoa } from '@/lib/azoa-context'
+import { isTerminal, type Result, type WorkflowExecutionState,
+ type WorkflowNodeExecution, type WorkflowReconciliationResult, type WorkflowRunResult, type ActionEconomicManifest, type StartWorkflowOptions } from 'azoa-sdk'
 import { DagFlow } from './dag-flow'
 import { getOutputShapeMirror } from './node-output-schema'
+import { NftWorkflowCosts } from './nft-workflow-costs'
 
 const POLL_INTERVAL_MS = 1500
-// Bounded: after this many *consecutive* poll failures, stop polling and
-// surface it visibly rather than retrying forever or freezing silently.
 const MAX_CONSECUTIVE_POLL_FAILURES = 4
 
 interface RunPanelAction {
@@ -35,9 +36,6 @@ const STATUS_COLOR: Record<string, string> = {
   Suspended: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
   AwaitingSignal: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
   AwaitingTimer: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
-  // Reconcile-before-retry park: engine probes chain truth before retrying a
-  // chain-action node. Resolved by a manual reconcileRun re-probe or the
-  // backend's own sweep — never auto-retried blindly.
   AwaitingReconciliation: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
 }
 
@@ -45,15 +43,27 @@ function statusPill(status: string) {
   return <Badge className={STATUS_COLOR[status] ?? 'bg-muted text-muted-foreground'}>{status}</Badge>
 }
 
-/** Per-action localStorage key holding the last-known active run id. */
-const runKey = (actionId: string) => `azoa.actionRun.${actionId}`
+const runKey = (scope: string) => `azoa.actionRun.v2.${scope}`
+const startKey = (scope: string) => `azoa.actionStart.v1.${scope}`
+type StoredStart = Pick<StartWorkflowOptions, 'idempotencyKey' | 'acknowledgeEconomicEffects' | 'expectedPublishedHash'>
 
-/**
- * Durable step-based action run panel: start a run, poll its execution state,
- * overlay live per-node status on the read-only DagFlow, and surface the
- * Advance/Signal controls for parked (Suspended/AwaitingSignal) runs.
- */
 export function RunPanel({ action }: { action: RunPanelAction }) {
+  const { userId } = useAzoa()
+  if (!userId) return <p>Sign in to run this action.</p>
+  const scope = `${userId}:${action.id}`
+  return <ScopedRunPanel key={scope} action={action} scope={scope} />
+}
+
+function ScopedRunPanel({ action, scope }: { action: RunPanelAction; scope: string }) {
+  const [pendingStart, setPendingStart] = useState<StoredStart | null>(null)
+  const [unresolvedRunId, setUnresolvedRunId] = useState<string | null>(null)
+  const [hydrated, setHydrated] = useState(false)
+  const [preview, setPreview] = useState<ActionEconomicManifest | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
+  const alive = useRef(false)
+  const startBusy = useRef(false)
+  const selection = useRef({ generation: 0, runId: '' })
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const [run, setRun] = useState<WorkflowRunResult | null>(null)
   const [execState, setExecState] = useState<WorkflowExecutionState | null>(null)
   const [starting, setStarting] = useState(false)
@@ -71,49 +81,11 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
   const [reconciling, setReconciling] = useState(false)
   const [reconcileResult, setReconcileResult] = useState<WorkflowReconciliationResult | null>(null)
 
-  // True once polling has given up after MAX_CONSECUTIVE_POLL_FAILURES in a
-  // row — surfaced as a visible "stopped" banner (with a manual retry) rather
-  // than letting the run view silently freeze at its last known state.
   const [pollStalled, setPollStalled] = useState(false)
-  // Bumped by the manual retry action to force the polling effect below to
-  // re-run for the SAME run id (run.id alone doesn't change on a manual retry).
   const [pollGeneration, setPollGeneration] = useState(0)
-
-  // Mirrors the last action.id this component actually rendered transient run
-  // state for. This component instance is reused across actions (no upstream
-  // `key`), so an action switch must reset run/exec/history state synchronously —
-  // done here, during render, per React's "adjusting state when a prop changes"
-  // pattern, rather than from inside an effect (which would apply one paint late
-  // and trips react-hooks/set-state-in-effect). The actual side effects — the
-  // localStorage read and the attach/history network calls — stay in the effect
-  // below, which now only performs work, never resets state directly.
-  //
-  // Every piece of transient, per-run-or-per-action UI state must be reset here,
-  // not just the "obvious" run/exec state: advanceFromNodeId, gateId,
-  // signalPayload, error and pollStalled all previously survived an action
-  // switch, so a value picked (or an error raised) against action A could be
-  // silently applied to / shown for action B once the switch landed.
-  const [renderedActionId, setRenderedActionId] = useState(action.id)
-  if (action.id !== renderedActionId) {
-    setRenderedActionId(action.id)
-    setRun(null)
-    setExecState(null)
-    setSelectedNodeId(null)
-    setHistory([])
-    setReconcileResult(null)
-    setAdvanceFromNodeId('')
-    setGateId('')
-    setSignalPayload('')
-    setError(null)
-    setPollStalled(false)
-  }
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Tracks the currently-shown action id. attachRun captures action.id at call time
-  // and bails its setRun/removeItem continuation if the action switched while the
-  // status fetch was in flight — otherwise a resolved run could land on the wrong
-  // action (this component instance is reused across actions, no upstream `key`).
   const actionIdRef = useRef(action.id)
 
   const clearPoll = useCallback(() => {
@@ -123,44 +95,40 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
     }
   }, [])
 
-  // Consecutive poll-failure count and the number of upcoming fixed-cadence
-  // ticks to skip (a lightweight, bounded backoff) — refs because they drive
-  // scheduling decisions inside the interval tick, not rendering.
   const pollFailureCountRef = useRef(0)
   const ticksToSkipRef = useRef(0)
 
   const pollOnce = useCallback(async (runId: string) => {
-    const res = await azoa.workflow.getExecutionState(runId)
+    const expected = selection.current
+    if (expected.runId !== runId) return
+    const res: Result<WorkflowExecutionState, { message: string }> = await azoa.workflow.getExecutionState(runId).catch((e: unknown) => ({
+      ok: false as const, error: { message: e instanceof Error ? e.message : 'Unable to poll run' },
+    }))
+    if (!alive.current || selection.current !== expected) return
+    if (isOk(res) && (res.value.runId !== runId || res.value.actionId !== action.id)) {
+      setError('Execution response does not match the selected run.')
+      clearPoll()
+      return
+    }
     if (isOk(res)) {
       pollFailureCountRef.current = 0
       ticksToSkipRef.current = 0
       setPollStalled(false)
       setExecState(res.value)
+      setRun((current) => current?.id === runId ? { ...current, status: res.value.status } : current)
       if (isTerminal(res.value.status)) clearPoll()
     } else {
       pollFailureCountRef.current += 1
       if (pollFailureCountRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
-        // Repeated failures — stop rather than silently freezing at the last
-        // known state. The banner below lets the operator resume manually.
         setError(res.error.message)
         setPollStalled(true)
         clearPoll()
       } else {
-        // Transient failure: tolerate it and back off before the next actual
-        // attempt (skip the next N fixed-cadence ticks) instead of either
-        // hammering the endpoint or giving up outright.
         ticksToSkipRef.current = pollFailureCountRef.current
       }
     }
-  }, [clearPoll])
+  }, [clearPoll, action.id])
 
-  // (Re)start polling only when the run ID changes (or a manual retry bumps
-  // pollGeneration) — NOT on every status change, else each poll (which
-  // updates status) would tear down and rebuild the interval. pollOnce/clearPoll
-  // are stable useCallbacks, so excluding them is safe here. The first poll
-  // fires via a zero-delay timeout rather than a direct call, so the effect
-  // body never invokes anything that sets state synchronously on its own turn —
-  // the same subscription shape as the interval tick below, just a one-shot.
   useEffect(() => {
     if (!run || isTerminal(run.status)) return
     const runId = run.id
@@ -182,8 +150,6 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on run.id (+ manual-retry generation) only
   }, [run?.id, pollGeneration, pollOnce, clearPoll])
 
-  // Manual resume after polling has stalled: clear the failure/backoff state
-  // and bump pollGeneration so the effect above re-subscribes for this run.
   const handleResumePolling = useCallback(() => {
     setError(null)
     setPollStalled(false)
@@ -192,125 +158,156 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
 
   useEffect(() => clearPoll, [clearPoll])
 
-  // Holds the action id whose stored key has been hydrated (mount-attach ran). The
-  // persist effect only writes once this matches the current action — this prevents
-  // (a) clobbering the stored key before mount-attach reads it, and (b) writing a
-  // stale run under a newly-switched action's key before its own mount-attach resets.
   const hydratedForRef = useRef<string | null>(null)
 
-  // Persist the active run id per action so a refresh / tab-switch can re-attach.
-  // Terminal runs clear the key (nothing to resume); the history list covers them.
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (hydratedForRef.current !== action.id) return // not yet hydrated for THIS action
-    if (run && !isTerminal(run.status)) {
-      window.localStorage.setItem(runKey(action.id), run.id)
-    } else {
-      window.localStorage.removeItem(runKey(action.id))
+    if (!run || hydratedForRef.current !== action.id) return
+    try {
+      if (isTerminal(run.status)) window.localStorage.removeItem(runKey(scope))
+      else window.localStorage.setItem(runKey(scope), run.id)
+    } catch {
+      const report = setTimeout(() => {
+        if (alive.current) setError('Run remains selected, but browser storage could not save it. Keep its run ID for recovery.')
+      }, 0)
+      return () => clearTimeout(report)
     }
-  }, [run, action.id])
+  }, [run, action.id, scope])
 
-  // Guarded the same way attachRun is: capture the action this fetch was issued
-  // for, and bail post-await if the action has since switched. Without this, a
-  // fast A→B action switch can let action A's listRuns response land after B's
-  // and overwrite B's history with A's runs (the render-phase reset above
-  // clears `history` synchronously, but that doesn't cancel A's in-flight
-  // fetch or stop its resolution from winning the race).
   const loadHistory = useCallback(async () => {
-    const forActionId = action.id
-    const res = await azoa.workflow.listRuns(forActionId)
-    if (actionIdRef.current !== forActionId) return
-    if (isOk(res)) {
-      // Newest first — startedAt ISO descending.
-      setHistory([...res.value].sort((a, b) => b.startedAt.localeCompare(a.startedAt)))
+    try {
+      const res = await azoa.workflow.listRuns(action.id)
+      if (!alive.current) return
+      if (isOk(res)) setHistory([...res.value].sort((a, b) => b.startedAt.localeCompare(a.startedAt)))
+    } catch (e) {
+      if (alive.current) setError(e instanceof Error ? e.message : 'Unable to load run history')
     }
   }, [action.id])
 
-  // Re-attach a persisted run on mount: fetch its current status; clear the key if
-  // the run is terminal or the fetch 404s (stale/deleted). Also load run history.
   const attachRun = useCallback(async (runId: string) => {
     const forActionId = action.id
+    const expected = { generation: selection.current.generation + 1, runId }
+    selection.current = expected
+    clearPoll()
+    setStarting(false)
+    setAdvancing(false)
+    setSignaling(false)
+    setReconciling(false)
+    setAdvanceFromNodeId('')
+    setGateId('')
+    setSignalPayload('')
+    setReconcileResult(null)
     setAttaching(true)
     setError(null)
     try {
       const res = await azoa.workflow.getRunStatus(runId)
-      // Bail if the action switched while the fetch was in flight — the resolved
-      // run belongs to an action that's no longer shown.
-      if (actionIdRef.current !== forActionId) return
+      if (!alive.current || selection.current !== expected || actionIdRef.current !== forActionId) return
       if (isOk(res)) {
-        // Defense in depth: reject a run whose actionId doesn't match the action
-        // currently shown. This is what actually stops a contaminated history
-        // row (or a stale/tampered localStorage entry) from writing the wrong
-        // run id into THIS action's localStorage key — the actionIdRef check
-        // above only guards the in-flight-fetch race, not a mismatched result.
-        if (res.value.actionId !== forActionId) {
-          if (typeof window !== 'undefined') window.localStorage.removeItem(runKey(forActionId))
+        if (res.value.actionId !== forActionId || res.value.id !== runId) {
+          window.localStorage.removeItem(runKey(scope))
+          setUnresolvedRunId(null)
+          setError('Saved run belongs to a different action.')
           return
         }
+        setUnresolvedRunId(null)
         setRun(res.value)
         setExecState(null)
         setSelectedNodeId(null)
         if (isTerminal(res.value.status) && typeof window !== 'undefined') {
-          window.localStorage.removeItem(runKey(forActionId))
+          window.localStorage.removeItem(runKey(scope))
         }
-      } else if (typeof window !== 'undefined') {
-        // 404 / gone — drop the stale key silently.
-        window.localStorage.removeItem(runKey(forActionId))
+      } else {
+        setUnresolvedRunId(runId)
+        setError(res.error.message)
+      }
+    } catch (e) {
+      if (alive.current && selection.current === expected) {
+        setUnresolvedRunId(runId)
+        setError(e instanceof Error ? e.message : 'Unable to restore run')
       }
     } finally {
-      if (actionIdRef.current === forActionId) setAttaching(false)
+      if (alive.current && selection.current === expected && actionIdRef.current === forActionId) setAttaching(false)
     }
-  }, [action.id])
+  }, [action.id, scope, clearPoll])
 
-  // Mount / action switch: re-attach the persisted run for THIS action (if any) and
-  // hydrate the history list. Transient state itself is reset synchronously during
-  // render (the renderedActionId check above); the ref bookkeeping here is
-  // synchronous too (refs, not state), but the two network calls are deferred
-  // through a zero-delay timeout — same subscription shape as the poll effect
-  // above — so nothing that sets state is invoked directly from the effect body.
   useEffect(() => {
     if (typeof window === 'undefined') return
     actionIdRef.current = action.id // current action generation — attachRun guards on this
     hydratedForRef.current = action.id // allow the persist effect to write for this action
-    const stored = window.localStorage.getItem(runKey(action.id))
     const kickoff = setTimeout(() => {
+      let stored: string | null = null
+      try {
+        stored = window.localStorage.getItem(runKey(scope))
+        setUnresolvedRunId(stored)
+        const raw = window.localStorage.getItem(startKey(scope))
+        if (raw) {
+          const saved = JSON.parse(raw) as StoredStart
+          if (typeof saved.idempotencyKey !== 'string' || !saved.idempotencyKey.trim()
+            || typeof saved.acknowledgeEconomicEffects !== 'boolean'
+            || typeof saved.expectedPublishedHash !== 'string' || !saved.expectedPublishedHash)
+            throw new Error('Saved start request is invalid. Keep it for recovery; no new request was sent.')
+          setPendingStart({ idempotencyKey: saved.idempotencyKey,
+            acknowledgeEconomicEffects: saved.acknowledgeEconomicEffects, expectedPublishedHash: saved.expectedPublishedHash })
+        }
+        setHydrated(true)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Unable to read saved start request')
+      }
+      void azoa.workflow.previewRun(action.id).then((result) => {
+        if (!alive.current) return
+        if (isOk(result) && result.value.actionId === action.id) setPreview(result.value)
+        else setError(isOk(result) ? 'Preview belongs to a different action.' : result.error.message)
+      }).catch((e: unknown) => {
+        if (alive.current) setError(e instanceof Error ? e.message : 'Unable to load run preview')
+      })
       if (stored) void attachRun(stored)
       void loadHistory()
     }, 0)
     return () => clearTimeout(kickoff)
-    // Keyed on action.id only — attachRun/loadHistory are stable useCallbacks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [action.id])
+  }, [action.id, scope, attachRun, loadHistory])
 
   const handleStart = async () => {
+    if (startBusy.current || !hydrated || unresolvedRunId) return
+    startBusy.current = true
+    const expected = selection.current
     setStarting(true)
     setError(null)
-    setExecState(null)
-    setSelectedNodeId(null)
-    setReconcileResult(null)
     try {
-      const res = await azoa.workflow.startWorkflow(action.id)
-      if (isOk(res)) {
-        setRun(res.value)
-        void loadHistory()
-      } else {
-        setError(res.error.message)
+      let request = pendingStart
+      if (!request) {
+        if (!preview?.publishedVersionHash || (preview.hasEconomicNodes && !acknowledged))
+          throw new Error('Review the published action and acknowledge its economic effects before starting.')
+        request = { idempotencyKey: crypto.randomUUID(), acknowledgeEconomicEffects: acknowledged,
+          expectedPublishedHash: preview.publishedVersionHash }
+        window.localStorage.setItem(startKey(scope), JSON.stringify(request))
+        setPendingStart(request)
       }
+      const res = await azoa.workflow.startWorkflow(action.id, request)
+      if (!alive.current || selection.current !== expected) return
+      if (isOk(res)) {
+        if (res.value.actionId !== action.id) throw new Error('Start response belongs to a different action.')
+        window.localStorage.setItem(runKey(scope), res.value.id)
+        window.localStorage.removeItem(startKey(scope))
+        setPendingStart(null)
+        setStarting(false)
+        selection.current = { generation: expected.generation + 1, runId: res.value.id }
+        setUnresolvedRunId(null)
+        setRun(res.value)
+        setExecState(null)
+        setSelectedNodeId(null)
+        setReconcileResult(null)
+        void loadHistory()
+      } else setError(res.error.message)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to start run')
+      if (alive.current && selection.current === expected) setError(e instanceof Error ? e.message : 'Failed to start run')
     } finally {
-      setStarting(false)
+      startBusy.current = false
+      if (alive.current && selection.current === expected) setStarting(false)
     }
   }
 
   const handleAdvance = async (fromNodeId: string) => {
-    if (!run || !fromNodeId) return
-    // Defense in depth: reject a resume-from node id that isn't actually a
-    // Succeeded node on the CURRENT action/run. advanceFromNodeId is reset on
-    // action switch above, but this also guards a run swap (e.g. re-attaching
-    // a different run of the same action) that leaves a picked id pointing at
-    // a node that no longer applies — so a stale/unmatched id can never be
-    // posted, not just a cross-action one.
+    const expected = selection.current
+    if (!run || !fromNodeId || attaching || expected.runId !== run.id) return
     if (!advanceCandidates.some((n) => n.id === fromNodeId)) {
       setError('The selected resume node no longer applies to this run — pick again.')
       return
@@ -321,7 +318,9 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
       const res = await azoa.workflow.advance(run.id, fromNodeId, {
         idempotencyKey: crypto.randomUUID(),
       })
+      if (!alive.current || selection.current !== expected) return
       if (isOk(res)) {
+        if (res.value.id !== expected.runId || res.value.actionId !== action.id) throw new Error('Response does not match the selected run.')
         setRun(res.value)
         setAdvanceFromNodeId('')
         await pollOnce(res.value.id)
@@ -329,21 +328,24 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
         setError(res.error.message)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Advance failed')
+      if (alive.current && selection.current === expected) setError(e instanceof Error ? e.message : 'Advance failed')
     } finally {
-      setAdvancing(false)
+      if (alive.current && selection.current === expected) setAdvancing(false)
     }
   }
 
   const handleSignal = async () => {
-    if (!run || !gateId.trim()) return
+    const expected = selection.current
+    if (!run || !gateId.trim() || attaching || expected.runId !== run.id) return
     setSignaling(true)
     setError(null)
     try {
       const res = await azoa.workflow.signal(run.id, gateId.trim(), signalPayload.trim() || null, {
         idempotencyKey: crypto.randomUUID(),
       })
+      if (!alive.current || selection.current !== expected) return
       if (isOk(res)) {
+        if (res.value.id !== expected.runId || res.value.actionId !== action.id) throw new Error('Response does not match the selected run.')
         setRun(res.value)
         setGateId('')
         setSignalPayload('')
@@ -352,19 +354,21 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
         setError(res.error.message)
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Signal failed')
+      if (alive.current && selection.current === expected) setError(e instanceof Error ? e.message : 'Signal failed')
     } finally {
-      setSignaling(false)
+      if (alive.current && selection.current === expected) setSignaling(false)
     }
   }
 
   const handleReconcile = async () => {
-    if (!run) return
+    const expected = selection.current
+    if (!run || attaching || expected.runId !== run.id) return
     setReconciling(true)
     setError(null)
     setReconcileResult(null)
     try {
       const res = await azoa.workflow.reconcileRun(run.id)
+      if (!alive.current || selection.current !== expected) return
       if (isOk(res)) {
         setReconcileResult(res.value)
       } else {
@@ -372,12 +376,16 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
       }
       // Refresh run + execution state regardless — reconcile advances lifecycle.
       const s = await azoa.workflow.getRunStatus(run.id)
-      if (isOk(s)) setRun(s.value)
+      if (!alive.current || selection.current !== expected) return
+      if (isOk(s)) {
+        if (s.value.id !== expected.runId || s.value.actionId !== action.id) throw new Error('Response does not match the selected run.')
+        setRun(s.value)
+      }
       await pollOnce(run.id)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Reconcile failed')
+      if (alive.current && selection.current === expected) setError(e instanceof Error ? e.message : 'Reconcile failed')
     } finally {
-      setReconciling(false)
+      if (alive.current && selection.current === expected) setReconciling(false)
     }
   }
 
@@ -390,8 +398,6 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
     )
   }
 
-  // Merge live per-node execution state onto the action's static nodes, keyed by
-  // real node id (UUID), for the DagFlow overlay.
   const execByNodeId = new Map<string, WorkflowNodeExecution>()
   for (const ne of execState?.nodeExecutions ?? []) execByNodeId.set(ne.nodeId, ne)
   const liveNodes = action.nodes.map((n) => {
@@ -404,9 +410,6 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
   const selectedExec = selectedNodeId ? execByNodeId.get(selectedNodeId) : undefined
   const selectedNode = selectedNodeId ? action.nodes.find((n) => n.id === selectedNodeId) : undefined
 
-  // Advance resumes FROM a completed node into its successor. The natural default
-  // is the most-recently-succeeded node (highest executionOrder among Succeeded),
-  // so the operator never hand-types a UUID. Candidates = all Succeeded nodes.
   const advanceCandidates = action.nodes
     .filter((n) => execByNodeId.get(n.id)?.state === 'Succeeded')
     .sort((a, b) => b.executionOrder - a.executionOrder)
@@ -417,8 +420,8 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
     <div className="flex flex-col gap-3">
       {/* Run header */}
       <div className="flex flex-wrap items-center gap-3 rounded-md border bg-card p-3">
-        <Button size="sm" disabled={starting || (run !== null && !isTerminal(run.status))} onClick={handleStart}>
-          {starting ? 'Starting...' : run && !isTerminal(run.status) ? 'Run in progress...' : 'Start Run'}
+        <Button size="sm" disabled={!hydrated || starting || attaching || !!unresolvedRunId || (!pendingStart && (!preview?.publishedVersionHash || (preview.hasEconomicNodes && !acknowledged))) || (run !== null && !isTerminal(run.status))} onClick={handleStart}>
+          {starting ? 'Starting...' : run && !isTerminal(run.status) ? 'Run in progress...' : pendingStart ? 'Retry original start' : 'Start Run'}
         </Button>
 
         {run && (
@@ -442,6 +445,25 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
         )}
       </div>
 
+      {unresolvedRunId && !attaching && (
+        <Button size="sm" variant="outline" onClick={() => void attachRun(unresolvedRunId)}>Retry restoring saved run</Button>
+      )}
+      {pendingStart ? (
+        <p className="text-sm">A saved start request is awaiting confirmation. Retry sends its original consent and published version.</p>
+      ) : preview && (
+        <div className="space-y-2 rounded-md border p-3 text-sm">
+          <p>Published version <code className="break-all">{preview.publishedVersionHash ?? 'unavailable'}</code></p>
+          {preview.entries.map((entry) => (
+            <p key={entry.nodeId}>{entry.nodeName}: {entry.nodeType}{entry.amount ? ` - ${entry.amount}` : ''}{entry.destination ? ` to ${entry.destination}` : ''}</p>
+          ))}
+          {preview.hasEconomicNodes && (
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
+              I authorize the economic effects shown for this published version.
+            </label>
+          )}
+        </div>
+      )}
       {error && <ErrorBanner message={error} />}
 
       {pollStalled && run && !isTerminal(run.status) && (
@@ -453,8 +475,8 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
         </div>
       )}
 
-      {/* Run history — shown when no run is attached. Click a row to re-attach. */}
-      {!run && !attaching && history.length > 0 && (
+      {/* Select a run to inspect its durable outcome. */}
+      {history.length > 0 && (
         <div className="rounded-md border">
           <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
             Previous runs ({history.length})
@@ -519,7 +541,7 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
                 </div>
                 <Button
                   size="sm"
-                  disabled={advancing || !effectiveAdvanceFrom}
+                  disabled={attaching || advancing || !effectiveAdvanceFrom}
                   onClick={() => handleAdvance(effectiveAdvanceFrom)}
                 >
                   {advancing ? 'Advancing...' : 'Advance'}
@@ -543,7 +565,7 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
                   <Label className="text-xs">Payload (optional)</Label>
                   <Input value={signalPayload} onChange={(e) => setSignalPayload(e.target.value)} placeholder="optional payload" />
                 </div>
-                <Button size="sm" disabled={signaling || !gateId.trim()} onClick={handleSignal}>
+                <Button size="sm" disabled={attaching || signaling || !gateId.trim()} onClick={handleSignal}>
                   {signaling ? 'Signaling...' : 'Signal'}
                 </Button>
               </div>
@@ -567,7 +589,7 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
                 released to retry, and an indeterminate one stays parked for the next sweep.
               </p>
               <div>
-                <Button size="sm" variant="outline" disabled={reconciling} onClick={handleReconcile}>
+                <Button size="sm" variant="outline" disabled={attaching || reconciling} onClick={handleReconcile}>
                   {reconciling ? 'Probing…' : 'Re-probe chain'}
                 </Button>
               </div>
@@ -601,6 +623,8 @@ export function RunPanel({ action }: { action: RunPanelAction }) {
                 {outputShapeCaption(selectedNode.nodeType)}
               </p>
               <Separator className="mb-2" />
+              {selectedExec && selectedExec.state !== 'Pending' && ['NftMint', 'Grant'].includes(selectedNode.nodeType) &&
+                <NftWorkflowCosts key={`${scope}:${selectedExec.id}`} scope={scope} executionId={selectedExec.id} />}
               {selectedExec?.error && (
                 <p className="mb-2 break-words text-xs text-red-600 dark:text-red-400">{selectedExec.error}</p>
               )}
@@ -624,7 +648,6 @@ function formatStarted(iso: string): string {
   return isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
-/** One-line caption describing a node type's expected output shape, per the client-side schema mirror. */
 function outputShapeCaption(nodeType: string): string {
   const shape = getOutputShapeMirror(nodeType)
   if (shape.open) return 'Free-form output'

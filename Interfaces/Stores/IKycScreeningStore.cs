@@ -21,14 +21,12 @@ public interface IKycScreeningStore
         CancellationToken ct = default);
 
     /// <summary>
-    /// The single row a value gate reads: the most recent screening for this exact
-    /// (user, tenant) pair. A null result means NOT SCREENED, which the gate must
-    /// treat as a denial, never as an absence of adverse findings.
+    /// Returns the latest exact user/tenant result, restricted to lineage when supplied; gates require lineage.
     /// </summary>
     Task<AZOAResult<KycScreeningResult>> GetLatestResultAsync(
         Guid userId,
         Guid? tenantId,
-        CancellationToken ct = default);
+        CancellationToken ct = default, string? lineageKey = null);
 
     Task<AZOAResult<IReadOnlyList<KycScreeningResult>>> GetResultsForUserAsync(
         Guid userId,
@@ -49,7 +47,7 @@ public interface IKycScreeningStore
         string tenantScope,
         string? queryFullName,
         string? queryBirthdayTimeFrom,
-        CancellationToken ct = default);
+        CancellationToken ct = default, string? lineageKey = null);
 
     /// <summary>
     /// Node-internal reconciliation for the vendor's <c>already-exists</c> reply.

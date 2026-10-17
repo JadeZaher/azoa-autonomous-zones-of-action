@@ -77,7 +77,7 @@ provisioning), documented in `docs/NODE-HOST.md`.
   against chain truth before retrying a chain-action node, and never
   double-spend. Runs execute through the HTTP API with the saga hosted service
   on (`Sagas:Enabled=true` is the deliberate default, boot-guarded).
-- STAR-ODK dapp generator, including the ecosystem-tree composition model
+- Action Graph Bundle dapp generator (released as STAR-ODK), including the ecosystem-tree composition model
   (`Ecosystem`/`EcosystemNode`, multi-dApp series codegen).
 - Holon storage model (NFTs, fungible tokens, and generic assets modeled as
   holons) with cross-provider search, mint, exchange, and an opt-in

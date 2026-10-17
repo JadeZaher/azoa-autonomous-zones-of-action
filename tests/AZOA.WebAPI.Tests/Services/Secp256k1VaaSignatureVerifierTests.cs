@@ -17,6 +17,8 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Wormhole;
+using AZOA.WebAPI.Interfaces.Wtt;
+using AZOA.WebAPI.Models.Wtt;
 using BcBigInteger = BCCrypto2::Org.BouncyCastle.Math.BigInteger;
 using SecNamedCurves = BCCrypto2::Org.BouncyCastle.Asn1.Sec.SecNamedCurves;
 using ECDomainParameters = BCCrypto2::Org.BouncyCastle.Crypto.Parameters.ECDomainParameters;
@@ -43,6 +45,95 @@ namespace AZOA.WebAPI.Tests.Services;
 public class Secp256k1VaaSignatureVerifierTests
 {
     private static readonly Secp256k1Curve Curve = new();
+
+    [Fact]
+    public void AuthoritativeAddressVerificationDoesNotFallbackToConfiguredGuardians()
+    {
+        var (privateKey, address) = Curve.FromPrivateKey(PrivKey(0x21));
+        var (_, other) = Curve.FromPrivateKey(PrivKey(0x31));
+        var digest = Digest(BuildBody());
+        var (r, s, v) = Curve.Sign(digest, privateKey);
+        var verifier = MakeVerifier(CfgWith(0, Addr0x(other)));
+        var signature = new WormholeVaaSignature { GuardianIndex = 0, R = r, S = s, V = v };
+        verifier.VerifyGuardianSignature(digest, signature, address).Should().BeTrue();
+        verifier.VerifyGuardianSignature(digest, signature, other).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("current", true)]
+    [InlineData("retained", true)]
+    [InlineData("ethereum-normal-finality", true)]
+    [InlineData("stale-chain-fresh-fetch", false)]
+    [InlineData("solana-lag", false)]
+    [InlineData("future-chain", false)]
+    [InlineData("missing-head-policy", false)]
+    [InlineData("duplicate-head-policy", false)]
+    [InlineData("expired-since-finalized", false)]
+    [InlineData("expired", false)]
+    [InlineData("below-quorum", false)]
+    [InlineData("wrong-emitter", false)]
+    [InlineData("wrong-core", false)]
+    [InlineData("stale-state", false)]
+    [InlineData("changed-body", false)]
+    [InlineData("wrong-guardian", false)]
+    [InlineData("duplicate-case", false)]
+    [InlineData("duplicate-prefix", false)]
+    [InlineData("duplicate-exact", false)]
+    public async Task WttRequiresActualQuorumRotationRegistrationAndExactPublication(string scenario, bool accepted)
+    {
+        var keys = Enumerable.Range(0, 4).Select(index => Curve.FromPrivateKey(PrivKey((byte)(0x20 + index)))).ToArray();
+        var payload = WttPayloadCodec.EncodeTransfer(new("100", new string('a', 64), 2, new string('b', 64), 8, "0"));
+        var body = BuildBody(sequence: ulong.MaxValue, payload: payload);
+        var digest = Digest(body);
+        int count = scenario == "below-quorum" ? 2 : 3;
+        var wire = Enumerable.Range(0, count).Select(index =>
+        {
+            var keyIndex = index == 1 && scenario.StartsWith("duplicate-", StringComparison.Ordinal) ? 0 : index;
+            var (r, s, v) = Curve.Sign(digest, keys[keyIndex].priv);
+            return new WireSig(index, r, s, v);
+        }).ToArray();
+        var vaa = BuildVaaBase64(1, wire, body);
+        uint chainTime = checked((uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var evidence = new WttGuardianEvidence("target-genesis", "core", "token-bridge", 1,
+            scenario is "retained" or "expired" or "expired-since-finalized" ? 2U : 1U,
+            keys.Select(key => Convert.ToHexString(key.address).ToLowerInvariant()).ToArray(),
+            scenario == "expired" ? chainTime - 1 : chainTime + 60, chainTime, "finalized-block", DateTimeOffset.UtcNow,
+            1, Convert.ToHexString(Emitter()).ToLowerInvariant());
+        evidence = scenario switch
+        {
+            "ethereum-normal-finality" => evidence with { ChainTimeUnixSeconds = chainTime - 780 },
+            "stale-chain-fresh-fetch" => evidence with { ChainTimeUnixSeconds = chainTime - 3600 },
+            "solana-lag" => evidence with { ChainTimeUnixSeconds = chainTime - 180 },
+            "future-chain" => evidence with { ChainTimeUnixSeconds = chainTime + 60 },
+            "expired-since-finalized" => evidence with { ChainTimeUnixSeconds = chainTime - 780, ExpirationUnixSeconds = chainTime - 60 },
+            "wrong-emitter" => evidence with { RegisteredEmitterAddress = new string('c', 64) },
+            "wrong-core" => evidence with { CoreBridge = "different-core" },
+            "stale-state" => evidence with { ObservedAt = DateTimeOffset.UtcNow.AddHours(-1) },
+            "wrong-guardian" => evidence with { GuardianAddresses = keys.Reverse().Select(key => Convert.ToHexString(key.address).ToLowerInvariant()).ToArray() },
+            _ => evidence,
+        };
+        if (scenario.StartsWith("duplicate-", StringComparison.Ordinal))
+        {
+            var duplicated = evidence.GuardianAddresses.ToArray();
+            duplicated[1] = scenario == "duplicate-case" ? duplicated[0].ToUpperInvariant()
+                : scenario == "duplicate-prefix" ? "0x" + duplicated[0] : duplicated[0];
+            evidence = evidence with { GuardianAddresses = duplicated };
+        }
+        var source = new Mock<IWttGuardianStateSource>();
+        source.Setup(value => value.ReadWttGuardianEvidenceAsync(1, 1, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<WttGuardianEvidence>.Success(evidence));
+        var expected = new WttProofExpectation("target-genesis", "core", "token-bridge",
+            Convert.ToHexString(body).ToLowerInvariant());
+        if (scenario == "changed-body") expected = expected with { SourceBodyHex = expected.SourceBodyHex + "00" };
+        var finality = new WttFinalityOptions();
+        if (scenario != "missing-head-policy")
+            finality.Networks.Add(new("target-genesis", scenario == "solana-lag" ? 120 : 1200));
+        if (scenario == "duplicate-head-policy") finality.Networks.Add(new("target-genesis", 1200));
+        var result = await new WttProofVerifier(MakeVerifier(new WormholeConfig()), TimeProvider.System, Options.Create(finality))
+            .VerifyAsync(vaa, expected, source.Object);
+        result.IsError.Should().Be(!accepted);
+        if (accepted) result.Result!.Vaa.Sequence.Should().Be("18446744073709551615");
+    }
 
     // ─── secp256k1 signing helper (test side) ───
 

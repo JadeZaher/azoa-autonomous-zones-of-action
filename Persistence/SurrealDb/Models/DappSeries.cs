@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
@@ -31,6 +30,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
             Draft,
             Building,
             Ready,
+            Deploying,
+            DeploymentFailed,
             Deployed,
             Archived,
         }
@@ -52,7 +53,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string UserId { get; set; } = string.Empty;
 
         [FieldGroup("DappSeriesStatus enum name")]
-        [Inside("Draft", "Building", "Ready", "Deployed", "Archived")]
+        [Inside("Draft", "Building", "Ready", "Deploying", "DeploymentFailed", "Deployed", "Archived")]
         [Default("\"Draft\"")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public StatusKind Status { get; set; }
@@ -63,6 +64,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Linked ActionGraphBundle.Id, populated by GenerateAsync (null until generation)")]
         [References(typeof(ActionGraphBundle), Optional = true)]
         public string? ActionGraphBundleId { get; set; }
+        public string? DeploymentOperationId { get; set; }
 
         [FieldGroup("Deployment target chain (e.g. algorand-mainnet) -- nullable until set")]
         public string? TargetChain { get; set; }

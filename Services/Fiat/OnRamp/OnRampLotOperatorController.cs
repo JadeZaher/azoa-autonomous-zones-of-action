@@ -4,28 +4,13 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat.OnRamp;
 
-/// <summary>
-/// The operator's view of money that was taken and never became funds in somebody's account.
-///
-/// <para>Every row in <c>on_ramp_lot</c> is a payment the provider confirmed as cleared — the lot
-/// is claimed only after the amount is re-read server-side — so a lot that is not Issued and not
-/// Reversed is a person who paid and received nothing. Each of those outcomes also answers the
-/// provider 202, telling it to stop retrying
-/// (<c>Services/Fiat/OnRamp/OnRampSettlementHandler.cs</c>), which is exactly why the durable row
-/// needs a reader: without one the node deliberately ends the conversation about a charge nobody
-/// can see.</para>
-///
-/// <para>Guarded by the hardened <c>Operator</c> policy — a JWT floor plus an explicit operator
-/// capability, never an API key — the same gate the reversal board and the platform-unit surface
-/// use. Everything here is a read, and it reads other people's payment records.</para>
-///
-/// <para>Colocated with the on-ramp rather than under <c>Controllers/</c> because that directory
-/// belongs to other items in this wave; MVC discovers controllers by type, not by folder, so the
-/// route is identical either way and moving the file later changes nothing.</para>
-/// </summary>
+/// <summary>Audited operator recovery for uncredited payments; see AGENTS.md.</summary>
 [ApiController]
 [Route("api/admin/on-ramp-lots")]
 // OI-27. The board also answers under api/operator/ because that is the ONLY prefix the console's
@@ -37,6 +22,27 @@ namespace AZOA.WebAPI.Services.Fiat.OnRamp;
 [Authorize(Policy = "Operator")]
 public sealed class OnRampLotOperatorController : ControllerBase
 {
+    /// <summary>Resumes issuance using the original allocation key after a reasoned operator decision.</summary>
+    [HttpPost("intents/{intentId:guid}/resume")]
+    [EnableRateLimiting("financial")]
+    public async Task<IActionResult> Resume(Guid intentId, [FromBody] OnRampRecoveryReason body,
+        [FromServices] OnRampRecovery recovery, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var actor)) return Forbid();
+        var result = await recovery.ResumeAsync(intentId, actor, body.Reason, ct);
+        return result.IsError ? Conflict(result) : Ok(AZOAResult<OnRampLotView>.Success(OnRampLotView.From(result.Result!)));
+    }
+
+    /// <summary>Refunds an unissued payment after durably excluding any allocation of its units.</summary>
+    [HttpPost("intents/{intentId:guid}/refund")]
+    [EnableRateLimiting("financial")]
+    public async Task<IActionResult> Refund(Guid intentId, [FromBody] OnRampRecoveryReason body,
+        [FromServices] OnRampRecovery recovery, CancellationToken ct)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var actor)) return Forbid();
+        var result = await recovery.RefundAsync(intentId, actor, body.Reason, ct, body.ProviderRefundId, body.RetryFailed, body.ExpectedRefundAttempt);
+        return result.IsError ? Conflict(result) : Ok(AZOAResult<OnRampLotView>.Success(OnRampLotView.From(result.Result!)));
+    }
     private const int DefaultListLimit = 100;
 
     private readonly IOnRampLotLedger _lots;
@@ -108,6 +114,8 @@ public sealed class OnRampLotOperatorController : ControllerBase
     }
 }
 
+public sealed record OnRampRecoveryReason(string Reason, string? ProviderRefundId = null, bool RetryFailed = false, long? ExpectedRefundAttempt = null);
+
 /// <summary>
 /// One fiat-funded issuance as an operator sees it. Quantities are exact decimal strings and the
 /// money is minor units of <see cref="CurrencyCode"/>; nothing here is a float, because a rounded
@@ -178,6 +186,12 @@ public sealed class OnRampLotView
     /// <summary>The durable operation that moved the units, when one ran.</summary>
     public string? OperationId { get; init; }
 
+    public string? ProviderRefundId { get; init; }
+
+    public DateTimeOffset? RefundStartedAt { get; init; }
+    public long RefundAttempt { get; init; }
+    public string? ProviderRefundStatus { get; init; }
+
     public long AttemptCount { get; init; }
 
     public DateTimeOffset? IssuedAt { get; init; }
@@ -196,16 +210,17 @@ public sealed class OnRampLotView
         return new OnRampLotView
         {
             Id = row.Id,
-            IntentId = row.IntentId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
+            IntentId = SurrealLink.FromLink(row.IntentId)!,
+            SubjectUserId = SurrealLink.FromLink(row.SubjectUserId)!,
+            TenantId = row.TenantId is null ? null : SurrealLink.FromLink(row.TenantId),
             ChainType = row.ChainType,
             AssetId = row.AssetId,
             Status = row.Status,
             StatusReason = row.StatusReason,
             ChargedAndUncredited =
                 !string.Equals(row.Status, OnRampLotStatuses.Issued, StringComparison.Ordinal)
-                && !string.Equals(row.Status, OnRampLotStatuses.Reversed, StringComparison.Ordinal),
+                && !string.Equals(row.Status, OnRampLotStatuses.Reversed, StringComparison.Ordinal)
+                && row.Status != OnRampLotStatuses.Refunded,
             NeedsAPersonToMoveIt = OnRampLotStatuses.NeedsOperator(row.Status),
             FiatMinorUnits = row.FiatMinorUnits,
             CurrencyCode = row.CurrencyCode,
@@ -220,6 +235,10 @@ public sealed class OnRampLotView
             SourcePaymentIntentId = row.SourcePaymentIntentId,
             SourceChargeId = row.SourceChargeId,
             OperationId = row.OperationId,
+            ProviderRefundId = row.ProviderRefundId,
+            RefundStartedAt = row.RefundStartedAt,
+            RefundAttempt = row.RefundAttempt,
+            ProviderRefundStatus = row.ProviderRefundStatus,
             AttemptCount = row.AttemptCount,
             IssuedAt = row.IssuedAt,
             ReversalWindowEnds = row.ReversalWindowEnds,

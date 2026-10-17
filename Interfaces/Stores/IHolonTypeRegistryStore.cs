@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 

@@ -10,6 +10,8 @@ public sealed class NodeFeeScheduleUpdateRequest
 
     public NodeFeeScheduleEntryRequest? Swap { get; set; }
 
+    public string? SwapFlatDenomination { get; set; }
+
     public NodeFeeScheduleEntryRequest? ActionComplete { get; set; }
 
     public NodeFeeScheduleEntryRequest? FederationPublish { get; set; }

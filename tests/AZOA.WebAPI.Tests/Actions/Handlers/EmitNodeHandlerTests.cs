@@ -1,132 +1,90 @@
-using System.Text.Json;
-using FluentAssertions;
+﻿using System.Text.Json;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Actions.Handlers;
-using Xunit;
-using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
+using AZOA.WebAPI.Services.Signing;
+using FluentAssertions;
+using Moq;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
+using Receipt = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionEmitReceipt;
 
 namespace AZOA.WebAPI.Tests.Actions.Handlers;
 
-/// <summary>
-/// Unit tests for <see cref="EmitNodeHandler"/>. Verifies the pure
-/// pass-through behaviour: the tenant payload reaches <c>Output</c>
-/// unchanged, no manager is involved, and <c>RequiresChainCapability</c>
-/// is false (Tier-1).
-/// </summary>
-public class EmitNodeHandlerTests
+public sealed class EmitNodeHandlerTests
 {
-    // ── helpers matching ActionNodeHandlerTests conventions ──────────────
-
-    private static ActionNode NodeWith(ActionNodeType type, string config) =>
-        new() { Id = Guid.NewGuid(), NodeType = type, Config = config };
-
-    private static ActionNodeExecutionContext CtxFor(ActionNode node, Guid userId) =>
-        new(Guid.NewGuid(), node.Id,
-            new ActionEntity { Id = Guid.NewGuid(), UserId = userId, Nodes = { node } },
-            actingUserId: userId);
-
-    // ── metadata / SPI assertions ────────────────────────────────────────
-
-    [Fact]
-    public void EmitNodeHandler_NodeType_IsEmit()
+    [Theory]
+    [InlineData("{}", false)]
+    [InlineData("{\"currency\":\"USD\",\"freelancerPayout\":\"500\"}", true)]
+    public async Task Admitted_emit_projects_exact_accepted_payload(string payload, bool tenant)
     {
-        var handler = new EmitNodeHandler();
+        var (handler, context, receipts, reference) = Fixture(payload, tenant);
+        var receipt = new Receipt { Id = reference.OperationId!, RunId = context.RunId.ToString("N"),
+            NodeId = context.NodeId.ToString("N"), ActorId = context.ActingUserId.ToString("N"),
+            TenantId = context.ActingTenantId?.ToString("N"), IntentHash = reference.IntentHash, OutputJson = payload,
+            EventId = tenant ? reference.OperationId : null, RegistrationId = tenant ? Guid.NewGuid().ToString("N") : null,
+            DestinationRevision = tenant ? 1L : null, DestinationUrl = tenant ? "https://receiver.example/events" : null };
+        receipts.Setup(store => store.GetAsync(receipt.Id, It.IsAny<CancellationToken>())).ReturnsAsync(receipt);
+        receipts.Setup(store => store.HasAcceptedEventAsync(receipt, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var result = await handler.HandleAsync(context);
         handler.NodeType.Should().Be(ActionNodeType.Emit);
+        ((IActionNodeHandler)handler).RequiresChainCapability.Should().BeFalse();
+        result.PendingOperation!.Status.Should().Be(ActionExternalOperationStatus.Succeeded);
+        result.Output.Should().Be(payload);
     }
 
     [Fact]
-    public void EmitNodeHandler_RequiresChainCapability_IsFalse()
+    public async Task Missing_durable_admission_cannot_pass_through_success()
     {
-        IActionNodeHandler handler = new EmitNodeHandler();
-        handler.RequiresChainCapability.Should().BeFalse();
+        var (handler, context, _, _) = Fixture("{}", false, admitted: false);
+        var result = await handler.HandleAsync(context);
+        result.IsError.Should().BeTrue();
+        result.Retriable.Should().BeFalse();
+        result.PendingOperation.Should().BeNull();
     }
 
     [Fact]
-    public void EmitNodeHandler_IsConstructableWithNoArguments()
+    public async Task Infrastructure_failure_is_not_swallowed_as_success()
     {
-        // final-hardening F3: the handler now takes an OPTIONAL IActionWebhookEmitter
-        // (nullable, default null) so it can enqueue a best-effort action.emit webhook.
-        // The pure-passthrough contract is preserved — it must still be constructable
-        // with zero arguments, and the single constructor's only parameter is optional.
-        var ctors = typeof(EmitNodeHandler).GetConstructors();
-        ctors.Should().ContainSingle();
-        var parameters = ctors[0].GetParameters();
-        parameters.Should().ContainSingle();
-        parameters[0].IsOptional.Should().BeTrue();
-
-        // Zero-arg construction still works (the pure path — no emitter, no manager).
-        var act = () => new EmitNodeHandler();
-        act.Should().NotThrow();
-    }
-
-    // ── payload round-trip ───────────────────────────────────────────────
-
-    [Fact]
-    public async Task HandleAsync_TenantPayload_RoundTripsToOutputUnchanged()
-    {
-        // Arrange — a tenant-shaped ArdaNova payout payload
-        var payloadObj = new { freelancerPayout = "500", currency = "USD" };
-        var payloadJson = JsonSerializer.Serialize(payloadObj);
-        var cfg = new EmitNodeConfig
-        {
-            Payload = JsonDocument.Parse(payloadJson).RootElement
-        };
-        var cfgJson = JsonSerializer.Serialize(cfg, ActionNodeJson.Options);
-
-        var node = NodeWith(ActionNodeType.Emit, cfgJson);
-        var ctx = CtxFor(node, Guid.NewGuid());
-
-        var handler = new EmitNodeHandler();
-
-        // Act
-        var result = await handler.HandleAsync(ctx);
-
-        // Assert — success, output matches input payload exactly
-        result.IsError.Should().BeFalse();
-        result.Output.Should().NotBeNull();
-
-        using var doc = JsonDocument.Parse(result.Output!);
-        doc.RootElement.GetProperty("freelancerPayout").GetString().Should().Be("500");
-        doc.RootElement.GetProperty("currency").GetString().Should().Be("USD");
+        var (handler, context, receipts, reference) = Fixture("{}", false);
+        receipts.Setup(store => store.GetAsync(reference.OperationId!, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("store unavailable"));
+        Func<Task> action = () => handler.HandleAsync(context);
+        await action.Should().ThrowAsync<InvalidOperationException>();
     }
 
     [Fact]
-    public async Task HandleAsync_UndefinedPayload_EmitsEmptyObject()
+    public void Reference_is_stable_for_retry_and_distinct_for_another_run()
     {
-        // Arrange — the wire form of "no payload": config JSON with no
-        // "payload" key. Deserializing leaves EmitNodeConfig.Payload at its
-        // default (ValueKind == Undefined). (A default JsonElement cannot be
-        // re-serialized, so the config is supplied as its JSON wire form
-        // rather than by serializing a default EmitNodeConfig.)
-        var node = NodeWith(ActionNodeType.Emit, """{ "notPayload": 1 }""");
-        var ctx = CtxFor(node, Guid.NewGuid());
-
-        var handler = new EmitNodeHandler();
-
-        // Act
-        var result = await handler.HandleAsync(ctx);
-
-        // Assert — graceful empty object, no exception
-        result.IsError.Should().BeFalse();
-        result.Output.Should().Be("{}");
+        var (handler, context, _, reference) = Fixture("{}", false);
+        handler.CreateReference(context, reference.IntentHash).Should().Be(reference);
+        var another = new ActionNodeExecutionContext(Guid.NewGuid(), context.NodeId, context.ActionDefinition, context.ActingUserId);
+        handler.CreateReference(another, reference.IntentHash).OperationId.Should().NotBe(reference.OperationId);
     }
 
-    [Fact]
-    public async Task HandleAsync_NullConfig_EmitsEmptyObject()
+    private static (EmitNodeHandler Handler, ActionNodeExecutionContext Context, Mock<IActionEmitStore> Receipts,
+        ActionExternalOperationReference Reference) Fixture(string payload, bool tenant, bool admitted = true)
     {
-        // Arrange — node config is an empty JSON object (no Payload key)
-        var node = NodeWith(ActionNodeType.Emit, "{}");
-        var ctx = CtxFor(node, Guid.NewGuid());
-
-        var handler = new EmitNodeHandler();
-
-        // Act
-        var result = await handler.HandleAsync(ctx);
-
-        // Assert — graceful, no throw
-        result.IsError.Should().BeFalse();
-        result.Output.Should().Be("{}");
+        var node = new ActionNode { Id = Guid.NewGuid(), NodeType = ActionNodeType.Emit, Config = "{\"Payload\":" + payload + "}" };
+        var graph = new ActionDefinition { Id = Guid.NewGuid(), Nodes = [node] };
+        var context = new ActionNodeExecutionContext(Guid.NewGuid(), node.Id, graph, Guid.NewGuid(),
+            actingTenantId: tenant ? Guid.NewGuid() : null);
+        using var config = JsonDocument.Parse(node.Config);
+        var frozen = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(new ActionFrozenNodeInput(1,
+            context.RunId, context.NodeId, ActionNodeType.Emit, context.ActingUserId, context.ActingTenantId,
+            config.RootElement.Clone(), new Dictionary<Guid, ActionNodeExecution>(), new Dictionary<Guid, ActionNodeExecution>())));
+        var reference = ActionEmitService.Reference(context, CanonicalJson.HashCanonical(frozen));
+        var executions = new Mock<IActionNodeExecutionStore>();
+        executions.Setup(store => store.GetByRunAndNodeAsync(context.RunId, context.NodeId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(admitted ? AZOAResult<ActionNodeExecution>.Success(new() { ExternalOperation = reference, FrozenInput = frozen })
+                : AZOAResult<ActionNodeExecution>.Failure("Not admitted."));
+        var receipts = new Mock<IActionEmitStore>();
+        var service = new ActionEmitService(receipts.Object, Mock.Of<IActionRunStore>(), executions.Object,
+            new SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), Mock.Of<IWalletStore>(), Mock.Of<ISurrealExecutor>()));
+        return (new(service), context, receipts, reference);
     }
 }

@@ -21,6 +21,6 @@ public interface INftManager
     Task<AZOAResult<IBlockchainOperation>> MintAsync(NftMintRequest request, Guid userId, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
 
     Task<AZOAResult<IBlockchainOperation>> TransferAsync(Guid nftId, NftTransferRequest request, Guid userId, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
-    Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid userId, AZOARequest? providerRequest = null);
-    Task<AZOAResult<NftMetadata>> GetMetadataAsync(Guid id, AZOARequest? request = null);
+    Task<AZOAResult<IBlockchainOperation>> BurnAsync(Guid nftId, Guid walletId, Guid userId, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
+    Task<AZOAResult<NftMetadata>> GetMetadataAsync(Guid id, AZOARequest? request = null, Guid? callerUserId = null);
 }

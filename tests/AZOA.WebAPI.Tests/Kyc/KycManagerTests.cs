@@ -37,6 +37,12 @@ public class KycManagerTests
               .ReturnsAsync(new AZOAResult<KycSubmission> { Result = null });
         _store.Setup(s => s.UpsertSubmissionAsync(It.IsAny<KycSubmission>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync((KycSubmission sub, CancellationToken _) => new AZOAResult<KycSubmission> { Result = sub });
+        _store.Setup(s => s.TryRetireAttemptAsync(It.IsAny<KycSubmission>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((KycSubmission sub, DateTimeOffset now, CancellationToken _) =>
+            {
+                sub.Status = KycStatus.EXPIRED;
+                return AZOAResult<KycSubmission>.Success(sub);
+            });
         _store.Setup(s => s.CreateSubmissionAsync(
                 It.IsAny<KycSubmission>(),
                 It.IsAny<IReadOnlyList<KycDocument>>(),
@@ -136,7 +142,7 @@ public class KycManagerTests
     private static IHostEnvironment DevelopmentEnvironment()
         => Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == Environments.Development);
 
-    // â”€â”€ Begin / ensure-active session â”€â”€
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Begin / ensure-active session Ã¢â€â‚¬Ã¢â€â‚¬
 
     [Fact]
     public async Task Begin_FirstAttemptPersistsSecretBearingProviderStateServerSide()
@@ -202,16 +208,17 @@ public class KycManagerTests
         var result = await _manager.BeginAsync(userId);
 
         result.IsError.Should().BeFalse();
-        _store.Verify(store => store.UpsertSubmissionAsync(
+        _store.Verify(store => store.TryRetireAttemptAsync(
             It.Is<KycSubmission>(submission => submission.Id == active.Id
                 && submission.Status == KycStatus.EXPIRED),
+            It.IsAny<DateTimeOffset>(),
             It.IsAny<CancellationToken>()), Times.Once);
         _provider.Verify(provider => provider.BeginSessionAsync(
             userId, It.IsAny<CancellationToken>()), Times.Once);
         result.Result!.ProviderKey.Should().Be("manual");
     }
 
-    // ── Begin rollover / approval guard ──────────────────────────────────────
+    // â”€â”€ Begin rollover / approval guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Begin_RejectedLatestAttemptCreatesNextServerOwnedAttempt()
@@ -257,7 +264,7 @@ public class KycManagerTests
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    // ── Submit ────────────────────────────────────────────────────────────────
+    // â”€â”€ Submit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Submit_HappyPath_PersistsPendingAndStampsSession()
@@ -449,7 +456,7 @@ public class KycManagerTests
         result.Result!.UserId.Should().Be(authenticated);
     }
 
-    // ── GetStatus ───────────────────────────────────────────────────────────
+    // â”€â”€ GetStatus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task GetStatus_ReturnsLatest()
@@ -497,7 +504,7 @@ public class KycManagerTests
         result.Message.Should().StartWith(KycAuthorizationError.NotFound);
     }
 
-    // ── Approve / Reject ──────────────────────────────────────────────────────
+    // â”€â”€ Approve / Reject â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Approve_ConditionallyCommitsLedgerDecision()
@@ -750,7 +757,7 @@ public class KycManagerTests
         result.Message.Should().StartWith(KycAuthorizationError.NotFound);
     }
 
-    // ── IDOR ──────────────────────────────────────────────────────────────────
+    // â”€â”€ IDOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task GetById_DifferentUser_ReturnsForbidden()

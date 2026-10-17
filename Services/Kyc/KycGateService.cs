@@ -6,7 +6,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Settings;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Kyc;
@@ -102,7 +101,7 @@ public sealed class KycGateService : IKycGateService
                 out _))
         {
             // Identity holds. The AML answer is a separate question and is required.
-            if (await IsAmlClearAsync(userId, tenantId, ct))
+            if (await IsAmlClearAsync(userId, tenantId, latest.Result.AmlLineageKey, ct))
                 return new AZOAResult<bool> { Result = true, Message = "Success" };
         }
 
@@ -115,23 +114,16 @@ public sealed class KycGateService : IKycGateService
         };
     }
 
-    /// <summary>
-    /// Fail-closed AML read. Only <see cref="KycScreeningDecision.NO_HIT"/> on a
-    /// non-truncated, un-erased result for this exact (user, tenant) pair opens the
-    /// gate. A MISSING result denies, a store error denies, MANUAL_REVIEW denies, and
-    /// a truncated hit list denies — an unread sanctions list is not a clean one, and
-    /// the whole point of screening is that an approved identity who is sanctioned
-    /// must not reach value.
-    /// </summary>
-    private async Task<bool> IsAmlClearAsync(Guid userId, Guid? tenantId, CancellationToken ct)
+    // See Services/Kyc/AGENTS.md: AML attempt lineage.
+    private async Task<bool> IsAmlClearAsync(Guid userId, Guid? tenantId, string? lineageKey, CancellationToken ct)
     {
-        var screening = await _screeningStore.GetLatestResultAsync(userId, tenantId, ct);
+        if (string.IsNullOrWhiteSpace(lineageKey)) return false;
+        var screening = await _screeningStore.GetLatestResultAsync(userId, tenantId, ct, lineageKey);
         if (screening.IsError || screening.Result is null)
             return false;
 
-        // Ask KycAmlClearance rather than restating the rule: a third copy is how the
-        // status projection and the value gate came apart in the first place.
-        return KycAmlClearance.IsClear(screening.Result);
+        return string.Equals(screening.Result.LineageKey, lineageKey, StringComparison.Ordinal)
+            && KycAmlClearance.IsClear(screening.Result);
     }
 
     public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid userId)

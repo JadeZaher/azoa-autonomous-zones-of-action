@@ -1,158 +1,131 @@
-# `Services/Hold` — the HOLD primitive (D14 / W3.4)
+# `Services/Hold` — durable custody commands (D14 / W3.4, B2)
 
-A hold is units committed for a named person, parked where nobody can spend them, until a
-stated instant passes. It is the thing that makes "this is yours in N days" a fact instead
-of a sentence in a terms page: before it existed, freshly issued stake landed in a person's
-own account immediately, so the only way to undo a reversed payment was to claw back units
-the node had already told them were theirs.
-
-Four verbs, one ledger row per hold, and the row is the idempotency anchor.
+A hold is units committed for a named person and parked where nobody can spend them until a
+stated time has passed. Every change to a hold is a **durable command**. The command is
+admitted under the caller's actual authority, its accounting is committed atomically with an
+immutable receipt, and any value that moves on a rail goes through exact saved wire. There is no
+legacy `PlatformHoldService`, `HoldController`, sweep worker or separate reserve-draw writer any
+more. Their callers were migrated in round 3 (B3-09).
 
 ## §holding-account — why the holding account is the reserve account
 
-The item this implements asked for "a platform-custodial holding wallet" whose own
-acceptance of each project asset is prepared through `CustodialRecipientPreparer`. That
-shape does not close on this codebase, and the reason is worth keeping:
+A separately derived "holding wallet" cannot satisfy the custodial recipient guard: acceptance
+needs the recipient's own key, and a platform context there would mean the node accepted on a
+person's behalf. So the holding account **is** the platform reserve account. It already holds
+every asset this node creates, and `ReserveDrawKind.Hold` models units committed but not yet
+gone. A reserve-backed `Open` is refused unless the exact network/protocol reserve ledger row
+exists (`SurrealHoldCommandStore.CommitLocalAsync`). An asset the reserve never registered is one
+the holding account may not be able to receive.
 
-`ICustodialRecipientPreparer.PrepareAsync` **refuses** a recipient signing context that is
-not a resolvable *user* context (`CustodialRecipientPreparer.cs`, the
-`IsResolvableUserContext` guard, mirrored again inside `AlgorandProvider`). It refuses on
-purpose — an acceptance can only be authorised by the recipient's own key, and a platform
-context there would mean the node accepted on a person's behalf. A separately-derived
-holding account has no user context and no wallet row, so it can never satisfy that guard;
-it would also owe a per-asset account minimum on every asset it ever touched.
+## §command-model — local accounting versus rail movement
 
-So the holding account **is** the platform reserve account:
-
-- it is already an operator-owned custodial account behind `IKeyCustodyService`;
-- it is the manager/reserve/freeze/clawback authority on every asset this node creates, so
-  it can hold those assets with no preparation at all;
-- the reserve's named-partition ledger already models exactly this — `ReserveDrawKind.Hold`
-  is documented in `Services/Reserve/IPlatformReserve.cs` as "units are committed to a hold
-  (W3.4) but have not yet left the reserve".
-
-The control that replaces "prepare the holding account for each asset" is
-`PlatformHoldService.OpenAsync`'s **refusal to hold an asset the reserve has no ledger row
-for**. An asset the reserve never registered is one the holding account may well be unable
-to receive, and the node says so instead of finding out on the rail.
-
-`CustodialRecipientPreparer` is still on the critical path, where it belongs: **every
-outbound move** — the release — prepares the **beneficiary** first. Without that, the first
-release to a worker who has never held the asset fails on the rail with a message naming
-the asset and its acceptance step, which is precisely the blockchain error a non-crypto
-worker must never see.
-
-## §funder-source — what is declared and not built
-
-`HoldFundingSource.Funder` (a hold funded from a person's own account) is declared in the
-enum and in the table's assert list, and `OpenAsync` **refuses it**. Building it needs an
-idempotency anchor on the inbound leg — without one a retried open charges the funder
-twice — and that anchor is `IBlockchainOperationManager.ExecuteAsync`, which this service
-does not route through. Refusing is honest; treating it as reserve-sourced would issue node
-units against a payment nobody made. Unblocking it is a routing change in `OpenAsync`, not
-a redesign.
-
-## §state-machine — and why `Releasing` exists
-
-```
-Pending ──draw ok──▶ Held ──window elapsed, recipient ready, draw ok──▶ Releasing ──paid──▶ Released
-   │                  │                                                     │
-   │ draw refused     │ given back                                          └── retried, never re-sent
-   ▼                  ▼
-Refunded           Refunded            Held ──continued──▶ ReleasedIntoHold (a second hold, same units)
-```
-
-`Releasing` is not decoration. The partition draw (`ReleaseHold`) commits **before** the
-outbound move, because the alternative — move first, count after — understates what the
-reserve has committed and lets a partition be oversubscribed. A row parked in `Releasing`
-therefore holds units the ledger already counts as issued, so **a refund from `Releasing` is
-refused**: crediting the partition again would hand the same declared budget out twice.
-
-A release that was already broadcast is **reconciled, never re-sent**
-(`ReconcileBroadcastReleaseAsync`): `Confirmed` completes the row, `FailedOnChain` allows a
-resend, and `Pending`/`Unknown` refuse. A second send against a merely-unobserved payout is
-how one hold pays twice.
+- **Local commands** (`Open`, `Refund`, `ReleaseIntoHold`) are calculated by
+  `HoldLocalCommandPlan` and `HoldReserveMutationPlan`, which are pure. The store then writes the
+  liability, the partition counters, the command and the immutable receipt in **one**
+  transaction. Replaying the same request key returns the saved receipt, even after authority
+  is lost.
+- **Rail commands** (release out, funder in) save a rail plan. `HoldRailExecutor` separates
+  interactive preparation from restricted recovery, and recovery may only observe or rebroadcast
+  bytes already submitted. Accounting projects only from finalized evidence of the exact saved
+  wire (`HoldRailCompletionPlan`).
+- Actual recipient acceptance is its own stage. It has its own request identity, authority and
+  signed bytes. Transfer consent cannot manufacture it, and timers never synthesize it.
 
 ## §chained-holds — `ReleaseIntoHold` and the window rule
 
-Approving completed work is a release into a **second** hold: the funder's window ends and
-the worker's begins over the same units. A plain release cannot express it, because a
-release *ends* the commitment while the second window has to *keep* it.
+A child window may never end earlier than its parent's. Otherwise a chain of instant holds would
+be a way out of the funder's window. The child inherits the parent's partition commitment
+(`InheritsReserveCommitment`), so exactly one row in a chain performs the terminal draw. A parent
+cannot refund after its child has committed.
 
-Two rules make chaining safe:
+## §purchased-liabilities — economic sources settle only through their source
 
-1. **The child window may never be earlier than the parent's.** Otherwise a chain of
-   instant holds would be the way out of the funder's window that a plain early release is
-   refused for.
-2. **The child inherits the parent's partition draw** (`InheritsReserveCommitment`), so
-   exactly one row in a chain ever performs the `ReleaseHold` or `CancelHold` draw. Two
-   draws for one commitment would double-count the partition in opposite directions.
+A liability with `EconomicSourceId` (opened by an exchange purchase) was paid for by the
+participant. `HoldLocalCommandPlan` therefore refuses ordinary local `Refund` and
+`ReleaseIntoHold` for it (B3-04). Only three things can settle it:
 
-Releasing *into* a hold is allowed **before** the parent's window elapses, because no value
-leaves the holding account — only who the units are held for changes.
+1. the original exchange source: settlement, or compensation once absence is proved;
+2. a release to its beneficiary, including the exact purchase mandate fenced by
+   `HoldReleaseExchangeFence`;
+3. an exact fiat reversal recovery (`Services/Fiat/Reversal` §provenance).
 
-## §sweep — the hosted release
+The store's local transition `WHERE` repeats `EconomicSourceId == null`, so a racing source
+commitment cannot slip in between the read and the write.
 
-`HoldSweepWorker` releases due auto-release holds and finishes holds a crash left in
-`Releasing`. Without it a hold window would be a promise nobody keeps: the beneficiary would
-have to come back and ask for their own units on the right day.
+## §mandates — automatic release
 
-Config (`Hold` section, bound in `HoldRegistration`; all optional):
+`HoldReleaseMandateService` persists the server-produced disclosure before explicit owner
+acceptance, and its worker drives releases through the same `HoldRailExecutor`. It can never
+obtain recipient acceptance or start a new transaction generation. Two closing rules keep a
+mandate from outliving the liability it serves:
 
-| Key | Default | Meaning |
-|---|---|---|
-| `Hold:SweepEnabled` | `true` | Whether the sweep runs at all. |
-| `Hold:SweepIntervalSeconds` | `60` | Clamped to 15…3600. |
-| `Hold:SweepBatchSize` | `50` | Clamped to 1…200. |
-| `Hold:SweepChains` | *(empty)* | Falls back to `Reserve:Chains`. |
+- A local `Refund` or `ReleaseIntoHold` of a hold with an Active mandate cancels that mandate and
+  clears `ActiveReleaseMandateId` in the same transaction. The transition `WHERE` pins the
+  mandate pointer that was read.
+- A rail completion that leaves a *different* Active mandate behind cancels it atomically
+  (`SurrealHoldCommandStore.Completion`).
 
-With neither `Hold:SweepChains` nor `Reserve:Chains` the sweep has **no scope** and idles
-with a warning. It will not guess the platform default chain: releasing value somewhere
-nobody named is the quiet reach this node refuses everywhere else.
+Owners manage mandates with revoke and reauthorize. The `/holds` page journals each request
+before sending it (`HoldMandatePanel`).
 
-The sweep stamps **no acting tenant**. It is the node acting on its own timer, not a tenant
-acting on a person's behalf, so it asks the custody seam for no consent grant it does not
-have.
+## §participant-renewal — stages do not stall on login expiry (B3-14)
 
-## §node-quartet — four node types, and why `HoldRefund` is not `Refund`
+Participant stages store the authority that was current when each step was taken. They do not
+store the login session. When a credential expires, it is renewed explicitly; time alone never
+renews it:
 
-`Hold`, `Release`, `HoldRefund`, `ReleaseIntoHold` are Tier-2 (`RequiresChainCapability ==
-true`), so the value-rail capability gate refuses them pre-execution at **both** dispatch
-seams — the legacy `ActionManager` executor and the durable `ActionNodeStepHandler` step.
-Each declares its rail from its own config via `ResolveSettlementRailId`, so the gate asks
-whether the actor can settle *there* rather than anywhere.
+- transfer cost consent: `/continue` with a new request (`AuthorizeRailAsync` replaces
+  `CurrentAuthorityJson` but keeps the quote, stage and saved bytes);
+- recipient acceptance: `/accept` with a new `RequestId` (replaces
+  `CurrentAcceptanceAuthorityJson`);
+- mandate: `/reauthorize` (`SurrealHoldReleaseMandateStore.ChangeAuthorityAsync`).
 
-`ActionNodeType.Refund` was already taken by the NFT-transfer reversal node, which is a
-different authority (the run actor's, over an asset the actor sent) over a different asset
-shape. One node type cannot have two handlers — `ActionNodeHandlerRegistry` throws on that
-at startup — and overloading the existing one would have let an NFT reversal reach the hold
-ledger. Hence `HoldRefund`, whose handler lives beside the NFT one in
-`Services/Actions/Handlers/RefundNodeHandler.cs`.
+Bytes that are already submitted keep reconciling with no live authority at all.
 
-Node-level identity: a hold node's id is **derived** from `(runId, nodeId)` unless the
-config names one, so a retried saga step addresses the hold it already opened. Downstream
-nodes name the *node* (`HoldNodeName`) rather than reproducing the derived id by hand, and
-that name resolves through the same derivation the opening node used.
+## §workers and §durable-registration
 
-The beneficiary defaults to the **run actor**, never the action owner — the acting-user
-invariant this codebase enforces wherever a node has an identity side effect. A marketplace
-run holds units for the person who ran it.
+`HoldRegistration.AddPlatformHold` checks its prerequisites, then registers the following with
+`TryAddScoped`: `SurrealHoldCommandStore` (as `IHoldCommandStore` and `IExchangeHoldSourceStore`),
+`SurrealHoldReleaseMandateStore` (as `IHoldReleaseMandateStore`), `HoldRailExecutor`,
+`HoldCommandService`, `HoldReleaseMandateService` and `ActionHoldOperationService`. The last is
+also registered as an `IActionExternalOperationResolver`. Two hosted workers are added:
 
-## §tenant-scope — whose declared budget a hold may draw
+- `HoldReconciliationWorker`: observes and rebroadcasts submitted transfer and acceptance bytes
+  only;
+- `HoldReleaseMandateWorker`: prepares only stages that an Active mandate already authorized.
 
-A reserve ledger row registered by a tenant is *that tenant's* declared budget. A hold whose
-acting tenant is anyone else is refused (`GuardTenantScope`), because sponsor exchanges and
-contributor holds draw from the **same** reserve: a partition policed only in one tenant's
-database can be overdrawn by another caller. A row with no tenant is the platform's own unit
-and has no tenant owner to check.
+Neither worker signs for a participant.
 
-The REST surface derives the acting tenant from the **principal**, never the body — the
-allocation precedent — and a principal whose `act_as_tenant` claim disagrees with its own
-subject is refused rather than resolved by coin flip.
+## §node-quartet — four descriptors, one durable adapter
 
-## §reads — hold ids are not public
+`Hold`, `Release`, `HoldRefund` and `ReleaseIntoHold` are Tier-2 descriptors. Each one declares
+its rail (`ResolveSettlementRailId`) and returns `HoldNodeRail.RequiresDurableAdmission()` if
+anything invokes it directly. Effects run only through `ActionHoldOperationService`. That service
+admits the frozen node input under the run's saved signing witness. Its key is
+`action:{run}:{node}:hold`, so a retried step addresses the same command. It reports the
+command's progress, and outputs `HoldNodeResult.From(view, intent)` only from the completed
+immutable receipt. Signing scope is `transfer:sign` (`ActionSigningScopes`). `AutoRelease`
+defaults to `false`. A workflow mandate needs an explicit `Mandate` selection and
+`RecipientWalletId`. `HoldRefund` exists because `ActionNodeType.Refund` is the NFT reversal node.
+One node type cannot have two handlers.
 
-A hold id is the caller's own reference, so a bare id would be an enumerable window onto
-other people's money. `HoldController.GuardVisibility` admits only the beneficiary, the
-funder, or the tenant that drove the hold, and returns the same "no such hold" shape to
-everyone else: confirming that a hold exists is itself the leak.
+## §tenant-scope and §reads
+
+An `Open` draws a reserve partition only under `ReservePartitionScope.Refuse` with the caller's
+actual draw authority: the credential's tenant, the reserve's own tenant, or a node operator. A
+partition one tenant declared cannot be overdrawn by another.
+
+Settling an existing liability (local `Refund`, rail `Release` and `FundedRefund`) also requires
+`HoldCustodyScope.AdmitsSettlement`. That means the owner's or beneficiary's own login (no tenant),
+or the exact tenant holding custody. A child credential that another tenant issued for the same
+person cannot refund or release a hold this tenant does not hold. `ReleaseIntoHold`, the opening
+and the mandates already enforce the same rule. Discovery is scoped server-side:
+tenant callers see only their exact actor/tenant commands; a person sees commands they acted on
+or receive.
+
+## History
+
+The source-slice record for this design is in
+`conductor/tracks/platform-stub-closeout_20261015/round3-hold-*.md` and
+`round3-lane-B-resume.md`. Source acceptance is not runtime proof. The integrated sweep is still
+outstanding.

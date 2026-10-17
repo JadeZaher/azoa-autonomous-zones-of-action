@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Durable Workflow Engine — Specification"
+tags: [durable-workflow-engine, archived]
+---
+
 # Durable Workflow Engine — Specification
 
 ## Status
@@ -63,7 +69,7 @@ gap analysis).
 ## Goal
 Make the Action DAG a **durable, step-addressable, consumer-driven workflow
 engine** so an external consumer (ArdaNova) can push an actor (player / user /
-tenant) through a multi-phase process it *designed once* (a `ActionTemplate`) and
+tenant) through a multi-phase process it *designed once* (an `ActionTemplate`) and
 runs many actors through. A run must be able to **PAUSE between nodes**, survive
 a process restart, and be **advanced externally** — the user's literal pseudocode
 `action(holonStep1).step(holonStep2B)`.
@@ -134,7 +140,7 @@ saga instance with near-zero new orchestration vocabulary:
 | Workflow concept | Saga concept (already built) |
 |---|---|
 | A durable action run | A saga instance (one `CorrelationKey`) |
-| A `ActionNode` | A forward `ISagaStep` |
+| An `ActionNode` | A forward `ISagaStep` |
 | Node advancement | Step dispatch (`SagaProcessor.OnStepSucceededAsync`) |
 | A gate / wait node | A step that **PARKS** until a signal / timer |
 | Refund-on-cancel | A declared **compensation step** |

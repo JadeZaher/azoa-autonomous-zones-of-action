@@ -301,24 +301,17 @@ Follow-up track: `durable-skip-propagation`.
 
 ## §action-webhook-emit
 
-**final-hardening F3 — the generic `action.emit` webhook.** `EmitNodeHandler` still
-serializes its tenant-shaped payload straight to `ActionNodeExecution.Output` (the
-authoritative settlement surface — no fiat/payout math in AZOA). ON TOP of that, when
-the run carries an `ActingTenantId` AND an `IActionWebhookEmitter` is registered, the
-handler ALSO enqueues a best-effort webhook outbox event via `ActionWebhookEmitter`.
+Emit requires durable workflow admission. `EmitNodeHandler` delegates to
+`ActionEmitService`, which recovers the deterministic receipt and original event,
+or retries atomic acceptance under the frozen action and original credential.
+An accepted tenant event pins registration identity, destination revision, body
+and body hash. Missing registration remains pending; malformed frozen config
+has a durable failed receipt. Infrastructure failures reach the workflow boundary.
 
-- **Optional dependency.** The emitter is a nullable ctor param (default `null`) so the
-  handler stays constructable with zero args and the pure-passthrough path is preserved
-  when no tenant/emitter is present. `EmitNodeConfig.EventType` (optional) names the
-  event; it defaults to `action.emit`.
-- **Never fails the node.** `ActionWebhookEmitter.EmitAsync` only writes an outbox row
-  (no outbound HTTP — that is the delivery worker's job) and swallows every fault,
-  including store exceptions. A webhook plumbing failure must not fail the `Emit` node.
-- **Delivery + security** live in `Services/Webhooks/AGENTS.md §action-webhook`: a
-  parallel outbox to the consent one that reuses the shared registration store + SSRF
-  guard + HMAC signer, so a tenant's ONE endpoint receives both consent and action.emit
-  events.
-
+The output is the accepted payload. Acceptance proves a durable delivery obligation,
+not HTTP delivery or receiver business settlement. Non-tenant Emit has a local
+receipt without an event. No optional best-effort producer remains. Delivery and
+retry use `Services/Webhooks/AGENTS.md`; accepted effects cannot be recalled.
 ## §economic-manifest — value-moving-node disclosure for marketplace runs
 
 `ActionEconomicManifestBuilder.Build(action, registry, versionHash)` produces the
@@ -809,3 +802,86 @@ correct as written, currently decides nothing.
 Refund reverses a debit for the RUN ACTOR, while a clawback is exercised by the ISSUER
 against a holder who did not consent. Routing soulbound reversals through Refund would
 hand every marketplace runner an issuer's power over an asset they merely received.
+
+
+## Round 2 local mutation receipts
+
+The handler registry wraps local holon, wallet metadata/import and loan-ledger effects.
+ActionLocalMutationService recreates the real manager against bounded overlays, captures
+original row and query membership, and derives created entity IDs from the admitted command.
+The atomic store fences current run/node intent, node policy, actor/tenant consent, and
+all read witnesses before committing effects and receipt together. Table mutation locks
+serialize graph membership against ordinary insert/delete writers. Generic plans reject
+GovernanceProposal rows including descendants; only the governance authority service may
+mutate their projections.
+
+A deterministic rejected plan stores a failed receipt with no effects. This receipt
+competes with successful plans under the same unique command identity, so late suspended
+planners cannot commit after rejection. Existing receipt recovery needs no fresh execution
+authority. Infrastructure exceptions propagate; commit conflicts require reconciliation.
+
+## Audited action operator recovery
+
+`ActionOperationRecoveryService` exposes sanitized inspection and an explicit audited retry of the original frozen operation. GET never invokes a domain resolver. Retry accepts only an exact execution version/hash and operator-scoped idempotency key/reason; server-selected registered capabilities are local, governance, deployment and NFT. Current actor/tenant authority remains enforced by the original domain. No operation-ID replacement, manual terminal verdict or fresh signing permission is accepted.
+
+The store commits the action authority fence, exact parked generation, unchanged saga payload/admission hash and audit together. Replaying an old audit never wakes a later generation. Original signal payload is retained. Missing legacy correlation remains quarantined. See active track `round2-action-operator-contract.md` for review and unrun verification status.
+
+## Confirmed grant attachment
+
+ActionNftHolonLinkService handles the optional Holon attachment after a grant lifecycle completes. Its separate local receipt binds the frozen run/node/actor/tenant and exact lifecycle/asset/network/contract/final transaction evidence. The shared local mutation transaction checks current action, actor, delegated action scope, policy version and original Holon witness while committing the link and receipt together. Matching receipt replay precedes current ownership/readiness checks; no second mint or link is attempted. An existing token binding without this receipt is quarantined even when its chain/token pair matches, since that pair alone cannot prove contract identity. A racing committed receipt is reread before reporting a planning conflict. The real HolonManager runs over the staged overlay so publication, governance and type validation remain shared.
+
+## Durable action recovery and admission (Round 2)
+
+Both execute and start-workflow admit one asynchronous run. Their required Idempotency-Key
+is scoped to action, authenticated actor and tenant; exact request replay precedes live
+source checks. Acknowledged economic consent also requires ExpectedPublishedHash from
+preview. The admitted frozen snapshot is immutable. New admissions serialize current
+source revision/access/quota with run, execution rows and first saga step.
+
+Each scheduler decision carries the run version. Fresh Pending-to-Running admission and
+all node outcome updates advance the run epoch in one transaction, preventing stale
+workers from starting effects after a sibling failure or cancellation. Successor saga
+identity is deterministic and uses the shared opaque-key codec. Occurrence boundaries
+wait for selected prior work, including successful failure handling, while skipped
+unselected branches do not veto later occurrences. Only guaranteed prior outputs can bind.
+
+NFT actions use an immutable run/node/actor/tenant/intent authority. Domain admission,
+preparation authorization and first send are fenced; recovery only admits missing intent
+or observes/rebroadcasts already authorized wire. Participant controls supply new signatures.
+Grant attachment requires the separate atomic holon receipt before workflow success.
+Refund references one exact succeeded frozen transfer and waits for the actual holder.
+Read recovery invokes only a closed safe handler catalog under the original caller;
+retryable read or local-plan errors remain recoverable without pinning a failed receipt.
+
+The compensation handler does not claim to reverse value. Proven read-only/no-effect
+failures may close; completed or unresolved effects park for domain compensation evidence.
+Actual compensation adapters and their receipts remain required implementation work in
+Round 3, alongside the remaining Hold/native/fungible/emit and bridge/DEX adapters.
+# Participant signing authorization
+
+Runs retain private authenticated credential evidence; economic nodes retain private exact scope/grant evidence. Neither field participates in public run/node JSON or frozen upstream-output serialization. `ActionSigningScopes` is the closed scope mapping over resolved immutable node input. Native deployment kinds are explicit; runtime registration has no signing scope. Hold scope policy remains part of the in-progress Round3 hold domain package, not an implicit grant.
+
+An older frozen node without credential evidence parks as `NeedsParticipantAuthorization`. The original actor in the exact tenant context may authorize that unchanged node through `/api/action/executions/{executionId}/signing-authorization`, with expected version, intent hash, original request ID and review reason. The transaction records immutable participant consent and wakes only the matching parked saga. It refuses cancellation, changed input/version, wrong actor/tenant, revoked grants and existing historical node witnesses. Replaying the receipt never wakes a later saga generation. Runs without any frozen graph remain quarantined.
+
+Pre-dispatch deterministic refusals persist `AdmissionRejection` with the node admission. Recovery projects that durable no-effect decision without dispatching a handler. A missing transaction hash alone is never a rejection receipt.
+
+## Durable Emit acceptance
+
+The new Emit acceptance store records the exact payload and optional webhook event atomically under frozen run authority. Acceptance means the event is durably owed, not delivered or settled by its receiver. Non-tenant runs retain a local receipt. Tenant runs require an active configured destination; absent registration remains retryable. Deterministic malformed config is a durable failed receipt. Event identity and destination remain unchanged during recovery. The replacement handler/resolver and leased delivery worker remain required before enabling this path.
+
+## Frozen NFT workflow cost consent
+
+Solana mint and Grant executions park with their original frozen reference until the actor explicitly accepts a disclosed cost offer. `/api/nft-workflow-costs/{executionId}/quote` returns the execution version and receipt; `/accept` consumes the caller-persisted request ID, exact version and authorization. Atomic acceptance records both original workflow authority and current participant consent while creating the lifecycle. The frozen input remains unchanged. Resolver observation never dispatches a fresh signature for this path; participant lifecycle controls continue admitted work.
+
+`/reconcile` reads execution version before the immutable acceptance audit. A matching audit proves Applied even after cancellation or authority changes; absent audit only proves Obsolete after a version advance, otherwise remains Unresolved. Authentication supplies actor and tenant; request bodies cannot override them. Source fixtures cover parked recovery and ordered receipt reconciliation; execution is pending the integrated gate.
+
+## Hold quartet recovery
+
+The Hold resolver uses original frozen input and a network-qualified source. New
+openings and human references require explicit Network; a changed server default
+cannot redirect a recovered command. Named predecessors require the original run,
+node and immutable receipt identity. Only a completed accounting receipt yields
+successful output. Deterministic invalid input records HoldAdmissionRejected by
+execution-version CAS before failure; missing authority/provider/source evidence
+remains recoverable. The quartet is not activated until legacy caller cutover and
+registration are complete. Tests are authored but the integrated sweep is pending.

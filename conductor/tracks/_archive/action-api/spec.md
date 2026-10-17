@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Action API — Specification"
+tags: [action-api, archived]
+---
+
 # Action API — Specification
 
 ## Goal
@@ -10,7 +16,7 @@ Controllers → ActionManager → IActionRepository → AZOADbContext
                     IHolonManager        (holon CRUD, query, interact, propagate, compose, clone, move-subtree)
                     INftManager          (mint, transfer, burn)
                     IWalletManager       (wallet CRUD, portfolio)
-                    ISTARManager         (generate, deploy)
+                    IActionGraphBundleManager         (generate, deploy)
                     ISearchManager       (cross-entity search)
                     IUserNFTService    (composite views, bindings)
                     IBlockchainOperationManager
@@ -108,8 +114,8 @@ When a node executes, the ActionManager deserializes the Config JSON to the matc
 | `WalletQuery` | `WalletQueryRequest` | `_walletManager.QueryAsync(query, azoaNull)` |
 | `WalletSetDefault` | `{ walletId }` | `_walletManager.SetDefaultAsync(userId, walletId, azoaNull)` |
 | `WalletGetPortfolio` | `{ walletId }` | `_walletManager.GetPortfolioAsync(walletId, azoaNull)` |
-| `StarGenerate` | `{ starId, STARDappGenerationRequest }` | `_starManager.GenerateAsync(starId, request, azoaNull)` |
-| `StarDeploy` | `{ starId }` | `_starManager.DeployAsync(starId, azoaNull)` |
+| `ActionGraphBundleGenerate` | `{ actionGraphBundleId, ActionGraphBundleDappGenerationRequest }` | `_bundleManager.GenerateAsync(actionGraphBundleId, request, azoaNull)` |
+| `ActionGraphBundleDeploy` | `{ actionGraphBundleId }` | `_bundleManager.DeployAsync(actionGraphBundleId, azoaNull)` |
 | `Search` | `SearchRequest` | `_searchManager.SearchAsync(query, userId, azoaNull)` |
 | `UserNFTGetComposite` | `{ userId }` | `_userNFTService.GetUserNFTCompositeAsync(userId)` |
 | `BlockchainExecute` | `BlockchainOperation` (built from config) | `_blockchainManager.ExecuteAsync(operation, azoaNull)` |

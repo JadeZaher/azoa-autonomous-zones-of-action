@@ -1,5 +1,4 @@
 using FluentValidation;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Validators;
@@ -30,8 +29,5 @@ public class WalletCreateModelValidator : AbstractValidator<WalletCreateModel>
             RuleFor(x => x.Label)
                 .MaximumLength(128).WithMessage("Label must not exceed 128 characters.");
         });
-
-        RuleFor(x => x.WalletType)
-            .IsInEnum().WithMessage("WalletType is not a valid value.");
     }
 }

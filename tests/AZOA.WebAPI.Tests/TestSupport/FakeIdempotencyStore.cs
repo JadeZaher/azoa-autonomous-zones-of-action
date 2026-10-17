@@ -15,9 +15,58 @@ namespace AZOA.WebAPI.Tests.TestSupport;
 /// (Won=false). TryAdd, NOT GetOrAdd — GetOrAdd's value factory can run on
 /// multiple racing threads, each wrongly believing it created the entry.
 /// </summary>
-public sealed class FakeIdempotencyStore : IIdempotencyStore
+public sealed class FakeIdempotencyStore : IIdempotencyStore, IAllocationRecoveryStore, IValueMoveReceiptStore
 {
     private readonly ConcurrentDictionary<string, IdempotencyRecord> _records = new();
+    private readonly ConcurrentDictionary<string, bool> _noEffect = new();
+
+    private readonly ConcurrentDictionary<string, string> _prepared = new();
+    private readonly Dictionary<string, long> _generations = new();
+    public Task<bool> TryPrepareAsync(string key, string preparedJson, CancellationToken ct, long expectedGeneration = 0)
+    {
+        lock (_generations) return Task.FromResult(_generations.GetValueOrDefault(key) == expectedGeneration && _prepared.TryAdd(key, preparedJson));
+    }
+    public Task<long> GetPreparationGenerationAsync(string key, CancellationToken ct)
+    {
+        lock (_generations) return Task.FromResult(_generations.GetValueOrDefault(key));
+    }
+    public Task<string?> GetPreparedAsync(string key, CancellationToken ct)
+        => Task.FromResult(_prepared.GetValueOrDefault(key));
+    public Task<bool> TryClearPreparedAsync(string key, string expectedPreparedJson, CancellationToken ct)
+    {
+        lock (_generations)
+        {
+            var removed = ((ICollection<KeyValuePair<string, string>>)_prepared).Remove(new(key, expectedPreparedJson));
+            if (removed) _generations[key] = _generations.GetValueOrDefault(key) + 1;
+            return Task.FromResult(removed);
+        }
+    }
+
+    public async Task RecordNoEffectFailureAsync(string key, string safeError, CancellationToken ct)
+    {
+        var record = await GetAsync(key, ct) ?? throw new InvalidOperationException("Missing claim");
+        lock (record)
+        {
+            if (record.State != IdempotencyState.InProgress || record.OperationType != "fiat_allocation")
+                throw new InvalidOperationException("Claim changed");
+            record.State = IdempotencyState.Failed;
+            record.Error = safeError;
+            _noEffect[key] = true;
+        }
+    }
+
+    public async Task<bool> TryReserveRefundAfterNoEffectAsync(string key, CancellationToken ct)
+    {
+        var record = await GetAsync(key, ct);
+        if (record is null) return false;
+        lock (record)
+        {
+            if (record.State != IdempotencyState.Failed || record.OperationType != "fiat_allocation"
+                || !_noEffect.TryRemove(key, out _)) return false;
+            record.OperationType = AZOA.WebAPI.Core.Idempotency.SurrealIdempotencyStore.RefundReservationType;
+            return true;
+        }
+    }
 
     public int RecordCount => _records.Count;
     public IEnumerable<string> Keys => _records.Keys;

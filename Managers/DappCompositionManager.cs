@@ -1,5 +1,4 @@
 using System.Text.Json;
-using AZOA.WebAPI.Core.Json;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -8,6 +7,8 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
+using AZOA.WebAPI.Helpers.Deployments;
 // Disambiguate `ActionDefinition`: the source-gen'd POCO (Generated.SurrealDb.ActionDefinition) is
 // not yet wired through IActionStore -- the hand-written model stays in
 // service until the action cutover slice lands. Alias keeps the manager
@@ -23,19 +24,22 @@ public sealed class DappCompositionManager : IDappCompositionManager
     private readonly IActionRunStore _runStore;
     private readonly IHolonStore _holonStore;
     private readonly IActionGraphBundleManager _bundleManager;
+    private readonly IDeploymentStore _deployments;
 
     public DappCompositionManager(
         IDappSeriesStore seriesStore,
         IActionStore actionStore,
         IActionRunStore runStore,
         IHolonStore holonStore,
-        IActionGraphBundleManager bundleManager)
+        IActionGraphBundleManager bundleManager,
+        IDeploymentStore deployments)
     {
         _seriesStore = seriesStore;
         _actionStore = actionStore;
         _runStore = runStore;
         _holonStore = holonStore;
         _bundleManager = bundleManager;
+        _deployments = deployments;
     }
 
     // ── Series CRUD ──────────────────────────────────────────────────────────
@@ -55,6 +59,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         var load = await _seriesStore.GetSeriesAsync(seriesId, ct);
         if (load.IsError || load.Result is null) return load;
         if (!load.Result.OwnedBy(userId)) return Fail<DappSeries>("Forbidden: series is owned by a different user.");
+        await ReadDeploymentStatusAsync(load.Result, ct);
         return load;
     }
 
@@ -63,6 +68,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
     {
         var load = await _seriesStore.GetSeriesByUserAsync(userId, ct);
         if (load.IsError || load.Result is null) return load;
+        foreach (var series in load.Result) await ReadDeploymentStatusAsync(series, ct);
         var filtered = status.HasValue
             ? load.Result.Where(s => s.Status == status.Value).ToList()
             : load.Result.ToList();
@@ -298,8 +304,10 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
     // ── Generation & Deployment ──────────────────────────────────────────────
 
-    public async Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default)
+    public async Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default,
+        DeploymentGenerateRequest? request = null, Guid? actingTenantId = null)
     {
+        if (request is null) return Fail<IActionGraphBundle>("Select an explicit deployment target and artifact format.");
         var composeResult = await ComposeAsync(seriesId, userId, ct);
         if (composeResult.IsError || composeResult.Result is null) return Fail<IActionGraphBundle>(composeResult.Message);
         var manifest = composeResult.Result;
@@ -308,7 +316,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
         // ActionGraphBundleCreateModel does not yet carry TargetChain/BoundHolonIds; those
         // flow to IActionGraphBundleManager via ActionGraphBundleDappGenerationRequest on the Generate
-        // call. spec.md §STAR Integration Flow has those fields on the create
+        // call. spec.md §Action Graph Bundle Integration Flow has those fields on the create
         // model which does not match the runtime IActionGraphBundleManager surface -- this
         // is the authoritative shape.
         var bundleCreate = new ActionGraphBundleCreateModel
@@ -317,7 +325,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
             Description = series.Description ?? string.Empty,
             UserId = userId,
         };
-        var bundleUpsert = await _bundleManager.CreateOrUpdateAsync(bundleCreate, userId);
+        var bundleUpsert = await _bundleManager.CreateOrUpdateAsync(bundleCreate, userId, series.ActionGraphBundleIdGuid);
         if (bundleUpsert.IsError || bundleUpsert.Result is null) return Fail<IActionGraphBundle>(bundleUpsert.Message);
 
         var generationRequest = new ActionGraphBundleDappGenerationRequest
@@ -325,44 +333,79 @@ public sealed class DappCompositionManager : IDappCompositionManager
             TargetChain = manifest.TargetChain,
             BoundHolonIds = manifest.BoundHolonIds,
             Config = manifest.Config,
+            Generation = request,
         };
-        var generated = await _bundleManager.GenerateAsync(bundleUpsert.Result.Id, generationRequest, userId);
+        if (request.Target.Kind == "PlatformRuntime")
+        {
+            var entries = await _seriesStore.GetActionsBySeriesAsync(seriesId, ct);
+            if (entries.IsError || entries.Result is null) return Fail<IActionGraphBundle>(entries.Message);
+            var ordered = entries.Result.OrderBy(entry => entry.Order).ToArray();
+            try
+            {
+                generationRequest.Generation = request with
+                {
+                    ActionIds = ordered.Select(entry => entry.ActionIdGuid).ToArray(),
+                    Mappings = DeploymentSeriesMappings.Resolve(ordered).Concat(request.Mappings ?? []).ToArray(),
+                };
+            }
+            catch (Exception exception) when (exception is JsonException or ArgumentException) { return Fail<IActionGraphBundle>(exception.Message); }
+        }
+        var generated = await _bundleManager.GenerateAsync(bundleUpsert.Result.Id, generationRequest, userId, null, actingTenantId);
         if (generated.IsError || generated.Result is null) return Fail<IActionGraphBundle>(generated.Message);
 
         series.ActionGraphBundleIdGuid = generated.Result.Id;
         series.Status = DappSeries.StatusKind.Ready;
+        series.TargetChain = request.Target.ChainType;
+        series.DeploymentOperationId = null;
+        series.DeployedDate = null;
         var save = await _seriesStore.UpsertSeriesAsync(series, ct);
         if (save.IsError) return Fail<IActionGraphBundle>(save.Message);
 
         return generated;
     }
 
-    public async Task<AZOAResult<IActionGraphBundle>> DeployAsync(
-        Guid seriesId, Guid userId, string? targetOverride = null, CancellationToken ct = default)
+    public async Task<AZOAResult<DeploymentReceipt>> DeployAsync(
+        Guid seriesId, Guid userId, DeploymentStartRequest request, string requestKey, Guid? actingTenantId = null, CancellationToken ct = default)
     {
         var seriesLoad = await GetAsync(seriesId, userId, ct);
-        if (seriesLoad.IsError || seriesLoad.Result is null) return Fail<IActionGraphBundle>(seriesLoad.Message);
+        if (seriesLoad.IsError || seriesLoad.Result is null) return Fail<DeploymentReceipt>(seriesLoad.Message);
         var series = seriesLoad.Result;
 
-        if (series.Status != DappSeries.StatusKind.Ready)
-            return Fail<IActionGraphBundle>($"Series must be in Ready status to deploy; currently {series.Status}.");
+        if (series.Status is not (DappSeries.StatusKind.Ready or DappSeries.StatusKind.Deploying or DappSeries.StatusKind.Deployed))
+            return Fail<DeploymentReceipt>($"Series must have a generated artifact to deploy; currently {series.Status}.");
         var bundleId = series.ActionGraphBundleIdGuid;
         if (bundleId is null)
-            return Fail<IActionGraphBundle>("Series has no associated ActionGraphBundle; call Generate first.");
+            return Fail<DeploymentReceipt>("Series has no associated ActionGraphBundle; call Generate first.");
 
-        // targetOverride is currently passed-through informationally; the
-        // IActionGraphBundleManager.DeployAsync surface does not yet accept per-call target
-        // overrides -- if a different chain is needed, re-run Generate with an
-        // updated TargetChain on the series. Tracked as a follow-up.
-        var deployed = await _bundleManager.DeployAsync(bundleId.Value, userId);
-        if (deployed.IsError || deployed.Result is null) return Fail<IActionGraphBundle>(deployed.Message);
+        var deployed = await _bundleManager.DeployAsync(bundleId.Value, request, requestKey, userId, actingTenantId, ct);
+        if (deployed.IsError || deployed.Result is null) return Fail<DeploymentReceipt>(deployed.Message);
 
-        series.Status = DappSeries.StatusKind.Deployed;
-        series.DeployedDate = DateTimeOffset.UtcNow;
+        series.DeploymentOperationId = deployed.Result.OperationId;
+        series.Status = deployed.Result.State == "Confirmed" ? DappSeries.StatusKind.Deployed : DappSeries.StatusKind.Deploying;
+        series.DeployedDate = deployed.Result.State == "Confirmed" ? DateTimeOffset.UtcNow : null;
         var save = await _seriesStore.UpsertSeriesAsync(series, ct);
-        if (save.IsError) return Fail<IActionGraphBundle>(save.Message);
+        if (save.IsError) return Fail<DeploymentReceipt>(save.Message);
 
         return deployed;
+    }
+
+    private async Task ReadDeploymentStatusAsync(DappSeries series, CancellationToken ct)
+    {
+        if (series.DeploymentOperationId is null || series.Status == DappSeries.StatusKind.Archived) return;
+        var operation = await _deployments.GetAsync(series.DeploymentOperationId, ct);
+        if (operation is null || operation.ActorUserId != series.UserId)
+        {
+            series.Status = DappSeries.StatusKind.DeploymentFailed;
+            series.DeployedDate = null;
+            return;
+        }
+        series.Status = operation.State switch
+        {
+            "Confirmed" => DappSeries.StatusKind.Deployed,
+            "Failed" or "Cancelled" => DappSeries.StatusKind.DeploymentFailed,
+            _ => DappSeries.StatusKind.Deploying,
+        };
+        series.DeployedDate = operation.State == "Confirmed" ? operation.UpdatedAt : null;
     }
 
     // ── Validators ───────────────────────────────────────────────────────────

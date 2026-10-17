@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 
@@ -123,5 +122,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         /// <summary>When a handler completed the work. Absent while the row is not Applied.</summary>
         [Column(Order = 19)]
         public DateTimeOffset? AppliedAt { get; set; }
+
+        [Column(Order = 20)]
+        public string? ProviderAccountId { get; set; }
+
+        [Column(Order = 21)]
+        public string? ProviderObjectId { get; set; }
     }
 }

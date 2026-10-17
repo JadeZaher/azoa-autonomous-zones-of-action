@@ -31,6 +31,7 @@ const BASE_PATH = '/api/node-transparency'
 interface FeeScheduleEntryView {
   flatBaseUnits: string
   bps: number
+  denomination?: string | null
 }
 
 /** Mirrors `PublicNodeFeeScheduleResponse`. */
@@ -189,6 +190,7 @@ function FeeScheduleTable({ schedule }: { schedule: FeeScheduleView }) {
                 <TableHead>Operation</TableHead>
                 <TableHead>Flat (base units)</TableHead>
                 <TableHead>Rate</TableHead>
+                <TableHead>Swap denomination</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -199,6 +201,9 @@ function FeeScheduleTable({ schedule }: { schedule: FeeScheduleView }) {
                     <TableCell className="font-medium">{label}</TableCell>
                     <TableCell className="font-mono text-xs">{entry.flatBaseUnits}</TableCell>
                     <TableCell className="font-mono text-xs">{formatBps(entry.bps)}</TableCell>
+                    <TableCell className="text-xs">{key === 'swap'
+                      ? entry.denomination === 'input-base-units-v1' ? 'Input asset base units' : 'Not configured'
+                      : '—'}</TableCell>
                   </TableRow>
                 )
               })}

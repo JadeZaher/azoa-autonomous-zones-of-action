@@ -1,9 +1,9 @@
+using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
-using AZOA.WebAPI.Services.Actions;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
@@ -39,7 +39,7 @@ public sealed class GrantNodeHandler : IActionNodeHandler
         // tenant-consent-delegation AC4: forward the run's acting tenant so a
         // tenant-driven grant stamps it on the op and the signing seam's consent
         // gate fires (null = user-driven → unchanged).
-        var r = await _nftManager.MintAsync(cfg.Request, context.ActingUserId, actingTenantId: context.ActingTenantId);
+        var r = await _nftManager.MintAsync(cfg.Request, context.ActingUserId, new AZOARequest { IdempotencyKey = $"{context.RunId:N}:{context.NodeId:N}" }, actingTenantId: context.ActingTenantId);
 
         // The op can be non-null even on failure: a broadcast-then-confirmation-
         // timeout surfaces as IsError while the tx already landed. Read the hash

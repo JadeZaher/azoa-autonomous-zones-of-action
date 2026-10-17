@@ -3,22 +3,25 @@ using AZOA.WebAPI.Models.Actions;
 
 namespace AZOA.WebAPI.Services.Actions;
 
-/// <summary>
-/// Builds a <see cref="ActionNodeType"/> → <see cref="IActionNodeHandler"/> map
-/// from the registered handlers. Throws on a duplicate <see cref="ActionNodeType"/>
-/// so the "exactly one handler per type" invariant fails fast at startup
-/// instead of silently shadowing a handler.
-/// </summary>
+/// <inheritdoc/>
 public sealed class ActionNodeHandlerRegistry : IActionNodeHandlerRegistry
 {
     private readonly IReadOnlyDictionary<ActionNodeType, IActionNodeHandler> _handlers;
 
-    public ActionNodeHandlerRegistry(IEnumerable<IActionNodeHandler> handlers)
+    public ActionNodeHandlerRegistry(IEnumerable<IActionNodeHandler> handlers, ActionLocalMutationService? localMutations = null,
+        ActionNftOperationService? nftOperations = null, ActionHoldOperationService? holdOperations = null)
     {
         var map = new Dictionary<ActionNodeType, IActionNodeHandler>();
         foreach (var handler in handlers)
         {
-            if (!map.TryAdd(handler.NodeType, handler))
+            IActionNodeHandler effective = localMutations is not null && ActionLocalMutationService.Supports(handler.NodeType)
+                ? new ActionLocalMutationHandler(handler.NodeType, localMutations)
+                : nftOperations is not null && ActionNftOperationService.Supports(handler.NodeType)
+                    ? new ActionNftOperationHandler(handler, nftOperations)
+                    : holdOperations is not null && ActionHoldOperationService.Supports(handler.NodeType)
+                        ? new ActionHoldOperationHandler(handler, holdOperations)
+                        : ActionReadRecovery.Supports(handler.NodeType) ? new ActionReadHandler(handler) : handler;
+            if (!map.TryAdd(handler.NodeType, effective))
             {
                 throw new InvalidOperationException(
                     $"Duplicate action node handler for {handler.NodeType}: " +
@@ -29,6 +32,7 @@ public sealed class ActionNodeHandlerRegistry : IActionNodeHandlerRegistry
         _handlers = map;
     }
 
+    /// <inheritdoc/>
     public bool TryGet(ActionNodeType type, out IActionNodeHandler handler)
         => _handlers.TryGetValue(type, out handler!);
 }

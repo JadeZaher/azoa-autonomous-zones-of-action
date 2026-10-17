@@ -128,7 +128,7 @@ function isAllowlisted(violation: Violation): boolean {
  * They are separate on purpose. Folding this list into the allowlist would have required
  * writing a `reason` claiming each hit is justified, and none of them are -- `(dashboard)`
  * gates on `isAuthenticated` alone (src/app/(dashboard)/layout.tsx), with no role check, so
- * every signed-in avatar reaches /blockchain, /fungible-mint, /bridge and the seed-phrase
+ * every signed-in user reaches /blockchain, /fungible-mint, /bridge and the seed-phrase
  * export. Clearing the debt is a role-separation decision, not a reword.
  */
 /**

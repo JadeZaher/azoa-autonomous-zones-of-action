@@ -27,7 +27,7 @@ body-dump in the test (since reverted).
 | `Holon.Interact` (remove peers/metadata) | **FIXED — product bug** | Empty-collection upsert omission in `SurrealHolonStore` |
 | `Holon.Mint` | **FIXED — product bug** | `operation_log.parameters` was SCHEMAFULL non-FLEXIBLE |
 | `Holon.Exchange` | **FIXED — product bug** | Same schema bug as Mint |
-| `STARODK.Deploy` | **FIXED — test design** | Seed can't inject `GeneratedCode`; must generate first |
+| `ActionGraphBundle.Deploy` | **FIXED — test design** | Seed can't inject `GeneratedCode`; must generate first |
 | `Holon.MoveSubtree_CyclePrevention` (adjacent, unmasked) | **FIXED — test design** | Assertion string drift; endpoint is correct |
 
 ---
@@ -92,21 +92,21 @@ so Mint/Exchange now persist and return 200.
 list is the **same** `operation_log.parameters` schema bug and is expected to clear
 with this fix; it lives in another lane's test file so it is not asserted here.
 
-## 4. `STARODK.Deploy_ShouldSetDeploymentConfig` — TEST DESIGN (fixed at test)
+## 4. `ActionGraphBundle.Deploy_ShouldSetDeploymentConfig` — TEST DESIGN (fixed at test)
 
 **Symptom (reproduced):** deploy returned 400 *"Dapp must be generated before
 deployment."*
 
-**Root cause:** the test seeded with `STARODKBuilder.WithGeneratedCode("some
-code")`, but `STARODKCreateModel` carries only `Name/Description/PublicKey/
+**Root cause:** the test seeded with `ActionGraphBundleBuilder.WithGeneratedCode("some
+code")`, but `ActionGraphBundleCreateModel` carries only `Name/Description/PublicKey/
 UserId` — there is **no `GeneratedCode` field on the create model**, so the
-builder's value is silently dropped on `POST /api/starodk`. The seeded record has
-empty `GeneratedCode`; `STARManager.DeployAsync` correctly rejects a deploy of an
+builder's value is silently dropped on `POST /api/actiongraphbundle`. The seeded record has
+empty `GeneratedCode`; `ActionGraphBundleManager.DeployAsync` correctly rejects a deploy of an
 ungenerated dapp. This is the intended production flow: **create → generate →
 deploy** (`GeneratedCode` is set only by the generate endpoint). The endpoint is
 correct; the test skipped `generate`.
 
-**Fix (test-only):** the test now calls `POST /api/starodk/{id}/generate` before
+**Fix (test-only):** the test now calls `POST /api/actiongraphbundle/{id}/generate` before
 `deploy`, matching the real flow. No product change — the guard is correct.
 
 ## 5. `Holon.MoveSubtree_CyclePrevention_ShouldReturnError` — TEST DESIGN (adjacent)
@@ -169,7 +169,7 @@ bugs — one holon-store data-integrity bug + one schema bug hitting Mint & Exch
 (`MoveSubtree_CyclePrevention`) unmasked during verification.
 
 - Owned classes now fully green: `HolonControllerIntegrationTests` +
-  `STARODKControllerIntegrationTests` = **41/41 passed, 0 failed**.
+  `ActionGraphBundleControllerIntegrationTests` = **41/41 passed, 0 failed**.
 - Integration tail: **37 → 32** accounted-for remaining failures. The 32 are the
   previously-documented Buckets A–C (IDOR test-design, environment/repo-layout
   gates, store-layer socket/perf races) plus the two Bucket-D factory
@@ -190,7 +190,7 @@ Product code:
   golden (`parameters … TYPE option<object> FLEXIBLE`).
 
 Tests (owned failing tests):
-- `tests/.../Controllers/STARODKControllerIntegrationTests.cs` — Deploy test now
+- `tests/.../Controllers/ActionGraphBundleControllerIntegrationTests.cs` — Deploy test now
   generates before deploying.
 - `tests/.../Controllers/HolonControllerIntegrationTests.cs` — MoveSubtree cycle
   assertion aligned to the real message.

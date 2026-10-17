@@ -8,7 +8,6 @@ using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
-using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Lending;
 
 namespace AZOA.WebAPI.Models.Actions
@@ -85,7 +84,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers
         {
             if (!ActionNodeConfig.TryDeserialize<LoanRepaymentRecordNodeConfig>(
                     context.Node.Config, nameof(ActionNodeType.LoanRepaymentRecord), out var cfg, out var cfgError))
-                return ActionNodeResults.Fail(cfgError);
+                return ActionNodeResults.Invalid(cfgError);
 
             if (cfg.LoanHolonId == Guid.Empty)
                 return ActionNodeResults.Invalid("[LoanRepaymentRecord] loanHolonId is required.");

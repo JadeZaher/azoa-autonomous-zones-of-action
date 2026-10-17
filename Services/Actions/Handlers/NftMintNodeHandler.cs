@@ -2,7 +2,6 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
-using AZOA.WebAPI.Services.Actions;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
@@ -19,7 +18,7 @@ public sealed class NftMintNodeHandler : IActionNodeHandler
     {
         if (!ActionNodeConfig.TryDeserialize<NftMintRequest>(context.Node.Config, nameof(ActionNodeType.NftMint), out var model, out var cfgError))
             return ActionNodeResults.Fail(cfgError);
-        var r = await _nftManager.MintAsync(model, context.ActingUserId);
+        var r = await _nftManager.MintAsync(model, context.ActingUserId, new AZOARequest { IdempotencyKey = $"{context.RunId:N}:{context.NodeId:N}" }, actingTenantId: context.ActingTenantId);
         var outputJson = ActionNodeOutputProjection.SerializeOperation(r);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);
         return ActionNodeResults.Ok(outputJson);

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -7,6 +6,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Ecosystem;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 using PocoEcosystem = AZOA.WebAPI.Persistence.SurrealDb.Models.Ecosystem;
 using PocoEcosystemNode = AZOA.WebAPI.Persistence.SurrealDb.Models.EcosystemNode;
 
@@ -17,15 +17,18 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
     private readonly IActionGraphBundleStore _bundleStore;
     private readonly IEcosystemStore _ecosystemStore;
     private readonly IDappSeriesStore _dappSeriesStore;
+    private readonly IDeploymentService _deployments;
 
     public ActionGraphBundleManager(
         IActionGraphBundleStore bundleStore,
         IEcosystemStore ecosystemStore,
-        IDappSeriesStore dappSeriesStore)
+        IDappSeriesStore dappSeriesStore,
+        IDeploymentService deployments)
     {
         _bundleStore = bundleStore;
         _ecosystemStore = ecosystemStore;
         _dappSeriesStore = dappSeriesStore;
+        _deployments = deployments;
     }
 
     public async Task<AZOAResult<IActionGraphBundle>> GetAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
@@ -68,7 +71,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         // The caller-supplied model.UserId is intentionally ignored — the
         // authenticated user id from the controller is the only source of truth.
 
-        ActionGraphBundle odk;
+        ActionGraphBundle bundle;
         if (routeId.HasValue)
         {
             var loaded = await _bundleStore.GetByIdAsync(routeId.Value, default);
@@ -78,21 +81,21 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
             if (!IsOwnedBy(loaded.Result, userId))
                 return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
 
-            odk = (ActionGraphBundle)loaded.Result;
+            bundle = (ActionGraphBundle)loaded.Result;
         }
         else
         {
             var match = await _bundleStore.GetByNameAndUserAsync(model.Name, userId, default);
-            odk = (match.Result as ActionGraphBundle) ?? new ActionGraphBundle { UserId = userId };
+            bundle = (match.Result as ActionGraphBundle) ?? new ActionGraphBundle { UserId = userId };
         }
 
-        odk.Name         = model.Name;
-        odk.Description  = model.Description;
-        odk.PublicKey    = model.PublicKey;
-        odk.UserId     = userId; // authoritative — never trust model.UserId
-        odk.ModifiedDate = DateTime.UtcNow;
+        bundle.Name         = model.Name;
+        bundle.Description  = model.Description;
+        bundle.PublicKey    = model.PublicKey;
+        bundle.UserId     = userId; // authoritative — never trust model.UserId
+        bundle.ModifiedDate = DateTime.UtcNow;
 
-        return await _bundleStore.UpsertAsync(odk, default);
+        return await _bundleStore.UpsertAsync(bundle, default);
     }
 
     private static bool IsOwnedBy(IActionGraphBundle record, Guid userId) =>
@@ -115,7 +118,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         return await _bundleStore.DeleteAsync(id, default);
     }
 
-    public async Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid id, ActionGraphBundleDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid id, ActionGraphBundleDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
         var existing = await _bundleStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
@@ -123,51 +126,35 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
             return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
 
-        var odk = (ActionGraphBundle)existing.Result;
-        odk.TargetChain = request.TargetChain;
-        odk.BoundHolonIds = request.BoundHolonIds;
-        odk.GeneratedCode = GenerateDappCode(odk, request);
-        odk.ModifiedDate = DateTime.UtcNow;
-
-        return await _bundleStore.UpsertAsync(odk, default);
+        var bundle = (ActionGraphBundle)existing.Result;
+        if (request.Generation is null) return Fail("Select an explicit versioned generation target; legacy configuration must be regenerated.");
+        bundle.TargetChain = request.Generation.Target.ChainType;
+        bundle.BoundHolonIds = request.BoundHolonIds;
+        bundle.ModifiedDate = DateTime.UtcNow;
+        var saved = await _bundleStore.UpsertAsync(bundle, default);
+        if (saved.IsError) return saved;
+        var generated = await _deployments.GenerateAsync(id, userId.Value, actingTenantId, request.Generation);
+        return generated.IsError ? Fail(generated.Message) : await _bundleStore.GetByIdAsync(id);
     }
 
-    public async Task<AZOAResult<IActionGraphBundle>> DeployAsync(Guid id, Guid? userId = null, AZOARequest? providerRequest = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<DeploymentReceipt>> DeployAsync(Guid id, DeploymentStartRequest request, string requestKey,
+        Guid userId, Guid? actingTenantId = null, CancellationToken ct = default)
     {
-        var existing = await _bundleStore.GetByIdAsync(id, default);
-        if (existing.IsError || existing.Result == null) return existing;
-        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
-        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
-            return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
-
-        var odk = (ActionGraphBundle)existing.Result;
-        if (string.IsNullOrEmpty(odk.GeneratedCode))
-            return new AZOAResult<IActionGraphBundle> { IsError = true, Message = "Dapp must be generated before deployment." };
-
-        odk.DeploymentConfig = JsonSerializer.Serialize(new
+        var existing = await _bundleStore.GetByIdAsync(id, ct);
+        if (existing.IsError || existing.Result is null || !IsOwnedBy(existing.Result, userId))
+            return AZOAResult<DeploymentReceipt>.Failure("Bundle not found or not owned by this caller.");
+        if (string.IsNullOrWhiteSpace(existing.Result.DeploymentConfig))
+            return AZOAResult<DeploymentReceipt>.Failure("Generate an immutable artifact before deploying.");
+        try
         {
-            DeployedAt = DateTime.UtcNow,
-            Chain = odk.TargetChain,
-            Holons = odk.BoundHolonIds,
-            TxHash = $"0x{Guid.NewGuid():N}"
-        });
-        odk.ModifiedDate = DateTime.UtcNow;
-
-        return await _bundleStore.UpsertAsync(odk, default);
-    }
-
-    private static string GenerateDappCode(IActionGraphBundle odk, ActionGraphBundleDappGenerationRequest request)
-    {
-        var config = new
-        {
-            Name = odk.Name,
-            Description = odk.Description,
-            TargetChain = request.TargetChain,
-            BoundHolons = request.BoundHolonIds,
-            UserConfig = request.Config,
-            GeneratedAt = DateTime.UtcNow
-        };
-        return JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+            using var descriptor = JsonDocument.Parse(existing.Result.DeploymentConfig);
+            if (!descriptor.RootElement.TryGetProperty("formatVersion", out var version) || version.GetInt32() != 2
+                || !descriptor.RootElement.TryGetProperty("artifactId", out var artifact) || artifact.GetString() != request.ArtifactId)
+                return AZOAResult<DeploymentReceipt>.Failure("Selected artifact is not this bundle's generated revision; regenerate or select its exact artifact.");
+        }
+        catch (JsonException) { return AZOAResult<DeploymentReceipt>.Failure("Legacy deployment configuration must be regenerated."); }
+        return await _deployments.StartAsync(userId, actingTenantId, requestKey, request, ct);
     }
 
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
@@ -250,7 +237,8 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         var tree = AssembleTree(eco, existing, out var cycleError);
         if (cycleError != null) return FailTree(cycleError);
 
-        bundle.GeneratedCode = GenerateEcosystemCode(bundle, tree);
+        bundle.GeneratedCode = null;
+        bundle.DeploymentConfig = null;
         bundle.ModifiedDate = DateTime.UtcNow;
         await _bundleStore.UpsertAsync(bundle, default);
 
@@ -356,36 +344,6 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
 
         return new EcosystemTree { Ecosystem = ToEcosystemModel(eco), Roots = roots };
     }
-
-    /// <summary>
-    /// Tree-walking multi-dApp codegen. Composes the single-dApp descriptor
-    /// (mirrors <see cref="GenerateDappCode"/>) across every node in the tree,
-    /// depth-first, producing one composed JSON artifact stored on the owning
-    /// ActionGraphBundle's GeneratedCode. Real cross-chain value in the composed tree flows
-    /// through the Phase-B bridge (Algorand real; Solana fail-closed) — the
-    /// descriptor records the target chain but does not itself move value.
-    /// </summary>
-    private static string GenerateEcosystemCode(ActionGraphBundle bundle, EcosystemTree tree)
-    {
-        var composed = new
-        {
-            Ecosystem = tree.Ecosystem.Name,
-            OwnerActionGraphBundle = bundle.Name,
-            TargetChain = tree.Ecosystem.TargetChain,
-            GeneratedAt = DateTime.UtcNow,
-            Dapps = tree.Roots.Select(WalkNode).ToList(),
-        };
-        return JsonSerializer.Serialize(composed, new JsonSerializerOptions { WriteIndented = true });
-    }
-
-    private static object WalkNode(EcosystemTreeNode tn) => new
-    {
-        NodeId = tn.Node.Id,
-        Kind = tn.Node.RefKind.ToString(),
-        RefId = tn.Node.RefId,
-        Label = tn.Node.Label,
-        Children = tn.Children.Select(WalkNode).ToList(),
-    };
 
     private static EcosystemModel ToEcosystemModel(PocoEcosystem e) => new()
     {

@@ -1,0 +1,11 @@
+# Fungible creation
+
+The lifecycle owns the immutable request and accepted native network-cost quote. Admission and quote acceptance do not sign. Interactive continuation authorizes preparation and first submission; restricted refresh and the worker only observe, rebroadcast identical already-authorized wire, and commit confirmed projections. The provider owns protocol limits, bytes, signature validation, genesis and Indexer semantics.
+
+`AwaitingConsent` supports workflow admission and cross-device participant recovery. An offered quote is versioned separately from the immutable request. Acceptance checks its exact identity and database-clock expiry; once accepted, expiry does not invalidate recovery of that admission. Provider preparation claims unsigned bytes before custody.
+
+`Completed` and `AttachmentPending` expose a finalized asset ID. Chain confirmation before its authority/reserve/projection transaction is exposed as `ProjectionPending`; transaction IDs never stand in for ASA indices. The original logical issuer is the authenticated request actor even when the platform account creates the ASA.
+
+Finalized accounting uses the immutable admission and exact provider evidence, independently of later signing credential expiry or grant revocation. The same transaction attempts the originally requested unbound Holon association. If its owner or binding changed, authority and reserve still commit, with an immutable initial projection verdict and `AttachmentPending`. This is not full business completion. Explicit attachment recovery requires the current Holon owner, original operation tenant, current exact `dapp:develop` consent, operation version and finalized authority ID. Its unique receipt commits with the Holon update and completion; it cannot change the requested Holon or asset, send chain transactions, or reopen a canceled action. Exact receipt replay does not repeat the write or require the old live grant.
+
+The recovery worker catches exceptions only at per-operation and sweep boundaries. It cannot call preparation or accept a quote. Current Round3 work remains in progress: real-store/lifecycle fixtures, direct authenticated grant snapshot integration, cancellation/replacement controls and client migration must be reviewed before this package is considered complete. No runtime gates have run.

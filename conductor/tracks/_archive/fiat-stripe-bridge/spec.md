@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Fiat Stripe Bridge — Specification"
+tags: [fiat-stripe-bridge, archived]
+---
+
 # Fiat Stripe Bridge — Specification
 
 ## Goal
@@ -176,7 +182,7 @@ never inlined.
   proves this.
 - [ ] No client-supplied body field can redirect the allocation to a different
   user than the route/contract specifies (IDOR-resistant, mirroring the
-  STARODK precedent in project memory) — caller-supplied owner ids on the body
+  ActionGraphBundle precedent in project memory) — caller-supplied owner ids on the body
   are ignored.
 - [ ] `docs/INTEGRATION-CONTRACT.md` documents the ordered AZOA calls the
   tenant's `HandlePaymentSucceededAsync` makes after creating its

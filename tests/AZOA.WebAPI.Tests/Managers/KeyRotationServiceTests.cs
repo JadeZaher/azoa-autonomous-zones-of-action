@@ -51,6 +51,13 @@ public class KeyRotationServiceTests
     /// <summary>In-memory wallet store that can be told to fail the Nth upsert (1-based).</summary>
     private sealed class FakeWalletStore : IWalletStore
     {
+        public Task<AZOAResult<IWallet>> CreateIfAbsentAsync(IWallet wallet, CancellationToken ct = default)
+            => throw new InvalidOperationException("Wallet creation is outside this key-rotation fixture.");
+
+        public Task<AZOAResult<IWallet>> BootstrapTenantAsync(IWallet wallet, string externalUserId,
+            AZOA.WebAPI.Models.Signing.SigningConsentWitness authority, CancellationToken ct = default)
+            => throw new InvalidOperationException("Tenant bootstrap is outside this fixture.");
+
         private readonly Dictionary<Guid, IWallet> _rows = new();
         public int FailOnUpsertNumber { get; set; } = -1;
         public int UpsertCalls { get; private set; }

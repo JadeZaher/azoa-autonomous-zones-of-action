@@ -3,8 +3,6 @@
 
 #nullable enable
 
-using System;
-using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text.Json;
 using SurrealForge.Client;
@@ -45,6 +43,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 4)]
         [Inside("Devnet", "Testnet", "Mainnet")]
         public string Network { get; set; } = string.Empty;
+
+        /// <summary>Original protocol network identity when issuance supplied authoritative evidence.</summary>
+        public string? ProtocolIdentity { get; set; }
 
         /// <summary>Reserve address that holds the asset; frozen here so a later key swap is visible.</summary>
         [Column(Order = 5)]

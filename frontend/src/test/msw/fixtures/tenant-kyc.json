@@ -1,0 +1,19 @@
+{
+  "identomatChoice": {
+    "providerKey": "identomat",
+    "displayName": "Identomat",
+    "assuranceLevel": "document-and-liveness",
+    "hostedVerification": true,
+    "acceptsDocumentReferences": false
+  },
+  "selectedIdentomat": {
+    "tenantId": "a1111111111111111111111111111111",
+    "providerKey": "identomat",
+    "providerDisplayName": "Identomat",
+    "selectionVersion": 1,
+    "providerEnabled": true,
+    "providerAvailable": true,
+    "readinessCode": "READY",
+    "updatedAt": "2026-10-16T12:00:00+00:00"
+  }
+}

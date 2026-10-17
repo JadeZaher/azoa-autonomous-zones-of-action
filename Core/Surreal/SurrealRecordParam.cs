@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 // Binds a foreign key as a NATIVE record id for query parameters.
 
-using System;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 

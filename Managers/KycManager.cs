@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using SurrealForge.Client;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Hosting;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
@@ -13,6 +11,9 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
+using AZOA.WebAPI.Services.HostedSessions;
+using AZOA.WebAPI.Models.HostedSessions;
+using AZOA.WebAPI.Models.Signing;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -26,6 +27,7 @@ namespace AZOA.WebAPI.Managers;
 public sealed class KycManager : IKycManager
 {
     private readonly IKycStore _store;
+    private readonly IHostedSessionFlow? _hostedFlow;
     private readonly IKycProviderService _provider;
     private readonly IKycProviderRegistry? _registry;
     private readonly KycSettings _settings;
@@ -37,7 +39,7 @@ public sealed class KycManager : IKycManager
         IKycProviderService provider,
         IOptions<KycSettings> settings,
         IHostEnvironment environment,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null, IHostedSessionFlow? hostedFlow = null)
     {
         _store = store;
         _provider = provider;
@@ -45,6 +47,7 @@ public sealed class KycManager : IKycManager
         _settings = settings.Value;
         _environment = environment;
         _configuration = configuration;
+        _hostedFlow = hostedFlow;
     }
 
     [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
@@ -54,7 +57,7 @@ public sealed class KycManager : IKycManager
         IKycProviderRegistry registry,
         IOptions<KycSettings> settings,
         IHostEnvironment environment,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null, IHostedSessionFlow? hostedFlow = null)
     {
         _store = store;
         _provider = provider;
@@ -62,6 +65,7 @@ public sealed class KycManager : IKycManager
         _settings = settings.Value;
         _environment = environment;
         _configuration = configuration;
+        _hostedFlow = hostedFlow;
     }
 
     public KycProviderCapabilitiesModel GetCapabilities()
@@ -111,16 +115,18 @@ public sealed class KycManager : IKycManager
         CancellationToken ct = default)
         => BeginCoreAsync(userId, null, ct);
 
-    public Task<AZOAResult<KycSessionStartModel>> BeginAsync(
-        Guid userId,
-        Guid tenantId,
-        CancellationToken ct = default)
-        => BeginCoreAsync(userId, tenantId, ct);
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSessionStartModel>> BeginCustodialAsync(TenantCustodialWitness witness, CancellationToken ct = default)
+        => BeginCoreAsync(witness.UserId, witness.Authority.Credential.ActorUserId, ct, witness);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSubmissionModel>> SubmitCustodialAsync(SubmitKycModel model, TenantCustodialWitness witness, CancellationToken ct = default)
+        => SubmitCoreAsync(model, witness.UserId, witness.Authority.Credential.ActorUserId, ct, witness);
 
     private async Task<AZOAResult<KycSessionStartModel>> BeginCoreAsync(
         Guid userId,
         Guid? tenantId,
-        CancellationToken ct)
+        CancellationToken ct, TenantCustodialWitness? custody = null)
     {
         if (userId == Guid.Empty)
             return AZOAResult<KycSessionStartModel>.Failure("An authenticated user is required.");
@@ -150,15 +156,15 @@ public sealed class KycManager : IKycManager
             && !IsExpired(active.Result, now)
             && MatchesAuthority(active.Result, resolution, profile))
         {
-            return Ok(ToSessionStart(active.Result));
+            return capabilities.HostedVerification
+                ? await StartHostedAttemptAsync(active.Result, resolution.Provider, userId, tenantId, ct, custody)
+                : Ok(ToSessionStart(active.Result));
         }
         if (active.Result is not null)
         {
-            active.Result.Status = KycStatus.EXPIRED;
-            active.Result.ModifiedDate = now;
-            var expired = await _store.UpsertSubmissionAsync(active.Result, ct);
-            if (expired.IsError)
-                return Error<KycSessionStartModel>(expired.Message, expired.Exception, expired.Code);
+            var expired = await RetireAttemptAsync(active.Result, now, custody, ct);
+            if (expired.IsError || expired.Result is null)
+                return Error<KycSessionStartModel>("The verification changed; retry.", expired.Exception, expired.Code ?? AzoaErrorCodes.Conflict);
         }
 
         var latest = await GetLatestAsync(userId, tenantId, ct);
@@ -166,45 +172,40 @@ public sealed class KycManager : IKycManager
             return Error<KycSessionStartModel>(latest.Message, latest.Exception, latest.Code);
         if (latest.Result is not null
             && MatchesAuthority(latest.Result, resolution, profile)
-            && KycApprovalTrust.IsCurrentApproval(latest.Result, profile, now, out _))
+            && KycApprovalTrust.IsCurrentApproval(latest.Result, profile, now, out _)
+            && (!capabilities.HostedVerification || !string.IsNullOrWhiteSpace(latest.Result.AmlLineageKey)))
         {
             return Error<KycSessionStartModel>(
                 "KYC_ALREADY_APPROVED: This identity already has an active approval.");
         }
 
-        // A hosted provider stays refused unless it implements the durable
-        // admission seam (IHostedSessionProvider / HostedSessionFlow, D11). This
-        // gates on the SEAM being used, not merely on the HostedVerification flag:
-        // GenericHostedKycProviderService and VeriffKycProviderService both report
-        // HostedVerification=true while remaining fail-closed stubs that do not
-        // implement IHostedSessionProvider, so they stay refused here regardless of
-        // whatever their own Available value happens to be. IdentomatKycProviderService
-        // implements the seam and internally routes its BeginSessionAsync through
-        // IHostedSessionFlow.BeginAsync, which claims durable admission (keyed by a
-        // stable per-(user, tenant) admission key) BEFORE touching the vendor -
-        // see Services/HostedSessions/AGENTS.md. That is what makes it safe for two
-        // concurrent begins to converge on one provider session instead of two: the
-        // manual flow has no external side effect, and any seam-implementing hosted
-        // provider claims its own durable row before any external side effect.
-        if (capabilities.HostedVerification && resolution.Provider is not IHostedSessionProvider)
+        if (capabilities.HostedVerification)
         {
-            return Error<KycSessionStartModel>(
-                "KYC provider is unavailable until durable hosted-session admission is installed.");
+            if (resolution.Provider is not IHostedSessionProvider || _hostedFlow is null)
+                return Error<KycSessionStartModel>("The durable hosted verification service is unavailable.");
+            var hostedAttemptId = Guid.NewGuid().ToString("N");
+            var hostedAttempt = new KycSubmission
+            {
+                Id = hostedAttemptId, UserId = userId.ToString("N"), TenantId = tenantId?.ToString("N"),
+                ProviderSelectionVersion = resolution.SelectionVersion, ProviderTrustRevision = resolution.TrustRevision,
+                Provider = profile.Provider, ProviderKey = profile.ProviderKey, Status = KycStatus.PENDING,
+                ProviderSessionId = hostedAttemptId, HostedVerification = true, AcceptsDocumentReferences = false,
+                ProviderResult = KycApprovalTrust.CreateEnvelope(profile), SubmittedAt = now,
+                ExpiresAt = now.AddMinutes(Math.Clamp(resolution.Settings.SessionExpiryMinutes, 1, 1440)),
+                CreatedDate = now, ModifiedDate = now,
+            };
+            var claimed = await CreateAttemptAsync(hostedAttempt, Array.Empty<KycDocument>(), custody, ct);
+            if (claimed.IsError || claimed.Result is null)
+            {
+                var raced = await GetActiveAsync(userId, tenantId, ct);
+                if (raced.IsError || raced.Result is null || IsExpired(raced.Result, DateTimeOffset.UtcNow)
+                    || !MatchesAuthority(raced.Result, resolution, profile))
+                    return Error<KycSessionStartModel>(claimed.Message, claimed.Exception, claimed.Code);
+                hostedAttempt = raced.Result;
+            }
+            else hostedAttempt = claimed.Result;
+            return await StartHostedAttemptAsync(hostedAttempt, resolution.Provider, userId, tenantId, ct, custody);
         }
-
-        // Ordering note (why this call site does not itself persist-before-call):
-        // for a provider gated above, the durable-admission-before-external-call
-        // invariant that Providers/Kyc/AGENTS.md requires ("persist the hosted
-        // session before returning a redirect") is enforced INSIDE this call by
-        // HostedSessionFlow.BeginAsync, not by statement order here. By the time
-        // BeginSessionAsync returns, a hosted provider has already durably claimed
-        // its hosted_session row (and, on success, attached the vendor's session id
-        // to it) - the KycSubmission this method persists afterward is a downstream
-        // ledger projection with no external side effect of its own, so writing it
-        // after the provider call is safe rather than a repeat of the ordering bug.
-        // Routing every hosted provider through HostedSessionFlow (enforced by the
-        // IHostedSessionProvider gate above) is therefore the enforced path that
-        // makes the original ordering trap structurally impossible to hit again.
         var started = await resolution.Provider.BeginSessionAsync(userId, ct);
         if (started.IsError || started.Result is null)
             return Error<KycSessionStartModel>(started.Message, started.Exception, started.Code);
@@ -243,7 +244,7 @@ public sealed class KycManager : IKycManager
             CreatedDate = now,
             ModifiedDate = now
         };
-        var created = await _store.CreateSubmissionAsync(attempt, Array.Empty<KycDocument>(), ct);
+        var created = await CreateAttemptAsync(attempt, Array.Empty<KycDocument>(), custody, ct);
         if (created.IsError || created.Result is null)
         {
             var concurrent = await GetActiveAsync(userId, tenantId, ct);
@@ -261,24 +262,56 @@ public sealed class KycManager : IKycManager
         return Ok(ToSessionStart(created.Result));
     }
 
+    private Task<AZOAResult<KycSubmission>> CreateAttemptAsync(KycSubmission submission,
+        IReadOnlyList<KycDocument> documents, TenantCustodialWitness? custody, CancellationToken ct)
+        => custody is null ? _store.CreateSubmissionAsync(submission, documents, ct)
+            : _store is IKycCustodialAdmissionStore store ? store.CreateCustodialSubmissionAsync(submission, documents, custody, ct)
+            : Task.FromResult(Error<KycSubmission>("Custodial KYC admission is unavailable."));
+
+    private Task<AZOAResult<KycSubmission>> RetireAttemptAsync(KycSubmission expected,
+        DateTimeOffset now, TenantCustodialWitness? custody, CancellationToken ct)
+        => custody is null ? _store.TryRetireAttemptAsync(expected, now, ct)
+            : _store is IKycCustodialAdmissionStore store ? store.RetireCustodialAttemptAsync(expected, now, custody, ct)
+            : Task.FromResult(Error<KycSubmission>("Custodial KYC admission is unavailable."));
+
+    private async Task<AZOAResult<KycSessionStartModel>> StartHostedAttemptAsync(
+        KycSubmission attempt, IKycProviderService provider, Guid userId, Guid? tenantId, CancellationToken ct, TenantCustodialWitness? custody = null)
+    {
+        if (provider is not IHostedSessionProvider hosted || _hostedFlow is null)
+            return Error<KycSessionStartModel>("The durable hosted verification service is unavailable.");
+        if (!Guid.TryParseExact(attempt.ProviderSessionId, "N", out var sessionId)
+            || !string.Equals(attempt.Id, attempt.ProviderSessionId, StringComparison.Ordinal))
+            return string.IsNullOrWhiteSpace(attempt.VerificationUrl)
+                ? Error<KycSessionStartModel>("NeedsOperator: this legacy verification requires correlation reconciliation.", code: AzoaErrorCodes.Conflict)
+                : Ok(ToSessionStart(attempt));
+        var started = await _hostedFlow.BeginAsync(hosted, new HostedSessionRequest
+        {
+            FlowKind = HostedSessionFlowKinds.Kyc, SubjectUserId = userId, TenantId = tenantId,
+            SessionId = sessionId, AdmissionKey = "kyc-attempt:" + attempt.Id,
+            CustodialAuthority = custody,
+            PolicyRevision = KycApprovalTrust.ReadPolicyVersion(attempt.ProviderResult) ?? string.Empty,
+        }, ct);
+        if (started.IsError || started.Result is null)
+            return Error<KycSessionStartModel>(started.Message, started.Exception, started.Code);
+        var attached = await _store.TryAttachHostedRedirectAsync(attempt, started.Result.RedirectUrl, started.Result.ExpiresAt, ct);
+        if (attached.IsError) return Error<KycSessionStartModel>(attached.Message, attached.Exception, attached.Code);
+        if (attached.Result is null)
+            attached = await _store.GetSubmissionByIdAsync(Guid.ParseExact(attempt.Id, "N"), ct);
+        return attached.Result is null || attached.IsError
+            ? Error<KycSessionStartModel>("The verification changed; reload its status.")
+            : Ok(ToSessionStart(attached.Result));
+    }
     public Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
         SubmitKycModel model,
         Guid userId,
         CancellationToken ct = default)
         => SubmitCoreAsync(model, userId, null, ct);
 
-    public Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
-        SubmitKycModel model,
-        Guid userId,
-        Guid tenantId,
-        CancellationToken ct = default)
-        => SubmitCoreAsync(model, userId, tenantId, ct);
-
     private async Task<AZOAResult<KycSubmissionModel>> SubmitCoreAsync(
         SubmitKycModel model,
         Guid userId,
         Guid? tenantId,
-        CancellationToken ct)
+        CancellationToken ct, TenantCustodialWitness? custody = null)
     {
         if (userId == Guid.Empty)
             return Error<KycSubmissionModel>("An authenticated user is required.");
@@ -355,20 +388,19 @@ public sealed class KycManager : IKycManager
                 active.Result.ExpiresAt = now.AddDays(
                     Math.Clamp(resolution.Settings.SubmissionExpiryDays, 1, 365));
                 active.Result.ModifiedDate = now;
-                var attached = await _store.AttachDocumentsIfAbsentAsync(
-                    active.Result,
-                    attemptDocuments,
-                    ct);
+                var attached = custody is null
+                    ? await _store.AttachDocumentsIfAbsentAsync(active.Result, attemptDocuments, ct)
+                    : _store is IKycCustodialAdmissionStore custodialStore
+                        ? await custodialStore.AttachCustodialDocumentsAsync(active.Result, attemptDocuments, custody, ct)
+                        : Error<KycSubmission>("Custodial KYC admission is unavailable.");
                 if (attached.IsError || attached.Result is null)
                     return Error<KycSubmissionModel>(attached.Message, attached.Exception, attached.Code);
 
                 return await WithDocuments(attached.Result, tenantId, ct);
             }
 
-            active.Result.Status = KycStatus.EXPIRED;
-            active.Result.ModifiedDate = now;
-            var expired = await _store.UpsertSubmissionAsync(active.Result, ct);
-            if (expired.IsError)
+            var expired = await RetireAttemptAsync(active.Result, now, custody, ct);
+            if (expired.IsError || expired.Result is null)
                 return Error<KycSubmissionModel>(expired.Message, expired.Exception, expired.Code);
         }
 
@@ -412,7 +444,7 @@ public sealed class KycManager : IKycManager
             ModifiedDate      = now
         };
 
-        var savedSubmission = await _store.CreateSubmissionAsync(submission, documents, ct);
+        var savedSubmission = await CreateAttemptAsync(submission, documents, custody, ct);
         if (savedSubmission.IsError || savedSubmission.Result is null)
             return Error<KycSubmissionModel>(
                 savedSubmission.Message,
@@ -472,7 +504,7 @@ public sealed class KycManager : IKycManager
             (docs.Result ?? Enumerable.Empty<KycDocument>()).Select(ToDocumentModel).ToList());
     }
 
-    // ── Admin surface ─────────────────────────────────────────────────────────
+    // â”€â”€ Admin surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task<AZOAResult<IEnumerable<KycSubmissionModel>>> GetPendingAsync(CancellationToken ct = default)
     {
@@ -629,7 +661,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(saved.Result, tenantId, ct);
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// <summary>
     /// Loads a submission by id and asserts the authenticated user owns it.
@@ -710,7 +742,8 @@ public sealed class KycManager : IKycManager
 
         return !MatchesAuthority(submission, authority.Result, profile)
             || (submission.Status == KycStatus.APPROVED
-                && !KycApprovalTrust.IsCurrentApproval(submission, profile, now, out _));
+                && (!KycApprovalTrust.IsCurrentApproval(submission, profile, now, out _)
+                    || (submission.HostedVerification && string.IsNullOrWhiteSpace(submission.AmlLineageKey))));
     }
 
     private async Task<AZOAResult<KycProviderResolution>> ResolveAuthorityAsync(
@@ -793,6 +826,7 @@ public sealed class KycManager : IKycManager
         ReviewNotes       = s.ReviewNotes,
         RejectionReason   = s.RejectionReason,
         ProviderSessionId = s.ProviderSessionId,
+        AmlLineageKey = s.AmlLineageKey,
         HostedVerification = s.HostedVerification,
         AcceptsDocumentReferences = s.AcceptsDocumentReferences,
         VerificationUrl    = s.VerificationUrl,

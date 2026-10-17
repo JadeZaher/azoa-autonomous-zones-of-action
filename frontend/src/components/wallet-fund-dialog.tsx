@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { SolanaProvider } from 'azoa-sdk'
 import {
@@ -11,23 +12,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { azoa, isOk } from '@/lib/azoa'
 import { useNetwork } from '@/lib/network-context'
-import { PROJECT_TOKEN, getBuyTargetTokenId, getPayWithTokenId } from '@/lib/networks'
+import { PROJECT_TOKEN, getBuyTargetTokenId } from '@/lib/networks'
 import type { WalletEntry } from '@/lib/azoa-context'
 import { Coins, ShoppingCart, AlertTriangle, ExternalLink } from 'lucide-react'
-
-/** Matches .NET SwapQuoteResponse (camelCase JSON). */
-interface SwapQuoteResponse {
-  chain: string
-  tokenIn: string
-  tokenOut: string
-  amountIn: string
-  expectedAmountOut: string
-  priceImpact: number
-  fee: string
-  quoteId?: string
-  swapTransaction?: string
-  message?: string
-}
 
 interface WalletFundDialogProps {
   wallet: WalletEntry
@@ -178,127 +165,27 @@ function TopUpBody({
 
 // ─── Buy (mainnet) ───
 
+/** Buying uses the durable swap lifecycle on the Swap page; this dialog never prepares unsigned swap wire itself. */
 function BuyBody({
   wallet, chain, onDone,
 }: { wallet: WalletEntry; chain: string; onDone: () => void }) {
+  const router = useRouter()
   const target = getBuyTargetTokenId(chain)
-  const payWith = getPayWithTokenId(chain)
-  const payUnit = chain === 'solana' ? 'SOL' : 'ALGO'
-  const [amount, setAmount] = useState('0.1')
-  const [quote, setQuote] = useState<SwapQuoteResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const swapUnavailable = chain !== 'solana' && chain !== 'algorand'
-
-  if (swapUnavailable || !target) {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950 p-3 flex gap-2 text-xs text-amber-800 dark:text-amber-200">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          <p>
-            {swapUnavailable
-              ? `Buying ${PROJECT_TOKEN.symbol} isn't supported on ${wallet.chainType}.`
-              : `The ${PROJECT_TOKEN.symbol} token isn't configured for ${wallet.chainType}. Set ${
-                  chain === 'solana'
-                    ? 'NEXT_PUBLIC_BUY_TOKEN_SOLANA_MINT'
-                    : 'NEXT_PUBLIC_BUY_TOKEN_ALGORAND_ASSET_ID'
-                }.`}
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onDone}>Close</Button>
-        </DialogFooter>
-      </div>
-    )
-  }
-
-  const handleQuote = async () => {
-    const amt = Number(amount)
-    if (!Number.isFinite(amt) || amt <= 0) {
-      toast.error('Enter a valid amount')
-      return
-    }
-    setLoading(true)
-    setQuote(null)
-    const qs = new URLSearchParams({
-      chain,
-      tokenIn: payWith,
-      tokenOut: target,
-      amountIn: amount,
-      slippageBps: '50',
-      walletAddress: wallet.address,
-    })
-    const res = await azoa.api.request<SwapQuoteResponse>('GET', `/api/swap/quote?${qs.toString()}`)
-    setLoading(false)
-    if (isOk(res)) setQuote(res.value)
-    else toast.error(res.error.message)
-  }
-
-  const handleConfirm = async () => {
-    if (!quote?.quoteId) return
-    setLoading(true)
-    const res = await azoa.api.request<SwapQuoteResponse>('POST', '/api/swap/execute', {
-      chain,
-      quoteId: quote.quoteId,
-      walletAddress: wallet.address,
-    })
-    setLoading(false)
-    if (isOk(res)) {
-      toast.success(
-        res.value.message ||
-          `Swap prepared. Sign the returned transaction with your ${wallet.chainType} wallet to complete the buy.`
-      )
-      onDone()
-    } else {
-      toast.error(res.error.message)
-    }
-  }
-
   return (
     <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Label>Pay with ({payUnit})</Label>
-        <Input
-          type="number"
-          min="0"
-          step="any"
-          value={amount}
-          onChange={(e) => { setAmount(e.target.value); setQuote(null) }}
-        />
-      </div>
-
-      {quote && (
-        <div className="rounded-lg bg-muted p-3 space-y-1 text-xs">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">You receive (est.)</span>
-            <span className="font-mono">{quote.expectedAmountOut} {PROJECT_TOKEN.symbol}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Price impact</span>
-            <span className="font-mono">{(quote.priceImpact * 100).toFixed(2)}%</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Fee</span>
-            <span className="font-mono">{quote.fee}</span>
-          </div>
-        </div>
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        The DEX returns an unsigned transaction; sign it with your connected wallet to finalise the buy.
+      <p className="text-sm">
+        Buying {PROJECT_TOKEN.symbol} runs through the Swap page: an immutable quote, explicit consent to the fee, minimum
+        output and cost caps, and completion only after finalized on-chain settlement.
       </p>
-
+      {!target ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950 p-3 flex gap-2 text-xs text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <p>The {PROJECT_TOKEN.symbol} token isn&apos;t configured for {wallet.chainType}.</p>
+        </div>
+      ) : null}
       <DialogFooter>
-        <Button variant="outline" onClick={onDone} disabled={loading}>Cancel</Button>
-        {!quote ? (
-          <Button onClick={handleQuote} disabled={loading}>
-            {loading ? 'Getting quote…' : 'Get quote'}
-          </Button>
-        ) : (
-          <Button onClick={handleConfirm} disabled={loading || !quote.quoteId}>
-            {loading ? 'Preparing…' : `Buy ${PROJECT_TOKEN.symbol}`}
-          </Button>
-        )}
+        <Button variant="outline" onClick={onDone}>Close</Button>
+        <Button onClick={() => { onDone(); router.push('/swap') }}>Open Swap</Button>
       </DialogFooter>
     </div>
   )

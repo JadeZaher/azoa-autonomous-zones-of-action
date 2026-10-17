@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 
 namespace AZOA.WebAPI.Interfaces.Stores;
 
@@ -18,8 +19,11 @@ public interface IWalletStore
     Task<AZOAResult<IWallet>> UpsertAsync(IWallet wallet, CancellationToken ct = default);
 
     /// <summary>Atomically creates a wallet or returns the record already using its deterministic id.</summary>
-    Task<AZOAResult<IWallet>> CreateIfAbsentAsync(IWallet wallet, CancellationToken ct = default)
-        => UpsertAsync(wallet, ct);
+    Task<AZOAResult<IWallet>> CreateIfAbsentAsync(IWallet wallet, CancellationToken ct = default);
+
+    /// <summary>Creates or reads a deterministic custodial wallet under current tenant ownership and live provisioning consent.</summary>
+    Task<AZOAResult<IWallet>> BootstrapTenantAsync(IWallet wallet, string externalUserId,
+        SigningConsentWitness authority, CancellationToken ct = default);
 
     /// <summary>Deletes a wallet by id.</summary>
     Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default);

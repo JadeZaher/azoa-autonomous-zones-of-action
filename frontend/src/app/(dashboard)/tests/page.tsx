@@ -295,53 +295,19 @@ function buildTestCases(
 
     // ── DEX Quotes ────────────────────────────────────────────────────────────
     {
-      name: 'Algorand swap quote (Tinyman)',
+      name: 'DEX capability discovery',
       category: 'dex',
       fn: async () => {
-        try {
-          // Testnet USDC = 10458941 (mainnet USDC 31566704 doesn't exist on testnet).
-          const backendResp = await azoa.api.request('GET', `/api/swap/quote?chain=algorand&tokenIn=0&tokenOut=10458941&amountIn=1000000&slippageBps=50`);
-          if (!isOk(backendResp)) {
-            return { passed: false, detail: `DEX error: ${backendResp.error?.message ?? 'Unknown'}`, raw: backendResp.error };
-          }
-          const quote = ((backendResp.value as { result?: unknown })?.result ?? backendResp.value) as Record<string, any> | null;
-          // Server flags env-conditions (no pool / upstream offline) as 200 +
-          // Unavailable so the test panel can render them as expected, not red.
-          if (quote?.unavailable) {
-            return {
-              passed: true,
-              detail: `Expected (env): ${quote.unavailableReason ?? 'unavailable'} — ${quote.message ?? ''}`.trim(),
-              raw: quote
-            };
-          }
-          if (!quote || !quote.expectedAmountOut) return { passed: false, detail: 'No quote in response', raw: backendResp.value };
-          return { passed: true, detail: `Quote retrieved: ${quote.expectedAmountOut} µUSDC (~${(parseFloat(quote.expectedAmountOut)/1000000).toFixed(2)} USDC)`, raw: quote }
-        } catch (err) {
-          return { passed: false, detail: `Error: ${String(err)}`, raw: null }
-        }
-      },
-    },
-    {
-      name: 'Solana swap quote (Jupiter)',
-      category: 'dex',
-      fn: async () => {
-        try {
-          const backendResp = await azoa.api.request('GET', `/api/swap/quote?chain=solana&tokenIn=So11111111111111111111111111111111111111112&tokenOut=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amountIn=1000000000&slippageBps=50`);
-          if (!isOk(backendResp)) {
-            return { passed: false, detail: `DEX: ${backendResp.error?.message ?? 'Unknown'}`, raw: backendResp.error };
-          }
-          const quote = ((backendResp.value as { result?: unknown })?.result ?? backendResp.value) as Record<string, any> | null;
-          if (quote?.unavailable) {
-            return {
-              passed: true,
-              detail: `Expected (env): ${quote.unavailableReason ?? 'unavailable'} — ${quote.message ?? ''}`.trim(),
-              raw: quote
-            };
-          }
-          if (!quote || !quote.expectedAmountOut) return { passed: false, detail: 'No quote', raw: backendResp.value };
-          return { passed: true, detail: `Quote: ${quote.expectedAmountOut} out`, raw: quote }
-        } catch (err) {
-          return { passed: false, detail: `Error: ${String(err)}`, raw: null }
+        // Grammar per enabled network only; quotes need an owned wallet and run on the Swap page.
+        const result = await azoa.api.getDexCapabilities()
+        if (!isOk(result)) return { passed: false, detail: result.error.message, raw: result.error }
+        const ready = result.value.filter((view) => view.ready)
+        return {
+          passed: true,
+          detail: result.value.length === 0
+            ? 'Expected (env): no reviewed DEX module is enabled'
+            : `${ready.length}/${result.value.length} modules ready: ${result.value.map((view) => `${view.capability.provider}@${view.network.chainType}/${view.network.network}`).join(', ')}`,
+          raw: result.value,
         }
       },
     },

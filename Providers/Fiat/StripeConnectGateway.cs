@@ -32,8 +32,7 @@ public sealed class StripeConnectedAccount
     /// <summary>How many requirements the provider is still waiting on. A count, never the detail.</summary>
     public int OutstandingRequirementCount { get; init; }
 
-    /// <summary>Whether this account belongs to the provider's live mode.</summary>
-    public bool Livemode { get; init; }
+    public string? PayoutSchedule { get; init; }
 }
 
 /// <summary>The one-time hosted onboarding link a person is sent to.</summary>
@@ -50,6 +49,9 @@ public sealed class StripeConnectedAccountRequest
 {
     /// <summary>The person the account belongs to, as a compact Guid.</summary>
     public string SubjectUserId { get; init; } = string.Empty;
+
+    /// <summary>The payout-account admission row this create is fenced by; recorded for operator reconciliation.</summary>
+    public string ClaimId { get; init; } = string.Empty;
 
     /// <summary>Two-letter country the account is registered in.</summary>
     public string Country { get; init; } = "US";
@@ -92,6 +94,7 @@ public sealed class StripeTransferRequest
 /// <summary>The server-fetched facts about one outbound transfer.</summary>
 public sealed class StripeTransfer
 {
+    public string? IntentId { get; init; }
     public string TransferId { get; init; } = string.Empty;
 
     /// <summary>What was sent, in minor units, as the provider holds it.</summary>
@@ -110,13 +113,26 @@ public sealed class StripeTransfer
     public bool Livemode { get; init; }
 }
 
+/// <summary>A connected account's bank payout, fetched in that account's scope.</summary>
+public sealed class StripeBankPayout
+{
+    public string PayoutId { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public long AmountMinorUnits { get; init; }
+    public string Currency { get; init; } = string.Empty;
+    public string? IntentId { get; init; }
+    public bool Livemode { get; init; }
+}
+
 /// <summary>
-/// The Stripe Connect HTTP surface the off-ramp uses: a connected account per person, the hosted
-/// onboarding link, and the transfer that actually pays them. See
+/// The Stripe Connect surface for accounts, onboarding, funding transfers and bank payouts. See
 /// <c>Services/Fiat/OffRamp/AGENTS.md</c>.
 /// </summary>
 public interface IStripeConnectGateway
 {
+    /// <summary>Reverses a fixed amount of a funding transfer with a durable idempotency key.</summary>
+    Task<AZOAResult<StripeTransferReversal>> ReverseTransferAsync(StripeCredentials credentials,
+        string transferId, long amount, string payoutId, string idempotencyKey, CancellationToken ct = default);
     /// <summary>Creates an Express connected account. Idempotent on the request key.</summary>
     Task<AZOAResult<StripeConnectedAccount>> CreateConnectedAccountAsync(
         StripeCredentials credentials, StripeConnectedAccountRequest request, CancellationToken ct = default);
@@ -136,6 +152,18 @@ public interface IStripeConnectGateway
     /// <summary>Re-reads one transfer server-side. Never trust a webhook body for these facts.</summary>
     Task<AZOAResult<StripeTransfer>> GetTransferAsync(
         StripeCredentials credentials, string transferId, CancellationToken ct = default);
+
+    /// <summary>Sets the platform-controlled account's payout schedule to manual.</summary>
+    Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
+        StripeCredentials credentials, string accountId, CancellationToken ct = default);
+
+    /// <summary>Creates an idempotent bank payout in the connected account's scope.</summary>
+    Task<AZOAResult<StripeBankPayout>> CreateBankPayoutAsync(
+        StripeCredentials credentials, StripeTransferRequest request, CancellationToken ct = default);
+
+    /// <summary>Fetches a bank payout from its owning connected account.</summary>
+    Task<AZOAResult<StripeBankPayout>> GetBankPayoutAsync(
+        StripeCredentials credentials, string accountId, string payoutId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -151,11 +179,18 @@ public interface IStripeConnectGateway
 /// which names accounts, balances and capabilities — never reaches a person.</para>
 ///
 /// <para>Deliberately not the Stripe SDK, for the same reason <see cref="StripeGateway"/> is not:
-/// the surface used here is five endpoints, and the house rule is to minimise external
+/// the surface is limited to the off-ramp's endpoints, and the house rule is to minimise external
 /// dependencies on a value path.</para>
 /// </summary>
 public sealed class StripeConnectGateway : IStripeConnectGateway
 {
+    /// <inheritdoc/>
+    public Task<AZOAResult<StripeTransferReversal>> ReverseTransferAsync(StripeCredentials credentials,
+        string transferId, long amount, string payoutId, string idempotencyKey, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Post, "/v1/transfers/" + Uri.EscapeDataString(transferId) + "/reversals",
+            new[] { new KeyValuePair<string, string>("amount", amount.ToString(CultureInfo.InvariantCulture)),
+                new KeyValuePair<string, string>("metadata[azoa_intent_id]", payoutId) },
+            idempotencyKey, "reverse a failed payout's funding", StripeTransferReversal.Parse, ct);
     /// <summary>The account type this node creates. Express carries the provider's own onboarding.</summary>
     public const string AccountType = "express";
 
@@ -177,12 +212,15 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
         var form = new List<KeyValuePair<string, string>>
         {
             new("type", AccountType),
+            new("settings[payouts][schedule][interval]", "manual"),
             new("country", string.IsNullOrWhiteSpace(request.Country) ? "US" : request.Country.Trim().ToUpperInvariant()),
             // Transfers is the only capability requested. Asking for card_payments as well would
             // put this node's users through a payments review they have no reason to pass.
             new("capabilities[transfers][requested]", "true"),
             new("metadata[azoa_user_id]", request.SubjectUserId),
         };
+        if (!string.IsNullOrWhiteSpace(request.ClaimId))
+            form.Add(new("metadata[azoa_payout_claim]", request.ClaimId));
 
         return SendAsync(
             credentials,
@@ -300,6 +338,30 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
             ct);
     }
 
+    /// <inheritdoc />
+    public Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
+        StripeCredentials credentials, string accountId, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Post, "/v1/accounts/" + Uri.EscapeDataString(accountId),
+            new[] { new KeyValuePair<string, string>("settings[payouts][schedule][interval]", "manual") },
+            null, "configure bank payouts", ParseConnectedAccount, ct);
+
+    /// <inheritdoc />
+    public Task<AZOAResult<StripeBankPayout>> CreateBankPayoutAsync(
+        StripeCredentials credentials, StripeTransferRequest request, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Post, "/v1/payouts", new[]
+        {
+            new KeyValuePair<string, string>("amount", request.AmountMinorUnits.ToString(CultureInfo.InvariantCulture)),
+            new KeyValuePair<string, string>("currency", request.Currency.ToLowerInvariant()),
+            new KeyValuePair<string, string>("method", "standard"),
+            new KeyValuePair<string, string>("metadata[azoa_intent_id]", request.PayoutId),
+        }, request.IdempotencyKey, "send money to a bank", ParseBankPayout, ct, request.ConnectedAccountId);
+
+    /// <inheritdoc />
+    public Task<AZOAResult<StripeBankPayout>> GetBankPayoutAsync(
+        StripeCredentials credentials, string accountId, string payoutId, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Get, "/v1/payouts/" + Uri.EscapeDataString(payoutId),
+            null, null, "read a bank payout", ParseBankPayout, ct, accountId);
+
     private async Task<AZOAResult<T>> SendAsync<T>(
         StripeCredentials credentials,
         HttpMethod method,
@@ -308,7 +370,8 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
         string? idempotencyKey,
         string attemptedAction,
         Func<string, T?> parse,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? connectedAccountId = null)
         where T : class
     {
         if (string.IsNullOrWhiteSpace(credentials.SecretKey) || string.IsNullOrWhiteSpace(credentials.ApiBaseUrl))
@@ -323,6 +386,8 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
             using var message = new HttpRequestMessage(method, credentials.ApiBaseUrl.TrimEnd('/') + path);
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credentials.SecretKey);
             message.Headers.TryAddWithoutValidation("Stripe-Version", StripeGateway.ApiVersion);
+            if (!string.IsNullOrWhiteSpace(connectedAccountId))
+                message.Headers.TryAddWithoutValidation("Stripe-Account", connectedAccountId);
             if (!string.IsNullOrWhiteSpace(idempotencyKey))
                 message.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
             if (form is not null)
@@ -339,9 +404,16 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
 
             if (!response.IsSuccessStatusCode)
             {
+                using var error = JsonDocument.Parse(body);
+                if ((int)response.StatusCode == 400
+                    && error.RootElement.TryGetProperty("error", out var detail)
+                    && ReadString(detail, "code") is "balance_insufficient" or "insufficient_funds")
+                    return AZOAResult<T>.FailureWithCode(
+                        "The payment provider is still making these funds available.", FiatPayoutErrors.AwaitingFundsCode);
+
                 _logger.LogError(
-                    "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId} body={Body}",
-                    attemptedAction, (int)response.StatusCode, correlationId, body);
+                    "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId}",
+                    attemptedAction, (int)response.StatusCode, correlationId);
 
                 // 429 and 5xx are the rail being busy; anything else is a request this node built
                 // wrongly or an account the provider will not pay, neither of which a retry fixes.
@@ -365,7 +437,7 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException or JsonException)
         {
             _logger.LogError(
                 exception,
@@ -391,12 +463,15 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
             return new StripeConnectedAccount
             {
                 AccountId = accountId!,
+                PayoutSchedule = root.Value.TryGetProperty("settings", out var settings)
+                    && settings.TryGetProperty("payouts", out var payouts)
+                    && payouts.TryGetProperty("schedule", out var schedule)
+                        ? ReadString(schedule, "interval") : null,
                 PayoutsEnabled = ReadBool(root.Value, "payouts_enabled"),
                 ChargesEnabled = ReadBool(root.Value, "charges_enabled"),
                 DetailsSubmitted = ReadBool(root.Value, "details_submitted"),
                 DisabledReason = ReadRequirementsString(root.Value, "disabled_reason"),
                 OutstandingRequirementCount = CountRequirements(root.Value),
-                Livemode = ReadBool(root.Value, "livemode"),
             };
         }
     }
@@ -438,6 +513,8 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
             return new StripeTransfer
             {
                 TransferId = transferId!,
+                IntentId = root.Value.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
+                    ? ReadString(metadata, "azoa_intent_id") : null,
                 AmountMinorUnits = ReadInt64(root.Value, "amount") ?? 0L,
                 AmountReversedMinorUnits = ReadInt64(root.Value, "amount_reversed") ?? 0L,
                 Currency = ReadString(root.Value, "currency") ?? string.Empty,
@@ -502,6 +579,30 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
                 ? ReadString(requirements, name)
                 : null;
 
+    /// <summary>Parses only the authoritative bank payout facts used by reconciliation.</summary>
+    public static StripeBankPayout? ParseBankPayout(string json)
+    {
+        var root = TryReadObject(json, out var document);
+        if (root is null)
+            return null;
+        using (document)
+        {
+            var id = ReadString(root.Value, "id");
+            if (string.IsNullOrWhiteSpace(id))
+                return null;
+            return new StripeBankPayout
+            {
+                PayoutId = id,
+                Status = ReadString(root.Value, "status") ?? string.Empty,
+                AmountMinorUnits = ReadInt64(root.Value, "amount") ?? 0,
+                Currency = ReadString(root.Value, "currency") ?? string.Empty,
+                Livemode = ReadBool(root.Value, "livemode"),
+                IntentId = root.Value.TryGetProperty("metadata", out var metadata)
+                    ? ReadString(metadata, "azoa_intent_id") : null,
+            };
+        }
+    }
+
     private static string? ReadString(JsonElement root, string name)
         => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
@@ -534,6 +635,7 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
 /// </summary>
 public static class FiatPayoutErrors
 {
+    public const string AwaitingFundsCode = "PAYOUT_AWAITING_FUNDS";
     /// <summary>Wire code for a payout rail this node cannot use at all right now.</summary>
     public const string PayoutUnavailableCode = "PAYOUT_UNAVAILABLE";
 

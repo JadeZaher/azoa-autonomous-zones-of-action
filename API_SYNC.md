@@ -18,7 +18,7 @@ allocation receipt endpoint for allocation status.
 ## SDK 0.3.1 — Waves 3-4 parity (W4.7)
 
 Adds typed coverage for the Wave 3-4 value-rail surfaces that had shipped
-backend-first with no SDK method: Hold (`HoldController`), fiat on-ramp
+backend-first with no SDK method: Hold (retired `HoldController`), fiat on-ramp
 checkout (`FiatCheckoutController`), and the two Admin/Operator-scoped read
 surfaces (`PlatformTokenController`, `ProjectTreasuryController`). See the
 new rows below. `AllocationRequest.kind` gains `"IssueUnits"` plus
@@ -137,10 +137,19 @@ below.
 | | /api/nft/{id}/burn | POST | `burnNft` | client.ts | OK (safe operation projection) |
 | | /api/nft/fungible-mint | POST | `fungibleMint` | client.ts | OK (safe response) |
 | | /api/nft/{id}/metadata | GET | `getNftMetadata` | client.ts | OK |
-| **UserNFT** | /api/usernft | POST | `mintUserNFT` | client.ts | OK |
+| **UserNFT** | /api/usernft/mint | POST | `mintUserNFT` | client.ts | Lifecycle result; required Idempotency-Key |
 | | /api/usernft/{id} | GET | `getUserNFT` | client.ts | OK |
 | | /api/usernft/{id}/transfer | POST | `transferUserNFT` | client.ts | OK |
-| | /api/usernft/{id}/burn | POST | `burnUserNFT` | client.ts | OK |
+| | /api/usernft/{id} | DELETE | `burnUserNFT` | client.ts | Lifecycle result; required Idempotency-Key |
+| | /api/usernft/lifecycle/request | GET | `getNftLifecycleByRequest` | client.ts | Actor/tenant-scoped key correlation; absence remains uncertain |
+| | /api/usernft/lifecycle/request/cancel | POST | `cancelNftRequest` | client.ts | Atomic cancellation tombstone fences delayed admission |
+| | /api/usernft/lifecycle | GET | `listNftLifecycles` | client.ts | Participant-scoped cursor page; continue even when page items are empty |
+| | /api/usernft/fee-quote | GET | `getNftFeeQuote` | client.ts | Native fee base units and immutable revision; excludes chain fees |
+| | /api/usernft/lifecycle/{operationId}/refund | POST | `refundNftTransfer` | client.ts | Original transfer reference; holder must authorize return |
+| | /api/usernft/lifecycle/{operationId} | GET | `getNftLifecycle` | client.ts | Participant-authorized durable status |
+| | /api/usernft/lifecycle/{operationId}/refresh | POST | `refreshNftLifecycle` | client.ts | Reconcile chain evidence |
+| | /api/usernft/lifecycle/{operationId}/accept | POST | `acceptNftLifecycle` | client.ts | Explicit recipient/creator authorization |
+| | /api/usernft/lifecycle/{operationId}/cancel | POST | `cancelNftLifecycle` | client.ts | Actor-authorized unsent cancellation |
 | **Bridge** | /api/bridge/routes | GET | `getBridgeRoutes` | client.ts | OK |
 | | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK (safe response) |
@@ -150,12 +159,27 @@ below.
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
 | **Exchange** | /api/exchange/{userId} | POST | `exchange` | client.ts | OK — requires an API-key principal carrying the exchange-signing scope, exactly like `allocate`; idempotencyKey is REQUIRED (not optional, unlike allocate) |
 | | /api/exchange/receipt/{idempotencyKey} | GET | `getExchangeReceipt` | client.ts | OK |
-| **Hold** | /api/holds | POST | `openHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId} | GET | `getHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId}/release | POST | `releaseHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId}/refund | POST | `refundHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId}/release-into-hold | POST | `releaseHoldIntoHold` | client.ts | OK |
-| | /api/holds/mine | GET | `listMyHolds` | client.ts | OK |
+| **Hold commands** | /api/hold-commands | POST | `startHoldCommand` | client.ts | Keyed admission; quote before any custody |
+| | /api/hold-commands | GET | `listHoldCommands` | client.ts | Participant discovery after a lost response |
+| | /api/hold-commands/{id} | GET | `getHoldCommand` | client.ts | Participant-safe progress |
+| | /api/hold-commands/{id}/refresh | POST | `refreshHoldCommand` | client.ts | Observes/rebroadcasts authorized wire only |
+| | /api/hold-commands/{id}/continue | POST | `continueHoldCommand` | client.ts | Explicit quote consent; renews current authority |
+| | /api/hold-commands/{id}/accept | POST | `acceptHoldRecipient` | client.ts | Actual recipient acceptance |
+| | /api/hold-commands/{id}/replace | POST | `replaceHoldCommand` | client.ts | Proven no-effect generation replacement |
+| | /api/hold-commands/{id}/cancel | POST | `cancelHoldCommand` | client.ts | Unsent/no-effect cancellation |
+| | /api/hold-commands/{id}/reconcile-request | POST | `reconcileHoldCommand` | client.ts | Saved-request resolution |
+| | /api/hold-commands/{id}/accept-opening | POST | `acceptHoldOpening` | client.ts | Workflow opening disclosure acceptance |
+| | /api/hold-commands/{id}/reconcile-opening | POST | `reconcileHoldOpening` | client.ts | |
+| | /api/hold-commands/{id}/replace-opening | POST | `replaceHoldOpening` | client.ts | |
+| | /api/hold-commands/{id}/withdraw-opening | POST | `withdrawHoldOpening` | client.ts | |
+| | /api/hold-commands/{id}/reconcile-opening-recovery | POST | `reconcileHoldOpeningRecovery` | client.ts | |
+| **Hold release mandates** | /api/hold-release-mandates/offers | POST | `quoteHoldReleaseMandate` | client.ts | Server-authored disclosure |
+| | /api/hold-release-mandates/accept | POST | `acceptHoldReleaseMandate` | client.ts | Explicit acceptance |
+| | /api/hold-release-mandates | GET | `listHoldReleaseMandates` | client.ts | |
+| | /api/hold-release-mandates/{id} | GET | `getHoldReleaseMandate` | client.ts | |
+| | /api/hold-release-mandates/{id}/reauthorize | POST | `reauthorizeHoldReleaseMandate` | client.ts | |
+| | /api/hold-release-mandates/{id}/revoke | POST | `revokeHoldReleaseMandate` | client.ts | |
+| | /api/hold-release-mandates/{id}/reconcile-request | POST | `reconcileHoldReleaseMandate` | client.ts | |
 | **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
 | | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
 | | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
@@ -257,12 +281,12 @@ below.
 | | /api/apikey/{id}/rotate | POST | `rotateApiKey` | client.ts | OK |
 | | /api/apikey/scopes | GET | `listIssuableScopes`, `listSelfIssuableApiKeyScopes` | client.ts | OK |
 | | /api/apikey/tenant | POST | — | — | **SDK gap** (tenant-scoped key issuance) |
-| **DappComposition** | /api/dapp-series/{id}/compose | POST | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/validate | GET | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/manifest | GET | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/generate | POST | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/deploy | POST | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/status | GET | — | — | **SDK gap** |
+| **DappComposition** | /api/dapp-series/{id}/compose | POST | `composeDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/validate | GET | `validateDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/manifest | GET | `getDappSeriesManifest` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/generate | POST | `generateDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/deploy | POST | `deployDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/status | GET | `getDappSeriesDeploymentStatus` | client.ts | Typed contract; deployment remains pending until confirmed |
 | **DappSeries** | /api/dapp-series/{id} | GET | `getDappSeries` | client.ts | OK |
 | | /api/dapp-series | GET | `listDappSeries` | client.ts | OK |
 | | /api/dapp-series | POST | `createDappSeries` | client.ts | OK |
@@ -273,8 +297,13 @@ below.
 | | /api/dapp-series/{seriesId}/actions/{actionId} | DELETE | `removeSeriesAction` | client.ts | OK |
 | | /api/dapp-series/{seriesId}/actions/{actionId}/order | PUT | `reorderSeriesAction` | client.ts | OK |
 | | /api/dapp-series/{seriesId}/actions/{actionId}/mappings | PUT | `updateSeriesMappings` | client.ts | OK |
-| **Swap** | /api/swap/quote | GET | `getSwapQuote` | client.ts | OK |
-| | /api/swap/execute | POST | `executeSwap` | client.ts | OK |
+| **DEX** | /api/dex/capabilities | GET | `getDexCapabilities` | client.ts | OK |
+| | /api/dex/quotes | POST | `quoteDex` | client.ts | OK |
+| | /api/dex/operations (+ lifecycle subroutes) | POST/GET | `startDexSwap` … `prepareDexSwapCleanup` | client.ts | OK |
+| | /api/operator/dex/operations/{id}/settle-review | POST | — | — | Operator-only; no SDK method by design |
+| **WTT** | /api/bridge/wtt/quotes | POST | `quoteWtt` | client.ts | OK (source-authored; runtime pending) |
+| | /api/bridge/wtt/operations (+ by-request-key, cancel, continue, submit, participant, participant-signature, refresh, native-output, cleanup) | POST/GET | `startWtt` … `startWttCleanup` | client.ts | OK (source-authored; runtime pending) |
+| | /api/operator/wtt/operations/{id} (+ reconcile, resume-proof) | GET/POST | — | — | Operator-only; no SDK method by design |
 | **Network** | /api/network | GET | — | — | **SDK gap** (`getNetworkInfo` no longer in the SDK) |
 | **Credential** | /api/credential/issue/{recipientUserId} | POST | — | — | **SDK gap** — backend two-party mint route (D41) has no typed SDK method yet |
 | | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |
@@ -392,3 +421,42 @@ consume the public Azoa API/SDK contract as a partner dependency, add end-to-end
 coverage for Arda Nova onboarding and financial workflows, and keep a clean
 versioned seam so future agents and external partners do not depend on Azoa
 internals or a shared repository checkout.
+
+## Hosted identity recovery and renewal (Round 1)
+
+KYC begin now persists a durable attempt before contacting a hosted provider.
+Retries reuse the attempt; rejected/expired attempts and real approvals missing
+required verification evidence can renew. Missing-evidence real approvals project
+EXPIRED through the existing KYC status contract, and tenant custodial projection
+uses its existing rejected/reverification state. SDK begin/status signatures are
+unchanged; clients should start a new verification after that status, and resume
+pending attempts using begin. No AML details or lineage hashes are public.
+
+Operator hosted reconciliation returns Recovered, ResolvedUnsent, or Quarantined.
+Confirmed absence releases only provably unsent creation. Uncertain sent requests
+retain admission; late original responses or verified canonical attachment resolve
+them. Unverified callback aliases are rejected. Fresh creation remains pending;
+aged unresolved/quarantined admissions require operator reconciliation.
+
+### Durable deployment API (source authored; integrated verification pending)
+
+| Route | Method | SDK method | Contract |
+| --- | --- | --- | --- |
+| `/api/deployments/bundles/{id}/generate` | POST | `generateDeployment` | Explicit runtime/native target and immutable artifact |
+| `/api/deployments/artifacts/{id}` | GET | `getDeploymentArtifact` | Owned normalized artifact |
+| `/api/deployments/quote` | POST | `quoteDeployment` | Native intent with exact fee/rent/value quote |
+| `/api/deployments/contract-query` | POST | `queryNativeContract` | Read-only EVM simulation; no signing |
+| `/api/deployments` | POST | `startDeployment` | Idempotency key and typed request; pending receipt |
+| `/api/deployments` | GET | `listDeployments` | Actor/tenant-scoped cursor discovery |
+| `/api/deployments/{id}` | GET | `getDeployment` | Read-only current receipt |
+| `/api/deployments/request` | GET | `getDeploymentByRequest` | Recover a lost first response by exact key |
+| `/api/deployments/request/cancel` | POST | `cancelDeploymentRequest` | Exact-body cancellation/tombstone |
+| `/api/deployments/{id}/continue` | POST | `continueDeployment` | Current authority for the next stage |
+| `/api/deployments/{id}/cancel` | POST | `cancelDeployment` | Only authoritative cancellable state |
+| `/api/deployments/{id}/invoke` | POST | `invokeDeployment` | Actual caller, immutable input and invocation key; returns durable ActionRun |
+| `/api/deployments/{id}/artifact.mjs` | GET | Console authenticated download | Hash-pinned runnable loader |
+
+Solana partial-stage cleanup and recovery after fee-budget exhaustion, plus AVM
+large-ID wire precision and verified remote compiler identity, remain REQUIRED
+Round3 implementation packages. These are not external deferrals or accepted
+production-complete paths.

@@ -198,7 +198,7 @@ Tasks:
   surfaces the unique-index violation as a clean error.
 - [ ] Task: Manager + controller. `Managers/HolonTypeRegistryManager.cs`
   (register/update/delete owner-IDOR — lookup scoped by id + authenticated
-  user, body-supplied owner ignored, STARODK precedent; list/get public
+  user, body-supplied owner ignored, ActionGraphBundle precedent; list/get public
   read) + `Controllers/HolonTypeController.cs` (POST/PUT/DELETE/GET list/GET
   by asset-type), DI in `Program.cs`. Tests: AC-5a manager-level.
 - [ ] Task: Opt-in enforcement. `Managers/HolonManager.cs` Create/Update: when

@@ -83,3 +83,22 @@ Internals:
 
 Security: no key is ever logged; wrong-key decrypt throws
 `AuthenticationTagMismatchException` (never returns garbage plaintext).
+
+## Solana multipart authorization
+
+Durable Solana NFT/value preparation uses the existing consent-aware custody calls
+for each explicit participant. `IPartialTransactionSigner` returns a verified
+signature over canonical message bytes; the provider verifies the exact required
+key set and completed envelope. No new secret export or fallback path is introduced.
+
+## Wallet authentication proofs
+
+`WalletSignatureVerifier` dispatches validated canonical identities to raw Ed25519 proofs for Algorand/Solana and EIP-191 personal-sign recovery for Ethereum. It rejects unknown chains, malformed signatures and noncanonical EVM s/v values. Address normalization and unique binding migration live in `Services/Auth/AGENTS.md`; no transaction-signing custody permissions are inferred from authentication.
+
+## Durable signing authority
+
+`SigningAdmissionAuthorityFactory` captures the authenticated credential before durable admission. Login JWTs carry owner authority; child and node-operator JWTs retain their original scope ceiling. API-key authority intersects the authenticated principal's scopes with the current key row and separately pins the exact row scopes/hash/expiry. A concurrent scope expansion cannot expand the authenticated request.
+
+`ValidatedTokenTime` reads the token class's actual validated authentication instant: login/operator `auth_time`, child `nbf`, plus bounded `exp` and optional consistent `iat`. It never substitutes worker time. The transaction fences the exact observed user authentication watermark; workflow recovery preserves the original ceiling without pretending the original JWT is still a fresh HTTP session.
+
+Economic node admission selects one exact explicit grant per required scope; separate grants can cover separate scopes. The node stores those grant identities, scope strings and expiry evidence atomically with the run scheduler epoch. Subsequent effect authorization must use the same grants and exact owned wallet binding. Workers may observe prior effects after revocation, but cannot replace a revoked grant with a newer grant to authorize another effect.

@@ -5,8 +5,6 @@
 
 #nullable enable
 
-using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace AZOA.WebAPI.Models.Kyc;
@@ -85,6 +83,8 @@ public sealed class KycSubmissionModel
     public string? ReviewNotes { get; set; }
     public string? RejectionReason { get; set; }
     public string? ProviderSessionId { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? AmlLineageKey { get; set; }
     public bool HostedVerification { get; set; }
     public bool AcceptsDocumentReferences { get; set; }
     public string? VerificationUrl { get; set; }

@@ -1,7 +1,13 @@
+---
+type: Track Spec
+title: "Action Core — Specification"
+tags: [action-core, archived]
+---
+
 # Action Core — Specification
 
 ## Goal
-Define the core domain models and abstractions for the **Action DAG system** — a control-flow orchestration layer on top of the holonic graph and STAR dapp-generator. Each action is a DAG with entry/terminal nodes, optional dependencies on completed actions, and reusable node templates (meta-nodes). A series of Actions composes into a dApp contract.
+Define the core domain models and abstractions for the **Action DAG system** — a control-flow orchestration layer on top of the holonic graph and Action Graph Bundle dapp-generator. Each action is a DAG with entry/terminal nodes, optional dependencies on completed actions, and reusable node templates (meta-nodes). A series of Actions composes into a dApp contract.
 
 ## Architecture Overview
 
@@ -16,7 +22,7 @@ Define the core domain models and abstractions for the **Action DAG system** —
 ├─────────────────────────────────────────────────────────────┤
 │  Existing AZOA Manager Layer                                │
 │  IHolonManager | INftManager | IWalletManager               │
-│  ISTARManager | ISearchManager | IUserNFTService          │
+│  IActionGraphBundleManager | ISearchManager | IUserNFTService          │
 │  IBlockchainOperationManager                                 │
 ├─────────────────────────────────────────────────────────────┤
 │  Holon Graph (nested links, peer IDs, parent/children)       │  (data flow, not control)
@@ -102,8 +108,8 @@ Each value maps to a specific existing manager method:
 | `WalletQuery` | `IWalletManager.QueryAsync` | Query wallets |
 | `WalletSetDefault` | `IWalletManager.SetDefaultAsync` | Set default wallet for user |
 | `WalletGetPortfolio` | `IWalletManager.GetPortfolioAsync` | Get portfolio with live balances |
-| `StarGenerate` | `ISTARManager.GenerateAsync` | Generate dapp from STAR template |
-| `StarDeploy` | `ISTARManager.DeployAsync` | Deploy a STAR dapp to target chain |
+| `ActionGraphBundleGenerate` | `IActionGraphBundleManager.GenerateAsync` | Generate dapp from Action Graph Bundle template |
+| `ActionGraphBundleDeploy` | `IActionGraphBundleManager.DeployAsync` | Deploy an Action Graph Bundle dapp to target chain |
 | `Search` | `ISearchManager.SearchAsync` | Cross-entity search |
 | `UserNFTGetComposite` | `IUserNFTService.GetCompositeAsync` | Get user+NFT composite view |
 | `BlockchainExecute` | `IBlockchainOperationManager.ExecuteAsync` | Execute raw blockchain operation |

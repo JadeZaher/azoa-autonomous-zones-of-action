@@ -3,8 +3,6 @@
 
 #nullable enable
 
-using System;
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -18,7 +16,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [SurrealNote("NODE-OPERATOR-ONLY, like kyc_identity. Absent from every generic consumer read surface.")]
     [SurrealNote("score_threshold is persisted because the provider applies it SERVER-SIDE at query time and never echoes it per hit. Without it a stored result set is unexplainable later: you cannot tell whether an empty result means 'clean' or 'threshold was too high'.")]
     [SurrealNote("topics is an open array<string>, never a closed enum. The vendor does not publish an exhaustive topic list, so a strict enum would reject legitimate future values.")]
-    [SurrealNote("This row is what a value gate reads: only the LATEST result for (subject_user_id, tenant_id) with decision NO_HIT opens a value operation. A missing row, a store error, MANUAL_REVIEW, and HIT all deny — an approved identity with no AML answer must not reach value.")]
+    [SurrealNote("This row is what a value gate reads: only the LATEST result for (subject_user_id, tenant_id, approved lineage_key) with decision NO_HIT opens a value operation. A missing row, a store error, MANUAL_REVIEW, and HIT all deny — an approved identity with no AML answer must not reach value.")]
     [SurrealNote("query_full_name and query_birthday_time_from are retained PII on the same D25 footing as kyc_identity's four personal fields, so retention_expires_at / erased_at exist here too. Erasing a binding without erasing these would leave a name and a date of birth behind forever.")]
     [Slice("identity")]
     [Index("kyc_screening_result_subject", Fields = new[] { "subject_user_id" })]
@@ -40,6 +38,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [References(typeof(User), Optional = true)]
         public string? TenantId { get; set; }
+
+        /// <summary>Exact hosted attempt, session and verified-subject correlation.</summary>
+        public string? LineageKey { get; set; }
 
         /// <summary>Exact <c>query.fullName</c> submitted; NONE once erased (D25).</summary>
         [FieldGroup("Exact query shape submitted to the provider (retained PII)")]

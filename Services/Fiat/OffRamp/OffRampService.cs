@@ -1,10 +1,13 @@
-﻿// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: UNLICENSED
 
 using System.Numerics;
+using System.Text.Json;
+using SurrealForge.Client;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -61,6 +64,7 @@ public sealed record CashOutView(
     {
         FiatPayoutStatuses.Requested => "Getting your money ready to send.",
         FiatPayoutStatuses.UnitsCollected => "On its way to your bank.",
+        FiatPayoutStatuses.BankPending => "Your bank transfer is being processed.",
         FiatPayoutStatuses.Paid => "Sent to your bank.",
         FiatPayoutStatuses.Reversed => "Your bank sent this payment back. Support is looking into it.",
         FiatPayoutStatuses.Returned => "This cash-out did not go through and your balance was restored.",
@@ -116,6 +120,13 @@ public interface IOffRamp
     /// <summary>Step 2: the money is sent to the person's own payout account.</summary>
     Task<AZOAResult<OffRampStepOutcome>> SendMoneyAsync(string payoutId, CancellationToken ct = default);
 
+    /// <summary>Reconciles a bank event against the durable connected account and provider facts.</summary>
+    Task<FiatEventOutcome> ReconcileBankPayoutAsync(
+        string payoutId, string accountId, string providerPayoutId, CancellationToken ct = default);
+
+    /// <summary>Reconciles failed bank funding and restores only proven returned value.</summary>
+    Task<AZOAResult<FiatPayout>> RecoverFailedBankAsync(string payoutId, Guid actor, string reason, CancellationToken ct = default);
+
     /// <summary>Compensation: give the units back and close the cash-out.</summary>
     Task<AZOAResult<OffRampStepOutcome>> AbandonAsync(
         string payoutId, string reason, CancellationToken ct = default);
@@ -169,6 +180,7 @@ public sealed class OffRampService : IOffRamp
     private readonly ISagaCoordinator _sagas;
     private readonly ILogger<OffRampService> _logger;
     private readonly TimeProvider _clock;
+    private BankPayoutProcessor BankPayouts => new(_fiat, _payouts, _connect, _logger, _clock);
 
     public OffRampService(
         FiatOptions fiat,
@@ -317,7 +329,9 @@ public sealed class OffRampService : IOffRamp
         var now = _clock.GetUtcNow();
         var candidate = new FiatPayout
         {
-            Id = FiatPayout.RecordIdFor(request.SubjectUserId, request.RequestKey),
+            Id = FiatPayout.RecordIdFor(request.SubjectUserId, request.RequestKey, _fiat.ActiveEnvironment.Name, _providerFactory.DefaultNetwork.ToString()),
+            Environment = _fiat.ActiveEnvironment.Name,
+            ChainNetwork = _providerFactory.DefaultNetwork.ToString(),
             SubjectUserId = request.SubjectUserId.ToString("N"),
             RequestKey = request.RequestKey.Trim(),
             TenantId = request.TenantId?.ToString("N"),
@@ -425,14 +439,17 @@ public sealed class OffRampService : IOffRamp
             return AZOAResult<OffRampStepOutcome>.Failure(read.Message);
         if (read.Result is not { } row)
             return AZOAResult<OffRampStepOutcome>.Failure($"Cash-out '{payoutId}' was not found.");
+        if (row.Environment != _fiat.ActiveEnvironment.Name || row.ChainNetwork != _providerFactory.DefaultNetwork.ToString())
+            return AZOAResult<OffRampStepOutcome>.Failure("This payout belongs to a different payment or chain environment.");
 
         // Already past this step, closed, or waiting on a person: nothing for the step to do.
         if (!string.Equals(row.Status, FiatPayoutStatuses.Requested, StringComparison.Ordinal))
             return Definite(row);
 
-        if (!Guid.TryParseExact(row.SubjectUserId, "N", out var subjectUserId) || subjectUserId == Guid.Empty)
+        if (!Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) || subjectUserId == Guid.Empty)
             return await ParkAsync(row, "This cash-out names no account to take units from.", ct);
 
+        // Collect always takes the full claimed, availability-checked quantity; see AGENTS.md §collect-quantity.
         var quantity = OffRampAging.ParseBaseUnits(row.QuantityBaseUnits);
         if (quantity <= BigInteger.Zero)
             return await ParkAsync(row, "This cash-out names no units to take.", ct);
@@ -530,6 +547,11 @@ public sealed class OffRampService : IOffRamp
             return AZOAResult<OffRampStepOutcome>.Failure(read.Message);
         if (read.Result is not { } row)
             return AZOAResult<OffRampStepOutcome>.Failure($"Cash-out '{payoutId}' was not found.");
+        if (row.Environment != _fiat.ActiveEnvironment.Name || row.ChainNetwork != _providerFactory.DefaultNetwork.ToString())
+            return AZOAResult<OffRampStepOutcome>.Failure("This payout belongs to a different payment or chain environment.");
+
+        if (row.Status == FiatPayoutStatuses.BankPending)
+            return await BankPayouts.SendAsync(row, ct);
 
         if (string.Equals(row.Status, FiatPayoutStatuses.Paid, StringComparison.Ordinal)
             || FiatPayoutStatuses.NeedsPerson(row.Status)
@@ -541,7 +563,7 @@ public sealed class OffRampService : IOffRamp
         if (!string.Equals(row.Status, FiatPayoutStatuses.UnitsCollected, StringComparison.Ordinal))
             return Indeterminate(row, "The units for this cash-out have not been collected yet.");
 
-        if (!Guid.TryParseExact(row.SubjectUserId, "N", out var subjectUserId) || subjectUserId == Guid.Empty)
+        if (!Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) || subjectUserId == Guid.Empty)
             return await ParkAsync(row, "This cash-out names no account to pay.", ct);
 
         // The destination is re-resolved from the person's OWN durable onboarding record on every
@@ -556,6 +578,15 @@ public sealed class OffRampService : IOffRamp
                 ?? Indeterminate(row, accountId.Message);
         }
 
+        if (!string.Equals(row.ConnectedAccountId, accountId.Result, StringComparison.Ordinal))
+            return await ParkAsync(row, "The payout account changed. Reconcile before sending money.", ct);
+
+        var manual = await _connect.ConfigureManualPayoutsAsync(
+            _fiat.CredentialsFor(_fiat.ActiveEnvironment), accountId.Result!, ct);
+        if (manual.IsError || manual.Result?.PayoutSchedule != "manual"
+            || manual.Result.AccountId != row.ConnectedAccountId)
+            return Indeterminate(row, "The payout account could not be configured for bank transfers.");
+
         var key = MoveIdempotencyKey(row.Id, "pay");
         var claim = await _idempotency.TryClaimAsync(key, PayoutOperationType, ct);
         if (!claim.Won)
@@ -563,7 +594,7 @@ public sealed class OffRampService : IOffRamp
             switch (ClassifyReplay(claim))
             {
                 case ClaimReplay.Completed:
-                    return await MarkPaidAsync(row, claim.Record.ResultPayload, ct);
+                    return await MarkTransferFundedAsync(row, claim.Record.ResultPayload, ct);
                 case ClaimReplay.Ambiguous:
                     return await ParkAsync(row, AmbiguousMoveReason, ct);
                 default:
@@ -589,31 +620,35 @@ public sealed class OffRampService : IOffRamp
 
         if (transfer.IsError || transfer.Result is null)
         {
-            await _idempotency.FailAsync(key, transfer.Message, ct);
             await CountAttemptAsync(row, transfer.Message, ct);
 
             // A refusal (not a busy rail) will not become a success by waiting. Give the units
             // back rather than leaving somebody with neither units nor money.
             if (string.Equals(transfer.Code, FiatPayoutErrors.PayoutRefusedCode, StringComparison.Ordinal))
+            {
+                await _idempotency.FailAsync(key, transfer.Message, ct);
                 return await AbandonAsync(row.Id, transfer.Message, ct);
+            }
 
-            return await ExhaustedAsync(row, transfer.Message, ct)
-                ?? Indeterminate(row, transfer.Message);
+            return await ParkAsync(row,
+                "The funding transfer outcome is uncertain. Reconcile it before returning units.", ct);
         }
 
-        if (transfer.Result.Livemode != (_fiat.ActiveEnvironment.Kind == RailEnvironmentKind.Live))
+        if (transfer.Result.Livemode != (_fiat.ActiveEnvironment.Kind == RailEnvironmentKind.Live)
+            || transfer.Result.AmountMinorUnits != row.AmountMinorUnits
+            || !string.Equals(transfer.Result.Currency, row.CurrencyCode, StringComparison.OrdinalIgnoreCase)
+            || transfer.Result.Destination != row.ConnectedAccountId)
         {
-            // The money left in the wrong mode. That is an operator fault the node must not paper
-            // over by marking the row paid.
+            // An inconsistent transfer requires reconciliation before any further money move.
             await _idempotency.CompleteAsync(key, transfer.Result.TransferId, ct);
             return await ParkAsync(
                 row,
-                "A cash-out was sent in the wrong provider mode. Confirm it before doing anything else.",
+                "The funding transfer does not match this cash-out. Reconcile it before doing anything else.",
                 ct);
         }
 
         await _idempotency.CompleteAsync(key, transfer.Result.TransferId, ct);
-        return await MarkPaidAsync(row, transfer.Result.TransferId, ct);
+        return await MarkTransferFundedAsync(row, transfer.Result.TransferId, ct);
     }
 
     // ─── Compensation ───
@@ -627,9 +662,23 @@ public sealed class OffRampService : IOffRamp
             return AZOAResult<OffRampStepOutcome>.Failure(read.Message);
         if (read.Result is not { } row)
             return AZOAResult<OffRampStepOutcome>.Failure($"Cash-out '{payoutId}' was not found.");
+        if (row.Environment != _fiat.ActiveEnvironment.Name || row.ChainNetwork != _providerFactory.DefaultNetwork.ToString())
+            return AZOAResult<OffRampStepOutcome>.Failure("This payout belongs to a different payment or chain environment.");
 
-        if (FiatPayoutStatuses.IsSettled(row.Status) || FiatPayoutStatuses.NeedsPerson(row.Status))
+        if (FiatPayoutStatuses.IsSettled(row.Status))
             return Definite(row);
+
+        var paymentClaim = await _idempotency.GetAsync(MoveIdempotencyKey(row.Id, "pay"), ct);
+        if (row.ProviderTransferId is not null || row.BankPayoutStartedAt is not null
+            || paymentClaim?.State is IdempotencyState.Completed or IdempotencyState.InProgress)
+            return await ParkAsync(row, "Money may have left the platform. Reconcile it before returning units.", ct);
+
+        if (FiatPayoutStatuses.NeedsPerson(row.Status))
+        {
+            var collection = await _idempotency.GetAsync(MoveIdempotencyKey(row.Id, "collect"), ct);
+            if (collection?.State != IdempotencyState.Completed) return Definite(row);
+            row.UnitsCollectedTransactionId ??= collection.ResultPayload;
+        }
 
         if (string.Equals(row.Status, FiatPayoutStatuses.Requested, StringComparison.Ordinal))
         {
@@ -887,9 +936,15 @@ public sealed class OffRampService : IOffRamp
         if (committing.IsError)
             return AZOAResult<CashOutAvailability?>.Failure(committing.Message);
 
+        if (lots.Result!.Any(lot => lot.Environment == "unbound" || lot.ChainNetwork == "unbound")
+            || committing.Result!.Any(payout => payout.Environment == "unbound" || payout.ChainNetwork == "unbound"))
+            return AZOAResult<CashOutAvailability?>.Failure("Historical payment records need authoritative environment classification before cash-out.");
+        var matchingLots = lots.Result!.Where(lot => lot.Environment == _fiat.ActiveEnvironment.Name
+            && lot.ChainNetwork == _providerFactory.DefaultNetwork.ToString()).ToArray();
         var now = _clock.GetUtcNow();
         var committed = BigInteger.Zero;
-        foreach (var open in committing.Result!)
+        foreach (var open in committing.Result!.Where(payout => payout.Environment == _fiat.ActiveEnvironment.Name
+            && payout.ChainNetwork == _providerFactory.DefaultNetwork.ToString()))
         {
             if (excludePayoutId is not null && string.Equals(open.Id, excludePayoutId, StringComparison.Ordinal))
                 continue;
@@ -899,19 +954,19 @@ public sealed class OffRampService : IOffRamp
         return AZOAResult<CashOutAvailability?>.Success(
             new CashOutAvailability(
                 OffRampAging.ParseBaseUnits(holdingRead.Result),
-                OffRampAging.LockedBaseUnits(lots.Result!, now),
+                OffRampAging.LockedBaseUnits(matchingLots, now),
                 committed,
-                OffRampAging.NextUnlockAt(lots.Result!, now)),
+                OffRampAging.NextUnlockAt(matchingLots, now)),
             "Success");
     }
 
     /// <summary>Moves the units back out of the reserve. Null on success; the refusal otherwise.</summary>
-    private async Task<string?> ReturnUnitsAsync(FiatPayout row, CancellationToken ct)
+    private async Task<string?> ReturnUnitsAsync(FiatPayout row, CancellationToken ct, BigInteger? requestedQuantity = null, string? reservedKey = null)
     {
-        if (!Guid.TryParseExact(row.SubjectUserId, "N", out var subjectUserId) || subjectUserId == Guid.Empty)
+        if (!Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) || subjectUserId == Guid.Empty)
             return "the account to return them to could not be resolved";
 
-        var quantity = OffRampAging.ParseBaseUnits(row.QuantityBaseUnits);
+        var quantity = requestedQuantity ?? OffRampAging.ParseBaseUnits(row.QuantityBaseUnits);
         if (quantity <= BigInteger.Zero)
             return null;
 
@@ -926,45 +981,55 @@ public sealed class OffRampService : IOffRamp
         if (!TryGetProvider(row.ChainType, out var provider, out var providerError))
             return providerError;
 
-        var key = MoveIdempotencyKey(row.Id, "return");
-        var claim = await _idempotency.TryClaimAsync(key, PayoutOperationType, ct);
-        if (!claim.Won)
+        var key = reservedKey ?? MoveIdempotencyKey(row.Id, "return");
+        if (_idempotency is not IValueMoveReceiptStore receipts
+            || !provider.TryGetModule<IValueTransferTransactionModule>(out var module) || module is null)
+            return "This chain requires durable prepared transfer support before units can be returned.";
+        var claim = await _idempotency.TryClaimAsync(key, "fiat-off-ramp-prepared", ct);
+        if (!claim.Won && claim.Record.State == IdempotencyState.Completed)
         {
-            switch (ClassifyReplay(claim))
-            {
-                case ClaimReplay.Completed:
-                    row.UnitsReturnedTransactionId = claim.Record.ResultPayload;
-                    return null;
-                case ClaimReplay.Ambiguous:
-                    return AmbiguousMoveReason;
-                default:
-                    return "a return for this cash-out is already in progress";
-            }
+            row.UnitsReturnedTransactionId = claim.Record.ResultPayload;
+            var repaired = await _reserve.DrawAsync(new ReserveDrawRequest(row.ChainType, row.AssetId,
+                _options.ReservePartition, ReserveDrawKind.Issue, quantity, key, ReserveDrawAuthority.NodeOperator), ct);
+            return repaired.IsError ? repaired.Message : null;
         }
-
-        // The reserve signs its own outgoing move; the person consented to nothing here, and
-        // nothing about giving somebody their units back needs their key.
-        var moved = await provider.TransferAsync(
-            row.AssetId,
-            reserveAccount.Result.Address,
-            wallet.Wallet.Address,
-            RailAmount.OfChainAsset(quantity, row.AssetId),
-            SigningContext.PlatformFor(row.ChainType),
-            ct);
-
-        if (moved.IsError)
+        if (claim.Record.State != IdempotencyState.InProgress || claim.Record.OperationType != "fiat-off-ramp-prepared")
+            return "The prior value move requires authoritative reconciliation before another transfer.";
+        var encoded = await receipts.GetPreparedAsync(key, ct);
+        if (encoded is null)
         {
-            await _idempotency.FailAsync(key, moved.Message, ct);
-            return moved.Message;
+            var generation = await receipts.GetPreparationGenerationAsync(key, ct);
+            var prepared = await module.PrepareValueTransferAsync(new(row.ChainType, _providerFactory.DefaultNetwork,
+                row.AssetId, reserveAccount.Result.Address, wallet.Wallet.Address, OffRampAging.Format(quantity),
+                SigningContext.PlatformFor(row.ChainType), $"value:{key}:{generation}"), ct);
+            if (prepared.IsError || prepared.Result is null) return prepared.Message;
+            await receipts.TryPrepareAsync(key, JsonSerializer.Serialize(prepared.Result), ct, generation);
+            encoded = await receipts.GetPreparedAsync(key, ct);
         }
-
-        if (IsPendingConfirmation(moved.Message))
+        var durable = encoded is null ? null : JsonSerializer.Deserialize<PreparedValueTransfer>(encoded);
+        if (durable is null || durable.Intent.ChainType != row.ChainType || durable.Intent.Network != _providerFactory.DefaultNetwork
+            || durable.Intent.AssetId != row.AssetId || durable.Intent.Sender != reserveAccount.Result.Address
+            || durable.Intent.Recipient != wallet.Wallet.Address || durable.Intent.QuantityBaseUnits != OffRampAging.Format(quantity))
+            return "The prepared transaction does not match the reserved restitution.";
+        var observed = await module.ObserveValueTransferAsync(durable, ct);
+        if (!observed.IsError && observed.Result == ChainConfirmation.FailedOnChain)
         {
-            await _idempotency.FailAsync(key, AmbiguousMoveReason, ct);
-            return AmbiguousMoveReason;
+            await receipts.TryClearPreparedAsync(key, encoded!, ct);
+            return "The original prepared transfer is authoritatively unable to take effect; the next recovery can prepare a replacement.";
         }
-
-        await _idempotency.CompleteAsync(key, moved.Result ?? string.Empty, ct);
+        if (!observed.IsError && observed.Result == ChainConfirmation.Unknown)
+        {
+            await module.SubmitValueTransferAsync(durable, ct);
+            observed = await module.ObserveValueTransferAsync(durable, ct);
+        }
+        if (observed.IsError || observed.Result != ChainConfirmation.Confirmed)
+        {
+            row.ReturnPendingTransactionId = durable.TransactionId;
+            row.ReturnPendingIdempotencyKey = key;
+            var pendingSaved = await SaveAsync(row, ct);
+            return pendingSaved.IsError ? pendingSaved.Message : AmbiguousMoveReason;
+        }
+        await _idempotency.CompleteAsync(key, durable.TransactionId, ct);
 
         var draw = await _reserve.DrawAsync(
             new ReserveDrawRequest(
@@ -979,9 +1044,10 @@ public sealed class OffRampService : IOffRamp
                 "Cash-out {PayoutId} gave {Amount} base units back but the partition counter was "
                 + "not updated: {Detail}",
                 row.Id, row.QuantityBaseUnits, draw.Message);
+            return draw.Message;
         }
 
-        row.UnitsReturnedTransactionId = moved.Result;
+        row.UnitsReturnedTransactionId = durable.TransactionId;
         return null;
     }
 
@@ -1003,17 +1069,48 @@ public sealed class OffRampService : IOffRamp
             : Definite(saved.Result!);
     }
 
-    private async Task<AZOAResult<OffRampStepOutcome>> MarkPaidAsync(
+    /// <inheritdoc />
+    public async Task<FiatEventOutcome> ReconcileBankPayoutAsync(
+        string payoutId, string accountId, string providerPayoutId, CancellationToken ct = default)
+    {
+        var read = await _payouts.GetAsync(payoutId, ct);
+        if (read.IsError)
+            return FiatEventOutcome.Failed;
+        if (read.Result is not { } row)
+            return FiatEventOutcome.Ignored;
+        return await BankPayouts.ReconcileAsync(row, accountId, providerPayoutId, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<FiatPayout>> RecoverFailedBankAsync(string payoutId, Guid actor, string reason, CancellationToken ct = default)
+    {
+        var read = await _payouts.GetAsync(payoutId, ct);
+        if (read.IsError || read.Result is not { } row) return AZOAResult<FiatPayout>.Failure(read.Message);
+        if (!_fiat.Enabled || row.Environment != _fiat.ActiveEnvironment.Name || row.ChainNetwork != _providerFactory.DefaultNetwork.ToString())
+            return AZOAResult<FiatPayout>.Failure("Recovery requires the original enabled payment environment and chain network.");
+        return await new FailedBankPayoutRecovery(_fiat, _payouts, _connect, _clock, RestoreReservedUnitsAsync)
+            .RecoverAsync(row, actor, reason, ct);
+    }
+
+    private async Task<string?> RestoreReservedUnitsAsync(FiatPayout row, BigInteger quantity, string key, CancellationToken ct)
+    {
+        var current = await _payouts.GetAsync(row.Id, ct);
+        if (current.IsError || current.Result is not { } fresh || fresh.Version != row.Version
+            || fresh.RestitutionKey != key || fresh.Status != FiatPayoutStatuses.Reversed)
+            return "The restitution reservation changed; reconcile before moving units.";
+        return await ReturnUnitsAsync(row, ct, quantity, key);
+    }
+
+    private async Task<AZOAResult<OffRampStepOutcome>> MarkTransferFundedAsync(
         FiatPayout row, string? transferId, CancellationToken ct)
     {
-        row.Status = FiatPayoutStatuses.Paid;
+        row.Status = FiatPayoutStatuses.BankPending;
         row.StatusReason = null;
         row.ProviderTransferId = string.IsNullOrWhiteSpace(transferId) ? row.ProviderTransferId : transferId;
-        row.PaidAt = _clock.GetUtcNow();
-        row.UpdatedAt = row.PaidAt.Value;
+        row.UpdatedAt = _clock.GetUtcNow();
 
         var saved = await SaveAsync(row, ct);
-        return saved.IsError ? Indeterminate(row, saved.Message) : Definite(saved.Result!);
+        return saved.IsError ? Indeterminate(row, saved.Message) : await BankPayouts.SendAsync(saved.Result!, ct);
     }
 
     private async Task<AZOAResult<OffRampStepOutcome>> SettleAsync(
@@ -1101,7 +1198,7 @@ public sealed class OffRampService : IOffRamp
     {
         var context = SigningContext.ForUser(subjectUserId, walletId).ForChain(row.ChainType);
 
-        return Guid.TryParseExact(row.TenantId, "N", out var tenantId) && tenantId != Guid.Empty
+        return Guid.TryParseExact(row.TenantId is null ? null : SurrealLink.FromLink(row.TenantId), "N", out var tenantId) && tenantId != Guid.Empty
             ? context.ActingAs(tenantId, AzoaScopes.TransferSign, subjectUserId)
             : context;
     }
@@ -1222,7 +1319,7 @@ public sealed class OffRampService : IOffRamp
 
     /// <summary>The account a row belongs to, or empty when the row names one this node cannot read.</summary>
     private static Guid SubjectOf(FiatPayout row)
-        => Guid.TryParseExact(row.SubjectUserId, "N", out var subjectUserId) ? subjectUserId : Guid.Empty;
+        => Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) ? subjectUserId : Guid.Empty;
 
     private static bool IsPendingConfirmation(string? message)
         => message?.Contains(OperationStatus.PendingConfirmationMarker, StringComparison.Ordinal) == true;

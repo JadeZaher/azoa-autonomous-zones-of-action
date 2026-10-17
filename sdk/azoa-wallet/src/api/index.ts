@@ -1,6 +1,31 @@
+export type * from "./webhooks.js";
+export type * from "./hold-commands.js";
+export type * from "./dex.js";
+export type * from "./wtt.js";
+export type * from "./consent.js";
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
+export type * from "./deployments.js";
 export type {
+  ActionRecoveryView,
+  ActionRecoveryRequest,
+  ActionRecoveryReceipt,
+  ActionRecoveryAudit,
   AzoaApiConfig,
+  BusinessVerificationCapabilities,
+  BusinessVerificationStatus,
+  BusinessVerificationSession,
+  FiatPayoutView,
+  EthereumPreparationView,
+  EthereumRecoveryRequest,
+  OnRampLotView,
+  FiatEventView,
+  HostedSessionRecoveryView,
+  HostedSessionRecoveryRequest,
+  WalletAuthenticationChain,
+  WalletAuthenticationChallenge,
+  WalletAuthenticationProof,
+  WalletAuthenticationToken,
+  WalletOwnershipClaim,
   UserResponse,
   TenantKycStatus,
   TenantCustodialAccountStatus,
@@ -25,12 +50,6 @@ export type {
   ExchangeParams,
   ExchangeReceiptState,
   ExchangeReceipt,
-  // Hold types (HoldController, D14 / W3.4)
-  HoldState,
-  HoldOpenParams,
-  HoldSettlementParams,
-  HoldChainParams,
-  HoldView,
   // Fiat on-ramp checkout types (FiatCheckoutController)
   FiatCheckoutStatus,
   FiatSettlementState,
@@ -77,10 +96,13 @@ export type {
   // Fungible mint (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,
-  // Swap types
-  SwapQuoteParams,
-  SwapExecuteParams,
-  SwapQuoteResponse,
+  FungibleCreationView,
+  FungibleCreationQuote,
+  FungibleContinuationRequest,
+  FungibleAttachmentRequest,
+  FungibleAttachmentView,
+  PlatformGenesisRequest,
+  PlatformGenesisResponse,
   BridgeTransactionResult,
   BridgeRouteInfo,
   BridgeInitiateParams,
@@ -104,6 +126,21 @@ export type {
   // UserNFT types
   UserNFTResult,
   UserNFTMintParams,
+  NftLifecycleView,
+  NftLifecyclePage,
+  NftFeeQuote,
+  NftFeeAuthorization,
+  NftOperation,
+  NftStageAcceptance,
+  NftReplacementCostAcceptance,
+  NftReplacementCostReconciliation,
+  NftProtocolCostLimits,
+  NftProtocolCostAuthorization,
+  NftProtocolCostQuote,
+  NftProtocolCostOffer,
+  NftWorkflowCostDisclosure,
+  NftWorkflowCostAcceptance,
+  NftWorkflowCostResolution,
   HolonNFTBindingResult,
   WalletNFTBindingResult,
   // Action types
@@ -112,6 +149,7 @@ export type {
   ActionEdgeType,
   ActionNodeType,
   ActionResult,
+  ActionRunResult,
   ActionCreateParams,
   ActionUpdateParams,
   ActionNodeResult,

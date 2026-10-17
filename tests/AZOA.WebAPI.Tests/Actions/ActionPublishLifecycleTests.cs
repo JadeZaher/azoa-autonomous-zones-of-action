@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Managers;
@@ -30,16 +31,17 @@ public class ActionPublishLifecycleTests
         if (action != null)
             actionStore.UpsertActionAsync(action).GetAwaiter().GetResult();
 
+        var executions = new InMemoryActionNodeExecutionStore();
         var manager = new ActionManager(
             actionStore,
             runStore,
-            new InMemoryActionNodeExecutionStore(),
+            executions,
             new ActionDagValidator(), new ActionDagExecutabilityValidator(),
             new ActionNodeHandlerRegistry(Array.Empty<IActionNodeHandler>()),
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
             BlockchainProviderFactoryFakes.Returning(),
-            BindingResolverFakes.PassThrough());
+            BindingResolverFakes.PassThrough(), workflowAdmission: new InMemoryActionWorkflowAdmissionStore(runStore, executions, new InMemorySagaStore()));
 
         return (manager, actionStore, runStore);
     }
@@ -132,7 +134,7 @@ public class ActionPublishLifecycleTests
         var action = ValidDraftAction();
         var (manager, _, _) = BuildManager(action);
 
-        var result = await manager.ExecuteAsync(action.Id, action.UserId);
+        var result = await manager.ExecuteAsync(action.Id, action.UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
 
         result.IsError.Should().BeTrue();
         result.Message.Should().ContainEquivalentOf("publish");
@@ -144,7 +146,7 @@ public class ActionPublishLifecycleTests
         var action = ValidDraftAction();
         var (manager, _, _) = BuildManager(action);
 
-        var result = await manager.StartWorkflowRunAsync(action.Id, action.UserId);
+        var result = await manager.StartWorkflowRunAsync(action.Id, action.UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
 
         result.IsError.Should().BeTrue();
         result.Message.Should().ContainEquivalentOf("publish");

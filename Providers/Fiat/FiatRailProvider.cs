@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Threading;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.HostedSessions;
@@ -11,7 +10,6 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Fiat;
-using Microsoft.Extensions.DependencyInjection;
 
 // The credit-capability probe reads the reserve ledger and the on-ramp's own options.
 // Aliased rather than imported wholesale so this file's type names stay unambiguous.
@@ -344,6 +342,9 @@ public interface IFiatOnRampRail
 /// </summary>
 public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
 {
+    /// <summary>Prefix of the claim-bound Stripe idempotency key for a checkout session create.</summary>
+    public const string CheckoutIdempotencyKeyPrefix = "azoa-fiat-checkout-";
+
     private readonly FiatOptions _options;
     private readonly IStripeGateway _gateway;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -519,6 +520,8 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             FlowKind = HostedSessionFlowKinds.FiatCheckout,
             ProviderKey = FiatRailIds.StripeProviderKey,
             AdmissionKey = request.AdmissionKey.Trim(),
+            CreationToken = Guid.NewGuid().ToString("N"),
+            CreationClaimedAt = now,
             SubjectUserId = request.SubjectUserId.ToString("N"),
             TenantId = request.TenantId?.ToString("N"),
             State = HostedSessionStates.Claimed,
@@ -566,6 +569,25 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
                 await ProjectAsync(scope, session, resumed: true, ct), "Success");
         }
 
+        // D1 creation fence: exactly one Stripe create per claim incarnation, keyed by its durable
+        // creation token; see Providers/Fiat/AGENTS.md §creation-fence.
+        var turn = await FiatHostedCreation.BeginOrResumeAsync(store, session, now, ct);
+        switch (turn.Verdict)
+        {
+            case FiatCreationVerdict.Attached:
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "This payment page has expired. Start a new payment.", AzoaErrorCodes.Conflict);
+            case FiatCreationVerdict.NeedsOperator:
+                _logger.LogError(
+                    "Funding intent {IntentId} has an unattached payment page the node can no longer replay; operator reconciliation is required.",
+                    session.Id);
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "This payment needs a manual check before it can continue.", AzoaErrorCodes.Conflict);
+            case FiatCreationVerdict.Busy:
+                return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
+        }
+
+        session = turn.Session!;
         var expiresAt = now.AddMinutes(checkout.SessionExpiryMinutes <= 0 ? 30 : checkout.SessionExpiryMinutes);
         var created = await _gateway.CreateCheckoutSessionAsync(
             _options.CredentialsFor(_environment),
@@ -582,17 +604,15 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
                 SuccessUrl = FiatReturnUrlPolicy.AppendIntent(successBase, session.Id),
                 CancelUrl = FiatReturnUrlPolicy.AppendIntent(cancelBase, session.Id),
                 ExpiresAt = expiresAt,
-                // The intent id is stable across retries, so a retried create returns Stripe's
-                // existing session instead of charging a second one.
-                IdempotencyKey = "azoa-fiat-checkout-" + session.Id,
+                // Bound to the claim incarnation, so a replay returns Stripe's existing session.
+                IdempotencyKey = FiatHostedCreation.IdempotencyKey(CheckoutIdempotencyKeyPrefix, session),
             },
             ct);
 
         if (created.IsError || created.Result is null || string.IsNullOrWhiteSpace(created.Result.Url))
         {
-            // The claim stays NON-TERMINAL. Failing it here would brick this admission key: the
-            // next attempt would resume a terminal row forever, so one provider outage would deny
-            // this person the ability to add funds for good.
+            // The claim stays NON-TERMINAL with its fence held: the next attempt replays the same
+            // claim-keyed create rather than opening a second page.
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 created.Message, created.Code ?? FiatConsumerErrors.RailBusyCode);
         }
@@ -614,14 +634,16 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             created.Result.PaymentIntentId,
             created.Result.Url!,
             created.Result.ExpiresAt ?? expiresAt,
+            session.CreationToken!,
             ct);
 
         if (attached.IsError || attached.Result is null)
         {
-            // Another concurrent begin won the attach. Re-read and project the winner rather than
-            // returning an error for a page that is perfectly usable.
+            // A concurrent replay of the same claim attached first; project it only when it carries
+            // this very Stripe session.
             var reread = await store.GetByIdAsync(sessionId, ct);
-            if (!reread.IsError && reread.Result is not null && !string.IsNullOrWhiteSpace(reread.Result.RedirectUrl))
+            if (!reread.IsError && reread.Result is not null && !string.IsNullOrWhiteSpace(reread.Result.RedirectUrl)
+                && string.Equals(reread.Result.ProviderSessionId, created.Result.SessionId, StringComparison.Ordinal))
                 return AZOAResult<FiatCheckoutIntent>.Success(
                     await ProjectAsync(scope, reread.Result, resumed: true, ct), "Success");
 

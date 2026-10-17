@@ -7,6 +7,7 @@ public class BlockchainNetworkConfig
     public string? ApiToken { get; set; }
     public string? ApiKey { get; set; }
     public string? PrivateKey { get; set; }
+    public string? ChainId { get; set; }
     public int? TimeoutMs { get; set; }
     public int? RetryCount { get; set; }
     public bool IsEnabled { get; set; } = true;

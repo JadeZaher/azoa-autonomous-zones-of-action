@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AZOA.WebAPI.Interfaces;
 
 namespace AZOA.WebAPI.Models;

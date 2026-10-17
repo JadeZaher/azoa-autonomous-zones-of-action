@@ -1,5 +1,15 @@
 # Managers — design notes
 
+## Swap fee denomination
+
+Swap flat fees require the persisted `input-base-units-v1` declaration. Missing
+or legacy denomination is disclosed as unconfigured and cannot produce a swap
+quote, including a legacy zero policy. The existing authorized schedule update
+can explicitly adopt either zero or nonzero values under its version CAS and
+immutable audit; no background migration guesses a denomination. Other operation
+fee semantics are unchanged. Exact unchanged policy retries return the current
+version without another audit. DEX quotes retain the chosen denomination/version.
+
 ## Value-access choke points
 
 `IValueAccessService` is the shared fail-closed readiness decision for direct
@@ -429,7 +439,7 @@ Two callers:
 
 ## §ecosystem-tree — ActionGraphBundleManager ecosystem tree + tree-walking codegen (D2)
 
-**final-hardening-cutover Phase D / D2** (absorbs `star-odk-ecosystem-tree`). A
+**final-hardening-cutover Phase D / D2** (absorbs `action-graph-bundle-ecosystem-tree`). A
 ActionGraphBundle owns an **Ecosystem**: a TREE of `EcosystemNode`s, each attaching a
 `DappSeries` (or a nested ActionGraphBundle) as a composable dApp. Storage POCOs:
 `Persistence/SurrealDb/Models/{Ecosystem,EcosystemNode}.cs`; store
@@ -755,3 +765,40 @@ One behaviour change worth knowing at the call site: `SweepReconciliationAsync` 
 `DefaultParkedRunBatchSize` (500) runs per call where it was previously unbounded. An operator
 draining a backlog larger than that calls it repeatedly; the background tick drains the rest
 regardless.
+
+## AML lineage projections
+
+Custodial readiness and the operator AML queue use the current approval's AML
+lineage, matching both value gates. The submission DTO carries this correlation
+only within the process (`JsonIgnore`); it is not an API field. Operator decisions
+append evidence under the same lineage and refuse obsolete screening references.
+An approval without linked evidence remains under review and cannot be cleared by
+an unrelated operator screening.
+
+## Credential lifecycle network binding
+
+Revocation resolves explicit historical network on initial admission and the immutable saved lifecycle on replay. A default-network change cannot redirect a retry. Cancellation tombstones return a typed cancellation before provider or credential projection access.
+
+## Native operation projections
+
+`BlockchainOperationManager` routes `DeployContract` and `CallContract` through the typed deployment journal, using `Parameters.DeploymentRequest` and an explicit request key. The projection ID is the scoped durable deployment ID. Its native state is refreshed from the deployment receipt on reads; preparation/submission never becomes success through generic operation settlement. Interactive continuation and cancellation use the deployment API. Action-native admission uses the frozen deployment node contract, not this general caller entry point. The old synchronous provider mutation wrappers are removed; Ethereum read-only calls use `IReadOnlyContractModule`.
+
+### Consent provisioning authority
+
+ConsentManager only serves scoped grant reads. User/tenant mutations use ConsentLifecycleService and the atomic lifecycle store. TenantManager provisioning requires a tenant witness and a registered atomic grant issuer. TenantCustodialAccountManager carries that same witness through idempotent ensure replay and convergence; it never fabricates a child principal. Identity creation remains create-only and precedes grant admission; a rejected grant produces an explicit failed provisioning result. Unexpected ensure failures attempt idempotency recovery then propagate to the centralized boundary.
+
+TenantCustodialAccountManager uses BootstrapTenantWalletAsync, passing the original full TenantProvision/WalletManage/KycRead witness. It narrows only the identity-grant issuance witness to TenantProvision; it cannot synthesize a child principal. WalletManager delegates both existing and fresh deterministic wallet candidates to BootstrapTenantAsync and does not return historical wallet data before current tenant checks. General owner bootstrap remains separate.
+
+### Claim credential recovery
+
+Claims require the live invite and expected target ID from the invitation; a JWT subject alone cannot transfer ownership. The expected ID is a correlation check, never authorization. Consumers retain that ID before submitting. Lost successful responses recover through ordinary password login by userId (SDK loginByUserId), or a fresh wallet challenge. Consumed invites never mint replay JWTs. Password login accepts exactly one identity (email or userId), requires an active self-owned user, and verifies the current password. A failed wallet claim requires a fresh challenge but leaves the invite reusable if the ownership transaction did not commit. No password-derived command fingerprint or credential journal is stored.
+
+TenantCustodialAccountManager keeps historical identity correlation separate from current access. GetStatus, provisioning convergence and cached response release require the actual tenant witness and exact current provisioning enrollment. ResolveCorrelatedChildAsync intentionally returns identity only; it is followed by current custody authority capture. Infrastructure errors in KYC orchestration preserve the original exception after updating an owned idempotency claim. New KYC effects require the captured witness at the datastore admission boundary in addition to response validation.
+
+
+Tenant custody KYC calls BeginCustodialAsync/SubmitCustodialAsync with the captured
+current enrollment witness. These select dedicated atomic store admissions;
+ordinary self-service KYC retains its actual-user controller authority. Final
+response validation is retained after reads/effects so historical provisioning
+identity cannot reveal a claimed user's current wallet or KYC state. Existing
+remote effects are accounted independently of later consent revocation.

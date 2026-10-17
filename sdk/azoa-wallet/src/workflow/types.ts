@@ -176,7 +176,7 @@ export interface SignalParams {
  * the handle was opened `fromTemplate`, `params` are the `{{param}}` substitution
  * values for instantiation. Amounts inside `params` are always strings.
  */
-export interface StartRunParams {
+export interface StartRunParams extends StartWorkflowOptions {
   /**
    * User this run targets. Optional: when `.forActor(childUserId)` was set on
    * the handle that is used; otherwise the run executes under the active session
@@ -185,6 +185,22 @@ export interface StartRunParams {
   actor?: string;
   /** `{{param}}` substitution values used when starting from a template. */
   params?: Record<string, string>;
+}
+
+/** Persist these options before submission and reuse them unchanged after response loss. */
+export interface StartWorkflowOptions {
+  idempotencyKey: string;
+  acknowledgeEconomicEffects?: boolean;
+  expectedPublishedHash?: string;
+  authToken?: string;
+}
+
+/** Disclosure for the exact published action version. */
+export interface ActionEconomicManifest {
+  actionId: string;
+  publishedVersionHash?: string;
+  hasEconomicNodes: boolean;
+  entries: Array<{ nodeId: string; nodeName: string; nodeType: string; destination?: string; amount?: string }>;
 }
 
 /**
@@ -209,7 +225,7 @@ export interface ChildCredentialResult {
 /**
  * Outcome of a reconciliation re-probe over a run parked in
  * `AwaitingReconciliation` — the `POST /api/action/runs/{runId}/reconcile` response.
- * Mirrors `Models/Actions/ActionReconciliationResult.cs`. NEVER re-broadcasts; a
+ * Mirrors `Models/Actions/ActionReconciliationResult.cs`. Recovery retains the original operation; a
  * Confirmed tx reconciles to success (no re-mint), a FailedOnChain node is released
  * to retry/compensation, and an indeterminate node stays parked.
  */
@@ -232,8 +248,8 @@ export interface WorkflowReconciliationResult {
 /** Per-call options for value-moving advances (`.step` / `.signal`). */
 export interface AdvanceOptions {
   /**
-   * Sets the `Idempotency-Key` request header, reusing the same `extraHeaders`
-   * plumbing as `executeSwap`. When absent the server falls back to its
+   * Sets the `Idempotency-Key` request header through the shared `extraHeaders`
+   * plumbing. When absent the server falls back to its
    * deterministic content key.
    */
   idempotencyKey?: string;

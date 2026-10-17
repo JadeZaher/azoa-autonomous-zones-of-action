@@ -2,8 +2,6 @@ using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
-using AZOA.WebAPI.Models.Responses;
-using AZOA.WebAPI.Services.Actions;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
@@ -19,7 +17,7 @@ public sealed class HolonPropagateNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<HolonPropagateNodeConfig>(context.Node.Config, nameof(ActionNodeType.HolonPropagate), out var cfg, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         // C-2: scope to the runner (ActingUserId) so a marketplace run cannot propagate over a victim's holon by GUID.
         var r = await _holonManager.PropagateAsync(cfg.HolonId, cfg.Request, context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);

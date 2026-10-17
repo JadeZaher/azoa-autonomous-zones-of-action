@@ -131,21 +131,11 @@ public interface IAlgorandASAModule : IBlockchainProviderModule
         CancellationToken ct = default);
 }
 
-public interface ISolanaMetaplexModule : IBlockchainProviderModule
-{
-    Task<AZOAResult<string>> CreateMetadataAccountAsync(
-        string mint, string name, string symbol, string uri,
-        int sellerFeeBasisPoints, string walletAddress, CancellationToken ct = default);
+/// <summary>Durable solana-account/1 metadata creation and replacement with explicit authority and budgets.</summary>
+public interface ISolanaMetaplexModule : INativeOperationModule { }
 
-    Task<AZOAResult<bool>> UpdateMetadataAsync(
-        string mint, string? newUri, string? newName, string walletAddress, CancellationToken ct = default);
-}
-
-public interface ISolanaSPLModule : IBlockchainProviderModule
-{
-    Task<AZOAResult<string>> CreateTokenAccountAsync(string mint, string owner, CancellationToken ct = default);
-    Task<AZOAResult<string>> CloseTokenAccountAsync(string tokenAccount, string owner, CancellationToken ct = default);
-}
+/// <summary>Durable solana-account/1 ATA creation and token-account closure with an exact rent destination.</summary>
+public interface ISolanaSPLModule : INativeOperationModule { }
 
 /// <summary>Optional capability for chains that can accept both transfer legs atomically.</summary>
 public interface IAtomicTransferGroupModule : IBlockchainProviderModule

@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using FluentAssertions;
 using SurrealForge.Client;
@@ -34,7 +35,8 @@ public sealed class SurrealNodeGovernanceStoreTests : IAsyncLifetime
         await SurrealTestSchema.BootstrapAsync(
             _testNamespace,
             NodeGovernanceParameters.SchemaNameConst,
-            NodeGovernanceAudit.SchemaNameConst);
+            NodeGovernanceAudit.SchemaNameConst,
+            "node_governance_policy_lock");
     }
 
     public async Task DisposeAsync()
@@ -95,6 +97,37 @@ public sealed class SurrealNodeGovernanceStoreTests : IAsyncLifetime
             "the policy UPSERT and audit CREATE are one rollback boundary");
         var audit = await _store.ListAuditAsync(10);
         audit.Result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AbsentPolicyWitnessCannotAuthorizeAnEffectAfterInitialPolicyCreation()
+    {
+        _surrealAvailable.Should().BeTrue("the integrated persistence gate requires SurrealDB");
+        var executor = new DefaultSurrealExecutor(_connection);
+        var before = await NodeGovernancePolicyFence.ReadVersionAsync(executor);
+        before.Should().BeNull();
+        var actor = SurrealLink.ToLink("user", Guid.NewGuid().ToString("N"))!;
+        var now = DateTimeOffset.UtcNow;
+        var policy = new NodeGovernanceParameters
+        {
+            AllowedAssetTypes = [], Version = 1, UpdatedByUserId = actor, UpdatedAt = now
+        };
+        var audit = new NodeGovernanceAudit
+        {
+            Id = Guid.NewGuid().ToString("N"), Action = "policy:update", ActorUserId = actor,
+            PreviousVersion = 0, NewVersion = 1, AllowedAssetTypes = [], OccurredAt = now
+        };
+        var created = await _store.UpdateParametersWithAuditAsync(policy, audit, null);
+        created.IsError.Should().BeFalse(created.Message);
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(NodeGovernancePolicyFence.Create(before));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        Func<Task> effect = async () =>
+        {
+            var response = await executor.ExecuteAsync(SurrealQuery.Combine(statements.ToArray()));
+            response.EnsureAllOk();
+        };
+        await effect.Should().ThrowAsync<SurrealStatementException>().WithMessage("*NODE_GOVERNANCE_POLICY_CHANGED*");
     }
 
     private static async Task<bool> ProbeSurrealAsync()

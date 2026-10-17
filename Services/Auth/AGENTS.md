@@ -1,0 +1,11 @@
+# Authentication services
+
+Wallet authentication accepts canonical Algorand, EIP-191 Ethereum and raw-message Solana proofs. Domain messages bind issuer, audience, canonical chain/address, nonce and exact millisecond UTC expiry. EVM signatures require canonical low-s secp256k1 values and recover to the requested identity; Solana base58 case is never folded.
+
+`WalletAuthIdentityMigrationService` owns the monotonic persisted `v1` readiness gate. Missing is closed. Bounded ordered pages select auth-bound users with an absent/non-current `AuthIdentityVersion`, avoiding unsupported string record-ID comparisons. Each canonicalization and progress marker is committed with the live migration lease and exact original binding/tenant/watermark. A final transaction locks that lease and verifies the remaining workset is empty before publishing Ready. Ordinary binding writers cannot pass the gate before Ready, and Ready is never automatically reset.
+
+Canonical collisions never grant access or choose an account. The private operator diagnosis includes fingerprints for every canonical-equivalent owner, collected in bounded pages while binding writes/deletes are gated. An operator may clear any diagnosed binding using the exact diagnostic fingerprint, migration version and an audit reason; repair atomically clears that binding, retains the audit and reopens migration. Stale diagnoses cannot clear newer identity authority. Unrelated profile data is preserved. Failed workers leave a durable lease which expires for bounded restart; infrastructure failures are logged only at the worker boundary.
+
+The small raw transaction guards exist solely to atomically fence migration/user mutation, operator repair/audit and the readiness proof. Ordinary reads, admission and mutations use typed Surreal builders. Typed UPDATE ONLY returns one object or NONE, so its transactional assertion checks absent results rather than treating the object as an array.
+
+Generic user profile saves preserve credentials, role and tenant authority. Wallet/claim changes use a dedicated observed-authority CAS; role assignment uses its own expected-role CAS; logout advances the watermark monotonically. A password claim clears any old wallet; a wallet claim replaces the prior password with an unguessable hash. This closes retained tenant credential access after ownership is severed.

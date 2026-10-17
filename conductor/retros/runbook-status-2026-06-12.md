@@ -1,3 +1,9 @@
+---
+type: Retro
+title: "RUNBOOK status snapshots — moved from RUNBOOK.md (2026-06-12)"
+tags: [retro]
+---
+
 # RUNBOOK status snapshots — moved from RUNBOOK.md (2026-06-12)
 
 > **Archival note (2026-06-12):** RUNBOOK.md was restructured into a true
@@ -211,7 +217,7 @@ live at:
 | `dapp_composition` | dapp_series, dapp_series_action |
 | `bridge` | bridge_tx, saga_steps, consumed_vaa_ledger, idempotency_key_store, operation_log |
 | `wallet_nft` | wallet, nft_ownership, swap_state |
-| `identity` | user, api_key, holon, star_odk |
+| `identity` | user, api_key, holon, action_graph_bundle |
 
 Cross-slice references (e.g. `dapp_series_action.action_id` → `action`) appear
 as dashed-blue ghost nodes in per-slice flowcharts and as full edges in the

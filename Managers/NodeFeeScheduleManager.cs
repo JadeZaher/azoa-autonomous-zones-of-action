@@ -1,7 +1,7 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -58,6 +58,8 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         var errors = new List<string>();
         if (request.ExpectedVersion < 0)
             errors.Add("ExpectedVersion cannot be negative.");
+        if (request.SwapFlatDenomination is not null && request.SwapFlatDenomination != NodeFeeSchedule.InputBaseUnitsV1)
+            errors.Add("SwapFlatDenomination must be input-base-units-v1.");
         var now = DateTimeOffset.UtcNow;
         var actorLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(actorUserId)) ?? string.Empty;
 
@@ -70,6 +72,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
             TransferBps = ResolveBps("Transfer.Bps", request.Transfer, baseSchedule.TransferBps, errors),
             SwapFlatBaseUnits = ResolveFlat("Swap.FlatBaseUnits", request.Swap, baseSchedule.SwapFlatBaseUnits, errors),
             SwapBps = ResolveBps("Swap.Bps", request.Swap, baseSchedule.SwapBps, errors),
+            SwapFlatDenomination = request.SwapFlatDenomination ?? baseSchedule.SwapFlatDenomination,
             ActionCompleteFlatBaseUnits = ResolveFlat("ActionComplete.FlatBaseUnits", request.ActionComplete, baseSchedule.ActionCompleteFlatBaseUnits, errors),
             ActionCompleteBps = ResolveBps("ActionComplete.Bps", request.ActionComplete, baseSchedule.ActionCompleteBps, errors),
             FederationPublishFlatBaseUnits = ResolveFlat("FederationPublish.FlatBaseUnits", request.FederationPublish, baseSchedule.FederationPublishFlatBaseUnits, errors),
@@ -83,10 +86,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         if (errors.Count > 0)
             return AZOAResult<NodeFeeScheduleResponse>.Failure(string.Join(" ", errors));
 
-        // A stale ExpectedVersion whose merged values equal the current schedule is a
-        // deliberate idempotent retry, not a conflict — hence the no-op short-circuit
-        // ahead of the version check. Pinned by
-        // NodeFeeScheduleManagerTests.UpdateScheduleAsync_IdenticalRetry_ReturnsCurrentWithoutNewAudit.
+        // Exact policy replay precedes the optimistic version check.
         if (SameFeeValues(next, baseSchedule))
         {
             return new AZOAResult<NodeFeeScheduleResponse>
@@ -150,6 +150,20 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         ulong grossAmount,
         CancellationToken ct = default)
     {
+        var result = await QuoteCoreAsync(operation, grossAmount, ct);
+        if (result.Result is { } quoted && (!UnsignedIntegerText.TryParse(quoted.FeeAmount, out var fee) || fee > ulong.MaxValue))
+            return AZOAResult<NodeFeeQuoteResponse>.Failure($"Node fee for {operation} exceeds the unsigned 64-bit provider amount range.");
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<NodeFeeQuoteResponse>> QuoteSwapBaseUnitsAsync(string grossAmount, CancellationToken ct = default)
+        => grossAmount is not { Length: > 0 and <= 512 } || !UnsignedIntegerText.TryParse(grossAmount, out var gross) || gross <= 0
+            ? Task.FromResult(AZOAResult<NodeFeeQuoteResponse>.Failure("Gross swap input must be a positive canonical integer base-unit amount."))
+            : QuoteCoreAsync(NodeFeeOperation.Swap, gross, ct);
+
+    private async Task<AZOAResult<NodeFeeQuoteResponse>> QuoteCoreAsync(NodeFeeOperation operation, BigInteger grossAmount, CancellationToken ct)
+    {
         if (!Enum.IsDefined(operation))
             return AZOAResult<NodeFeeQuoteResponse>.Failure("Node fee operation is not supported.");
         if (grossAmount == 0)
@@ -160,15 +174,15 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
             return AZOAResult<NodeFeeQuoteResponse>.Failure($"Node fee schedule unavailable: {current.Message}");
 
         var schedule = current.Result ?? DefaultSchedule();
+        if (operation == NodeFeeOperation.Swap &&
+            (current.Result is null || schedule.SwapFlatDenomination != NodeFeeSchedule.InputBaseUnitsV1))
+            return AZOAResult<NodeFeeQuoteResponse>.Failure(
+                "Swap fee denomination must be explicitly configured as input-base-units-v1 through the audited schedule update.");
         var entry = EntryFor(schedule, operation);
-        if (!ulong.TryParse(entry.FlatBaseUnits, NumberStyles.None, CultureInfo.InvariantCulture, out var flat))
+        if (!BigInteger.TryParse(entry.FlatBaseUnits, NumberStyles.None, CultureInfo.InvariantCulture, out var flat) || flat < 0 || entry.Bps is < 0 or > MaxBps)
             return AZOAResult<NodeFeeQuoteResponse>.Failure($"Node fee schedule has invalid flat amount for {operation}.");
 
-        var fee128 = (UInt128)flat + (((UInt128)grossAmount * (UInt128)entry.Bps) / MaxBps);
-        if (fee128 > ulong.MaxValue)
-            return AZOAResult<NodeFeeQuoteResponse>.Failure($"Node fee for {operation} exceeds the unsigned 64-bit provider amount range.");
-
-        var fee = (ulong)fee128;
+        var fee = flat + grossAmount * entry.Bps / MaxBps;
         if (fee >= grossAmount)
             return AZOAResult<NodeFeeQuoteResponse>.Failure($"Node fee for {operation} must be less than the gross amount.");
 
@@ -184,6 +198,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
                 FlatBaseUnits = entry.FlatBaseUnits,
                 Bps = entry.Bps,
                 ScheduleVersion = schedule.Version,
+                Denomination = entry.Denomination,
             },
             Message = "Success",
         };
@@ -239,6 +254,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
            && left.TransferBps == right.TransferBps
            && left.SwapFlatBaseUnits == right.SwapFlatBaseUnits
            && left.SwapBps == right.SwapBps
+           && left.SwapFlatDenomination == right.SwapFlatDenomination
            && left.ActionCompleteFlatBaseUnits == right.ActionCompleteFlatBaseUnits
            && left.ActionCompleteBps == right.ActionCompleteBps
            && left.FederationPublishFlatBaseUnits == right.FederationPublishFlatBaseUnits
@@ -261,6 +277,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
             {
                 FlatBaseUnits = schedule.SwapFlatBaseUnits,
                 Bps = schedule.SwapBps,
+                Denomination = schedule.SwapFlatDenomination,
             },
             NodeFeeOperation.ActionComplete => new NodeFeeScheduleEntryResponse
             {

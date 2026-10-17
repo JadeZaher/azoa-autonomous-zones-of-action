@@ -1,7 +1,13 @@
+---
+type: Track Spec
+title: "Search API — Specification"
+tags: [search-api, archived]
+---
+
 # Search API — Specification
 
 ## Goal
-Provide a unified, cross-entity search endpoint that queries Users, Holons, Wallets, BlockchainOperations, and STARODKs through a single interface with pagination, filtering, and faceted results.
+Provide a unified, cross-entity search endpoint that queries Users, Holons, Wallets, BlockchainOperations, and ActionGraphBundles through a single interface with pagination, filtering, and faceted results.
 
 ## Motivation
 As the AZOA ecosystem grows, consumers need to discover assets across entity boundaries:
@@ -49,8 +55,8 @@ public enum SearchableEntityType
     Holon = 2,
     Wallet = 4,
     BlockchainOperation = 8,
-    STARODK = 16,
-    All = User | Holon | Wallet | BlockchainOperation | STARODK
+    ActionGraphBundle = 16,
+    All = User | Holon | Wallet | BlockchainOperation | ActionGraphBundle
 }
 ```
 
@@ -135,7 +141,7 @@ public class SearchFacet
    - Holons: `LoadAllHolonsAsync`
    - Wallets: `LoadWalletsByUserAsync` (if UserId provided) or all wallets (requires provider extension)
    - BlockchainOperations: `LoadBlockchainOperationsByUserAsync` (if UserId provided) or all ops (requires provider extension)
-   - STARODKs: `LoadAllSTARODKsAsync`
+   - ActionGraphBundles: `LoadAllActionGraphBundlesAsync`
 4. **Filter by query** (case-insensitive contains on Name, Description, Username, Email, Address, Metadata values)
 5. **Apply structured filters**: ChainId, AssetType, UserId, date range
 6. **Sort** by `SortBy` field

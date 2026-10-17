@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: ".NET Client SDK — Specification"
+tags: [dotnet-client-sdk, archived]
+---
+
 # .NET Client SDK — Specification
 
 ## Status
@@ -12,7 +18,7 @@ today.
 Ship a **standalone, hand-written .NET client** for the AZOA WebAPI that a C#
 consumer references as a NuGet package and uses to call AZOA over HTTP, mirroring
 the public surface of the TS SDK: **auth/session, wallet, holons, portfolio, NFT
-(+ UserNFT bindings), swap, blockchain-operation/bridge/search reads, STAR ODK,
+(+ UserNFT bindings), swap, blockchain-operation/bridge/search reads, Action Graph Bundle,
 action CRUD, and the workflow template-authoring + fluent run-driver surface.** The
 two SDKs are **separate hand-written clients that both speak HTTP** to the same
 WebAPI; they share no runtime.
@@ -171,16 +177,16 @@ method → the proposed C# method on the corresponding facade. Grouped by facade
 | `getBlockchainOperation` (`client.ts:800`) | `Operations.GetAsync(operationId)` |
 | `getBlockchainOperationsByUser` (`client.ts:805`) | `Operations.ListByUserAsync(userId)` |
 
-#### STAR ODK → `azoa.Starodk`
+#### Action Graph Bundle → `azoa.ActionGraphBundle`
 | TS method | C# method |
 |---|---|
-| `getSTARODK` (`client.ts:812`) | `Starodk.GetAsync(id)` |
-| `listSTARODK` (`client.ts:817`) | `Starodk.ListAsync()` |
-| `createSTARODK` (`client.ts:828`) | `Starodk.CreateAsync(params)` |
-| `updateSTARODK` (`client.ts:837`, IDOR-safe upsert) | `Starodk.UpdateAsync(id, model)` |
-| `deleteSTARODK` (`client.ts:842`) | `Starodk.DeleteAsync(id)` |
-| `generateSTARDapp` (`client.ts:847`) | `Starodk.GenerateDappAsync(id, params)` |
-| `deploySTARODK` (`client.ts:852`) | `Starodk.DeployAsync(id)` |
+| `getActionGraphBundle` (`client.ts:812`) | `ActionGraphBundle.GetAsync(id)` |
+| `listActionGraphBundle` (`client.ts:817`) | `ActionGraphBundle.ListAsync()` |
+| `createActionGraphBundle` (`client.ts:828`) | `ActionGraphBundle.CreateAsync(params)` |
+| `updateActionGraphBundle` (`client.ts:837`, IDOR-safe upsert) | `ActionGraphBundle.UpdateAsync(id, model)` |
+| `deleteActionGraphBundle` (`client.ts:842`) | `ActionGraphBundle.DeleteAsync(id)` |
+| `generateActionGraphBundleDapp` (`client.ts:847`) | `ActionGraphBundle.GenerateDappAsync(id, params)` |
+| `deployActionGraphBundle` (`client.ts:852`) | `ActionGraphBundle.DeployAsync(id)` |
 
 #### Action CRUD + execution → `azoa.Actions`
 | TS method | C# method |
@@ -272,14 +278,14 @@ UserNFT + holon/wallet binding + verification surface (`client.ts:897-985`).
 **Acceptance:** all 25 matrix rows present; binding/verify bodies match.
 **Priority:** P0
 
-### FR-4: Swap + bridge + search + operations + STAR ODK + action CRUD facades
+### FR-4: Swap + bridge + search + operations + Action Graph Bundle + action CRUD facades
 **Description:** Mirror swap (`client.ts:863-893`, with idempotency-key on
 execute), bridge (bare-object responses — DP2's `RequestBareAsync` path,
-`client.ts:709-740`), search/operations reads, STAR ODK CRUD (IDOR-safe upsert on
+`client.ts:709-740`), search/operations reads, Action Graph Bundle CRUD (IDOR-safe upsert on
 `UpdateAsync`, `client.ts:837`), and action CRUD + execution
 (`client.ts:992-1071`).
 **Acceptance:** bare-object endpoints round-trip through the bare path; swap
-execute sets `Idempotency-Key`; STAR ODK update sends the IDOR-safe model.
+execute sets `Idempotency-Key`; Action Graph Bundle update sends the IDOR-safe model.
 **Priority:** P0
 
 ### FR-5: Workflow template authoring + durable run reads/writes

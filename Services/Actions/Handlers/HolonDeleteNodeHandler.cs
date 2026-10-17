@@ -2,8 +2,6 @@ using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
-using AZOA.WebAPI.Models.Responses;
-using AZOA.WebAPI.Services.Actions;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
@@ -19,7 +17,7 @@ public sealed class HolonDeleteNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(ActionNodeType.HolonDelete), out var cfg, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         // C1: scope the delete to the acting user (the RUNNER) so a marketplace
         // run can only delete the runner's own holons — never the action owner's.
         var r = await _holonManager.DeleteAsync(cfg.Id, context.ActingUserId);

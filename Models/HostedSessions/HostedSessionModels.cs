@@ -4,6 +4,9 @@
 
 #nullable enable
 
+using System.Text.Json.Serialization;
+using AZOA.WebAPI.Models.Signing;
+
 namespace AZOA.WebAPI.Models.HostedSessions;
 
 /// <summary>Stable flow-family discriminators for <see cref="HostedSessionRequest.FlowKind"/>.</summary>
@@ -11,6 +14,9 @@ public static class HostedSessionFlowKinds
 {
     /// <summary>Identity verification.</summary>
     public const string Kyc = "kyc";
+
+    /// <summary>Business verification.</summary>
+    public const string Kyb = "kyb";
 
     /// <summary>Reserved for the fiat-in checkout that reuses this seam.</summary>
     public const string FiatCheckout = "fiat-checkout";
@@ -67,6 +73,10 @@ public sealed class HostedSessionCapabilities
 /// <summary>Inputs for creating a hosted provider session.</summary>
 public sealed class HostedSessionRequest
 {
+    /// <summary>Internal current tenant authority for provider first-egress admission.</summary>
+    [JsonIgnore]
+    public TenantCustodialWitness? CustodialAuthority { get; init; }
+
     public string FlowKind { get; init; } = HostedSessionFlowKinds.Kyc;
 
     /// <summary>Subject user; also the provider-side client user correlation.</summary>
@@ -77,6 +87,13 @@ public sealed class HostedSessionRequest
 
     /// <summary>Stable admission key; the same key must resume rather than duplicate.</summary>
     public string AdmissionKey { get; init; } = string.Empty;
+
+    /// <summary>Optional durable domain attempt correlation allocated before provider creation.</summary>
+    public Guid? SessionId { get; init; }
+
+    public string ProviderKey { get; init; } = string.Empty;
+
+    public string PolicyRevision { get; init; } = string.Empty;
 }
 
 /// <summary>What a provider returns from an external create call.</summary>
@@ -100,6 +117,8 @@ public sealed class HostedSessionCreation
 /// </summary>
 public sealed class HostedCallbackTrigger
 {
+    public Guid? AttemptId { get; init; }
+    public string? EventId { get; init; }
     /// <summary>Provider session id named by the callback body.</summary>
     public string ProviderSessionId { get; init; } = string.Empty;
 
@@ -110,6 +129,9 @@ public sealed class HostedCallbackTrigger
 /// <summary>The authoritative, server-fetched provider verdict.</summary>
 public sealed class HostedSessionOutcome
 {
+    /// <summary>The server returned a recognized session result, independently of its final verdict.</summary>
+    public bool SessionExists { get; init; }
+
     /// <summary>Provider-native outcome token, normalised to upper case.</summary>
     public string Outcome { get; init; } = string.Empty;
 
@@ -127,6 +149,11 @@ public sealed class HostedSessionOutcome
 
     /// <summary>Verified person attributes, when the flow produces an identity.</summary>
     public HostedSessionSubjectAttributes? Subject { get; init; }
+
+    public DateTimeOffset? EvidenceValidUntil { get; init; }
+
+    /// <summary>Business evidence and server-only beneficiary linkage for KYB.</summary>
+    public AZOA.WebAPI.Models.Kyb.KybBusinessEvidence? Business { get; init; }
 }
 
 /// <summary>

@@ -451,3 +451,29 @@ Behavior preserved as-is through the decomposition; fix deliberately, not by acc
   entry on delete (§history — one user action, one entry), and the
   never-re-based paste offset (§clipboard). Every one of them was invisible to
   `tsc`, `eslint` and `next build`; see §testing before changing any of them.
+
+
+## Durable workflow start
+
+`RunPanel` keys its mounted state and browser persistence by authenticated user
+and action. The unscoped historical run key is not imported across accounts.
+A fresh start requires the SDK economic preview and its published version hash;
+economic entries require explicit consent. Before any POST, the panel stores only
+an allowlisted idempotency key, consent flag, and published hash. An unresolved
+start is retried verbatim, including after reload or a changed preview. Storage
+failure refuses admission; tokens and signing material are never persisted here.
+
+The scoped child unmounts on account/action changes. Async completions from the
+old child cannot attach runs or modify the new view. A transient saved-run lookup
+failure retains its identifier and blocks a replacement start; the restore button
+retries that lookup. Terminal observations clear active-run persistence. Invalid
+stored start data remains quarantined rather than silently generating a new key.
+
+`run/__tests__/run-panel.test.tsx` covers lost-response/remount replay with changed
+preview, explicit consent, account-switch races, restore failure, and storage
+refusal, alongside the existing action-switch and polling fixtures. These new
+cases are authored only; execution belongs to the final integrated sweep.
+
+## Workflow NFT cost review
+
+`nft-workflow-costs.tsx` mounts for selected admitted mint/Grant executions, including terminal executions so a lost acceptance response can still be reconciled. Actor/action/execution scope keys isolate browser state and asynchronous responses. Disclosure never accepts. The explicit acceptance action saves both an immutable request archive and the active pointer before HTTP; retries and reconciliation reuse that request. A proven Obsolete result permits a fresh offer while retaining the old archive. Applied displays existing participant lifecycle controls. Missing or corrupt browser storage does not authorize a replacement request.

@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -54,6 +53,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [FieldGroup("Failure reason when state == Failed")]
         public string? Error { get; set; }
+
+        [FieldGroup("Structured owner proof before value effects; never inferred from error text")]
+        public string? EffectDisposition { get; set; }
+
+        public string? PreparedTransactionJson { get; set; }
+        [Default("0")]
+        public long PreparationGeneration { get; set; }
 
         [FieldGroup("Timestamps")]
         [ReadOnly]

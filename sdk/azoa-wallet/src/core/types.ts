@@ -112,9 +112,8 @@ export interface ChainProvider {
   // via AzoaApiClient.bridge.*, but providers CAN implement client-side bridge logic.
 
   // ─── Contract operations (optional, not all chains support) ───
-  // Mirrors: DeployContractAsync, CallContractAsync
-  // These are excluded from the base interface — chains that support them
-  // expose chain-specific methods via provider.algorand.deployApp() etc.
+  // Custodial native operations use AzoaApiClient typed deployment quotes and receipts.
+  // Read-only EVM calls use queryNativeContract; mutations retain explicit pending states.
 }
 
 // ─── Operation params (chain-agnostic) ───

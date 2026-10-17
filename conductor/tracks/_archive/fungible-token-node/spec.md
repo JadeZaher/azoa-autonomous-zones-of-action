@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Track: fungible-token-node"
+tags: [fungible-token-node, archived]
+---
+
 # Track: fungible-token-node
 
 ## Overview
@@ -6,7 +12,7 @@
 ASA creation (`IAlgorandASAModule.CreateASAAsync`, full `total`/`decimals`
 control — [Providers/Blockchain/Algorand/AlgorandProvider.cs](../../../Providers/Blockchain/Algorand/AlgorandProvider.cs):514)
 through an action node + manager seam, so an action (and therefore the visual builder,
-DappSeries, and STAR-ODK) can **launch a fungible token** — not just a supply-1 NFT.
+DappSeries, and Action Graph Bundle) can **launch a fungible token** — not just a supply-1 NFT.
 
 Today the provider can create a fungible ASA but **nothing above it can reach it**:
 no `ActionNodeType`, no manager, no controller. This track adds the thinnest
@@ -21,7 +27,7 @@ builder's palette surfaces it automatically (the catalog mirrors the enum).
 
 - **Enables** [[project-asset-fractionalization]] — the project token is a
   fungible token created by this node.
-- **Consumed by** [[star-odk-ecosystem-tree]] via action composition.
+- **Consumed by** [[action-graph-bundle-ecosystem-tree]] via action composition.
 - **Independent of** the bridge — creating a token moves no value cross-chain, so
   this track has **no bridge dependency** and can ship before bridge hardening.
 

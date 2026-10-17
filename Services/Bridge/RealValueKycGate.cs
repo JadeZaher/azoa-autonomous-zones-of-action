@@ -6,7 +6,6 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Bridge;
@@ -111,27 +110,23 @@ public sealed class RealValueKycGate : IRealValueKycGate
                 out _))
         {
             // Identity holds. AML is the separate question, and it is required.
-            if (await IsAmlClearAsync(userId, tenantId, ct))
+            if (await IsAmlClearAsync(userId, tenantId, latest.Result.AmlLineageKey, ct))
                 return AZOAResult<bool>.Success(true);
         }
 
         return Denied();
     }
 
-    /// <summary>
-    /// Fail-closed AML read, identical in policy to <c>KycGateService</c>: only
-    /// NO_HIT on a non-truncated result for this exact (user, tenant) pair passes.
-    /// A missing result denies, a store error denies, MANUAL_REVIEW denies.
-    /// </summary>
-    private async Task<bool> IsAmlClearAsync(Guid userId, Guid? tenantId, CancellationToken ct)
+    // See Services/Kyc/AGENTS.md: AML attempt lineage.
+    private async Task<bool> IsAmlClearAsync(Guid userId, Guid? tenantId, string? lineageKey, CancellationToken ct)
     {
-        var screening = await _screeningStore.GetLatestResultAsync(userId, tenantId, ct);
+        if (string.IsNullOrWhiteSpace(lineageKey)) return false;
+        var screening = await _screeningStore.GetLatestResultAsync(userId, tenantId, ct, lineageKey);
         if (screening.IsError || screening.Result is null)
             return false;
 
-        // Ask KycAmlClearance rather than restating the rule: a third copy is how the
-        // status projection and the value gate came apart in the first place.
-        return KycAmlClearance.IsClear(screening.Result);
+        return string.Equals(screening.Result.LineageKey, lineageKey, StringComparison.Ordinal)
+            && KycAmlClearance.IsClear(screening.Result);
     }
 
     private async Task<AZOAResult<KycProviderResolution>> ResolveAuthorityAsync(

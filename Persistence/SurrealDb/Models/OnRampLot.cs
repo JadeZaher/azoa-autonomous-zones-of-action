@@ -3,9 +3,7 @@
 
 #nullable enable
 
-using System;
 using System.Security.Cryptography;
-using System.Text;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 
@@ -117,7 +115,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 19)]
         [FieldGroup("Lifecycle")]
-        [Inside("Pending", "Issued", "Refused", "Stuck", "Reversed")]
+        [Inside("Pending", "Issued", "Refused", "Stuck", "Reversed", "RefundPending", "Refunded")]
         [Default("\"Pending\"")]
         public string Status { get; set; } = "Pending";
 
@@ -154,6 +152,45 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 27)]
         public DateTimeOffset UpdatedAt { get; set; }
+
+        [Column(Order = 28)]
+        public string? ProviderRefundId { get; set; }
+
+        [Column(Order = 29)]
+        public DateTimeOffset? RefundStartedAt { get; set; }
+
+        [Column(Order = 30)]
+        [Default("\"[]\"")]
+        public string RecoveryAuditJson { get; set; } = "[]";
+
+        [Column(Order = 31)]
+        [Default("\"unbound\"")]
+        public string Environment { get; set; } = "unbound";
+
+        [Column(Order = 32)]
+        [Default("\"unbound\"")]
+        public string ChainNetwork { get; set; } = "unbound";
+
+        [Column(Order = 33)]
+        [Default("0")]
+        public long RefundAttempt { get; set; }
+
+        [Column(Order = 34)]
+        [Default("0")]
+        public long RefundedMinorUnits { get; set; }
+
+        [Column(Order = 35)]
+        public string? ProviderRefundStatus { get; set; }
+
+        /// <summary>The part of <see cref="ConsumedBaseUnits"/> a partial reversal took back; it never shrinks purchase attribution.</summary>
+        [Column(Order = 36)]
+        [Default("\"0\"")]
+        public string ReversedBaseUnits { get; set; } = "0";
+
+        /// <summary>Each reversal's cumulative target already marked here, by reversal id, so a repeat adds only the difference.</summary>
+        [Column(Order = 37)]
+        [Default("\"{}\"")]
+        public string ReversalMarksJson { get; set; } = "{}";
 
         /// <summary>Deterministic record id for the one lot a funding intent may settle into.</summary>
         public static string RecordIdFor(string intentId)

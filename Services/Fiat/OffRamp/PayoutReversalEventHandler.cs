@@ -10,7 +10,7 @@ using AZOA.WebAPI.Services.Fiat.Reversal;
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;
 
 /// <summary>
-/// What happens when the provider pulls a cash-out back out of the person's bank.
+/// Records reversals of the funding transfer to a connected account.
 ///
 /// <para>It is the mirror of <c>FiatReversalEventHandler</c> (W4.3) and it records its fact in
 /// the SAME ledger, because an operator looking at "money that moved and then un-moved" must see
@@ -85,9 +85,7 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
             return FiatEventOutcome.Failed;
         if (read.Result is not { } row)
             return FiatEventOutcome.Ignored;
-
-        if (string.Equals(row.Status, FiatPayoutStatuses.Reversed, StringComparison.Ordinal))
-            return FiatEventOutcome.Applied;   // a redelivery after the single terminal write
+        if (row.Environment != context.Environment.Name) return FiatEventOutcome.Ignored;
 
         if (string.IsNullOrWhiteSpace(row.ProviderTransferId))
         {
@@ -119,6 +117,12 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
 
         var transfer = fetched.Result;
 
+        if (!string.Equals(transfer.TransferId, row.ProviderTransferId, StringComparison.Ordinal)
+            || transfer.AmountMinorUnits != row.AmountMinorUnits
+            || !string.Equals(transfer.Currency, row.CurrencyCode, StringComparison.OrdinalIgnoreCase)
+            || transfer.AmountReversedMinorUnits > transfer.AmountMinorUnits)
+            return FiatEventOutcome.Failed;
+
         if (transfer.Livemode != (context.Environment.Kind == RailEnvironmentKind.Live))
         {
             _logger.LogError(
@@ -139,28 +143,37 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
         }
 
         var quantity = OffRampAging.ParseBaseUnits(row.QuantityBaseUnits);
-        var sourceMinorUnits = transfer.AmountMinorUnits > 0 ? transfer.AmountMinorUnits : row.AmountMinorUnits;
+        var sourceMinorUnits = row.AmountMinorUnits;
+        var reversedMinorUnits = Math.Max(row.ReversedMinorUnits, transfer.AmountReversedMinorUnits);
 
         // The units the node now owes back: the same proportional arithmetic the on-ramp reversal
         // pipeline uses, so a partial reversal is an exact proportion rather than an estimate.
         var owed = ReversalMath.ProportionalTarget(
-            quantity, transfer.AmountReversedMinorUnits, sourceMinorUnits);
+            quantity, reversedMinorUnits, sourceMinorUnits);
 
-        var recorded = await RecordReversalAsync(row, transfer, owed, context, ct);
+        var recorded = await RecordReversalAsync(row, transfer, reversedMinorUnits, owed, context, ct);
         if (recorded.IsError || recorded.Result is null)
             return FiatEventOutcome.Failed;
 
-        row.Status = FiatPayoutStatuses.Reversed;
+        // Reconcile from the monotonic ledger after a retry or a stale provider read.
+        reversedMinorUnits = recorded.Result.AmountMinorUnits;
+        owed = OffRampAging.ParseBaseUnits(recorded.Result.ReinstatementOwedBaseUnits);
+        if (row.ReversedMinorUnits >= reversedMinorUnits
+            && string.Equals(row.ReversalId, recorded.Result.Id, StringComparison.Ordinal))
+            return FiatEventOutcome.Applied;
+
+        owed = System.Numerics.BigInteger.Max(System.Numerics.BigInteger.Zero, owed - OffRampAging.ParseBaseUnits(row.RestoredQuantityBaseUnits));
+        row.Status = row.Status == FiatPayoutStatuses.Returned && owed == 0 ? FiatPayoutStatuses.Returned : FiatPayoutStatuses.Reversed;
         row.StatusReason = Truncate(
-            $"The provider took {transfer.AmountReversedMinorUnits} {row.CurrencyCode} minor units back "
+            $"The provider took {reversedMinorUnits} {row.CurrencyCode} minor units back "
             + "out of this cash-out. The node owes those units to the account again; re-issuing them "
             + "is an operator action.",
             MaxReasonLength);
-        row.ReversedMinorUnits = transfer.AmountReversedMinorUnits;
-        row.ReversedAt = _clock.GetUtcNow();
+        row.ReversedMinorUnits = reversedMinorUnits;
+        row.ReversedAt ??= _clock.GetUtcNow();
         row.ReversalId = recorded.Result.Id;
         row.UnitsOwedBaseUnits = OffRampAging.Format(owed);
-        row.UpdatedAt = row.ReversedAt.Value;
+        row.UpdatedAt = _clock.GetUtcNow();
 
         var saved = await SaveAsync(row, ct);
         if (saved.IsError)
@@ -190,6 +203,7 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
     private async Task<AZOAResult<FiatReversal>> RecordReversalAsync(
         FiatPayout row,
         StripeTransfer transfer,
+        long reversedMinorUnits,
         BigInteger owed,
         FiatEventContext context,
         CancellationToken ct)
@@ -212,10 +226,10 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
             SubjectUserId = row.SubjectUserId,
             TenantId = row.TenantId,
             FlowPurpose = FlowPurpose,
-            AmountMinorUnits = transfer.AmountReversedMinorUnits,
+            AmountMinorUnits = reversedMinorUnits,
             CurrencyCode = row.CurrencyCode,
             SourceAmountMinorUnits = transfer.AmountMinorUnits > 0 ? transfer.AmountMinorUnits : row.AmountMinorUnits,
-            IsPartial = !transfer.Reversed,
+            IsPartial = reversedMinorUnits < row.AmountMinorUnits,
             // The money is already gone from the platform's balance; there is nothing to wait for.
             FundsWithdrawn = true,
             ChainType = row.ChainType,
@@ -251,7 +265,20 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
         if (claimed.IsError || claimed.Result is null)
             return AZOAResult<FiatReversal>.Failure(claimed.Message);
 
-        return AZOAResult<FiatReversal>.Success(claimed.Result.Row, "Recorded.");
+        var existing = claimed.Result.Row;
+        if (claimed.Result.Created || existing.AmountMinorUnits >= reversedMinorUnits)
+            return AZOAResult<FiatReversal>.Success(existing, "Recorded.");
+
+        var expected = existing.Version;
+        existing.AmountMinorUnits = reversedMinorUnits;
+        existing.ReinstatementOwedBaseUnits = OffRampAging.Format(owed);
+        existing.IsPartial = candidate.IsPartial;
+        existing.ProviderEventId = context.Row.ProviderEventId;
+        existing.Status = FiatReversalStatuses.NeedsOperator;
+        existing.StatusReason = candidate.StatusReason;
+        existing.UpdatedAt = now;
+        existing.Version = expected + 1;
+        return await _reversals.UpdateIfVersionAsync(existing, expected, ct);
     }
 
     private async Task ParkAsync(FiatPayout row, string reason, CancellationToken ct)

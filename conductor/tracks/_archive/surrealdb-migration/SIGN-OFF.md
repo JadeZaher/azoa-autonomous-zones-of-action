@@ -1,3 +1,9 @@
+---
+type: Track Artifact
+title: "SurrealDB Migration -- SIGN-OFF"
+tags: [surrealdb-migration, archived]
+---
+
 # SurrealDB Migration -- SIGN-OFF
 *Date:* 2026-05-22 (Stream E close-out)
 *Track status:* COMPLETE
@@ -30,7 +36,7 @@ Three layers: controller surface, direct executor, static analyzer. The controll
 Directory.Build.props:16 defines AzoaSurrealDbVersion=0.1.0 which matches packages/Azoa.SurrealDb.Client/Azoa.SurrealDb.Client.csproj Version=0.1.0. Repo-internal references use ProjectReference (so there is no NuGet version surface to drift); the version literal is the audit-trail value used by scripts/passoff-surrealdb-wave1.ps1. The original spec G4 -- pin the vendor SurrealDb.Net SDK -- was dissolved by replacing the vendor SDK with Azoa.SurrealDb.Client (which we own, semver, and analyze). This is a stricter posture than the spec required.
 
 ### G5 -- Backup/restore first-class
-The round-trip is the real proof: seed 3 rows per table across 13 tables (every G6 value table plus the wave-2 saga_steps, idempotency_key_store, api_key, action_template, action_node_template, plus user/holon/star_odk added in CLOSEOUT Stream A). For each table, sort rows by id, canonicalize each row as JSON with alphabetically-sorted property names (handles SurrealDB returning fields in arbitrary order), SHA-256 the concatenation. Drive backup.ps1, REMOVE NAMESPACE, drive restore.ps1 -Force, re-canonicalize, assert byte-equal SHA-256 per table. This detects: silent row loss, field-order non-determinism, value drift, and missing tables. It does NOT detect: a store-layer deserialization bug that loses information on the SurrealDB-to-POCO-to-JSON path (because seeding uses raw SurrealQL CREATE, not the store layer). That trade-off is documented in the test header as intentional. F1 (P1) closed 2026-05-22 during Stream E sign-off: `scripts/surrealdb/backup.ps1` and `scripts/surrealdb/restore.ps1` now auto-detect docker (preferred) or podman via a `Find-ContainerRuntime` helper mirroring the pattern in `start-test-container.ps1`. Both scripts log the resolved runtime on startup; pipeline invocations remain identical. The G5 gate test now runs cleanly on this podman-only host (and on docker hosts, and on dual-runtime hosts).
+The round-trip is the real proof: seed 3 rows per table across 13 tables (every G6 value table plus the wave-2 saga_steps, idempotency_key_store, api_key, action_template, action_node_template, plus user/holon/action_graph_bundle added in CLOSEOUT Stream A). For each table, sort rows by id, canonicalize each row as JSON with alphabetically-sorted property names (handles SurrealDB returning fields in arbitrary order), SHA-256 the concatenation. Drive backup.ps1, REMOVE NAMESPACE, drive restore.ps1 -Force, re-canonicalize, assert byte-equal SHA-256 per table. This detects: silent row loss, field-order non-determinism, value drift, and missing tables. It does NOT detect: a store-layer deserialization bug that loses information on the SurrealDB-to-POCO-to-JSON path (because seeding uses raw SurrealQL CREATE, not the store layer). That trade-off is documented in the test header as intentional. F1 (P1) closed 2026-05-22 during Stream E sign-off: `scripts/surrealdb/backup.ps1` and `scripts/surrealdb/restore.ps1` now auto-detect docker (preferred) or podman via a `Find-ContainerRuntime` helper mirroring the pattern in `start-test-container.ps1`. Both scripts log the resolved runtime on startup; pipeline invocations remain identical. The G5 gate test now runs cleanly on this podman-only host (and on docker hosts, and on dual-runtime hosts).
 
 ### G6 -- Value tables SCHEMAFULL
 Wave-1 deliverable, cross-checked through G5: every table named in spec.md G6 plus the wave-2 additions is present in Persistence/SurrealDb/Schemas/*.surql as DEFINE TABLE ... SCHEMAFULL with field-level ASSERT clauses. G5 per-table seed (CREATE type::thing with CONTENT body) would fail on a schemaless or missing-field table; the fact that all 13 seed loops succeed in CI when the container is up is implicit proof that the SCHEMAFULL constraints are enforced.
@@ -81,7 +87,7 @@ F2 -- G5 seed bypasses store layer
 
 F3 -- G3 controller-path coverage is representative, not exhaustive
 - File: tests/AZOA.WebAPI.IntegrationTests/Gates/G3_InjectionSuiteTest.cs:115-183
-- Issue: Test 1 probes only Wallet/Holon/ApiKey/Bridge -- not User, NFT, BlockchainOperation, STAR, Action controllers.
+- Issue: Test 1 probes only Wallet/Holon/ApiKey/Bridge -- not User, NFT, BlockchainOperation, Action Graph Bundle, Action controllers.
 - Mitigation: SRDB0001 analyzer is the actual G3 enforcement (project-referenced into every csproj that calls SurrealQuery.Of, DiagnosticSeverity.Error). Test 2 + Test 3 are the load-bearing G3 proofs.
 
 F4 -- G2 Test 1 disables rate limiting

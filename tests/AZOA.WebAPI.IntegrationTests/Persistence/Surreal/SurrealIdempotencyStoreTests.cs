@@ -4,6 +4,11 @@ using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Models.Idempotency;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Providers.Fiat;
+using AZOA.WebAPI.Services.Fiat;
+using AZOA.WebAPI.Services.Fiat.OnRamp;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
@@ -77,6 +82,74 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
     /// <summary>
     /// Test 1: TryClaimAsync first time → wins (Won=true, state=InProgress).
     /// </summary>
+    [SkippableFact]
+    public async Task PermanentlyUnreconciledRefundsCannotStarveRowsBeyondFirstFifty()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB unavailable");
+        await SurrealTestSchema.BootstrapAsync(_testNamespace, "on_ramp_lot", "fiat_event");
+        var executor = new DefaultSurrealExecutor(_connection);
+        var old = DateTimeOffset.UtcNow.AddDays(-2);
+        for (var index = 0; index < 51; index++)
+        {
+            var intent = Guid.NewGuid().ToString("N");
+            var row = new OnRampLot { Id = OnRampLot.RecordIdFor(intent), IntentId = intent,
+                SubjectUserId = Guid.NewGuid().ToString("N"), ChainType = "Algorand", AssetId = "123",
+                Environment = "test", ChainNetwork = "Devnet", Status = OnRampLotStatuses.RefundPending,
+                CurrencyCode = "USD", FiatMinorUnits = 100, CreatedAt = old, UpdatedAt = old };
+            (await executor.ExecuteAsync(SurrealWriter.Create(row), default)).EnsureAllOk();
+        }
+        var options = new FiatOptions { Enabled = true };
+        var refunds = new OnRampRecovery(null!, _store, null!, null!, options, null!, TimeProvider.System);
+        var recovery = new FiatEventRecovery(executor, options, null!, [], refunds, NullLogger<FiatEventRecovery>.Instance);
+        await recovery.SweepAsync(default);
+        var once = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From(), default);
+        once.Count(row => row.UpdatedAt < old.AddHours(1)).Should().Be(1);
+        await recovery.SweepAsync(default);
+        var twice = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From(), default);
+        twice.Should().OnlyContain(row => row.UpdatedAt > old);
+        twice.Should().OnlyContain(row => row.Status == OnRampLotStatuses.RefundPending);
+    }
+
+    [SkippableFact]
+    public async Task PreparedReturnRetainsFirstWireAndOnlyExpectedFinalFailureCanClearIt()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB unavailable");
+        var key = $"fiat-restitution:{Guid.NewGuid():N}";
+        await _store.TryClaimAsync(key, "fiat-off-ramp-prepared", default);
+        (await _store.TryPrepareAsync(key, "wire-one", default)).Should().BeTrue();
+        (await _store.TryPrepareAsync(key, "wire-two", default)).Should().BeFalse();
+        (await _store.GetPreparedAsync(key, default)).Should().Be("wire-one");
+        (await _store.TryClearPreparedAsync(key, "wire-two", default)).Should().BeFalse();
+        (await _store.TryClearPreparedAsync(key, "wire-one", default)).Should().BeTrue();
+        (await _store.GetPreparationGenerationAsync(key, default)).Should().Be(1);
+        (await _store.TryPrepareAsync(key, "stale-generation", default)).Should().BeFalse();
+        (await _store.TryPrepareAsync(key, "replacement-after-proof", default, 1)).Should().BeTrue();
+    }
+
+    [SkippableFact]
+    public async Task ColonKey_NoEffectProofCanReserveRefundExactlyOnce()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB unavailable");
+        var key = $"alloc:{Guid.NewGuid():N}:on-ramp-proof";
+        (await _store.TryClaimAsync(key, "fiat_allocation", default)).Won.Should().BeTrue();
+        await _store.RecordNoEffectFailureAsync(key, "Gate refused before effects", default);
+        (await _store.TryReserveRefundAfterNoEffectAsync(key, default)).Should().BeTrue();
+        (await _store.TryReserveRefundAfterNoEffectAsync(key, default)).Should().BeFalse();
+        var late = await _store.TryClaimAsync(key, "fiat_allocation", default);
+        late.Won.Should().BeFalse();
+        late.Record.OperationType.Should().Be(SurrealIdempotencyStore.RefundReservationType);
+    }
+
+    [SkippableFact]
+    public async Task GenericFailureCannotReserveRefund()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB unavailable");
+        var key = $"alloc:{Guid.NewGuid():N}:unknown";
+        await _store.TryClaimAsync(key, "fiat_allocation", default);
+        await _store.FailAsync(key, "Unknown broadcast outcome", default);
+        (await _store.TryReserveRefundAfterNoEffectAsync(key, default)).Should().BeFalse();
+    }
+
     [SkippableFact]
     public async Task TryClaim_FirstTime_Wins()
     {

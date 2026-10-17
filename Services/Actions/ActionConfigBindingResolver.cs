@@ -51,7 +51,8 @@ public sealed class ActionConfigBindingResolver
         IReadOnlyDictionary<Guid, ActionNodeExecution> upstreamExecutions,
         IReadOnlyDictionary<Guid, ActionNodeExecution> allRunExecutions,
         Guid userId,
-        CancellationToken ct)
+        CancellationToken ct,
+        JsonElement? invocationInput = null)
     {
         if (string.IsNullOrWhiteSpace(configJson))
             return BindingResolveResult.Pass(configJson);
@@ -80,6 +81,8 @@ public sealed class ActionConfigBindingResolver
         // + "run.<nodeName>" (any prior node in the run) + holons lazily by
         // "holon.<id>" on first demand.
         var upstreamScope = BuildUpstreamScope(node, action, upstreamExecutions);
+        if (invocationInput is { ValueKind: JsonValueKind.Object } input)
+            upstreamScope["input"] = input.Clone();
         foreach (var (key, value) in BuildRunScope(action, allRunExecutions))
             upstreamScope[key] = value;
         var holonCache = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
@@ -300,6 +303,19 @@ public sealed class ActionConfigBindingResolver
 
         var root = segments[0];
         JsonElement element;
+
+        if (root == "input")
+        {
+            if (!upstreamScope.TryGetValue("input", out element))
+                return (null, "This run has no admitted invocation input.");
+            for (var index = 1; index < segments.Count; index++)
+            {
+                if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(segments[index], out var child))
+                    return (null, $"Invocation input member '{segments[index]}' is missing.");
+                element = child;
+            }
+            return (element, null);
+        }
 
         if (root == "upstream")
         {

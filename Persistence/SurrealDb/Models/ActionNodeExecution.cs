@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -26,6 +25,16 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     {
         public const string SchemaNameConst = "action_node_execution";
         public string SchemaName => SchemaNameConst;
+
+        [Default("0")]
+        public long Version { get; set; }
+        public string? FrozenInput { get; set; }
+        public string? SigningAuthorityJson { get; set; }
+        public string? AdmissionRejection { get; set; }
+        public string? ExternalOperationJson { get; set; }
+        public string? RecoveryState { get; set; }
+        public DateTimeOffset? WaitUntil { get; set; }
+        public bool ManualAdvanceReleased { get; set; }
 
         public enum ActionNodeState
         {

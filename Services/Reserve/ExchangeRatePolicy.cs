@@ -3,7 +3,6 @@
 using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
-using System.Text;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -70,6 +69,15 @@ public sealed class ExchangeOptions
     /// reading -- because slack only ever admits more.
     /// </summary>
     public decimal RateConsistencyDustMinorUnits { get; set; } = 1m;
+
+    /// <summary>
+    /// The reserve's accepted cap, in the settlement rail's native base units, on the pooled network fee of one
+    /// exchange group. Blank or non-positive refuses every exchange (fail-closed); see Services/Reserve/AGENTS.md §durable-exchange.
+    /// </summary>
+    public string MaximumGroupNetworkFeeBaseUnits { get; set; } = string.Empty;
+
+    /// <summary>Idle time after which a committed exchange never authorized for transmission is abandoned and its commitment returned.</summary>
+    public TimeSpan UnsentSourceAbandonAfter { get; set; } = TimeSpan.FromHours(1);
 }
 
 /// <summary>Everything a rate policy is allowed to see about one exchange.</summary>

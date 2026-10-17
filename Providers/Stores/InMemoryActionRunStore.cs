@@ -17,7 +17,7 @@ public sealed class InMemoryActionRunStore : IActionRunStore
 
     public Task<AZOAResult<ActionRun>> CreateAsync(ActionRun run, CancellationToken ct = default)
     {
-        if (!_runs.TryAdd(run.Id, run))
+        if (!_runs.TryAdd(run.Id, run.Clone()))
         {
             return Task.FromResult(new AZOAResult<ActionRun>
             {
@@ -26,13 +26,13 @@ public sealed class InMemoryActionRunStore : IActionRunStore
                 Result = null
             });
         }
-        return Task.FromResult(new AZOAResult<ActionRun> { Result = run, Message = "Created." });
+        return Task.FromResult(new AZOAResult<ActionRun> { Result = run.Clone(), Message = "Created." });
     }
 
     public Task<AZOAResult<ActionRun>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         if (_runs.TryGetValue(id, out var run))
-            return Task.FromResult(new AZOAResult<ActionRun> { Result = run, Message = "Success" });
+            return Task.FromResult(new AZOAResult<ActionRun> { Result = run.Clone(), Message = "Success" });
 
         return Task.FromResult(new AZOAResult<ActionRun>
         {
@@ -55,43 +55,32 @@ public sealed class InMemoryActionRunStore : IActionRunStore
             });
         }
 
-        if (expectedStatus is { } expected)
-        {
-            // G2 single-winner conditional update: apply only if the stored
-            // status still matches. Compare-and-swap on the dictionary entry so
-            // two concurrent projectors don't clobber each other.
-            if (current.Status != expected ||
-                !_runs.TryUpdate(run.Id, run, current))
-            {
-                return Task.FromResult(new AZOAResult<ActionRun>
-                {
-                    IsError = true,
-                    Message = $"ActionRun {run.Id} conditional update lost: status is no longer {expected}.",
-                    Result = null
-                });
-            }
-            return Task.FromResult(new AZOAResult<ActionRun> { Result = run, Message = "Updated." });
-        }
-
-        _runs[run.Id] = run;
-        return Task.FromResult(new AZOAResult<ActionRun> { Result = run, Message = "Updated." });
+        if ((expectedStatus is { } expected && current.Status != expected) || current.Version != run.Version)
+            return Task.FromResult(AZOAResult<ActionRun>.Failure("Action run version/status changed."));
+        var saved = current.Clone();
+        saved.Status = run.Status; saved.EndedAt = run.EndedAt; saved.FailReason = run.FailReason;
+        saved.Version++;
+        if (!_runs.TryUpdate(run.Id, saved, current))
+            return Task.FromResult(AZOAResult<ActionRun>.Failure("Action run version/status changed."));
+        run.Version = saved.Version;
+        return Task.FromResult(AZOAResult<ActionRun>.Success(saved.Clone()));
     }
 
     public Task<AZOAResult<IEnumerable<ActionRun>>> GetByActionIdAsync(Guid actionId, CancellationToken ct = default)
     {
-        IEnumerable<ActionRun> matches = _runs.Values.Where(r => r.ActionId == actionId).ToList();
+        IEnumerable<ActionRun> matches = _runs.Values.Where(r => r.ActionId == actionId).Select(row => row.Clone()).ToList();
         return Task.FromResult(new AZOAResult<IEnumerable<ActionRun>> { Result = matches, Message = "Success" });
     }
 
     public Task<AZOAResult<IEnumerable<ActionRun>>> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
     {
-        IEnumerable<ActionRun> matches = _runs.Values.Where(r => r.UserId == userId).ToList();
+        IEnumerable<ActionRun> matches = _runs.Values.Where(r => r.UserId == userId).Select(row => row.Clone()).ToList();
         return Task.FromResult(new AZOAResult<IEnumerable<ActionRun>> { Result = matches, Message = "Success" });
     }
 
     public Task<AZOAResult<IEnumerable<ActionRun>>> GetByStatusAsync(ActionRunStatus status, CancellationToken ct = default)
     {
-        IEnumerable<ActionRun> matches = _runs.Values.Where(r => r.Status == status).ToList();
+        IEnumerable<ActionRun> matches = _runs.Values.Where(r => r.Status == status).Select(row => row.Clone()).ToList();
         return Task.FromResult(new AZOAResult<IEnumerable<ActionRun>> { Result = matches, Message = "Success" });
     }
 
@@ -112,7 +101,7 @@ public sealed class InMemoryActionRunStore : IActionRunStore
         var cursor = (ActionRun?)current;
         while (cursor is not null && visited.Add(cursor.Id))
         {
-            chain.Add(cursor);
+            chain.Add(cursor.Clone());
             if (cursor.ParentRunId is null) break;
             _runs.TryGetValue(cursor.ParentRunId.Value, out cursor);
         }

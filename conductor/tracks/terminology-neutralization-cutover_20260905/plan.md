@@ -181,6 +181,47 @@ ungrammatical prose. The constraint must survive the rewrite: a
 principal-only loan tracker is defined by the *absence* of an interest-accrual
 primitive, and that absence is the feature.
 
+## Phase 6b — residual sweep ✅ 2026-10-16 (branch `chore/retired-vocabulary-sweep`)
+
+Railway still served the old vocabulary because none of this track's commits had
+been pushed: the remote `main` was `c6c55dd`, 60 commits behind. Even locally,
+residue had grown back: the `odk` identifier family, `star-odk` track ids, `STAR`
+in docs and live-test fixtures, `quest`/`avatar` in L0–L4 code written after the
+rename, and the landing page's "Actions in games" domain. That domain is now
+"Grants and bounties". A first draft said "Community governance", but the
+adversarial review caught that every governance node type is blocked by
+`NotEnabledActionNodeTypes`, which made it a claim the product refuses at
+publish.
+
+`residual-sweep/sweep.py` did the token-shaped work and logged every changed
+line (`manifest.jsonl`, 521 lines; `manifest-pass2.jsonl`, 17). Five partition
+reviewers judged each line (`review/*.jsonl` covers both passes, and every record has a verdict). An
+adversarial review then returned SHIP WITH FIXES. All of its findings were
+applied before the final sweep: the copy fix above, guard hardening,
+audit-trail integrity, verbatim-history reverts and OKF frontmatter.
+
+⚠ **Dev volumes need `.\dev-up.ps1 -Reset` once after this lands.** The
+`Aggregate` comment in `ecosystem.surql` / `ecosystem_node.surql` changed, and
+SurrealForge ledgers each generated file's SHA-256, so a volume that applied the
+old bytes stops on checksum drift. Production is pre-D28 and goes through the
+D31 wipe-and-reseed regardless. Review found two real rule bugs: plural `odks` escaped S13's lookahead,
+and S11 lowercased `ODK` glued to a digit. A third shape (`updateSTARODK`)
+surfaced only when the glued-suffix rule was added. `sweep.py verify` reports 0.
+
+The lesson: a rename sweep ends, and the vocabulary comes back.
+`RetiredVocabularyGuardTests` now fails the unit suite on any retired word in
+shipped source, including generated `.surql`. It was shown red on the two stale
+goldens before they were regenerated.
+
+Gates: build 0 errors / 22 warnings; unit 3668 passed / 1 skipped; frontend tsc +
+vitest 14/14; touched integration classes 61/62. The one failure,
+`SurrealActionGraphBundleStoreTests.GetByNameAndUserAsync_ScopesByOwnerAndIsCaseInsensitive`,
+fails identically on clean `main`. It is pre-existing and not vocabulary-related.
+
+Still open: the ArdaNova integration contract line 24 reads "a **action engine**". It
+must change in both repos at once to stay byte-identical. `Holon` stays: renaming it
+would be a D28-scale decision.
+
 ## Phase 7 — deployment reconciliation ⬜ NOT STARTED (D29/D31)
 
 - [ ] Determine how the `schema_migration` checksum ledger treats a renamed

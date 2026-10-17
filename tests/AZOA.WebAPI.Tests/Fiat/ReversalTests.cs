@@ -17,6 +17,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -26,7 +27,6 @@ using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Fiat;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
 using AZOA.WebAPI.Services.Fiat.Reversal;
-using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Reserve;
 using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
@@ -319,11 +319,10 @@ public class ReversalTests
         var row = harness.Reversals.Single();
 
         harness.Idempotency.Seed(
-            ReversalCompensationService.RecoveryIdempotencyKey(
-                row, "balance", BigInteger.Parse(IssuedBaseUnits)),
+            ReversalCompensationService.RecoveryIdempotencyKey(row, "balance", BigInteger.Zero),
             ReversalCompensationService.RecoveryOperationType,
             IdempotencyState.Completed,
-            resultPayload: "CLAWBACKTX");
+            resultPayload: ReversalCompensationService.RecoveryPayload(BigInteger.Parse(IssuedBaseUnits), "CLAWBACKTX"));
 
         await harness.Compensation.RecoverAsync(row.Id);
 
@@ -376,8 +375,8 @@ public class ReversalTests
         await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
 
         harness.VerifyNoClawback();
-        harness.Holds.Verify(
-            h => h.RefundAsync(It.IsAny<HoldSettlementRequest>(), It.IsAny<CancellationToken>()),
+        harness.Purchases.Verify(
+            store => store.RecoverExchangePurchaseAsync(It.IsAny<ExchangePurchaseRecovery>(), It.IsAny<CancellationToken>()),
             Times.Never);
         harness.Reversals.Single().RecoveredQuantityBaseUnits.Should().Be("0");
     }
@@ -390,14 +389,16 @@ public class ReversalTests
             ReversedPurchaseKind.OpenHold,
             ChainType,
             SourceQuantityBaseUnits: BigInteger.Parse(IssuedBaseUnits),
-            HoldId: "hold-1"));
+            HoldId: "hold-1",
+            SourceId: "source-1"));
 
         await harness.ApplyRefundAsync();
         await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
 
-        harness.Holds.Verify(
-            h => h.RefundAsync(
-                It.Is<HoldSettlementRequest>(r => r.Reference.NormalizedHoldId == "hold-1"),
+        harness.Purchases.Verify(
+            store => store.RecoverExchangePurchaseAsync(
+                It.Is<ExchangePurchaseRecovery>(request => request.SourceId == "source-1"
+                    && request.AttributedSourceUnits == IssuedBaseUnits && request.SubjectUserId == SubjectUserId),
                 It.IsAny<CancellationToken>()),
             Times.Once);
 
@@ -407,16 +408,38 @@ public class ReversalTests
     }
 
     [Fact]
-    public async Task Units_this_payment_bought_are_taken_back_with_the_reserves_authority()
+    public async Task A_purchase_recovery_whose_row_save_was_lost_is_counted_once_and_never_taken_again()
     {
         var harness = new Harness { Holding = "0" };
+        harness.Provenance.Claims.Add(new ReversedPurchaseClaim(ReversedPurchaseKind.OpenHold, ChainType,
+            SourceQuantityBaseUnits: BigInteger.Parse(IssuedBaseUnits), HoldId: "hold-1", SourceId: "source-1"));
+        await harness.ApplyRefundAsync();
+        harness.Ledger.LostSaves = 1;
+
+        var lost = await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+        var retried = await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+
+        lost.Result!.Definite.Should().BeFalse("the pass that recovered could not record it");
+        retried.Result!.Definite.Should().BeTrue();
+        harness.CommittedRecoveries.Should().ContainSingle().Which.CreditedSourceUnits.Should().Be(IssuedBaseUnits);
+        var row = harness.Reversals.Single();
+        row.RecoveredQuantityBaseUnits.Should().Be(IssuedBaseUnits, "the committed recovery is counted exactly once");
+        row.PurchaseRecoveredBaseUnits.Should().Be(IssuedBaseUnits);
+        row.Status.Should().Be(FiatReversalStatuses.Recovered);
+    }
+
+    [Fact]
+    public async Task Units_this_payment_bought_are_taken_back_with_the_reserves_authority()
+    {
+        var harness = new Harness { Holding = "0", PurchasedAssetUnits = 500 };
         harness.Provenance.Claims.Add(new ReversedPurchaseClaim(
             ReversedPurchaseKind.IssuedAsset,
             ChainType,
             SourceQuantityBaseUnits: BigInteger.Parse(IssuedBaseUnits),
             AssetId: "2002",
             AssetQuantityBaseUnits: new BigInteger(500),
-            HolderAddress: HolderAddress));
+            HolderAddress: HolderAddress,
+            SourceId: "source-1"));
 
         await harness.ApplyRefundAsync();
         await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
@@ -426,6 +449,84 @@ public class ReversalTests
         harness.ClawedBack[0].Amount.Should().Be(new BigInteger(500));
         harness.Reversals.Single().RecoveryPath.Should().Be(FiatReversalRecoveryPaths.Purchase);
     }
+
+    [Fact]
+    public async Task A_lost_row_save_never_claws_the_balance_twice_even_when_more_becomes_owed()
+    {
+        var harness = new Harness();
+        harness.Charge = Charge(amountRefunded: 300L);
+        await harness.ApplyRefundAsync();
+        harness.Ledger.LostSaves = 1;
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+
+        // A redelivery raises what is owed before the next pass; the first move is replayed, never repeated.
+        harness.Charge = Charge(amountRefunded: 600L);
+        await harness.ApplyRefundAsync();
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+
+        harness.ClawedBack.Select(call => call.Amount).Should().Equal(new BigInteger(30000), new BigInteger(30000));
+        var row = harness.Reversals.Single();
+        row.RecoveredQuantityBaseUnits.Should().Be("60000");
+        row.Status.Should().Be(FiatReversalStatuses.Recovered);
+    }
+
+    [Fact]
+    public async Task A_lost_row_save_never_claws_a_purchased_asset_twice()
+    {
+        var harness = new Harness { Holding = "0" };
+        harness.Provenance.Claims.Add(DirectBuy());
+        await harness.ApplyRefundAsync();
+        harness.Ledger.LostSaves = 1;
+
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+
+        harness.ClawedBack.Should().ContainSingle().Which.Amount.Should().Be(new BigInteger(1000));
+        var row = harness.Reversals.Single();
+        row.RecoveredQuantityBaseUnits.Should().Be(IssuedBaseUnits, "the completed clawback is counted exactly once");
+        row.Status.Should().Be(FiatReversalStatuses.Recovered);
+    }
+
+    [Fact]
+    public async Task A_partial_refund_claws_only_its_share_of_a_direct_buy_and_never_more_than_was_delivered()
+    {
+        var harness = new Harness { Holding = "0" };
+        harness.Provenance.Claims.Add(DirectBuy());
+        harness.Charge = Charge(amountRefunded: 300L);
+        await harness.ApplyRefundAsync();
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+        harness.Charge = Charge(amountRefunded: 600L);
+        await harness.ApplyRefundAsync();
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+
+        harness.ClawedBack.Select(call => call.Amount).Should().Equal(new BigInteger(300), new BigInteger(300));
+        harness.Reversals.Single().RecoveredQuantityBaseUnits.Should().Be("60000",
+            "each refund is credited exactly the share it clawed");
+    }
+
+    [Fact]
+    public async Task Two_partial_refunds_and_a_repeated_pass_leave_exactly_the_unrefunded_units_cashable()
+    {
+        var harness = new Harness();
+        harness.Charge = Charge(amountRefunded: 300L);
+        await harness.ApplyRefundAsync();
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+        harness.Charge = Charge(amountRefunded: 600L);
+        await harness.ApplyRefundAsync();
+        harness.Ledger.LostSaves = 1;
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+        await harness.Compensation.RecoverAsync(harness.Reversals.Single().Id);
+
+        var lot = harness.Lots.Rows.Single();
+        lot.ConsumedBaseUnits.Should().Be("60000", "a cumulative target is marked once, not added on top of itself");
+        (BigInteger.Parse(lot.QuantityBaseUnits) - BigInteger.Parse(lot.ConsumedBaseUnits))
+            .Should().Be(new BigInteger(40000), "the cash-out rule may still pay out what was never refunded");
+    }
+
+    private static ReversedPurchaseClaim DirectBuy() => new(ReversedPurchaseKind.IssuedAsset, ChainType,
+        SourceQuantityBaseUnits: BigInteger.Parse(IssuedBaseUnits), AssetId: "2002",
+        AssetQuantityBaseUnits: new BigInteger(1000), HolderAddress: HolderAddress, SourceId: "direct-buy");
 
     // ── Rung 3: the platform's own pocket, recorded and enforced ──
 
@@ -676,6 +777,9 @@ public class ReversalTests
 
         public string Holding { get; init; } = IssuedBaseUnits;
 
+        /// <summary>Units a purchase funded by the whole issuance delivered; the store's clawback contract scales from it.</summary>
+        public BigInteger PurchasedAssetUnits { get; init; } = 1000;
+
         public bool HoldingReadFails { get; init; }
 
         public bool ClawbackConfirms { get; init; } = true;
@@ -692,7 +796,9 @@ public class ReversalTests
 
         public FakeIdempotencyStore Idempotency { get; } = new();
 
-        public Mock<IPlatformHold> Holds { get; } = new();
+        public Mock<IExchangeHoldSourceStore> Purchases { get; } = new();
+
+        public List<ExchangePurchaseRecoveryResult> CommittedRecoveries { get; } = new();
 
         public List<(string Saga, string Correlation)> StartedSagas { get; } = new();
 
@@ -777,17 +883,49 @@ public class ReversalTests
                         ReservePartitionCounters.Declaring(new BigInteger(1_000_000)), 1, false));
                 });
 
-            Holds.Setup(h => h.RefundAsync(
-                    It.IsAny<HoldSettlementRequest>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(AZOAResult<HoldOutcome>.Success(
-                    new HoldOutcome(new HoldLedger(), null, null, false)));
+            // Process edge with the store's contract: each step takes only what this reversal has not yet taken.
+            Purchases.Setup(store => store.ListReversalRecoveriesAsync(
+                    It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => CommittedRecoveries.ToList());
+            Purchases.Setup(store => store.ReserveExchangeClawbackAsync(
+                    It.IsAny<ExchangePurchaseRecovery>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ExchangePurchaseRecovery request, CancellationToken _) =>
+                {
+                    var already = CommittedRecoveries.Where(step => step.SourceId == request.SourceId)
+                        .Aggregate(BigInteger.Zero, (total, step) => total + BigInteger.Parse(step.CreditedSourceUnits));
+                    var delta = BigInteger.Min(BigInteger.Parse(request.AttributedSourceUnits), BigInteger.Parse(request.ClaimSourceUnits)) - already;
+                    var clawed = CommittedRecoveries.Where(step => step.Clawback && step.SourceId == request.SourceId)
+                        .Aggregate(BigInteger.Zero, (total, step) => total + BigInteger.Parse(step.RecoveredHoldUnits));
+                    var spent = BigInteger.Parse(request.ClaimSourceUnits);
+                    var units = BigInteger.Min((PurchasedAssetUnits * delta + spent - 1) / spent, PurchasedAssetUnits - clawed);
+                    if (delta <= BigInteger.Zero || units <= BigInteger.Zero) return null;
+                    var step = new ExchangePurchaseRecoveryResult($"clawback-{CommittedRecoveries.Count}", request.SourceId,
+                        units.ToString(), delta.ToString(), string.Empty, null, Clawback: true);
+                    CommittedRecoveries.Add(step);
+                    return step;
+                });
+            Purchases.Setup(store => store.RecoverExchangePurchaseAsync(
+                    It.IsAny<ExchangePurchaseRecovery>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ExchangePurchaseRecovery request, CancellationToken _) =>
+                {
+                    var already = CommittedRecoveries.Where(step => step.SourceId == request.SourceId)
+                        .Aggregate(BigInteger.Zero, (total, step) => total + BigInteger.Parse(step.CreditedSourceUnits));
+                    var delta = BigInteger.Min(BigInteger.Parse(request.AttributedSourceUnits), BigInteger.Parse(request.ClaimSourceUnits)) - already;
+                    if (delta <= BigInteger.Zero) return null;
+                    var step = new ExchangePurchaseRecoveryResult($"receipt-{CommittedRecoveries.Count}", request.SourceId, "1",
+                        delta.ToString(), "liability", null);
+                    CommittedRecoveries.Add(step);
+                    return step;
+                });
 
             var asa = new Mock<IAlgorandASAModule>();
             asa.Setup(a => a.GetAssetHoldingAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() => HoldingReadFails
+                .ReturnsAsync((string assetId, string holder, CancellationToken _) => HoldingReadFails
                     ? AZOAResult<string>.Failure("The node could not be reached.")
-                    : AZOAResult<string>.Success(Holding));
+                    : AZOAResult<string>.Success((BigInteger.Parse(Holding) - ClawedBack
+                        .Where(call => call.AssetId == assetId && call.Holder == holder)
+                        .Aggregate(BigInteger.Zero, (total, call) => total + call.Amount)).ToString()));
             asa.Setup(a => a.ClawbackAssetAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<RailAmount>(),
                     It.IsAny<SigningContext>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
@@ -826,7 +964,7 @@ public class ReversalTests
                 Ledger,
                 Lots,
                 reserve.Object,
-                Holds.Object,
+                Purchases.Object,
                 Provenance,
                 factory.Object,
                 wallets.Object,
@@ -910,9 +1048,17 @@ public class ReversalTests
             return Task.FromResult(new AZOAResult<FiatReversal?> { Result = row is null ? null : Clone(row) });
         }
 
+        /// <summary>Saves still to lose a version race, as when a concurrent writer moved the row first.</summary>
+        public int LostSaves { get; set; }
+
         public Task<AZOAResult<FiatReversal>> UpdateIfVersionAsync(
             FiatReversal row, long expectedVersion, CancellationToken ct = default)
         {
+            if (LostSaves > 0)
+            {
+                LostSaves--;
+                return Task.FromResult(AZOAResult<FiatReversal>.Failure("Version conflict."));
+            }
             if (!_rows.TryGetValue(row.Id, out var current) || current.Version != expectedVersion)
                 return Task.FromResult(AZOAResult<FiatReversal>.Failure("Version conflict."));
 
@@ -1024,36 +1170,7 @@ public class ReversalTests
             return Task.FromResult(AZOAResult<OnRampLot>.Success(Clone(row)));
         }
 
-        private static OnRampLot Clone(OnRampLot row) => new()
-        {
-            Id = row.Id,
-            IntentId = row.IntentId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            QuantityBaseUnits = row.QuantityBaseUnits,
-            GrossQuantityBaseUnits = row.GrossQuantityBaseUnits,
-            NodeFeeBaseUnits = row.NodeFeeBaseUnits,
-            ConsumedBaseUnits = row.ConsumedBaseUnits,
-            FiatMinorUnits = row.FiatMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            PriceScheduleId = row.PriceScheduleId,
-            PriceScheduleVersion = row.PriceScheduleVersion,
-            UnitsPerMinorUnit = row.UnitsPerMinorUnit,
-            SourceCheckoutSessionId = row.SourceCheckoutSessionId,
-            SourcePaymentIntentId = row.SourcePaymentIntentId,
-            SourceChargeId = row.SourceChargeId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            OperationId = row.OperationId,
-            AttemptCount = row.AttemptCount,
-            IssuedAt = row.IssuedAt,
-            ReversalWindowEnds = row.ReversalWindowEnds,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        private static OnRampLot Clone(OnRampLot row) => System.Text.Json.JsonSerializer.Deserialize<OnRampLot>(System.Text.Json.JsonSerializer.Serialize(row))!;
 
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListIssuedForUserAsync(
             Guid userId, CancellationToken ct = default)

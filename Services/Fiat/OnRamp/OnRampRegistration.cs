@@ -48,7 +48,7 @@ public static class OnRampRegistration
                 "AddFiatOnRamp requires IRealValueKycGate to be registered first: buying units is a value "
                 + "action and D46 gates every value action on a current identity approval.");
 
-        // Bound as an instance resolved from configuration (the ReserveOptions/HoldOptions
+        // Bound as an instance resolved from configuration (the ReserveOptions
         // precedent): an absent section must still yield the fail-closed defaults, never null.
         services.AddSingleton(provider =>
             provider.GetRequiredService<IConfiguration>()
@@ -64,6 +64,7 @@ public static class OnRampRegistration
         // for one implementation would build two instances per request; the second resolves the
         // first, so there is exactly one handler per delivery.
         services.AddScoped<OnRampSettlementHandler>();
+        services.AddScoped<OnRampRecovery>();
         services.AddScoped<IFiatSettlementHandler>(provider =>
             provider.GetRequiredService<OnRampSettlementHandler>());
         services.AddScoped<IFiatEventHandler>(provider =>

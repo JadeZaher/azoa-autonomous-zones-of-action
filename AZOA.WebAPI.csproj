@@ -11,6 +11,10 @@
          .editorconfig; EnforceCodeStyleInBuild (Directory.Build.props) surfaces them.
          Packages/tests stay at warning to avoid breaking their pre-existing baseline. -->
     <WarningsAsErrors>$(WarningsAsErrors);IDE0005</WarningsAsErrors>
+    <!-- IDE0005 is only reported at build when XML docs are generated (Roslyn limitation);
+         the doc file exists to give the rule teeth, so XML-doc diagnostics stay silent (round 4 W0). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1572;CS1734;CS0419;CS1574;CS1570</NoWarn>
     <!-- Alpha version stamp (final-hardening-cutover Phase H, H5). Bump per
          CHANGELOG.md entry; see docs/NODE-HOST.md for the release process. -->
     <Version>0.1.0-alpha</Version>
@@ -106,10 +110,15 @@
                                   analyzer asset, so PrivateAssets=all.
        ═══════════════════════════════════════════════════════════════ -->
   <ItemGroup>
-    <PackageReference Include="SurrealForge.Client" Version="1.2.0" />
-    <PackageReference Include="SurrealForge.Schema" Version="1.2.0" />
+    <PackageReference Include="SurrealForge.Client" Version="1.3.0" />
+    <PackageReference Include="SurrealForge.Schema" Version="1.3.0" />
     <!-- Analyzer ships as an analyzer asset in the package; PrivateAssets=all
          keeps it from flowing to downstream consumers of this project. -->
-    <PackageReference Include="SurrealForge.Analyzer" Version="1.2.0" PrivateAssets="all" />
+    <PackageReference Include="SurrealForge.Analyzer" Version="1.3.0" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Pure wire/codec types stay internal; their unit tests read them directly. -->
+    <InternalsVisibleTo Include="AZOA.WebAPI.Tests" />
+    <InternalsVisibleTo Include="AZOA.WebAPI.IntegrationTests" />
   </ItemGroup>
 </Project>

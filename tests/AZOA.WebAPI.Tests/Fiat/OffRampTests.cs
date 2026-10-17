@@ -16,6 +16,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -27,6 +28,7 @@ using AZOA.WebAPI.Services.Fiat.OffRamp;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
 using AZOA.WebAPI.Services.Fiat.Reversal;
 using AZOA.WebAPI.Services.Reserve;
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -251,7 +253,7 @@ public class OffRampTests
         var harness = new Harness { Holding = "50000" };
         harness.Payouts.Seed(new FiatPayout
         {
-            Id = "already-in-flight",
+            Id = "already-in-flight", Environment = "test", ChainNetwork = "Devnet",
             SubjectUserId = SubjectUserId.ToString("N"),
             RequestKey = "first",
             ChainType = ChainType,
@@ -499,6 +501,38 @@ public class OffRampTests
     // ── A reversed payout runs the other way ──
 
     [Fact]
+    public async Task RestitutionCrashAfterSubmissionReplaysPersistedTransactionWithoutPreparingAgain()
+    {
+        var harness = new Harness();
+        await harness.RequestAsync(500);
+        var id = harness.Payouts.Rows.Single().Id;
+        await harness.Service.CollectUnitsAsync(id);
+        harness.CrashAfterPreparedSubmission = true;
+        await Assert.ThrowsAsync<HttpRequestException>(() => harness.Service.AbandonAsync(id, "Refund failed payout"));
+        harness.CrashAfterPreparedSubmission = false;
+        await harness.Service.AbandonAsync(id, "Resume original return");
+        harness.PreparedCount.Should().Be(1);
+        harness.Transfers.Where(move => move.From == ReserveAddress).Should().ContainSingle();
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.Returned);
+    }
+
+    [Fact]
+    public async Task RestitutionDrawFailureKeepsReceiptAndRepairsAccountingWithoutSecondTransfer()
+    {
+        var harness = new Harness();
+        await harness.RequestAsync(500);
+        var id = harness.Payouts.Rows.Single().Id;
+        await harness.Service.CollectUnitsAsync(id);
+        harness.FailReturnDraw = true;
+        await harness.Service.AbandonAsync(id, "Return collected units");
+        harness.Payouts.Rows.Single().Status.Should().NotBe(FiatPayoutStatuses.Returned);
+        harness.FailReturnDraw = false;
+        await harness.Service.AbandonAsync(id, "Repair accounting");
+        harness.Transfers.Where(move => move.From == ReserveAddress).Should().ContainSingle();
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.Returned);
+    }
+
+    [Fact]
     public async Task A_reversed_payout_is_recorded_as_a_debt_the_node_owes_and_never_flags_the_account()
     {
         var harness = new Harness();
@@ -582,6 +616,7 @@ public class OffRampTests
     private static OnRampLot Lot(
         string id, string quantity, DateTimeOffset? windowEnds, string consumed = "0") => new()
     {
+        Environment = "test", ChainNetwork = "Devnet",
         Id = id,
         IntentId = id,
         SubjectUserId = SubjectUserId.ToString("N"),
@@ -613,7 +648,10 @@ public class OffRampTests
 
         public bool AccountReady { get; init; } = true;
 
-        public bool TransferConfirms { get; init; } = true;
+        public bool TransferConfirms { get; set; } = true;
+        public bool CrashAfterPreparedSubmission { get; set; }
+        public bool FailReturnDraw { get; set; }
+        public int PreparedCount { get; private set; }
 
         public bool TransferRefused { get; init; }
 
@@ -757,6 +795,27 @@ public class OffRampTests
                         });
                 });
 
+            connect.Setup(c => c.GetTransferAsync(It.IsAny<StripeCredentials>(), "tr_test_1", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => AZOAResult<StripeTransfer>.Success(new() { TransferId = "tr_test_1",
+                    IntentId = SentTransfers.Last().PayoutId, Destination = ConnectedAccountId,
+                    AmountMinorUnits = SentTransfers.Last().AmountMinorUnits, Currency = SentTransfers.Last().Currency }));
+            connect.Setup(c => c.ConfigureManualPayoutsAsync(
+                    It.IsAny<StripeCredentials>(), ConnectedAccountId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<StripeConnectedAccount>.Success(new StripeConnectedAccount
+                { AccountId = ConnectedAccountId, PayoutSchedule = "manual", PayoutsEnabled = true }));
+            connect.Setup(c => c.GetConnectedAccountAsync(
+                    It.IsAny<StripeCredentials>(), ConnectedAccountId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<StripeConnectedAccount>.Success(new StripeConnectedAccount
+                { AccountId = ConnectedAccountId, PayoutSchedule = "manual", PayoutsEnabled = true }));
+            connect.Setup(c => c.CreateBankPayoutAsync(
+                    It.IsAny<StripeCredentials>(), It.IsAny<StripeTransferRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((StripeCredentials _, StripeTransferRequest request, CancellationToken __) =>
+                    AZOAResult<StripeBankPayout>.Success(new StripeBankPayout
+                    {
+                        PayoutId = "po_test_1", IntentId = request.PayoutId, Status = "paid",
+                        AmountMinorUnits = request.AmountMinorUnits, Currency = request.Currency,
+                    }));
+
             var platformToken = new Mock<IPlatformTokenGenesis>();
             platformToken
                 .Setup(p => p.GetStateAsync(It.IsAny<CancellationToken>()))
@@ -778,6 +837,7 @@ public class OffRampTests
                 .ReturnsAsync((ReserveDrawRequest request, CancellationToken _) =>
                 {
                     Draws.Add(request);
+                    if (FailReturnDraw && request.Kind == ReserveDrawKind.Issue) return AZOAResult<ReserveDrawOutcome>.Failure("Accounting unavailable");
                     return AZOAResult<ReserveDrawOutcome>.Success(new ReserveDrawOutcome(
                         request.AssetId, request.Partition, request.Kind, request.Amount,
                         ReservePartitionCounters.Declaring(new BigInteger(1_000_000)), 1, false));
@@ -811,6 +871,27 @@ public class OffRampTests
                         ? AZOAResult<string>.Success("MOVETX", "confirmed in round 42")
                         : AZOAResult<string>.Success("MOVETX", OperationStatus.PendingConfirmationMarker);
                 });
+
+            var preparedModule = new Mock<IValueTransferTransactionModule>();
+            var submitted = new HashSet<string>();
+            preparedModule.Setup(m => m.PrepareValueTransferAsync(It.IsAny<ValueTransferIntent>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ValueTransferIntent intent, CancellationToken _) => {
+                    PreparedCount++;
+                    return TransferFails ? AZOAResult<PreparedValueTransfer>.Failure("Preparation unavailable")
+                        : AZOAResult<PreparedValueTransfer>.Success(new("RETURN_TX", "SIGNED_WIRE", "test-genesis", intent));
+                });
+            preparedModule.Setup(m => m.SubmitValueTransferAsync(It.IsAny<PreparedValueTransfer>(), It.IsAny<CancellationToken>()))
+                .Returns((PreparedValueTransfer prepared, CancellationToken _) => {
+                    if (submitted.Add(prepared.TransactionId)) Transfers.Add(new(prepared.Intent.AssetId,
+                        prepared.Intent.Sender, prepared.Intent.Recipient, BigInteger.Parse(prepared.Intent.QuantityBaseUnits), prepared.Intent.SigningContext));
+                    if (CrashAfterPreparedSubmission) throw new HttpRequestException("Lost submission response");
+                    return Task.CompletedTask;
+                });
+            preparedModule.Setup(m => m.ObserveValueTransferAsync(It.IsAny<PreparedValueTransfer>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((PreparedValueTransfer prepared, CancellationToken _) => AZOAResult<ChainConfirmation>.Success(
+                    submitted.Contains(prepared.TransactionId) && TransferConfirms ? ChainConfirmation.Confirmed : ChainConfirmation.Pending));
+            provider.Setup(p => p.TryGetModule<IValueTransferTransactionModule>(out It.Ref<IValueTransferTransactionModule?>.IsAny))
+                .Returns((out IValueTransferTransactionModule? valueModule) => { valueModule = preparedModule.Object; return true; });
 
             var factory = new Mock<IBlockchainProviderFactory>();
             factory
@@ -945,40 +1026,7 @@ public class OffRampTests
                     .Select(Clone)
                     .ToList()));
 
-        private static FiatPayout Clone(FiatPayout row) => new()
-        {
-            Id = row.Id,
-            SubjectUserId = row.SubjectUserId,
-            RequestKey = row.RequestKey,
-            TenantId = row.TenantId,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            QuantityBaseUnits = row.QuantityBaseUnits,
-            AmountMinorUnits = row.AmountMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            PriceScheduleId = row.PriceScheduleId,
-            PriceScheduleVersion = row.PriceScheduleVersion,
-            UnitsPerMinorUnit = row.UnitsPerMinorUnit,
-            ConsumedLots = row.ConsumedLots,
-            AgedQuantityBaseUnits = row.AgedQuantityBaseUnits,
-            ConnectedAccountId = row.ConnectedAccountId,
-            ProviderTransferId = row.ProviderTransferId,
-            UnitsCollectedTransactionId = row.UnitsCollectedTransactionId,
-            UnitsReturnedTransactionId = row.UnitsReturnedTransactionId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            UnitsOwedBaseUnits = row.UnitsOwedBaseUnits,
-            ReversedMinorUnits = row.ReversedMinorUnits,
-            ReversalId = row.ReversalId,
-            AttemptCount = row.AttemptCount,
-            RequestedAt = row.RequestedAt,
-            UnitsCollectedAt = row.UnitsCollectedAt,
-            PaidAt = row.PaidAt,
-            ReversedAt = row.ReversedAt,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        private static FiatPayout Clone(FiatPayout row) => System.Text.Json.JsonSerializer.Deserialize<FiatPayout>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }
 
     /// <summary>In-memory on-ramp lot ledger with the production CAS contract.</summary>
@@ -1041,36 +1089,7 @@ public class OffRampTests
                     .Select(Clone)
                     .ToList()));
 
-        private static OnRampLot Clone(OnRampLot row) => new()
-        {
-            Id = row.Id,
-            IntentId = row.IntentId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            QuantityBaseUnits = row.QuantityBaseUnits,
-            GrossQuantityBaseUnits = row.GrossQuantityBaseUnits,
-            NodeFeeBaseUnits = row.NodeFeeBaseUnits,
-            ConsumedBaseUnits = row.ConsumedBaseUnits,
-            FiatMinorUnits = row.FiatMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            PriceScheduleId = row.PriceScheduleId,
-            PriceScheduleVersion = row.PriceScheduleVersion,
-            UnitsPerMinorUnit = row.UnitsPerMinorUnit,
-            SourceCheckoutSessionId = row.SourceCheckoutSessionId,
-            SourcePaymentIntentId = row.SourcePaymentIntentId,
-            SourceChargeId = row.SourceChargeId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            OperationId = row.OperationId,
-            AttemptCount = row.AttemptCount,
-            IssuedAt = row.IssuedAt,
-            ReversalWindowEnds = row.ReversalWindowEnds,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        private static OnRampLot Clone(OnRampLot row) => System.Text.Json.JsonSerializer.Deserialize<OnRampLot>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }
 
     /// <summary>In-memory reversal ledger; only the members the off-ramp actually reaches.</summary>
@@ -1116,52 +1135,6 @@ public class OffRampTests
         public Task<AZOAResult<bool>> HasActiveFlagAsync(Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<bool>.Success(
                 _rows.Values.Any(row => row.AccountFlagged && row.SubjectUserId == userId.ToString("N"))));
-    }
-
-    /// <summary>In-memory idempotency ledger with the production claim-or-replay contract.</summary>
-    private sealed class FakeIdempotencyStore : IIdempotencyStore
-    {
-        private readonly Dictionary<string, IdempotencyRecord> _rows = new(StringComparer.Ordinal);
-
-        public Task<IdempotencyClaim> TryClaimAsync(string key, string operationType, CancellationToken ct)
-        {
-            if (_rows.TryGetValue(key, out var existing))
-                return Task.FromResult(new IdempotencyClaim(false, existing));
-
-            var record = new IdempotencyRecord
-            {
-                Key = key,
-                OperationType = operationType,
-                State = IdempotencyState.InProgress,
-            };
-            _rows[key] = record;
-            return Task.FromResult(new IdempotencyClaim(true, record));
-        }
-
-        public Task CompleteAsync(string key, string resultPayload, CancellationToken ct)
-        {
-            if (_rows.TryGetValue(key, out var record))
-            {
-                record.State = IdempotencyState.Completed;
-                record.ResultPayload = resultPayload;
-            }
-
-            return Task.CompletedTask;
-        }
-
-        public Task FailAsync(string key, string error, CancellationToken ct)
-        {
-            if (_rows.TryGetValue(key, out var record))
-            {
-                record.State = IdempotencyState.Failed;
-                record.Error = error;
-            }
-
-            return Task.CompletedTask;
-        }
-
-        public Task<IdempotencyRecord?> GetAsync(string key, CancellationToken ct)
-            => Task.FromResult(_rows.TryGetValue(key, out var record) ? record : null);
     }
 
     /// <summary>A clock that does not move, so a window assertion is exact.</summary>

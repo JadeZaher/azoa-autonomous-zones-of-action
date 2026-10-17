@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: UNLICENSED
 // W4.2 -- the fiat on-ramp saga: a cleared card payment becomes units, at a price this node
 // registered beforehand, with a lot row that records which units that money bought.
 //
@@ -15,6 +15,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -28,6 +29,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using AZOA.WebAPI.Models;
 
 namespace AZOA.WebAPI.Tests.Fiat;
 
@@ -49,6 +51,36 @@ public class OnRampSagaTests
     private static readonly Guid TenantUserId = new("33333333333333333333333333333333");
 
     // ── The money-printer: a quantity may only come from the provider total x a registered price ──
+
+    [Fact]
+    public async Task Pending_issuance_is_not_aged_until_the_same_operation_is_confirmed()
+    {
+        var harness = new Harness { IssuanceStatus = "Pending" };
+
+        (await harness.ApplyAsync()).Should().Be(FiatEventOutcome.AcceptedPending);
+        var pending = harness.Lots.Single();
+        pending.Status.Should().NotBe(OnRampLotStatuses.Issued);
+        pending.OperationId.Should().Be(harness.IssuanceId.ToString("N"));
+        pending.IssuedAt.Should().BeNull();
+        pending.ReversalWindowEnds.Should().BeNull();
+        var allocationKey = harness.CapturedIdempotencyKey;
+
+        harness.IssuanceStatus = OperationStatus.Completed;
+        (await harness.ApplyAsync()).Should().Be(FiatEventOutcome.Applied);
+        harness.Lots.Single().OperationId.Should().Be(pending.OperationId);
+        harness.Lots.Single().IssuedAt.Should().Be(Now);
+        harness.CapturedIdempotencyKey.Should().Be(allocationKey);
+    }
+
+    [Fact]
+    public async Task Terminal_operation_without_transaction_evidence_does_not_issue_a_lot()
+    {
+        var harness = new Harness { IssuanceTransactionId = string.Empty };
+
+        (await harness.ApplyAsync()).Should().Be(FiatEventOutcome.AcceptedPending);
+        harness.Lots.Single().Status.Should().NotBe(OnRampLotStatuses.Issued);
+        harness.Lots.Single().IssuedAt.Should().BeNull();
+    }
 
     [Fact]
     public async Task The_issued_quantity_is_the_provider_total_times_the_registered_price()
@@ -728,36 +760,7 @@ public class OnRampSagaTests
                     .Select(Clone)
                     .ToList()));
 
-        private static OnRampLot Clone(OnRampLot row) => new()
-        {
-            Id = row.Id,
-            IntentId = row.IntentId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            QuantityBaseUnits = row.QuantityBaseUnits,
-            GrossQuantityBaseUnits = row.GrossQuantityBaseUnits,
-            NodeFeeBaseUnits = row.NodeFeeBaseUnits,
-            ConsumedBaseUnits = row.ConsumedBaseUnits,
-            FiatMinorUnits = row.FiatMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            PriceScheduleId = row.PriceScheduleId,
-            PriceScheduleVersion = row.PriceScheduleVersion,
-            UnitsPerMinorUnit = row.UnitsPerMinorUnit,
-            SourceCheckoutSessionId = row.SourceCheckoutSessionId,
-            SourcePaymentIntentId = row.SourcePaymentIntentId,
-            SourceChargeId = row.SourceChargeId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            OperationId = row.OperationId,
-            AttemptCount = row.AttemptCount,
-            IssuedAt = row.IssuedAt,
-            ReversalWindowEnds = row.ReversalWindowEnds,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        private static OnRampLot Clone(OnRampLot row) => System.Text.Json.JsonSerializer.Deserialize<OnRampLot>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }
 
     /// <summary>A price-schedule store backed by a fixed set of current versions.</summary>
@@ -860,6 +863,12 @@ public class OnRampSagaTests
 
         public AZOAResult<AllocationResult>? AllocationFailure { get; set; }
 
+        public Guid IssuanceId { get; } = Guid.NewGuid();
+
+        public string IssuanceStatus { get; set; } = OperationStatus.Completed;
+
+        public string IssuanceTransactionId { get; set; } = "CONFIRMED_ISSUANCE_TX";
+
         public AllocationRequest? CapturedRequest { get; set; }
 
         public string? CapturedIdempotencyKey { get; private set; }
@@ -939,12 +948,26 @@ public class OnRampSagaTests
                         UserId = SubjectUserId,
                         WalletId = Guid.NewGuid(),
                         WalletAddress = "RECIPIENTADDR",
-                        OperationId = Guid.NewGuid(),
+                        OperationId = IssuanceId,
                         GrossAmount = request.Amount,
                         NetAmount = NetAmount,
                         NodeFeeAmount = NodeFeeAmount,
                         NodeFeeScheduleVersion = 1,
                     }));
+                });
+
+            var operations = new Mock<IBlockchainOperationStore>(MockBehavior.Strict);
+            operations.Setup(store => store.GetByIdAsync(IssuanceId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() =>
+                {
+                    var operation = new Mock<IBlockchainOperation>();
+                    operation.SetupGet(row => row.Id).Returns(IssuanceId);
+                    operation.SetupGet(row => row.Status).Returns(IssuanceStatus);
+                    operation.SetupGet(row => row.Parameters).Returns(new Dictionary<string, string>
+                    {
+                        ["TxHash"] = IssuanceTransactionId,
+                    });
+                    return AZOAResult<IBlockchainOperation>.Success(operation.Object);
                 });
 
             var kyc = new Mock<IRealValueKycGate>();
@@ -981,7 +1004,8 @@ public class OnRampSagaTests
                 kyc.Object,
                 rails.Object,
                 NullLogger<OnRampSettlementHandler>.Instance,
-                new FixedClock(Now));
+                new FixedClock(Now),
+                operations.Object);
         }
 
         private FiatEventContext BuildContext() => new(

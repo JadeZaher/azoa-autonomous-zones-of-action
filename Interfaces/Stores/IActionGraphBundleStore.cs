@@ -19,8 +19,8 @@ public interface IActionGraphBundleStore
     /// <summary>Loads every action graph bundle.</summary>
     Task<AZOAResult<IEnumerable<IActionGraphBundle>>> GetAllAsync(CancellationToken ct = default);
 
-    /// <summary>Inserts or updates a action graph bundle.</summary>
-    Task<AZOAResult<IActionGraphBundle>> UpsertAsync(IActionGraphBundle odk, CancellationToken ct = default);
+    /// <summary>Inserts or updates an action graph bundle.</summary>
+    Task<AZOAResult<IActionGraphBundle>> UpsertAsync(IActionGraphBundle bundle, CancellationToken ct = default);
 
     /// <summary>Deletes an action graph bundle by id.</summary>
     Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default);

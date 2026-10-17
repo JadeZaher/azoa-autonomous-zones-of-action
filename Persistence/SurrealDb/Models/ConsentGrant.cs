@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -24,6 +23,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     {
         public const string SchemaNameConst = "consent_grant";
         public string SchemaName => SchemaNameConst;
+
+        public string? CommandId { get; set; }
+        public string? AdmissionReceiptJson { get; set; }
+        [Default("0")] public long Version { get; set; }
+        public DateTimeOffset? ExpiryNotifiedAt { get; set; }
 
         [Id]
         public string Id { get; set; } = string.Empty;

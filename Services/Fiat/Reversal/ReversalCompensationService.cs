@@ -2,16 +2,17 @@
 
 using System.Globalization;
 using System.Numerics;
+using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
-using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Services.Fiat.Reversal;
@@ -123,7 +124,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
     private readonly IFiatReversalLedger _reversals;
     private readonly IOnRampLotLedger _lots;
     private readonly IPlatformReserve _reserve;
-    private readonly IPlatformHold _holds;
+    private readonly IExchangeHoldSourceStore _purchases;
     private readonly IReversedPurchaseProvenance _provenance;
     private readonly IBlockchainProviderFactory _providerFactory;
     private readonly IWalletStore _wallets;
@@ -137,7 +138,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         IFiatReversalLedger reversals,
         IOnRampLotLedger lots,
         IPlatformReserve reserve,
-        IPlatformHold holds,
+        IExchangeHoldSourceStore purchases,
         IReversedPurchaseProvenance provenance,
         IBlockchainProviderFactory providerFactory,
         IWalletStore wallets,
@@ -150,7 +151,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         _reversals = reversals ?? throw new ArgumentNullException(nameof(reversals));
         _lots = lots ?? throw new ArgumentNullException(nameof(lots));
         _reserve = reserve ?? throw new ArgumentNullException(nameof(reserve));
-        _holds = holds ?? throw new ArgumentNullException(nameof(holds));
+        _purchases = purchases ?? throw new ArgumentNullException(nameof(purchases));
         _provenance = provenance ?? throw new ArgumentNullException(nameof(provenance));
         _providerFactory = providerFactory ?? throw new ArgumentNullException(nameof(providerFactory));
         _wallets = wallets ?? throw new ArgumentNullException(nameof(wallets));
@@ -211,10 +212,46 @@ public sealed class ReversalCompensationService : IReversalCompensation
         string? transactionId = null;
         string? refusal = null;
 
+        // ── Rung 0: purchase recoveries a previous pass committed but never recorded on this row ──
+        // They are immutable store receipts (a clawback counts once its move completed): a pass whose row save lost a
+        // version race is counted here, before any rung can take the same units again.
+        var committed = Guid.TryParseExact(row.SubjectUserId, "N", out var reversalSubject) && reversalSubject != Guid.Empty
+            ? await _purchases.ListReversalRecoveriesAsync(row.Id, reversalSubject, ct)
+            : Array.Empty<ExchangePurchaseRecoveryResult>();
+        var committedTotal = BigInteger.Zero;
+        var clawbackCounted = false;
+        foreach (var step in committed)
+        {
+            if (step.Clawback && (await _idempotency.GetAsync(ClawbackClaimKey(row, step), ct))?.State != IdempotencyState.Completed)
+                continue;
+            committedTotal += ReversalMath.ParseBaseUnits(step.CreditedSourceUnits);
+            clawbackCounted |= step.Clawback;
+        }
+        var purchaseRecorded = ReversalMath.ParseBaseUnits(row.PurchaseRecoveredBaseUnits);
+        // What rung 1 has recorded: every recovery on the row that is not a receipt-backed purchase step.
+        var balanceRecorded = ReversalMath.ParseBaseUnits(row.RecoveredQuantityBaseUnits) - purchaseRecorded;
+        if (balanceRecorded < BigInteger.Zero)
+            balanceRecorded = BigInteger.Zero;
+        if (committedTotal > purchaseRecorded)
+        {
+            var unrecorded = committedTotal - purchaseRecorded;
+            if (unrecorded > outstanding)
+            {
+                _logger.LogError(
+                    "Reversal {ReversalId} has {Committed} purchase-recovery units on record against {Outstanding} outstanding.",
+                    row.Id, ReversalMath.Format(committedTotal), ReversalMath.Format(outstanding));
+                unrecorded = outstanding;
+            }
+            recoveredThisPass += unrecorded;
+            outstanding -= unrecorded;
+            row.PurchaseRecoveredBaseUnits = ReversalMath.Format(purchaseRecorded + unrecorded);
+            path = clawbackCounted ? FiatReversalRecoveryPaths.Purchase : FiatReversalRecoveryPaths.Hold;
+        }
+
         // ── Rung 1: the units are still in the payer's own account ──
         if (policy.RecoverFromBalance && outstanding > BigInteger.Zero)
         {
-            var balance = await RecoverFromBalanceAsync(row, outstanding, ct);
+            var balance = await RecoverFromBalanceAsync(row, outstanding, balanceRecorded, ct);
             if (balance.Ambiguous)
                 return await ParkAmbiguousAsync(row, balance.Detail, ct);
             if (!balance.Definite)
@@ -237,7 +274,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         if (outstanding > BigInteger.Zero
             && (policy.RecoverFromOpenHolds || policy.RecoverFromPurchasedUnits))
         {
-            var purchases = await RecoverFromPurchasesAsync(row, policy, outstanding, ct);
+            var purchases = await RecoverFromPurchasesAsync(row, policy, outstanding, committed, ct);
             if (purchases.Ambiguous)
                 return await ParkAmbiguousAsync(row, purchases.Detail, ct);
             if (!purchases.Definite)
@@ -412,7 +449,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
     /// never more than they actually hold.
     /// </summary>
     private async Task<RungResult> RecoverFromBalanceAsync(
-        FiatReversal row, BigInteger outstanding, CancellationToken ct)
+        FiatReversal row, BigInteger outstanding, BigInteger balanceRecorded, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(row.ChainType) || string.IsNullOrWhiteSpace(row.AssetId))
             return RungResult.Refused("The reversal does not name the units it has to take back.");
@@ -427,11 +464,52 @@ public sealed class ReversalCompensationService : IReversalCompensation
         if (reserveAccount.IsError || reserveAccount.Result is null)
             return RungResult.Retry($"The platform account could not be resolved: {reserveAccount.Message}");
 
+        // Each move is keyed on what this rung had already recorded before it. A pass whose row save was lost finds its
+        // own completed move under the same key and replays the stored amount, before re-reading a balance it changed.
+        var recoveredHere = BigInteger.Zero;
+        string? transactionId = null;
+        for (var move = 0; move < MaxBalanceMovesPerPass && recoveredHere < outstanding; move++)
+        {
+            var key = RecoveryIdempotencyKey(row, "balance", balanceRecorded + recoveredHere);
+            var existing = await _idempotency.GetAsync(key, ct);
+            if (existing is not null)
+            {
+                var replayed = ReplayRecord(existing, FiatReversalRecoveryPaths.Balance);
+                if (replayed.Ambiguous || !replayed.Definite)
+                    return replayed;
+                if (replayed.Amount <= BigInteger.Zero)
+                    break;
+                recoveredHere += replayed.Amount;
+                transactionId ??= replayed.TransactionId;
+                continue;
+            }
+
+            var moved = await ClawBackBalanceAsync(row, key, outstanding - recoveredHere, subjectUserId, asa!,
+                reserveAccount.Result.Address, ct);
+            if (moved.Ambiguous || !moved.Definite)
+                return moved;
+            if (moved.Amount <= BigInteger.Zero)
+                return recoveredHere > BigInteger.Zero
+                    ? RungResult.Recovered(recoveredHere, FiatReversalRecoveryPaths.Balance, transactionId) : moved;
+            recoveredHere += moved.Amount;
+            transactionId ??= moved.TransactionId;
+            break;
+        }
+
+        return recoveredHere > BigInteger.Zero
+            ? RungResult.Recovered(recoveredHere, FiatReversalRecoveryPaths.Balance, transactionId)
+            : RungResult.Refused("The account no longer holds the units this payment bought.");
+    }
+
+    /// <summary>One fresh balance clawback under its claim key; the stored payload carries the exact amount moved.</summary>
+    private async Task<RungResult> ClawBackBalanceAsync(FiatReversal row, string key, BigInteger outstanding, Guid subjectUserId,
+        IAlgorandASAModule asa, string reserveAddress, CancellationToken ct)
+    {
         var holderAddress = await ResolveHolderAddressAsync(subjectUserId, row.ChainType!, ct);
         if (holderAddress.Address is null)
             return RungResult.Refused(holderAddress.Error);
 
-        var holdingRead = await asa!.GetAssetHoldingAsync(row.AssetId!, holderAddress.Address, ct);
+        var holdingRead = await asa.GetAssetHoldingAsync(row.AssetId!, holderAddress.Address, ct);
         if (holdingRead.IsError)
             return RungResult.Retry($"The account's balance could not be read: {holdingRead.Message}");
 
@@ -440,20 +518,17 @@ public sealed class ReversalCompensationService : IReversalCompensation
         if (recoverable <= BigInteger.Zero)
             return RungResult.Refused("The account no longer holds the units this payment bought.");
 
-        // The claim is keyed on the TARGET as well as the reversal, so a second partial refund
-        // that raises the target unlocks a new move while a retry of THIS one never repeats it.
-        var key = RecoveryIdempotencyKey(row, "balance", recoverable);
         var claim = await _idempotency.TryClaimAsync(key, RecoveryOperationType, ct);
         if (!claim.Won)
-            return ReplayClaim(claim, recoverable);
+            return ReplayRecord(claim.Record, FiatReversalRecoveryPaths.Balance);
 
         var clawback = await asa.ClawbackAssetAsync(
             row.AssetId!,
             holderAddress: holderAddress.Address,
-            recipientAddress: reserveAccount.Result.Address,
+            recipientAddress: reserveAddress,
             amount: RailAmount.OfChainAsset(recoverable, row.AssetId),
             signingContext: SigningContext.PlatformFor(row.ChainType!),
-            clawbackAddress: reserveAccount.Result.Address,
+            clawbackAddress: reserveAddress,
             ct: ct);
 
         if (clawback.IsError)
@@ -473,7 +548,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
             return RungResult.Unconfirmed(AmbiguousRecoveryReason);
         }
 
-        await _idempotency.CompleteAsync(key, clawback.Result ?? string.Empty, ct);
+        await _idempotency.CompleteAsync(key, RecoveryPayload(recoverable, clawback.Result), ct);
 
         // The units are back in the reserve, so the partition they were issued from gets its
         // availability back. Without this draw the on-ramp partition would shrink by every
@@ -500,8 +575,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
                 row.Id, ReversalMath.Format(recoverable), draw.Message);
         }
 
-        return RungResult.Recovered(
-            recoverable, FiatReversalRecoveryPaths.Balance, clawback.Result);
+        return RungResult.Recovered(recoverable, FiatReversalRecoveryPaths.Balance, clawback.Result);
     }
 
     // ── Rung 2 ────────────────────────────────────────────────────────────────
@@ -511,8 +585,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
     /// payment. Without that attribution nothing is touched: taking back an arbitrary hold a
     /// disputing sponsor happens to benefit from would rob whichever honest backer funded it.
     /// </summary>
-    private async Task<RungResult> RecoverFromPurchasesAsync(
-        FiatReversal row, ReversalFlowPolicy policy, BigInteger outstanding, CancellationToken ct)
+    private async Task<RungResult> RecoverFromPurchasesAsync(FiatReversal row, ReversalFlowPolicy policy, BigInteger outstanding,
+        IReadOnlyList<ExchangePurchaseRecoveryResult> committed, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(row.LotId))
             return RungResult.Refused("This reversal is not linked to an issuance.");
@@ -533,6 +607,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
         string? transactionId = null;
         string? refusal = null;
 
+        var purchaseCounted = ReversalMath.ParseBaseUnits(row.PurchaseRecoveredBaseUnits);
+
         foreach (var claim in claims.Result ?? Array.Empty<ReversedPurchaseClaim>())
         {
             if (remaining <= BigInteger.Zero)
@@ -544,12 +620,19 @@ public sealed class ReversalCompensationService : IReversalCompensation
             if (attributable <= BigInteger.Zero)
                 continue;
 
+            // This reversal's cumulative want from the purchase: what it already took plus what is still outstanding.
+            var alreadyFromClaim = committed.Where(step => step.SourceId == claim.SourceId).Aggregate(BigInteger.Zero,
+                (total, step) => total + ReversalMath.ParseBaseUnits(step.CreditedSourceUnits));
+            var cumulativeWant = BigInteger.Min(claim.SourceQuantityBaseUnits, alreadyFromClaim + attributable);
+
             var rung = claim.Kind switch
             {
+                ReversedPurchaseKind.OpenHold when policy.RecoverFromOpenHolds && cumulativeWant > alreadyFromClaim
+                    => await RefundOpenHoldAsync(row, claim, cumulativeWant, ct),
                 ReversedPurchaseKind.OpenHold when policy.RecoverFromOpenHolds
-                    => await RefundOpenHoldAsync(row, claim, attributable, ct),
+                    => RungResult.Refused("This payment's share of that purchase has already been recovered."),
                 ReversedPurchaseKind.IssuedAsset when policy.RecoverFromPurchasedUnits
-                    => await ClawBackPurchasedAssetAsync(row, claim, attributable, ct),
+                    => await ClawBackPurchasedAssetAsync(row, claim, committed, attributable, ct),
                 _ => RungResult.Refused("This flow does not unwind that kind of commitment."),
             };
 
@@ -564,6 +647,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
                 remaining -= rung.Amount;
                 path = FiatReversalRecoveryPaths.Combine(path, rung.Path!);
                 transactionId ??= rung.TransactionId;
+                // Both kinds are receipt-backed steps, so rung 0 can reconcile them after a lost row save.
+                purchaseCounted += rung.Amount;
             }
             else
             {
@@ -571,52 +656,46 @@ public sealed class ReversalCompensationService : IReversalCompensation
             }
         }
 
+        row.PurchaseRecoveredBaseUnits = ReversalMath.Format(purchaseCounted);
         return recovered > BigInteger.Zero
             ? RungResult.Recovered(recovered, path ?? FiatReversalRecoveryPaths.Purchase, transactionId)
             : RungResult.Refused(refusal ?? "Nothing this payment bought could be unwound.");
     }
 
     /// <summary>
-    /// Gives back a hold this payment funded. Nothing moves on any rail — the units never left
-    /// the holding account — so the reserve's own <c>CancelHold</c> draw inside the hold service
-    /// is the whole accounting, and this method deliberately performs no second draw.
+    /// Recovers exactly the share of a settled held purchase this payment funded. Nothing moves on any
+    /// rail; the store joins attribution, the liability recovery or split, the reserve return and an
+    /// immutable receipt in one transaction, so a retry replays rather than recovering twice.
     /// </summary>
     private async Task<RungResult> RefundOpenHoldAsync(
-        FiatReversal row, ReversedPurchaseClaim claim, BigInteger attributable, CancellationToken ct)
+        FiatReversal row, ReversedPurchaseClaim claim, BigInteger cumulativeWant, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(claim.HoldId) || string.IsNullOrWhiteSpace(claim.ChainType))
-            return RungResult.Refused("A commitment this payment funded names no hold to give back.");
+        if (string.IsNullOrWhiteSpace(claim.SourceId) || string.IsNullOrWhiteSpace(row.LotId)
+            || !Guid.TryParseExact(row.SubjectUserId, "N", out var subject) || subject == Guid.Empty)
+            return RungResult.Refused("A commitment this payment funded names no settled purchase to recover.");
 
-        var key = RecoveryIdempotencyKey(row, $"hold:{claim.HoldId}", attributable);
-        var idempotencyClaim = await _idempotency.TryClaimAsync(key, RecoveryOperationType, ct);
-        if (!idempotencyClaim.Won)
-            return ReplayClaim(idempotencyClaim, attributable, FiatReversalRecoveryPaths.Hold);
+        var recovered = await _purchases.RecoverExchangePurchaseAsync(new ExchangePurchaseRecovery(1, row.Id, row.LotId!,
+            subject, claim.SourceId!, ReversalMath.Format(cumulativeWant),
+            $"The payment that funded this purchase was reversed ({row.Id}).",
+            ReversalMath.Format(claim.SourceQuantityBaseUnits)), ct);
+        if (recovered is null)
+            return RungResult.Refused("The purchase this payment funded is no longer held exactly as it was settled.");
 
-        var refunded = await _holds.RefundAsync(
-            new HoldSettlementRequest(
-                new HoldReference(claim.ChainType, claim.HoldId!),
-                ActingTenantId: null,
-                Reason: $"The payment that funded this hold was reversed ({row.Id})."),
-            ct);
-
-        if (refunded.IsError)
-        {
-            await _idempotency.FailAsync(key, refunded.Message, ct);
-            return RungResult.Refused($"The hold could not be given back: {refunded.Message}");
-        }
-
-        await _idempotency.CompleteAsync(key, ReversalMath.Format(attributable), ct);
-        return RungResult.Recovered(attributable, FiatReversalRecoveryPaths.Hold, null);
+        return RungResult.Recovered(ReversalMath.ParseBaseUnits(recovered.CreditedSourceUnits),
+            FiatReversalRecoveryPaths.Hold, null);
     }
 
-    /// <summary>Takes back an asset this payment's units bought, using the reserve's clawback authority.</summary>
-    private async Task<RungResult> ClawBackPurchasedAssetAsync(
-        FiatReversal row, ReversedPurchaseClaim claim, BigInteger attributable, CancellationToken ct)
+    /// <summary>
+    /// Takes back delivered units this payment's share bought, using the reserve's clawback authority. Every move is first
+    /// reserved as an immutable store step (the payment's share, rounded up, never past what was delivered) whose id is the
+    /// move's claim key, so a repeated pass finishes or replays that step instead of clawing again.
+    /// </summary>
+    private async Task<RungResult> ClawBackPurchasedAssetAsync(FiatReversal row, ReversedPurchaseClaim claim,
+        IReadOnlyList<ExchangePurchaseRecoveryResult> committed, BigInteger attributable, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(claim.AssetId)
-            || string.IsNullOrWhiteSpace(claim.ChainType)
-            || string.IsNullOrWhiteSpace(claim.HolderAddress)
-            || claim.AssetQuantityBaseUnits <= BigInteger.Zero)
+        if (string.IsNullOrWhiteSpace(claim.AssetId) || string.IsNullOrWhiteSpace(claim.ChainType)
+            || string.IsNullOrWhiteSpace(claim.HolderAddress) || string.IsNullOrWhiteSpace(claim.SourceId)
+            || string.IsNullOrWhiteSpace(row.LotId) || !Guid.TryParseExact(row.SubjectUserId, "N", out var subject) || subject == Guid.Empty)
         {
             return RungResult.Refused(
                 "What this payment bought is not described precisely enough to take back.");
@@ -629,24 +708,72 @@ public sealed class ReversalCompensationService : IReversalCompensation
         if (reserveAccount.IsError || reserveAccount.Result is null)
             return RungResult.Retry($"The platform account could not be resolved: {reserveAccount.Message}");
 
-        var key = RecoveryIdempotencyKey(row, $"asset:{claim.AssetId}", attributable);
+        var recovered = BigInteger.Zero;
+        string? transactionId = null;
+        var fromClaim = committed.Where(step => step.SourceId == claim.SourceId).ToList();
+
+        // A reservation an earlier pass made but whose move never completed is finished before anything new is reserved.
+        foreach (var pending in fromClaim.Where(step => step.Clawback))
+        {
+            if ((await _idempotency.GetAsync(ClawbackClaimKey(row, pending), ct))?.State == IdempotencyState.Completed)
+                continue;
+            var finished = await SendClawbackAsync(row, claim, pending, asa!, reserveAccount.Result.Address, ct);
+            if (finished.Ambiguous || !finished.Definite || finished.Amount <= BigInteger.Zero)
+                return recovered > BigInteger.Zero && finished.Definite && !finished.Ambiguous
+                    ? RungResult.Recovered(recovered, FiatReversalRecoveryPaths.Purchase, transactionId) : finished;
+            recovered += finished.Amount;
+            transactionId ??= finished.TransactionId;
+        }
+
+        var alreadyFromClaim = fromClaim.Aggregate(BigInteger.Zero,
+            (total, step) => total + ReversalMath.ParseBaseUnits(step.CreditedSourceUnits));
+        var stillDue = attributable - recovered;
+        var cumulativeWant = BigInteger.Min(claim.SourceQuantityBaseUnits, alreadyFromClaim + stillDue);
+        if (stillDue > BigInteger.Zero && cumulativeWant > alreadyFromClaim)
+        {
+            var reserved = await _purchases.ReserveExchangeClawbackAsync(new ExchangePurchaseRecovery(1, row.Id, row.LotId!,
+                subject, claim.SourceId!, ReversalMath.Format(cumulativeWant),
+                $"The payment that funded this purchase was reversed ({row.Id}).",
+                ReversalMath.Format(claim.SourceQuantityBaseUnits)), ct);
+            if (reserved is not null)
+            {
+                var sent = await SendClawbackAsync(row, claim, reserved, asa!, reserveAccount.Result.Address, ct);
+                if (sent.Ambiguous || !sent.Definite)
+                    return sent;
+                recovered += sent.Amount;
+                transactionId ??= sent.TransactionId;
+            }
+        }
+
+        return recovered > BigInteger.Zero
+            ? RungResult.Recovered(recovered, FiatReversalRecoveryPaths.Purchase, transactionId)
+            : RungResult.Refused("This payment's share of what it bought has already been taken back or was never delivered.");
+    }
+
+    /// <summary>Sends exactly one reserved clawback step under its own claim key and records the credited amount.</summary>
+    private async Task<RungResult> SendClawbackAsync(FiatReversal row, ReversedPurchaseClaim claim,
+        ExchangePurchaseRecoveryResult step, IAlgorandASAModule asa, string reserveAddress, CancellationToken ct)
+    {
+        var key = ClawbackClaimKey(row, step);
+        var units = ReversalMath.ParseBaseUnits(step.RecoveredHoldUnits);
+        var credited = ReversalMath.ParseBaseUnits(step.CreditedSourceUnits);
         var idempotencyClaim = await _idempotency.TryClaimAsync(key, RecoveryOperationType, ct);
         if (!idempotencyClaim.Won)
-            return ReplayClaim(idempotencyClaim, attributable, FiatReversalRecoveryPaths.Purchase);
+            return ReplayRecord(idempotencyClaim.Record, FiatReversalRecoveryPaths.Purchase);
 
-        var clawback = await asa!.ClawbackAssetAsync(
+        var clawback = await asa.ClawbackAssetAsync(
             claim.AssetId!,
             holderAddress: claim.HolderAddress!,
-            recipientAddress: reserveAccount.Result.Address,
-            amount: RailAmount.OfChainAsset(claim.AssetQuantityBaseUnits, claim.AssetId),
+            recipientAddress: reserveAddress,
+            amount: RailAmount.OfChainAsset(units, claim.AssetId),
             signingContext: SigningContext.PlatformFor(claim.ChainType),
-            clawbackAddress: reserveAccount.Result.Address,
+            clawbackAddress: reserveAddress,
             ct: ct);
 
         if (clawback.IsError)
         {
             await _idempotency.FailAsync(key, clawback.Message, ct);
-            return RungResult.Refused($"What this payment bought could not be taken back: {clawback.Message}");
+            return RungResult.Retry($"What this payment bought could not be taken back: {clawback.Message}");
         }
 
         if (IsPendingConfirmation(clawback.Message))
@@ -655,34 +782,50 @@ public sealed class ReversalCompensationService : IReversalCompensation
             return RungResult.Unconfirmed(AmbiguousRecoveryReason);
         }
 
-        await _idempotency.CompleteAsync(key, clawback.Result ?? string.Empty, ct);
-        return RungResult.Recovered(attributable, FiatReversalRecoveryPaths.Purchase, clawback.Result);
+        await _idempotency.CompleteAsync(key, RecoveryPayload(credited, clawback.Result), ct);
+        return RungResult.Recovered(credited, FiatReversalRecoveryPaths.Purchase, clawback.Result);
     }
 
     // ── Shared machinery ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Deterministic claim key for one recovery move. The target is part of it so a SECOND
-    /// partial refund (which raises what is owed) unlocks a new move, while every retry of the
-    /// same move replays instead of repeating.
-    /// </summary>
-    public static string RecoveryIdempotencyKey(FiatReversal row, string rung, BigInteger amount)
-        => $"{RecoveryOperationType}:{row.Id}:{rung}:{ReversalMath.Format(amount)}";
+    /// <summary>Most balance moves one pass replays or makes; a fresh move always ends the loop.</summary>
+    private const int MaxBalanceMovesPerPass = 8;
 
     /// <summary>
-    /// What a repeated claim means. A completed claim is a recovery that already happened; a
-    /// failed one is a move whose outcome this node could not establish, which is the one case
-    /// that must reach a person rather than a retry.
+    /// Deterministic claim key for one recovery move, keyed on what the rung had already recorded before it. A second
+    /// partial refund that raises what is owed unlocks a new move only once the first is recorded; a pass whose row save
+    /// was lost finds its own move again instead of making a second one.
     /// </summary>
-    private static RungResult ReplayClaim(
-        IdempotencyClaim claim, BigInteger amount, string path = FiatReversalRecoveryPaths.Balance)
+    public static string RecoveryIdempotencyKey(FiatReversal row, string rung, BigInteger recordedBefore)
+        => $"{RecoveryOperationType}:{row.Id}:{rung}:{ReversalMath.Format(recordedBefore)}";
+
+    /// <summary>The claim key of one reserved clawback step: its immutable store receipt id.</summary>
+    public static string ClawbackClaimKey(FiatReversal row, ExchangePurchaseRecoveryResult step)
+        => $"{RecoveryOperationType}:{row.Id}:clawback:{step.ReceiptId}";
+
+    /// <summary>The completed claim payload: the exact units a move recovered and its rail reference.</summary>
+    public static string RecoveryPayload(BigInteger amount, string? transactionId)
+        => JsonSerializer.Serialize(new RecoveryClaimPayload(ReversalMath.Format(amount), transactionId));
+
+    /// <summary>
+    /// What an existing claim means. A completed claim is a recovery that already happened, for the amount it stored; a
+    /// failed one is a move whose outcome this node could not establish, which is the one case that must reach a person.
+    /// </summary>
+    private static RungResult ReplayRecord(IdempotencyRecord record, string path)
     {
-        if (claim.Record.State == IdempotencyState.Completed)
-            return RungResult.Recovered(amount, path, claim.Record.ResultPayload);
-
-        if (claim.Record.State == IdempotencyState.Failed)
+        if (record.State == IdempotencyState.Completed)
         {
-            var error = claim.Record.Error ?? string.Empty;
+            RecoveryClaimPayload? payload = null;
+            try { payload = JsonSerializer.Deserialize<RecoveryClaimPayload>(record.ResultPayload ?? string.Empty); }
+            catch (JsonException) { }
+            return payload is not null && ReversalMath.ParseBaseUnits(payload.Amount) > BigInteger.Zero
+                ? RungResult.Recovered(ReversalMath.ParseBaseUnits(payload.Amount), path, payload.TransactionId)
+                : RungResult.Unconfirmed("A completed recovery move did not record how much it took; a person must reconcile it.");
+        }
+
+        if (record.State == IdempotencyState.Failed)
+        {
+            var error = record.Error ?? string.Empty;
             return error.Contains(AmbiguousRecoveryReason, StringComparison.Ordinal)
                 ? RungResult.Unconfirmed(AmbiguousRecoveryReason)
                 : RungResult.Retry($"A previous recovery attempt failed: {error}");
@@ -690,6 +833,8 @@ public sealed class ReversalCompensationService : IReversalCompensation
 
         return RungResult.Retry("A recovery move for this reversal is still in progress.");
     }
+
+    private sealed record RecoveryClaimPayload(string Amount, string? TransactionId);
 
     /// <summary>
     /// Marks the issuance this reversal unwound, so the source-aged cash-out rule (W8.1) can
@@ -726,13 +871,24 @@ public sealed class ReversalCompensationService : IReversalCompensation
         }
         else
         {
-            var consumed = alreadyConsumed + target;
+            // The target is cumulative, and each reversal's mark lives on the lot in the same write, so a second partial
+            // refund or a repeated pass adds only the difference (AGENTS.md §lot).
+            var marks = ReadReversalMarks(lot.ReversalMarksJson);
+            var marked = ReversalMath.ParseBaseUnits(marks.GetValueOrDefault(row.Id));
+            if (target <= marked)
+                return;
+            var consumed = alreadyConsumed + (target - marked);
             if (consumed > issued)
                 consumed = issued;
             if (consumed <= alreadyConsumed)
                 return;
 
+            var applied = consumed - alreadyConsumed;
             lot.ConsumedBaseUnits = ReversalMath.Format(consumed);
+            // Tracked apart so purchase attribution keeps this lot's full place in the FIFO order (AGENTS.md §provenance).
+            lot.ReversedBaseUnits = ReversalMath.Format(ReversalMath.ParseBaseUnits(lot.ReversedBaseUnits) + applied);
+            marks[row.Id] = ReversalMath.Format(marked + applied);
+            lot.ReversalMarksJson = JsonSerializer.Serialize(marks);
         }
 
         lot.UpdatedAt = _clock.GetUtcNow();
@@ -746,6 +902,20 @@ public sealed class ReversalCompensationService : IReversalCompensation
             _logger.LogError(
                 "Reversal {ReversalId} could not record itself against on-ramp lot {LotId}: {Detail}",
                 row.Id, lot.Id, saved.Message);
+        }
+    }
+
+    /// <summary>Per-reversal cumulative targets already marked against a lot; unreadable marks count as none.</summary>
+    private static Dictionary<string, string> ReadReversalMarks(string? json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(string.IsNullOrWhiteSpace(json) ? "{}" : json)
+                ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
         }
     }
 

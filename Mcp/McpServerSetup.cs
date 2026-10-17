@@ -1,7 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Server;
 using AZOA.WebAPI.Mcp.Tools;
 
 namespace AZOA.WebAPI.Mcp;

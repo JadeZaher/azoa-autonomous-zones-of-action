@@ -1,9 +1,8 @@
-﻿// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: UNLICENSED
 
 using System.Numerics;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -14,7 +13,6 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Governance;
-using AZOA.WebAPI.Services.Hold;
 // ReserveDrawAuthority / ReservePartitionScope: the one who-may-draw-this-partition
 // predicate, enforced inside PlatformReserveService.DrawAsync so every draw seam asks it.
 using AZOA.WebAPI.Services.Reserve;
@@ -183,7 +181,7 @@ public sealed class AllocationManager : IAllocationManager
             if (gate.IsError)
             {
                 var refusal = ToConsumerSafeFailure(gate.Message);
-                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                await FailBeforeValueEffectAsync(ledgerKey, refusal.Message);
                 return refusal;
             }
 
@@ -192,7 +190,7 @@ public sealed class AllocationManager : IAllocationManager
             if (admissible is not null)
             {
                 var refusal = ToConsumerSafeFailure(admissible);
-                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                await FailBeforeValueEffectAsync(ledgerKey, refusal.Message);
                 return refusal;
             }
 
@@ -204,7 +202,7 @@ public sealed class AllocationManager : IAllocationManager
             if (!TryParseAmount(request.Amount, out var amount, out var amountError))
             {
                 var refusal = ToConsumerSafeFailure(amountError);
-                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                await FailBeforeValueEffectAsync(ledgerKey, refusal.Message);
                 return refusal;
             }
 
@@ -213,7 +211,7 @@ public sealed class AllocationManager : IAllocationManager
             {
                 var msg = feeQuoteResult.IsError ? feeQuoteResult.Message : "Node fee quote produced no result.";
                 var refusal = ToConsumerSafeFailure(msg);
-                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                await FailBeforeValueEffectAsync(ledgerKey, refusal.Message);
                 return refusal;
             }
             var feeQuote = feeQuoteResult.Result;
@@ -273,15 +271,12 @@ public sealed class AllocationManager : IAllocationManager
             var op = opResult.Result;
 
             // ── Step 7: settle the alloc idempotency key from the op outcome ──
-            // C2: complete the allocation idempotency key ONLY when the op carries a
-            // real TxHash (a confirmed broadcast, or an M1 pending-with-hash). If the
-            // op did not record a TxHash, leave the allocation record InProgress so a
-            // redelivered request replays "in progress" — NOT a false success.
+            // Completion requires a terminal chain outcome; reconciliation owns pending broadcasts.
             var result = BuildAllocationResult(
                 userId, wallet, provisioned, op.Id, feeQuote);
 
             var txHash = op.Parameters.GetValueOrDefault("TxHash", string.Empty);
-            if (string.IsNullOrWhiteSpace(txHash))
+            if (string.IsNullOrWhiteSpace(txHash) || op.Status is not (OperationStatus.Completed or OperationStatus.Transferred or OperationStatus.Minted))
             {
                 // Broadcast did not (yet) record a settlement reference. Do NOT
                 // Complete the key — leave it InProgress so reconciliation/replay can
@@ -307,6 +302,11 @@ public sealed class AllocationManager : IAllocationManager
     }
 
     // ── Quote-only (terms before the lock) ────────────────────────────────────
+
+    private Task FailBeforeValueEffectAsync(string key, string error)
+        => _idempotencyStore is IAllocationRecoveryStore recovery
+            ? recovery.RecordNoEffectFailureAsync(key, error, CancellationToken.None)
+            : _idempotencyStore.FailAsync(key, error, CancellationToken.None);
 
     /// <summary>
     /// Runs every gate and validation an allocation runs, returns the exact gross / node

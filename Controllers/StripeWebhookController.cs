@@ -142,44 +142,8 @@ public sealed class StripeWebhookController : ControllerBase
                 Acknowledgement());
         }
 
-        var context = new FiatEventContext(
-            row,
-            envelope.EventType,
-            envelope.CheckoutSessionId,
-            envelope.PaymentIntentId,
-            envelope.ChargeId,
-            envelope.IntentId,
-            envelope.SubjectUserId,
-            environment);
-
-        var outcomes = new List<FiatEventOutcome>();
-        string? firstError = null;
-
-        foreach (var handler in _handlers.Where(candidate => candidate.Handles(envelope.EventType)))
-        {
-            try
-            {
-                outcomes.Add(await handler.ApplyAsync(context, ct));
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                // One handler throwing must not lose the others' work, and must not be reported as
-                // success. It becomes a Failed outcome, which the aggregate promotes to a 5xx.
-                _logger.LogError(
-                    exception, "Fiat event handler {Handler} failed for {EventType}.",
-                    handler.Name, envelope.EventType);
-                outcomes.Add(FiatEventOutcome.Failed);
-                firstError ??= handler.Name + " threw while applying this event.";
-            }
-        }
-
-        var outcome = FiatEventDispositions.Aggregate(outcomes);
-        var recorded = await _inbox.RecordOutcomeAsync(
-            row.Id, FiatEventDispositions.ToRowStatus(outcome), firstError, ct);
+        var recorded = await FiatEventDispatcher.ApplyAsync(
+            row, environment, _inbox, _handlers, _logger, ct);
         if (recorded.IsError)
         {
             // The work may have happened; the bookkeeping did not. A 5xx brings the delivery back,
@@ -189,7 +153,12 @@ public sealed class StripeWebhookController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, Acknowledgement());
         }
 
-        return StatusCode(FiatEventDispositions.ToStatusCode(outcome), Acknowledgement());
+        return StatusCode(recorded.Result!.Status switch
+        {
+            FiatEventStatuses.Applied => StatusCodes.Status200OK,
+            FiatEventStatuses.Ignored or FiatEventStatuses.Received => StatusCodes.Status202Accepted,
+            _ => StatusCodes.Status500InternalServerError,
+        }, Acknowledgement());
     }
 
     /// <summary>Fixed acknowledgement; identical on every path, so the endpoint is not an oracle.</summary>

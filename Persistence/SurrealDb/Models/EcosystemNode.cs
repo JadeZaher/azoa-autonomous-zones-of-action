@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -11,7 +10,7 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("ecosystem_node",
-        Aggregate = "EcosystemNode (star-odk-ecosystem-tree / final-hardening-cutover D2 -- new entity)",
+        Aggregate = "EcosystemNode (action-graph-bundle-ecosystem-tree / final-hardening-cutover D2 -- new entity)",
         Guardrail = "G6 SCHEMAFULL; greenfield entity. A single node in an Ecosystem tree. parent_node_id null = a root child of the ecosystem; non-null = nested under another EcosystemNode. ref_kind + ref_id name the attached DappSeries or ActionGraphBundle.")]
     [SurrealNote("An EcosystemNode attaches ONE composable dApp (a DappSeries via ref_kind='DappSeries', or an ActionGraphBundle via ref_kind='ActionGraphBundle') into the ecosystem tree. Tree edges are modelled by parent_node_id (self-reference); the ecosystem root is the Ecosystem row, so a node whose parent_node_id is null hangs directly off the ecosystem. Codegen walks this tree parent->children (see IActionGraphBundleManager tree-walking codegen) with an app-side visited-set cycle guard mirroring the holon parent-cycle precedent.")]
     [SurrealNote("ref_id is the Guid('N') hex of the attached DappSeries.Id or ActionGraphBundle.Id. It is intentionally NOT a typed record<> FK because it is a polymorphic reference (DappSeries OR action_graph_bundle) discriminated by ref_kind -- SurrealDB record<> columns are single-table. Ownership is validated app-side, not by schema FK.")]

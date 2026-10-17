@@ -1,46 +1,32 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using System.Globalization;
 using System.Security.Claims;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Signing;
+using AZOA.WebAPI.Services.Signing;
+using SurrealForge.Client;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests.Credentials;
-
-/// <summary>
-/// D41 Phase 0 made into a control: WHO MAY ISSUE a credential to somebody else.
-///
-/// <para>The answer recorded on <see cref="CredentialController.Issue"/> and in the track plan is
-/// ROLE-GATED — the caller must hold <c>dapp:manager</c>. These tests exist because a decision
-/// stated only in a doc-comment is prose, not a control; delete the gate and they fail. Open
-/// issuance is a griefing primitive: a credential is soulbound and revocable ONLY by its issuer,
-/// so an unsolicited one can never be removed by the person carrying it.</para>
-///
-/// <para>They also pin the other half of the rule the whole rail hangs on: the issuer is stamped
-/// from the AUTHENTICATED CALLER and the recipient from the route, never from the request body.
-/// The issuer is the single input the D19 revoke decision reads, so a body-supplied one would let
-/// any caller nominate itself the revocation authority over a credential it did not issue.</para>
-/// </summary>
 public sealed class CredentialIssuanceAuthorizationTests
 {
-    private readonly Mock<IUserNFTService> _mint = new();
+    private readonly Mock<INftLifecycleService> _mint = new();
     private readonly Mock<ICredentialManager> _revoke = new();
 
     private readonly Guid _caller = Guid.NewGuid();
     private readonly Guid _recipient = Guid.NewGuid();
-
-    /// <summary>
-    /// An ordinary authenticated user is not an issuer. <c>dapp_role</c> is absent, which
-    /// <c>AzoaDappRoles.Normalize</c> reads as <c>dapp:user</c>, and a user cannot give themselves
-    /// the manager role — so this is a real restriction rather than a check every JWT passes.
-    /// </summary>
     [Fact]
     public async Task Issue_IsRefused_WhenTheCallerIsNotADappManager()
     {
@@ -52,8 +38,6 @@ public sealed class CredentialIssuanceAuthorizationTests
             .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         VerifyNothingWasIssued();
     }
-
-    /// <summary>A manager whose credential is a SCOPED key must still carry the mint capability.</summary>
     [Fact]
     public async Task Issue_IsRefused_WhenAScopedKeyLacksTheMintCapability()
     {
@@ -68,34 +52,32 @@ public sealed class CredentialIssuanceAuthorizationTests
             .Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         VerifyNothingWasIssued();
     }
-
-    /// <summary>
-    /// The permitted case, and the shape it hands the mint seam: issuer = the authenticated
-    /// caller, holder = the route recipient, soulbound and non-transferable by construction.
-    /// </summary>
     [Fact]
     public async Task Issue_StampsTheIssuerFromTheCaller_AndTheHolderFromTheRoute()
     {
         Guid capturedIssuer = Guid.Empty;
         Guid capturedRecipient = Guid.Empty;
         UserNFTMintModel? capturedModel = null;
+        SigningCredentialWitness? capturedCredential = null;
 
-        _mint.Setup(m => m.MintUserNFTAsync(
-                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserNFTMintModel>(), It.IsAny<AZOARequest?>()))
-            .Callback<Guid, Guid, UserNFTMintModel, AZOARequest?>(
-                (issuer, recipient, model, _) =>
+        _mint.Setup(m => m.MintAsync(
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserNFTMintModel>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(),
+                It.IsAny<ActionEffectAuthority?>(), It.IsAny<SigningCredentialWitness?>()))
+            .Callback<Guid, Guid, UserNFTMintModel, string, CancellationToken, Guid, ActionEffectAuthority?, SigningCredentialWitness?>(
+                (issuer, recipient, model, _, _, _, _, credential) =>
                 {
                     capturedIssuer = issuer;
                     capturedRecipient = recipient;
                     capturedModel = model;
+                    capturedCredential = credential;
                 })
-            .ReturnsAsync(new AZOAResult<IUserNFT> { Result = Mock.Of<IUserNFT>() });
+            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), Guid.NewGuid(), "AwaitingRecipientAcceptance", "Accept", "123", "create-tx", null, "Mint")));
 
         var controller = CreateController(dappRole: AzoaDappRoles.Manager);
 
         var result = await controller.Issue(_recipient, CredentialModel());
 
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.Should().BeOfType<AcceptedResult>();
         capturedIssuer.Should().Be(_caller,
             "the issuer of record is the authenticated caller; a body-supplied issuer would be an "
             + "authorization bypass, because the issuer is the only input the revoke decision reads");
@@ -104,13 +86,8 @@ public sealed class CredentialIssuanceAuthorizationTests
             "issuer == holder is the vacuous credential D41 exists to end");
         capturedModel!.IsSoulbound.Should().BeTrue("this route issues credentials, not tradeable NFTs");
         capturedModel.IsTransferable.Should().BeFalse();
+        capturedCredential!.ActorUserId.Should().Be(_caller, "the original issuer authority is captured server-side from the principal");
     }
-
-    /// <summary>
-    /// The body carries no issuer at all, so there is nothing for the controller to prefer over the
-    /// authenticated caller even by mistake. Stated as a test because the guarantee above is only as
-    /// strong as the absence of that field.
-    /// </summary>
     [Fact]
     public void TheIssuanceRequestModel_HasNoWritableIssuer()
     {
@@ -119,12 +96,9 @@ public sealed class CredentialIssuanceAuthorizationTests
             + "over a credential they did not issue");
     }
 
-    // ── Arrangement ───────────────────────────────────────────────────────────
-
     private static UserNFTMintModel CredentialModel() => new()
     {
         ChainType = "Algorand",
-        TokenId = "778899",
         NFTContractAddress = "CREDENTIALS",
         TokenStandard = "ASA",
         MetadataURI = "ipfs://credential",
@@ -132,24 +106,34 @@ public sealed class CredentialIssuanceAuthorizationTests
     };
 
     private void VerifyNothingWasIssued() =>
-        _mint.Verify(m => m.MintUserNFTAsync(
-            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserNFTMintModel>(), It.IsAny<AZOARequest?>()),
+        _mint.Verify(m => m.MintAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UserNFTMintModel>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(),
+                It.IsAny<ActionEffectAuthority?>(), It.IsAny<SigningCredentialWitness?>()),
             Times.Never,
             "an unauthorized caller must never reach the mint seam at all");
 
     private CredentialController CreateController(
         string dappRole, string? authMethod = null, params Claim[] extraClaims)
     {
+        var now = DateTimeOffset.UtcNow;
         var claims = new List<Claim>
         {
             new("UserId", _caller.ToString()),
+            new(ClaimTypes.NameIdentifier, _caller.ToString()),
             new("dapp_role", dappRole),
+            new(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
+            new(AzoaClaims.AuthTime, now.AddMinutes(-1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            new("exp", now.AddHours(1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
         };
         if (authMethod is not null)
             claims.Add(new Claim("AuthMethod", authMethod));
         claims.AddRange(extraClaims);
 
-        return new CredentialController(_revoke.Object, _mint.Object)
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(_caller, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Success(Mock.Of<IUser>(user => user.IsActive)));
+        var signing = new SigningAdmissionAuthorityFactory(users.Object, Mock.Of<IWalletStore>(), Mock.Of<ISurrealExecutor>());
+        return new CredentialController(_revoke.Object, _mint.Object, signing)
         {
             ControllerContext = new ControllerContext
             {

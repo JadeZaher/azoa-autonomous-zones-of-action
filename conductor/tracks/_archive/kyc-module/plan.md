@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "KYC Module — Plan"
+tags: [kyc-module, archived]
+---
+
 # KYC Module — Plan
 
 Source spec: [spec.md](spec.md)
@@ -12,8 +18,8 @@ revisit only if a phase surfaces a blocker.
 
 | # | Decision | Resolution |
 |---|----------|------------|
-| **D1** | `Result<T>` → `AZOAResult<T>` mapping. ArdaNova's `Result<T>` carries a `ResultType` discriminator (`KycController.cs:68-74`); `AZOAResult<T>` (`Models/Responses/AZOAResult.cs:38-85`) has only `IsError`/`Message`. How is Forbidden vs NotFound vs ValidationError preserved? | **Message-prefix discriminator**, exactly as STARODK does (`Interfaces/Managers/ISTARManager.cs:12-19`, `STARODKAuthorizationError`). Add `KycAuthorizationError { Forbidden = "KYC_FORBIDDEN: ", NotFound = "KYC_NOT_FOUND: " }`. The controller's `TranslateResult` maps the prefix to 403/404 (copy `STARODKController.cs:100-111`). No new result shape, no SDK churn. |
-| **D2** | Persistence seam. ArdaNova uses EF `IRepository<T>` + `IUnitOfWork` + AutoMapper (`KycService.cs:13-37`). | **Hand-authored SurrealDB store**, mirroring `SurrealStarStore` (`Providers/Stores/Surreal/SurrealStarStore.cs`). `IKycStore` is the seam; no AutoMapper (manual `ToPoco`/`FromPoco` like `SurrealStarStore.cs:161-227`). `user_id` stored as a SurrealDB record link via `SurrealLink.ToLink("user", …)` (`SurrealStarStore.cs:180`). Id encoding `Guid.ToString("N").ToLowerInvariant()` (`SurrealStarStore.cs:155-159`). |
+| **D1** | `Result<T>` → `AZOAResult<T>` mapping. ArdaNova's `Result<T>` carries a `ResultType` discriminator (`KycController.cs:68-74`); `AZOAResult<T>` (`Models/Responses/AZOAResult.cs:38-85`) has only `IsError`/`Message`. How is Forbidden vs NotFound vs ValidationError preserved? | **Message-prefix discriminator**, exactly as ActionGraphBundle does (`Interfaces/Managers/IActionGraphBundleManager.cs:12-19`, `ActionGraphBundleAuthorizationError`). Add `KycAuthorizationError { Forbidden = "KYC_FORBIDDEN: ", NotFound = "KYC_NOT_FOUND: " }`. The controller's `TranslateResult` maps the prefix to 403/404 (copy `ActionGraphBundleController.cs:100-111`). No new result shape, no SDK churn. |
+| **D2** | Persistence seam. ArdaNova uses EF `IRepository<T>` + `IUnitOfWork` + AutoMapper (`KycService.cs:13-37`). | **Hand-authored SurrealDB store**, mirroring `SurrealActionGraphBundleStore` (`Providers/Stores/Surreal/SurrealActionGraphBundleStore.cs`). `IKycStore` is the seam; no AutoMapper (manual `ToPoco`/`FromPoco` like `SurrealActionGraphBundleStore.cs:161-227`). `user_id` stored as a SurrealDB record link via `SurrealLink.ToLink("user", …)` (`SurrealActionGraphBundleStore.cs:180`). Id encoding `Guid.ToString("N").ToLowerInvariant()` (`SurrealActionGraphBundleStore.cs:155-159`). |
 | **D3** | Approval side-effect + gate source of truth. ArdaNova upgrades `User.verificationLevel = PRO` on approval (`KycService.cs:184-186`) and the gate reads that enum (`KycGateService.cs:18-30`). AZOA `User` has only `IsVerified` bool (`User.cs:69-72`), no `VerificationLevel`. | **Do NOT add a `VerificationLevel` enum/column to the shared `user` table from inside a feature module.** On approval, set `User.IsVerified = true`. The **gate reads KYC submission status** (most-recent APPROVED submission for the user) via `IKycStore`, not a denormalized level. This keeps the `user` schema untouched and the gate authoritative against the KYC ledger. (If a multi-tier level is later needed, it becomes its own track.) |
 | **D4** | Enum persistence. | **Persist enums as their string names** (`JsonStringEnumConverter`) to match the readable, value-name posture of the ported enums and keep DB rows human-legible. Verify against `Persistence/SurrealDb/CONVENTION.md` during Phase 1; if the convention mandates ints, switch — record the override here. |
 | **D5** | Admin authorization for `pending`/`approve`/`reject`. ArdaNova's `KycController` is unauthenticated on these (`KycController.cs:42-61`). | **Require an admin policy/role** on the admin endpoints (`[Authorize(Policy = "Admin")]` or equivalent already in `Program.cs`). Confirm the existing admin policy name during Phase 5; if none exists, gate behind `[Authorize]` + a role claim check and note the gap as a follow-up. `reviewerUserId` always comes from the admin's token, never the body. |
@@ -42,17 +48,17 @@ revisit only if a phase surfaces a blocker.
   `type`, `file_url`, `file_name`, `mime_type`, `file_size_bytes`, `metadata`,
   `created_date`. Index: `kyc_document_submission_id`.
 - [ ] **`IKycStore`** — `Interfaces/Stores/IKycStore.cs`, mirroring
-  `ISTARStore.cs:6-27` doc-comment style. Methods per spec Scope §1
+  `IActionGraphBundleStore.cs:6-27` doc-comment style. Methods per spec Scope §1
   (`GetSubmissionByIdAsync`, `GetLatestSubmissionByUserAsync`,
   `GetActiveSubmissionByUserAsync`, `GetPendingAsync`, `UpsertSubmissionAsync`,
   `GetDocumentsBySubmissionAsync`, `AddDocumentsAsync`), all `AZOAResult<T>`.
 - [ ] **`SurrealKycStore`** — `Providers/Stores/Surreal/SurrealKycStore.cs`,
-  mirroring `SurrealStarStore.cs`: `ISurrealExecutor` ctor, `try/catch` +
-  `CaptureException` per method (`SurrealStarStore.cs:47-50`), `ToSurrealId`/
+  mirroring `SurrealActionGraphBundleStore.cs`: `ISurrealExecutor` ctor, `try/catch` +
+  `CaptureException` per method (`SurrealActionGraphBundleStore.cs:47-50`), `ToSurrealId`/
   `FromSurrealId`, `SurrealLink.ToLink("user", …)` for `user_id`, manual
   `ToPoco`/`FromPoco`, `UPSERT type::record(...) CONTENT ... RETURN AFTER`
-  (`SurrealStarStore.cs:112-119`). Owner-scoped active-submission query mirrors
-  the name+user lookup at `SurrealStarStore.cs:61-66`.
+  (`SurrealActionGraphBundleStore.cs:112-119`). Owner-scoped active-submission query mirrors
+  the name+user lookup at `SurrealActionGraphBundleStore.cs:61-66`.
 
 ## Phase 2 — Provider seam + providers
 
@@ -80,7 +86,7 @@ revisit only if a phase surfaces a blocker.
 ## Phase 3 — KycManager
 
 - [ ] **`KycAuthorizationError`** static (Forbidden/NotFound prefixes) — colocate
-  with `IKycManager` like `STARODKAuthorizationError` in `ISTARManager.cs:12-19`.
+  with `IKycManager` like `ActionGraphBundleAuthorizationError` in `IActionGraphBundleManager.cs:12-19`.
 - [ ] **`IKycManager`** — `Interfaces/Managers/IKycManager.cs`. Methods per spec
   Scope §3, all `AZOAResult<T>`, User-scoped.
 - [ ] **`KycManager`** — `Managers/KycManager.cs`, depending on `IKycStore`,
@@ -92,8 +98,8 @@ revisit only if a phase surfaces a blocker.
   - `GetStatusAsync(userId)` — latest submission (`:120-133`).
   - `GetByIdAsync(submissionId, userId)` — **IDOR-scoped**: load by id, then
     require `submission.UserId == userId` or return
-    `KycAuthorizationError.Forbidden` (the STARODK ownership check,
-    `STARManager.cs:51-52,71-72`). ArdaNova's `GetByIdAsync` (`:108-118`) is
+    `KycAuthorizationError.Forbidden` (the ActionGraphBundle ownership check,
+    `ActionGraphBundleManager.cs:51-52,71-72`). ArdaNova's `GetByIdAsync` (`:108-118`) is
     unscoped — this is the deliberate hardening.
   - `ListDocumentsAsync(submissionId, userId)` — same IDOR scoping.
   - `GetPendingAsync` (`:135-151`), `ApproveAsync` (`:165-192`), `RejectAsync`
@@ -121,7 +127,7 @@ revisit only if a phase surfaces a blocker.
   var gate = await _kycGate.RequireVerifiedAsync(userId);
   if (gate.IsError) return Fail<...>(gate.Message); // carries KYC_FORBIDDEN: prefix
 
-  // In the controller (copy STARODKController.cs:100-111):
+  // In the controller (copy ActionGraphBundleController.cs:100-111):
   //   message starts with KycAuthorizationError.Forbidden -> 403
   ```
 
@@ -131,12 +137,12 @@ revisit only if a phase surfaces a blocker.
 ## Phase 5 — Controller
 
 - [ ] **`KycController`** — `Controllers/KycController.cs`, `[ApiController]`,
-  `[Route("api/[controller]")]`, `[Authorize]`, mirroring `STARODKController.cs`.
+  `[Route("api/[controller]")]`, `[Authorize]`, mirroring `ActionGraphBundleController.cs`.
   Endpoints per spec Scope §5. Copy `GetUserIdFromClaims()`
-  (`STARODKController.cs:113-118`) and `TranslateResult` (`:100-111`).
+  (`ActionGraphBundleController.cs:113-118`) and `TranslateResult` (`:100-111`).
   - `POST submit`, `GET status`, `GET {id:guid}`, `GET {id:guid}/documents` —
-    User-scoped; body `UserId` ignored (STARODK precedent,
-    `STARManager.cs:62-66`); no `{userId}` in any route (closes ArdaNova's
+    User-scoped; body `UserId` ignored (ActionGraphBundle precedent,
+    `ActionGraphBundleManager.cs:62-66`); no `{userId}` in any route (closes ArdaNova's
     `GET /status/{userId}` IDOR, `KycController.cs:28-33`).
   - `GET pending`, `POST {id:guid}/approve`, `POST {id:guid}/reject` — admin-gated
     per **D5**; `reviewerUserId` from the admin token.

@@ -10,7 +10,6 @@
 
 #nullable enable
 
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace AZOA.WebAPI.Models.Kyc;

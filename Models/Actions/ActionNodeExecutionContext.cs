@@ -104,6 +104,12 @@ public sealed class ActionNodeExecutionContext
 /// </summary>
 public sealed class ActionNodeHandlerResult
 {
+    public ActionExternalOperationObservation? PendingOperation { get; init; }
+
+    public static ActionNodeHandlerResult Pending(ActionExternalOperationObservation observation) =>
+        new() { PendingOperation = observation, Output = observation.Output, Message = observation.Detail,
+            TxHash = observation.TransactionId, ChainType = observation.ChainType };
+
     public bool IsError { get; init; }
 
     /// <summary>Free-form message. On failure this becomes <see cref="ActionNodeExecution.Error"/>.</summary>

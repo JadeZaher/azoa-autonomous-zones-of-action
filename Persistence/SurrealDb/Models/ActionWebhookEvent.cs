@@ -4,7 +4,6 @@
 
 #nullable enable
 
-using System;
 using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
@@ -12,12 +11,8 @@ using SurrealForge.Client.Schema;
 namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("action_webhook_event",
-        Aggregate = "ActionWebhookEvent (Models/ActionWebhookEvent.cs)",
-        Guardrail = "G6 SCHEMAFULL, transactional-outbox single-winner due-scan")]
-    [SurrealNote("Generic action.emit webhook transactional outbox (final-hardening F3). Generalizes the consent_webhook_event outbox to arbitrary tenant-defined events fired by an Emit action node. One row == one action.emit event owed to exactly one tenant. Written in the SAME logical write as the Emit node output (no dual-write); a polling delivery worker claims due rows and POSTs them with retry + idempotency id. Mirrors the consent_webhook_event outbox SHAPE exactly.")]
-    [SurrealNote("Due-scan: status='Pending' AND next_attempt_at<=now, oldest first. Conditional transitions (MarkDelivered/Reschedule/DeadLetter) assert AffectedCount==1 — the same single-winner discipline as the saga step claim, so behaviour is safe under one worker (and identical across engines).")]
-    [SurrealNote("BEST-EFFORT (notification): this row is a NOTIFICATION. Delivery never writes back to action_run or action_node_execution. The Emit node's serialized Output remains the tenant's authoritative settlement surface; the webhook is a convenience push.")]
-    [SurrealNote("STRICT per-tenant isolation (H5): tenant_id scopes every delivery to ONLY that tenant's webhook_registration + secret (the SAME registration table the consent path uses). idempotency_id is the stable per-event dedup id sent to the receiver (X-Azoa-Idempotency-Id), constant across all retries of this event.")]
+        Aggregate = "Immutable accepted action webhook event",
+        Guardrail = "G6 SCHEMAFULL, immutable accepted event and versioned delivery")]
     [Slice("bridge")]
     [Index("action_webhook_event_due_scan", Fields = new[] { "status", "next_attempt_at" })]
     [Index("action_webhook_event_by_tenant", Fields = new[] { "tenant_id" })]
@@ -25,6 +20,19 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     {
         public const string SchemaNameConst = "action_webhook_event";
         public string SchemaName => SchemaNameConst;
+
+        public string? ReceiptId { get; set; }
+        public string? RegistrationId { get; set; }
+        public long? DestinationRevision { get; set; }
+        public string? DestinationUrl { get; set; }
+        public string? BodyJson { get; set; }
+        [Default("0")] public long Version { get; set; }
+        [Default("0")] public long RetryGeneration { get; set; }
+        [Default("0")] public long CycleAttemptCount { get; set; }
+        public string? LeaseId { get; set; }
+        public DateTimeOffset? LeaseExpiresAt { get; set; }
+        public long? AttemptSecretRevision { get; set; }
+        public string? AttemptEncryptedSecret { get; set; }
 
         public enum DeliveryStatus
         {

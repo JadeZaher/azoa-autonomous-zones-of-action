@@ -7,7 +7,6 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Settings;
-using Microsoft.Extensions.Hosting;
 
 namespace AZOA.WebAPI.Services.Kyc;
 
@@ -15,6 +14,9 @@ namespace AZOA.WebAPI.Services.Kyc;
 public static class KycApprovalTrust
 {
     public const string EnvelopeSchema = "azoa.kyc.approval-provenance/v1";
+
+    public static string? ReadPolicyVersion(string? envelope)
+        => TryReadEnvelope(envelope, out var provenance) ? provenance.PolicyVersion : null;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

@@ -119,9 +119,9 @@ export const NODE_CATALOG: NodeTypeMeta[] = [
   // ─── Governance (Tier-1, pure-DB) — PREVIEW ───
   // Mirrored so the catalog stays complete, but NOT enabled: the tally counts raw holons (Sybil hole)
   // until governance-vote-of-record lands. See AGENTS.md §catalog-status.
-  { type: 'GovernanceProposalCreate', category: 'Governance', label: 'Create Proposal', description: 'Preview — not enabled. Open a governance proposal holon with options and a voting window; cannot run yet', defaultConfig: J({ name: '', description: '', parentHolonId: null, options: [], opensAt: null, closesAt: null, uniquenessScope: null }), status: 'preview' },
-  { type: 'GovernanceVote', category: 'Governance', label: 'Cast Vote', description: 'Preview — not enabled. Cast a ballot on a proposal; cannot run yet', defaultConfig: J({ proposalHolonId: '', option: '' }), status: 'preview' },
-  { type: 'GovernanceTally', category: 'Governance', label: 'Tally Votes', description: 'Preview — not enabled. Tally ballots on a proposal; cannot run yet', defaultConfig: J({ proposalHolonId: '' }), status: 'preview' },
+  { type: 'GovernanceProposalCreate', category: 'Governance', label: 'Create Proposal', description: 'Preview — not enabled. Open a governance proposal holon with options and a voting window; cannot run yet', defaultConfig: J({ name: '', description: '', parentHolonId: null, options: [], opensAt: null, closesAt: null, minimumVotes: 0, uniquenessScope: 'Tenant' }) },
+  { type: 'GovernanceVote', category: 'Governance', label: 'Cast Vote', description: 'Preview — not enabled. Cast a ballot on a proposal; cannot run yet', defaultConfig: J({ proposalHolonId: '', option: '' }) },
+  { type: 'GovernanceTally', category: 'Governance', label: 'Tally Votes', description: 'Preview — not enabled. Tally ballots on a proposal; cannot run yet', defaultConfig: J({ proposalHolonId: '' }) },
 
   // ─── Lending (Tier-1, pure-DB) ───
   // Credit rails (Phase 5 D21): holonic loan ledger. Money is ALWAYS a base-unit decimal STRING, never a number.

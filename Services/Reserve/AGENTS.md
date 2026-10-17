@@ -115,67 +115,83 @@ would let one declared budget back a second seller. Same rule and the same sente
 `OffRampService.AmbiguousMoveReason`. Held at the counters by
 `tests/AZOA.WebAPI.Tests/Exchange/BuyBackQueueTests.cs`.
 
-## §exchange-settlement — what a group the rail merely ACCEPTED still owes (OI-33)
+## §durable-exchange — journal before commitment, settle only the saved group
 
-`ReserveExchangeManager` deliberately stops short of two things when
-`ExchangeGroupSubmission.Confirmed` is false, and leaves both to chain truth:
+`ReserveExchangeManager.ExchangeAsync` runs every refusable gate before it writes anything. It then
+journals the exchange as an immutable `ExchangeHoldSource` **before** any commitment or signature:
 
-1. it does **not** credit the project's treasury (crediting on acceptance would make a project
-   spendably richer on a settlement chain truth has not agreed to, and that same balance is the
-   availability control a later sell is paid out against); and
-2. it does **not** unwind, because a group whose fate is merely unknown must not be compensated.
+1. **Resume, never re-decide.** The source id is derived from (tenant, API key,
+   Idempotency-Key). If that source already exists, the request resumes it. A request whose
+   canonical terms (`RequestJson`) differ is refused (`OperationNotAllowed`). A replay never
+   prepares or signs a second time.
+2. **Gates.** In order: node governance, the platform unit, the rate policy (including buy-back
+   admission, §buy-back), the hold window and the release request. A preview stops here. It
+   journals nothing, and it returns the release disclosure when automatic release is requested.
+   That disclosure reveals the participant's wallet and readiness, so the controller runs the live
+   consent check on any preview carrying a `releaseMandate`.
+3. **Authority.** The controller captures the actual API-key credential
+   (`ExchangeCallerContext.Credential`). `ExchangeAuthorityFactory` binds it together with the
+   participant's watermark, wallet and `UserExplicit` swap:sign grant. Both parties are re-fenced
+   at commitment, at preparation and at first egress. Evidence and settlement need no live
+   authority.
+4. **Commitment pre-check.** The partition room or the treasury counters are explained before
+   admission. This check is advisory; the source transaction rechecks everything atomically.
 
-Neither refusal is a control until something COMPLETES it. `ExchangeSettlementReconciler` is
-that something, and `ReconciliationService` calls it from the two branches where the operation's
-status actually transitions — before the transition, because the transition is what settles the
-idempotency claim and a settled claim is never revisited:
+The source then advances through `ExchangeHoldSourceService.ContinueAsync`: commit, begin
+preparation, module `Prepare`, save the prepared candidate, authorize first egress, then
+observe or submit. Each commitment kind is exactly one shape, and its accounting is atomic:
 
-- **chain-confirmed** → `SettleConfirmedAsync` records the outstanding project credit under the
-  exchange's own ledger key (so a re-run replays instead of doubling), flips
-  `ExchangeProjectCreditApplied` to `"true"` and restates the stored replay payload. If it
-  cannot, the operation is NOT advanced and is flagged for an operator.
-- **chain-failed** → `CompensateFailedAsync` hands back exactly the commitment the row NAMES
-  (`ExchangeCommitmentKind` / `ExchangeCommitmentHoldId` / `ExchangeCommitmentTreasurySpent`,
-  stamped by `BuildOperation`). A row that names none is refused rather than guessed: a guessed
-  unwind returns units nobody took.
+| Kind | Commit | Confirmed | Proven absent |
+| --- | --- | --- | --- |
+| Held buy (`Opening`) | hold `AwaitingSourceSettlement` + partition `Hold` (+ release mandate) | hold `Held` + treasury `Credit` | partition `CancelHold`, mandate cancelled |
+| Direct buy (`Units: Issue`) | partition `Hold` | `ReleaseHold` + treasury `Credit` | `CancelHold` |
+| Sale (`Units: Return`) | treasury `Hold` + return validity | treasury `ReleaseHold` + partition `Return` (clamped to outstanding) | treasury `CancelHold` |
 
-An operation row only ever exists for a group the rail ACCEPTED — every in-request refusal
-compensates and returns before `BuildOperation` runs — so these paths can never double-unwind.
+**Recovery.** A submit that throws `HttpRequestException` leaves the source `Submitted` with its
+saved bytes. `ExchangeSourceReconciliationWorker` then picks up due sources (`NextReconcileAt`).
+For each one it observes, rebroadcasts the identical saved bytes, and projects finality. A source
+idle in `Committed`, `Preparing` or `Prepared` for longer than `Exchange:UnsentSourceAbandonAfter`
+(default 1h) is `Abandoned` with an `Unsent` verdict, and its commitment is released. This is safe
+because no bytes were ever authorized for egress, and authorizing egress is a CAS from `Prepared`
+that competes with abandonment. The worker never commits, prepares or authorizes anything.
 
-### Why the reconciler carries its own anchor
+**Release disclosure.** Automatic release needs the previewed disclosure to be echoed back
+verbatim. The server checks it against fresh mechanics and captures transfer:sign from the same
+key. Under the same key, an expired disclosure can be revised only while the source is still
+`Admitted`. Each revision is a versioned, audited change (`ReviseExchangeReleaseAsync`).
 
-Both primitives it drives dedupe on a **bounded** replay window —
-`ProjectTreasuryService.MovementReplayWindowSize` and `PlatformReserveService.DrawReplayWindowSize`
-are 128 keys each, evicted oldest-first — and both say outright that outside the window a repeated
-key is unknown and the effect **applies**. That is not idempotency; it is a grace period.
+**Fails closed until review.** The Algorand `IExchangeTransactionModule` is deliberately not
+advertised, so every exchange currently refuses with "capability unavailable" before any
+commitment. Advertising it is the independent reviewer's act. Ethereum and Solana parity is
+`round3-value-custody-parity-amendment.md`. Configuration: `Exchange:MaximumGroupNetworkFeeBaseUnits`
+(blank refuses every exchange) and `Exchange:UnsentSourceAbandonAfter`.
 
-The reconciler is re-entered by the sweep exactly when a pass returned false, and the ordinary
-reason a pass returns false is that the effect landed and the write after it did not: the credit
-posts, `UpsertAsync` fails, the row still says `ExchangeProjectCreditApplied="false"`. Let 128
-other movements hit that project's treasury in between and the next sweep credits it a second
-time for one exchange. Same shape on the compensation refund and on the partition unwind.
-
-So `OnceAsync` claims each effect in the **unbounded, insert-wins** `IIdempotencyStore` before
-running it, under `<ledgerKey>:reconcile-credit` / `-unwind` / `-refund` and the distinct
-operation type `reserve_exchange_settlement` (distinct so the receipt surface, which refuses a
-ledger row whose operation type is not the exchange's own, can never replay a settlement anchor
-as a caller's receipt). The ledger states are read as claims about the world: `Completed` means a
-pass recorded that the effect landed, so it is **not** run again; `Failed` means a pass recorded
-that it did not; an open `InProgress` that is not ours means nobody can say, so it refuses and
-flags — under-crediting is visible and an operator can finish it, double-crediting mints value out
-of nothing.
-
-**Retries take the next generation of the key, not the same one.** SurrealForge settles a key with
-`UPDATE ... SET state = $_next WHERE state = $_expected` and throws *"Cannot complete idempotency
-key"* when the row has already moved on, so a key is a one-shot: it goes `InProgress` → `Completed`
-or `InProgress` → `Failed`, once. A retry therefore claims `<key>#2`, `#3`, … up to
-`MaxSettlementAttempts` (8), and "has this effect landed?" is answered by walking the generations
-until one says `Completed`. Reusing the base key would have passed against a permissive test double
-and thrown the first time production retried anything, so `ReconciledExchangeTests.StrictAnchorLedger`
-enforces the package's own precondition rather than a friendlier one.
+**Retired rows.** Operation rows written by the old post-submit path carry no saved wire and no
+egress authorization. For any row it owns, `ExchangeSettlementReconciler` returns false and logs
+`MANUAL INTERVENTION REQUIRED`. It never credits or unwinds from the row alone.
 
 ## §vocabulary
 
 Nothing in this directory's consumer-facing text may name a chain, a token, a wallet or a gas
 fee. A person selling their stake reads about *units*, *funds*, a *project's treasury* and a
 *place in the queue*. The rail words stay in the provider layer and in operator logs.
+
+## Fungible issuance projection
+
+`ReserveAssetRegistrationPlan` is the shared pure registration builder. The durable fungible lifecycle composes that plan with original issuance authority and optional Holon attachment in one datastore transaction. The reserve store lives under Providers/Stores/Surreal and changes only partition counters/replay keys through its version CAS. Re-registering an identity with different supply, authority address, tenant or protocol is a conflict, not a successful replay.
+
+## Platform genesis authority
+
+Genesis claims a single immutable definition per network before admitting the fungible lifecycle. Its purpose witness is distinct from ordinary signing authority: actual recent node-operator credential, bootstrap revisions, frozen definition/key, reserve and protocol identity. It grants no user-wallet access and fabricates no KYC evidence. Quote consent precedes new signatures. A fresh operator session renews only that exact operation's authority; original command and signed bytes remain immutable.
+
+Platform activation joins finalized authority, reserve registration and creation completion in one transaction. The generic platform store may update pending diagnostics, not activate or rewrite the definition. Confirmed accounting and already-authorized exact-wire recovery survive operator session expiry. Operator polling never requests faucet funds; funding is an explicit prerequisite. Genesis has no ordinary cancellation endpoint: withholding continuation pauses new effects, while already-authorized bytes may still settle. Proven no-effect replacement retains the original definition and archives the prior wire and evidence before requesting a new quote.
+
+Initial definition claims join the same actual recent operator/bootstrap authorization fence as later genesis admission; actor IDs alone cannot freeze definitions. Active reads require a completed exact creation operation plus immutable authority, projection and reserve identity. An old active row with only asset text returns `PLATFORM_TOKEN_EVIDENCE_REQUIRED`; neither replay nor status may issue a replacement asset. Repository seeds contain no legacy platform-token issuance. Old mocked tests are not chain provenance and must migrate to explicit durable receipts.
+
+## Reserve service invariants
+
+Configured chain restrictions and public expected-address checks run before custody. An empty chain list uses the explicit shipped fallback; it does not allow every provider. Platform reserve signing requires a platform signing context. CallerWallet fungible creation now uses the separate durable lifecycle with the caller's actual wallet authority, rather than a platform signature over a user sender.
+
+Partition declaration and draw apply the same ledger-owned tenant policy. Declaration is a set operation, cannot shrink below existing promises, and never accepts settlement authority to name new partitions. A draw requires a declared partition. The 128-entry per-asset FIFO replay window is bounded: evicted keys can execute again, so every economic caller requires its own durable command/receipt anchor. Malformed partition accounting is a refusal, not zero availability.
+
+Public-address derivation catches only expected argument/format/cryptographic validation failures and returns a value-free refusal. Unexpected exceptions bubble to the centralized boundary. Secret inputs are never included in authored diagnostics. Reserve models and service comments carry terse contracts; rationale is maintained here.

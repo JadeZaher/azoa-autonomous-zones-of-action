@@ -1,34 +1,11 @@
-/**
- * The fluent `action()` run driver — the headline of the workflow SDK.
- *
- * `action(actionId)` / `action.fromTemplate(templateId)` / `action.run(runId)` open a
- * {@link WorkflowRunHandle} (D3 — explicit variants, no id-shape sniffing). The
- * handle is a **thenable** (D7): each chained method (`.start` / `.step` /
- * `.signal`) enqueues an async op and returns `this`, so
- *
- * ```ts
- * const r = await action(actionId).start({ params }).step(nodeB).step(nodeC);
- * ```
- *
- * issues `start-workflow → advance{fromNodeId:nodeB} → advance{fromNodeId:nodeC}`
- * IN ORDER and resolves to the final `Result<WorkflowRunResult, SdkError>`. The
- * FIRST `err` short-circuits the rest of the chain (no throw — Result discipline);
- * the terminal `then` resolves to that error.
- *
- * `.forActor(childUserId)` makes a tenant principal act FOR a child user: on
- * the first advancement call the handle lazily acquires a child credential
- * (tenant `X-Api-Key` is the principal for that call), caches the child JWT for
- * the handle's lifetime, re-acquires it on expiry (deduped like the API client's
- * `_refreshInFlight`), and threads it as a per-run `Authorization: Bearer`
- * override on `advance` / `signal` — leaving the global tenant `X-Api-Key`
- * untouched (D-AUTH). No `.forActor()` ⇒ the run uses the active session token.
- */
+/** Fluent workflow driver; admission, authority and recovery rules are in AGENTS.md. */
 
 import type { Result } from "../core/result.js";
 import { ok, err, isOk } from "../core/result.js";
 import { SdkError, SdkErrorCode } from "../core/errors.js";
 import { assertUuid } from "./guards.js";
 import { WorkflowClient } from "./client.js";
+import { workflowStartQuery } from "./start-options.js";
 import type { AzoaApiClient } from "../api/client.js";
 import {
   isAwaiting,
@@ -63,6 +40,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
 
   /** The child user this handle acts FOR (lazy credential), if `.forActor` set. */
   private _actorUserId?: string;
+  private _actorLocked = false;
   /** Cached child JWT + its expiry, per the handle's lifetime. */
   private _childToken?: { token: string; expiresAt: number };
   /** Deduped in-flight credential acquisition (mirrors `_refreshInFlight`). */
@@ -93,6 +71,9 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
    */
   forActor(childUserId: string): this {
     assertUuid(childUserId, "childUserId");
+    if (this._actorLocked && this._actorUserId !== childUserId) {
+      throw new SdkError(SdkErrorCode.INVALID_INPUT, "The run actor cannot change after an operation is queued");
+    }
     this._actorUserId = childUserId;
     return this;
   }
@@ -105,38 +86,28 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
 
   // ─── Chainable advancement ops (DRIVE) ───
 
-  /**
-   * Start a durable run. From a template: instantiate with `{{params}}` first,
-   * then `start-workflow` on the resulting action. From an action: `start-workflow`
-   * directly. From a run: a no-op bind (already started). Binds the handle to the
-   * returned `runId`. Chainable.
-   *
-   * `params.actor`, when present, is treated like `.forActor(actor)` (a plain
-   * user id) so `start({ actor })` and `.forActor(id)` are interchangeable.
-   */
-  start(params?: StartRunParams): this {
+  /** Queue admission of a persisted action intent, or read an existing run. */
+  start(options?: StartRunParams): this {
+    const params = options ? { ...options, params: options.params ? { ...options.params } : undefined } : undefined;
+    if (params?.actor) this.forActor(params.actor);
     return this._enqueue(async () => {
-      if (params?.actor) {
-        assertUuid(params.actor, "actor");
-        this._actorUserId = params.actor;
+      const authToken = await this._resolveAuthToken();
+      if (!isOk(authToken)) return err(authToken.error);
+      if (this.source.kind === "run") {
+        return this.workflow.getRunStatus(this.source.runId, { authToken: authToken.value });
       }
+      if (!params) return err(new SdkError(SdkErrorCode.INVALID_INPUT, "Starting a run requires a persisted idempotencyKey"));
+      workflowStartQuery(params);
 
       let actionId: string;
       if (this.source.kind === "template") {
-        const inst = await this.workflow.instantiate(
-          this.source.templateId,
-          params?.params
-        );
-        if (!isOk(inst)) return err(inst.error);
-        actionId = inst.value.id;
-      } else if (this.source.kind === "action") {
-        actionId = this.source.actionId;
+        return err(new SdkError(SdkErrorCode.INVALID_INPUT,
+          "Instantiate the template explicitly, persist its action ID, then preview and start that action with the original request key"));
       } else {
-        // Already a concrete run — nothing to start; just read current state.
-        return this.workflow.getRunStatus(this.source.runId);
+        actionId = this.source.actionId;
       }
 
-      const started = await this.workflow.startWorkflow(actionId);
+      const started = await this.workflow.startWorkflow(actionId, { ...params, authToken: authToken.value });
       if (!isOk(started)) return err(started.error);
       this._runId = started.value.id;
       return ok(started.value);
@@ -189,6 +160,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
    * the post-chain state. Returns `Result<WorkflowRunResult, SdkError>`.
    */
   async status(): Promise<Result<WorkflowRunResult, SdkError>> {
+    this._actorLocked = true;
     await this._queue;
     if (this._error) return err(this._error);
     const runId = this._runId;
@@ -200,7 +172,9 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
         )
       );
     }
-    const res = await this.workflow.getRunStatus(runId);
+    const authToken = await this._resolveAuthToken();
+    if (!isOk(authToken)) return err(authToken.error);
+    const res = await this.workflow.getRunStatus(runId, { authToken: authToken.value });
     if (isOk(res)) {
       this._lastRun = res.value;
       this._fireSuspendIfAwaiting(res.value);
@@ -261,6 +235,7 @@ export class WorkflowRunHandle implements PromiseLike<Result<WorkflowRunResult, 
   private _enqueue(
     op: () => Promise<Result<WorkflowRunResult, SdkError>>
   ): this {
+    this._actorLocked = true;
     this._queue = this._queue.then(async () => {
       if (this._error) return; // already short-circuited
       try {

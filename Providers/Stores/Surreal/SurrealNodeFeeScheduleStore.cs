@@ -10,8 +10,7 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
 {
-    private const string ScheduleTable = NodeFeeSchedule.SchemaNameConst;
-    private const string AuditTable = NodeFeeAudit.SchemaNameConst;
+    private const string ConflictMarker = "Node fee schedule version conflict";
 
     private readonly ISurrealExecutor _executor;
 
@@ -37,73 +36,52 @@ public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
         long? expectedVersion,
         CancellationToken ct = default)
     {
-        // raw: schedule CAS and immutable audit append share one transaction.
-        var upsertSchedule = SurrealQuery
-                .Of("UPSERT type::record($_st, $_sid) SET mint_flat_base_units = type::string($_mint_flat), mint_bps = $_mint_bps, transfer_flat_base_units = type::string($_transfer_flat), transfer_bps = $_transfer_bps, swap_flat_base_units = type::string($_swap_flat), swap_bps = $_swap_bps, action_complete_flat_base_units = type::string($_action_flat), action_complete_bps = $_action_bps, federation_publish_flat_base_units = type::string($_federation_flat), federation_publish_bps = $_federation_bps, version = $_version, updated_by_user_id = $_actor, updated_at = $_updated_at RETURN AFTER")
-                .WithParam("_st", ScheduleTable)
-                .WithParam("_sid", NodeFeeSchedule.LocalId)
-                .WithParam("_mint_flat", schedule.MintFlatBaseUnits)
-                .WithParam("_mint_bps", schedule.MintBps)
-                .WithParam("_transfer_flat", schedule.TransferFlatBaseUnits)
-                .WithParam("_transfer_bps", schedule.TransferBps)
-                .WithParam("_swap_flat", schedule.SwapFlatBaseUnits)
-                .WithParam("_swap_bps", schedule.SwapBps)
-                .WithParam("_action_flat", schedule.ActionCompleteFlatBaseUnits)
-                .WithParam("_action_bps", schedule.ActionCompleteBps)
-                .WithParam("_federation_flat", schedule.FederationPublishFlatBaseUnits)
-                .WithParam("_federation_bps", schedule.FederationPublishBps)
-                .WithParam("_version", schedule.Version)
-                .WithParam("_actor", SurrealRecordParam.OfLink(schedule.UpdatedByUserId))
-                .WithParam("_updated_at", schedule.UpdatedAt);
+        if (schedule.Id != NodeFeeSchedule.LocalId || schedule.Version != (expectedVersion ?? 0) + 1)
+            return AZOAResult<NodeFeeSchedule>.Failure(ConflictMarker);
+        SurrealQuery mutation;
+        if (expectedVersion is null)
+            mutation = SurrealWriter.Create(schedule);
+        else
+        {
+            var update = SurrealWriter.UpdateOnly<NodeFeeSchedule>(NodeFeeSchedule.LocalId)
+                .Where(row => row.Version == expectedVersion.Value)
+                .Set(row => row.MintFlatBaseUnits, schedule.MintFlatBaseUnits).Set(row => row.MintBps, schedule.MintBps)
+                .Set(row => row.TransferFlatBaseUnits, schedule.TransferFlatBaseUnits).Set(row => row.TransferBps, schedule.TransferBps)
+                .Set(row => row.SwapFlatBaseUnits, schedule.SwapFlatBaseUnits).Set(row => row.SwapBps, schedule.SwapBps)
+                .Set(row => row.ActionCompleteFlatBaseUnits, schedule.ActionCompleteFlatBaseUnits).Set(row => row.ActionCompleteBps, schedule.ActionCompleteBps)
+                .Set(row => row.FederationPublishFlatBaseUnits, schedule.FederationPublishFlatBaseUnits).Set(row => row.FederationPublishBps, schedule.FederationPublishBps)
+                .Set(row => row.Version, schedule.Version).Set(row => row.UpdatedAt, schedule.UpdatedAt);
+            update = schedule.SwapFlatDenomination is null ? update.Unset(row => row.SwapFlatDenomination)
+                : update.Set(row => row.SwapFlatDenomination, schedule.SwapFlatDenomination);
+            update = schedule.UpdatedByUserId is null ? update.Unset(row => row.UpdatedByUserId)
+                : update.Set(row => row.UpdatedByUserId, schedule.UpdatedByUserId);
+            mutation = update.Build();
+        }
+        var captured = SurrealGeneratedStatementScope.Assign(mutation, "fee_policy", "_fee_saved");
+        var appendAudit = SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "fee_audit");
+        // raw: captured typed policy CAS and immutable audit append commit or roll back together.
+        var atomic = SurrealQuery.Combine(SurrealQuery.Of("BEGIN"),
+            captured,
 
-        var readVersion = SurrealQuery
-                .Of("LET $_versions = SELECT VALUE version FROM type::record($_st, $_sid)")
-                .WithParam("_st", ScheduleTable)
-                .WithParam("_sid", NodeFeeSchedule.LocalId);
-
-        var enforceVersion = SurrealQuery
-                .Of("IF ($_expect_existing AND (array::len($_versions) != 1 OR $_versions[0] != $_expected)) OR (!$_expect_existing AND array::len($_versions) != 0) { THROW 'Node fee schedule version conflict' }")
-                .WithParam("_expect_existing", expectedVersion.HasValue)
-                .WithParam("_expected", expectedVersion ?? 0L);
-
-        var appendAudit = SurrealQuery
-                .Of("CREATE type::record($_at, $_aid) CONTENT $_audit RETURN AFTER")
-                .WithParam("_at", AuditTable)
-                .WithParam("_aid", audit.Id)
-                .WithParam("_audit", audit);
-
-        var atomic = SurrealQuery.Combine(
-                SurrealQuery.Of("BEGIN"),
-                readVersion,
-                enforceVersion,
-                upsertSchedule,
-                appendAudit,
-                SurrealQuery.Of("COMMIT"));
-
+            SurrealQuery.Of("IF $_fee_saved = NONE OR $_fee_saved = [] { THROW 'Node fee schedule version conflict' }"),
+            appendAudit, SurrealQuery.Of("RETURN $_fee_saved"), SurrealQuery.Of("COMMIT"));
         try
         {
             var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
             {
                 var executed = await _executor.ExecuteAsync(atomic, ct);
-                var errors = string.Join(" ", executed.Where(statement => !statement.IsOk)
-                    .Select(statement => statement.ErrorText));
-                if (errors.Contains("Node fee schedule version conflict", StringComparison.OrdinalIgnoreCase))
-                    throw new FeeScheduleVersionConflictException("Node fee schedule version conflict");
-                if (SurrealTransientConflict.IsRetryableConflict(
-                        new InvalidOperationException(errors)))
-                    throw new FeeScheduleVersionConflictException("Transaction conflict");
-
                 executed.EnsureAllOk();
                 return executed;
             }, ct);
-
-            var persisted = response.GetValues<NodeFeeSchedule>(3).SingleOrDefault()
+            var persisted = response.GetValues<NodeFeeSchedule>(4).SingleOrDefault()
                 ?? throw new InvalidOperationException("Fee schedule write returned no row.");
             return AZOAResult<NodeFeeSchedule>.Success(persisted, "Saved.");
         }
-        catch (FeeScheduleVersionConflictException)
+        catch (SurrealStatementException exception) when (
+            exception.Message.Contains(ConflictMarker, StringComparison.Ordinal) ||
+            SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
-            return AZOAResult<NodeFeeSchedule>.Failure("Node fee schedule version conflict.");
+            return AZOAResult<NodeFeeSchedule>.Failure(ConflictMarker);
         }
     }
 
@@ -118,5 +96,4 @@ public sealed class SurrealNodeFeeScheduleStore : INodeFeeScheduleStore
         return AZOAResult<IEnumerable<NodeFeeAudit>>.Success(rows);
     }
 
-    private sealed class FeeScheduleVersionConflictException(string message) : Exception(message);
 }

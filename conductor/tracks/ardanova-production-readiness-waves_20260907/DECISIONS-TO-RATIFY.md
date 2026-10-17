@@ -7,6 +7,12 @@ timestamp: 2026-09-07T00:00:00Z
 
 # Decisions to ratify or reject
 
+> 2026-10-15 reconciliation: the owner selected Identomat first for both KYC and
+> KYB. The historical no-company-endpoint premise below is superseded by the
+> vendor's documented KYB API. See
+> [platform-stub-closeout](../platform-stub-closeout_20261015/spec.md) for the
+> implementation and the explicitly recorded vendor workflow setup dependency.
+
 Each of these is a product decision that code has already made implicitly. Ratify
 it into the runbook as a numbered decision, or reject it and schedule the reversal.
 

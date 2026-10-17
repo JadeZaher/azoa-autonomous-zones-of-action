@@ -50,6 +50,24 @@ public interface IUserStore
     /// </summary>
     Task<AZOAResult<IUser>> GetByAuthWalletAsync(string address, string chainType, CancellationToken ct = default);
 
+    /// <summary>CAS-updates wallet credentials without changing ownership.</summary>
+    Task<AZOAResult<IUser>> TryUpdateAuthenticationAsync(IUser user, string? expectedAddress, string? expectedChain,
+        Guid? expectedTenant, DateTime? expectedAuthNotBefore, CancellationToken ct = default);
+
+    /// <summary>Atomically consumes the exact live invite, changes ownership and credentials, and records consent revocations.</summary>
+    Task<AZOAResult<IUser>> TryClaimAuthenticationAsync(IUser user, string? expectedAddress, string? expectedChain,
+        Guid expectedTenant, DateTime? expectedAuthNotBefore, AZOA.WebAPI.Models.WalletAuthClaimToken invite,
+        CancellationToken ct = default);
+
+    /// <summary>Advances the token revocation watermark without overwriting credentials or moving it backwards.</summary>
+    Task<AZOAResult<bool>> AdvanceAuthenticationWatermarkAsync(Guid userId, DateTime notBefore, CancellationToken ct = default);
+
+    /// <summary>Assigns a validated role only while the observed role remains current.</summary>
+    Task<AZOAResult<IUser>> TryAssignDappRoleAsync(Guid userId, string expectedRole, string role, CancellationToken ct = default);
+
+    /// <summary>Changes account activation only while the observed active state remains current.</summary>
+    Task<AZOAResult<IUser>> TrySetActiveAsync(Guid userId, bool expectedActive, bool active, CancellationToken ct = default);
+
     /// <summary>Returns a bounded page of active principals with a live tenant-provision key.</summary>
     Task<AZOAResult<IReadOnlyList<IUser>>> ListTenantPrincipalsPageAsync(
         int offset,

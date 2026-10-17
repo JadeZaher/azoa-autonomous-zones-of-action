@@ -1,8 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
-using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Requests;
 
 namespace AZOA.WebAPI.Models.Actions;
@@ -58,6 +57,7 @@ public class NftBurnNodeConfig
 {
     public Guid NftId { get; set; }
     public Guid WalletId { get; set; }
+    public AZOA.WebAPI.Models.Blockchain.NftFeeAuthorization? FeeAuthorization { get; set; }
 }
 
 public class WalletUpdateNodeConfig
@@ -111,22 +111,14 @@ public class EmitNodeConfig
 {
     public JsonElement Payload { get; set; }
 
-    /// <summary>
-    /// Optional tenant-defined event name for the GENERIC action.emit webhook
-    /// (final-hardening F3). When the run has an acting tenant AND that tenant has a
-    /// webhook registration, the Emit node ALSO enqueues an outbox event with this name
-    /// (defaults to <c>action.emit</c> when omitted). Free-form — AZOA does not interpret
-    /// it; it is echoed to the receiver so the tenant can route on it. The webhook is a
-    /// best-effort push ON TOP of the node's serialized output, which remains the
-    /// authoritative settlement surface.
-    /// </summary>
+    /// <summary>Optional event name, defaulting to action.emit; see Services/Actions/AGENTS.md for durable acceptance.</summary>
     public string? EventType { get; set; }
 }
 
-/// <summary>Swap config: tenant-supplied DEX swap params. Rate comes from the DEX, never AZOA.</summary>
+/// <summary>Swap config: frozen exact-input quote request; price, receipt and costs come from the durable DEX journal.</summary>
 public class SwapNodeConfig
 {
-    public SwapExecuteRequest Request { get; set; } = new();
+    public DexQuoteRequest? Quote { get; set; }
 }
 
 /// <summary>Grant (mint-to-actor) config. Actor user is taken from the run context, never this body.</summary>
@@ -148,6 +140,7 @@ public class TransferNodeConfig
 public class RefundNodeConfig
 {
     public Guid NftId { get; set; }
+    public Guid? TransferNodeId { get; set; }
     public NftTransferRequest Request { get; set; } = new();
 }
 
@@ -157,8 +150,10 @@ public class RefundNodeConfig
 public class FungibleTokenCreateNodeConfig
 {
     public string ChainType { get; set; } = "Algorand";
+    public AZOA.WebAPI.Core.ChainNetwork? Network { get; set; }
     public string Name { get; set; } = string.Empty;
     public string UnitName { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonNumberHandling(System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | System.Text.Json.Serialization.JsonNumberHandling.WriteAsString)]
     public ulong Total { get; set; }
     public int Decimals { get; set; }
     public Guid? HolonId { get; set; }

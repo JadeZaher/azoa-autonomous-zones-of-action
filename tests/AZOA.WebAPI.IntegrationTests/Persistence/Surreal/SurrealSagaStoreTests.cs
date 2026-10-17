@@ -387,7 +387,7 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         await invalidSuccessor.Should().ThrowAsync<SurrealStatementException>();
         var persisted = await _store.GetAsync(staleSource.Id, CancellationToken.None);
         persisted!.Status.Should().Be(StepStatus.InProgress);
-        persisted.ClaimedAt.Should().Be(winnerClaim.ClaimedAt);
+        persisted.ClaimedAt.Should().Be(winnerClaim!.ClaimedAt);
     }
 
     /// <summary>

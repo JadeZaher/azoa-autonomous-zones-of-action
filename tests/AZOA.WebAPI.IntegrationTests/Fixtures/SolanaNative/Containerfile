@@ -1,0 +1,15 @@
+FROM docker.io/library/rust:1.89.0-bookworm AS compiler
+RUN apt-get update && apt-get install -y --no-install-recommends bzip2 libssl3 libudev1 && rm -rf /var/lib/apt/lists/*
+RUN curl -fL https://github.com/anza-xyz/agave/releases/download/v3.1.8/solana-release-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/agave.tar.bz2 \
+    && echo 'e951bb8127c57460bc3ebca1671952e9b164e249d713fcebe2c125f70b8791e8  /tmp/agave.tar.bz2' | sha256sum -c - \
+    && tar -xjf /tmp/agave.tar.bz2 -C /opt && rm /tmp/agave.tar.bz2
+ENV PATH="/opt/solana-release/bin:${PATH}"
+WORKDIR /fixture
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build-sbf --tools-version v1.52 --arch v0 --sbf-out-dir /out/one -- --locked \
+    && cargo build-sbf --tools-version v1.52 --arch v0 --features revision-two --sbf-out-dir /out/two -- --locked \
+    && sha256sum /out/one/azoa_native_fixture.so /out/two/azoa_native_fixture.so > /out/SHA256SUMS
+
+FROM scratch
+COPY --from=compiler /out /out

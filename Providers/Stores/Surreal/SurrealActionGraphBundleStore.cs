@@ -4,7 +4,6 @@ using SurrealForge.Client;
 using SurrealForge.Client.Json;
 using SurrealForge.Client.Query;
 using SurrealForge.Client.Schema;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
@@ -98,21 +97,21 @@ public sealed class SurrealActionGraphBundleStore : IActionGraphBundleStore
         }
     }
 
-    public async Task<AZOAResult<IActionGraphBundle>> UpsertAsync(IActionGraphBundle odk, CancellationToken ct = default)
+    public async Task<AZOAResult<IActionGraphBundle>> UpsertAsync(IActionGraphBundle bundle, CancellationToken ct = default)
     {
         try
         {
-            if (odk.Id == Guid.Empty)
-                odk.Id = Guid.NewGuid();
+            if (bundle.Id == Guid.Empty)
+                bundle.Id = Guid.NewGuid();
 
-            var poco = ToPoco(odk);
+            var poco = ToPoco(bundle);
 
             var q    = SurrealWriter.Upsert(poco);
             var resp = await _executor.ExecuteAsync(q, ct);
             resp.EnsureAllOk();
 
             var saved  = resp.GetValues<ActionGraphBundleRecord>(0).FirstOrDefault();
-            var result = saved is not null ? FromPoco(saved) : odk;
+            var result = saved is not null ? FromPoco(saved) : bundle;
 
             return new AZOAResult<IActionGraphBundle> { Result = result, Message = "Saved." };
         }
@@ -147,34 +146,34 @@ public sealed class SurrealActionGraphBundleStore : IActionGraphBundleStore
 
 
 
-    private static ActionGraphBundleRecord ToPoco(IActionGraphBundle odk)
+    private static ActionGraphBundleRecord ToPoco(IActionGraphBundle bundle)
     {
         // Serialize BoundHolonIds as a JSON array of "N"-formatted id strings.
         // ALWAYS serialize (empty → `[]`) so the SET-based upsert REPLACES the
         // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
-        var idStrings = odk.BoundHolonIds.Select(SurrealId.ToSurrealId).ToList();
+        var idStrings = bundle.BoundHolonIds.Select(SurrealId.ToSurrealId).ToList();
         JsonElement? boundHolonIdsJson = JsonSerializer.SerializeToElement(idStrings, SurrealJsonOptions.Default);
 
         return new ActionGraphBundleRecord
         {
-            Id               = SurrealId.ToSurrealId(odk.Id),
-            Name             = odk.Name,
-            Description      = odk.Description,
-            PublicKey        = odk.PublicKey,
-            PrivateKeyHash   = odk.PrivateKeyHash,
-            UserId         = odk.UserId.HasValue ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(odk.UserId.Value)) : null,
+            Id               = SurrealId.ToSurrealId(bundle.Id),
+            Name             = bundle.Name,
+            Description      = bundle.Description,
+            PublicKey        = bundle.PublicKey,
+            PrivateKeyHash   = bundle.PrivateKeyHash,
+            UserId         = bundle.UserId.HasValue ? SurrealLink.ToLink("user", SurrealId.ToSurrealId(bundle.UserId.Value)) : null,
             BoundHolonIds    = boundHolonIdsJson,
-            TargetChain      = odk.TargetChain,
-            GeneratedCode    = odk.GeneratedCode,
-            DeploymentConfig = odk.DeploymentConfig,
+            TargetChain      = bundle.TargetChain,
+            GeneratedCode    = bundle.GeneratedCode,
+            DeploymentConfig = bundle.DeploymentConfig,
             CreatedDate      = new DateTimeOffset(
-                                   DateTime.SpecifyKind(odk.CreatedDate, DateTimeKind.Utc)),
-            ModifiedDate     = odk.ModifiedDate.HasValue
+                                   DateTime.SpecifyKind(bundle.CreatedDate, DateTimeKind.Utc)),
+            ModifiedDate     = bundle.ModifiedDate.HasValue
                                ? new DateTimeOffset(
-                                     DateTime.SpecifyKind(odk.ModifiedDate.Value, DateTimeKind.Utc))
+                                     DateTime.SpecifyKind(bundle.ModifiedDate.Value, DateTimeKind.Utc))
                                : null,
-            IsActive         = odk.IsActive,
-            IsPublic         = odk.IsPublic
+            IsActive         = bundle.IsActive,
+            IsPublic         = bundle.IsPublic
         };
     }
 

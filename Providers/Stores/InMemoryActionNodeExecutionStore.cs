@@ -36,6 +36,18 @@ namespace AZOA.WebAPI.Providers.Stores;
 /// </remarks>
 public sealed class InMemoryActionNodeExecutionStore : IActionNodeExecutionStore
 {
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionNodeExecution?>> TryAdmitAsync(ActionNodeExecution execution, CancellationToken ct = default, long? expectedRunVersion = null)
+    {
+        if (execution.State != ActionNodeState.Pending || string.IsNullOrWhiteSpace(execution.FrozenInput))
+            return AZOAResult<ActionNodeExecution?>.Failure("Frozen input and a Pending execution are required.");
+        var candidate = execution.Clone();
+        candidate.State = ActionNodeState.Running;
+        candidate.StartedAt = DateTime.UtcNow;
+        var claimed = await UpdateAsync(candidate, ActionNodeState.Pending, ct);
+        return AZOAResult<ActionNodeExecution?>.Success(claimed.IsError ? null : claimed.Result);
+    }
+
     // Keyed by execution row Id
     private readonly ConcurrentDictionary<Guid, ActionNodeExecution> _byId = new();
 
@@ -121,7 +133,11 @@ public sealed class InMemoryActionNodeExecutionStore : IActionNodeExecutionStore
         }
 
         var stored = execution.Clone();
-        _byId[execution.Id] = stored;
+        stored.Version = current.Version + 1;
+        if (execution.Version != current.Version || !ActionOperationIdentity.CanUpdate(current, execution)
+            || !_byId.TryUpdate(execution.Id, stored, current))
+            return Task.FromResult(AZOAResult<ActionNodeExecution>.Failure("Node execution version/state changed."));
+        execution.Version = stored.Version;
         return Task.FromResult(new AZOAResult<ActionNodeExecution> { Result = stored.Clone(), Message = "Updated." });
     }
 
@@ -188,7 +204,12 @@ public sealed class InMemoryActionNodeExecutionStore : IActionNodeExecutionStore
             TxHash = current.TxHash,
             ChainType = current.ChainType,
             StartedAt = DateTime.UtcNow,
-            EndedAt = current.EndedAt
+            EndedAt = current.EndedAt,
+            Version = current.Version + 1,
+            WaitUntil = current.WaitUntil,
+            FrozenInput = current.FrozenInput,
+            ExternalOperation = current.ExternalOperation,
+            RecoveryState = current.RecoveryState,
         };
 
         // Conditional CAS: only swap if the row we read is still the current row.

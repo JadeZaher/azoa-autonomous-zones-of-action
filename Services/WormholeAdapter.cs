@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
@@ -269,7 +268,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         // A real verifier is wired — every signature must independently verify
         // against the canonical digest. Any failure rejects the whole VAA.
-        byte[] digestBytes = AZOA.WebAPI.Helpers.Encoding.HexToBytes(parsed.Digest!);
+        byte[] digestBytes = AZOA.WebAPI.Helpers.ByteEncoding.HexToBytes(parsed.Digest!);
         int verified = 0;
         foreach (var s in parsed.Signatures)
         {
@@ -330,7 +329,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         var raw = Convert.FromBase64String(vaaBase64);
         var sha = System.Security.Cryptography.SHA256.HashData(raw);
-        return AZOA.WebAPI.Helpers.Encoding.ToLowerHex(sha);
+        return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(sha);
     }
 
     public async Task<AZOAResult<WormholeRedemptionResult>> RedeemTransferAsync(
@@ -490,7 +489,7 @@ public class WormholeAdapter : IWormholeAdapter
 
         // Prefer the values actually inside the signed body over caller hints.
         vaa.EmitterChainId = bodyEmitterChain;
-        vaa.EmitterAddress = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(emitterBytes);
+        vaa.EmitterAddress = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(emitterBytes);
         vaa.Sequence = (long)bodySequence;
         vaa.Nonce = nonce;
         vaa.ConsistencyLevel = consistency;
@@ -504,7 +503,7 @@ public class WormholeAdapter : IWormholeAdapter
         var body = new byte[b.Length - bodyStart];
         System.Array.Copy(b, bodyStart, body, 0, body.Length);
         var digest = Keccak256.ComputeHash(Keccak256.ComputeHash(body));
-        vaa.Digest = AZOA.WebAPI.Helpers.Encoding.ToLowerHex(digest);
+        vaa.Digest = AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(digest);
 
         vaa.StructurallyParsed = true;
         return vaa;
