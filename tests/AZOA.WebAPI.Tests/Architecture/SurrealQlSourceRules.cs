@@ -77,6 +77,27 @@ internal static partial class SurrealQlSourceRules
         }
     }
 
+    /// <summary>D-8: tenant payout rows change only through the ledger's atomic commit (plus the create-if-absent float and credit).</summary>
+    public static IEnumerable<string> TenantPayoutWriteOutsideLedger(CSharpSource source)
+    {
+        const string ledger = "Services/Fiat/OffRamp/TenantPayoutLedger.cs";
+        foreach (var literal in source.Literals.Where(literal => TenantPayoutRawWrite().IsMatch(literal.Body)))
+            yield return $"{source.Location(literal.Start)} raw tenant_payout_* write; go through ITenantPayoutLedger.CommitAsync";
+        var mentionsRows = TenantPayoutType().IsMatch(source.Code);
+        foreach (Match match in AnyWriter().Matches(source.Code))
+        {
+            if (source.RelativePath == ledger)
+            {
+                var member = MemberSignature().Matches(source.Code).LastOrDefault(signature => signature.Index <= match.Index);
+                var name = member is null ? "" : MemberName().Match(member.Value).Groups[1].Value;
+                if (name is "CommitAsync" or "RecordCreditAsync" or "GetOrCreateFloatAsync") continue;
+                yield return $"{source.Location(match.Index)} tenant payout write in {name}; only CommitAsync/RecordCreditAsync/GetOrCreateFloatAsync write";
+            }
+            else if (mentionsRows && TenantPayoutGeneric().IsMatch(source.Code[match.Index..Math.Min(source.Code.Length, match.Index + 200)]))
+                yield return $"{source.Location(match.Index)} typed write of a tenant payout row outside the ledger";
+        }
+    }
+
     public static IEnumerable<string> OrdinalEnumCast(CSharpSource source)
     {
         foreach (Match match in OrdinalCast().Matches(source.Code))
@@ -287,6 +308,21 @@ internal static partial class SurrealQlSourceRules
 
     [GeneratedRegex(@"\(\s*([A-Z][\w.]*)\??\s*\)\s*\(\s*(?:int|long|short|byte|uint|ulong)\s*\)")]
     private static partial Regex OrdinalCast();
+
+    [GeneratedRegex(@"\b(?:UPDATE|UPSERT|CREATE|DELETE|INSERT|RELATE)\b[^;]*\btenant_payout_(?:float|credit|debit)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex TenantPayoutRawWrite();
+
+    [GeneratedRegex(@"\bTenantPayout(?:Float|Credit|Debit)\b")]
+    private static partial Regex TenantPayoutType();
+
+    [GeneratedRegex(@"^\s*SurrealWriter\s*\.\s*(?:Create|Upsert|UpdateOnly|DeleteOnly)\s*(?:<\s*TenantPayout(?:Float|Credit|Debit)\s*>|\(\s*(?:new\s+TenantPayout|\w*(?:[Ff]loat|[Cc]redit|[Dd]ebit)\w*\s*\)))")]
+    private static partial Regex TenantPayoutGeneric();
+
+    [GeneratedRegex(@"\bSurrealWriter\s*\.\s*(?:Create|Upsert|UpdateOnly|DeleteOnly)\b")]
+    private static partial Regex AnyWriter();
+
+    [GeneratedRegex(@"(\w+)\s*(?:<[^>]*>)?\s*\($")]
+    private static partial Regex MemberName();
 
     [GeneratedRegex(@"\bSurrealWriter\s*\.\s*(UpdateOnly|DeleteOnly)\s*<")]
     private static partial Regex ConditionalMutation();

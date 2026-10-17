@@ -33,6 +33,10 @@ public sealed class SurrealQlSourceRulesTests
         { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Unset(row => row.AllowedChains).Build();", true },
         { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Where(row => row.Version == version).Unset(row => row.AllowedChains).Build();", false },
         { "no-where", "var q = SurrealWriter.DeleteOnly<Row>(id).Build();", true },
+        { "tenant-payout", "var debit = new TenantPayoutDebit { Id = id };\nawait executor.ExecuteAsync(SurrealWriter.Create(debit));", true },
+        { "tenant-payout", "var q = SurrealWriter.UpdateOnly<TenantPayoutFloat>(id).Where(row => row.Version == v).Set(row => row.ReservedMinorUnits, 0).Build();", true },
+        { "tenant-payout", "var q = SurrealQuery.Of(\"UPDATE tenant_payout_float SET reserved_minor_units = 0\");", true },
+        { "tenant-payout", "var debit = new TenantPayoutDebit { Id = id };\nawait ledger.CommitAsync(new TenantPayoutTransition(observed, next, new TenantPayoutEntryChange.CreateDebit(debit)));", false },
         { "ordinal", "var state = (Row.ActionNodeState)(int)execution.State;", true },
         { "ordinal", "var state = Enum.Parse<Row.ActionNodeState>(execution.State.ToString());", false },
         { "end-relative", "statements.Add(SurrealQuery.Of(\"RETURN $_user\"));\nvar row = response.GetValues<User>(statements.Count - 2).Single();", true },
@@ -86,6 +90,10 @@ public sealed class SurrealQlSourceRulesTests
     [Fact]
     public void Typed_conditional_mutations_always_carry_a_Where()
         => AssertNone("no-where", "SurrealForge 1.3.0 UpdateOnly/DeleteOnly Build() throws without a predicate, failing the flow at runtime");
+
+    [Fact]
+    public void Tenant_payout_rows_change_only_through_the_ledger_commit()
+        => AssertNone("tenant-payout", "D-8 exactly-once accounting holds only if every float/credit/debit change rides the float version CAS (round4-lane-L3-money.md)");
 
     [Fact]
     public void Persisted_enums_are_never_cast_by_ordinal()
@@ -151,6 +159,7 @@ public sealed class SurrealQlSourceRulesTests
         "srdb0001" => SurrealQlSourceRules.Srdb0001Suppression(source),
         "assign-key" => SurrealQlSourceRules.AssignOfKey(source),
         "no-where" => SurrealQlSourceRules.ConditionalMutationWithoutWhere(source),
+        "tenant-payout" => SurrealQlSourceRules.TenantPayoutWriteOutsideLedger(source),
         "ordinal" => SurrealQlSourceRules.OrdinalEnumCast(source),
         "end-relative" => SurrealQlSourceRules.EndRelativeResultIndex(source),
         "bare-id" => SurrealQlSourceRules.BareIdReference(source, source.RelativePath.EndsWith("Snippet.cs", StringComparison.Ordinal) ? SnippetColumns : null),
