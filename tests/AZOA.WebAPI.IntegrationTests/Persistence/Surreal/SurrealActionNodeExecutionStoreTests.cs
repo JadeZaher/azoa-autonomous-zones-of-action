@@ -1,6 +1,7 @@
 using FluentAssertions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Providers.Stores.Surreal;

@@ -25,6 +25,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nethereum.Signer;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests;
 
