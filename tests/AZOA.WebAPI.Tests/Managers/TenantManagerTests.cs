@@ -201,7 +201,7 @@ public class TenantManagerTests
         // No grant (default). Even though the user exists, issuance is denied.
 
         var result = await _manager.IssueChildCredentialAsync(
-            tenantId, userId, Array.Empty<string>(), new[] { AzoaScopes.WalletManage });
+            tenantId, userId, Array.Empty<string>(), new[] { AzoaScopes.WalletManage }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(TenantAuthorizationError.NotFound);
@@ -219,7 +219,7 @@ public class TenantManagerTests
             .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = userId, OwnerTenantId = tenantId } });
 
         var result = await _manager.IssueChildCredentialAsync(
-            tenantId, userId, Array.Empty<string>(), new[] { AzoaScopes.WalletManage });
+            tenantId, userId, Array.Empty<string>(), new[] { AzoaScopes.WalletManage }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(TenantAuthorizationError.NotFound);
@@ -237,7 +237,7 @@ public class TenantManagerTests
         var result = await _manager.IssueChildCredentialAsync(
             tenantId, userId,
             requestedScopes: new[] { AzoaScopes.WalletManage },
-            tenantScopes: new[] { AzoaScopes.TenantProvision, AzoaScopes.WalletManage, AzoaScopes.NftMint });
+            tenantScopes: new[] { AzoaScopes.TenantProvision, AzoaScopes.WalletManage, AzoaScopes.NftMint }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeFalse();
         result.Result!.UserId.Should().Be(userId);
@@ -263,7 +263,7 @@ public class TenantManagerTests
             tenantId, userId,
             // Request both; tenant holds both — but the grant ceiling drops nft:mint.
             requestedScopes: new[] { AzoaScopes.WalletManage, AzoaScopes.NftMint },
-            tenantScopes: new[] { AzoaScopes.WalletManage, AzoaScopes.NftMint });
+            tenantScopes: new[] { AzoaScopes.WalletManage, AzoaScopes.NftMint }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeFalse();
         result.Result!.Scopes.Should().BeEquivalentTo(new[] { AzoaScopes.WalletManage });
@@ -293,7 +293,7 @@ public class TenantManagerTests
             });
 
         var result = await _manager.IssueChildCredentialAsync(
-            tenantId, userId, new[] { AzoaScopes.WalletManage }, new[] { AzoaScopes.WalletManage });
+            tenantId, userId, new[] { AzoaScopes.WalletManage }, new[] { AzoaScopes.WalletManage }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(TenantAuthorizationError.NotFound);
@@ -311,7 +311,7 @@ public class TenantManagerTests
         GivenLiveGrant(userId, otherTenant, AzoaScopes.WalletManage);
 
         var result = await _manager.IssueChildCredentialAsync(
-            askingTenant, userId, new[] { AzoaScopes.WalletManage }, new[] { AzoaScopes.WalletManage });
+            askingTenant, userId, new[] { AzoaScopes.WalletManage }, new[] { AzoaScopes.WalletManage }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
         result.Message.Should().StartWith(TenantAuthorizationError.NotFound);
@@ -331,7 +331,7 @@ public class TenantManagerTests
         GivenLiveGrant(userId, tenantId, AzoaScopes.WalletManage);
 
         var result = await _manager.IssueChildCredentialAsync(
-            tenantId, userId, new[] { AzoaScopes.WalletManage }, new[] { AzoaScopes.WalletManage });
+            tenantId, userId, new[] { AzoaScopes.WalletManage }, new[] { AzoaScopes.WalletManage }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeFalse();
         // The issued token's nbf is at/after the watermark (cannot act before a claim).

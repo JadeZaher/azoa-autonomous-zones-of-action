@@ -19,6 +19,14 @@ public static class AzoaDappRoles
     public static bool CanManage(string? role)
         => string.Equals(Normalize(role), Manager, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>True unless <paramref name="scope"/> is a role-bound dApp scope that <paramref name="role"/> does not hold.</summary>
+    public static bool GrantsScope(string? role, string scope) => scope switch
+    {
+        AzoaScopes.DappDevelop => CanDevelop(role),
+        AzoaScopes.DappManage => CanManage(role),
+        _ => true,
+    };
+
     /// <summary>
     /// The complete, canonical set of assignable DApp roles. operator:admin is
     /// deliberately absent — operator authority is a JWT-only scope, never a DApp

@@ -209,19 +209,9 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
-            if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
-            {
-                // D-5: allowlisted endpoint + scope + live consent + active issuing tenant; see Services/Consent/AGENTS.md.
-                var childGate = ActivatorUtilities.CreateInstance<AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate>(
-                    context.HttpContext.RequestServices);
-                var childRejection = await childGate.RejectAsync(
-                    principal!, context.HttpContext.GetEndpoint(), context.HttpContext.RequestAborted);
-                if (childRejection is not null)
-                {
-                    context.Fail(childRejection);
-                    return;
-                }
-            }
+            // D-5: allowlisted endpoint + scope + live consent/role + active issuing tenant and key; see Services/Consent/AGENTS.md.
+            if (!await AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate.AdmitAsync(context))
+                return;
 
             if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
             {
@@ -604,50 +594,11 @@ builder.Services.AddAuthorization(o =>
                 ? ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)
                 : ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value == AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin));
     });
-    // DappDevelop gates authoring writes; DappManage gates lifecycle writes.
-    // API keys inherit only the owner's current dApp role and, when scoped, must
-    // also carry the matching explicit dapp capability.
-    o.AddPolicy("DappDevelop", p =>
-        p.RequireAssertion(ctx =>
-        {
-            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
-            var isApiKey = string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase);
-
-            // Not an API key (i.e. a JWT identity) → must prove a dapp capability.
-            if (!isApiKey)
-                return ctx.User.HasDappDevelopAccess();
-
-            // CSV was non-empty but every token was dropped as forbidden (all-forbidden
-            // scope list) → must NOT be treated as legacy full-access. Deny.
-            if (string.Equals(ctx.User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            // Genuinely-empty-CSV key emits no scope claims → legacy full-access → allowed.
-            if (ctx.User.GetScopes().Count == 0)
-                return ctx.User.HasDappDeveloperRole();
-
-            // Scoped key → must explicitly carry the dapp-developer capability.
-            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappDevelop)
-                && ctx.User.HasDappDeveloperRole();
-        }));
-    o.AddPolicy("DappManage", p =>
-        p.RequireAssertion(ctx =>
-        {
-            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
-            var isApiKey = string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase);
-
-            if (!isApiKey)
-                return ctx.User.HasDappManageAccess();
-
-            if (string.Equals(ctx.User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            if (ctx.User.GetScopes().Count == 0)
-                return ctx.User.HasDappManagerRole();
-
-            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage)
-                && ctx.User.HasDappManagerRole();
-        }));
+    // DappDevelop gates authoring writes; DappManage gates lifecycle writes. Both require the
+    // caller's live dApp role; a scope alone never admits (child tokens: store-loaded role stamped by
+    // DelegatedChildCredentialGate). See Helpers/AGENTS.md §Role-bound dApp policies.
+    o.AddPolicy("DappDevelop", p => p.RequireAssertion(ctx => ctx.User.HasDappDevelopAccess()));
+    o.AddPolicy("DappManage", p => p.RequireAssertion(ctx => ctx.User.HasDappManageAccess()));
     o.AddPolicy("DappRoleAssignment", p =>
     {
         p.RequireAuthenticatedUser();

@@ -32,33 +32,43 @@ public static class ClaimsPrincipalExtensions
         return false;
     }
 
+    /// <summary>The <c>DappDevelop</c> policy predicate; see `Helpers/AGENTS.md` §Role-bound dApp policies.</summary>
     public static bool HasDappDevelopAccess(this ClaimsPrincipal principal)
-    {
-        if (principal is null)
-            return false;
+        => HasRoleBoundAccess(principal, AZOA.WebAPI.Core.AzoaScopes.DappDevelop, principal.HasDappDeveloperRole());
 
-        if (principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappDevelop))
-            return true;
-
-        return principal.HasDappDeveloperRole();
-    }
-
+    /// <summary>The <c>DappManage</c> policy predicate; see `Helpers/AGENTS.md` §Role-bound dApp policies.</summary>
     public static bool HasDappManageAccess(this ClaimsPrincipal principal)
-    {
-        if (principal is null)
-            return false;
-
-        if (principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage))
-            return true;
-
-        return principal.HasDappManagerRole();
-    }
+        => HasRoleBoundAccess(principal, AZOA.WebAPI.Core.AzoaScopes.DappManage, principal.HasDappManagerRole());
 
     public static bool HasDappDeveloperRole(this ClaimsPrincipal principal)
-        => AZOA.WebAPI.Core.AzoaDappRoles.CanDevelop(principal?.FindFirst("dapp_role")?.Value);
+        => AZOA.WebAPI.Core.AzoaDappRoles.CanDevelop(principal.TrustedDappRole());
 
     public static bool HasDappManagerRole(this ClaimsPrincipal principal)
-        => AZOA.WebAPI.Core.AzoaDappRoles.CanManage(principal?.FindFirst("dapp_role")?.Value);
+        => AZOA.WebAPI.Core.AzoaDappRoles.CanManage(principal.TrustedDappRole());
+
+    /// <summary>The dApp role the server vouches for: a delegated token's role comes only from the store-loaded live-role identity.</summary>
+    private static string? TrustedDappRole(this ClaimsPrincipal? principal)
+    {
+        if (principal is null) return null;
+        if (!principal.IsDelegated()) return principal.FindFirst("dapp_role")?.Value;
+        return principal.Identities
+            .FirstOrDefault(identity => identity.AuthenticationType == AZOA.WebAPI.Core.AzoaClaims.LiveRoleIdentity)
+            ?.FindFirst("dapp_role")?.Value;
+    }
+
+    /// <summary>True for a tenant-delegated principal (child credential or acting-tenant token).</summary>
+    private static bool IsDelegated(this ClaimsPrincipal principal)
+        => AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal) || principal.GetActingTenantId() is not null;
+
+    private static bool HasRoleBoundAccess(ClaimsPrincipal? principal, string scope, bool hasRole)
+    {
+        if (principal is null || !hasRole) return false;                  // the role is always required; a scope alone never admits.
+        if (principal.IsDelegated()) return principal.HasScope(scope);    // delegated: live role AND the delegated scope.
+        if (!principal.IsApiKey()) return true;                           // login JWT: role claim (its dapp scopes are implied by it).
+        if (string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+            return false;                                                 // all-forbidden CSV → not full access.
+        return principal.GetScopes().Count == 0 || principal.HasScope(scope); // legacy empty CSV, or an explicit scope.
+    }
 
     /// <summary>True for a first-party login JWT: <c>token_use=login</c>, no acting tenant, not an API key.</summary>
     public static bool IsFirstPartyLogin(this ClaimsPrincipal principal)
@@ -86,12 +96,7 @@ public static class ClaimsPrincipalExtensions
         if (!AZOA.WebAPI.Core.AzoaScopes.IsIssuableByUser(scope))
             return false;
 
-        return scope switch
-        {
-            AZOA.WebAPI.Core.AzoaScopes.DappDevelop => principal.HasDappDeveloperRole(),
-            AZOA.WebAPI.Core.AzoaScopes.DappManage => principal.HasDappManagerRole(),
-            _ => true,
-        };
+        return AZOA.WebAPI.Core.AzoaDappRoles.GrantsScope(principal.TrustedDappRole(), scope);
     }
 
     /// <summary>
