@@ -1379,6 +1379,10 @@ builder.Services.AddHostedService<SwapRecoveryWorker>();
 builder.Services.AddScoped<SwapActionResolver>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp => sp.GetRequiredService<SwapActionResolver>());
 builder.Services.AddScoped<IBlockchainOperationManager, BlockchainOperationManager>();
+// D-3 client-signed operations: CAS store + lifecycle service (submit-signed, stuck-row parking, operator resolution).
+builder.Services.AddScoped<AZOA.WebAPI.Services.Blockchain.ClientSigning.IClientSignedOperationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealOperationLogClientSigningStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Blockchain.ClientSigning.ClientSignedOperationService>();
 builder.Services.AddScoped<IActionGraphBundleManager, ActionGraphBundleManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();

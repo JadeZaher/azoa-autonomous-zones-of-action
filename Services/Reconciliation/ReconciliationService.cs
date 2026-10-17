@@ -8,6 +8,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Bridge;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Blockchain.ClientSigning;
 
 namespace AZOA.WebAPI.Services.Reconciliation;
 
@@ -60,6 +61,7 @@ public sealed class ReconciliationService : IReconciliationService
     /// </remarks>
     private readonly AZOA.WebAPI.Services.Reserve.IExchangeSettlementReconciler? _exchanges;
 
+    private readonly ClientSignedOperationService? _clientSigned;
     private readonly ILogger<ReconciliationService> _logger;
     private readonly ReconciliationOptions _options;
 
@@ -106,13 +108,16 @@ public sealed class ReconciliationService : IReconciliationService
         // withholds until confirmation, and the commitments an accepted-then-failed group leaves
         // standing. Optional so the existing positional fixtures keep compiling; Program.cs
         // registers it, and an unwired one is reported rather than assumed settled.
-        AZOA.WebAPI.Services.Reserve.IExchangeSettlementReconciler? exchanges = null)
+        AZOA.WebAPI.Services.Reserve.IExchangeSettlementReconciler? exchanges = null,
+        // D-3: client-signed rows are judged by their saved plan, not by a bare TxHash probe.
+        ClientSignedOperationService? clientSigned = null)
     {
         _bridgeStore = bridgeStore;
         _chainFactory = chainFactory;
         _idempotency = idempotency;
         _credentials = credentials;
         _exchanges = exchanges;
+        _clientSigned = clientSigned;
         _logger = logger;
         _options = options.Value;
     }
@@ -510,6 +515,20 @@ public sealed class ReconciliationService : IReconciliationService
 
         var ageSeconds = (now - op.CreatedDate).TotalSeconds;
         var hardStuck = ageSeconds >= Math.Max(0, _options.OperationHardStuckAfterSeconds);
+
+        if (_clientSigned is not null
+            && ClientSignedOperationService.ReadPlan(op) is not null)
+        {
+            return await _clientSigned.ReconcileAsync(op, now, ct) switch
+            {
+                ClientSigningReconcileOutcome.Completed => ReconciliationReport.Empty with { Advanced = 1 },
+                ClientSigningReconcileOutcome.Failed => ReconciliationReport.Empty with { Failed = 1 },
+                ClientSigningReconcileOutcome.Parked => ReconciliationReport.Empty with { StuckFlagged = 1 },
+                ClientSigningReconcileOutcome.Flagged =>
+                    MaybeFlagStuckOperation(op, ageSeconds, hardStuck, "client-signed plan could not be observed"),
+                _ => MaybeFlagStuckOperation(op, ageSeconds, hardStuck, "client-signed plan has no chain-proven outcome yet"),
+            };
+        }
 
         // Same provider-resolution convention as BlockchainOperationManager:
         // Parameters["ChainType"] (else default provider), Parameters["ChainNetwork"].
