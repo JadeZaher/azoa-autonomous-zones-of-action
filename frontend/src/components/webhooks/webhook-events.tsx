@@ -94,7 +94,9 @@ function EventList({ userId, operatorTenantId, family = 'action' }: PanelProps) 
     if (receipt.requestId !== pending.command.requestId || receipt.eventId !== pending.eventId
       || receipt.version !== pending.command.expectedVersion + 1) throw new Error('Retry receipt did not match the saved command.')
     localStorage.removeItem(storageKey); setSaved(null)
-    setMessage('Retry accepted. Delivery keeps the original event identity and destination.')
+    const from = receipt.retriedFrom === 'AttemptBudgetExhausted' ? ' (it had run out of attempts)'
+      : receipt.retriedFrom === 'AbandonedAttempt' ? ' (its last attempt was abandoned mid-flight)' : ''
+    setMessage(`Retry accepted${from}. Delivery keeps the original event identity and destination.`)
     await load()
   }
   async function start(row: DeliveryEvent) {
