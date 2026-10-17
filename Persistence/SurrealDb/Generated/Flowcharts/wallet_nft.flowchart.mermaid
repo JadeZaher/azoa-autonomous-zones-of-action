@@ -18,6 +18,7 @@ graph LR
     nft_workflow_cost_retirement["nft_workflow_cost_retirement: Node"]:::nodeClass
     swap_state["swap_state: Node"]:::nodeClass
     wallet["wallet: Node"]:::nodeClass
+    wallet_ownership_proof["wallet_ownership_proof: Node"]:::nodeClass
 
     %% Cross-slice targets (rendered as ghost nodes)
     user["user: Node (external)"]:::externalNode
@@ -27,6 +28,7 @@ graph LR
     nft_ownership -- "user_id [N:1]" --> user
     swap_state -- "user_id [N:1]" --> user
     wallet -- "user_id [N:1]" --> user
+    wallet_ownership_proof -- "user_id [N:1]" --> user
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;
     classDef externalNode fill:#eef5ff,stroke:#5b8def,stroke-width:1px,stroke-dasharray:4 3,rx:10px,ry:10px;
