@@ -61,8 +61,7 @@ retired exchange rows; wallet-identity conflicts; DEX settle-review; WTT operato
 stage keys; and `reconcileParkedRuns` returning `{ scanned, results, errors, hardStuck }` — zero
 scanned or any error is never a success.
 
-§tenant-payout-float — `getTenantPayoutBalance`, `startTenantPayoutTopUp` and
-`getTenantPayoutFloat` are coded against the L3 D-8 design record before the routes exist. Field
-names follow the design (`available/reserved/pendingCreditMinorUnits`, operator `consistent`); a
-node without the routes answers 404 and callers must render "not offered". Re-check the shapes when
-the D-8 implementation merges.
+§tenant-payout-float — `getTenantPayoutBalance` (tenant) and `getTenantPayoutFloats` (operator)
+return one `TenantPayoutFloatView` per currency/environment, mirroring the D-8 implementation;
+`startTenantPayoutTopUp` returns the Checkout intent. `deficitMinorUnits > 0` means a charged-back
+top-up is uncovered and every tenant-priced cash-out is refused until it is.

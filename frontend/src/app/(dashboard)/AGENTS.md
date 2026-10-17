@@ -26,12 +26,11 @@ only server-side (F-H8), so a tenant session gets a 403 there by design.
 
 ## §tenant-payout-float
 
-`payout-balance` shows the D-8 tenant float (available / reserved / aging top-ups) and starts a
-top-up checkout. It is coded against the L3 design record (`Services/Fiat/OffRamp/AGENTS.md`
-§tenant-funded) before the routes exist: a 404 renders "not offered on this node yet", never an
-empty balance. A negative balance (charged-back top-up) is shown as an alert because every
-tenant-priced cash-out is refused until it is covered. Revisit the field names when L3 lands
-`GET /api/fiat/tenant-payout-balance`.
+`payout-balance` shows the D-8 tenant floats (`GET /api/fiat/tenant-payout-balance`, one per
+currency/environment: available / reserved / maturing top-ups) and starts a top-up checkout
+(`POST .../top-up`) with a saved request key. A positive `deficitMinorUnits` (charged-back top-up)
+is an alert because every tenant-priced cash-out is refused until it is covered. A non-tenant
+principal gets 403; the page says the balance belongs to an organization account.
 
 ## §operator-boards (admin)
 

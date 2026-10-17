@@ -3,7 +3,7 @@
 // Tenant payout float (D-8): cash-outs priced by this tenant are paid from it, never from the node.
 // See `src/app/(dashboard)/AGENTS.md` §tenant-payout-float.
 import { useCallback, useEffect, useState } from 'react'
-import type { TenantPayoutBalance, TenantPayoutTopUp } from 'azoa-sdk'
+import type { TenantPayoutFloatView, TenantPayoutTopUp } from 'azoa-sdk'
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import { azoa, isOk } from '@/lib/azoa'
 import { useAzoaAuth } from '@/lib/azoa-auth'
@@ -19,8 +19,7 @@ const SCOPE = 'tenant-payout-top-up'
 
 export default function PayoutBalancePage() {
   const { userId } = useAzoaAuth()
-  const [balance, setBalance] = useState<TenantPayoutBalance | null>(null)
-  const [offered, setOffered] = useState(true)
+  const [floats, setFloats] = useState<TenantPayoutFloatView[] | null>(null)
   const [topUp, setTopUp] = useState<TenantPayoutTopUp | null>(null)
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,14 +30,9 @@ export default function PayoutBalancePage() {
     setError(null)
     try {
       const result = await azoa.api.getTenantPayoutBalance()
-      if (isOk(result)) {
-        setBalance(result.value)
-        setOffered(true)
-      } else if (result.error.status === 404) {
-        setOffered(false)
-      } else {
-        setError(refusalMessage(result.error, 'Your payout balance could not be read.'))
-      }
+      if (isOk(result)) setFloats(result.value ?? [])
+      else if (result.error.status === 403 && !result.error.serverCode?.includes('KYB')) setError('The payout balance belongs to an organization account. Sign in as the organization to see it.')
+      else setError(refusalMessage(result.error, 'Your payout balance could not be read.'))
     } finally { setBusy(false) }
   }, [])
 
@@ -75,31 +69,34 @@ export default function PayoutBalancePage() {
         </p>
       </div>
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
-      {!offered ? (
-        <Card><CardContent className="pt-6 text-sm">Tenant payout balances are not offered here yet. Tenant-priced cash-outs stay unavailable until it does.</CardContent></Card>
-      ) : (
-        <>
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between">
-              <div>
-                <CardTitle>Balance</CardTitle>
-                <CardDescription>Top-ups count once the payment can no longer be charged back.</CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => void load()} disabled={busy}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
-            </CardHeader>
-            <CardContent>
-              {balance ? (
-                <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-                  <div><div className="text-xs text-muted-foreground">Available</div><div className="font-medium">{formatMinorUnits(balance.availableMinorUnits, balance.currencyCode)}</div></div>
-                  <div><div className="text-xs text-muted-foreground">Reserved for cash-outs in flight</div><div className="font-medium">{formatMinorUnits(balance.reservedMinorUnits, balance.currencyCode)}</div></div>
-                  <div><div className="text-xs text-muted-foreground">Top-ups still aging</div><div className="font-medium">{formatMinorUnits(balance.pendingCreditMinorUnits, balance.currencyCode)}</div></div>
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between">
+          <div>
+            <CardTitle>Balance</CardTitle>
+            <CardDescription>Top-ups count, net of fees, once the payment can no longer be charged back.</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={busy}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Refresh</Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {floats === null ? <p className="text-sm text-muted-foreground">Reading…</p>
+            : floats.length === 0 ? <p className="text-sm text-muted-foreground">No balance yet. Top up below before publishing a price schedule that pays people out.</p>
+            : floats.map(float => (
+              <div key={float.floatId} className="space-y-2 text-sm">
+                {floats.length > 1 && <p className="text-xs text-muted-foreground">{float.currencyCode.toUpperCase()} · {float.environment}</p>}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div><div className="text-xs text-muted-foreground">Available</div><div className="font-medium">{formatMinorUnits(float.availableMinorUnits, float.currencyCode)}</div></div>
+                  <div><div className="text-xs text-muted-foreground">Reserved for cash-outs in flight</div><div className="font-medium">{formatMinorUnits(float.reservedMinorUnits, float.currencyCode)}</div></div>
+                  <div><div className="text-xs text-muted-foreground">Top-ups still maturing</div><div className="font-medium">{formatMinorUnits(float.pendingCreditMinorUnits, float.currencyCode)}</div></div>
                 </div>
-              ) : <p className="text-sm text-muted-foreground">Reading…</p>}
-              {balance && balance.availableMinorUnits < 0 && (
-                <p className="mt-3 text-sm text-destructive" role="alert">A top-up was charged back. The balance is negative and every tenant-priced cash-out is refused until it is topped up.</p>
-              )}
-            </CardContent>
-          </Card>
+                {float.deficitMinorUnits > 0 && (
+                  <p className="text-destructive" role="alert">
+                    A top-up was charged back: {formatMinorUnits(float.deficitMinorUnits, float.currencyCode)} is uncovered, and every cash-out priced by you is refused until it is topped up.
+                  </p>
+                )}
+              </div>
+            ))}
+        </CardContent>
+      </Card>
           <Card>
             <CardHeader><CardTitle>Top up</CardTitle></CardHeader>
             <CardContent className="space-y-4 text-sm">
@@ -117,8 +114,6 @@ export default function PayoutBalancePage() {
               )}
             </CardContent>
           </Card>
-        </>
-      )}
     </div>
   )
 }

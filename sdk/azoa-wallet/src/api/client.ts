@@ -5,7 +5,7 @@ import type { HoldLiabilityPage, HoldLiabilityView, HoldReserveAssetView, HoldSt
 import type { DexCapabilityView, NodeFeeScheduleUpdateRequest, DexQuoteRequest, DexQuoteAvailability, DexQuoteView, SwapAdmissionRequest, SwapOperationView, SwapVersionCommand, SwapStageCommand, SwapExposureCommand, SwapExternalSigningView, SwapBrowserStageCommand, SwapCleanupRequest, SwapCleanupStageCommand } from "./dex.js";
 import type { WttQuoteRequest, WttOfferView, WttStartRequest, WttCancelRequest, WttOperationView, WttOperationPage, WttContinueCommand, WttStageCommand, WttParticipantSigningView, WttParticipantSignatureCommand, WttNativeOutputOffer, WttNativeOutputRequest, WttCleanupOffer, WttCleanupRequest } from "./wtt.js";
 import type { KycSessionStart, KycSubmission, HostedSessionRefreshReceipt, WalletOwnershipChallenge, WalletOwnershipProof } from "./identity.js";
-import type { FiatPayoutResolveRequest, FiatReversalResolveRequest, TenantPayoutBalance, TenantPayoutTopUpParams, TenantPayoutTopUp, TenantPayoutFloatView } from "./money.js";
+import type { FiatPayoutResolveRequest, FiatReversalResolveRequest, TenantPayoutTopUpParams, TenantPayoutTopUp, TenantPayoutFloatView } from "./money.js";
 import type { ClientSigningPlanView, ClientSignedSubmission, StuckClientSignedOperationView, ClientSigningResolution } from "./operations.js";
 import type { DeploymentOperatorResolution, ParkedDeployment, RetiredExchangeRowView, RetiredExchangeResolution, WalletIdentityMigrationView, WalletIdentityConflictRepair, SwapOperatorSettlementRequest, WttStageKeyReadinessReport, WttStageKeyRewrapReport } from "./operator.js";
 import { ok, err } from "../core/result.js";
@@ -4229,8 +4229,8 @@ export class AzoaApiClient {
     return this.request("POST", API_PATHS.FIAT_REVERSAL_RESOLVE(reversalId), request);
   }
 
-  /** Tenant: the payout float tenant-priced cash-outs draw on (D-8). */
-  async getTenantPayoutBalance(): Promise<Result<TenantPayoutBalance, SdkError>> {
+  /** Tenant: every payout float (one per currency/environment) tenant-priced cash-outs draw on (D-8). */
+  async getTenantPayoutBalance(): Promise<Result<TenantPayoutFloatView[], SdkError>> {
     return this.request("GET", API_PATHS.TENANT_PAYOUT_BALANCE);
   }
 
@@ -4240,8 +4240,8 @@ export class AzoaApiClient {
     return this.request("POST", API_PATHS.TENANT_PAYOUT_TOP_UP, params);
   }
 
-  /** Operator: one tenant float with its consistency check. */
-  async getTenantPayoutFloat(tenantId: string): Promise<Result<TenantPayoutFloatView, SdkError>> {
+  /** Operator: one tenant's floats with the entry-vs-counter consistency check. */
+  async getTenantPayoutFloats(tenantId: string): Promise<Result<TenantPayoutFloatView[], SdkError>> {
     assertUuid(tenantId, "tenantId");
     return this.request("GET", API_PATHS.TENANT_PAYOUT_FLOAT(tenantId));
   }

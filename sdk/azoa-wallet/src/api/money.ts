@@ -8,18 +8,30 @@ export interface FiatPayoutResolveRequest { resolution: FiatPayoutResolution; re
 export interface FiatReversalResolveRequest { reason: string }
 
 /**
- * Tenant payout float (D-8): tenant-priced cash-outs are paid from it, never from the node.
- * Coded against the L3 design record (`Services/Fiat/OffRamp/AGENTS.md` §tenant-funded); see `src/api/AGENTS.md` §tenant-payout-float.
+ * One tenant payout float (D-8; mirrors `Services/Fiat/OffRamp/TenantPayoutFunding.cs` `TenantPayoutFloatView`).
+ * Tenant-priced cash-outs are paid from it, never from the node. `consistent` checks the counters
+ * against sums recomputed from the entry rows (`balance = credits − finalized − reserved`).
  */
-export interface TenantPayoutBalance {
+export interface TenantPayoutFloatView {
+  floatId: string;
+  tenantId: string;
   currencyCode: string;
-  availableMinorUnits: number;
+  environment: string;
+  creditedMinorUnits: number;
   reservedMinorUnits: number;
-  /** Settled top-ups still inside the reversal window; they count once they age. */
+  finalizedMinorUnits: number;
+  availableMinorUnits: number;
+  /** Charged-back top-ups not yet covered; while positive, tenant-priced cash-outs are refused. */
+  deficitMinorUnits: number;
+  /** Settled top-ups still inside the reversal window; they count once they mature. */
   pendingCreditMinorUnits: number;
+  recomputedCreditedMinorUnits: number;
+  recomputedReservedMinorUnits: number;
+  recomputedFinalizedMinorUnits: number;
+  consistent: boolean;
 }
 
-/** `POST /api/fiat/tenant-payout-balance/top-up`: a Checkout payment that credits the float once settled and aged. */
+/** `POST /api/fiat/tenant-payout-balance/top-up`: a Checkout payment that credits the float, net of fees, once it matures. */
 export interface TenantPayoutTopUpParams {
   requestKey: string;
   amountMinorUnits: number;
@@ -27,11 +39,3 @@ export interface TenantPayoutTopUpParams {
   cancelUrl?: string;
 }
 export type TenantPayoutTopUp = FiatCheckoutIntent;
-
-/** Operator view `GET /api/admin/tenant-payout-floats/{tenantId}`; `consistent` checks `balance = credits − finalized − reserved`. */
-export interface TenantPayoutFloatView extends TenantPayoutBalance {
-  tenantId: string;
-  creditsMinorUnits: number;
-  finalizedMinorUnits: number;
-  consistent: boolean;
-}
