@@ -81,14 +81,11 @@ public sealed class ExchangeController : ControllerBase
 
         var caller = identity.Caller!;
 
-        // A plain preview claims nothing and moves nothing, so it is exempt from the consent check.
-        // A preview carrying a release mandate discloses the participant's wallet and readiness, so it is gated.
-        if (!request.PreviewOnly || request.ReleaseMandate is not null)
-        {
-            var consentRefusal = await RequireLiveConsentAsync(userId, caller.ActingTenantId, ct);
-            if (consentRefusal is not null)
-                return consentRefusal;
-        }
+        // Every preview is gated too: it reads the participant's identity readiness (and, with a
+        // release mandate, their wallet), so an ungated quote is a per-person status oracle.
+        var consentRefusal = await RequireLiveConsentAsync(userId, caller.ActingTenantId, ct);
+        if (consentRefusal is not null)
+            return consentRefusal;
 
         if (!request.PreviewOnly)
         {
