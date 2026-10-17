@@ -66,6 +66,9 @@ public static class OffRampRegistration
         Require(services, Caller, typeof(IRealValueKycGate),
             "cashing out is a value action: D46 gates it, and the reversal risk pause wraps that "
             + "same gate (AddReversalRiskValueGate)");
+        Require(services, Caller, typeof(IReversalFactSource),
+            "tenant top-ups are credited net of fees and reversed from the provider's own charge and dispute "
+            + "facts (AddFiatReversalPipeline)");
         Require(services, Caller, typeof(IHttpClientFactory),
             "every payout figure is read and written over the named Stripe client");
 

@@ -82,6 +82,8 @@ public sealed partial class OffRampService
         var saved = await SaveAsync(resolved, ct);
         if (saved.IsError)
             return saved;
+        // D-8: record-paid finalizes, return-units releases (no transfer proven above) a tenant debit.
+        await SyncFundingAsync(saved.Result!, ct);
 
         _logger.LogWarning(
             "Operator {Actor} resolved cash-out {PayoutId} from {Prior} to {Status} ({Resolution}).",

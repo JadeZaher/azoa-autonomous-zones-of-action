@@ -103,6 +103,8 @@ DEFINE FIELD IF NOT EXISTS return_pending_transaction_id ON TABLE fiat_payout TY
 DEFINE FIELD IF NOT EXISTS return_pending_idempotency_key ON TABLE fiat_payout TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS recovery_reversal_attempt ON TABLE fiat_payout TYPE int
     DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS funding_tenant_id ON TABLE fiat_payout TYPE option<record<user>>;
+DEFINE FIELD IF NOT EXISTS collect_partition ON TABLE fiat_payout TYPE option<string>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 
