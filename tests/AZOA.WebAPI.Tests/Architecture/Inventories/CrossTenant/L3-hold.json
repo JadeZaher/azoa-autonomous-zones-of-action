@@ -1,0 +1,227 @@
+[
+  {
+    "store": "IHoldCommandStore",
+    "method": "GetReceiptAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "GetHoldAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it (HoldLiabilityReadService.Visible for liability reads)"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "FindOwnedHoldAsync",
+    "tenantCheck": "query-pinned: owner + network + tenant; a null tenant matches only tenant-less liabilities (SurrealHoldCommandTests.OwnedHoldLookupKeepsTenantlessAndTenantHeldLiabilitiesApart)"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "GetCommandAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "ListParticipantAsync",
+    "tenantCheck": "query-pinned: original actor + exact tenant, or the direct recipient for login callers"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "ListReconciliationAsync",
+    "tenantCheck": "worker-only: no caller identity; observes, schedules or rebroadcasts already-authorized saved bytes and never signs for a participant"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "ScheduleReconciliationAsync",
+    "tenantCheck": "worker-only: no caller identity; observes, schedules or rebroadcasts already-authorized saved bytes and never signs for a participant"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "GetRecoveryAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "GetAuthorizationAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "ClaimRailAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "AuthorizeRailAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "BeginPreparationAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "SavePreparedAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "AuthorizeSendAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "CompleteRailAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "RecordNoEffectAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "CancelRailAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "ReplaceRailAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "AdmitAcceptanceAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "AdvanceAcceptanceAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "CommitLocalAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "AdmitWorkflowOpeningAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "CommitWorkflowOpeningAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "ReplaceWorkflowOpeningAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IHoldCommandStore",
+    "method": "WithdrawWorkflowOpeningAsync",
+    "tenantCheck": "fenced in-transaction: captured credential (SigningAuthorityFence) plus actor/tenant WHERE pins on the command row; custody settlement requires HoldCustodyScope"
+  },
+  {
+    "store": "IExchangeHoldSourceStore",
+    "method": "CommitExchangeOpeningAsync",
+    "tenantCheck": "fenced in-transaction: ExchangeAuthorityFence re-checks the tenant API key and the participant's grant on the immutable source"
+  },
+  {
+    "store": "IExchangeHoldSourceStore",
+    "method": "ListExchangeSourcesAsync",
+    "tenantCheck": "query-pinned: the actual tenant + API key only"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "GetOfferAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "OfferAsync",
+    "tenantCheck": "fenced in-transaction: SigningAuthorityFence.ForConsent [transfer:sign] on the owner credential; liability owner/tenant pinned"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "AdmitAsync",
+    "tenantCheck": "fenced in-transaction: SigningAuthorityFence.ForConsent [transfer:sign] + exact offer and liability pins"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "ReauthorizeAsync",
+    "tenantCheck": "fenced in-transaction: SigningAuthorityFence.ForConsent [transfer:sign] + mandate version pin"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "RevokeAsync",
+    "tenantCheck": "fenced in-transaction: SigningAuthorityFence.ForRunAdmission on the owner credential + mandate version pin"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "ListDueAsync",
+    "tenantCheck": "worker-only: no caller identity; observes, schedules or rebroadcasts already-authorized saved bytes and never signs for a participant"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "ScheduleAsync",
+    "tenantCheck": "worker-only: no caller identity; observes, schedules or rebroadcasts already-authorized saved bytes and never signs for a participant"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "ListOwnerAsync",
+    "tenantCheck": "query-pinned: owner actor + exact tenant"
+  },
+  {
+    "store": "IHoldReleaseMandateStore",
+    "method": "GetRecoveryAsync",
+    "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
+  },
+  {
+    "store": "SurrealProjectTreasuryLedgerStore",
+    "method": "GetAsync",
+    "tenantCheck": "record id is SHA-256(chain|network|tenant|project); ProjectTreasuryService.GuardRowOwnership refuses a row whose tenant disagrees"
+  },
+  {
+    "store": "SurrealProjectTreasuryLedgerStore",
+    "method": "CreateIfAbsentAsync",
+    "tenantCheck": "record id derived from the principal's tenant; tenant_id written as record<user> link (SQL-04)"
+  },
+  {
+    "store": "SurrealProjectTreasuryLedgerStore",
+    "method": "UpdateIfVersionAsync",
+    "tenantCheck": "version CAS on a row already read through GuardRowOwnership"
+  },
+  {
+    "store": "SurrealProjectTreasuryLedgerStore",
+    "method": "ListByTenantAsync",
+    "tenantCheck": "query-pinned: tenant_id = record<user> parameter (operator surface only)"
+  },
+  {
+    "store": "SurrealHoldCommandStore",
+    "method": "ListLiabilitiesAsync",
+    "tenantCheck": "query-pinned: own tenant-less, received, or caller-as-custody-tenant; re-checked by HoldLiabilityReadService.Visible"
+  },
+  {
+    "store": "SurrealHoldCommandStore",
+    "method": "ListReserveAssetsAsync",
+    "tenantCheck": "query-pinned: rows registered by the caller's tenant (+ platform unit for an acting tenant/operator); filtered by ReservePartitionScope.Refuse"
+  },
+  {
+    "store": "SurrealHoldCommandStore",
+    "method": "ListRetiredExchangeRowsAsync",
+    "tenantCheck": "operator-only: node-wide by design, served only under the Operator policy"
+  },
+  {
+    "store": "SurrealHoldCommandStore",
+    "method": "GetRetiredExchangeRowAsync",
+    "tenantCheck": "operator-only: node-wide by design, served only under the Operator policy"
+  }
+]

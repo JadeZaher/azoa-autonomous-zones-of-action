@@ -321,7 +321,7 @@ public sealed class PlatformReserveService : IPlatformReserve
 
             var row = current.Result;
 
-            var scopeRefusal = ReservePartitionScope.Refuse(row, authority, row.AssetId, _options);
+            var scopeRefusal = ReservePartitionScope.RefuseDeclaration(row, authority, row.AssetId, _options);
             if (scopeRefusal is not null)
                 return AZOAResult<PlatformReserveLedger>.FailureWithCode(
                     scopeRefusal, AzoaErrorCodes.Forbidden);
