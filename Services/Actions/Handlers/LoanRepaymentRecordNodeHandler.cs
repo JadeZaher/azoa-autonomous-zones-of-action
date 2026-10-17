@@ -85,7 +85,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers
         {
             if (!ActionNodeConfig.TryDeserialize<LoanRepaymentRecordNodeConfig>(
                     context.Node.Config, nameof(ActionNodeType.LoanRepaymentRecord), out var cfg, out var cfgError))
-                return ActionNodeResults.Fail(cfgError);
+                return ActionNodeResults.Invalid(cfgError);
 
             if (cfg.LoanHolonId == Guid.Empty)
                 return ActionNodeResults.Invalid("[LoanRepaymentRecord] loanHolonId is required.");

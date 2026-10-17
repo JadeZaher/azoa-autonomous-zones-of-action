@@ -472,7 +472,9 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             if (!seen.Add((subjectUserId, tenantId)))
                 continue;
 
-            var latest = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct);
+            var latest = string.IsNullOrWhiteSpace(submission.AmlLineageKey)
+                ? new AZOAResult<KycScreeningResult>()
+                : await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct, submission.AmlLineageKey);
             if (latest.IsError)
             {
                 // One unreadable verdict must not silently shrink the queue: a person
@@ -535,7 +537,14 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         var tenantId = request.TenantId is { } candidate && candidate != Guid.Empty
             ? candidate
             : (Guid?)null;
-        var latest = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct);
+        var approval = await _kycStore.GetLatestSubmissionAsync(subjectUserId, tenantId, ct);
+        if (approval.IsError)
+            return CopyFailure<KycSubmission, AmlManualReviewItem>(approval);
+        if (approval.Result is null || EffectiveStatus(approval.Result, DateTimeOffset.UtcNow) != KycStatus.APPROVED
+            || string.IsNullOrWhiteSpace(approval.Result.AmlLineageKey))
+            return OperationNotAllowed<AmlManualReviewItem>("A current identity approval with linked AML evidence is required.");
+        var lineageKey = approval.Result.AmlLineageKey;
+        var latest = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct, lineageKey);
         if (latest.IsError)
             return CopyFailure<KycScreeningResult, AmlManualReviewItem>(latest);
         var current = latest.Result;
@@ -565,6 +574,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             Id = Guid.NewGuid().ToString("N"),
             SubjectUserId = subjectUserId.ToString("N"),
             TenantId = tenantId?.ToString("N"),
+            LineageKey = lineageKey,
             // The query shape is deliberately NOT copied: a decision is not a new search,
             // and duplicating a name and a date of birth spreads retained PII (D25).
             ScoreThreshold = current.ScoreThreshold,
@@ -599,7 +609,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             superseding.Id,
             request.Reason.Trim());
 
-        var refreshed = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct);
+        var refreshed = await _screening.GetLatestResultAsync(subjectUserId, tenantId, ct, lineageKey);
         if (refreshed.IsError)
             return CopyFailure<KycScreeningResult, AmlManualReviewItem>(refreshed);
         if (refreshed.Result is null)
@@ -701,39 +711,8 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             });
     }
 
-    private async Task<AZOAResult<bool>> HasCurrentTenantAuthorityAsync(Guid tenantId, CancellationToken ct)
-    {
-        if (tenantId == Guid.Empty || tenantId == NodeOperatorIdentity.UserId)
-            return AZOAResult<bool>.Success(false);
-        var user = await _users.GetByIdAsync(tenantId, ct);
-        if (user.IsError)
-            return string.Equals(user.Code, AzoaErrorCodes.NotFound, StringComparison.Ordinal)
-                ? AZOAResult<bool>.Success(false)
-                : DependencyUnavailable<bool>();
-        if (user.Result is null || !user.Result.IsActive)
-            return AZOAResult<bool>.Success(false);
-        IReadOnlyList<AZOA.WebAPI.Models.ApiKey> keys;
-        try
-        {
-            keys = await _apiKeys.ListByUserAsync(tenantId, ct);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            return DependencyUnavailable<bool>();
-        }
-        var now = DateTime.UtcNow;
-        return AZOAResult<bool>.Success(keys.Any(key => key.IsActive
-            && key.RevokedAt is null
-            && (key.ExpiresAt is null || key.ExpiresAt > now)
-            && (key.Scopes ?? string.Empty)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Contains(AzoaScopes.TenantProvision, StringComparer.Ordinal)));
-    }
-
+    private Task<AZOAResult<bool>> HasCurrentTenantAuthorityAsync(Guid tenantId, CancellationToken ct)
+        => TenantAuthority.CheckAsync(tenantId, _users, _apiKeys, DateTimeOffset.UtcNow, ct);
     private async Task<AZOAResult<TenantKycSelectionResponse>> ToSelectionResponseAsync(
         Guid tenantId,
         TenantKycProviderSelection? selection,

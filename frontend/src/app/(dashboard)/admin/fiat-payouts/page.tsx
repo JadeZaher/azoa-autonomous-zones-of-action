@@ -23,31 +23,7 @@ import { AlertTriangle, PlayCircle, RefreshCw, Undo2 } from 'lucide-react'
 
 const PAYOUTS_PATH = '/api/admin/fiat-payouts'
 
-/** Mirrors `FiatPayoutView` (Services/Fiat/OffRamp/FiatPayoutOperatorController.cs). */
-interface FiatPayoutView {
-  id: string
-  status: string
-  statusReason?: string | null
-  subjectUserId: string
-  tenantId?: string | null
-  amountMinorUnits: number
-  currencyCode: string
-  quantityBaseUnits: string
-  agedQuantityBaseUnits: string
-  unitsOwedBaseUnits: string
-  reversedMinorUnits: number
-  consumedLotCount: number
-  connectedAccountId?: string | null
-  providerTransferId?: string | null
-  unitsCollectedTransactionId?: string | null
-  unitsReturnedTransactionId?: string | null
-  reversalId?: string | null
-  attemptCount: number
-  requestedAt: string
-  unitsCollectedAt?: string | null
-  paidAt?: string | null
-  reversedAt?: string | null
-}
+import type { FiatPayoutView } from 'azoa-sdk'
 
 /**
  * Operator-facing words for each durable status. The server's vocabulary is the ledger's; this is
@@ -57,6 +33,7 @@ interface FiatPayoutView {
 const STATUS_COPY: Record<string, { label: string; tone: 'open' | 'working' | 'done' | 'bad' }> = {
   Requested: { label: 'Claimed — nothing moved', tone: 'open' },
   UnitsCollected: { label: 'Balance taken, money not sent', tone: 'bad' },
+  BankPending: { label: 'Bank transfer processing', tone: 'working' },
   Paid: { label: 'Sent to their bank', tone: 'done' },
   Reversed: { label: 'Bank sent it back', tone: 'bad' },
   Returned: { label: 'Cancelled, balance restored', tone: 'done' },
@@ -102,6 +79,7 @@ function StatusBadge({ status }: { status: string }) {
 function nextStepLabel(status: string): string | null {
   if (status === 'Requested') return 'Take the balance'
   if (status === 'UnitsCollected') return 'Send the money'
+  if (status === 'BankPending') return 'Check bank transfer'
   return null
 }
 
@@ -133,15 +111,17 @@ export default function FiatPayoutsConsolePage() {
 
   const act = useCallback(async (
     id: string,
-    verb: 'advance' | 'return' | 'park' | 'restart',
+    verb: 'advance' | 'return' | 'park' | 'restart' | 'recover',
     successMessage: string,
   ) => {
+    const reason = verb === 'recover' ? window.prompt('Why should this failed bank payout be recovered?')?.trim() : 'Actioned from the operator board.'
+    if (verb === 'recover' && !reason) return
     setBusyId(id)
     try {
       const res = await azoa.api.request<FiatPayoutView>(
         'POST', `${PAYOUTS_PATH}/${encodeURIComponent(id)}/${verb}`,
-        verb === 'return' || verb === 'park'
-          ? { reason: 'Actioned from the operator board.' }
+        verb === 'return' || verb === 'park' || verb === 'recover'
+          ? { reason }
           : undefined,
       )
       if (isOk(res)) {
@@ -159,7 +139,7 @@ export default function FiatPayoutsConsolePage() {
 
   const totals = useMemo(() => rows.reduce(
     (acc, row) => ({
-      inFlight: acc.inFlight + (row.status === 'Requested' || row.status === 'UnitsCollected'
+      inFlight: acc.inFlight + (row.status === 'Requested' || row.status === 'UnitsCollected' || row.status === 'BankPending'
         ? row.amountMinorUnits : 0),
       strandedCount: acc.strandedCount + (row.status === 'UnitsCollected' ? 1 : 0),
       needsPerson: acc.needsPerson + (row.status === 'NeedsOperator' ? 1 : 0),
@@ -371,6 +351,12 @@ export default function FiatPayoutsConsolePage() {
                                 {nextStep}
                               </Button>
                             )}
+                            {(row.status === 'NeedsOperator' || row.status === 'Reversed') && row.providerPayoutId && (
+                              <Button size="sm" variant="outline" disabled={busy}
+                                onClick={() => act(row.id, 'recover', 'Recovery reconciled')}>
+                                Recover failed bank payout
+                              </Button>
+                            )}
                             {(row.status === 'Requested' || row.status === 'UnitsCollected') && (
                               <Button
                                 size="sm"
@@ -392,6 +378,12 @@ export default function FiatPayoutsConsolePage() {
                                 title="Stop the queue touching this one until a person decides"
                               >
                                 Hold
+                              </Button>
+                            )}
+                            {(row.status === 'NeedsOperator' || row.status === 'Reversed') && row.providerPayoutId && (
+                              <Button size="sm" variant="outline" disabled={busy}
+                                onClick={() => act(row.id, 'recover', 'Recovery reconciled')}>
+                                Recover failed bank payout
                               </Button>
                             )}
                             {(row.status === 'Requested' || row.status === 'UnitsCollected') && (

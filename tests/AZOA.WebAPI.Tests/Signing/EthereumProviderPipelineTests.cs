@@ -13,6 +13,7 @@ using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Ethereum;
 using AZOA.WebAPI.Services.Custody;
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +46,7 @@ public class EthereumProviderPipelineTests
     private const string TokenContract = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
     private readonly RecordingEthereumSigner _signer = new();
+    private readonly FakeEthereumPreparationStore _preparations = new();
 
     private static IConfiguration BuildConfig(string? chainIdMetadata = SepoliaChainId) =>
         new ConfigurationBuilder()
@@ -53,6 +55,7 @@ public class EthereumProviderPipelineTests
                 ["AZOA:WalletEncryptionKey"] = "unit-test-wallet-encryption-key-0123456789",
                 ["AZOA:Ethereum:PlatformPrivateKey"] = "0x" + Convert.ToHexStringLower(PlatformKey.GetPrivateKeyAsBytes()),
                 ["AZOA:Ethereum:PlatformTokenContract"] = TokenContract,
+                ["AZOA:Ethereum:AllocatorActivationEpoch"] = "pipeline-fixture",
                 // Keep the confirmation poll and RPC retry loops short so a pending-path
                 // test does not spend half a minute sleeping.
                 ["AZOA:Ethereum:ConfirmationPollAttempts"] = "2",
@@ -64,7 +67,7 @@ public class EthereumProviderPipelineTests
                 ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
                 ["Blockchain:Chains:0:Devnet:NodeUrl"] = "http://ethereum.test/",
                 ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "2000",
-                ["Blockchain:Chains:0:Metadata:ChainId"] = chainIdMetadata,
+                ["Blockchain:Chains:0:Devnet:ChainId"] = chainIdMetadata,
             })
             .Build();
 
@@ -74,6 +77,7 @@ public class EthereumProviderPipelineTests
         bool withSigner = true,
         string? chainIdMetadata = SepoliaChainId)
     {
+        _preparations.SeedCheckpoint("eip155:" + SepoliaChainId, PlatformAddress, "pipeline-fixture");
         ITransactionSignerFactory? signerFactory = withSigner
             ? new TransactionSignerFactory(new ITransactionSigner[] { _signer })
             : null;
@@ -84,7 +88,8 @@ public class EthereumProviderPipelineTests
             signerFactory,
             custody,
             custodyScopeFactory: null,
-            stub);
+            stub,
+            preparationStore: _preparations);
     }
 
     /// <summary>The type-2 transaction the stub actually received, decoded from the wire bytes.</summary>
@@ -207,10 +212,11 @@ public class EthereumProviderPipelineTests
 
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("reconcile against chain truth");
+        result.IsError.Should().BeFalse();
+        result.Message.Should().StartWith(OperationStatus.PendingConfirmationMarker);
+        result.Result.Should().Be(_preparations.Snapshot.Single().TransactionId);
         stub.SendTransactionCount.Should().Be(
-            1, "a post-send 5xx is ambiguous: a resubmit at the same nonce is a replacement");
+            1, "a post-send 5xx preserves the recorded wire for explicit reconciliation");
     }
 
     [Fact]
@@ -221,8 +227,9 @@ public class EthereumProviderPipelineTests
 
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("nonce too low");
+        result.IsError.Should().BeFalse();
+        result.Message.Should().StartWith(OperationStatus.PendingConfirmationMarker);
+        result.Result.Should().Be(_preparations.Snapshot.Single().TransactionId);
         stub.SendTransactionCount.Should().Be(1);
     }
 
@@ -237,8 +244,10 @@ public class EthereumProviderPipelineTests
 
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Refusing to record a mismatched id");
+        result.IsError.Should().BeFalse();
+        result.Message.Should().StartWith(OperationStatus.PendingConfirmationMarker);
+        result.Result.Should().Be(_preparations.Snapshot.Single().TransactionId).And.NotBe(stub.EchoedHashOverride);
+        stub.SendTransactionCount.Should().Be(1);
     }
 
     [Fact]
@@ -250,7 +259,7 @@ public class EthereumProviderPipelineTests
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
         result.IsError.Should().BeTrue("a transaction that landed and reverted is a real failure");
-        result.Message.Should().Contain("REVERTED");
+        result.Message.Should().Contain("reverted in a finalized block");
     }
 
     [Fact]
@@ -262,7 +271,7 @@ public class EthereumProviderPipelineTests
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("no transaction signer is configured");
+        result.Message.Should().Contain("signing requires");
         stub.SendTransactionCount.Should().Be(0);
     }
 
@@ -276,6 +285,23 @@ public class EthereumProviderPipelineTests
 
         result.IsError.Should().BeTrue("the chain id is signed INSIDE the payload");
         result.Message.Should().Contain("Chain id mismatch");
+        stub.SendTransactionCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("0x1")]
+    [InlineData(" 11155111")]
+    public async Task Transfer_requires_a_positive_explicit_network_pin_before_signing(string? pin)
+    {
+        using var stub = new EthereumRpcStub();
+        var provider = NewProvider(stub, chainIdMetadata: pin);
+        var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("per-network Ethereum ChainId");
         stub.SendTransactionCount.Should().Be(0);
     }
 
@@ -302,10 +328,11 @@ public class EthereumProviderPipelineTests
         // two transactions of which only one can mine (a REPLACEMENT, not two transfers).
         using var stub = new EthereumRpcStub { PendingNonce = 7 };
         var provider = NewProvider(stub);
+        var otherProvider = NewProvider(stub);
 
         var results = await Task.WhenAll(
-            Enumerable.Range(0, 4).Select(_ =>
-                provider.TransferNativeAsync(PlatformAddress, Recipient, 5)));
+            Enumerable.Range(0, 4).Select(index =>
+                (index % 2 == 0 ? provider : otherProvider).TransferNativeAsync(PlatformAddress, Recipient, 5)));
 
         results.Should().OnlyContain(r => !r.IsError);
         stub.SubmittedRaws.Should().HaveCount(4);
@@ -325,6 +352,7 @@ public class EthereumProviderPipelineTests
     {
         using var stub = new EthereumRpcStub();
         var userKey = EthECKey.GenerateKey();
+        _preparations.SeedCheckpoint("eip155:" + SepoliaChainId, userKey.GetPublicAddress(), "pipeline-fixture");
         var userId = Guid.NewGuid();
         var walletId = Guid.NewGuid();
 
@@ -393,7 +421,7 @@ public class EthereumProviderPipelineTests
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("does not control " + PlatformAddress);
+        result.Message.Should().ContainEquivalentOf("does not control " + PlatformAddress);
         result.Message.Should().Contain(KeyCustodyService.PlatformMnemonicConfigPath);
         result.Message.Should().Contain(EthereumProvider.PlatformPrivateKeyConfigPath);
         result.Message.Should().NotContain("stub", "the signer is complete; the message must name the real cause");
@@ -784,71 +812,29 @@ public class EthereumProviderPipelineTests
     // ─── Contracts ───
 
     [Fact]
-    public async Task CallContract_read_only_decodes_the_declared_outputs()
+    public async Task Explicit_read_only_contract_query_decodes_declared_outputs_without_broadcast()
     {
         using var stub = new EthereumRpcStub();
         stub.CallReturns[EthereumAbi.Selector(EthereumAbi.BalanceOfSignature)] = Uint256(TwentyEtherInWei);
         var provider = NewProvider(stub);
-
-        var result = await provider.CallContractAsync(
-            TokenContract,
-            EthereumAbi.BalanceOfSignature,
-            new Dictionary<string, object>
-            {
-                ["readOnly"] = true,
-                ["args"] = new object[] { PlatformAddress },
-                ["outputs"] = "uint256",
-            },
-            PlatformAddress);
-
+        var result = await provider.QueryContractAsync(new(TokenContract, EthereumAbi.BalanceOfSignature,
+            [JsonSerializer.SerializeToElement(PlatformAddress)], ["uint256"], PlatformAddress));
         result.IsError.Should().BeFalse(result.Message);
-        var payload = result.Result.Should().BeOfType<Dictionary<string, object>>().Subject;
-        payload["decoded"].Should().BeEquivalentTo(new List<object?> { "20000000000000000000" });
-        stub.SendTransactionCount.Should().Be(0, "a read must never broadcast");
-    }
-
-    [Fact]
-    public async Task CallContract_refuses_a_state_changing_call_that_carries_no_signing_context()
-    {
-        using var stub = new EthereumRpcStub();
-        var provider = NewProvider(stub);
-
-        var result = await provider.CallContractAsync(
-            TokenContract,
-            EthereumAbi.TransferSignature,
-            new Dictionary<string, object> { ["args"] = new object[] { Recipient, "1" } },
-            PlatformAddress);
-
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("no caller attribution");
+        result.Result.Should().BeOfType<Dictionary<string, object>>().Subject["decoded"]
+            .Should().BeEquivalentTo(new List<object?> { "20000000000000000000" });
         stub.SendTransactionCount.Should().Be(0);
+        provider.TryGetModule<INativeOperationModule>(out _).Should().BeTrue();
+        provider.TryGetModule<IReadOnlyContractModule>(out _).Should().BeTrue();
     }
 
     [Fact]
-    public async Task DeployContract_returns_the_address_the_receipt_reports()
-    {
-        using var stub = new EthereumRpcStub { DeployedContractAddress = TokenContract };
-        var provider = NewProvider(stub);
-
-        var result = await provider.DeployContractAsync(new byte[] { 0x60, 0x80, 0x60, 0x40 }, PlatformAddress);
-
-        result.IsError.Should().BeFalse(result.Message);
-        result.Result.Should().Be(TokenContract);
-        Broadcast(stub).ReceiverAddress.Should().BeNullOrEmpty("a creation transaction has no recipient");
-    }
-
-    [Fact]
-    public async Task DeployContract_refuses_constructor_arguments_without_declared_types()
+    public async Task Querying_a_write_signature_only_simulates_and_never_allocates_a_signer()
     {
         using var stub = new EthereumRpcStub();
         var provider = NewProvider(stub);
-
-        var result = await provider.DeployContractAsync(
-            new byte[] { 0x60, 0x80 }, PlatformAddress,
-            new Dictionary<string, object> { ["owner"] = PlatformAddress });
-
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Refusing to guess ABI types");
+        var result = await provider.QueryContractAsync(new(TokenContract, EthereumAbi.TransferSignature,
+            [JsonSerializer.SerializeToElement(Recipient), JsonSerializer.SerializeToElement("1")], [], PlatformAddress));
+        result.IsError.Should().BeFalse(result.Message);
         stub.SendTransactionCount.Should().Be(0);
     }
 
@@ -989,6 +975,7 @@ public class EthereumProviderPipelineTests
         public BigInteger NativeBalanceWei { get; set; } = 1_000_000_000_000_000_000;
         public BigInteger BlockNumber { get; set; } = 4_242;
         public BigInteger ReceiptStatus { get; set; } = 1;
+        private static string BlockHash => "0x" + new string('b', 64);
 
         public bool HeadBlockHasBaseFee { get; set; } = true;
         public bool ReceiptFound { get; set; } = true;
@@ -1062,9 +1049,10 @@ public class EthereumProviderPipelineTests
                         ? new Dictionary<string, object?>
                         {
                             ["number"] = Quantity(BlockNumber),
+                            ["hash"] = BlockHash,
                             ["baseFeePerGas"] = Quantity(BaseFeePerGas),
                         }
-                        : new Dictionary<string, object?> { ["number"] = Quantity(BlockNumber) });
+                        : new Dictionary<string, object?> { ["number"] = Quantity(BlockNumber), ["hash"] = BlockHash });
 
                 case "eth_maxPriorityFeePerGas":
                     return Result(id, Quantity(PriorityFee));
@@ -1093,8 +1081,7 @@ public class EthereumProviderPipelineTests
                         SendTransactionCount++;
                         LastSubmittedRaw = StringParam(0);
                         SubmittedRaws.Add(LastSubmittedRaw);
-                        // The node's pending count advances once it accepts a transaction;
-                        // a test that leaves PendingNonce fixed is simulating node lag.
+                        // Keep the pending nonce fixed to simulate node lag.
                         KnownHashes.Add(HashOf(LastSubmittedRaw));
                     }
 
@@ -1121,6 +1108,7 @@ public class EthereumProviderPipelineTests
                     var receipt = new Dictionary<string, object?>
                     {
                         ["transactionHash"] = hash,
+                        ["blockHash"] = BlockHash,
                         ["blockNumber"] = Quantity(BlockNumber),
                         ["gasUsed"] = Quantity(GasEstimate),
                     };
@@ -1133,9 +1121,29 @@ public class EthereumProviderPipelineTests
                 }
 
                 case "eth_getTransactionByHash":
+                {
+                    string? raw;
+                    lock (_gate) raw = SubmittedRaws.FirstOrDefault(candidate => string.Equals(HashOf(candidate), StringParam(0), StringComparison.OrdinalIgnoreCase));
+                    if (raw is not null)
+                    {
+                        var transaction = Transaction1559Encoder.Current.Decode(Convert.FromHexString(raw[2..]));
+                        return Result(id, new Dictionary<string, object?>
+                        {
+                            ["hash"] = HashOf(raw),
+                            ["from"] = TransactionVerificationAndRecovery.GetSenderAddress(transaction),
+                            ["to"] = string.IsNullOrEmpty(transaction.ReceiverAddress) ? null : transaction.ReceiverAddress,
+                            ["nonce"] = Quantity(transaction.Nonce ?? BigInteger.Zero),
+                            ["value"] = Quantity(transaction.Amount ?? BigInteger.Zero),
+                            ["input"] = CallDataOf(transaction),
+                            ["chainId"] = Quantity(transaction.ChainId),
+                            ["blockNumber"] = ReceiptFound ? Quantity(BlockNumber) : null,
+                            ["blockHash"] = ReceiptFound ? BlockHash : null,
+                        });
+                    }
                     return Result(id, TransactionInMempool
                         ? new Dictionary<string, object?> { ["hash"] = StringParam(0), ["blockNumber"] = null }
                         : null);
+                }
 
                 default:
                     return RpcError(id, $"unstubbed method {method}");

@@ -1,47 +1,70 @@
-# Services/Webhooks — outbound webhook delivery workers
+﻿# Services/Webhooks - outbound delivery
 
-Transactional-outbox delivery workers that drain a webhook outbox and POST due events
-to tenant-registered endpoints. Both workers share the same discipline: a singleton
-hosted loop, a config-driven interval (`WebhookOptions`), a fresh DI scope per tick
-(the stores are scoped), a last-ditch guard so a bad tick never tears down the app,
-and the SAME security primitives — `WebhookSsrfGuard` (https-only + public-IP allowlist,
-re-checked immediately before each POST for DNS-rebind defence), `WebhookHmacSigner`
-(replay-resistant timestamped HMAC over a length-prefixed preimage), and the shared
-`IWebhookRegistrationStore` (one registration per tenant; strict per-tenant isolation).
+Workers share HTTPS/public-address enforcement with DNS-bound connection resolution,
+a redirect/proxy/cookie/credential-free HTTP handler, bounded request/response headers,
+and timestamped HMAC. HTTP response bodies are never buffered for acknowledgment.
 
-## §consent-webhook
+## Action webhook
 
-`ConsentWebhookDeliveryWorker` drains `consent_webhook_event` (consent lifecycle events:
-granted/revoked/expired). Observe-only: it never writes back to `consent_grant`.
-tenant-consent-delegation §4 AC7/AC8/H5.
+`ActionWebhookDeliveryWorker` consumes the immutable events accepted atomically with
+`ActionEmitReceipt`. It claims through `IActionWebhookDeliveryStore`; listing is not
+permission to send. Each lease captures the original active destination and current
+encrypted secret revision under registration/event serialization. A claimed attempt
+may finish after disable or rotation; a subsequent attempt requires fresh authority.
+Completion checks exact holder, version and database-time expiry. Stale completion
+cannot overwrite a newer claim. Abandoned attempts count toward the retry budget.
 
-## §action-webhook
+The stable canonical body contains eventType, runId, nodeId, actionId, payload,
+occurredAt and idempotencyId. No payload repair or destination substitution occurs.
+Every request signs those exact bytes with a fresh timestamp and includes the secret
+revision. An HTTP 2xx acknowledges delivery only. Lost responses can produce duplicates;
+receivers deduplicate the stable idempotency ID. Delivery does not rewrite action state.
 
-`ActionWebhookDeliveryWorker` (final-hardening F3) drains `action_webhook_event` — the
-GENERIC mirror for arbitrary tenant-defined `action.emit` events fired by an `Emit`
-action node.
+Unavailable original destinations, missing acceptance evidence and exhausted attempts
+become visible dead letters. Stored errors are bounded symbolic codes. Protected attempt
+material is cleared on completion or expired-attempt retirement. Unexpected failures are
+logged once at the polling boundary; cancellation propagates. The old generic writer and
+best-effort emitter have been removed. Audited retry/discovery client integration remains
+required before this closeout is considered complete.
 
-**Why a parallel outbox rather than one generic table.** The consent outbox is a shipped,
-security-reviewed path with a fixed event shape (grantId/scopes/participationRef). Rather
-than reshape it and risk regressing consent delivery, F3 adds a PARALLEL outbox
-(`action_webhook_event`) with its own POCO/store/emitter/worker, and REUSES the shared
-security + registration infra unchanged. A tenant configures ONE `WebhookRegistration`;
-that single endpoint receives BOTH its consent events and its action.emit events, each
-signed with the tenant's own secret. Net result: zero consent-path change, full infra
-reuse, and a clean generic action event surface.
+## Consent webhook
 
-**Payload shape.** `{ eventType, runId, nodeId, actionId, payload, occurredAt,
-idempotencyId }` where `payload` is the tenant's opaque object re-embedded as a nested
-JSON object (a malformed stored payload degrades to `{}` rather than failing delivery).
-`eventType` is the tenant-defined name from the `Emit` node config (defaults to
-`action.emit`). The HMAC is computed over EXACTLY the serialized body string.
+`ConsentWebhookDeliveryWorker` delivers granted/revoked/expired events and never changes
+consent grants. It already uses the shared protected secret and safe transport. Migration
+of its older delivery state machine to equivalent lease/destination guarantees remains
+required; do not claim that the action worker alone proves consent delivery parity.
 
-**Best-effort boundary.** The worker never writes back to `action_run` /
-`action_node_execution`. A dead-lettered event does not fail or roll back the run — the
-`Emit` node's serialized `Output` remains the tenant's authoritative settlement surface;
-the webhook is a convenience push on top.
+## Protected registration secrets
 
-**Delivery uses its own named HttpClient** (`WebhookOptions.ActionHttpClientName =
-"action-webhook"`) configured with the SAME SSRF-guarded, `AllowAutoRedirect=false`
-primary handler as the consent client, so a 3xx to an internal address surfaces as a
-delivery failure instead of being silently followed.
+`WebhookSecretProtector` uses the existing AES-GCM platform key facility. Its authenticated
+envelope binds purpose, tenant, registration and secret revision. Cross-identity swaps
+fail, missing keys fail visibly, and there is no plaintext fallback. New secrets use 32
+random bytes. The audited management flow requires explicit legacy replacement and uses
+an exact keyed legacy snapshot. Normal reads never disclose stored signing material.
+
+Create/update/rotation are versioned and audited. Destination and secret revisions are
+separate; secret-only rotation keeps destination identity. A generated secret is disclosed
+only by the first successful authorized mutation, never by replay. Tenant/operator editors
+persist exact commands before mutation and use server-backed withdrawal after uncertainty.
+
+## Action delivery retry
+
+`LeasedWebhookSender` owns only bounded HTTP and signature construction from a
+frozen lease. It returns a completion decision; workers perform persistence after
+it returns. This keeps database transport failures outside the HTTP retry boundary
+and lets action and consent workers share identical wire behavior. Insufficient
+lease lifetime returns no completion and starts no HTTP request.
+
+Discovery returns tenant-scoped metadata without payload or protected attempt material.
+An explicit audited retry requires the exact dead-letter version, original accepted event
+evidence, current management authority and the original active destination revision.
+It starts a fresh bounded attempt cycle while retaining lifetime attempts and event identity.
+The registration lock, event transition and immutable retry receipt commit atomically.
+Same-command response-loss recovery returns that receipt without starting another cycle.
+The SDK and tenant/operator panels persist the exact command before sending. Explicit
+reconciliation archives it only after an authenticated read proves a strictly newer
+event version; this does not cancel a previously accepted delivery.
+
+### Consent delivery cutover
+
+ConsentWebhookDeliveryWorker now uses IConsentWebhookDeliveryStore and LeasedWebhookSender. It sends only immutable-proof-backed events under an exact lease and completes storage outside HTTP error handling. Legacy events lacking original transition evidence are suspended with an explicit reason; they are not rebuilt from mutable grants or redirected to current registrations. Consent metadata and retry endpoints use the same actual tenant/operator authorization binding as action notifications, with separate consent event routes and command identity domain.

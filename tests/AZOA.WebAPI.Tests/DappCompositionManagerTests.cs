@@ -36,7 +36,7 @@ public class DappCompositionManagerTests
     public DappCompositionManagerTests()
     {
         _manager = new DappCompositionManager(
-            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _bundleManager.Object);
+            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _bundleManager.Object, Mock.Of<IDeploymentStore>());
     }
 
     // ── Series CRUD ──────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ public class DappCompositionManagerTests
         var create = await _manager.CreateAsync(_userId, new DappSeriesCreateModel { Name = "X" });
         var seriesId = create.Result!.IdGuid;
 
-        var deploy = await _manager.DeployAsync(seriesId, _userId);
+        var deploy = await _manager.DeployAsync(seriesId, _userId, new("artifact", "hash", new("PlatformRuntime", "Algorand", "Devnet")), "key");
 
         deploy.IsError.Should().BeTrue();
         deploy.Message.Should().Contain("Ready");

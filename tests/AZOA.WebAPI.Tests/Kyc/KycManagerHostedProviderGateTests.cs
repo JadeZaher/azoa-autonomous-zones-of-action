@@ -32,7 +32,7 @@ namespace AZOA.WebAPI.Tests.Kyc;
 /// </summary>
 public sealed class KycManagerHostedProviderGateTests
 {
-    // ── The real adapter satisfies the contract the gate checks for ─────────
+    // â”€â”€ The real adapter satisfies the contract the gate checks for â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public void IdentomatAdapter_ImplementsTheHostedSessionSeamTheGateChecksFor()
@@ -43,7 +43,7 @@ public sealed class KycManagerHostedProviderGateTests
         typeof(IdentomatKycProviderService).Should().BeAssignableTo<IHostedSessionProvider>();
     }
 
-    // ── Task 1: a provider that implements the seam is no longer blocked ────
+    // â”€â”€ Task 1: a provider that implements the seam is no longer blocked â”€â”€â”€â”€
 
     [Fact]
     public async Task Begin_HostedProviderRoutedThroughHostedSessionFlow_Succeeds()
@@ -54,7 +54,7 @@ public sealed class KycManagerHostedProviderGateTests
         var hostedStore = new InMemoryHostedSessionStore();
         var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
         var provider = new FakeSeamHostedKycProvider(flow);
-        var manager = NewManager(store, provider);
+        var manager = NewManager(store, provider, flow);
         var userId = Guid.NewGuid();
 
         var result = await manager.BeginAsync(userId);
@@ -73,14 +73,14 @@ public sealed class KycManagerHostedProviderGateTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // ── Task 1: fail-closed hosted stubs stay refused ────────────────────────
+    // â”€â”€ Task 1: fail-closed hosted stubs stay refused â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
-    public async Task Begin_VeriffStub_StaysRefused_DespiteReportingHostedVerification()
+    public async Task Begin_UnconfiguredVeriff_StaysRefused_DespiteReportingHostedVerification()
     {
         var store = new Mock<IKycStore>();
         SetupNoExistingSubmissions(store);
-        var provider = new VeriffKycProviderService();
+        var provider = AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Veriff();
         var settings = new KycSettings
         {
             Provider = "veriff",
@@ -103,11 +103,11 @@ public sealed class KycManagerHostedProviderGateTests
     }
 
     [Fact]
-    public async Task Begin_GenericHostedScaffold_StaysRefused_DespiteReportingHostedVerification()
+    public async Task Begin_UnconfiguredGenericHosted_StaysRefused_DespiteReportingHostedVerification()
     {
         var store = new Mock<IKycStore>();
         SetupNoExistingSubmissions(store);
-        var provider = new GenericHostedKycProviderService(Options.Create(new KycSettings()));
+        var provider = AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Generic(Options.Create(new KycSettings()));
         var settings = new KycSettings
         {
             Provider = "hosted",
@@ -167,14 +167,14 @@ public sealed class KycManagerHostedProviderGateTests
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be(
-            "KYC provider is unavailable until durable hosted-session admission is installed.");
+            "The durable hosted verification service is unavailable.");
         provider.Verify(p => p.BeginSessionAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         store.Verify(s => s.CreateSubmissionAsync(
             It.IsAny<KycSubmission>(), It.IsAny<IReadOnlyList<KycDocument>>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
-    // ── The two resolution paths now admit the same providers ───────────────
+    // â”€â”€ The two resolution paths now admit the same providers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Begin_SeamProviderWrappedInTheRegistrysProfileBoundDecorator_IsAdmitted()
@@ -186,7 +186,7 @@ public sealed class KycManagerHostedProviderGateTests
         // KycProviderRegistry.ResolveTenantAsync returned. That asymmetry was the bug,
         // not the contract: ResolveNodeDefault handed back the raw adapter and so
         // passed KycManager's `resolution.Provider is IHostedSessionProvider` gate,
-        // while ResolveTenantAsync handed back a wrapper that hid the seam — so the
+        // while ResolveTenantAsync handed back a wrapper that hid the seam â€” so the
         // SAME provider was admitted or refused depending only on which route reached
         // it, and the tenant-scoped route is the acceptance path
         // (POST /api/tenant/custodial-accounts/{externalSubject}/kyc/session).
@@ -203,7 +203,7 @@ public sealed class KycManagerHostedProviderGateTests
         var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
         var inner = new FakeSeamHostedKycProvider(flow);
         var wrapped = new SeamForwardingKycProviderServiceWrapper(inner.ProviderKey, inner);
-        var manager = NewManager(store, wrapped);
+        var manager = NewManager(store, wrapped, flow);
 
         var result = await manager.BeginAsync(Guid.NewGuid());
 
@@ -223,18 +223,18 @@ public sealed class KycManagerHostedProviderGateTests
         var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
         var inner = new FakeSeamHostedKycProvider(flow);
         var wrapped = new DelegateOnlyKycProviderServiceWrapper(inner.ProviderKey, inner);
-        var manager = NewManager(store, wrapped);
+        var manager = NewManager(store, wrapped, flow);
 
         var result = await manager.BeginAsync(Guid.NewGuid());
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Be(
-            "KYC provider is unavailable until durable hosted-session admission is installed.");
+            "The durable hosted verification service is unavailable.");
         inner.VendorCreateCallCount.Should().Be(0);
     }
 
-    // ── Concurrency: the seam's admission claim, not KycManager's own ledger,
-    //    is what stops a second provider session ──────────────────────────────
+    // â”€â”€ Concurrency: the seam's admission claim, not KycManager's own ledger,
+    //    is what stops a second provider session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Begin_CalledTwiceForTheSameSubject_NeverCreatesASecondProviderSession()
@@ -249,7 +249,7 @@ public sealed class KycManagerHostedProviderGateTests
         var hostedStore = new InMemoryHostedSessionStore();
         var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
         var provider = new FakeSeamHostedKycProvider(flow);
-        var manager = NewManager(store, provider);
+        var manager = NewManager(store, provider, flow);
         var userId = Guid.NewGuid();
 
         var first = await manager.BeginAsync(userId);
@@ -263,9 +263,9 @@ public sealed class KycManagerHostedProviderGateTests
             "two begins for one subject must converge on exactly one external provider session");
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    private static KycManager NewManager(Mock<IKycStore> store, IKycProviderService provider)
+    private static KycManager NewManager(Mock<IKycStore> store, IKycProviderService provider, IHostedSessionFlow flow)
         => new(
             store.Object,
             provider,
@@ -279,7 +279,39 @@ public sealed class KycManagerHostedProviderGateTests
                     TrustedProviderKeys = ["hosted"],
                 },
             }),
-            DevelopmentEnvironment());
+            DevelopmentEnvironment(), hostedFlow: flow);
+
+    [Theory]
+    [InlineData(KycStatus.REJECTED)]
+    [InlineData(KycStatus.EXPIRED)]
+    [InlineData(KycStatus.APPROVED)]
+    public async Task Begin_RenewalAllocatesDifferentDurableAttemptBeforeVendorSend(KycStatus oldStatus)
+    {
+        var store = new Mock<IKycStore>();
+        SetupNoExistingSubmissions(store);
+        SetupCreateEchoesSubmission(store);
+        var hostedStore = new InMemoryHostedSessionStore();
+        var flow = new HostedSessionFlow(hostedStore, new NoopOutcomeHandler());
+        var provider = new FakeSeamHostedKycProvider(flow);
+        var manager = NewManager(store, provider, flow);
+        var userId = Guid.NewGuid();
+        var first = await manager.BeginAsync(userId);
+        first.IsError.Should().BeFalse();
+        var previous = (await store.Object.GetActiveSubmissionByUserAsync(userId)).Result!;
+        previous.Status = oldStatus;
+        previous.ExpiresAt = oldStatus == KycStatus.APPROVED ? DateTimeOffset.UtcNow.AddDays(1) : DateTimeOffset.UtcNow.AddMinutes(-1);
+        previous.AmlLineageKey = null;
+        store.Setup(s => s.GetActiveSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+        store.Setup(s => s.GetLatestSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(previous));
+        var second = await manager.BeginAsync(userId);
+        second.IsError.Should().BeFalse(second.Message);
+        second.Result!.ProviderSessionId.Should().NotBe(first.Result!.ProviderSessionId);
+        provider.VendorCreateCallCount.Should().Be(2);
+        var current = (await store.Object.GetActiveSubmissionByUserAsync(userId)).Result!;
+        current.Id.Should().Be(second.Result.ProviderSessionId);
+    }
 
     private static void SetupNoExistingSubmissions(Mock<IKycStore> store)
     {
@@ -296,7 +328,18 @@ public sealed class KycManagerHostedProviderGateTests
                 It.IsAny<IReadOnlyList<KycDocument>>(),
                 It.IsAny<CancellationToken>()))
              .ReturnsAsync((KycSubmission submission, IReadOnlyList<KycDocument> _, CancellationToken __) =>
-                 new AZOAResult<KycSubmission> { Result = submission });
+             {
+                 store.Setup(s => s.GetActiveSubmissionByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                     .ReturnsAsync(AZOAResult<KycSubmission>.Success(submission));
+                 return AZOAResult<KycSubmission>.Success(submission);
+             });
+        store.Setup(s => s.TryAttachHostedRedirectAsync(It.IsAny<KycSubmission>(), It.IsAny<string>(),
+                It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((KycSubmission submission, string url, DateTimeOffset? expiry, CancellationToken _) =>
+            {
+                submission.VerificationUrl = url;
+                return AZOAResult<KycSubmission>.Success(submission);
+            });
     }
 
     private static IHostEnvironment DevelopmentEnvironment()

@@ -25,6 +25,8 @@ public sealed class NodeFeeScheduleResponse
 
 public sealed class NodeFeeScheduleEntryResponse
 {
+    public string? Denomination { get; set; }
+
     public string FlatBaseUnits { get; set; } = "0";
 
     public long Bps { get; set; }
@@ -53,6 +55,8 @@ public sealed class NodeFeeAuditResponse
 
 public sealed class NodeFeeQuoteResponse
 {
+    public string? Denomination { get; set; }
+
     public NodeFeeOperation Operation { get; set; }
 
     public string GrossAmount { get; set; } = "0";

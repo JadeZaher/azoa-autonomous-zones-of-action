@@ -1,197 +1,123 @@
-// ─── DI registration (orchestrator applies to Program.cs — do NOT edit here) ───
-//
-//   builder.Services.AddScoped<IWalletAuthChallengeStore, SurrealWalletAuthChallengeStore>();
-//
-// Scoped lifetime matches the other Surreal stores (e.g. SurrealApiKeyStore /
-// SurrealConsentGrantStore). Register alongside them in the Surreal store block.
-
-using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Helpers;
+using AZOA.WebAPI.Services.Auth;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using SurrealForge.Client.Idempotency;
+using System.Security.Cryptography;
+using System.Text.Json;
+using WalletAuthChallenge = AZOA.WebAPI.Models.WalletAuthChallenge;
+using WalletAuthChallengePoco = AZOA.WebAPI.Persistence.SurrealDb.Models.WalletAuthChallenge;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
-/// <summary>
-/// SurrealDB-backed <see cref="IWalletAuthChallengeStore"/> (user-sovereign-identity §1).
-/// Mirrors the inline-POCO pattern of <see cref="SurrealApiKeyStore"/> /
-/// <see cref="SurrealConsentGrantStore"/>: Guid("N") lowercase-hex record ids and a
-/// private row POCO with <see cref="JsonPropertyNameAttribute"/> snake_case columns.
-///
-/// <para><see cref="TryConsumeAsync"/> is the no-TOCTOU single-use primitive: a single
-/// conditional UPDATE filtered on <c>consumed_at = NONE AND expires_at &gt; now</c>, so
-/// SurrealDB serializes two concurrent verifies and exactly one observes
-/// <c>AffectedCount() == 1</c>.</para>
-/// </summary>
-public sealed class SurrealWalletAuthChallengeStore : IWalletAuthChallengeStore
+/// <inheritdoc/>
+public sealed class SurrealWalletAuthChallengeStore(ISurrealExecutor executor) : IWalletAuthChallengeStore
 {
-    private const string Table = "wallet_auth_challenge";
+    private sealed record Slot(string Nonce, DateTimeOffset ExpiresAt);
 
-    private readonly ISurrealExecutor _executor;
-
-    public SurrealWalletAuthChallengeStore(ISurrealExecutor executor)
-    {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
-    }
-
+    /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthChallenge>> CreateAsync(WalletAuthChallenge challenge, CancellationToken ct = default)
     {
-        try
-        {
-            if (challenge.Id == Guid.Empty) challenge.Id = Guid.NewGuid();
-            var poco = FromDomain(challenge);
-
-            var q = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", poco.Id)
-                .WithParam("_body", poco);
-
-            var response = await _executor.ExecuteAsync(q, ct);
-            if (!response[0].IsOk)
-            {
-                // Surface the DB error (notably a nonce UNIQUE collision) as a
-                // store-prefixed domain error, never the raw transport exception.
-                return new AZOAResult<WalletAuthChallenge>
-                {
-                    IsError = true,
-                    Message = $"SurrealWalletAuthChallengeStore.CreateAsync failed: {response[0].ErrorText}"
-                };
-            }
-
-            var saved = response.GetValues<WalletAuthChallengePoco>(0).FirstOrDefault();
-            return new AZOAResult<WalletAuthChallenge>
-            {
-                Result = saved is not null ? ToDomain(saved) : challenge,
-                Message = "Saved."
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<WalletAuthChallenge>().CaptureException(ex, $"SurrealWalletAuthChallengeStore.CreateAsync failed: {ex.Message}");
-        }
+        if (!await WalletAuthIdentityGate.IsReadyAsync(executor, ct))
+            return AZOAResult<WalletAuthChallenge>.FailureWithCode("Wallet identity migration is not ready.", AzoaErrorCodes.DependencyUnavailable);
+        if (!WalletAuthIdentity.TryCreate(challenge.Address, challenge.ChainType, out var address, out var chain)
+            || address != challenge.Address || chain != challenge.ChainType)
+            return AZOAResult<WalletAuthChallenge>.Failure("A canonical wallet identity is required.");
+        if (!await ReserveAsync(challenge, ct))
+            return AZOAResult<WalletAuthChallenge>.FailureWithCode("Too many active challenges for this wallet. Try again shortly.", AzoaErrorCodes.Conflict);
+        if (challenge.Id == Guid.Empty) challenge.Id = Guid.NewGuid();
+        var response = await executor.ExecuteAsync(SurrealWriter.Create(FromDomain(challenge)), ct);
+        response.EnsureAllOk();
+        return AZOAResult<WalletAuthChallenge>.Success(ToDomain(response.GetValues<WalletAuthChallengePoco>(0).Single()));
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthChallenge>> GetByNonceAsync(string nonce, CancellationToken ct = default)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(nonce))
-                return new AZOAResult<WalletAuthChallenge> { Result = null, Message = "No nonce supplied." };
-
-            var q = SurrealQuery
-                .Of("SELECT * FROM wallet_auth_challenge WHERE nonce = $_nonce LIMIT 1")
-                .WithParam("_nonce", nonce);
-
-            var row = await _executor.QuerySingleAsync<WalletAuthChallengePoco>(q, ct);
-            return new AZOAResult<WalletAuthChallenge>
-            {
-                Result = row is null ? null : ToDomain(row),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<WalletAuthChallenge>().CaptureException(ex, $"SurrealWalletAuthChallengeStore.GetByNonceAsync failed: {ex.Message}");
-        }
+        var row = await executor.QuerySingleAsync<WalletAuthChallengePoco>(
+            SurrealQuery<WalletAuthChallengePoco>.From().Where(row => row.Nonce == nonce).Limit(1), ct);
+        return new AZOAResult<WalletAuthChallenge> { Result = row is null ? null : ToDomain(row) };
     }
 
-    public async Task<AZOAResult<WalletAuthChallenge>> GetLatestLiveByAddressAsync(
-        string address, string chainType, DateTime now, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<WalletAuthChallenge>> GetLatestLiveByAddressAsync(string address, string chainType, DateTime now, CancellationToken ct = default)
     {
-        try
-        {
-            var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
-            var q = SurrealQuery
-                .Of(@"SELECT * FROM wallet_auth_challenge
-                      WHERE address = $_addr
-                        AND chain_type = $_chain
-                        AND consumed_at = NONE
-                        AND expires_at > $_now
-                      ORDER BY created_at DESC
-                      LIMIT 1")
-                .WithParam("_addr", address)
-                .WithParam("_chain", chainType)
-                .WithParam("_now", nowUtc);
-
-            var row = await _executor.QuerySingleAsync<WalletAuthChallengePoco>(q, ct);
-            return new AZOAResult<WalletAuthChallenge>
-            {
-                Result = row is null ? null : ToDomain(row),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<WalletAuthChallenge>().CaptureException(ex, $"SurrealWalletAuthChallengeStore.GetLatestLiveByAddressAsync failed: {ex.Message}");
-        }
+        if (!await WalletAuthIdentityGate.IsReadyAsync(executor, ct))
+            return AZOAResult<WalletAuthChallenge>.FailureWithCode("Wallet identity migration is not ready.", AzoaErrorCodes.DependencyUnavailable);
+        var instant = new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc));
+        var row = await executor.QuerySingleAsync<WalletAuthChallengePoco>(SurrealQuery<WalletAuthChallengePoco>.From()
+            .Where(row => row.Address == address && row.ChainType == chainType && row.ConsumedAt == null && row.ExpiresAt > instant)
+            .OrderByDescending(row => row.CreatedAt).Limit(1), ct);
+        return new AZOAResult<WalletAuthChallenge> { Result = row is null ? null : ToDomain(row) };
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> TryConsumeAsync(string nonce, DateTime now, CancellationToken ct = default)
     {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(nonce))
-                return new AZOAResult<bool> { Result = false, Message = "No nonce supplied." };
-
-            var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
-
-            // ATOMIC single-use consume (AC1). The conditional WHERE is the no-TOCTOU
-            // gate: SurrealDB serializes two concurrent verifies and exactly one row
-            // transitions consumed_at NONE → now. AffectedCount() == 1 ⇒ this caller won.
-            var q = SurrealQuery
-                .Of(@"UPDATE wallet_auth_challenge
-                      SET consumed_at = $_now
-                      WHERE nonce = $_nonce
-                        AND consumed_at = NONE
-                        AND expires_at > $_now
-                      RETURN BEFORE")
-                .WithParam("_nonce", nonce)
-                .WithParam("_now", nowUtc);
-
-            var response = await _executor.ExecuteAsync(q, ct);
-            response.EnsureAllOk();
-            return new AZOAResult<bool>
-            {
-                Result = response[0].AffectedCount() == 1,
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<bool>().CaptureException(ex, $"SurrealWalletAuthChallengeStore.TryConsumeAsync failed: {ex.Message}");
-        }
+        if (!await WalletAuthIdentityGate.IsReadyAsync(executor, ct)) return AZOAResult<bool>.Success(false);
+        var found = await GetByNonceAsync(nonce, ct);
+        if (found.Result is null) return AZOAResult<bool>.Success(false);
+        var instant = new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc));
+        var response = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthChallengePoco>(SurrealId.ToSurrealId(found.Result.Id))
+            .Where(row => row.Nonce == nonce && row.ConsumedAt == null && row.ExpiresAt > instant)
+            .Set(row => row.ConsumedAt, instant), ct);
+        response.EnsureAllOk();
+        return AZOAResult<bool>.Success(response.GetValues<WalletAuthChallengePoco>(0).Count() == 1);
     }
 
-    public async Task<AZOAResult<int>> CountLiveByAddressAsync(
-        string address, string chainType, DateTime now, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<int>> CountLiveByAddressAsync(string address, string chainType, DateTime now, CancellationToken ct = default)
     {
-        try
-        {
-            var nowUtc = DateTime.SpecifyKind(now, DateTimeKind.Utc);
-            var q = SurrealQuery
-                .Of(@"SELECT * FROM wallet_auth_challenge
-                      WHERE address = $_addr
-                        AND chain_type = $_chain
-                        AND consumed_at = NONE
-                        AND expires_at > $_now")
-                .WithParam("_addr", address)
-                .WithParam("_chain", chainType)
-                .WithParam("_now", nowUtc);
-
-            var rows = await _executor.QueryAsync<WalletAuthChallengePoco>(q, ct);
-            return new AZOAResult<int> { Result = rows.Count, Message = "Success" };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<int>().CaptureException(ex, $"SurrealWalletAuthChallengeStore.CountLiveByAddressAsync failed: {ex.Message}");
-        }
+        var instant = new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc));
+        var rows = await executor.QueryAsync<WalletAuthChallengePoco>(SurrealQuery<WalletAuthChallengePoco>.From()
+            .Where(row => row.Address == address && row.ChainType == chainType && row.ConsumedAt == null && row.ExpiresAt > instant), ct);
+        return AZOAResult<int>.Success(rows.Count);
     }
 
-    // ── Mapping ───────────────────────────────────────────────────────────────
-
+    private async Task<bool> ReserveAsync(WalletAuthChallenge challenge, CancellationToken ct)
+    {
+        var id = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{challenge.ChainType}:{challenge.Address}"))).ToLowerInvariant();
+        for (var attempt = 0; attempt < 16; attempt++)
+        {
+            var row = await executor.QuerySingleAsync<WalletAuthChallengeBudget>(SurrealQuery<WalletAuthChallengeBudget>.Key(id), ct);
+            if (row is null)
+            {
+                try
+                {
+                    var creation = await executor.ExecuteAsync(SurrealWriter.Create(new WalletAuthChallengeBudget { Id = id }), ct);
+                    creation.EnsureAllOk();
+                }
+                catch (SurrealStatementException ex) when (SurrealIdempotencyLedger.IsUniqueViolation(ex.Message)) { }
+                continue;
+            }
+            var slots = JsonSerializer.Deserialize<List<Slot>>(row.SlotsJson)!;
+            var now = DateTimeOffset.UtcNow;
+            var legacy = await executor.QueryAsync<WalletAuthChallengePoco>(SurrealQuery<WalletAuthChallengePoco>.From()
+                .Where(item => item.Address == challenge.Address && item.ChainType == challenge.ChainType && item.ConsumedAt == null && item.ExpiresAt > now)
+                .Limit(5), ct);
+            foreach (var old in legacy)
+                if (slots.All(slot => slot.Nonce != old.Nonce)) slots.Add(new(old.Nonce, old.ExpiresAt));
+            var live = new List<Slot>();
+            foreach (var slot in slots.Where(item => item.ExpiresAt > DateTimeOffset.UtcNow))
+            {
+                var existing = await GetByNonceAsync(slot.Nonce, ct);
+                if (existing.Result?.ConsumedAt is null) live.Add(slot);
+            }
+            if (live.Count >= 5) return false;
+            live.Add(new(challenge.Nonce, new DateTimeOffset(DateTime.SpecifyKind(challenge.ExpiresAt, DateTimeKind.Utc))));
+            var result = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthChallengeBudget>(id)
+                .Where(item => item.Version == row.Version).Set(item => item.SlotsJson, JsonSerializer.Serialize(live))
+                .Set(item => item.Version, row.Version + 1), ct);
+            result.EnsureAllOk();
+            if (result.GetValues<WalletAuthChallengeBudget>(0).Any()) return true;
+        }
+        return false;
+    }
 
     private static WalletAuthChallengePoco FromDomain(WalletAuthChallenge c) => new()
     {
@@ -218,20 +144,4 @@ public sealed class SurrealWalletAuthChallengeStore : IWalletAuthChallengeStore
         ConsumedAt    = p.ConsumedAt?.UtcDateTime,
         CreatedAt     = p.CreatedAt.UtcDateTime,
     };
-
-    // ── POCO (private; inline until source-gen catches up) ────────────────────
-
-    private sealed class WalletAuthChallengePoco : SurrealForge.Client.ISurrealRecord
-    {
-        public string SchemaName => Table;
-
-        [JsonPropertyName("id")]             public string Id            { get; set; } = string.Empty;
-        [JsonPropertyName("nonce")]          public string Nonce         { get; set; } = string.Empty;
-        [JsonPropertyName("address")]        public string Address       { get; set; } = string.Empty;
-        [JsonPropertyName("chain_type")]     public string ChainType     { get; set; } = string.Empty;
-        [JsonPropertyName("domain_message")] public string DomainMessage { get; set; } = string.Empty;
-        [JsonPropertyName("expires_at")]     public DateTimeOffset ExpiresAt   { get; set; }
-        [JsonPropertyName("consumed_at")]    public DateTimeOffset? ConsumedAt { get; set; }
-        [JsonPropertyName("created_at")]     public DateTimeOffset CreatedAt   { get; set; }
-    }
 }

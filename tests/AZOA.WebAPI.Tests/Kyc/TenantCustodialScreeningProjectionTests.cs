@@ -42,15 +42,29 @@ public sealed class TenantCustodialScreeningProjectionTests
     {
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.IsError.Should().BeFalse();
         status.Result!.KycStatus.Should().Be(TenantKycStatus.Approved);
         status.Result.Ready.Should().BeTrue();
         status.Result.ReviewDueAt.Should().BeNull();
         status.Result.UnavailableReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Obsolete_clean_screening_does_not_hide_current_review()
+    {
+        var tenantId = Guid.NewGuid();
+        var userId = SeedApprovedSubject(tenantId);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT,
+            DateTimeOffset.UtcNow.AddHours(-1), lineageKey: "fixture-lineage");
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT,
+            lineageKey: "obsolete-attempt");
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
+        status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
+        status.Result.Ready.Should().BeFalse();
     }
 
     [Theory]
@@ -62,9 +76,9 @@ public sealed class TenantCustodialScreeningProjectionTests
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
         var screenedAt = DateTimeOffset.UtcNow.AddHours(-2);
-        _screening.SeedResult(userId, tenantId, decision, screenedAt);
+        _screening.SeedResult(userId, tenantId, decision, screenedAt, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.IsError.Should().BeFalse();
         status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
@@ -80,9 +94,9 @@ public sealed class TenantCustodialScreeningProjectionTests
     {
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         var reason = status.Result!.UnavailableReason!;
         reason.Should().NotContainEquivalentOf("sanction");
@@ -100,9 +114,9 @@ public sealed class TenantCustodialScreeningProjectionTests
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
         _screening.SeedResult(
-            userId, tenantId, KycScreeningDecision.NO_HIT, resultsTruncated: true);
+            userId, tenantId, KycScreeningDecision.NO_HIT, resultsTruncated: true, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
         status.Result.Ready.Should().BeFalse();
@@ -115,7 +129,7 @@ public sealed class TenantCustodialScreeningProjectionTests
         var tenantId = Guid.NewGuid();
         SeedApprovedSubject(tenantId);
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
         status.Result.Ready.Should().BeFalse();
@@ -131,7 +145,7 @@ public sealed class TenantCustodialScreeningProjectionTests
         SeedApprovedSubject(tenantId);
         _screening.FailReads = true;
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.IsError.Should().BeTrue();
         status.Message.Should().StartWith("TENANT_KYC_UNAVAILABLE");
@@ -144,9 +158,9 @@ public sealed class TenantCustodialScreeningProjectionTests
         // let one tenant's clearance open another tenant's gate.
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, Guid.NewGuid(), KycScreeningDecision.NO_HIT);
+        _screening.SeedResult(userId, Guid.NewGuid(), KycScreeningDecision.NO_HIT, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
     }
@@ -156,9 +170,9 @@ public sealed class TenantCustodialScreeningProjectionTests
     {
         var tenantId = Guid.NewGuid();
         var userId = SeedSubject(tenantId, KycStatus.PENDING);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.KycStatus.Should().Be(TenantKycStatus.Pending);
         status.Result.UnavailableReason.Should().Be("KYC verification is not approved.");
@@ -172,7 +186,7 @@ public sealed class TenantCustodialScreeningProjectionTests
         var tenantId = Guid.NewGuid();
         SeedApprovedSubject(tenantId);
 
-        var status = await CreateManager(registerScreeningStore: false).GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager(registerScreeningStore: false).GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.IsError.Should().BeTrue();
         status.Message.Should().StartWith("TENANT_KYC_UNAVAILABLE");
@@ -184,10 +198,10 @@ public sealed class TenantCustodialScreeningProjectionTests
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
         var screenedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW, screenedAt);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW, screenedAt, lineageKey: "fixture-lineage");
 
         var status = await CreateManager(manualReviewSlaHours: "0")
-            .GetStatusAsync(tenantId, ExternalSubject);
+            .GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.ReviewDueAt.Should().Be(
             screenedAt.AddHours(KycAmlClearance.MinimumManualReviewSlaHours),
@@ -204,10 +218,10 @@ public sealed class TenantCustodialScreeningProjectionTests
         const string contact = "compliance@node.example";
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW, lineageKey: "fixture-lineage");
 
         var status = await CreateManager(manualReviewContact: contact)
-            .GetStatusAsync(tenantId, ExternalSubject);
+            .GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
         status.Result.ReviewContact.Should().Be(contact);
@@ -221,9 +235,9 @@ public sealed class TenantCustodialScreeningProjectionTests
     {
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.MANUAL_REVIEW, lineageKey: "fixture-lineage");
 
-        var status = await CreateManager().GetStatusAsync(tenantId, ExternalSubject);
+        var status = await CreateManager().GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.ReviewContact.Should().BeNull();
         status.Result.UnavailableReason.Should().Be(KycAmlClearance.UnderReviewReason);
@@ -239,10 +253,10 @@ public sealed class TenantCustodialScreeningProjectionTests
         // recourse that exists. Control characters also travel into headers and logs.
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.HIT, lineageKey: "fixture-lineage");
 
         var status = await CreateManager(manualReviewContact: configured)
-            .GetStatusAsync(tenantId, ExternalSubject);
+            .GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.KycStatus.Should().Be(TenantKycStatus.UnderReview);
         status.Result.ReviewContact.Should().BeNull();
@@ -254,10 +268,10 @@ public sealed class TenantCustodialScreeningProjectionTests
     {
         var tenantId = Guid.NewGuid();
         var userId = SeedApprovedSubject(tenantId);
-        _screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT);
+        _screening.SeedResult(userId, tenantId, KycScreeningDecision.NO_HIT, lineageKey: "fixture-lineage");
 
         var status = await CreateManager(manualReviewContact: "compliance@node.example")
-            .GetStatusAsync(tenantId, ExternalSubject);
+            .GetStatusFixtureAsync(tenantId, ExternalSubject);
 
         status.Result!.Ready.Should().BeTrue();
         status.Result.ReviewDueAt.Should().BeNull();
@@ -356,6 +370,7 @@ public sealed class TenantCustodialScreeningProjectionTests
                 Id = Guid.NewGuid(),
                 UserId = userId,
                 TenantId = tenantId,
+                AmlLineageKey = "fixture-lineage",
                 Status = status,
                 SubmittedAt = DateTime.UtcNow.AddMinutes(-10)
             }));
@@ -422,6 +437,7 @@ public sealed class TenantCustodialScreeningProjectionTests
             _idempotency.Object,
             new ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
             Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == environmentName),
+            ConsentFixture.Access().Object,
             registerScreeningStore ? _screening : null);
     }
 }

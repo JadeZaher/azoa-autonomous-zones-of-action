@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { Building2, Search, Settings2 } from 'lucide-react'
+import { OperatorWebhookRegistrationPanel } from '@/components/webhooks/webhook-registration'
+import { WebhookEventsPanel } from '@/components/webhooks/webhook-events'
 import { Button } from '@/components/ui/button'
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -37,6 +39,7 @@ export default function OperatorTenantsPage() {
   const [activeSearch, setActiveSearch] = useState('')
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [editing, setEditing] = useState<OperatorTenantKycSummaryResponse | null>(null)
+  const [webhookTenant, setWebhookTenant] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -99,7 +102,10 @@ export default function OperatorTenantsPage() {
       {loading && tenants.length === 0 ? <OperatorLoading label="Loading tenant configuration" /> : (
         <div className="grid gap-4 lg:grid-cols-2">
           {tenants.map((tenant) => (
-            <TenantCard key={tenant.tenantId} tenant={tenant} onConfigure={() => setEditing(tenant)} />
+            <div key={tenant.tenantId} className="space-y-2">
+              <TenantCard tenant={tenant} onConfigure={() => setEditing(tenant)} />
+              <Button variant="outline" onClick={() => setWebhookTenant(tenant.tenantId)}>Manage webhook for {tenant.tenantId}</Button>
+            </div>
           ))}
           {!loading && tenants.length === 0 && (
             <div className="border border-dashed border-border p-6 text-sm text-muted-foreground lg:col-span-2">
@@ -115,6 +121,15 @@ export default function OperatorTenantsPage() {
           </Button>
         </div>
       )}
+
+      <Dialog open={webhookTenant !== null} onOpenChange={open => { if (!open) setWebhookTenant(null) }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Tenant webhook</DialogTitle><DialogDescription>Manage the selected tenant receiver with a recent operator session.</DialogDescription></DialogHeader>
+          {webhookTenant && <OperatorWebhookRegistrationPanel tenantId={webhookTenant} />}
+          {webhookTenant && <WebhookEventsPanel userId="node-operator" operatorTenantId={webhookTenant} />}
+      {webhookTenant && <WebhookEventsPanel userId="node-operator" operatorTenantId={webhookTenant} family="consent" />}
+        </DialogContent>
+      </Dialog>
 
       {editing && (
         <TenantAssignment

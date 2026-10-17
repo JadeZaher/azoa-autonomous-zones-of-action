@@ -28,4 +28,7 @@ public interface INodeFeeScheduleManager
         NodeFeeOperation operation,
         ulong grossAmount,
         CancellationToken ct = default);
+
+    /// <summary>Computes an explicitly denominated swap fee over canonical full-width integer input base units.</summary>
+    Task<AZOAResult<NodeFeeQuoteResponse>> QuoteSwapBaseUnitsAsync(string grossAmount, CancellationToken ct = default);
 }

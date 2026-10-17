@@ -58,7 +58,7 @@ public class WalletAuthTokenParityTests
             .ReturnsAsync(new AZOAResult<int> { Result = 0 });
 
         _walletMgr = new WalletAuthManager(
-            _challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, _consentGrants.Object, _config);
+            _challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, _config);
     }
 
     /// <summary>

@@ -222,7 +222,10 @@ public static class ActionNodeOutputSchema
         ("ReleaseNotBefore", OutputFieldType.String),
         ("NextHoldId", OutputFieldType.String),
         ("TransactionId", OutputFieldType.String),
-        ("Replayed", OutputFieldType.Boolean));
+        ("Replayed", OutputFieldType.Boolean),
+        ("HoldRecordId", OutputFieldType.String),
+        ("NextHoldRecordId", OutputFieldType.String),
+        ("OperationId", OutputFieldType.String));
 
     /// <summary>
     /// The flat <c>BridgeTransactionResult</c> shape — Bridge/Back serialize

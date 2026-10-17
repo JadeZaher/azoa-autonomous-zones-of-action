@@ -19,7 +19,7 @@ public sealed class WalletDeleteNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(ActionNodeType.WalletDelete), out var cfg, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         var r = await _walletManager.DeleteAsync(cfg.Id, context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);

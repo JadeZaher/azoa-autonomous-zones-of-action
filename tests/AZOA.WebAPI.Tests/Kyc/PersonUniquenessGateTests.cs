@@ -793,6 +793,10 @@ public sealed class PersonUniquenessGateTests
             return Task.FromResult(new AZOAResult<KycIdentity?> { Result = found });
         }
 
+        public Task<AZOAResult<KycIdentity>> BindVerifiedUserAsync(
+            KycIdentity candidate, KycSubmission expected, HostedSession lease, CancellationToken ct = default)
+            => BindUserAsync(candidate, ct);
+
         public Task<AZOAResult<KycIdentity>> BindUserAsync(KycIdentity candidate, CancellationToken ct = default)
             => throw new NotSupportedException("The uniqueness gate must not bind identities.");
 

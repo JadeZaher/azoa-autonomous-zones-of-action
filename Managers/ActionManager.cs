@@ -1,17 +1,17 @@
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
+using AZOA.WebAPI.Interfaces.Actions;
 using AZOA.WebAPI.Interfaces.Stores;
-using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Sagas;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Actions;
-using AZOA.WebAPI.Services.Actions.Predicates;
 using AZOA.WebAPI.Services.Actions.Workflow;
 
 namespace AZOA.WebAPI.Managers;
@@ -25,7 +25,7 @@ namespace AZOA.WebAPI.Managers;
 /// and <see cref="IActionNodeHandlerRegistry"/> (the per-<see cref="ActionNodeType"/>
 /// dispatch table).
 /// </summary>
-public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePauseSeam
+public partial class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePauseSeam
 {
     /// <inheritdoc />
     /// <remarks>
@@ -43,8 +43,8 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
     private readonly IActionDagExecutabilityValidator _executabilityValidator;
     private readonly IActionNodeHandlerRegistry _registry;
     private readonly ISagaStore _sagaStore;
-    private readonly IBlockchainProviderFactory _chainFactory;
-    private readonly ActionConfigBindingResolver _bindingResolver;
+    private readonly ActionOperationRecovery _operationRecovery;
+    private readonly IActionWorkflowAdmissionStore? _workflowAdmission;
 
     // D1/D9 pre-execution value-rail capability gate, and — since OI-28 — the account pause.
     // Constructed here (not injected) so the DI signature stays positional-compatible; the
@@ -96,18 +96,20 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
         // OI-28: the read side of the account pause. Program.cs registers IFiatReversalLedger
         // unconditionally (AddFiatReversalPipeline), so production always supplies it; a container
         // without the reversal pipeline cannot hold a flag to honour.
-        AZOA.WebAPI.Services.Fiat.Reversal.IFiatReversalLedger? accountPauseLedger = null)
+        AZOA.WebAPI.Services.Fiat.Reversal.IFiatReversalLedger? accountPauseLedger = null,
+        IActionWorkflowAdmissionStore? workflowAdmission = null,
+        IEnumerable<IActionExternalOperationResolver>? operationResolvers = null)
     {
         _actionStore = actionStore;
         _runStore = runStore;
         _executionStore = executionStore;
+        _workflowAdmission = workflowAdmission;
         _accessRequestStore = accessRequestStore!;
         _dagValidator = dagValidator;
         _executabilityValidator = executabilityValidator;
         _registry = registry;
         _sagaStore = sagaStore;
-        _chainFactory = chainFactory;
-        _bindingResolver = bindingResolver;
+        _operationRecovery = new ActionOperationRecovery(operationResolvers ?? []);
         _runQuota = configuration is null
             ? new ActionRunQuotaOptions()
             : ActionRunQuotaOptions.FromConfiguration(configuration);
@@ -408,8 +410,8 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
             };
 
 
-        // Full validation stack: structural DAG + fan-out-as-error + config check.
-        var dagResult = _dagValidator.Validate(action, fanOutAsError: true);
+        // Validate the complete graph before publishing.
+        var dagResult = _dagValidator.Validate(action);
         if (!dagResult.IsValid)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — DAG invalid: {string.Join("; ", dagResult.Errors)}" };
 
@@ -591,425 +593,48 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
     // EXECUTION
     // ═══════════════════════════════════════════════════════════════════
 
-    public async Task<AZOAResult<ActionRun>> ExecuteAsync(Guid actionId, Guid userId, AZOARequest? request = null, Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false)
+    /// <inheritdoc/>
+    public Task<AZOAResult<ActionRun>> ExecuteAsync(Guid actionId, Guid userId, AZOARequest? request = null,
+        Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false)
+        => StartWorkflowRunAsync(actionId, userId, request, actingTenantId, acknowledgeEconomicEffects);
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionNodeExecution>> ExecuteNodeAsync(Guid actionId, Guid nodeId, Guid userId,
+        AZOARequest? request = null, Guid? actingTenantId = null)
     {
-        // Marketplace mechanic: the owner may run their own action; a non-owner may
-        // run it only when it is published (public + Active). Provenance back to the
-        // origin action/creator is stamped on the run below for the non-owner path.
-        var (startable, isOwner) = await LoadStartableActionAsync(actionId, userId);
-        if (startable.IsError || startable.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = startable.Message };
-
-        // Marketplace guard 1 — per-(user,action) run-start quota (treasury/runner drain).
-        var quotaGate = await EnforceRunQuotaAsync(actionId, userId, isOwner);
-        if (quotaGate is not null)
-            return quotaGate;
-
-        // FR-2 (action-dag-semantic-hardening): require Active status before execution.
-        // (The non-owner path already enforced Active in LoadStartableActionAsync; this
-        // keeps the owner path's original gate + error message intact.)
-        if (startable.Result.Status != ActionStatus.Active)
-            return new AZOAResult<ActionRun> { IsError = true, Message = "Action must be published (Active) before it can be executed. Call POST /{id}/publish first." };
-
-        // Validate DAG first (also assigns ExecutionOrder onto definition nodes).
-        var validationResult = await ValidateDAGAsync(actionId, request);
-        if (validationResult.IsError)
-            return new AZOAResult<ActionRun> { IsError = true, Message = validationResult.Message };
-
-        // final-hardening F4: enforce action dependencies at run start (fail-closed).
-        // Rejected BEFORE any run/exec rows are written — no orphaned run on rejection.
-        // Uses the already-authorized action (startable.Result) so a non-owner
-        // marketplace run isn't rejected by owner-scoped dependency reads.
-        var depGate = await EnforceDependenciesAsync(startable.Result, request);
-        if (depGate is not null)
-            return depGate;
-
-        var actionResult = await _actionStore.GetActionAsync(actionId);
-        if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = actionResult.Message };
-
-        var action = actionResult.Result;
-
-        // Marketplace guard 2 — economic-consent gate. DAG validation above assigned
-        // ExecutionOrder, so the manifest lists value-moving nodes in run order. A
-        // non-owner run containing economic nodes is rejected unless acknowledged.
-        var consentGate = EnforceEconomicConsent(action, isOwner, acknowledgeEconomicEffects);
-        if (consentGate is not null)
-            return consentGate;
-
-        // F6 TOCTOU guard: confirm the definition is STILL Active at the version we
-        // just read before we commit a run against it. This closes unpublish racing
-        // a run-start — if an UnpublishAsync flipped Active → Draft (bumping version)
-        // between our ownership read and here, the confirm misses and we reject
-        // rather than executing a torn/unpublished definition.
-        var confirmed = await _actionStore.TryConfirmActionStateAsync(
-            action.Id, ActionStatus.Active, action.Version);
-        if (confirmed == 0)
-            return new AZOAResult<ActionRun>
-            {
-                IsError = true,
-                Message = "Action run conflict: the action was unpublished or modified concurrently. Reload and retry."
-            };
-
-        // Create the ActionRun upfront — Pending → Running on first node claim.
-        // The run is ALWAYS stamped to the RUNNER (userId), not the action owner —
-        // on the owner path they are equal; on the non-owner (marketplace) path the
-        // runner gets a run under their own context with provenance back to origin.
-        var run = new ActionRun
-        {
-            Id = Guid.NewGuid(),
-            ActionId = action.Id,
-            UserId = userId,
-            // tenant-consent-delegation AC4: stamp the acting tenant from the
-            // activating principal so Tier-2 nodes carry it to the signing seam.
-            ActingTenantId = actingTenantId,
-            // Marketplace provenance: null on the owner path, origin action + creator
-            // on the non-owner path.
-            SourceActionId = isOwner ? null : action.Id,
-            OriginUserId = isOwner ? null : action.UserId,
-            // Bind the run to the exact published graph revision (bait-and-switch guard).
-            PublishedVersionHash = action.PublishedVersionHash,
-            Status = ActionRunStatus.Pending,
-            StartedAt = DateTime.UtcNow
-        };
-        var createRun = await _runStore.CreateAsync(run);
-        if (createRun.IsError || createRun.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = createRun.Message };
-
-        // Pre-create one ActionNodeExecution(Pending) per action node.
-        foreach (var node in action.Nodes)
-        {
-            var exec = new ActionNodeExecution
-            {
-                Id = Guid.NewGuid(),
-                RunId = run.Id,
-                NodeId = node.Id,
-                State = ActionNodeState.Pending,
-                StartedAt = DateTime.UtcNow
-            };
-            var createExec = await _executionStore.CreateAsync(exec);
-            if (createExec.IsError)
-                return new AZOAResult<ActionRun> { IsError = true, Message = createExec.Message };
-        }
-
-        // Status: Pending → Running (first claim).
-        run.Status = ActionRunStatus.Running;
-        await _runStore.UpdateAsync(run);
-
-        // Track per-node executions in-memory for ComposeOutputs upstream lookup.
-        var executionsByNode = new Dictionary<Guid, ActionNodeExecution>();
-
-        // Execute nodes in topological order.
-        var sortedNodes = action.Nodes.OrderBy(n => n.ExecutionOrder).ToList();
-
-        foreach (var node in sortedNodes)
-        {
-            // V2 skip rule (Managers/AGENTS.md §onfailure-semantics):
-            // 1. Any Control/Conditional source Failed or Skipped → skip.
-            // 2. OnFailure edges are excluded from rule 1; they activate when
-            //    source Failed and skip when source Succeeded/Skipped (inverse).
-            // 3. When ≥1 OnFailure edges exist: node runs only if ≥1 OnFailure
-            //    source Failed (and no Control/Conditional source failed rule 1).
-            var incomingEdges = action.Edges.Where(e => e.TargetNodeId == node.Id).ToList();
-            var shouldSkip = false;
-
-            var onFailureEdges = incomingEdges.Where(e => e.EdgeType == ActionEdgeType.OnFailure).ToList();
-            var controlEdges = incomingEdges.Where(
-                e => e.EdgeType == ActionEdgeType.Control || e.EdgeType == ActionEdgeType.Conditional).ToList();
-
-            // Rule 1: Control/Conditional source Failed or Skipped → skip.
-            foreach (var edge in controlEdges)
-            {
-                executionsByNode.TryGetValue(edge.SourceNodeId, out var sourceExec);
-                var sourceState = sourceExec?.State;
-
-                if (edge.EdgeType == ActionEdgeType.Conditional)
-                {
-                    if (sourceState == ActionNodeState.Failed || sourceState == ActionNodeState.Skipped)
-                    {
-                        shouldSkip = true;
-                        break;
-                    }
-                }
-
-                if (edge.EdgeType == ActionEdgeType.Control &&
-                    (sourceState == ActionNodeState.Failed || sourceState == ActionNodeState.Skipped))
-                {
-                    shouldSkip = true;
-                    break;
-                }
-            }
-
-            // Rule 2+3: OnFailure edges (inverse activation).
-            if (!shouldSkip && onFailureEdges.Count > 0)
-            {
-                var anyOnFailureSourceFailed = onFailureEdges.Any(e =>
-                {
-                    executionsByNode.TryGetValue(e.SourceNodeId, out var ex);
-                    return ex?.State == ActionNodeState.Failed;
-                });
-                // Skip unless at least one OnFailure source actually Failed.
-                if (!anyOnFailureSourceFailed)
-                    shouldSkip = true;
-            }
-
-            var execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result!;
-
-            if (shouldSkip)
-            {
-                execution.State = ActionNodeState.Skipped;
-                execution.EndedAt = DateTime.UtcNow;
-                // HIGH#7 G2 guard: only mark Skipped if the row is still
-                // Pending. If a concurrent ForkAsync flipped it to Cancelled
-                // we must not silently overwrite — the store returns an
-                // error result and we simply re-read the latest state for
-                // downstream ComposeOutputs lookup.
-                var skipUpdate = await _executionStore.UpdateAsync(
-                    execution, expectedState: ActionNodeState.Pending);
-                if (skipUpdate.IsError)
-                {
-                    execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result ?? execution;
-                }
-                executionsByNode[node.Id] = execution;
-                continue;
-            }
-
-            // Claim the row (Pending → Running). G2 conditional-update guard.
-            var claim = await _executionStore.TryClaimPendingAsync(run.Id, node.Id);
-            if (claim.IsError || claim.Result == null)
-            {
-                // Either missing or already-claimed (lost race). Treat as fail.
-                execution.State = ActionNodeState.Failed;
-                execution.Error = claim.Message ?? "Failed to claim node for execution.";
-                execution.EndedAt = DateTime.UtcNow;
-                // Best-effort unconditional update — the claim already
-                // observed a drift, so a second guard would be redundant.
-                await _executionStore.UpdateAsync(execution);
-                executionsByNode[node.Id] = execution;
-                break;
-            }
-            execution = claim.Result!;
-
-            // Build upstream-output map for ComposeOutputs (predecessors only).
-            var upstream = new Dictionary<Guid, ActionNodeExecution>();
-            foreach (var edge in incomingEdges)
-            {
-                if (executionsByNode.TryGetValue(edge.SourceNodeId, out var pe))
-                    upstream[edge.SourceNodeId] = pe;
-            }
-
-            // FR-1 ($from binding) — resolve before handler dispatch.
-            // See Services/Actions/AGENTS.md §output-binding.
-            // C1/H1: identity side-effects and holon-scoped $from binding resolve
-            // against the RUNNER (run.UserId), never the action owner. On the owner
-            // path run.UserId == action.UserId, so behaviour is unchanged.
-            var bindingResult = await _bindingResolver.TryResolveAsync(
-                node.Config, node, action, upstream, executionsByNode, run.UserId, CancellationToken.None);
-
-            ActionNodeHandlerResult result;
-            if (!bindingResult.Ok)
-            {
-                result = ActionNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingResult.Error}");
-            }
-            else if (!_registry.TryGet(node.NodeType, out var handler))
-            {
-                result = ActionNodeResults.Fail($"Unsupported node type: {node.NodeType}");
-            }
-            else if (Services.Actions.NotEnabledActionNodeTypes.IsBlocked(node.NodeType))
-            {
-                // Fail closed BEFORE HandleAsync, exactly as the rail gate below does.
-                // These handlers ARE registered and would otherwise execute.
-                result = ActionNodeResults.Fail(
-                    Services.Actions.NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));
-            }
-            else if (handler.RequiresChainCapability
-                && await _railGate.AdmitValueNodeAsync(
-                        run.UserId, handler.ResolveSettlementRailId(node))
-                    is { IsAllowed: false } refusal)
-            {
-                // The ONE pre-execution admission predicate — fails closed (no broadcast). A
-                // value-moving node may not run while the actor's account is PAUSED by an
-                // unresolved reversal (OI-28), nor unless the actor has a usable destination on
-                // the rail THIS node settles on. HandleAsync is SKIPPED entirely. The durable
-                // seam calls the same predicate, so the two paths cannot drift apart.
-                result = ActionNodeResults.Fail(refusal.RefusalMessage);
-            }
-            else
-            {
-                try
-                {
-                    // Temporarily swap in the binding-resolved config so context.Node.Config
-                    // carries the resolved values. Restored after the call (ExecuteAsync is
-                    // sequential; the definition node object is not shared across calls).
-                    var originalConfig = node.Config;
-                    // Ok==true (checked above) guarantees ResolvedJson is non-null.
-                    node.Config = bindingResult.ResolvedJson!;
-                    try
-                    {
-                        var ctx = new ActionNodeExecutionContext(run.Id, node.Id, action, run.UserId, upstream, run.ActingTenantId, executionsByNode);
-                        result = await handler.HandleAsync(ctx);
-                    }
-                    finally
-                    {
-                        node.Config = originalConfig;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    result = ActionNodeResults.Fail(ex.Message);
-                }
-            }
-
-            if (result.IsError)
-            {
-                execution.State = ActionNodeState.Failed;
-                execution.Error = result.Message;
-            }
-            else
-            {
-                execution.State = ActionNodeState.Succeeded;
-                execution.Output = result.Output;
-            }
-            execution.EndedAt = DateTime.UtcNow;
-            // HIGH#7 — only commit the terminal state when the row is still
-            // Running. A concurrent fork (or supervisor-fail) may have
-            // flipped the row to Cancelled between our claim and our
-            // completion; in that case the guard rejects the overwrite and
-            // we accept the fork's decision rather than resurrecting the
-            // execution into Succeeded/Failed.
-            var terminalUpdate = await _executionStore.UpdateAsync(
-                execution, expectedState: ActionNodeState.Running);
-            if (terminalUpdate.IsError)
-            {
-                execution = (await _executionStore.GetByRunAndNodeAsync(run.Id, node.Id)).Result ?? execution;
-            }
-            executionsByNode[node.Id] = execution;
-        }
-
-        // V3 run-status: Failed iff any UNHANDLED Failed execution exists.
-        // A Failed node is "handled" when it has ≥1 outgoing OnFailure edge
-        // (the failure arm activated, so the run can still succeed).
-        // See Managers/AGENTS.md §onfailure-semantics.
-        var allExecs = (await _executionStore.GetByRunIdAsync(run.Id)).Result ?? Enumerable.Empty<ActionNodeExecution>();
-        var nodesWithOnFailureOut = action.Edges
-            .Where(e => e.EdgeType == ActionEdgeType.OnFailure)
-            .Select(e => e.SourceNodeId)
-            .ToHashSet();
-        var hasUnhandledFailure = allExecs.Any(e =>
-            e.State == ActionNodeState.Failed && !nodesWithOnFailureOut.Contains(e.NodeId));
-        run.Status = hasUnhandledFailure ? ActionRunStatus.Failed : ActionRunStatus.Succeeded;
-        run.EndedAt = DateTime.UtcNow;
-        var updated = await _runStore.UpdateAsync(run);
-
-        return new AZOAResult<ActionRun> { Result = updated.Result, Message = $"Action run {run.Status}." };
+        var loaded = await LoadOwnedActionAsync(actionId, userId);
+        if (loaded.IsError || loaded.Result is null) return AZOAResult<ActionNodeExecution>.Failure(loaded.Message);
+        var source = loaded.Result;
+        if (source.Status != ActionStatus.Active)
+            return AZOAResult<ActionNodeExecution>.Failure("Publish the action before admitting node execution.");
+        var node = source.Nodes.SingleOrDefault(item => item.Id == nodeId);
+        if (node is null) return AZOAResult<ActionNodeExecution>.Failure("Node not found.");
+        var quota = await EnforceRunQuotaAsync(actionId, userId, true);
+        if (quota is not null) return AZOAResult<ActionNodeExecution>.Failure(quota.Message);
+        var dependencies = await EnforceDependenciesAsync(source, request);
+        if (dependencies is not null) return AZOAResult<ActionNodeExecution>.Failure(dependencies.Message);
+        var graph = System.Text.Json.JsonSerializer.Deserialize<ActionDefinition>(System.Text.Json.JsonSerializer.Serialize(source))
+            ?? throw new InvalidOperationException("Action snapshot is unreadable.");
+        graph.Nodes = graph.Nodes.Where(item => item.Id == nodeId).ToList();
+        graph.Edges = [];
+        var validation = _executabilityValidator.Validate(graph);
+        var configError = ValidateNodeConfigs(graph);
+        if (!validation.IsValid || configError is not null)
+            return AZOAResult<ActionNodeExecution>.Failure(configError ?? string.Join("; ", validation.Errors));
+        if (NotEnabledActionNodeTypes.IsBlocked(node.NodeType))
+            return AZOAResult<ActionNodeExecution>.Failure(NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));
+        var run = new ActionRun { Id = Guid.NewGuid(), ActionId = actionId, UserId = userId,
+            ActingTenantId = actingTenantId, Status = ActionRunStatus.Running, StartedAt = DateTime.UtcNow,
+            PublishedVersionHash = source.PublishedVersionHash };
+        ActionRunSnapshot.Capture(run, graph);
+        var admission = _workflowAdmission ?? throw new InvalidOperationException("Atomic workflow admission is not registered.");
+        var admitted = await admission.AdmitAsync(new ActionWorkflowAdmission(run, graph,
+            [new ActionSourceAdmission(source.Id, source.Version, source.PublishedVersionHash, _runQuota.EffectiveLimit(true))], nodeId));
+        if (admitted.IsError) return AZOAResult<ActionNodeExecution>.Failure(admitted.Message);
+        var execution = await _executionStore.GetByRunAndNodeAsync(run.Id, nodeId);
+        if (!execution.IsError) execution.Message = "Node admitted; use its run ID to observe durable execution.";
+        return execution;
     }
-
-    public async Task<AZOAResult<ActionNodeExecution>> ExecuteNodeAsync(Guid actionId, Guid nodeId, Guid userId, AZOARequest? request = null, Guid? actingTenantId = null)
-    {
-        var actionResult = await LoadOwnedActionAsync(actionId, userId);
-        if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionNodeExecution> { IsError = true, Message = actionResult.Message };
-
-        var action = actionResult.Result;
-        var node = action.Nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node == null)
-            return new AZOAResult<ActionNodeExecution> { IsError = true, Message = "Node not found." };
-
-        // Single-node execution creates an ad-hoc ActionRun that lives just long
-        // enough to record this one node's outcome. This preserves the
-        // historic ExecuteNodeAsync entry point (used by the ActionController)
-        // while keeping the new (runId, nodeId) invariant: no state ever lands
-        // on the ActionNode itself.
-        var run = new ActionRun
-        {
-            Id = Guid.NewGuid(),
-            ActionId = action.Id,
-            UserId = action.UserId,
-            // tenant-consent-delegation AC4: carry the acting tenant onto the
-            // ad-hoc one-node run so the dispatched handler reaches the seam.
-            ActingTenantId = actingTenantId,
-            Status = ActionRunStatus.Running,
-            StartedAt = DateTime.UtcNow
-        };
-        await _runStore.CreateAsync(run);
-
-        var execution = new ActionNodeExecution
-        {
-            Id = Guid.NewGuid(),
-            RunId = run.Id,
-            NodeId = node.Id,
-            State = ActionNodeState.Running,
-            StartedAt = DateTime.UtcNow
-        };
-        await _executionStore.CreateAsync(execution);
-
-        // FR-1 ($from binding) — resolve before handler dispatch (single-node path).
-        // Single-node path is owner-only (LoadOwnedActionAsync), so run.UserId ==
-        // action.UserId here; use run.UserId for parity with the multi-node path.
-        var bindingResultSingle = await _bindingResolver.TryResolveAsync(
-            node.Config, node, action, new Dictionary<Guid, ActionNodeExecution>(),
-            new Dictionary<Guid, ActionNodeExecution>(), run.UserId, CancellationToken.None);
-
-        ActionNodeHandlerResult result;
-        if (!bindingResultSingle.Ok)
-        {
-            result = ActionNodeResults.Fail($"$from binding error on node '{node.Name}': {bindingResultSingle.Error}");
-        }
-        else if (!_registry.TryGet(node.NodeType, out var handler))
-        {
-            result = ActionNodeResults.Fail($"Unsupported node type: {node.NodeType}");
-        }
-        else
-        {
-            try
-            {
-                var originalConfigSingle = node.Config;
-                // Ok==true (checked above) guarantees ResolvedJson is non-null.
-                node.Config = bindingResultSingle.ResolvedJson!;
-                try
-                {
-                    var ctx = new ActionNodeExecutionContext(run.Id, node.Id, action, run.UserId, upstreamExecutions: null, actingTenantId: run.ActingTenantId);
-                    result = await handler.HandleAsync(ctx);
-                }
-                finally
-                {
-                    node.Config = originalConfigSingle;
-                }
-            }
-            catch (Exception ex)
-            {
-                result = ActionNodeResults.Fail(ex.Message);
-            }
-        }
-
-        if (result.IsError)
-        {
-            execution.State = ActionNodeState.Failed;
-            execution.Error = result.Message;
-        }
-        else
-        {
-            execution.State = ActionNodeState.Succeeded;
-            execution.Output = result.Output;
-        }
-        execution.EndedAt = DateTime.UtcNow;
-        // HIGH#7 — same G2 guard as the in-loop terminal update at line ~308.
-        // The ad-hoc single-node run created the execution in Running state,
-        // so we only commit Succeeded/Failed when the row is still Running.
-        await _executionStore.UpdateAsync(execution, expectedState: ActionNodeState.Running);
-
-        run.Status = result.IsError ? ActionRunStatus.Failed : ActionRunStatus.Succeeded;
-        run.EndedAt = DateTime.UtcNow;
-        await _runStore.UpdateAsync(run);
-
-        return result.IsError
-            ? new AZOAResult<ActionNodeExecution> { IsError = true, Result = execution, Message = result.Message ?? string.Empty }
-            : new AZOAResult<ActionNodeExecution> { Result = execution, Message = "Node executed successfully." };
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // FORK
-    // ═══════════════════════════════════════════════════════════════════
 
     public async Task<AZOAResult<ActionRun>> ForkAsync(Guid runId, Guid atNodeId, string reason, Guid userId, AZOARequest? request = null)
     {
@@ -1031,11 +656,15 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
             };
         }
 
-        var actionResult = await _actionStore.GetActionAsync(parent.ActionId);
-        if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = actionResult.Message };
-
-        var action = actionResult.Result;
+        var actionResult = await LoadStartableActionAsync(parent.ActionId, userId);
+        if (actionResult.Item1.IsError || actionResult.Item1.Result is null)
+            return AZOAResult<ActionRun>.Failure(actionResult.Item1.Message);
+        if (parent.DefinitionSnapshotJson is null)
+            return AZOAResult<ActionRun>.Failure("Legacy run has no frozen definition to fork safely.");
+        var action = ActionRunSnapshot.Read(parent);
+        if (actionResult.Item1.Result.Version != action.Version
+            || actionResult.Item1.Result.PublishedVersionHash != action.PublishedVersionHash)
+            return AZOAResult<ActionRun>.Failure("The action changed after the parent run was admitted; start a new run with current consent.");
         var forkPointNode = action.Nodes.FirstOrDefault(n => n.Id == atNodeId);
         if (forkPointNode == null)
         {
@@ -1086,7 +715,12 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
             StartedAt = DateTime.UtcNow,
             ParentRunId = parent.Id,
             ForkedAtNodeId = atNodeId,
-            ForkReason = reason
+            ForkReason = reason,
+            DefinitionSnapshotJson = parent.DefinitionSnapshotJson,
+            DefinitionSnapshotHash = parent.DefinitionSnapshotHash,
+            InternalDependenciesJson = parent.InternalDependenciesJson,
+            OccurrenceBoundariesJson = parent.OccurrenceBoundariesJson,
+            InitialInputJson = parent.InitialInputJson,
         };
         var createChild = await _runStore.CreateAsync(child);
         if (createChild.IsError || createChild.Result == null)
@@ -1877,29 +1511,29 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
     // DURABLE WORKFLOW ENGINE (durable-workflow-engine)
     // ═══════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Start a durable, suspendable workflow run. Mirrors <see cref="ExecuteAsync"/>'s
-    /// run + per-node-execution creation (so the existing read surface and
-    /// fork/supervisor paths keep working), then — instead of the in-process
-    /// node <c>foreach</c> — enqueues the ENTRY node as the first saga step. The
-    /// saga processor advances the DAG asynchronously, suspending at
-    /// manual/gate/timer nodes (durable-workflow-engine D1, Phase 2).
-    /// </summary>
+    /// <inheritdoc/>
     public async Task<AZOAResult<ActionRun>> StartWorkflowRunAsync(Guid actionId, Guid userId, AZOARequest? request = null, Guid? actingTenantId = null, bool acknowledgeEconomicEffects = false)
     {
-        // Marketplace mechanic (durable path): owner may start their own action; a
-        // non-owner may start it only when published (public + Active). Provenance is
-        // stamped on the run below, mirroring the legacy ExecuteAsync path.
+        var key = request?.IdempotencyKey;
+        if (actionId == Guid.Empty || userId == Guid.Empty || string.IsNullOrWhiteSpace(key) || key.Length > 200
+            || acknowledgeEconomicEffects && string.IsNullOrWhiteSpace(request?.ExpectedPublishedHash))
+            return AZOAResult<ActionRun>.Failure("A request key and, when acknowledging economic effects, the disclosed published hash are required.");
+        var runId = ActionWorkflowIdentity.RunId(actionId, userId, actingTenantId, key);
+        var invocationIdentity = CanonicalJson.Hash(new { actionId, userId, actingTenantId, key, acknowledgeEconomicEffects,
+            request!.ExpectedPublishedHash });
+        var existing = await _runStore.GetByIdAsync(runId);
+        if (existing.Result is { } saved)
+            return saved.UserId == userId && saved.ActingTenantId == actingTenantId && saved.ActionId == actionId
+                && saved.InvocationIdentity == invocationIdentity
+                ? AZOAResult<ActionRun>.Success(saved) : AZOAResult<ActionRun>.Failure("Workflow request key conflicts with its admitted intent.");
         var (startable, isOwner) = await LoadStartableActionAsync(actionId, userId);
         if (startable.IsError || startable.Result == null)
             return new AZOAResult<ActionRun> { IsError = true, Message = startable.Message };
 
-        // Marketplace guard 1 — per-(user,action) run-start quota (treasury/runner drain).
         var quotaGate = await EnforceRunQuotaAsync(actionId, userId, isOwner);
         if (quotaGate is not null)
             return quotaGate;
 
-        // FR-2: require Active status before starting a durable workflow run.
         if (startable.Result.Status != ActionStatus.Active)
             return new AZOAResult<ActionRun> { IsError = true, Message = "Action must be published (Active) before a workflow run can be started. Call POST /{id}/publish first." };
 
@@ -1907,23 +1541,6 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
         if (validationResult.IsError)
             return new AZOAResult<ActionRun> { IsError = true, Message = validationResult.Message };
 
-        // FR-3 / AC-3a: fan-out is an error on the durable path — reject before any
-        // saga rows are written (ResolveSingleSuccessor catches it at runtime too,
-        // but catching here gives a cleaner, pre-run error message).
-        var actionForFanOut = (await _actionStore.GetActionAsync(actionId)).Result;
-        if (actionForFanOut != null)
-        {
-            var fanOutCheck = _dagValidator.Validate(actionForFanOut, fanOutAsError: true);
-            var fanOutErrors = fanOutCheck.Errors.Where(e => e.Contains("fan-out", StringComparison.OrdinalIgnoreCase)).ToList();
-            if (fanOutErrors.Count > 0)
-                return new AZOAResult<ActionRun> { IsError = true, Message = $"Workflow run rejected — fan-out not supported on durable path: {string.Join("; ", fanOutErrors)}" };
-        }
-
-        // final-hardening F4: enforce action dependencies at run start (fail-closed).
-        // Rejected BEFORE the run + per-node executions are written and before the entry
-        // node is enqueued as a saga step — no orphaned durable run on rejection.
-        // Uses the already-authorized action (startable.Result) so a non-owner
-        // marketplace run isn't rejected by owner-scoped dependency reads.
         var depGate = await EnforceDependenciesAsync(startable.Result, request);
         if (depGate is not null)
             return depGate;
@@ -1933,10 +1550,9 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
             return new AZOAResult<ActionRun> { IsError = true, Message = actionResult.Message };
         var action = actionResult.Result;
 
-        // Marketplace guard 2 — economic-consent gate (durable path). Mirrors
-        // ExecuteAsync: a non-owner run containing value-moving nodes is rejected
-        // unless the runner acknowledged the disclosed effects. ValidateDAGAsync above
-        // assigned ExecutionOrder so the manifest lists nodes in run order.
+        if (request.ExpectedPublishedHash is { } expectedHash && action.PublishedVersionHash != expectedHash)
+            return AZOAResult<ActionRun>.Failure("The published action differs from the disclosed revision.");
+
         var consentGate = EnforceEconomicConsent(action, isOwner, acknowledgeEconomicEffects);
         if (consentGate is not null)
             return consentGate;
@@ -1945,9 +1561,6 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
         if (entry is null)
             return new AZOAResult<ActionRun> { IsError = true, Message = "Action has no entry node to start the workflow run." };
 
-        // F6 TOCTOU guard: confirm the definition is STILL Active at the version we
-        // read before committing a durable run -- same discipline as ExecuteAsync.
-        // Closes unpublish racing a workflow-run-start on the durable path.
         var confirmed = await _actionStore.TryConfirmActionStateAsync(
             action.Id, ActionStatus.Active, action.Version);
         if (confirmed == 0)
@@ -1957,57 +1570,26 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
                 Message = "Action run conflict: the action was unpublished or modified concurrently. Reload and retry."
             };
 
-        // Create the run + one Pending ActionNodeExecution per node — identical to
-        // ExecuteAsync so the per-node claim/idempotency surface is shared.
         var run = new ActionRun
         {
-            Id = Guid.NewGuid(),
+            Id = runId,
+            InvocationIdentity = invocationIdentity,
+            AuthenticationWitnessJson = request?.AuthenticationWitness is { } authentication
+                ? CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(authentication)) : null,
             ActionId = action.Id,
-            // Stamp the run to the RUNNER (marketplace mechanic) — owner path: equal;
-            // non-owner path: runner's own context with provenance back to origin.
             UserId = userId,
-            // tenant-consent-delegation AC4: persist the acting tenant on the
-            // durable run so it survives the async saga-worker hop and reaches the
-            // Tier-2 node handlers via the ActionNodeExecutionContext. This is the
-            // keystone — the durable path is where the acting tenant would otherwise
-            // be lost (no ambient principal on the saga worker).
             ActingTenantId = actingTenantId,
-            // Marketplace provenance: null on owner path, origin action + creator on
-            // the non-owner path.
             SourceActionId = isOwner ? null : action.Id,
             OriginUserId = isOwner ? null : action.UserId,
-            // Bind the run to the exact published graph revision (bait-and-switch guard).
             PublishedVersionHash = action.PublishedVersionHash,
             Status = ActionRunStatus.Pending,
             StartedAt = DateTime.UtcNow
         };
-        var createRun = await _runStore.CreateAsync(run);
-        if (createRun.IsError || createRun.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = createRun.Message };
-
-        foreach (var node in action.Nodes)
-        {
-            var exec = new ActionNodeExecution
-            {
-                Id = Guid.NewGuid(),
-                RunId = run.Id,
-                NodeId = node.Id,
-                State = ActionNodeState.Pending,
-                StartedAt = DateTime.UtcNow
-            };
-            var createExec = await _executionStore.CreateAsync(exec);
-            if (createExec.IsError)
-                return new AZOAResult<ActionRun> { IsError = true, Message = createExec.Message };
-        }
-
-        // Enqueue the entry node as the first saga step (step name = node id).
-        // Started directly via the store, not the coordinator, because the
-        // action-workflow definition is not a SagaDefinition (D1, Approach A).
-        await EnqueueWorkflowNodeAsync(run.Id, action.Id, run.UserId, entry.Id, signalPayload: null);
-
+        ActionRunSnapshot.Capture(run, action);
+        var admission = _workflowAdmission ?? throw new InvalidOperationException("Atomic workflow admission is not registered.");
         run.Status = ActionRunStatus.Running;
-        var updated = await _runStore.UpdateAsync(run);
-        return new AZOAResult<ActionRun> { Result = updated.Result ?? run, Message = "Workflow run started." };
+        return await admission.AdmitAsync(new ActionWorkflowAdmission(run, action,
+            [new ActionSourceAdmission(action.Id, action.Version, action.PublishedVersionHash, _runQuota.EffectiveLimit(isOwner))], entry.Id));
     }
 
     /// <summary>
@@ -2024,44 +1606,32 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
             return new AZOAResult<ActionRun> { IsError = true, Message = runResult.Message };
         var run = runResult.Result;
 
-        if (run.Status is not (ActionRunStatus.Suspended or ActionRunStatus.AwaitingSignal))
+        if (run.Status.IsTerminal())
             return new AZOAResult<ActionRun>
             {
                 IsError = true,
-                Message = $"Cannot advance run {runId}: status is {run.Status} (only Suspended/AwaitingSignal runs accept advance)."
+                Message = $"Cannot advance run {runId}: status is {run.Status} (terminal runs cannot advance)."
             };
 
-        var actionResult = await _actionStore.GetActionAsync(run.ActionId);
-        if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = actionResult.Message };
-        var action = actionResult.Result;
+        if (run.DefinitionSnapshotJson is null)
+            return AZOAResult<ActionRun>.Failure("Legacy run has no frozen definition to advance safely.");
+        var action = ActionRunSnapshot.Read(run);
+        var from = await _executionStore.GetByRunAndNodeAsync(run.Id, fromNodeId);
+        if (from.IsError || from.Result?.State != ActionNodeState.Succeeded)
+            return AZOAResult<ActionRun>.Failure("Only a successfully completed node can authorize manual advancement.");
+        var sourceNode = action.Nodes.SingleOrDefault(node => node.Id == fromNodeId);
+        if (sourceNode is null || WorkflowNodeConfig.Parse(sourceNode.Config).Item1 != WorkflowAdvance.Manual)
+            return AZOAResult<ActionRun>.Failure("The selected node does not allow manual advancement.");
 
-        // Resolve the next hop through the SAME authority the engine's
-        // auto-advance uses, so the manual and auto paths can never route the
-        // same graph to different successors (or disagree on the fan-out guard).
-        var hop = ActionWorkflowEdges.ResolveSingleSuccessor(action, fromNodeId);
-        switch (hop.Kind)
+        if (!from.Result.ManualAdvanceReleased)
         {
-            case SuccessorKind.Terminal:
-                // Manual-advance from a terminal node ⇒ the run completes.
-                run.Status = ActionRunStatus.Succeeded;
-                run.EndedAt = DateTime.UtcNow;
-                var done = await _runStore.UpdateAsync(run);
-                return new AZOAResult<ActionRun> { Result = done.Result ?? run, Message = "Workflow run completed (advanced past terminal node)." };
-
-            case SuccessorKind.FanOut:
-                return new AZOAResult<ActionRun>
-                {
-                    IsError = true,
-                    Message = $"Cannot advance: node {fromNodeId} has {hop.Count} Control successors (fan-out is out of scope)."
-                };
-
-            default: // Single
-                await EnqueueWorkflowNodeAsync(run.Id, run.ActionId, run.UserId, hop.NodeId!.Value, signalPayload: null);
-                run.Status = ActionRunStatus.Running;
-                var updated = await _runStore.UpdateAsync(run);
-                return new AZOAResult<ActionRun> { Result = updated.Result ?? run, Message = "Workflow run advanced." };
+            from.Result.ManualAdvanceReleased = true;
+            var released = await _executionStore.UpdateAsync(from.Result, ActionNodeState.Succeeded);
+            if (released.IsError) return AZOAResult<ActionRun>.Failure(released.Message);
         }
+        var admission = _workflowAdmission ?? throw new InvalidOperationException("Atomic workflow admission is not registered.");
+        await new ActionDagScheduler(_runStore, _executionStore, admission).AdvanceAsync(action, run.Id);
+        return await _runStore.GetByIdAsync(run.Id);
     }
 
     /// <summary>
@@ -2455,142 +2025,43 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
         return await _accessRequestStore.GetByRequesterAsync(requesterUserId, status);
     }
 
-    /// <summary>
-    /// The shared reconcile-before-retry re-probe for ONE parked run. For each
-    /// Failed chain-action execution that carries a broadcast tx hash, it re-probes
-    /// chain truth and feeds the verdict into <see cref="ChainActionRecovery"/>:
-    ///
-    /// <list type="bullet">
-    /// <item><b>Confirmed</b> → the tx LANDED. Reconcile the execution to Succeeded
-    /// (guarded on Failed) and un-park the run's parked saga step (gate
-    /// <c>recon:{nodeId}</c>) so the durable engine re-drives advancement from the
-    /// now-Succeeded row — NO re-broadcast.</item>
-    /// <item><b>FailedOnChain</b> → provably failed. Un-park the step; the
-    /// re-dispatched node-step replays its Failed outcome into the saga's
-    /// retry/compensation budget (re-broadcast is safe here).</item>
-    /// <item><b>Pending/Unknown</b> (or a probe error / no hash) → still
-    /// indeterminate. Leave the node Failed and the run parked, untouched, for the
-    /// next sweep. NEVER auto-re-broadcast — this is the double-mint guard.</item>
-    /// </list>
-    ///
-    /// <para>The run is left in <see cref="ActionRunStatus.AwaitingReconciliation"/>
-    /// while ANY node remains indeterminate; once a node is un-parked the saga
-    /// processor projects the run back to Running as it resumes. We never force a
-    /// terminal status here — the engine (success advance) or the saga
-    /// (retry/compensation) owns the terminal verdict, exactly as on the live path.</para>
-    /// </summary>
     private async Task<ActionReconciliationResult> ReprobeReconciliationAsync(
         ActionRun run, IReadOnlyList<ActionNodeExecution>? preloadedExecutions = null)
     {
         var outcome = new ActionReconciliationResult { RunId = run.Id, Status = run.Status };
-
-        // The sweep already read these rows to date the park; reuse them rather than
-        // paying a second store round-trip per parked run.
-        var execs = preloadedExecutions ?? await LoadRunExecutionsAsync(run.Id);
-
-        // Only Failed rows carrying a broadcast hash are candidates: those are the
-        // parked chain-action nodes the step handler stamped before parking. A
-        // Failed row with no hash was a non-broadcast failure (parked because we
-        // could not prove anything was on the wire) — re-probing has nothing to
-        // probe, so it stays parked for an operator.
-        var candidates = execs
-            .Where(e => e.State == ActionNodeState.Failed && !string.IsNullOrWhiteSpace(e.TxHash))
-            .ToList();
-
-        foreach (var exec in candidates)
+        var rows = preloadedExecutions ?? await LoadRunExecutionsAsync(run.Id);
+        foreach (var execution in rows.Where(row => row.State is ActionNodeState.Running or ActionNodeState.Failed))
         {
-            var verdict = await ProbeConfirmationAsync(exec.TxHash, exec.ChainType);
-            var action = ChainActionRecovery.Decide(exec.TxHash, verdict);
-
-            switch (action)
+            if (execution.State != ActionNodeState.Running || execution.ExternalOperation is null)
             {
-                case ChainActionRecoveryAction.AdvanceReconciled:
-                    // Confirmed — reconcile the row to Succeeded (guarded on Failed),
-                    // then un-park so the engine re-drives advancement. No re-mint.
-                    exec.State = ActionNodeState.Succeeded;
-                    exec.Error = null;
-                    exec.EndedAt = DateTime.UtcNow;
-                    var reconciled = await _executionStore.UpdateAsync(
-                        exec, expectedState: ActionNodeState.Failed);
-                    if (!reconciled.IsError)
-                    {
-                        await UnparkReconciliationStepAsync(run.Id, exec.NodeId);
-                        outcome.ReconciledConfirmed++;
-                    }
-                    else
-                    {
-                        // The row drifted off Failed (a concurrent sweep already
-                        // reconciled it) — count it as still-indeterminate for this
-                        // pass rather than double-counting; the winner advanced it.
-                        outcome.StillIndeterminate++;
-                    }
-                    break;
-
-                case ChainActionRecoveryAction.Retry:
-                    // Provably FailedOnChain — re-broadcast is safe. Un-park so the
-                    // node-step replays Failed into the saga retry/compensation budget.
-                    await UnparkReconciliationStepAsync(run.Id, exec.NodeId);
-                    outcome.ReleasedFailedOnChain++;
-                    break;
-
-                case ChainActionRecoveryAction.ParkForReconciliation:
-                default:
-                    // Still in-flight / ambiguous — leave parked. NEVER re-broadcast.
-                    outcome.StillIndeterminate++;
-                    break;
+                outcome.StillIndeterminate++;
+                continue;
             }
+            var observed = await _operationRecovery.ObserveAsync(execution, run, CancellationToken.None);
+            if (observed.Status is ActionExternalOperationStatus.Pending or ActionExternalOperationStatus.Ambiguous)
+            {
+                outcome.StillIndeterminate++;
+                continue;
+            }
+            execution.ExternalOperation = observed.Reference;
+            execution.Output = observed.Output;
+            execution.Error = observed.Detail;
+            execution.TxHash = observed.TransactionId;
+            execution.ChainType = observed.ChainType;
+            execution.State = observed.Status == ActionExternalOperationStatus.Succeeded ? ActionNodeState.Succeeded
+                : observed.Status == ActionExternalOperationStatus.Cancelled ? ActionNodeState.Cancelled : ActionNodeState.Failed;
+            execution.EndedAt = DateTime.UtcNow;
+            execution.RecoveryState = observed.Status.ToString();
+            var saved = await _executionStore.UpdateAsync(execution, ActionNodeState.Running);
+            if (saved.IsError) { outcome.StillIndeterminate++; continue; }
+            await _sagaStore.TrySignalAsync(run.Id.ToString(), $"operator:{execution.NodeId:N}", null, CancellationToken.None);
+            if (execution.State == ActionNodeState.Succeeded) outcome.ReconciledConfirmed++;
+            else outcome.ReleasedFailedOnChain++;
         }
-
-        // Re-read the run so the caller sees the post-unpark status (the saga
-        // projection flips AwaitingReconciliation→Running as the un-parked step
-        // resumes). A run with no candidates, or all still-indeterminate, stays
-        // AwaitingReconciliation.
         var refreshed = await _runStore.GetByIdAsync(run.Id);
         outcome.Status = refreshed.Result?.Status ?? run.Status;
         return outcome;
     }
-
-    /// <summary>
-    /// Re-probe chain truth for a recorded broadcast tx, mirroring the step
-    /// handler's <c>ResolveProvider</c>/probe path. A missing hash, an unresolvable
-    /// provider, or a probe error all fold to <see cref="ChainConfirmation.Unknown"/>
-    /// — the conservative verdict that parks rather than re-broadcasts.
-    /// </summary>
-    private async Task<ChainConfirmation> ProbeConfirmationAsync(string? txHash, string? chainType)
-    {
-        if (string.IsNullOrWhiteSpace(txHash))
-            return ChainConfirmation.Unknown;
-
-        IBlockchainProvider? provider;
-        try
-        {
-            provider = string.IsNullOrWhiteSpace(chainType)
-                ? _chainFactory.GetDefaultProvider()
-                : _chainFactory.GetProvider(chainType, _chainFactory.DefaultNetwork);
-        }
-        catch
-        {
-            return ChainConfirmation.Unknown;
-        }
-
-        var conf = await provider.GetTransactionConfirmationAsync(txHash!, CancellationToken.None);
-        return conf.IsError ? ChainConfirmation.Unknown : conf.Result;
-    }
-
-    /// <summary>
-    /// Un-park the saga step the step handler parked for a reconciliation node. The
-    /// gate id mirrors the handler's park (<c>recon:{nodeId}</c>); a single-winner
-    /// <c>TrySignalAsync</c> flips the parked step back to Pending so the processor
-    /// re-dispatches it. Idempotent — a second un-park (a racing sweep) is a no-op.
-    /// </summary>
-    private async Task UnparkReconciliationStepAsync(Guid runId, Guid nodeId)
-    {
-        var reconGateId = $"recon:{nodeId}";
-        await _sagaStore.TrySignalAsync(
-            runId.ToString(), reconGateId, newPayloadJson: null, CancellationToken.None);
-    }
-
-    // ── Workflow helpers ───────────────────────────────────────────────────
 
     /// <summary>The entry node: the explicit <c>IsEntry</c> node, else the
     /// lowest <c>ExecutionOrder</c> node (the validator's topological head).</summary>
@@ -2600,21 +2071,6 @@ public class ActionManager : IActionManager, IParkedRunReconciler, IValueNodePau
         if (entry is not null)
             return entry;
         return action.Nodes.OrderBy(n => n.ExecutionOrder).FirstOrDefault();
-    }
-
-    /// <summary>Enqueue an action node as a saga step (the first step of a run, or
-    /// a manual/signal-driven resume). Mirrors the handler's self-advance enqueue
-    /// so the correlation key, step name, and idempotency key are derived
-    /// identically.</summary>
-    private async Task EnqueueWorkflowNodeAsync(
-        Guid runId, Guid actionId, Guid userId, Guid nodeId, string? signalPayload)
-    {
-        var payload = new ActionStepPayload(runId, actionId, userId, nodeId, signalPayload);
-        var stepName = nodeId.ToString();
-        var idemKey = SagaKeys.StepIdempotencyKey(runId.ToString(), stepName);
-        await _sagaStore.EnqueueNextStepAsync(
-            ActionWorkflowSaga.Name, stepName, runId.ToString(),
-            idemKey, SagaStep<ActionStepPayload>.Serialize(payload), CancellationToken.None);
     }
 
     /// <summary>Re-serialize the parked gate step's payload with the delivered

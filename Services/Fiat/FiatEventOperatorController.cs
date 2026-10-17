@@ -4,26 +4,11 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AZOA.WebAPI.Services.Fiat;
 
-/// <summary>
-/// The operator's view of payment-rail deliveries nothing finished.
-///
-/// <para>Two statuses land here. <c>Failed</c> was answered 500 and the provider retries within
-/// its own budget. <c>Received</c> is the one that needs a person: it is what
-/// <see cref="FiatEventDispositions.ToRowStatus"/> parks an <c>AcceptedPending</c> delivery at
-/// "so a sweep or a redelivery picks it up", while
-/// <see cref="FiatEventDispositions.ToStatusCode"/> answers 202 — stop retrying. There is no
-/// sweep. This board is the reader that makes the durable row mean something.</para>
-///
-/// <para>Guarded by the hardened <c>Operator</c> policy — a JWT floor plus an explicit operator
-/// capability, never an API key. The rows carry provider correlation ids for other people's
-/// payments, which is server-side detail and never tenant-projected.</para>
-///
-/// <para>Colocated with the inbox rather than under <c>Controllers/</c> because that directory
-/// belongs to other items in this wave; MVC discovers controllers by type, not by folder.</para>
-/// </summary>
+/// <summary>Operator visibility and replay for verified payment events; see AGENTS.md.</summary>
 [ApiController]
 [Route("api/admin/fiat-events")]
 // OI-65, and the same reason as the on-ramp lot board beside it: api/operator/ is the only prefix
@@ -68,6 +53,18 @@ public sealed class FiatEventOperatorController : ControllerBase
         }
 
         return Ok(AZOAResult<IReadOnlyList<FiatEventView>>.Success(board, "Success"));
+    }
+
+    /// <summary>Replays a verified delivery through the authoritative handlers.</summary>
+    [HttpPost("{id}/replay")]
+    [EnableRateLimiting("financial")]
+    public async Task<IActionResult> Replay(string id, [FromServices] FiatEventRecovery recovery, CancellationToken ct)
+    {
+        var result = await recovery.ReplayAsync(id, ct);
+        if (result.IsError || result.Result is null) return Conflict(result);
+        _logger.LogWarning("Operator {Actor} replayed fiat event {EventId}; status {Status}.",
+            User.Identity?.Name, id, result.Result.Status);
+        return Ok(AZOAResult<FiatEventView>.Success(FiatEventView.From(result.Result)));
     }
 }
 

@@ -20,7 +20,7 @@ public sealed class UserNFTGetCompositeNodeHandler : IActionNodeHandler
     {
         if (!ActionNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(ActionNodeType.UserNFTGetComposite), out var cfg, out var cfgError))
             return ActionNodeResults.Fail(cfgError);
-        var r = await _userNFTService.GetUserNFTCompositeAsync(cfg.Id);
+        var r = await _userNFTService.GetUserNFTCompositeAsync(cfg.Id, callerUserId: context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);
         return ActionNodeResults.Ok(outputJson);

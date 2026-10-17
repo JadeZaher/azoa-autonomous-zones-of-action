@@ -156,34 +156,14 @@ export interface OperatorKycDecisionRequest {
  * declared here, because a contract that restates every server field drifts on the ones nobody
  * reads.
  */
-export interface OperatorOnRampLot {
-    id: string;
-    intentId: string;
-    status: string;
-    statusReason?: string | null;
-    /** Cleared and still uncredited — the person is out of pocket. */
-    chargedAndUncredited: boolean;
-    /** Parked where the node will never move it on its own. */
-    needsAPersonToMoveIt: boolean;
-    fiatMinorUnits: number;
-    currencyCode: string;
-    createdAt: string;
-}
+export type OperatorOnRampLot = import("azoa-sdk").OnRampLotView;
 
 /**
  * A payment-rail delivery nothing finished. OI-65: `providerWasToldToStopRetrying` is the one
  * that needs a person — this node answered 202 and the provider will not deliver it again.
  * Mirrors `FiatEventView` (`Services/Fiat/FiatEventOperatorController.cs`).
  */
-export interface OperatorFiatEvent {
-    id: string;
-    providerEventId: string;
-    eventType: string;
-    status: string;
-    providerWasToldToStopRetrying: boolean;
-    attemptCount: number;
-    lastError?: string | null;
-}
+export type OperatorFiatEvent = import("azoa-sdk").FiatEventView;
 
 export interface OperatorResponse<T> {
     result: T;

@@ -11,6 +11,80 @@ namespace AZOA.WebAPI.Tests.Managers;
 public sealed class NodeFeeScheduleManagerTests
 {
     [Fact]
+    public async Task FullWidthSwapInputKeepsExactVersionedFeeAndNetWithoutUInt64Truncation()
+    {
+        var manager = new NodeFeeScheduleManager(new FakeNodeFeeScheduleStore(new NodeFeeSchedule
+        {
+            SwapFlatDenomination = NodeFeeSchedule.InputBaseUnitsV1, SwapFlatBaseUnits = "7", SwapBps = 25, Version = 9,
+        }));
+        const string gross = "1000000000000000000000000000000";
+        var result = await manager.QuoteSwapBaseUnitsAsync(gross);
+        result.IsError.Should().BeFalse(result.Message);
+        result.Result!.GrossAmount.Should().Be(gross);
+        result.Result.FeeAmount.Should().Be("2500000000000000000000000007");
+        result.Result.NetAmount.Should().Be("997499999999999999999999999993");
+        result.Result.ScheduleVersion.Should().Be(9);
+        result.Result.Denomination.Should().Be(NodeFeeSchedule.InputBaseUnitsV1);
+        (await manager.QuoteAsync(NodeFeeOperation.Swap, 1000)).Result!.FeeAmount.Should().Be("9");
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("01")]
+    [InlineData("-1")]
+    [InlineData("1e30")]
+    [InlineData(" 10")]
+    public async Task FullWidthQuoteRejectsNonCanonicalAmountsAndNeverInventsMissingPolicy(string gross)
+    {
+        var manager = new NodeFeeScheduleManager(new FakeNodeFeeScheduleStore());
+        (await manager.QuoteSwapBaseUnitsAsync(gross)).IsError.Should().BeTrue();
+        (await manager.QuoteSwapBaseUnitsAsync("1000000000000000000000000000000")).IsError.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("7")]
+    public async Task SwapQuoteRequiresAuditedExplicitDenominationEvenForLegacyZero(string flat)
+    {
+        var store = new FakeNodeFeeScheduleStore(new NodeFeeSchedule { SwapFlatBaseUnits = flat, Version = 3 });
+        var manager = new NodeFeeScheduleManager(store);
+        (await manager.QuoteAsync(NodeFeeOperation.Swap, 1000)).IsError.Should().BeTrue();
+        var adopted = await manager.UpdateScheduleAsync(new NodeFeeScheduleUpdateRequest
+        {
+            ExpectedVersion = 3, SwapFlatDenomination = NodeFeeSchedule.InputBaseUnitsV1,
+        }, Guid.NewGuid());
+        adopted.IsError.Should().BeFalse(adopted.Message);
+        adopted.Result!.Swap.Denomination.Should().Be(NodeFeeSchedule.InputBaseUnitsV1);
+        store.Audits.Should().ContainSingle();
+        store.Audits[0].ScheduleJson.Should().Contain(NodeFeeSchedule.InputBaseUnitsV1);
+        var quote = await manager.QuoteAsync(NodeFeeOperation.Swap, 1000);
+        quote.IsError.Should().BeFalse(quote.Message);
+        quote.Result!.FeeAmount.Should().Be(flat);
+        quote.Result.Denomination.Should().Be(NodeFeeSchedule.InputBaseUnitsV1);
+        quote.Result.ScheduleVersion.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task MissingSwapPolicyDoesNotBecomeImplicitZeroAndUnknownDenominationCannotBeAdopted()
+    {
+        var store = new FakeNodeFeeScheduleStore();
+        var manager = new NodeFeeScheduleManager(store);
+        (await manager.QuoteAsync(NodeFeeOperation.Swap, 1000)).IsError.Should().BeTrue();
+        (await manager.UpdateScheduleAsync(new NodeFeeScheduleUpdateRequest
+        {
+            SwapFlatDenomination = "whole-token-v1",
+        }, Guid.NewGuid())).IsError.Should().BeTrue();
+        store.Audits.Should().BeEmpty();
+        var configured = await manager.UpdateScheduleAsync(new NodeFeeScheduleUpdateRequest
+        {
+            ExpectedVersion = 0, SwapFlatDenomination = NodeFeeSchedule.InputBaseUnitsV1,
+        }, Guid.NewGuid());
+        configured.IsError.Should().BeFalse(configured.Message);
+        configured.Result!.Version.Should().Be(1);
+        store.Audits.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task GetScheduleAsync_WithNoPersistedRow_ReturnsZeroFeeVersionZero()
     {
         var manager = new NodeFeeScheduleManager(new FakeNodeFeeScheduleStore());

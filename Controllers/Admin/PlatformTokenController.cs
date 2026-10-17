@@ -10,13 +10,7 @@ using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Controllers.Admin;
 
-/// <summary>
-/// The operator surface for this node's platform unit: read it, and run its one-time
-/// genesis (W3.2, D49). Two gates, because the two verbs are not equally dangerous —
-/// the read is <c>Operator</c>, the irreversible mint additionally requires a
-/// <c>RecentNodeOperatorSession</c> (a fresh, non-API-key node-operator login), the same
-/// treatment API-key creation gets.
-/// </summary>
+/// <summary>Reads verified platform issuance and admits an operator-authorized genesis.</summary>
 /// <remarks>Promotion checklist + the decide-once warning: <c>docs/PLATFORM-TOKEN-GENESIS.md</c>.</remarks>
 [ApiController]
 [Route("api/admin/platform-token")]
@@ -24,17 +18,15 @@ namespace AZOA.WebAPI.Controllers.Admin;
 public sealed class PlatformTokenController : ControllerBase
 {
     private readonly IPlatformTokenGenesis _genesis;
+    private readonly AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? _signingAuthority;
 
-    public PlatformTokenController(IPlatformTokenGenesis genesis)
+    public PlatformTokenController(IPlatformTokenGenesis genesis, AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null)
     {
         _genesis = genesis ?? throw new ArgumentNullException(nameof(genesis));
+        _signingAuthority = signingAuthority;
     }
 
-    /// <summary>
-    /// The platform unit on this node's active network, with live supply. Circulating
-    /// supply is reserve OUTFLOW read from the reserve ledger — an unreadable ledger is
-    /// reported as unavailable (503), never as zero.
-    /// </summary>
+    /// <summary>Returns the verified platform definition and available reserve supply.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(AZOAResult<PlatformTokenStateResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(AZOAResult<PlatformTokenStateResponse>), StatusCodes.Status404NotFound)]
@@ -63,17 +55,7 @@ public sealed class PlatformTokenController : ControllerBase
             PlatformTokenStateResponse.From(state.Result), state.Message));
     }
 
-    /// <summary>
-    /// Runs the one-time genesis: claims the single-winner <c>platform_token</c> row,
-    /// tops the reserve up from the faucet on a dev/test network, mints the asset into the
-    /// platform reserve, and records the asset id.
-    ///
-    /// Idempotent: re-running with the SAME definition replays (no second asset); running
-    /// with a DIFFERENT definition is refused with
-    /// <c>PLATFORM_TOKEN_ALREADY_EXISTS</c> / <c>PLATFORM_TOKEN_DEFINITION_FROZEN</c>,
-    /// because an Algorand ASA cannot be re-scaled and honouring it would create a second
-    /// platform unit.
-    /// </summary>
+    /// <summary>Claims or replays genesis without accepting costs or submitting a new transaction.</summary>
     [HttpPost("genesis")]
     [Authorize(Policy = "RecentNodeOperatorSession")]
     [EnableRateLimiting("financial")]
@@ -90,6 +72,10 @@ public sealed class PlatformTokenController : ControllerBase
                 Message = "Invalid token.",
             });
 
+        var factory = _signingAuthority ?? throw new InvalidOperationException("Platform genesis credential capture is not registered.");
+        var captured = await factory.CaptureCredentialAsync(User, ct);
+        if (captured.IsError || captured.Result is null) return BadRequest(captured);
+        request.AuthenticationWitness = captured.Result;
         var outcome = await _genesis.RunAsync(request, operatorUserId.Value, ct);
         if (outcome.IsError || outcome.Result is null)
         {
@@ -109,8 +95,8 @@ public sealed class PlatformTokenController : ControllerBase
             };
         }
 
-        return Ok(AZOAResult<PlatformTokenGenesisResponse>.Success(
-            PlatformTokenGenesisResponse.From(outcome.Result), outcome.Message));
+        var response = AZOAResult<PlatformTokenGenesisResponse>.Success(PlatformTokenGenesisResponse.From(outcome.Result), outcome.Message);
+        return outcome.Result.Operation is { State: not "Completed" } ? Accepted(response) : Ok(response);
     }
 
     private Guid? GetUserIdFromClaims()
@@ -209,12 +195,14 @@ public sealed class PlatformTokenStateResponse
 /// <summary>What a genesis run did.</summary>
 public sealed class PlatformTokenGenesisResponse
 {
+    public AZOA.WebAPI.Models.Blockchain.FungibleCreationView? Operation { get; init; }
+    public string State => Operation?.State ?? "Completed";
     public PlatformTokenDefinitionResponse Definition { get; init; } = new();
 
     /// <summary><c>false</c> when the call replayed an already-completed genesis.</summary>
     public bool Created { get; init; }
 
-    /// <summary>Operational note (faucet top-up outcome); null when nothing was needed.</summary>
+    /// <summary>Funding and recovery guidance for the original genesis operation.</summary>
     public string? OperationsNote { get; init; }
 
     /// <summary>Projects the domain outcome onto the allowlisted wire shape.</summary>
@@ -227,6 +215,7 @@ public sealed class PlatformTokenGenesisResponse
             Definition = PlatformTokenDefinitionResponse.From(outcome.Definition),
             Created = outcome.Created,
             OperationsNote = outcome.OperationsNote,
+            Operation = outcome.Operation,
         };
     }
 }

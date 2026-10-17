@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using AZOA.WebAPI.Models.Responses;
-using AZOA.WebAPI.Core.Surreal;   // SurrealRecordParam (record<> binding, never a bare hex id)
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;   // SurrealTransientConflict (retryable 3.x txn conflicts)
@@ -26,6 +25,9 @@ public static class OnRampLotStatuses
 
     /// <summary>A refund or dispute took the money back and the units with it (W4.3).</summary>
     public const string Reversed = "Reversed";
+
+    public const string RefundPending = "RefundPending";
+    public const string Refunded = "Refunded";
 
     /// <summary>
     /// The statuses that will never become <see cref="Issued"/> without a person acting.
@@ -93,218 +95,98 @@ public interface IOnRampLotLedger
 /// <c>Providers/Stores/Surreal/</c> is outside this item's file boundary; the interface is
 /// <see cref="IOnRampLotLedger"/>, so moving it later is a file move.
 /// </summary>
-public sealed class SurrealOnRampLotLedger : IOnRampLotLedger
+public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampLotLedger
 {
-    private const string Table = OnRampLot.SchemaNameConst;
-
-    private const string IssuedForUserStatement =
-        "SELECT * FROM on_ramp_lot WHERE subject_user_id = $_user AND status = $_status "
-        + "ORDER BY issued_at ASC";
-
-    private const string NeedingOperatorStatement =
-        "SELECT * FROM on_ramp_lot WHERE status INSIDE $_statuses ORDER BY created_at DESC LIMIT $_limit";
-
-    private const string StrandedPendingStatement =
-        "SELECT * FROM on_ramp_lot WHERE status = $_status AND updated_at < $_before "
-        + "ORDER BY created_at DESC LIMIT $_limit";
-
-    /// <summary>
-    /// How long a lot may sit Pending before it is a person's problem rather than a retry's.
-    /// </summary>
-    /// <remarks>
-    /// Sized to outlast the payment provider's own webhook retry budget (Stripe retries a failed
-    /// delivery for about three days). Past it nothing will bring the delivery back on its own, so
-    /// a lot still Pending is money the node took and never credited.
-    /// </remarks>
     public static readonly TimeSpan StrandedPendingAfter = TimeSpan.FromHours(72);
 
-    private readonly ISurrealExecutor _executor;
-
-    public SurrealOnRampLotLedger(ISurrealExecutor executor)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<OnRampLotClaim>> ClaimAsync(OnRampLot candidate, CancellationToken ct = default)
     {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
-    }
-
-    /// <inheritdoc />
-    public async Task<AZOAResult<OnRampLotClaim>> ClaimAsync(
-        OnRampLot candidate, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(candidate);
-
         try
         {
-            var create = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", candidate.Id)
-                .WithParam("_body", candidate);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(create, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            var created = response.GetValues<OnRampLot>(0).SingleOrDefault() ?? candidate;
-            return AZOAResult<OnRampLotClaim>.Success(new OnRampLotClaim(created, Created: true), "Created.");
+            var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
+            response.EnsureAllOk();
+            return AZOAResult<OnRampLotClaim>.Success(new(response.GetValues<OnRampLot>(0).Single(), true));
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
-            // A CREATE that lost to an existing row is the redelivery case, not a fault — but only
-            // when the row really is there now. Re-read before concluding that, so a transport
-            // failure is never reported as "this payment already has a lot" (which would leave a
-            // person charged with nothing credited and nothing to retry).
-            var existing = await GetAsync(candidate.Id, ct);
-            if (!existing.IsError && existing.Result is not null)
-                return AZOAResult<OnRampLotClaim>.Success(
-                    new OnRampLotClaim(existing.Result, Created: false), "Already claimed.");
-
-            return new AZOAResult<OnRampLotClaim>()
-                .CaptureException(ex, $"On-ramp lot write failed: {ex.Message}");
+            var existing = await executor.QuerySingleAsync<OnRampLot>(SurrealQuery<OnRampLot>.Key(candidate.Id), ct);
+            if (existing is null) throw;
+            return AZOAResult<OnRampLotClaim>.Success(new(existing, false));
         }
     }
 
-    /// <inheritdoc />
-    public Task<AZOAResult<OnRampLot?>> GetByIntentAsync(string intentId, CancellationToken ct = default)
-        => string.IsNullOrWhiteSpace(intentId)
-            ? Task.FromResult(new AZOAResult<OnRampLot?> { Result = null, Message = "Not found." })
-            : GetAsync(OnRampLot.RecordIdFor(intentId), ct);
+    /// <inheritdoc/>
+    public async Task<AZOAResult<OnRampLot?>> GetByIntentAsync(string intentId, CancellationToken ct = default)
+        => new() { Result = string.IsNullOrWhiteSpace(intentId) ? null
+            : await executor.QuerySingleAsync<OnRampLot>(SurrealQuery<OnRampLot>.Key(OnRampLot.RecordIdFor(intentId)), ct) };
 
-    /// <inheritdoc />
-    public async Task<AZOAResult<OnRampLot>> UpdateIfVersionAsync(
-        OnRampLot row, long expectedVersion, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<OnRampLot>> UpdateIfVersionAsync(OnRampLot row, long expectedVersion, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(row);
-
-        try
+        var update = SurrealWriter.UpdateOnly<OnRampLot>(row.Id)
+            .Where(lot => lot.Version == expectedVersion)
+            .Set(lot => lot.QuantityBaseUnits, row.QuantityBaseUnits)
+            .Set(lot => lot.GrossQuantityBaseUnits, row.GrossQuantityBaseUnits)
+            .Set(lot => lot.NodeFeeBaseUnits, row.NodeFeeBaseUnits)
+            .Set(lot => lot.ConsumedBaseUnits, row.ConsumedBaseUnits)
+            .Set(lot => lot.PriceScheduleVersion, row.PriceScheduleVersion)
+            .Set(lot => lot.UnitsPerMinorUnit, row.UnitsPerMinorUnit)
+            .Set(lot => lot.Status, row.Status)
+            .Set(lot => lot.AttemptCount, row.AttemptCount)
+            .Set(lot => lot.Version, row.Version)
+            .Set(lot => lot.UpdatedAt, row.UpdatedAt)
+            .Set(lot => lot.RecoveryAuditJson, row.RecoveryAuditJson);
+        update = update.Set(lot => lot.RefundAttempt, row.RefundAttempt)
+            .Set(lot => lot.RefundedMinorUnits, row.RefundedMinorUnits);
+        update = row.PriceScheduleId is null ? update.Unset(lot => lot.PriceScheduleId) : update.Set(lot => lot.PriceScheduleId, row.PriceScheduleId);
+        update = row.SourceCheckoutSessionId is null ? update.Unset(lot => lot.SourceCheckoutSessionId) : update.Set(lot => lot.SourceCheckoutSessionId, row.SourceCheckoutSessionId);
+        update = row.SourcePaymentIntentId is null ? update.Unset(lot => lot.SourcePaymentIntentId) : update.Set(lot => lot.SourcePaymentIntentId, row.SourcePaymentIntentId);
+        update = row.SourceChargeId is null ? update.Unset(lot => lot.SourceChargeId) : update.Set(lot => lot.SourceChargeId, row.SourceChargeId);
+        update = row.StatusReason is null ? update.Unset(lot => lot.StatusReason) : update.Set(lot => lot.StatusReason, row.StatusReason);
+        update = row.OperationId is null ? update.Unset(lot => lot.OperationId) : update.Set(lot => lot.OperationId, row.OperationId);
+        update = row.IssuedAt is null ? update.Unset(lot => lot.IssuedAt) : update.Set(lot => lot.IssuedAt, row.IssuedAt);
+        update = row.ReversalWindowEnds is null ? update.Unset(lot => lot.ReversalWindowEnds) : update.Set(lot => lot.ReversalWindowEnds, row.ReversalWindowEnds);
+        update = row.ProviderRefundId is null ? update.Unset(lot => lot.ProviderRefundId) : update.Set(lot => lot.ProviderRefundId, row.ProviderRefundId);
+        update = row.ProviderRefundStatus is null ? update.Unset(lot => lot.ProviderRefundStatus) : update.Set(lot => lot.ProviderRefundStatus, row.ProviderRefundStatus);
+        update = row.RefundStartedAt is null ? update.Unset(lot => lot.RefundStartedAt) : update.Set(lot => lot.RefundStartedAt, row.RefundStartedAt);
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
-            var update = SurrealQuery
-                .Of("UPDATE type::record($_t, $_id) CONTENT $_body WHERE version = $_expected RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", row.Id)
-                .WithParam("_body", row)
-                .WithParam("_expected", expectedVersion);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(update, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            if (response.Count == 0 || !response[0].IsOk || response[0].AffectedCount() != 1)
-                return AZOAResult<OnRampLot>.Failure(
-                    $"On-ramp lot '{row.Id}' changed underneath this update "
-                    + $"(expected version {expectedVersion}).");
-
-            return AZOAResult<OnRampLot>.Success(
-                response.GetValues<OnRampLot>(0).SingleOrDefault() ?? row, "Saved.");
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<OnRampLot>()
-                .CaptureException(ex, $"On-ramp lot update failed: {ex.Message}");
-        }
+            var result = await executor.ExecuteAsync(update.Build(), ct);
+            result.EnsureAllOk();
+            return result;
+        }, ct);
+        var saved = response.GetValues<OnRampLot>(0).SingleOrDefault();
+        return saved is null ? AZOAResult<OnRampLot>.Failure("The lot changed during this update.")
+            : AZOAResult<OnRampLot>.Success(saved);
     }
 
-    /// <inheritdoc />
-    public async Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListIssuedForUserAsync(
-        Guid userId, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListIssuedForUserAsync(Guid userId, CancellationToken ct = default)
     {
-        if (userId == Guid.Empty)
-            return AZOAResult<IReadOnlyList<OnRampLot>>.Success(Array.Empty<OnRampLot>(), "Success");
-
-        try
-        {
-            // subject_user_id is a record<user> column, so the parameter has to be bound as a
-            // native record id — a bare string compares equal to nothing and would answer "this
-            // person has no on-ramped units" with no error at all.
-            var query = SurrealQuery
-                .Of(IssuedForUserStatement)
-                .WithParam("_user", SurrealRecordParam.Of(User.SchemaNameConst, userId.ToString("N")))
-                .WithParam("_status", OnRampLotStatuses.Issued);
-
-            var rows = await _executor.QueryAsync<OnRampLot>(query, ct);
-            return AZOAResult<IReadOnlyList<OnRampLot>>.Success(
-                rows?.ToList() ?? new List<OnRampLot>(), "Success");
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<IReadOnlyList<OnRampLot>>()
-                .CaptureException(ex, $"On-ramp lot read failed: {ex.Message}");
-        }
+        var subject = SurrealLink.ToLink(User.SchemaNameConst, userId.ToString("N"));
+        var rows = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From()
+            .Where(row => row.SubjectUserId == subject && row.Status == OnRampLotStatuses.Issued)
+            .OrderBy(row => row.IssuedAt), ct);
+        return AZOAResult<IReadOnlyList<OnRampLot>>.Success(rows.ToList());
     }
 
-    /// <inheritdoc />
-    public async Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
-        int limit, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(int limit, CancellationToken ct = default)
     {
         var capped = Math.Clamp(limit, 1, 500);
-
-        try
-        {
-            // Two literal statements rather than one OR: each arm keeps its own LIMIT (so a flood
-            // of one kind cannot crowd the other off the board) and each keeps a statement shape
-            // this file already proves elsewhere.
-            var decidedQuery = SurrealQuery
-                .Of(NeedingOperatorStatement)
-                .WithParam("_statuses", OnRampLotStatuses.NeedingOperatorStatuses.ToArray())
-                .WithParam("_limit", capped);
-            var decided = (await _executor.QueryAsync<OnRampLot>(decidedQuery, ct))?.ToList()
-                ?? new List<OnRampLot>();
-
-            var strandedQuery = SurrealQuery
-                .Of(StrandedPendingStatement)
-                .WithParam("_status", OnRampLotStatuses.Pending)
-                .WithParam("_before", DateTimeOffset.UtcNow - StrandedPendingAfter)
-                .WithParam("_limit", capped);
-            var stranded = (await _executor.QueryAsync<OnRampLot>(strandedQuery, ct))?.ToList()
-                ?? new List<OnRampLot>();
-
-            return AZOAResult<IReadOnlyList<OnRampLot>>.Success(
-                MergeOperatorReads(decided, stranded, capped), "Success");
-        }
-        catch (Exception ex)
-        {
-            // A read that cannot answer must say so. Returning an empty board here would tell an
-            // operator that nobody is owed money, which is the one answer that must never be a
-            // guess.
-            return new AZOAResult<IReadOnlyList<OnRampLot>>()
-                .CaptureException(ex, $"On-ramp lot read failed: {ex.Message}");
-        }
+        var before = DateTimeOffset.UtcNow - StrandedPendingAfter;
+        var decided = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From()
+            .Where(row => row.Status == OnRampLotStatuses.Refused || row.Status == OnRampLotStatuses.Stuck
+                || row.Status == OnRampLotStatuses.RefundPending).OrderByDescending(row => row.CreatedAt).Limit(capped), ct);
+        var stranded = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From()
+            .Where(row => row.Status == OnRampLotStatuses.Pending && row.CreatedAt < before)
+            .OrderByDescending(row => row.CreatedAt).Limit(capped), ct);
+        return AZOAResult<IReadOnlyList<OnRampLot>>.Success(MergeOperatorReads(decided, stranded, capped));
     }
 
-    /// <summary>Folds the two operator reads into one board: newest first, one row per lot.</summary>
-    public static IReadOnlyList<OnRampLot> MergeOperatorReads(
-        IEnumerable<OnRampLot> decided, IEnumerable<OnRampLot> strandedPending, int limit)
-    {
-        ArgumentNullException.ThrowIfNull(decided);
-        ArgumentNullException.ThrowIfNull(strandedPending);
-
-        // A lot can only satisfy one arm at a time, but the two reads are not one transaction: a
-        // lot parked between them would otherwise appear twice on the board.
-        return decided
-            .Concat(strandedPending)
-            .GroupBy(row => row.Id, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .OrderByDescending(row => row.CreatedAt)
-            .Take(Math.Max(limit, 1))
-            .ToList();
-    }
-
-    private async Task<AZOAResult<OnRampLot?>> GetAsync(string recordId, CancellationToken ct)
-    {
-        try
-        {
-            var query = SurrealQuery<OnRampLot>.Key(recordId);
-            var row = await _executor.QuerySingleAsync<OnRampLot>(query, ct);
-            return new AZOAResult<OnRampLot?> { Result = row, Message = row is null ? "Not found." : "Success" };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<OnRampLot?>()
-                .CaptureException(ex, $"On-ramp lot read failed: {ex.Message}");
-        }
-    }
+    public static IReadOnlyList<OnRampLot> MergeOperatorReads(IEnumerable<OnRampLot> decided,
+        IEnumerable<OnRampLot> strandedPending, int limit)
+        => decided.Concat(strandedPending).GroupBy(row => row.Id, StringComparer.Ordinal)
+            .Select(group => group.First()).OrderByDescending(row => row.CreatedAt).Take(Math.Max(limit, 1)).ToList();
 }

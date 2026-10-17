@@ -29,8 +29,8 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Algorand blockchain provider using direct REST API calls to Algod and Indexer.
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
-public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule,
-    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule
+public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule,
+    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule, INftTransactionModule
 {
     // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a
@@ -738,21 +738,7 @@ public class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAto
         }
     }
 
-    public override Task<AZOAResult<string>> DeployContractAsync(
-        byte[] contractCode, string walletAddress,
-        Dictionary<string, object>? args = null, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>(
-            "AVM contract deployment requires TEAL compilation and client-side signing. Not yet implemented."));
-    }
 
-    public override Task<AZOAResult<object>> CallContractAsync(
-        string contractAddress, string method, Dictionary<string, object> args,
-        string walletAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<object>(
-            "AVM contract calls require client-side signing. Not yet implemented."));
-    }
 
     public override async Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)

@@ -191,3 +191,5 @@ continuation; do not call `CompleteStepAsync` followed by `EnqueueNextStepAsync`
 for the same logical transition. Completion and compensation share the lease
 guard/create helpers so their source literals remain classified atomicity
 escape hatches rather than proliferating raw CRUD.
+
+SagaOpaqueKey in Helpers now owns the exact existing s_ prefix and _C_ colon mapping. Saga admission, lookup, parking and operator recovery must use the shared codec for correlation, step, idempotency and gate storage fields. This extraction deliberately preserves existing bytes and legacy untagged decoding; it is not a data migration or a newly generalized arbitrary-text encoding.

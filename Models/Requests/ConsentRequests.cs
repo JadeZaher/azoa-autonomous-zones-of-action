@@ -13,6 +13,8 @@ namespace AZOA.WebAPI.Models.Requests;
 /// </summary>
 public class GrantConsentRequest
 {
+    /// <summary>Caller-persisted command identity, reused unchanged after response loss.</summary>
+    public Guid RequestId { get; set; }
     /// <summary>The tenant the user is authorizing.</summary>
     public Guid TenantId { get; set; }
 

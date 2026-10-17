@@ -1,6 +1,6 @@
 using FluentAssertions;
 using AZOA.WebAPI.Interfaces.ActionExecution;
-using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Providers.Stores;
 using AZOA.WebAPI.Services;
@@ -24,7 +24,7 @@ public class ActionManagerSkipPropagationTests
     /// chain. GateCheck is wired to a failing handler so it produces Failed.
     /// Returns the manager + run after execution so callers can inspect node states.
     /// </summary>
-    private static async Task<(ActionManager manager,
+    private static async Task<(DurableActionExecutionHarness manager,
                                 InMemoryActionNodeExecutionStore execStore,
                                 ActionEntity action,
                                 ActionRun run)>
@@ -80,7 +80,7 @@ public class ActionManagerSkipPropagationTests
             new AlwaysSucceedHandler(ActionNodeType.Transfer),
         };
 
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             actionStore,
             runStore,
             execStore,
@@ -168,7 +168,7 @@ public class ActionManagerSkipPropagationTests
         action.Nodes[1].ExecutionOrder = 1;
         await actionStore.UpsertActionAsync(action);
 
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             actionStore, runStore, execStore, new ActionDagValidator(), new ActionDagExecutabilityValidator(),
             new ActionNodeHandlerRegistry(new IActionNodeHandler[]
             {
@@ -235,7 +235,7 @@ public class ActionManagerSkipPropagationTests
         action.Nodes[2].ExecutionOrder = 2;
         await actionStore.UpsertActionAsync(action);
 
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             actionStore, runStore, execStore, new ActionDagValidator(), new ActionDagExecutabilityValidator(),
             new ActionNodeHandlerRegistry(new IActionNodeHandler[]
             {
@@ -295,7 +295,7 @@ public class ActionManagerSkipPropagationTests
         action.Nodes[1].ExecutionOrder = 1;
         await actionStore.UpsertActionAsync(action);
 
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             actionStore, runStore, execStore, new ActionDagValidator(), new ActionDagExecutabilityValidator(),
             new ActionNodeHandlerRegistry(new IActionNodeHandler[]
             {

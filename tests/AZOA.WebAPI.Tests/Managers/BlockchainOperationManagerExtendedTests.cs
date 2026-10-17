@@ -38,10 +38,6 @@ public class BlockchainOperationManagerExtendedTests
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_swap" });
         _algoProvider.Setup(p => p.TransferAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string> { Result = "algo_xfer" });
-        _algoProvider.Setup(p => p.DeployContractAsync(It.IsAny<byte[]>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object>?>(), It.IsAny<CancellationToken>()))
-                     .ReturnsAsync(new AZOAResult<string> { Result = "algo_deploy" });
-        _algoProvider.Setup(p => p.CallContractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                     .ReturnsAsync(new AZOAResult<object> { Result = new object() });
 
         _solProvider = new Mock<IBlockchainProvider>();
         _solProvider.Setup(p => p.ChainType).Returns("Solana");
@@ -117,52 +113,6 @@ public class BlockchainOperationManagerExtendedTests
 
         result.IsError.Should().BeFalse();
         op.Status.Should().Be(OperationStatus.Transferred);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_DeployContract_ShouldDelegateAndSetStatus()
-    {
-        var op = new BlockchainOperation
-        {
-            OperationType = "DeployContract",
-            Parameters = new Dictionary<string, string>
-            {
-                ["ChainType"] = "Algorand",
-                ["ContractCode"] = Convert.ToBase64String(new byte[] { 1, 2, 3 }),
-                ["WalletAddress"] = "addr"
-            }
-        };
-        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((IBlockchainOperation o, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = o });
-
-        var result = await _manager.ExecuteAsync(op);
-
-        result.IsError.Should().BeFalse();
-        op.Status.Should().Be(OperationStatus.Deployed);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_CallContract_ShouldDelegateAndSetStatus()
-    {
-        var op = new BlockchainOperation
-        {
-            OperationType = "CallContract",
-            Parameters = new Dictionary<string, string>
-            {
-                ["ChainType"] = "Algorand",
-                ["ContractAddress"] = "0x123",
-                ["Method"] = "mint",
-                ["Args"] = "{}",
-                ["WalletAddress"] = "addr"
-            }
-        };
-        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((IBlockchainOperation o, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = o });
-
-        var result = await _manager.ExecuteAsync(op);
-
-        result.IsError.Should().BeFalse();
-        op.Status.Should().Be(OperationStatus.Called);
     }
 
     [Fact]

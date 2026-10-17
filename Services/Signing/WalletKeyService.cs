@@ -28,6 +28,9 @@ public class WalletKeyService
                      ?? throw new InvalidOperationException(
                          "AZOA:WalletEncryptionKey is required for platform wallet generation.");
 
+        if (string.IsNullOrWhiteSpace(secret))
+            throw new InvalidOperationException("AZOA:WalletEncryptionKey cannot be empty.");
+
         // Derive a 256-bit key from the secret using SHA-256
         _encryptionKey = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(secret));
     }
@@ -57,6 +60,16 @@ public class WalletKeyService
         var generated = GenerateAlgorandKeypair(includeSeedPhrase: false);
         return (generated.publicKey, generated.privateKeyHex, generated.address);
     }
+
+    /// <summary>Authenticates a purpose-qualified secret envelope without exposing its contents.</summary>
+    public string FingerprintSecretEnvelope(string envelope)
+        => Convert.ToHexString(HMACSHA256.HashData(_encryptionKey, System.Text.Encoding.UTF8.GetBytes(envelope))).ToLowerInvariant();
+
+    /// <summary>Encrypt an authenticated application secret envelope with the platform key.</summary>
+    public string EncryptSecretEnvelope(string envelope) => AesGcmEncrypt(envelope);
+
+    /// <summary>Decrypt an application secret envelope; the caller must validate its purpose and identity.</summary>
+    public string DecryptSecretEnvelope(string encryptedEnvelope) => AesGcmDecrypt(encryptedEnvelope);
 
     /// <summary>Encrypt a private key hex string for storage.</summary>
     public string EncryptPrivateKey(string privateKeyHex)

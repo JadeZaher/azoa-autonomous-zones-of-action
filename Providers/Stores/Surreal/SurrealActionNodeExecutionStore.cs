@@ -1,423 +1,249 @@
-using System.Text.Json.Serialization;
-using SurrealForge.Client;
-using SurrealForge.Client.Query;
+using System.Text.Json;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
-using SurrealForge.Client.Schema;
+using AZOA.WebAPI.Models.Signing;
+using SurrealForge.Client;
+using SurrealForge.Client.Idempotency;
+using SurrealForge.Client.Query;
+using Row = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionNodeExecution;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
-/// <summary>
-/// SurrealDB-backed <see cref="IActionNodeExecutionStore"/>. One row per
-/// <c>(RunId, NodeId)</c> pair; the natural key is enforced by the UNIQUE
-/// composite index on the <c>action_node_execution</c> schema, so a
-/// concurrent <see cref="CreateAsync"/> for the same pair fails at the DB
-/// boundary rather than producing a duplicate row.
-///
-/// <para>
-/// <b>G2 — <see cref="TryClaimPendingAsync"/></b> is the exactly-once claim
-/// primitive: an atomic conditional <c>UPDATE … WHERE run_id = $rid AND
-/// node_id = $nid AND state = 'Pending' RETURN AFTER</c>. Verbatim from
-/// <c>SURREAL-SCHEMA-HINTS.md</c> §5 (lines 228-237). Under N racing workers
-/// at most one update mutates a row; the others receive <c>AffectedCount==0</c>
-/// (or no <c>state='Pending'</c> match) and return null. <c>IsError == true</c>
-/// is reserved for "row does not exist at all" — the row-exists-but-not-Pending
-/// race-loser case returns <c>Result == null</c> with <c>IsError == false</c>.
-/// </para>
-///
-/// <para>
-/// <b>HIGH#7 state-machine guard</b> on <see cref="UpdateAsync"/>: when the
-/// caller supplies <see cref="ActionNodeState"/> the UPDATE only proceeds when
-/// the currently-stored <c>state</c> equals that value. This mirrors the
-/// fork-vs-in-flight-success race the in-memory store guards against:
-/// returning an error rather than overwriting prevents a Succeeded transition
-/// from silently winning over a concurrent fork's Cancelled stamp (and
-/// vice-versa).
-/// </para>
-///
-/// <para>
-/// Pattern mirrors <see cref="SurrealSagaStore"/> — Guid('N') lowercase-hex
-/// record ids, inline POCO (replace with generated POCO when source-gen
-/// catches up — <c>AZOA.WebAPI.Persistence.SurrealDb.Models.ActionNodeExecution</c>
-/// already exists), every value parameter-bound (G3 / SRDB0001).
-/// </para>
-/// </summary>
-public sealed class SurrealActionNodeExecutionStore : IActionNodeExecutionStore
+/// <inheritdoc/>
+public sealed class SurrealActionNodeExecutionStore(ISurrealExecutor executor) : IActionNodeExecutionStore
 {
-    private const string ExecTable = "action_node_execution";
-
-    // State string literals — passed as bound parameters so the schema
-    // ASSERT INSIDE [...] comparison uses the same tokens the DDL declares.
-    private const string StatePending   = "Pending";
-    private const string StateRunning   = "Running";
-
-    private readonly ISurrealExecutor _executor;
-
-    public SurrealActionNodeExecutionStore(ISurrealExecutor executor)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionNodeExecution?>> TryAdmitAsync(ActionNodeExecution execution, CancellationToken ct = default, long? expectedRunVersion = null)
     {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        if (execution.State != ActionNodeState.Pending || string.IsNullOrWhiteSpace(execution.FrozenInput) || expectedRunVersion is null)
+            return AZOAResult<ActionNodeExecution?>.Failure("Frozen input and a Pending execution are required.");
+        var candidate = execution.Clone();
+        candidate.State = ActionNodeState.Running;
+        candidate.StartedAt = DateTime.UtcNow;
+        var claimed = await UpdateCoreAsync(candidate, ActionNodeState.Pending, ct, expectedRunVersion);
+        return AZOAResult<ActionNodeExecution?>.Success(claimed.IsError ? null : claimed.Result);
     }
 
-    // ── CreateAsync ──────────────────────────────────────────────────────────
-
-    public async Task<AZOAResult<ActionNodeExecution>> CreateAsync(
-        ActionNodeExecution execution, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionNodeExecution>> CreateAsync(ActionNodeExecution execution, CancellationToken ct = default)
     {
-        if (execution is null)
-            return Err<ActionNodeExecution>("CreateAsync: execution must not be null.");
-        if (execution.Id == Guid.Empty)
-            return Err<ActionNodeExecution>("CreateAsync: execution.Id must not be empty.");
-
+        if (execution is null || execution.Id == Guid.Empty)
+            return AZOAResult<ActionNodeExecution>.Failure("An execution identity is required.");
         try
         {
-            var poco = FromDomain(execution);
-
-            // CREATE rather than UPDATE so the UNIQUE (run_id, node_id) index
-            // is the arbiter — a duplicate per-(run, node) insert fails at the
-            // DB boundary rather than overwriting an existing row. The
-            // SurrealStatementException (or non-OK status) surfaces as an
-            // AZOAResult error to the caller.
-            var q = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t",    ExecTable)
-                .WithParam("_id",   poco.Id)
-                .WithParam("_body", poco);
-
-            SurrealResponse resp;
-            try
-            {
-                resp = await _executor.ExecuteAsync(q, ct);
-            }
-            catch (SurrealStatementException ex)
-            {
-                return Err<ActionNodeExecution>(
-                    $"ActionNodeExecution already exists for (run={execution.RunId}, node={execution.NodeId}): {ex.Message}");
-            }
-
-            if (resp.Count == 0 || !resp[0].IsOk)
-            {
-                return Err<ActionNodeExecution>(
-                    $"ActionNodeExecution {execution.Id} could not be created (possible duplicate (run, node)).");
-            }
-
-            return Ok(execution.Clone(), "Created.");
+            var response = await executor.ExecuteAsync(SurrealWriter.Create(ToRow(execution)), ct);
+            response.EnsureAllOk();
+            return AZOAResult<ActionNodeExecution>.Success(ToDomain(response.GetValues<Row>(0).Single()));
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
-            return Err<ActionNodeExecution>($"SurrealActionNodeExecutionStore.CreateAsync({execution.Id}) failed: {ex.Message}");
+            return AZOAResult<ActionNodeExecution>.Failure("An execution already exists for this run and node.");
         }
     }
 
-    // ── GetByIdAsync ─────────────────────────────────────────────────────────
-
+    /// <inheritdoc/>
     public async Task<AZOAResult<ActionNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::record($_t, $_id)")
-                .WithParam("_t",  ExecTable)
-                .WithParam("_id", SurrealId.ToSurrealId(id));
-
-            var rows = await _executor.QueryAsync<ActionNodeExecutionPoco>(q, ct);
-            return rows.Count == 0
-                ? Missing<ActionNodeExecution>($"ActionNodeExecution {id} not found.")
-                : Ok(ToDomain(rows[0]));
-        }
-        catch (Exception ex)
-        {
-            return Err<ActionNodeExecution>($"SurrealActionNodeExecutionStore.GetByIdAsync({id}) failed: {ex.Message}");
-        }
+        var row = await executor.QuerySingleAsync<Row>(SurrealQuery<Row>.Key(id.ToString("N")), ct);
+        return row is null ? AZOAResult<ActionNodeExecution>.Failure("Node execution not found.")
+            : AZOAResult<ActionNodeExecution>.Success(ToDomain(row));
     }
 
-    // ── UpdateAsync ──────────────────────────────────────────────────────────
+    /// <inheritdoc/>
+    public Task<AZOAResult<ActionNodeExecution>> UpdateAsync(ActionNodeExecution execution,
+        ActionNodeState? expectedState = null, CancellationToken ct = default)
+        => UpdateCoreAsync(execution, expectedState, ct, null);
 
-    public async Task<AZOAResult<ActionNodeExecution>> UpdateAsync(
-        ActionNodeExecution execution,
-        ActionNodeState? expectedState = null,
-        CancellationToken ct = default)
+    private async Task<AZOAResult<ActionNodeExecution>> UpdateCoreAsync(ActionNodeExecution execution,
+        ActionNodeState? expectedState, CancellationToken ct, long? expectedRunVersion)
     {
-        if (execution is null)
-            return Err<ActionNodeExecution>("UpdateAsync: execution must not be null.");
-        if (execution.Id == Guid.Empty)
-            return Err<ActionNodeExecution>("UpdateAsync: execution.Id must not be empty.");
-
-        try
+        if (execution is null || execution.Id == Guid.Empty)
+            return AZOAResult<ActionNodeExecution>.Failure("An execution identity is required.");
+        var row = ToRow(execution);
+        var current = await GetByIdAsync(execution.Id, ct);
+        if (current.IsError || current.Result is null) return current;
+        if (current.Result.Version != execution.Version || !ActionOperationIdentity.CanUpdate(current.Result, execution))
+            return AZOAResult<ActionNodeExecution>.Failure("Node execution version or immutable intent changed.");
+        if (current.Result.State == ActionNodeState.Pending && execution.State == ActionNodeState.Running && expectedRunVersion is null)
+            return AZOAResult<ActionNodeExecution>.Failure("New effects require a current scheduler admission decision.");
+        if (expectedRunVersion is null && ((current.Result.SigningAuthorityJson is null && execution.SigningAuthorityJson is not null)
+            || (current.Result.AdmissionRejection is null && execution.AdmissionRejection is not null)))
+            return AZOAResult<ActionNodeExecution>.Failure("Signing authority and no-effect rejection require atomic admission.");
+        WorkflowSigningWitness? signing = null;
+        IReadOnlyList<SurrealQuery>? signingFence = null;
+        ActionFrozenNodeInput? admittedInput = null;
+        if (expectedRunVersion is not null)
         {
-            var surrealId = SurrealId.ToSurrealId(execution.Id);
-
-            // Pre-check existence + the optional state guard. Cheaper than
-            // doing a conditional UPDATE + re-fetch on the miss path, and
-            // gives us a precise error message ("not found" vs "guard
-            // rejected").
-            var headQ = SurrealQuery
-                .Of("SELECT * FROM type::record($_t, $_id)")
-                .WithParam("_t",  ExecTable)
-                .WithParam("_id", surrealId);
-
-            var existing = await _executor.QueryAsync<ActionNodeExecutionPoco>(headQ, ct);
-            if (existing.Count == 0)
-                return Missing<ActionNodeExecution>($"ActionNodeExecution {execution.Id} not found.");
-
-            if (expectedState.HasValue)
+            admittedInput = JsonSerializer.Deserialize<ActionFrozenNodeInput>(execution.FrozenInput!);
+            if (admittedInput is null || admittedInput.Version != 1 || admittedInput.RunId != execution.RunId || admittedInput.NodeId != execution.NodeId)
+                return AZOAResult<ActionNodeExecution>.Failure("Frozen action identity is invalid.");
+        }
+        if (expectedRunVersion is not null && execution.AdmissionRejection is null)
+        {
+            var input = admittedInput!;
+            var scopes = ActionSigningScopes.Required(input.NodeType, input.Config.GetRawText());
+            if (scopes is null) return AZOAResult<ActionNodeExecution>.Failure("Signing scope requirements are unavailable.");
+            if (scopes.Count > 0)
             {
-                var currentState = ParseState(existing[0].State);
-                if (currentState != expectedState.Value)
-                {
-                    return Err<ActionNodeExecution>(
-                        $"state-machine guard rejected update; expected={expectedState.Value} actual={currentState}");
-                }
+                signing = execution.SigningAuthorityJson is null ? null : JsonSerializer.Deserialize<WorkflowSigningWitness>(execution.SigningAuthorityJson);
+                var expectedAction = new ActionEffectAuthority(input.RunId, input.NodeId, input.ActorUserId, input.ActingTenantId,
+                    CanonicalJson.HashCanonical(execution.FrozenInput!));
+                var expectedScopes = scopes.Append(AZOA.WebAPI.Core.AzoaScopes.ActionExecute).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
+                if (signing is null || signing.Action != expectedAction
+                    || !signing.RequiredScopes.Order(StringComparer.Ordinal).SequenceEqual(expectedScopes)
+                    || (signingFence = SigningAuthorityFence.ForNodeAdmission(signing, "node_signing")) is null)
+                    return AZOAResult<ActionNodeExecution>.Failure("Current participant signing authorization is required.");
             }
-
-            var poco = FromDomain(execution);
-
-            // UPDATE ... CONTENT replaces all fields. If the caller passed
-            // expectedState we have already verified above; SurrealDB does
-            // not provide a "WHERE state = $expected" hook inside CONTENT
-            // updates, so the verify-then-update sequence is the simplest
-            // shape that preserves the in-memory store's semantics. The
-            // window between the SELECT and the UPDATE is small; if a
-            // stricter race-resolution is needed in the future, swap this
-            // for an explicit conditional UPDATE with the same SET clause
-            // listing each column individually.
-            // Transaction ids such as the simulated provider's `sim:...` values
-            // must stay scalar strings. Binding them inside CONTENT lets Surreal
-            // coerce colon-bearing values into record ids, rejecting the whole
-            // terminal update and leaving a successfully handled node Running.
-            // Keep the ordinary POCO body, then override this one field with the
-            // coercion-safe scalar expression.
-            poco.TxHash = null;
-            var updateQ = SurrealQuery
-                .Of("UPSERT type::record($_t, $_id) CONTENT object::extend($_body, { tx_hash: IF $_has_tx_hash { array::join($_tx_hash_chars, '') } ELSE { NONE } }) RETURN AFTER")
-                .WithParam("_t",             ExecTable)
-                .WithParam("_id",            surrealId)
-                .WithParam("_body",          poco)
-                .WithParam("_has_tx_hash",   !string.IsNullOrWhiteSpace(execution.TxHash))
-                .WithParam("_tx_hash_chars", SurrealScalarString.ToCharacters(execution.TxHash));
-
-            var resp = await _executor.ExecuteAsync(updateQ, ct);
-            resp.EnsureAllOk();
-
-            return Ok(execution.Clone(), "Updated.");
         }
-        catch (Exception ex)
+        var update = SurrealWriter.UpdateOnly<Row>(row.Id).Where(item => item.Version == row.Version)
+            .Set(item => item.State, row.State).Set(item => item.Version, row.Version + 1)
+            .Set(item => item.StartedAt, row.StartedAt)
+            .Set(item => item.ManualAdvanceReleased, row.ManualAdvanceReleased);
+        if (expectedState is { } state)
         {
-            return Err<ActionNodeExecution>($"SurrealActionNodeExecutionStore.UpdateAsync({execution.Id}) failed: {ex.Message}");
+            var expected = (Row.ActionNodeState)(int)state;
+            update = update.Where(item => item.State == expected);
         }
-    }
-
-    // ── GetByRunIdAsync ──────────────────────────────────────────────────────
-
-    public async Task<AZOAResult<IEnumerable<ActionNodeExecution>>> GetByRunIdAsync(
-        Guid runId, CancellationToken ct = default)
-    {
+        update = row.WaitUntil is null ? update.Unset(item => item.WaitUntil) : update.Set(item => item.WaitUntil, row.WaitUntil);
+        update = row.Output is null ? update.Unset(item => item.Output) : update.Set(item => item.Output, row.Output);
+        update = row.Error is null ? update.Unset(item => item.Error) : update.Set(item => item.Error, row.Error);
+        update = row.TxHash is null ? update.Unset(item => item.TxHash) : update.Set(item => item.TxHash, row.TxHash);
+        update = row.ChainType is null ? update.Unset(item => item.ChainType) : update.Set(item => item.ChainType, row.ChainType);
+        update = row.EndedAt is null ? update.Unset(item => item.EndedAt) : update.Set(item => item.EndedAt, row.EndedAt);
+        update = row.FrozenInput is null ? update.Unset(item => item.FrozenInput) : update.Set(item => item.FrozenInput, row.FrozenInput);
+        update = row.SigningAuthorityJson is null ? update.Unset(item => item.SigningAuthorityJson) : update.Set(item => item.SigningAuthorityJson, row.SigningAuthorityJson);
+        update = row.AdmissionRejection is null ? update.Unset(item => item.AdmissionRejection) : update.Set(item => item.AdmissionRejection, row.AdmissionRejection);
+        update = row.ExternalOperationJson is null ? update.Unset(item => item.ExternalOperationJson) : update.Set(item => item.ExternalOperationJson, row.ExternalOperationJson);
+        update = row.RecoveryState is null ? update.Unset(item => item.RecoveryState) : update.Set(item => item.RecoveryState, row.RecoveryState);
+        // raw: node outcomes and fresh admission invalidate the scheduler epoch under the run lock; see AGENTS.md.
+        var runGuard = expectedRunVersion is null
+            ? SurrealQuery.Of("LET $_node_run = (UPDATE ONLY type::record('action_run', $_node_run_id) SET version += 1 RETURN AFTER)")
+                .WithParam("_node_run_id", execution.RunId.ToString("N"))
+            : SurrealQuery.Of("LET $_node_run = (UPDATE ONLY type::record('action_run', $_node_run_id) SET version += 1 WHERE version = $_scheduler_version AND status = 'Running' RETURN AFTER)")
+                .WithParam("_node_run_id", execution.RunId.ToString("N")).WithParam("_scheduler_version", expectedRunVersion.Value);
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"), runGuard,
+            SurrealQuery.Of("IF $_node_run = NONE { THROW 'ACTION_SCHEDULER_DECISION_CHANGED' }") };
+        if (admittedInput is not null)
+            statements.Add(SurrealQuery.Of("""
+                IF $_node_run.user_id != type::record('user', $_admission_actor)
+                    OR (($_admission_has_tenant AND $_node_run.acting_tenant_id != type::record('user', $_admission_tenant))
+                        OR (!$_admission_has_tenant AND $_node_run.acting_tenant_id != NONE))
+                    { THROW 'ACTION_SCHEDULER_DECISION_CHANGED' }
+                """).WithParam("_admission_actor", admittedInput.ActorUserId.ToString("N"))
+                .WithParam("_admission_has_tenant", admittedInput.ActingTenantId.HasValue)
+                .WithParam("_admission_tenant", admittedInput.ActingTenantId?.ToString("N") ?? ""));
+        if (signing is not null && signingFence is not null)
+        {
+            statements.Add(SurrealQuery.Of("""
+                IF $_node_run.user_id != type::record('user', $_signing_actor)
+                    OR (($_signing_tenant_present AND $_node_run.acting_tenant_id != type::record('user', $_signing_tenant))
+                        OR (!$_signing_tenant_present AND $_node_run.acting_tenant_id != NONE))
+                    { THROW 'SIGNING_AUTHORITY_CHANGED' }
+                """).WithParam("_signing_actor", signing.Credential.ActorUserId.ToString("N"))
+                .WithParam("_signing_tenant_present", signing.Credential.TenantId.HasValue)
+                .WithParam("_signing_tenant", signing.Credential.TenantId?.ToString("N") ?? ""));
+            if (signing.AuthorizationId is { } authorizationId)
+            {
+                statements.Add(SurrealQuery.Of("LET $_node_authorization = (SELECT * FROM ONLY type::record('action_signing_authorization', $_node_authorization_id))")
+                    .WithParam("_node_authorization_id", authorizationId.ToString("N")));
+                statements.Add(SurrealQuery.Of("""
+                    IF $_node_authorization = NONE OR $_node_authorization.execution_id != $_signing_execution_id
+                        OR crypto::sha256($_node_authorization.witness_json) != $_signing_witness_hash
+                        { THROW 'SIGNING_AUTHORITY_CHANGED' }
+                    """).WithParam("_signing_execution_id", execution.Id.ToString("N"))
+                    .WithParam("_signing_witness_hash", CanonicalJson.Hash(signing)));
+            }
+            else
+                statements.Add(SurrealQuery.Of("""
+                    IF $_node_run.authentication_witness_json = NONE
+                        OR crypto::sha256($_node_run.authentication_witness_json) != $_signing_credential_hash
+                        { THROW 'SIGNING_AUTHORITY_CHANGED' }
+                    """).WithParam("_signing_credential_hash", CanonicalJson.Hash(signing.Credential)));
+            statements.AddRange(signingFence);
+        }
+        var updateIndex = statements.Count;
+        statements.Add(SurrealGeneratedStatementScope.Apply(update.Build(), "node_outcome"));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        var transaction = SurrealQuery.Combine(statements.ToArray());
+        Row? saved;
         try
         {
-            var q = SurrealQuery
-                .Of("SELECT * FROM action_node_execution WHERE run_id = $_rid ORDER BY started_at ASC")
-                .WithParam("_rid", SurrealRecordParam.Of("action_run", SurrealId.ToSurrealId(runId)));
-
-            var rows = await _executor.QueryAsync<ActionNodeExecutionPoco>(q, ct);
-            IEnumerable<ActionNodeExecution> result = rows.Select(ToDomain).ToList();
-            return new AZOAResult<IEnumerable<ActionNodeExecution>> { Result = result, Message = "Success" };
+            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var result = await executor.ExecuteAsync(transaction, ct);
+                result.EnsureAllOk();
+                return result;
+            }, ct);
+            saved = response.GetValues<Row>(updateIndex).SingleOrDefault();
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (exception.Message.Contains("ACTION_SCHEDULER_DECISION_CHANGED", StringComparison.Ordinal)
+            || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal))
         {
-            return Err<IEnumerable<ActionNodeExecution>>(
-                $"SurrealActionNodeExecutionStore.GetByRunIdAsync({runId}) failed: {ex.Message}");
+            return AZOAResult<ActionNodeExecution>.Failure("Workflow scheduler decision changed.");
         }
+        if (saved is null) return AZOAResult<ActionNodeExecution>.Failure("Node execution version/state changed.");
+        execution.Version = saved.Version;
+        return AZOAResult<ActionNodeExecution>.Success(ToDomain(saved));
     }
 
-    // ── GetByRunAndNodeAsync ─────────────────────────────────────────────────
-
-    public async Task<AZOAResult<ActionNodeExecution>> GetByRunAndNodeAsync(
-        Guid runId, Guid nodeId, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IEnumerable<ActionNodeExecution>>> GetByRunIdAsync(Guid runId, CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery
-                .Of("SELECT * FROM action_node_execution WHERE run_id = $_rid AND node_id = $_nid LIMIT 1")
-                .WithParam("_rid", SurrealRecordParam.Of("action_run", SurrealId.ToSurrealId(runId)))
-                .WithParam("_nid", SurrealRecordParam.Of("action_node", SurrealId.ToSurrealId(nodeId)));
-
-            var rows = await _executor.QueryAsync<ActionNodeExecutionPoco>(q, ct);
-            return rows.Count == 0
-                ? Missing<ActionNodeExecution>($"No ActionNodeExecution for (run={runId}, node={nodeId}).")
-                : Ok(ToDomain(rows[0]));
-        }
-        catch (Exception ex)
-        {
-            return Err<ActionNodeExecution>(
-                $"SurrealActionNodeExecutionStore.GetByRunAndNodeAsync({runId},{nodeId}) failed: {ex.Message}");
-        }
+        var id = SurrealLink.ToLink("action_run", runId.ToString("N"));
+        var rows = await executor.QueryAsync<Row>(SurrealQuery<Row>.From().Where(row => row.RunId == id)
+            .OrderBy(row => row.StartedAt), ct);
+        return AZOAResult<IEnumerable<ActionNodeExecution>>.Success(rows.Select(ToDomain).ToArray());
     }
 
-    // ── TryClaimPendingAsync — G2 single-winner primitive ────────────────────
-
-    public async Task<AZOAResult<ActionNodeExecution?>> TryClaimPendingAsync(
-        Guid runId, Guid nodeId, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionNodeExecution>> GetByRunAndNodeAsync(Guid runId, Guid nodeId, CancellationToken ct = default)
     {
-        try
-        {
-            var runHex  = SurrealRecordParam.Of("action_run", SurrealId.ToSurrealId(runId));
-            var nodeHex = SurrealRecordParam.Of("action_node", SurrealId.ToSurrealId(nodeId));
-
-            // Existence probe so the "row missing" signal (IsError == true) is
-            // distinguishable from the race-loser signal (Result == null,
-            // IsError == false). Matches the in-memory store's interface
-            // contract.
-            var probe = SurrealQuery
-                .Of("SELECT id FROM action_node_execution WHERE run_id = $_rid AND node_id = $_nid LIMIT 1")
-                .WithParam("_rid", runHex)
-                .WithParam("_nid", nodeHex);
-
-            var probeRows = await _executor.QueryAsync<ActionNodeExecutionIdProjection>(probe, ct);
-            if (probeRows.Count == 0)
-            {
-                return new AZOAResult<ActionNodeExecution?>
-                {
-                    IsError = true,
-                    Message = $"No ActionNodeExecution for (run={runId}, node={nodeId}).",
-                    Result  = null
-                };
-            }
-
-            // THE single-winner primitive — verbatim from SURREAL-SCHEMA-HINTS
-            // §5 lines 228-237. The conditional predicate is the arbiter; under
-            // N concurrent calls AT MOST ONE row mutates.
-            var nowUtc = DateTime.UtcNow;
-            var claim = SurrealQuery
-                .Of("UPDATE action_node_execution SET state = $_running, started_at = $_now WHERE run_id = $_rid AND node_id = $_nid AND state = $_pending RETURN AFTER")
-                .WithParam("_rid",     runHex)
-                .WithParam("_nid",     nodeHex)
-                .WithParam("_pending", StatePending)
-                .WithParam("_running", StateRunning)
-                .WithParam("_now",     nowUtc);
-
-            var resp = await _executor.ExecuteAsync(claim, ct);
-            if (resp.Count == 0 || !resp[0].IsOk)
-            {
-                return new AZOAResult<ActionNodeExecution?>
-                {
-                    Result  = null,
-                    Message = $"ActionNodeExecution (run={runId}, node={nodeId}) claim failed."
-                };
-            }
-
-            var winners = resp[0].GetValues<ActionNodeExecutionPoco>();
-            if (winners.Count == 0)
-            {
-                // Row existed but was NOT Pending — lost the race. Not an error.
-                return new AZOAResult<ActionNodeExecution?>
-                {
-                    Result  = null,
-                    Message = $"ActionNodeExecution (run={runId}, node={nodeId}) is not Pending (already claimed)."
-                };
-            }
-
-            return new AZOAResult<ActionNodeExecution?>
-            {
-                Result  = ToDomain(winners[0]),
-                Message = "Claimed."
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<ActionNodeExecution?>
-            {
-                IsError = true,
-                Message = $"SurrealActionNodeExecutionStore.TryClaimPendingAsync({runId},{nodeId}) failed: {ex.Message}",
-                Result  = null
-            };
-        }
+        var run = SurrealLink.ToLink("action_run", runId.ToString("N")); var node = SurrealLink.ToLink("action_node", nodeId.ToString("N"));
+        var row = await executor.QuerySingleAsync<Row>(SurrealQuery<Row>.From()
+            .Where(item => item.RunId == run && item.NodeId == node).Limit(1), ct);
+        return row is null ? AZOAResult<ActionNodeExecution>.Failure("Node execution not found.")
+            : AZOAResult<ActionNodeExecution>.Success(ToDomain(row));
     }
 
-    // ── Mapping ──────────────────────────────────────────────────────────────
-
-    private static ActionNodeExecutionPoco FromDomain(ActionNodeExecution e) => new()
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionNodeExecution?>> TryClaimPendingAsync(Guid runId, Guid nodeId, CancellationToken ct = default)
     {
-        Id         = SurrealId.ToSurrealId(e.Id),
-        RunId      = SurrealLink.ToLink("action_run", SurrealId.ToSurrealId(e.RunId))!,
-        NodeId     = SurrealLink.ToLink("action_node", SurrealId.ToSurrealId(e.NodeId))!,
-        State      = e.State.ToString(),
-        Output     = e.Output,
-        Error      = e.Error,
-        TxHash     = e.TxHash,
-        ChainType  = e.ChainType,
-        StartedAt  = ToUtcOffset(e.StartedAt),
-        EndedAt    = e.EndedAt.HasValue ? ToUtcOffset(e.EndedAt.Value) : null,
+        var existing = await GetByRunAndNodeAsync(runId, nodeId, ct);
+        if (existing.IsError || existing.Result is null)
+            return AZOAResult<ActionNodeExecution?>.Failure(existing.Message);
+        if (existing.Result.State != ActionNodeState.Pending)
+            return AZOAResult<ActionNodeExecution?>.Success(null);
+        var row = existing.Result;
+        row.State = ActionNodeState.Running; row.StartedAt = DateTime.UtcNow;
+        var claimed = await UpdateAsync(row, ActionNodeState.Pending, ct);
+        return AZOAResult<ActionNodeExecution?>.Success(claimed.IsError ? null : claimed.Result);
+    }
+
+    private static Row ToRow(ActionNodeExecution row) => new()
+    {
+        Id = row.Id.ToString("N"), RunId = SurrealLink.ToLink("action_run", row.RunId.ToString("N"))!, NodeId = SurrealLink.ToLink("action_node", row.NodeId.ToString("N"))!,
+        State = (Row.ActionNodeState)(int)row.State, Version = row.Version,
+        Output = row.Output, Error = row.Error, TxHash = row.TxHash, ChainType = row.ChainType,
+        StartedAt = new DateTimeOffset(DateTime.SpecifyKind(row.StartedAt, DateTimeKind.Utc)),
+        EndedAt = row.EndedAt is { } ended ? new DateTimeOffset(DateTime.SpecifyKind(ended, DateTimeKind.Utc)) : null,
+        WaitUntil = row.WaitUntil is { } wait ? new DateTimeOffset(DateTime.SpecifyKind(wait, DateTimeKind.Utc)) : null,
+        FrozenInput = row.FrozenInput, SigningAuthorityJson = row.SigningAuthorityJson, AdmissionRejection = row.AdmissionRejection, RecoveryState = row.RecoveryState, ManualAdvanceReleased = row.ManualAdvanceReleased,
+        ExternalOperationJson = row.ExternalOperation is null ? null : JsonSerializer.Serialize(row.ExternalOperation),
     };
 
-    private static ActionNodeExecution ToDomain(ActionNodeExecutionPoco p) => new()
+    internal static ActionNodeExecution ToDomain(Row row) => new()
     {
-        Id         = FromSurrealId(p.Id),
-        RunId      = string.IsNullOrEmpty(p.RunId)  ? Guid.Empty : FromSurrealId(SurrealLink.FromLink(p.RunId)!),
-        NodeId     = string.IsNullOrEmpty(p.NodeId) ? Guid.Empty : FromSurrealId(SurrealLink.FromLink(p.NodeId)!),
-        State      = ParseState(p.State),
-        Output     = p.Output,
-        Error      = p.Error,
-        TxHash     = p.TxHash,
-        ChainType  = p.ChainType,
-        StartedAt  = p.StartedAt.UtcDateTime,
-        EndedAt    = p.EndedAt?.UtcDateTime,
+        Id = SurrealRecordGuid.Parse(row.Id), RunId = SurrealRecordGuid.Parse(row.RunId), NodeId = SurrealRecordGuid.Parse(row.NodeId),
+        State = (ActionNodeState)(int)row.State, Version = row.Version,
+        Output = row.Output, Error = row.Error, TxHash = row.TxHash, ChainType = row.ChainType,
+        StartedAt = row.StartedAt.UtcDateTime, EndedAt = row.EndedAt?.UtcDateTime,
+        WaitUntil = row.WaitUntil?.UtcDateTime,
+        FrozenInput = row.FrozenInput, SigningAuthorityJson = row.SigningAuthorityJson, AdmissionRejection = row.AdmissionRejection, RecoveryState = row.RecoveryState, ManualAdvanceReleased = row.ManualAdvanceReleased,
+        ExternalOperation = row.ExternalOperationJson is null ? null
+            : JsonSerializer.Deserialize<ActionExternalOperationReference>(row.ExternalOperationJson)
+                ?? throw new InvalidOperationException("Node operation envelope is unreadable."),
     };
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-
-    private static Guid FromSurrealId(string id)
-        => Guid.TryParseExact(id, "N", out var g) ? g : Guid.Empty;
-
-    private static DateTimeOffset ToUtcOffset(DateTime dt)
-    {
-        var utc = dt.Kind switch
-        {
-            DateTimeKind.Utc         => dt,
-            DateTimeKind.Local       => dt.ToUniversalTime(),
-            DateTimeKind.Unspecified => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
-            _                        => DateTime.SpecifyKind(dt, DateTimeKind.Utc),
-        };
-        return new DateTimeOffset(utc, TimeSpan.Zero);
-    }
-
-    private static ActionNodeState ParseState(string? raw) =>
-        Enum.TryParse<ActionNodeState>(raw, ignoreCase: false, out var v)
-            ? v
-            : throw new InvalidOperationException(
-                $"Unrecognised ActionNodeState '{raw}' read from SurrealDB. " +
-                "Schema ASSERT INSIDE [...] should have prevented this; refresh the schema.");
-
-    private static AZOAResult<T> Ok<T>(T value, string msg = "Success") =>
-        new() { Result = value, Message = msg };
-
-    private static AZOAResult<T> Missing<T>(string msg) =>
-        new() { IsError = true, Message = msg, Result = default };
-
-    private static AZOAResult<T> Err<T>(string msg) =>
-        new() { IsError = true, Message = msg, Result = default };
-
-    // ── POCO (private — replace with generated POCO when source-gen catches up) ──
-
-    private sealed class ActionNodeExecutionPoco : SurrealForge.Client.ISurrealRecord
-    {
-        public string SchemaName => ExecTable;
-
-        [JsonPropertyName("id")]         public string Id { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.ActionRun))] [JsonPropertyName("run_id")]     public string RunId { get; set; } = string.Empty;
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.ActionNode))] [JsonPropertyName("node_id")]    public string NodeId { get; set; } = string.Empty;
-        [JsonPropertyName("state")]      public string? State { get; set; }
-        [JsonPropertyName("output")]     public string? Output { get; set; }
-        [JsonPropertyName("error")]      public string? Error { get; set; }
-        [JsonPropertyName("tx_hash")]    public string? TxHash { get; set; }
-        [JsonPropertyName("chain_type")] public string? ChainType { get; set; }
-        [JsonPropertyName("started_at")] public DateTimeOffset StartedAt { get; set; }
-        [JsonPropertyName("ended_at")]   public DateTimeOffset? EndedAt { get; set; }
-    }
-
-    private sealed class ActionNodeExecutionIdProjection
-    {
-        [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
-    }
 }

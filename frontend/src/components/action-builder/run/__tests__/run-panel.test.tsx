@@ -27,9 +27,11 @@ vi.mock('../../dag-flow', () => ({
   ),
 }))
 
-const { workflowMock } = vi.hoisted(() => ({
+const { workflowMock, auth } = vi.hoisted(() => ({
+  auth: { userId: 'user-1' as string | null },
   workflowMock: {
     startWorkflow: vi.fn(),
+    previewRun: vi.fn(),
     getRunStatus: vi.fn(),
     getExecutionState: vi.fn(),
     listRuns: vi.fn(),
@@ -38,6 +40,8 @@ const { workflowMock } = vi.hoisted(() => ({
     reconcileRun: vi.fn(),
   },
 }))
+
+vi.mock('@/lib/azoa-context', () => ({ useAzoa: () => auth }))
 
 vi.mock('@/lib/azoa', () => ({
   azoa: { workflow: workflowMock },
@@ -106,7 +110,10 @@ async function flush() {
 }
 
 beforeEach(() => {
+  Object.values(workflowMock).forEach((mock) => mock.mockReset())
   window.localStorage.clear()
+  auth.userId = 'user-1'
+  workflowMock.previewRun.mockImplementation(async (actionId: string) => ({ ok: true, value: { actionId, publishedVersionHash: 'revision-1', hasEconomicNodes: false, entries: [] } }))
   workflowMock.listRuns.mockResolvedValue({ ok: true, value: [] })
   workflowMock.getRunStatus.mockResolvedValue({ ok: false, error: { message: 'not found' } })
   workflowMock.getExecutionState.mockResolvedValue({ ok: true, value: makeExecState('run', 'action', []) })
@@ -154,7 +161,7 @@ describe('RunPanel — C4 cross-action run bleed', () => {
 
   it('rejects a persisted run whose actionId does not match the current action and clears the stale key', async () => {
     const action = makeAction('action-a')
-    window.localStorage.setItem('azoa.actionRun.action-a', 'stale-run-id')
+    window.localStorage.setItem('azoa.actionRun.v2.user-1:action-a', 'stale-run-id')
 
     workflowMock.getRunStatus.mockImplementation(async (runId: string) => {
       if (runId === 'stale-run-id') {
@@ -171,7 +178,7 @@ describe('RunPanel — C4 cross-action run bleed', () => {
     // Never attached: "Start Run" is still the primary action.
     expect(screen.getByRole('button', { name: 'Start Run' })).toBeInTheDocument()
     expect(screen.queryByText(/stale-run-id/)).not.toBeInTheDocument()
-    expect(window.localStorage.getItem('azoa.actionRun.action-a')).toBeNull()
+    expect(window.localStorage.getItem('azoa.actionRun.v2.user-1:action-a')).toBeNull()
   })
 })
 
@@ -180,8 +187,8 @@ describe('RunPanel — C5 stale advance-target survives an action switch', () =>
     const actionA = makeAction('action-a', [node('a-n1', 'NodeA1', 0), node('a-n2', 'NodeA2', 1)])
     const actionB = makeAction('action-b', [node('b-n1', 'NodeB1', 0)])
 
-    window.localStorage.setItem('azoa.actionRun.action-a', 'run-a')
-    window.localStorage.setItem('azoa.actionRun.action-b', 'run-b')
+    window.localStorage.setItem('azoa.actionRun.v2.user-1:action-a', 'run-a')
+    window.localStorage.setItem('azoa.actionRun.v2.user-1:action-b', 'run-b')
 
     workflowMock.getRunStatus.mockImplementation(async (runId: string) => {
       if (runId === 'run-a') return { ok: true, value: makeRun({ id: 'run-a', actionId: 'action-a', status: 'Suspended' }) }
@@ -242,6 +249,7 @@ describe('RunPanel — C10 poll failure handling', () => {
       })
 
       render(<RunPanel action={action} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
       fireEvent.click(screen.getByRole('button', { name: 'Start Run' }))
       await act(async () => {
         await Promise.resolve()
@@ -269,6 +277,7 @@ describe('RunPanel — C10 poll failure handling', () => {
       workflowMock.getExecutionState.mockResolvedValue({ ok: false, error: { message: 'still down' } })
 
       render(<RunPanel action={action} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
       fireEvent.click(screen.getByRole('button', { name: 'Start Run' }))
       await act(async () => {
         await Promise.resolve()
@@ -309,7 +318,7 @@ describe('RunPanel — C10 poll failure handling', () => {
 describe('RunPanel — C12 data-id click matching', () => {
   it('selects a node on a real node click, and ignores a click on a handle-shaped data-id', async () => {
     const action = makeAction('action-a', [node('a-n1', 'NodeA1', 0)])
-    window.localStorage.setItem('azoa.actionRun.action-a', 'run-a')
+    window.localStorage.setItem('azoa.actionRun.v2.user-1:action-a', 'run-a')
     workflowMock.getRunStatus.mockResolvedValue({ ok: true, value: makeRun({ id: 'run-a', actionId: 'action-a', status: 'Running' }) })
     workflowMock.getExecutionState.mockResolvedValue({
       ok: true,
@@ -326,4 +335,114 @@ describe('RunPanel — C12 data-id click matching', () => {
     fireEvent.click(screen.getByTestId('node-a-n1'))
     expect(screen.getByText('NodeA1', { selector: 'p' })).toBeInTheDocument()
   })
+})
+
+
+describe('RunPanel durable start admission', () => {
+  it('persists before sending and replays the exact consent and hash after a lost response and remount', async () => {
+    workflowMock.previewRun.mockResolvedValue({ ok: true, value: { actionId: 'action-a', publishedVersionHash: 'revision-1',
+      hasEconomicNodes: true, entries: [{ nodeId: 'fee', nodeName: 'Transfer', nodeType: 'Transfer', amount: '12', destination: 'recipient' }] } })
+    workflowMock.startWorkflow.mockImplementationOnce(async (_actionId: string, request: unknown) => {
+      expect(JSON.parse(localStorage.getItem('azoa.actionStart.v1.user-1:action-a')!)).toEqual(request)
+      throw new Error('Response lost')
+    }).mockResolvedValueOnce({ ok: true, value: makeRun({ id: 'original-run', actionId: 'action-a' }) })
+    const first = render(<RunPanel action={makeAction('action-a')} />)
+    await screen.findByText(/Transfer: Transfer/)
+    expect(screen.getByRole('button', { name: 'Start Run' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'Start Run' }))
+    await screen.findByText('Response lost')
+    const original = workflowMock.startWorkflow.mock.calls[0][1]
+    expect(original).toMatchObject({ acknowledgeEconomicEffects: true, expectedPublishedHash: 'revision-1' })
+    first.unmount()
+    workflowMock.previewRun.mockResolvedValue({ ok: true, value: { actionId: 'action-a', publishedVersionHash: 'revision-2', hasEconomicNodes: false, entries: [] } })
+    render(<RunPanel action={makeAction('action-a')} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry original start' }))
+    await waitFor(() => expect(workflowMock.startWorkflow).toHaveBeenCalledTimes(2))
+    expect(workflowMock.startWorkflow.mock.calls[1]).toEqual(['action-a', original])
+    await waitFor(() => expect(localStorage.getItem('azoa.actionStart.v1.user-1:action-a')).toBeNull())
+    expect(localStorage.getItem('azoa.actionRun.v2.user-1:action-a')).toBe('original-run')
+  })
+
+  it('does not attach a late start to a different account or reuse its saved request', async () => {
+    let finish!: (value: unknown) => void
+    workflowMock.startWorkflow.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const view = render(<RunPanel action={makeAction('action-a')} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start Run' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Start Run' }))
+    await waitFor(() => expect(workflowMock.startWorkflow).toHaveBeenCalledTimes(1))
+    auth.userId = 'user-2'
+    view.rerender(<RunPanel action={makeAction('action-a')} />)
+    await act(async () => { finish({ ok: true, value: makeRun({ id: 'late-account-one', actionId: 'action-a' }) }) })
+    expect(screen.queryByText(/late-account-one/)).not.toBeInTheDocument()
+    expect(localStorage.getItem('azoa.actionStart.v1.user-1:action-a')).not.toBeNull()
+    expect(localStorage.getItem('azoa.actionStart.v1.user-2:action-a')).toBeNull()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start Run' })).toBeEnabled())
+    expect(screen.queryByRole('button', { name: 'Retry original start' })).not.toBeInTheDocument()
+  })
+
+  it('retains the saved run on transient attachment failure and blocks a replacement start', async () => {
+    localStorage.setItem('azoa.actionRun.v2.user-1:action-a', 'existing-run')
+    workflowMock.getRunStatus.mockResolvedValueOnce({ ok: false, error: { message: 'temporarily unavailable' } })
+      .mockResolvedValueOnce({ ok: true, value: makeRun({ id: 'existing-run', actionId: 'action-a' }) })
+    render(<RunPanel action={makeAction('action-a')} />)
+    await screen.findByText('temporarily unavailable')
+    expect(localStorage.getItem('azoa.actionRun.v2.user-1:action-a')).toBe('existing-run')
+    expect(screen.getByRole('button', { name: 'Start Run' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry restoring saved run' }))
+    await screen.findByText('run existing-run')
+    expect(workflowMock.startWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('refuses network admission when durable request storage fails', async () => {
+    render(<RunPanel action={makeAction('action-a')} />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Start Run' })).toBeEnabled())
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage unavailable') })
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Start Run' }))
+      await screen.findByText('Storage unavailable')
+      expect(workflowMock.startWorkflow).not.toHaveBeenCalled()
+    } finally { storage.mockRestore() }
+  })
+})
+
+
+it('discards an old same-action poll after selecting another run', async () => {
+  let finishOld!: (value: unknown) => void
+  workflowMock.listRuns.mockResolvedValue({ ok: true, value: [
+    makeRun({ id: 'aaaaaaaa-old', actionId: 'action-a' }), makeRun({ id: 'bbbbbbbb-new', actionId: 'action-a' }),
+  ] })
+  workflowMock.getRunStatus.mockImplementation(async (runId: string) => ({ ok: true, value: makeRun({ id: runId, actionId: 'action-a' }) }))
+  workflowMock.getExecutionState.mockImplementation((runId: string) => runId === 'aaaaaaaa-old'
+    ? new Promise((resolve) => { finishOld = resolve })
+    : Promise.resolve({ ok: true, value: makeExecState(runId, 'action-a', [['action-a-n1', 'Pending']]) }))
+  render(<RunPanel action={makeAction('action-a')} />)
+  fireEvent.click(await screen.findByRole('button', { name: /aaaaaaaa/ }))
+  await waitFor(() => expect(workflowMock.getExecutionState).toHaveBeenCalledWith('aaaaaaaa-old'))
+  fireEvent.click(screen.getByRole('button', { name: /bbbbbbbb/ }))
+  await screen.findByText('run bbbbbbbb-new')
+  await waitFor(() => expect(workflowMock.getExecutionState).toHaveBeenCalledWith('bbbbbbbb-new'))
+  await act(async () => { finishOld({ ok: true, value: { ...makeExecState('aaaaaaaa-old', 'action-a', [['action-a-n1', 'Succeeded']]), status: 'Succeeded' } }) })
+  expect(screen.getByText('run bbbbbbbb-new')).toBeInTheDocument()
+  expect(screen.getByText(/0\/1 completed/)).toBeInTheDocument()
+  expect(localStorage.getItem('azoa.actionRun.v2.user-1:action-a')).toBe('bbbbbbbb-new')
+})
+
+it('cannot advance the previous run while a new history selection is loading', async () => {
+  let finishNew!: (value: unknown) => void
+  workflowMock.listRuns.mockResolvedValue({ ok: true, value: [
+    makeRun({ id: 'aaaaaaaa-old', actionId: 'action-a' }), makeRun({ id: 'bbbbbbbb-new', actionId: 'action-a' }),
+  ] })
+  workflowMock.getRunStatus.mockImplementation((runId: string) => runId === 'bbbbbbbb-new'
+    ? new Promise((resolve) => { finishNew = resolve })
+    : Promise.resolve({ ok: true, value: makeRun({ id: runId, actionId: 'action-a', status: 'Suspended' }) }))
+  workflowMock.getExecutionState.mockResolvedValue({ ok: true, value: makeExecState('aaaaaaaa-old', 'action-a', [['action-a-n1', 'Succeeded']]) })
+  render(<RunPanel action={makeAction('action-a')} />)
+  fireEvent.click(await screen.findByRole('button', { name: /aaaaaaaa/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Advance' })).toBeEnabled())
+  fireEvent.click(screen.getByRole('button', { name: /bbbbbbbb/ }))
+  expect(screen.getByRole('button', { name: 'Advance' })).toBeDisabled()
+  fireEvent.click(screen.getByRole('button', { name: 'Advance' }))
+  expect(workflowMock.advance).not.toHaveBeenCalled()
+  await act(async () => { finishNew({ ok: true, value: makeRun({ id: 'bbbbbbbb-new', actionId: 'action-a', status: 'Succeeded' }) }) })
 })

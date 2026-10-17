@@ -213,3 +213,37 @@ mismatched operations map to the same 404 response; a caller-owned failed or
 in-progress ledger without an operation remains readable. Dependency failures
 are generic 503 responses. Reconcile is an observation request, never a replay
 or value-operation retry.
+
+## Hosted-session reconciliation
+
+The hosted-session recovery queue and mutation routes require the Operator policy.
+Only aged unattached admissions are eligible. Recovery accepts an evidence reference
+and explicit operator attestation, re-fetches the real vendor outcome before attach,
+and persists actor, timestamp and decision evidence on the original admission.
+Confirmed absence preserves that audit while releasing the unique admission key.
+The queue is an allowlist projection; provider session tokens and redirect URLs
+are omitted. See `Services/HostedSessions/AGENTS.md` for vendor ambiguity limits.
+
+## Business verification and shared Identomat callbacks
+
+`TenantBusinessVerificationController` permits first-party tenant owners and provisioning API
+keys, rejects delegated-child provenance, and sources tenant identity only from subject claims.
+Services recheck the active owner and a live provisioning key. API-key reads/refresh require
+kyc:read; starts require kyc:submit. Redirect responses are no-store. Identomat's company-wide
+callback at `/api/kyc/callback/identomat` routes across KYC and KYB using each flow's server-only
+session correlation and one company callback secret. Unknown sessions and rejected signatures
+receive the same acknowledgement. See `Services/Kyb/AGENTS.md` for setup and trust boundaries.
+
+## Durable NFT API
+
+Both NFT route families now delegate to the same lifecycle. UserNFT mint/transfer/refund use body feeAuthorization; burn uses quote/revision/maximum query fields. The legacy Nft mint/transfer/burn bodies also carry feeAuthorization. Nonzero quotes must be read and explicitly authorized before admission. Credential issue still requires manager role and mint scope; pending issuance/revocation returns HTTP 202 with its lifecycle result, and only confirmed completion is settled.
+
+Authenticated participant lifecycle GET/list/refresh/accept/cancel routes expose recovery. Fee quote accepts nftId or sourceOperationId to resolve historical network identity. Request-key lookup cannot prove absence of an in-flight request; cancel-by-key writes an atomic permanent tombstone or applies existing lifecycle cancellation rules. Refund creation requires the original sender's completed transfer, while the current holder authorizes the reverse movement. No controller accepts a body-supplied logical issuer.
+
+### Consent command receipts
+
+User consent creation requires a caller-persisted requestId and actual first-party owner credential. The response is the original immutable ConsentLifecycleReceipt; it is not a current live-grant status. Replaying a successful command after revocation does not recreate consent. GET remains the current scoped grant view. DELETE returns the immutable ConsentRevocationReceipt. Participation requires prior tenant-approved enrollment. Tenant offboard endpoints return the original ConsentOffboardReceipt and close membership before any later admission can succeed. Actual principal capture and transactional authority fences apply to mutations; request body IDs cannot supply the actor.
+
+NFT mint-cost-quote endpoints require the same authenticated NftMint scope and request key as mint. Credential issue cost-quote additionally requires the manager role and distinct recipient, and normalizes soulbound/nontransferable flags identically to issuance. Responses include the exact receipt hash and category limits as an acceptance payload; returning that payload does not itself authorize execution.
+
+NFT workflow cost endpoints bind authenticated actor/tenant to the exact persisted execution. Quote and accept capture actual credentials; acceptance checks original workflow and current participant authority transactionally. Reconcile is an authenticated receipt read and does not demand new signing consent. Accept returns 202 because admission alone is not mint completion. See `Services/Actions/AGENTS.md` for saved-request and recovery semantics.

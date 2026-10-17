@@ -1,0 +1,19 @@
+[package]
+name = "azoa-native-fixture"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+revision-two = []
+
+[profile.release]
+panic = "abort"
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[package.metadata.solana]
+tools-version = "v1.52"

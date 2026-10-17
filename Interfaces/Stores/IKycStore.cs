@@ -76,6 +76,22 @@ public interface IKycStore
     /// <summary>Inserts or updates a submission.</summary>
     Task<AZOAResult<KycSubmission>> UpsertSubmissionAsync(KycSubmission submission, CancellationToken ct = default);
 
+    /// <summary>Retires the observed active attempt without overwriting a concurrent decision.</summary>
+    Task<AZOAResult<KycSubmission>> TryRetireAttemptAsync(KycSubmission expected, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>Attaches the redirect only while this exact hosted attempt remains active.</summary>
+    Task<AZOAResult<KycSubmission>> TryAttachHostedRedirectAsync(KycSubmission expected, string redirectUrl, DateTimeOffset? expiresAt, CancellationToken ct = default);
+
+    /// <summary>Completes the exact active hosted attempt if its correlation, provenance, version and expiry still match; contention returns no row.</summary>
+    Task<AZOAResult<KycSubmission>> TryCompleteHostedAsync(
+        KycSubmission expected,
+        HostedSession lease,
+        KycStatus status,
+        DateTimeOffset reviewedAt,
+        DateTimeOffset? expiresAt,
+        string? rejectionReason,
+        CancellationToken ct = default);
+
     /// <summary>
     /// Atomically creates one active submission and its documents. The storage
     /// transaction rejects a second active submission for the user.

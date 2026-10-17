@@ -1,9 +1,15 @@
+import type { WebhookRegistrationCommand, WebhookRegistrationStatus, WebhookRegistrationMutationResult, WebhookRegistrationWithdrawal, WebhookEventStatus, WebhookEventRetryCommand, WebhookEventRetryReceipt, ConsentWebhookEventStatus } from "./webhooks.js";
+import type { ConsentGrantCommand, ConsentGrantView, ConsentGrantReceipt, ConsentRevocationReceipt, ConsentOffboardReceipt, ConsentCommandWithdrawal } from "./consent.js";
 import type { Result } from "../core/result.js";
+import type { HoldStartCommand, HoldCommandView, HoldCommandPage, HoldConsentCommand, HoldRecoveryCommand, HoldOpeningAcceptance, HoldRequestLookup, HoldRequestResolution, HoldOpeningRecoveryLookup, HoldMandateOfferRequest, HoldMandateOffer, HoldMandateAcceptance, HoldMandateView, HoldMandatePage, HoldMandateResolution } from "./hold-commands.js";
+import type { DexQuoteRequest, DexQuoteAvailability, DexQuoteView, SwapAdmissionRequest, SwapOperationView, SwapVersionCommand, SwapStageCommand, SwapExposureCommand, SwapExternalSigningView, SwapBrowserStageCommand, SwapCleanupRequest, SwapCleanupStageCommand } from "./dex.js";
 import { ok, err } from "../core/result.js";
 import { SdkError, SdkErrorCode } from "../core/errors.js";
 import type { SdkErrorDetail } from "../core/errors.js";
 import { API_PATHS } from "./api-version.js";
-import type { WorkflowRunStatus } from "../workflow/types.js";
+import type { ContractQueryRequest, DappCompositionManifest, DappCompositionValidation, DeploymentArtifactView, DeploymentEcosystemAttachment, DeploymentEcosystemTree, DeploymentGenerateRequest, DeploymentInvokeRequest, DeploymentPage, DeploymentQuoteRequest, DeploymentReceipt, DeploymentStartRequest, NativeOperationIntent, DeploymentOriginalBudgetRecoveryRequest, DeploymentRecoveryQuoteRequest, DeploymentRecoveryQuote, DeploymentRecoveryStartRequest, DeploymentRecoveryAncestry } from "./deployments.js";
+import type { WorkflowRunStatus, WorkflowNodeExecution, WorkflowExecutionState, StartWorkflowOptions } from "../workflow/types.js";
+import { workflowStartQuery } from "../workflow/start-options.js";
 
 export interface AzoaApiConfig {
   baseUrl: string;
@@ -19,6 +25,46 @@ export interface AzoaApiConfig {
   debug?: boolean;
   /** Sink for debug output. Defaults to the global `console`. */
   debugLogger?: Pick<Console, "debug" | "error">;
+}
+
+export interface ActionRecoveryView {
+  executionId: string;
+  runId: string;
+  nodeId: string;
+  version: number;
+  state: string;
+  recoveryState?: string | null;
+  domain?: string | null;
+  operationId?: string | null;
+  intentHash?: string | null;
+  canRetry: boolean;
+}
+
+export interface ActionRecoveryRequest {
+  requestId: string;
+  expectedVersion: number;
+  intentHash: string;
+  reason: string;
+}
+
+export interface ActionRecoveryReceipt {
+  auditId: string;
+  executionId: string;
+  expectedVersion: number;
+  requestedAt: string;
+}
+
+export interface ActionRecoveryAudit {
+  id: string;
+  operatorId: string;
+  executionId: string;
+  runId: string;
+  nodeId: string;
+  expectedVersion: number;
+  intentHash: string;
+  reason: string;
+  action: string;
+  createdAt: string;
 }
 
 // Mirrors the .NET AZOAResult<T> shape returned by most controllers.
@@ -42,6 +88,93 @@ export interface UserResponse {
   firstName?: string;
   lastName?: string;
   isActive: boolean;
+}
+
+export interface BusinessVerificationCapabilities {
+  providerKey: string;
+  flowKind: "kyb";
+  available: boolean;
+  missingConfigurationKeys: string[];
+  unavailableReason?: string | null;
+}
+
+export interface BusinessVerificationStatus {
+  attemptId: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "NEEDS_OPERATOR";
+  verified: boolean;
+  expiresAt: string;
+  reviewedAt?: string | null;
+  beneficiaryCount: number;
+}
+
+export interface OnRampLotView {
+  id: string;
+  intentId: string;
+  status: string;
+  statusReason: string | null;
+  chargedAndUncredited: boolean;
+  needsAPersonToMoveIt: boolean;
+  fiatMinorUnits: number;
+  currencyCode: string;
+  createdAt: string;
+  providerRefundId: string | null;
+  refundStartedAt: string | null;
+  refundAttempt: number;
+  providerRefundStatus: string | null;
+}
+
+export interface FiatEventView {
+  id: string;
+  providerEventId: string;
+  eventType: string;
+  status: string;
+  providerWasToldToStopRetrying: boolean;
+  attemptCount: number;
+  lastError: string | null;
+}
+
+export interface HostedSessionRecoveryView {
+  sessionId: string;
+  flowKind: string;
+  providerKey: string;
+  subjectUserId: string;
+  tenantId?: string;
+  status: string;
+  createdDate: string;
+}
+
+export interface HostedSessionRecoveryRequest {
+  reason: string;
+  operatorReviewedSubjectAndProvider: true;
+  confirmedProviderAbsence: boolean;
+  providerSessionId?: string;
+  redirectUrl?: string;
+}
+
+export type WalletAuthenticationChain = "algorand" | "ethereum" | "solana";
+export interface WalletAuthenticationChallenge {
+  address: string;
+  chainType: WalletAuthenticationChain;
+  nonce: string;
+  message: string;
+  expiresAt: string;
+}
+export interface WalletAuthenticationProof {
+  address: string;
+  chainType: WalletAuthenticationChain;
+  signature: string;
+  message: string;
+}
+export interface WalletAuthenticationToken { token: string; userId: string }
+export type WalletOwnershipClaim = { targetUserId: string; claimToken: string } & (
+  { newPassword: string; address?: never; chainType?: never; signature?: never; message?: never }
+  | (WalletAuthenticationProof & { newPassword?: never })
+);
+
+export interface BusinessVerificationSession {
+  verification: BusinessVerificationStatus;
+  verificationUrl: string;
+  resumed: boolean;
 }
 
 /**
@@ -218,59 +351,95 @@ export interface SearchResult {
 // ─── Request types matching .NET DTOs ───
 
 export interface NftMintParams {
+  protocolCostAuthorization?: NftProtocolCostAuthorization;
+  feeAuthorization?: NftFeeAuthorization;
   walletId: string;
   name: string;
   description: string;
   chainId: string;
-  tokenId?: string;
+  metadataUri: string;
   imageUri?: string;
   externalUri?: string;
   metadata?: Record<string, string>;
 }
 
 export interface NftTransferParams {
+  feeAuthorization?: NftFeeAuthorization;
   targetUserId: string;
   walletId: string;
   memo?: string;
 }
 
-/**
- * Mirrors .NET FungibleMintRequest — the body for `POST /api/nft/fungible-mint`
- * (the one-shot, no-DAG fungible token launch). Field shape matches the
- * `FungibleTokenCreate` action node config; total + decimals are tenant-authoritative.
- */
+/** Immutable descriptor admitted before cost consent and chain submission. */
 export interface FungibleMintParams {
-  /** Target chain (e.g. "Algorand"). Algorand-only in v1. */
   chainType: string;
-  /** Human-readable asset name (ASA name). */
+  network?: string;
   name: string;
-  /** Short unit name / ticker (ASA unit name). */
   unitName: string;
-  /** Total supply in base units. Must be > 0. Sent as a number/bigint-safe value. */
-  total: number;
-  /** Number of decimal places (0..19). */
+  /** Canonical uint64 base-unit text; safe integer numbers are accepted for compatibility. */
+  total: string | number;
   decimals: number;
-  /** Optional holon to link the created asset to (D10 Holon↔asset link). */
   holonId?: string;
 }
 
-/** Mirrors .NET FungibleTokenResult — the outcome of a fungible-token (ASA) launch. */
-export interface FungibleTokenResult {
-  /** The user the token was launched for. */
-  userId: string;
-  /** The custodial wallet the token was launched from. */
+export interface FungibleCreationQuote {
+  quoteId: string;
+  intentHash: string;
+  protocolIdentity: string;
+  networkFeeBaseUnits: string;
+  minimumBalanceBaseUnits: string;
+  currency: string;
+  decimals: number;
+  payerAddress: string;
+  expiresAt: string;
+}
+
+export interface FungibleCreationView {
+  operationId: string;
+  version: number;
+  state: string;
+  chainType: string;
+  network: string;
+  assetId?: string | null;
+  transactionId?: string | null;
+  detail?: string | null;
+  quote?: FungibleCreationQuote | null;
   walletId: string;
-  /** The on-chain address of the custodial wallet. */
   walletAddress: string;
-  /** True when this call provisioned a brand-new wallet. */
   walletProvisioned: boolean;
-  /** The chain-native asset id of the created fungible token (ASA id). */
+  requestedHolonId?: string | null;
+  purpose: 'Participant' | 'PlatformGenesis';
+}
+
+export interface PlatformGenesisRequest {
+  chainType: string; name: string; unitName: string; total: string; decimals: number;
+  expectedNetwork: string; confirmIrreversible: true;
+}
+export interface PlatformGenesisResponse {
+  definition: PlatformTokenDefinition; created: boolean; state: string;
+  operationsNote?: string | null; operation?: FungibleCreationView | null;
+}
+
+export interface FungibleContinuationRequest { requestId: string; version: number }
+export interface FungibleAttachmentRequest extends FungibleContinuationRequest { projectionAuthorityId: string }
+export interface FungibleAttachmentView {
+  operationId: string; version: number; state: string; holonId: string; projectionAuthorityId: string;
+  chainType: string; network: string; assetId: string; transactionId: string;
+}
+
+/** AssetId remains empty until authoritative issuance; operation is the recovery receipt. */
+export interface FungibleTokenResult {
+  userId: string;
+  walletId: string;
+  walletAddress: string;
+  walletProvisioned: boolean;
   assetId: string;
-  /** True when this response replays a prior launch — no second token was created. */
   replayed: boolean;
+  operation?: FungibleCreationView | null;
 }
 
 export interface NftBurnParams {
+  feeAuthorization?: NftFeeAuthorization;
   walletId: string;
 }
 
@@ -278,8 +447,11 @@ export interface NftBurnParams {
 
 /** Mirrors .NET CredentialRevokeRequest — the body for `POST /api/credential/{assetId}/revoke`. */
 export interface CredentialRevokeParams {
-  /** Chain the credential lives on. Algorand-only (ASA clawback) in v1. */
+  feeAuthorization?: NftFeeAuthorization;
+  /** Chain and historical network of the verified issuance. */
   chainType: string;
+  network?: string;
+  contractAddress?: string;
   /** Optional free-text reason recorded on the operation row. */
   reason?: string;
 }
@@ -287,12 +459,10 @@ export interface CredentialRevokeParams {
 /** The OperationStatus constants a revocation can carry; only "Completed" is a confirmed clawback. */
 export type CredentialRevokeStatus = "Completed" | "PendingConfirmation" | "Failed";
 
-/**
- * Mirrors .NET CredentialRevokeResult. `status` is the ONLY authority on what happened —
- * branch on it (or `isConfirmed`), never on "the call returned a result". The SDK never
- * returns a "PendingConfirmation" outcome as `ok`; see {@link isCredentialRevocationPending}.
- */
+/** Credential revocation projection; inspect status/isConfirmed and reconcile lifecycleId while pending. */
 export interface CredentialRevokeResult {
+  lifecycleId?: string;
+  lifecycleState?: NftLifecycleView["state"];
   /** Chain-native asset id (ASA id) of the revoked credential. */
   assetId: string;
   /** AZOA's ownership-row id for the credential. */
@@ -623,6 +793,7 @@ export interface ActionGraphBundleDappGenerationParams {
   targetChain: string;
   boundHolonIds: string[];
   config?: Record<string, string>;
+  generation: DeploymentGenerateRequest;
 }
 
 // ─── UserNFT types matching .NET DTOs ───
@@ -652,18 +823,96 @@ export interface UserNFTResult {
 }
 
 export interface UserNFTMintParams {
+  protocolCostAuthorization?: NftProtocolCostAuthorization;
+  feeAuthorization?: NftFeeAuthorization;
   chainType: string;
-  contractAddress?: string;
+  walletId?: string;
+  nftContractAddress?: string;
   tokenStandard?: string;
   metadataURI?: string;
+  imageURI?: string;
   name: string;
   description?: string;
   attributes?: Record<string, string>;
   royaltyPercentage?: number;
+  royaltyRecipient?: string;
   isSoulbound?: boolean;
   isTransferable?: boolean;
-  holonBindings?: { holonId: string; role: string; permissionLevel: string; permissions?: Record<string, string> }[];
-  walletBindings?: { walletId: string; bindingType: string; accessLevel: string; accessPermissions?: Record<string, string> }[];
+  holonBindings?: Record<string, string>;
+  walletBindings?: Record<string, string>;
+}
+
+export type NftOperation = "Mint" | "Transfer" | "Burn" | "Revoke" | "Refund";
+export interface NftFeeAuthorization { revision: number; maxNativeBaseUnits: string; quoteId: string }
+export interface NftFeeQuote {
+  quoteId: string;
+  chainType: string; network: string; operation: NftOperation; revision: number;
+  currency: string; decimals: number; nativeBaseUnits: string; treasuryAddress: string; payerUserId: string;
+}
+export interface NftProtocolCostLimits { networkFee: string; retainedRent: string; protocolLevy: string }
+export interface NftProtocolCostAuthorization { quoteId: string; quoteHash: string; limits: NftProtocolCostLimits }
+export interface NftProtocolCostQuote {
+  quoteId: string; actorUserId: string; actingTenantId: string; payerWalletId: string; payerAddress: string;
+  chainType: string; network: string; physicalNetworkIdentity: string; lifecycleId: string; draftHash: string;
+  stage: string; preparationGeneration: number; tokenStandard: string; policyEvidenceJson: string;
+  limits: NftProtocolCostLimits; createdAt: string; expiresAt: string;
+  quotedIntentHash?: string | null;
+}
+export interface NftProtocolCostOffer { quote: NftProtocolCostQuote; authorization: NftProtocolCostAuthorization }
+export interface NftWorkflowCostDisclosure { executionId: string; executionVersion: number; offer: NftProtocolCostOffer }
+export interface NftWorkflowCostAcceptance {
+  requestId: string; executionId: string; expectedExecutionVersion: number; authorization: NftProtocolCostAuthorization;
+}
+export interface NftWorkflowCostResolution { state: "Applied" | "Obsolete" | "Unresolved"; lifecycle?: NftLifecycleView | null }
+export interface NftLifecyclePage { items: NftLifecycleView[]; nextCursor: string | null }
+export interface EthereumPreparationView {
+  id: string;
+  network: string;
+  sender: string;
+  state: string;
+  nonce: string;
+  transactionId: string | null;
+  preparationKey: string;
+  updatedAt: string;
+}
+export interface EthereumRecoveryRequest { cancel: boolean; maximumFeePerGas: string; reason: string }
+export interface NftLifecycleView {
+  version: number;
+  preparationGeneration: number;
+  stageAcceptance?: NftStageAcceptance | null;
+  needsStageAcceptance?: boolean;
+  needsReplacementCosts?: boolean;
+  replacementCostsAccepted?: boolean;
+  operation: NftOperation;
+  feeQuote: NftFeeQuote | null;
+  actorUserId: string;
+  recipientUserId: string;
+  operationId: string;
+  nftId: string;
+  state: "Preparing" | "Prepared" | "Submitted" | "NeedsOperator" | "AwaitingRecipientAcceptance"
+    | "AwaitingCreatorDestruction" | "AwaitingRefundAuthorization" | "AwaitingRefundDestinationAcceptance" | "Confirmed" | "Completed" | "Cancelled" | "Failed";
+  stage: string;
+  assetId: string | null;
+  transactionId: string | null;
+  detail: string | null;
+}
+
+export interface NftStageAcceptance {
+  requestId: string;
+  expectedVersion: number;
+  state: NftLifecycleView["state"];
+  stage: string;
+  generation: number;
+}
+
+export interface NftReplacementCostAcceptance {
+  stage: NftStageAcceptance;
+  costs: NftProtocolCostAuthorization;
+}
+
+export interface NftReplacementCostReconciliation {
+  status: "Applied" | "Obsolete" | "Unresolved";
+  lifecycle: NftLifecycleView;
 }
 
 export interface HolonNFTBindingResult {
@@ -1088,7 +1337,14 @@ export type SelfIssuableApiKeyScope =
   | "swap:sign"
   | "transfer:sign"
   | "grant:sign"
-  | "token:create:sign";
+  | "token:create:sign"
+  | "contract:deploy:sign"
+  | "wtt:source:sign"
+  | "wtt:target:sign"
+  | "wtt:participant:sign"
+  | "wtt:cleanup:sign"
+  | "contract:call:sign"
+  | "solana:account:sign";
 
 /** One self-issuable API-key scope with its human description. */
 export interface SelfIssuableApiKeyScopeInfo {
@@ -1637,6 +1893,7 @@ export type NodeChainNetwork = "Devnet" | "Testnet" | "Mainnet";
 export interface NodeFeeScheduleEntry {
   flatBaseUnits: string;
   bps: number;
+  denomination?: "input-base-units-v1" | null;
 }
 
 /** The node's live, publicly-declared fee schedule. */
@@ -1846,7 +2103,7 @@ export interface FiatReversalView {
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
 
 /** DappSeries lifecycle status (mirrors .NET DappSeries.StatusKind). */
-export type DappSeriesStatus = "Draft" | "Building" | "Ready" | "Deployed" | "Archived";
+export type DappSeriesStatus = "Draft" | "Building" | "Ready" | "Deploying" | "Deployed" | "DeploymentFailed" | "Archived";
 
 /** A linked series of action DAGs that compose into a deployable dApp (mirrors .NET DappSeries). */
 export interface DappSeriesResult {
@@ -1858,6 +2115,7 @@ export interface DappSeriesResult {
   /** Cross-action deployment settings (string→string map), serialized as JSON on the row. */
   sharedConfig?: unknown;
   actionGraphBundleId?: string;
+  deploymentOperationId?: string;
   targetChain?: string;
   /** Composed DappManifest as a JSON string (null until ComposeAsync runs). */
   manifest?: string;
@@ -2005,6 +2263,104 @@ export class AzoaApiClient {
 
   // Tenant custodial onboarding
 
+  async getBusinessVerificationCapabilities(): Promise<Result<BusinessVerificationCapabilities, SdkError>> {
+    return this.request("GET", "/api/tenant/business-verification/capabilities");
+  }
+
+  async getBusinessVerification(): Promise<Result<BusinessVerificationStatus | null, SdkError>> {
+    return this.request("GET", "/api/tenant/business-verification");
+  }
+
+  async recoverOnRampPayment(intentId: string, action: "resume" | "refund", reason: string, providerRefundId?: string, retry?: { expectedRefundAttempt: number }): Promise<Result<OnRampLotView, SdkError>> {
+    return this.request<OnRampLotView>("POST", `/api/operator/on-ramp-lots/intents/${encodeURIComponent(intentId)}/${action}`, { reason, providerRefundId, ...(retry ? { retryFailed: true, expectedRefundAttempt: retry.expectedRefundAttempt } : {}) });
+  }
+
+  async recoverFailedBankPayout(payoutId: string, reason: string): Promise<Result<FiatPayoutView, SdkError>> {
+    return this.request<FiatPayoutView>("POST", `/api/admin/fiat-payouts/${encodeURIComponent(payoutId)}/recover`, { reason });
+  }
+
+  async listEthereumPreparations(network: "Devnet" | "Testnet" | "Mainnet", operator = false): Promise<Result<EthereumPreparationView[], SdkError>> {
+    return this.request("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
+  }
+
+  async activateEthereumSigner(network: "Devnet" | "Testnet" | "Mainnet", walletId: string): Promise<Result<boolean, SdkError>> {
+    return this.request("POST", `/api/ethereum/recovery/${network}/activate`, { walletId });
+  }
+
+  async activateEthereumPlatformSigner(network: "Devnet" | "Testnet" | "Mainnet", sender: string): Promise<Result<boolean, SdkError>> {
+    return this.request("POST", `/api/operator/ethereum/recovery/${network}/activate`, { sender });
+  }
+
+  async recoverEthereumPreparation(network: "Devnet" | "Testnet" | "Mainnet", id: string, request: EthereumRecoveryRequest, operator = false): Promise<Result<EthereumPreparationView, SdkError>> {
+    return this.request("POST", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}/${encodeURIComponent(id)}`, request);
+  }
+
+  async replayFiatEvent(eventId: string): Promise<Result<FiatEventView, SdkError>> {
+    return this.request<FiatEventView>("POST", `/api/operator/fiat-events/${encodeURIComponent(eventId)}/replay`, {});
+  }
+
+  async listFiatEvents(limit = 50): Promise<Result<FiatEventView[], SdkError>> {
+    return this.request("GET", `/api/operator/fiat-events?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`);
+  }
+
+  async createWalletAuthenticationChallenge(address: string, chainType: WalletAuthenticationChain): Promise<Result<WalletAuthenticationChallenge, SdkError>> {
+    return this.request("POST", "/api/user/auth/challenge", { address, chainType }, false, undefined, true);
+  }
+
+  async verifyWalletAuthentication(proof: WalletAuthenticationProof): Promise<Result<WalletAuthenticationToken, SdkError>> {
+    return this.request("POST", "/api/user/auth/verify", proof, false, undefined, true);
+  }
+
+  async linkAuthenticationWallet(proof: WalletAuthenticationProof): Promise<Result<boolean, SdkError>> {
+    return this.request("POST", "/api/user/wallet/link", proof);
+  }
+
+  async createWalletOwnershipInvite(childUserId: string): Promise<Result<{ claimToken: string; targetUserId: string; expiresAt: string }, SdkError>> {
+    return this.request("POST", "/api/user/claim-invite", { childUserId });
+  }
+
+  async claimWalletOwnership(request: WalletOwnershipClaim): Promise<Result<WalletAuthenticationToken, SdkError>> {
+    return this.request("POST", "/api/user/claim", request, false, undefined, true);
+  }
+
+  async listActionRecovery(limit = 50): Promise<Result<ActionRecoveryView[], SdkError>> {
+    return this.request("GET", `/api/operator/action-recovery?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`);
+  }
+
+  async getActionRecovery(executionId: string): Promise<Result<ActionRecoveryView, SdkError>> {
+    return this.request("GET", `/api/operator/action-recovery/${encodeURIComponent(executionId)}`);
+  }
+
+  async getActionRecoveryHistory(executionId: string): Promise<Result<ActionRecoveryAudit[], SdkError>> {
+    return this.request("GET", `/api/operator/action-recovery/${encodeURIComponent(executionId)}/history`);
+  }
+
+  async retryActionRecovery(executionId: string, request: ActionRecoveryRequest): Promise<Result<ActionRecoveryReceipt, SdkError>> {
+    return this.request("POST", `/api/operator/action-recovery/${encodeURIComponent(executionId)}/retry`, request);
+  }
+
+  async listHostedSessionRecovery(limit = 50): Promise<Result<HostedSessionRecoveryView[], SdkError>> {
+    return this.request("GET", `/api/operator/hosted-sessions/reconciliation?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`);
+  }
+
+  async refreshHostedSession(sessionId: string): Promise<Result<{ sessionId: string; status: string; providerKey: string }, SdkError>> {
+    return this.request("POST", `/api/operator/hosted-sessions/${encodeURIComponent(sessionId)}/refresh`, {});
+  }
+
+  async reconcileHostedSession(sessionId: string, request: HostedSessionRecoveryRequest): Promise<Result<{ sessionId: string; status: string; reconciledAt?: string }, SdkError>> {
+    return this.request("POST", `/api/operator/hosted-sessions/${encodeURIComponent(sessionId)}/reconcile`, request);
+  }
+
+  async refreshBusinessVerification(): Promise<Result<BusinessVerificationStatus | null, SdkError>> {
+    return this.request("POST", "/api/tenant/business-verification/refresh");
+  }
+
+  async beginBusinessVerification(idempotencyKey: string): Promise<Result<BusinessVerificationSession, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("POST", "/api/tenant/business-verification/session", undefined, false,
+      { "Idempotency-Key": idempotencyKey });
+  }
+
   async getTenantCustodialCapabilities(): Promise<Result<TenantCustodialCapabilities, SdkError>> {
     return this.request("GET", API_PATHS.TENANT_CUSTODIAL_CAPABILITIES);
   }
@@ -2064,6 +2420,10 @@ export class AzoaApiClient {
   async login(email: string, password: string): Promise<Result<string, SdkError>> {
     // .NET returns AZOAResult<string> where Result is the JWT token
     return this.request("POST", "/api/user/login", { email, password });
+  }
+
+  async loginByUserId(userId: string, password: string): Promise<Result<string, SdkError>> {
+    return this.request("POST", "/api/user/login", { userId, password }, false, undefined, true);
   }
 
   async register(params: {
@@ -2154,48 +2514,79 @@ export class AzoaApiClient {
     return this.request<NftResult[]>("GET", `/api/nft${query ? `?${query}` : ""}`);
   }
 
-  async mintNft(params: NftMintParams): Promise<Result<BlockchainOperationResult, SdkError>> {
+  /** Returns costs for explicit consent without admitting or signing the mint. */
+  async quoteNftMintCosts(params: NftMintParams, idempotencyKey: string): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("POST", "/api/nft/mint-cost-quote", params, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async mintNft(params: NftMintParams, idempotencyKey: string): Promise<Result<BlockchainOperationResult, SdkError>> {
     // POST /api/nft/mint with NftMintRequest body
-    return this.request<BlockchainOperationResult>("POST", "/api/nft/mint", params);
+    return this.request<BlockchainOperationResult>("POST", "/api/nft/mint", params, false, { "Idempotency-Key": idempotencyKey });
   }
 
-  /**
-   * One-shot fungible token (ASA) mint — the direct (no-DAG) parallel to the
-   * `FungibleTokenCreate` action node. Maps to `POST /api/nft/fungible-mint`
-   * (NftController.FungibleMint). KYC-gated (a fail-closed rejection surfaces as a
-   * 403 → `SdkError` with the `KYC_FORBIDDEN:` message) and idempotent.
-   *
-   * Supply `options.idempotencyKey` to set the `Idempotency-Key` header; the
-   * backend dedupes on it (absent ⇒ deterministic content key). A duplicate call
-   * under the same key returns the ORIGINAL result with `replayed: true` and
-   * creates NO second token.
-   */
-  async fungibleMint(
-    params: FungibleMintParams,
-    options?: { idempotencyKey?: string }
-  ): Promise<Result<FungibleTokenResult, SdkError>> {
-    const extraHeaders = options?.idempotencyKey
-      ? { "Idempotency-Key": options.idempotencyKey }
-      : undefined;
-    return this.request<FungibleTokenResult>(
-      "POST",
-      "/api/nft/fungible-mint",
-      params,
-      false,
-      extraHeaders
-    );
+  /** Retain the original key and descriptor until the server reports a terminal operation. */
+  async fungibleMint(params: FungibleMintParams, options: { idempotencyKey: string }): Promise<Result<FungibleTokenResult, SdkError>> {
+    assertNonEmpty(options.idempotencyKey, "idempotencyKey");
+    if (typeof params.total === "number" && (!Number.isSafeInteger(params.total) || params.total <= 0))
+      throw new Error("Supply must be a positive safe integer or canonical uint64 text.");
+    const total = String(params.total);
+    if (!/^[1-9][0-9]*$/.test(total) || BigInt(total) > 18446744073709551615n)
+      throw new Error("Supply must be canonical positive uint64 text.");
+    return this.request<FungibleTokenResult>("POST", "/api/nft/fungible-mint", { ...params, total }, false,
+      { "Idempotency-Key": options.idempotencyKey });
   }
 
-  async transferNft(nftId: string, params: NftTransferParams): Promise<Result<BlockchainOperationResult, SdkError>> {
+  async listFungibleCreations(offset = 0, limit = 25): Promise<Result<FungibleCreationView[], SdkError>> {
+    return this.request("GET", `/api/fungible-creation?offset=${offset}&limit=${limit}`);
+  }
+
+  async getFungibleCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("GET", `/api/fungible-creation/${encodeURIComponent(id)}`);
+  }
+
+  async quoteFungibleCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/quote`);
+  }
+
+  async acceptFungibleCreationQuote(id: string, request: { version: number; quoteId: string }): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/accept-quote`, request);
+  }
+
+  async continueFungibleCreation(id: string, request: FungibleContinuationRequest): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/continue`, request);
+  }
+
+  async refreshFungibleCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/refresh`);
+  }
+
+  async replaceFungibleCreation(id: string, request: FungibleContinuationRequest): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/replace`, request);
+  }
+
+  async cancelFungibleCreation(id: string, request: FungibleContinuationRequest): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/cancel`, request);
+  }
+
+  async getFungibleAttachment(id: string): Promise<Result<FungibleAttachmentView, SdkError>> {
+    return this.request("GET", `/api/fungible-creation/${encodeURIComponent(id)}/attachment`);
+  }
+
+  async attachFungibleCreation(id: string, request: FungibleAttachmentRequest): Promise<Result<FungibleAttachmentView, SdkError>> {
+    return this.request("POST", `/api/fungible-creation/${encodeURIComponent(id)}/attachment`, request);
+  }
+
+  async transferNft(nftId: string, params: NftTransferParams, idempotencyKey: string): Promise<Result<BlockchainOperationResult, SdkError>> {
     assertUuid(nftId, "nftId");
     // POST /api/nft/{id}/transfer with NftTransferRequest body
-    return this.request<BlockchainOperationResult>("POST", `/api/nft/${nftId}/transfer`, params);
+    return this.request<BlockchainOperationResult>("POST", `/api/nft/${nftId}/transfer`, params, false, { "Idempotency-Key": idempotencyKey });
   }
 
-  async burnNft(nftId: string, params: NftBurnParams): Promise<Result<BlockchainOperationResult, SdkError>> {
+  async burnNft(nftId: string, params: NftBurnParams, idempotencyKey: string): Promise<Result<BlockchainOperationResult, SdkError>> {
     assertUuid(nftId, "nftId");
     // POST /api/nft/{id}/burn with NftBurnRequest body
-    return this.request<BlockchainOperationResult>("POST", `/api/nft/${nftId}/burn`, params);
+    return this.request<BlockchainOperationResult>("POST", `/api/nft/${nftId}/burn`, params, false, { "Idempotency-Key": idempotencyKey });
   }
 
   async getNftMetadata(nftId: string): Promise<Result<NftMetadata, SdkError>> {
@@ -2205,20 +2596,7 @@ export class AzoaApiClient {
 
   // ─── Credential (CredentialController, D19) ───
 
-  /**
-   * Revoke a soulbound credential (issuer-only ASA clawback). Maps to
-   * `POST /api/credential/{assetId}/revoke`. KYC-gated, scope-gated
-   * (`credential:revoke:sign`) and idempotent — `options.idempotencyKey` sets the
-   * `Idempotency-Key` header; a duplicate call replays the ORIGINAL result with
-   * `replayed: true`.
-   *
-   * NOT yet enabled server-side (credential-third-party-issuance_20260906); this
-   * method exists for parity with the backend surface.
-   *
-   * A PendingConfirmation outcome (HTTP 202, broadcast but unconfirmed) is NEVER
-   * returned as `ok` — it surfaces as an `SdkError` with `status: 202`. Detect it
-   * with {@link isCredentialRevocationPending} and reconcile rather than re-submit.
-   */
+  /** Starts or resumes issuer-authorized credential revocation; pending outcomes require lifecycle reconciliation. */
   async revokeCredential(
     assetId: string,
     params: CredentialRevokeParams,
@@ -2406,9 +2784,237 @@ export class AzoaApiClient {
     return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/generate`, params);
   }
 
-  async deployActionGraphBundle(actiongraphbundleId: string): Promise<Result<ActionGraphBundleResult, SdkError>> {
+  async deployActionGraphBundle(actiongraphbundleId: string, request: DeploymentStartRequest, requestKey: string): Promise<Result<DeploymentReceipt, SdkError>> {
     assertUuid(actiongraphbundleId, "actiongraphbundleId");
-    return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/deploy`);
+    return this.request("POST", `/api/actiongraphbundle/${actiongraphbundleId}/deploy`, request, false, { "Idempotency-Key": requestKey });
+  }
+
+  async generateDeployment(bundleId: string, request: DeploymentGenerateRequest): Promise<Result<DeploymentArtifactView, SdkError>> {
+    assertUuid(bundleId, "bundleId");
+    return this.request("POST", `/api/deployments/bundles/${bundleId}/generate`, request);
+  }
+
+  async getDeploymentArtifact(artifactId: string): Promise<Result<DeploymentArtifactView, SdkError>> {
+    return this.request("GET", `/api/deployments/artifacts/${encodeURIComponent(artifactId)}`);
+  }
+
+  /** Read-only authoritative quote; retain the returned immutable intent for admission. */
+  async quoteDeployment(request: DeploymentQuoteRequest): Promise<Result<NativeOperationIntent, SdkError>> {
+    return this.request("POST", "/api/deployments/quote", request);
+  }
+
+  /** Simulation/read only: this endpoint cannot allocate custody, nonces, or broadcast. */
+  async queryNativeContract(request: ContractQueryRequest): Promise<Result<unknown, SdkError>> {
+    return this.request("POST", "/api/deployments/contract-query", request);
+  }
+
+  /** Reuse both key and request after a lost response. Pending is not confirmation. */
+  async startDeployment(request: DeploymentStartRequest, requestKey: string): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", "/api/deployments", request, false, { "Idempotency-Key": requestKey });
+  }
+
+  async listDeployments(cursor?: string, limit = 25): Promise<Result<DeploymentPage, SdkError>> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request("GET", `/api/deployments?${query}`);
+  }
+
+  async getDeployment(operationId: string): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("GET", `/api/deployments/${encodeURIComponent(operationId)}`);
+  }
+
+  /** Absence does not prove a suspended request cannot still be admitted. */
+  async getDeploymentByRequest(requestKey: string): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("GET", `/api/deployments/request?${new URLSearchParams({ requestKey })}`);
+  }
+
+  /** Atomically fences delayed admission, or cancels an existing safely cancellable operation. */
+  async cancelDeploymentRequest(requestKey: string, request: DeploymentStartRequest): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", "/api/deployments/request/cancel", { requestKey, request });
+  }
+
+  /** Interactive authorization of the next stage; the server rechecks live custody and caps. */
+  async continueDeployment(operationId: string): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/continue`);
+  }
+
+  async cancelDeployment(operationId: string): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/cancel`);
+  }
+
+  async recoverDeploymentWithinBudget(operationId: string, request: DeploymentOriginalBudgetRecoveryRequest): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/recovery/original-budget`, request);
+  }
+
+  async quoteDeploymentRecovery(operationId: string, request: DeploymentRecoveryQuoteRequest): Promise<Result<DeploymentRecoveryQuote, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/recovery/quote`, request);
+  }
+
+  /** Persist this exact request before sending; replay it after a lost response. */
+  async startDeploymentRecovery(operationId: string, request: DeploymentRecoveryStartRequest): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/recovery/start`, request);
+  }
+
+  /** Success proves this exact unadmitted quote can no longer authorize recovery. */
+  async invalidateDeploymentRecovery(operationId: string, request: DeploymentRecoveryStartRequest): Promise<Result<DeploymentReceipt, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/recovery/invalidate`, request);
+  }
+
+  async getWebhookRegistration(): Promise<Result<WebhookRegistrationStatus | null, SdkError>> {
+    return this.request("GET", "/api/tenant/webhook-registration");
+  }
+
+  /** Persist the command before submission and reuse it unchanged after response loss. */
+  async grantConsent(command: ConsentGrantCommand): Promise<Result<ConsentGrantReceipt, SdkError>> {
+    return this.request("POST", "/api/user/consent", command);
+  }
+
+  async withdrawConsentCommand(command: ConsentGrantCommand): Promise<Result<ConsentCommandWithdrawal, SdkError>> {
+    return this.request("POST", "/api/user/consent/withdraw", command);
+  }
+
+  async listConsentGrants(): Promise<Result<ConsentGrantView[], SdkError>> {
+    return this.request("GET", "/api/user/consent");
+  }
+
+  async getConsentGrant(grantId: string): Promise<Result<ConsentGrantView, SdkError>> {
+    return this.request("GET", `/api/user/consent/${encodeURIComponent(grantId)}`);
+  }
+
+  async revokeConsent(grantId: string): Promise<Result<ConsentRevocationReceipt, SdkError>> {
+    return this.request("DELETE", `/api/user/consent/${encodeURIComponent(grantId)}`);
+  }
+
+  async listTenantConsentGrants(participationRef?: string): Promise<Result<ConsentGrantView[], SdkError>> {
+    return this.request("GET", `/api/tenant/consent${participationRef === undefined ? "" : `?participationRef=${encodeURIComponent(participationRef)}`}`);
+  }
+
+  async offboardParticipation(participationRef: string): Promise<Result<ConsentOffboardReceipt, SdkError>> {
+    return this.request("DELETE", `/api/tenant/consent/participation/${encodeURIComponent(participationRef)}`);
+  }
+
+  async offboardProvisionedUser(externalUserId: string): Promise<Result<ConsentOffboardReceipt, SdkError>> {
+    return this.request("DELETE", `/api/tenant/consent/provisioned?externalUserId=${encodeURIComponent(externalUserId)}`);
+  }
+
+  async listConsentWebhookEvents(offset = 0, limit = 25): Promise<Result<ConsentWebhookEventStatus[], SdkError>> {
+    return this.request("GET", `/api/tenant/consent-webhook-events?offset=${offset}&limit=${limit}`);
+  }
+
+  async getConsentWebhookEvent(eventId: string): Promise<Result<ConsentWebhookEventStatus, SdkError>> {
+    return this.request("GET", `/api/tenant/consent-webhook-events/${encodeURIComponent(eventId)}`);
+  }
+
+  async retryConsentWebhookEvent(eventId: string, command: WebhookEventRetryCommand): Promise<Result<WebhookEventRetryReceipt, SdkError>> {
+    return this.request("POST", `/api/tenant/consent-webhook-events/${encodeURIComponent(eventId)}/retry`, command);
+  }
+
+  async listOperatorConsentWebhookEvents(tenantId: string, offset = 0, limit = 25): Promise<Result<ConsentWebhookEventStatus[], SdkError>> {
+    return this.request("GET", `/api/operator/tenants/${encodeURIComponent(tenantId)}/consent-webhook-events?offset=${offset}&limit=${limit}`);
+  }
+
+  async getOperatorConsentWebhookEvent(tenantId: string, eventId: string): Promise<Result<ConsentWebhookEventStatus, SdkError>> {
+    return this.request("GET", `/api/operator/tenants/${encodeURIComponent(tenantId)}/consent-webhook-events/${encodeURIComponent(eventId)}`);
+  }
+
+  async retryOperatorConsentWebhookEvent(tenantId: string, eventId: string, command: WebhookEventRetryCommand): Promise<Result<WebhookEventRetryReceipt, SdkError>> {
+    return this.request("POST", `/api/operator/tenants/${encodeURIComponent(tenantId)}/consent-webhook-events/${encodeURIComponent(eventId)}/retry`, command);
+  }
+
+  async listWebhookEvents(offset = 0, limit = 25): Promise<Result<WebhookEventStatus[], SdkError>> {
+    return this.request("GET", `/api/tenant/webhook-events?offset=${offset}&limit=${limit}`);
+  }
+
+  async getWebhookEvent(eventId: string): Promise<Result<WebhookEventStatus, SdkError>> {
+    return this.request("GET", `/api/tenant/webhook-events/${encodeURIComponent(eventId)}`);
+  }
+
+  /** Preserve the exact command when retrying after response loss. */
+  async retryWebhookEvent(eventId: string, command: WebhookEventRetryCommand): Promise<Result<WebhookEventRetryReceipt, SdkError>> {
+    return this.request("POST", `/api/tenant/webhook-events/${encodeURIComponent(eventId)}/retry`, command);
+  }
+
+  async listOperatorWebhookEvents(tenantId: string, offset = 0, limit = 25): Promise<Result<WebhookEventStatus[], SdkError>> {
+    return this.request("GET", `/api/operator/tenants/${encodeURIComponent(tenantId)}/webhook-events?offset=${offset}&limit=${limit}`);
+  }
+
+  async getOperatorWebhookEvent(tenantId: string, eventId: string): Promise<Result<WebhookEventStatus, SdkError>> {
+    return this.request("GET", `/api/operator/tenants/${encodeURIComponent(tenantId)}/webhook-events/${encodeURIComponent(eventId)}`);
+  }
+
+  async retryOperatorWebhookEvent(tenantId: string, eventId: string, command: WebhookEventRetryCommand): Promise<Result<WebhookEventRetryReceipt, SdkError>> {
+    return this.request("POST", `/api/operator/tenants/${encodeURIComponent(tenantId)}/webhook-events/${encodeURIComponent(eventId)}/retry`, command);
+  }
+
+  /** Retry the same command after response loss; a replay never rediscloses a secret. */
+  async updateWebhookRegistration(command: WebhookRegistrationCommand): Promise<Result<WebhookRegistrationMutationResult, SdkError>> {
+    return this.request("PUT", "/api/tenant/webhook-registration", command);
+  }
+
+  async withdrawWebhookRegistration(command: WebhookRegistrationCommand): Promise<Result<WebhookRegistrationWithdrawal, SdkError>> {
+    return this.request("POST", "/api/tenant/webhook-registration/withdraw", command);
+  }
+
+  async withdrawOperatorWebhookRegistration(tenantId: string, command: WebhookRegistrationCommand): Promise<Result<WebhookRegistrationWithdrawal, SdkError>> {
+    return this.request("POST", `/api/operator/tenants/${encodeURIComponent(tenantId)}/webhook-registration/withdraw`, command);
+  }
+
+  async getOperatorWebhookRegistration(tenantId: string): Promise<Result<WebhookRegistrationStatus | null, SdkError>> {
+    return this.request("GET", `/api/operator/tenants/${encodeURIComponent(tenantId)}/webhook-registration`);
+  }
+
+  async updateOperatorWebhookRegistration(tenantId: string, command: WebhookRegistrationCommand): Promise<Result<WebhookRegistrationMutationResult, SdkError>> {
+    return this.request("PUT", `/api/operator/tenants/${encodeURIComponent(tenantId)}/webhook-registration`, command);
+  }
+
+  /** Inspects one durable ancestry page without signing or submitting a transaction. */
+  async inspectDeploymentRecoveryAncestry(operationId: string): Promise<Result<DeploymentRecoveryAncestry, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/recovery/ancestry/inspect`);
+  }
+
+  /** Admits an actual caller-owned run; observe the returned run through getActionRun. */
+  async invokeDeployment(operationId: string, request: DeploymentInvokeRequest, invocationKey: string): Promise<Result<ActionRunResult, SdkError>> {
+    return this.request("POST", `/api/deployments/${encodeURIComponent(operationId)}/invoke`, request, false, { "Idempotency-Key": invocationKey });
+  }
+
+  async generateDappSeries(seriesId: string, request: DeploymentGenerateRequest): Promise<Result<ActionGraphBundleResult, SdkError>> {
+    assertUuid(seriesId, "seriesId");
+    return this.request("POST", `/api/dapp-series/${seriesId}/generate`, request);
+  }
+
+  async composeDappSeries(seriesId: string): Promise<Result<DappCompositionManifest, SdkError>> {
+    assertUuid(seriesId, "seriesId");
+    return this.request("POST", `/api/dapp-series/${seriesId}/compose`);
+  }
+
+  async validateDappSeries(seriesId: string): Promise<Result<DappCompositionValidation, SdkError>> {
+    assertUuid(seriesId, "seriesId");
+    return this.request("GET", `/api/dapp-series/${seriesId}/validate`);
+  }
+
+  async getDappSeriesManifest(seriesId: string): Promise<Result<DappCompositionManifest, SdkError>> {
+    assertUuid(seriesId, "seriesId");
+    return this.request("GET", `/api/dapp-series/${seriesId}/manifest`);
+  }
+
+  async getDappSeriesDeploymentStatus(seriesId: string): Promise<Result<DappSeriesStatus, SdkError>> {
+    assertUuid(seriesId, "seriesId");
+    return this.request("GET", `/api/dapp-series/${seriesId}/status`);
+  }
+
+  async getDeploymentEcosystem(bundleId: string): Promise<Result<DeploymentEcosystemTree, SdkError>> {
+    assertUuid(bundleId, "bundleId");
+    return this.request("GET", `/api/actiongraphbundle/${bundleId}/ecosystem`);
+  }
+
+  async attachDeploymentEcosystem(bundleId: string, request: DeploymentEcosystemAttachment): Promise<Result<DeploymentEcosystemTree, SdkError>> {
+    assertUuid(bundleId, "bundleId");
+    return this.request("POST", `/api/actiongraphbundle/${bundleId}/ecosystem/dapp-series`, request);
+  }
+
+  async deployDappSeries(seriesId: string, request: DeploymentStartRequest, requestKey: string): Promise<Result<DeploymentReceipt, SdkError>> {
+    assertUuid(seriesId, "seriesId");
+    return this.request("POST", `/api/dapp-series/${seriesId}/deploy`, request, false, { "Idempotency-Key": requestKey });
   }
 
   // ─── Holon AssetType registry (HolonTypeRegistryController, final-hardening F5) ───
@@ -2563,6 +3169,94 @@ export class AzoaApiClient {
     return this.request<HoldView>("POST", API_PATHS.HOLD_OPEN, params);
   }
 
+  /** Admits the original keyed command and returns its actual custody progress. */
+  async startHoldCommand(request: HoldStartCommand): Promise<Result<HoldCommandView, SdkError>> {
+    assertNonEmpty(request.intent.requestKey, 'requestKey');
+    return this.request('POST', '/api/hold-commands', request);
+  }
+
+  async listHoldCommands(offset = 0, limit = 25): Promise<Result<HoldCommandPage, SdkError>> {
+    return this.request('GET', `/api/hold-commands?offset=${offset}&limit=${limit}`);
+  }
+
+  async getHoldCommand(id: string): Promise<Result<HoldCommandView, SdkError>> {
+    assertNonEmpty(id, 'operationId');
+    return this.request('GET', `/api/hold-commands/${encodeURIComponent(id)}`);
+  }
+
+  /** Observes or rebroadcasts previously authorized bytes without new signing consent. */
+  async refreshHoldCommand(id: string): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/refresh`);
+  }
+
+  async continueHoldCommand(id: string, request: HoldConsentCommand): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/continue`, request);
+  }
+
+  async acceptHoldRecipient(id: string, request: HoldConsentCommand): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/accept`, request);
+  }
+
+  async replaceHoldCommand(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/replace`, request);
+  }
+
+  async cancelHoldCommand(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/cancel`, request);
+  }
+
+  async reconcileHoldCommand(id: string, request: HoldRequestLookup): Promise<Result<HoldRequestResolution, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/reconcile-request`, request);
+  }
+
+  async acceptHoldOpening(id: string, request: HoldOpeningAcceptance): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/accept-opening`, request);
+  }
+
+  async reconcileHoldOpening(id: string, request: HoldOpeningAcceptance): Promise<Result<HoldRequestResolution, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/reconcile-opening`, request);
+  }
+
+  async replaceHoldOpening(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/replace-opening`, request);
+  }
+
+  async withdrawHoldOpening(id: string, request: HoldRecoveryCommand): Promise<Result<HoldCommandView, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/withdraw-opening`, request);
+  }
+
+  async reconcileHoldOpeningRecovery(id: string, request: HoldOpeningRecoveryLookup): Promise<Result<HoldRequestResolution, SdkError>> {
+    return this.request('POST', `/api/hold-commands/${encodeURIComponent(id)}/reconcile-opening-recovery`, request);
+  }
+
+  async quoteHoldReleaseMandate(request: HoldMandateOfferRequest): Promise<Result<HoldMandateOffer, SdkError>> {
+    return this.request('POST', '/api/hold-release-mandates/offers', request);
+  }
+
+  async acceptHoldReleaseMandate(request: HoldMandateAcceptance): Promise<Result<HoldMandateView, SdkError>> {
+    return this.request('POST', '/api/hold-release-mandates/accept', request);
+  }
+
+  async listHoldReleaseMandates(offset = 0, limit = 25): Promise<Result<HoldMandatePage, SdkError>> {
+    return this.request('GET', `/api/hold-release-mandates?offset=${offset}&limit=${limit}`);
+  }
+
+  async getHoldReleaseMandate(id: string): Promise<Result<HoldMandateView, SdkError>> {
+    return this.request('GET', `/api/hold-release-mandates/${encodeURIComponent(id)}`);
+  }
+
+  async reauthorizeHoldReleaseMandate(id: string, request: HoldRecoveryCommand): Promise<Result<HoldMandateView, SdkError>> {
+    return this.request('POST', `/api/hold-release-mandates/${encodeURIComponent(id)}/reauthorize`, request);
+  }
+
+  async revokeHoldReleaseMandate(id: string, request: HoldRecoveryCommand): Promise<Result<HoldMandateView, SdkError>> {
+    return this.request('POST', `/api/hold-release-mandates/${encodeURIComponent(id)}/revoke`, request);
+  }
+
+  async reconcileHoldReleaseMandate(id: string, request: { kind: 'MandateReauthorize' | 'MandateRevoke'; request: HoldRecoveryCommand }): Promise<Result<HoldMandateResolution, SdkError>> {
+    return this.request('POST', `/api/hold-release-mandates/${encodeURIComponent(id)}/reconcile-request`, request);
+  }
+
   /** Releases a due hold to its beneficiary. Refused before the window elapses. */
   async releaseHold(
     chain: string,
@@ -2697,14 +3391,38 @@ export class AzoaApiClient {
 
   // ─── Platform token reserve/genesis read (PlatformTokenController). Operator-scoped. ───
 
-  /**
-   * The platform unit on this node's active network, with live supply. There is
-   * deliberately no `runPlatformTokenGenesis` method — that mutation additionally
-   * requires a fresh, non-API-key node-operator login the SDK's bearer/API-key
-   * config cannot express.
-   */
+  /** Operator-scoped verified platform issuance and reserve supply. */
   async getPlatformTokenState(): Promise<Result<PlatformTokenState, SdkError>> {
     return this.request<PlatformTokenState>("GET", API_PATHS.PLATFORM_TOKEN_GET);
+  }
+
+  /** Requires an actual recent node-operator session; admission does not accept costs or sign. */
+  async runPlatformTokenGenesis(request: PlatformGenesisRequest): Promise<Result<PlatformGenesisResponse, SdkError>> {
+    return this.request("POST", "/api/admin/platform-token/genesis", request);
+  }
+
+  async getPlatformGenesisCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("GET", `/api/admin/platform-token/creation/${encodeURIComponent(id)}`);
+  }
+
+  async refreshPlatformGenesisCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/admin/platform-token/creation/${encodeURIComponent(id)}/refresh`);
+  }
+
+  async quotePlatformGenesisCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/admin/platform-token/creation/${encodeURIComponent(id)}/quote`);
+  }
+
+  async acceptPlatformGenesisQuote(id: string, request: { version: number; quoteId: string }): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/admin/platform-token/creation/${encodeURIComponent(id)}/accept-quote`, request);
+  }
+
+  async continuePlatformGenesisCreation(id: string, request: FungibleContinuationRequest): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/admin/platform-token/creation/${encodeURIComponent(id)}/continue`, request);
+  }
+
+  async replacePlatformGenesisCreation(id: string, request: FungibleContinuationRequest): Promise<Result<FungibleCreationView, SdkError>> {
+    return this.request("POST", `/api/admin/platform-token/creation/${encodeURIComponent(id)}/replace`, request);
   }
 
   // ─── Project treasury reads (ProjectTreasuryController). Operator-scoped. ───
@@ -2811,6 +3529,66 @@ export class AzoaApiClient {
     return this.request<SwapQuoteResponse>("GET", `/api/swap/quote?${qs}`);
   }
 
+  /** Issues an immutable owner-bound quote; unavailable liquidity is an ordinary result. */
+  async quoteDex(request: DexQuoteRequest): Promise<Result<DexQuoteAvailability, SdkError>> {
+    return this.request("POST", "/api/dex/quotes", request);
+  }
+
+  async getDexQuote(id: string): Promise<Result<DexQuoteView, SdkError>> {
+    return this.request("GET", `/api/dex/quotes/${encodeURIComponent(id)}`);
+  }
+
+  /** Replays the caller's saved admission key and original quote without generating a new command. */
+  async startDexSwap(request: SwapAdmissionRequest): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", "/api/dex/operations", request);
+  }
+
+  async getDexSwap(id: string): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("GET", `/api/dex/operations/${encodeURIComponent(id)}`);
+  }
+
+  async prepareDexSwap(id: string, command: SwapVersionCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/prepare`, command);
+  }
+
+  async signDexSwap(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/sign`, command);
+  }
+
+  /** Disclosure is potential egress and requires explicit persisted participant consent. */
+  async exposeDexSwap(id: string, command: SwapExposureCommand): Promise<Result<SwapExternalSigningView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/external-signing`, command);
+  }
+
+  async acceptDexSwapSignature(id: string, command: SwapBrowserStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/external-signature`, command);
+  }
+
+  async submitDexSwap(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/submit`, command);
+  }
+
+  async refreshDexSwap(id: string): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/refresh`);
+  }
+
+  async cancelDexSwap(id: string, command: SwapVersionCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cancel`, command);
+  }
+
+  /** Stops future server submission without recalling a send or releasing reserved accounting. */
+  async withdrawDexSwapSubmission(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/withdraw-submission`, command);
+  }
+
+  async beginDexSwapCleanup(id: string, command: SwapCleanupRequest): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cleanup`, command);
+  }
+
+  async prepareDexSwapCleanup(id: string, command: SwapCleanupStageCommand): Promise<Result<SwapOperationView, SdkError>> {
+    return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cleanup/prepare`, command);
+  }
+
   /**
    * Execute a previously-fetched swap quote — returns an unsigned swap
    * transaction the caller signs and broadcasts. Maps to `POST /api/swap/execute`.
@@ -2837,8 +3615,61 @@ export class AzoaApiClient {
 
   // ─── UserNFT ───
 
-  async mintUserNFT(params: UserNFTMintParams): Promise<Result<UserNFTResult, SdkError>> {
-    return this.request("POST", "/api/usernft/mint", params);
+  /** Discloses costs for the caller-reviewed replacement generation without signing. */
+  async quoteNftReplacementCosts(operationId: string, stage: NftStageAcceptance): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/quote`, stage);
+  }
+
+  /** Accepts the exact saved replacement cost request without signing. */
+  async acceptNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/accept`, request);
+  }
+
+  /** Reads the saved request outcome before any fresh offer replaces it. */
+  async reconcileNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
+    return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/reconcile`, request);
+  }
+
+  /** Atomically retires an unanswered acceptance version, preserving a winning acceptance. */
+  async retireNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
+    return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/retire`, request);
+  }
+
+  /** Discloses costs for the original frozen execution without accepting them. */
+  async quoteNftWorkflowCosts(executionId: string): Promise<Result<NftWorkflowCostDisclosure, SdkError>> {
+    assertUuid(executionId, "executionId");
+    return this.request("POST", `/api/nft-workflow-costs/${executionId}/quote`);
+  }
+
+  /** Accepts the caller-persisted exact request; replay preserves its original identity. */
+  async acceptNftWorkflowCosts(request: NftWorkflowCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertUuid(request.executionId, "executionId");
+    assertUuid(request.requestId, "requestId");
+    return this.request("POST", "/api/nft-workflow-costs/accept", request);
+  }
+
+  /** Retires only an uncommitted acceptance; a winning admission remains Applied. */
+  async retireNftWorkflowCosts(request: NftWorkflowCostAcceptance): Promise<Result<NftWorkflowCostResolution, SdkError>> {
+    assertUuid(request.executionId, "executionId");
+    assertUuid(request.requestId, "requestId");
+    return this.request("POST", "/api/nft-workflow-costs/retire", request);
+  }
+
+  /** Resolves the saved acceptance without authorizing a new mint. */
+  async reconcileNftWorkflowCosts(request: NftWorkflowCostAcceptance): Promise<Result<NftWorkflowCostResolution, SdkError>> {
+    assertUuid(request.executionId, "executionId");
+    assertUuid(request.requestId, "requestId");
+    return this.request("POST", "/api/nft-workflow-costs/reconcile", request);
+  }
+
+  /** Returns costs for explicit consent without admitting or signing the mint. */
+  async quoteUserNftMintCosts(params: UserNFTMintParams, idempotencyKey: string): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("POST", "/api/usernft/mint-cost-quote", params, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async mintUserNFT(params: UserNFTMintParams, idempotencyKey: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", "/api/usernft/mint", params, false, { "Idempotency-Key": idempotencyKey });
   }
 
   async getUserNFT(id: string): Promise<Result<UserNFTResult, SdkError>> {
@@ -2855,14 +3686,66 @@ export class AzoaApiClient {
     return this.request("GET", `/api/usernft/user/${userId}`);
   }
 
-  async transferUserNFT(id: string, recipientAddress: string): Promise<Result<UserNFTResult, SdkError>> {
+  async transferUserNFT(id: string, recipientAddress: string, idempotencyKey: string, feeAuthorization?: NftFeeAuthorization): Promise<Result<NftLifecycleView, SdkError>> {
     assertUuid(id, "userNFTId");
-    return this.request("POST", `/api/usernft/${id}/transfer`, { recipientAddress });
+    return this.request("POST", `/api/usernft/${id}/transfer`, { recipientAddress, feeAuthorization }, false, { "Idempotency-Key": idempotencyKey });
   }
 
-  async burnUserNFT(id: string): Promise<Result<{ message: string }, SdkError>> {
+  async burnUserNFT(id: string, idempotencyKey: string, feeAuthorization?: NftFeeAuthorization): Promise<Result<NftLifecycleView, SdkError>> {
     assertUuid(id, "userNFTId");
-    return this.request("DELETE", `/api/usernft/${id}`);
+    const query = feeAuthorization ? `?feeRevision=${feeAuthorization.revision}&maxNativeFeeBaseUnits=${encodeURIComponent(feeAuthorization.maxNativeBaseUnits)}&feeQuoteId=${encodeURIComponent(feeAuthorization.quoteId)}` : "";
+    return this.request("DELETE", `/api/usernft/${id}${query}`, undefined, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async getNftLifecycleByRequest(operation: NftOperation, requestKey: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("GET", `/api/usernft/lifecycle/request?${new URLSearchParams({ operation, requestKey })}`);
+  }
+
+  async cancelNftRequest(operation: NftOperation, requestKey: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", "/api/usernft/lifecycle/request/cancel", { operation, requestKey });
+  }
+
+  async listNftLifecycles(cursor?: string, limit = 25): Promise<Result<NftLifecyclePage, SdkError>> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.request("GET", `/api/usernft/lifecycle?${query}`);
+  }
+
+  async getNftFeeQuote(chainType: string, operation: NftOperation, context?: { nftId?: string; sourceOperationId?: string }): Promise<Result<NftFeeQuote, SdkError>> {
+    const query = new URLSearchParams({ chainType, operation });
+    if (context?.nftId) query.set("nftId", context.nftId);
+    if (context?.sourceOperationId) query.set("sourceOperationId", context.sourceOperationId);
+    return this.request("GET", `/api/usernft/fee-quote?${query}`);
+  }
+
+  async refundNftTransfer(operationId: string, idempotencyKey: string, feeAuthorization?: NftFeeAuthorization): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/refund`, { feeAuthorization }, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async getNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("GET", `/api/UserNFT/lifecycle/${encodeURIComponent(operationId)}`);
+  }
+
+  /** Returns costs for explicit consent without admitting or signing the mint. */
+  async quoteCredentialIssueCosts(recipientId: string, params: UserNFTMintParams, idempotencyKey: string): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertNonEmpty(idempotencyKey, "idempotencyKey");
+    return this.request("POST", `/api/Credential/issue/${encodeURIComponent(recipientId)}/cost-quote`, params, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async issueCredential(recipientId: string, params: UserNFTMintParams, idempotencyKey: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", `/api/Credential/issue/${encodeURIComponent(recipientId)}`, params, false, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async refreshNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/refresh`);
+  }
+
+  async acceptNftLifecycle(operationId: string, acceptance: NftStageAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/accept`, acceptance);
+  }
+
+  async cancelNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
+    return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/cancel`);
   }
 
   async bindHolonToNFT(userNFTId: string, holonId: string, params: { role: string; permissionLevel: string; permissions?: Record<string, string> }): Promise<Result<HolonNFTBindingResult, SdkError>> {
@@ -2917,15 +3800,15 @@ export class AzoaApiClient {
     return this.request("GET", `/api/usernft/user/${userId}/composite`);
   }
 
-  async verifyNFTOwnership(params: { chainType: string; nftContractAddress: string; tokenId: string }): Promise<Result<{ isOwner: boolean }, SdkError>> {
+  async verifyNFTOwnership(params: { chainType: string; nftContractAddress: string; tokenId: string }): Promise<Result<boolean, SdkError>> {
     return this.request("POST", "/api/usernft/verify-ownership", params);
   }
 
-  async verifyHolonAccess(params: { userNFTId: string; holonId: string; requiredPermission?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
+  async verifyHolonAccess(params: { userNFTId: string; holonId: string; requiredPermission?: string }): Promise<Result<boolean, SdkError>> {
     return this.request("POST", "/api/usernft/verify-holon-access", params);
   }
 
-  async verifyWalletAccess(params: { userNFTId: string; walletId: string; requiredAccess?: string }): Promise<Result<{ hasAccess: boolean }, SdkError>> {
+  async verifyWalletAccess(params: { userNFTId: string; walletId: string; requiredAccess?: string }): Promise<Result<boolean, SdkError>> {
     return this.request("POST", "/api/usernft/verify-wallet-access", params);
   }
 
@@ -3011,16 +3894,31 @@ export class AzoaApiClient {
    * owned by the caller and carries {@link ActionRunResult.sourceActionId} /
    * {@link ActionRunResult.originUserId} back to the action owner.
    */
-  async executeAction(actionId: string): Promise<Result<ActionRunResult, SdkError>> {
+  async executeAction(actionId: string, options: StartWorkflowOptions): Promise<Result<ActionRunResult, SdkError>> {
     assertUuid(actionId, "actionId");
-    return this.request("POST", `/api/action/${actionId}/execute`);
+    return this.request("POST", `/api/action/${actionId}/execute${workflowStartQuery(options)}`, undefined, false, {
+      "Idempotency-Key": options.idempotencyKey,
+      ...(options.authToken ? { Authorization: `Bearer ${options.authToken}` } : {}),
+    });
   }
 
-  /** Execute a single node within an action. */
-  async executeActionNode(actionId: string, nodeId: string): Promise<Result<ActionNodeResult, SdkError>> {
+  /** Admit a single published node; its runId identifies durable execution and recovery. */
+  async executeActionNode(actionId: string, nodeId: string): Promise<Result<WorkflowNodeExecution, SdkError>> {
     assertUuid(actionId, "actionId");
     assertUuid(nodeId, "nodeId");
     return this.request("POST", `/api/action/${actionId}/nodes/${nodeId}/execute`);
+  }
+
+  /** Read the current durable outcome; admission does not imply completion. */
+  async getActionRun(runId: string): Promise<Result<ActionRunResult, SdkError>> {
+    assertUuid(runId, "runId");
+    return this.request("GET", `/api/action/runs/${runId}`);
+  }
+
+  /** Read sanitized node outcomes for a durable run. */
+  async getActionExecutionState(runId: string): Promise<Result<WorkflowExecutionState, SdkError>> {
+    assertUuid(runId, "runId");
+    return this.request("GET", `/api/action/runs/${runId}/execution-state`);
   }
 
   // ─── Action Invitations + Request/Approval (action-invitations-approval) ───
@@ -3481,7 +4379,7 @@ export class AzoaApiClient {
 /** Shallow-redact obvious credentials before logging a request body. */
 function redactSecrets(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
-  const SECRET_RE = /pass(word)?|token|secret|api[-_]?key|mnemonic|privatekey|seed/i;
+  const SECRET_RE = /pass(word)?|token|secret|api[-_]?key|mnemonic|privatekey|seed|signature/i;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     out[k] = SECRET_RE.test(k) ? "«redacted»" : v;

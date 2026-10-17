@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: UNLICENSED
-// W3.2 — platform-unit genesis: the single-winner claim that makes a second genesis
-// refusable, the frozen definition, the resume path, and circulating supply as reserve
-// outflow (never a fabricated zero).
 
 using System.Globalization;
 using System.Numerics;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Helpers;
+using AZOA.WebAPI.Models.Blockchain;
+using AZOA.WebAPI.Models.Signing;
+using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -24,30 +24,29 @@ public class PlatformTokenGenesisTests
     private const string ReserveAddress = "RESERVEADDRESSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string AssetId = "7001";
 
-    private static readonly Guid OperatorUserId = Guid.NewGuid();
-
-    // ── The happy path ────────────────────────────────────────────────────────
+    private static readonly Guid OperatorUserId = NodeOperatorIdentity.UserId;
 
     [Fact]
-    public async Task RunAsync_mints_once_and_records_the_asset_id()
+    public async Task RunAsync_admits_pending_creation_without_claiming_an_asset()
     {
         var harness = GenesisHarness.Create();
 
         var outcome = await harness.RunAsync();
 
         outcome.IsError.Should().BeFalse(outcome.Message);
-        outcome.Result!.Created.Should().BeTrue();
-        outcome.Result.Definition.AssetId.Should().Be(AssetId);
+        outcome.Result!.Created.Should().BeFalse();
+        outcome.Result.Operation!.State.Should().Be("AwaitingConsent");
+        outcome.Result.Definition.AssetId.Should().BeEmpty();
         outcome.Result.Definition.UnitName.Should().Be(PlatformTokenGenesisDefaults.UnitName);
         outcome.Result.Definition.Decimals.Should().Be(PlatformTokenGenesisDefaults.Decimals);
 
         harness.Minter.MintCount.Should().Be(1);
         var row = harness.Store.Single();
-        row.Status.Should().Be(PlatformToken.StatusActive);
-        row.AssetId.Should().Be(AssetId);
+        row.Status.Should().Be(PlatformToken.StatusPending);
+        row.AssetId.Should().BeNull();
         row.ReserveAddress.Should().Be(ReserveAddress);
         row.GenesisUserId.Should().Be(OperatorUserId.ToString("N"));
-        row.ActivatedAt.Should().NotBeNull();
+        row.ActivatedAt.Should().BeNull();
     }
 
     [Fact]
@@ -64,13 +63,12 @@ public class PlatformTokenGenesisTests
         minted.Total.Should().Be(PlatformTokenGenesisDefaults.TotalBaseUnits);
     }
 
-    // ── Refusing a second genesis ─────────────────────────────────────────────
-
     [Fact]
     public async Task RunAsync_replays_a_completed_genesis_without_minting_again()
     {
         var harness = GenesisHarness.Create();
         await harness.RunAsync();
+        harness.Store.SeedVerifiedReadProjection();
 
         var second = await harness.RunAsync();
 
@@ -86,6 +84,7 @@ public class PlatformTokenGenesisTests
     {
         var harness = GenesisHarness.Create();
         await harness.RunAsync();
+        harness.Store.SeedVerifiedReadProjection();
 
         var second = await harness.RunAsync(Request(total: 999_000_000));
 
@@ -108,8 +107,6 @@ public class PlatformTokenGenesisTests
         contradicting.Code.Should().Be(PlatformTokenGenesisCodes.DefinitionFrozen);
         harness.Minter.MintCount.Should().Be(1, "the second attempt never reached the mint");
     }
-
-    // ── Resume after a failed attempt ─────────────────────────────────────────
 
     [Fact]
     public async Task RunAsync_leaves_a_failed_attempt_resumable_rather_than_terminal()
@@ -138,18 +135,19 @@ public class PlatformTokenGenesisTests
         var resumed = await harness.RunAsync();
 
         resumed.IsError.Should().BeFalse(resumed.Message);
-        resumed.Result!.Created.Should().BeTrue();
+        resumed.Result!.Created.Should().BeFalse();
+        resumed.Result.Operation!.State.Should().Be("AwaitingConsent");
         harness.Minter.LastOperationKey.Should().Be(
             firstKey, "a resume must replay the original mint, not anchor a new one");
         harness.Store.Rows.Should().HaveCount(1);
-        harness.Store.Single().Status.Should().Be(PlatformToken.StatusActive);
+        harness.Store.Single().Status.Should().Be(PlatformToken.StatusPending);
     }
 
     [Fact]
     public async Task RunAsync_reports_the_asset_id_when_the_mint_lands_but_the_record_does_not()
     {
         var harness = GenesisHarness.Create();
-        harness.Store.FailUpdates = true;
+        harness.Minter.ReportCompletedWithoutProjection = true;
 
         var outcome = await harness.RunAsync();
 
@@ -157,8 +155,6 @@ public class PlatformTokenGenesisTests
         outcome.Code.Should().Be(PlatformTokenGenesisCodes.Unrecorded);
         outcome.Message.Should().Contain(AssetId, "an operator cannot repair an asset id they were never told");
     }
-
-    // ── Refusals that cost nothing ────────────────────────────────────────────
 
     [Fact]
     public async Task RunAsync_refuses_without_the_irreversibility_acknowledgement()
@@ -189,11 +185,6 @@ public class PlatformTokenGenesisTests
     [Fact]
     public async Task RunAsync_accepts_the_intended_total_now_the_mint_path_carries_it()
     {
-        // OI-26 widened IAlgorandASAModule.CreateASAAsync's total to the chain's own uint64,
-        // so the intended genesis total is inside the rail ceiling and MINTS. The refusal side
-        // of that boundary is proved in Managers/FungibleTokenSupplyCeilingTests; it cannot be
-        // reached through this request at all, because its Total is a ulong? and so cannot
-        // express an over-rail value.
         var harness = GenesisHarness.Create();
 
         var outcome = await harness.RunAsync(Request(total: PlatformTokenGenesisDefaults.IntendedTotalBaseUnits));
@@ -240,10 +231,8 @@ public class PlatformTokenGenesisTests
         harness.Minter.MintCount.Should().Be(0);
     }
 
-    // ── The faucet is a dev/test path only ────────────────────────────────────
-
     [Fact]
-    public async Task RunAsync_tops_the_reserve_up_from_the_faucet_on_a_dev_network()
+    public async Task RunAsync_does_not_refund_the_reserve_on_dev_network_replay()
     {
         var harness = GenesisHarness.Create(ChainNetwork.Devnet);
         harness.WithFaucet(nativeBalanceBaseUnits: "0");
@@ -251,7 +240,7 @@ public class PlatformTokenGenesisTests
         var outcome = await harness.RunAsync();
 
         outcome.IsError.Should().BeFalse(outcome.Message);
-        harness.FaucetDispenses.Should().Be(1);
+        harness.FaucetDispenses.Should().Be(0);
         outcome.Result!.OperationsNote.Should().Contain("faucet");
     }
 
@@ -278,13 +267,12 @@ public class PlatformTokenGenesisTests
         harness.FaucetDispenses.Should().Be(0);
     }
 
-    // ── Supply is derived, never stored ───────────────────────────────────────
-
     [Fact]
     public async Task GetStateAsync_reads_circulating_supply_as_reserve_outflow()
     {
         var harness = GenesisHarness.Create();
         await harness.RunAsync();
+        harness.Store.SeedVerifiedReadProjection();
         harness.WithLedgerPartitions(
             ("contributor", Declared: 500_000, Issued: 120_000, Held: 30_000, Returned: 20_000),
             ("investor", Declared: 400_000, Issued: 60_000, Held: 0, Returned: 0));
@@ -305,6 +293,7 @@ public class PlatformTokenGenesisTests
     {
         var harness = GenesisHarness.Create();
         await harness.RunAsync();
+        harness.Store.SeedVerifiedReadProjection();
 
         var state = await harness.Genesis.GetStateAsync();
 
@@ -317,6 +306,7 @@ public class PlatformTokenGenesisTests
     {
         var harness = GenesisHarness.Create();
         await harness.RunAsync();
+        harness.Store.SeedVerifiedReadProjection();
         harness.WithoutLedgerRow();
 
         var state = await harness.Genesis.GetStateAsync();
@@ -336,7 +326,31 @@ public class PlatformTokenGenesisTests
         state.Code.Should().Be(PlatformTokenGenesisCodes.NotGenesised);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task Missing_actual_operator_credential_cannot_freeze_a_definition()
+    {
+        var harness = GenesisHarness.Create();
+        (await harness.Genesis.RunAsync(Request(), OperatorUserId)).IsError.Should().BeTrue();
+        harness.Store.Rows.Should().BeEmpty();
+        harness.Minter.MintCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Legacy_active_asset_text_cannot_be_reissued_or_reported_verified()
+    {
+        var harness = GenesisHarness.Create();
+        await harness.RunAsync();
+        var row = harness.Store.Single();
+        row.Status = PlatformToken.StatusActive;
+        row.AssetId = AssetId;
+        (await harness.RunAsync()).Code.Should().Be(PlatformTokenGenesisCodes.EvidenceRequired);
+        (await harness.Genesis.GetStateAsync()).Code.Should().Be(PlatformTokenGenesisCodes.EvidenceRequired);
+        harness.Minter.MintCount.Should().Be(1);
+    }
+
+    private static SigningCredentialWitness OperatorCredential() => new(1, "Jwt", OperatorUserId, null, null,
+        DateTimeOffset.UtcNow.AddSeconds(-1), DateTimeOffset.UtcNow.AddMinutes(10), null, null, [], false,
+        TokenUse: AzoaClaims.TokenUseNodeOperator, OperatorCredentialRevision: 1, OperatorSessionRevision: 1);
 
     private static PlatformTokenGenesisRequest Request(
         ulong? total = null,
@@ -350,12 +364,6 @@ public class PlatformTokenGenesisTests
         ExpectedNetwork = expectedNetwork,
         ConfirmIrreversible = true,
     };
-
-    /// <summary>
-    /// Drives <see cref="PlatformTokenGenesis"/> with the reserve, the mint seam and the
-    /// node-state store doubled, so every assertion is about the genesis discipline itself
-    /// rather than about SurrealDB or a chain.
-    /// </summary>
     private sealed class GenesisHarness
     {
         private readonly Mock<IPlatformReserve> _reserve = new();
@@ -378,6 +386,7 @@ public class PlatformTokenGenesisTests
             WithLedgerPartitions();
 
             _factory.SetupGet(f => f.DefaultNetwork).Returns(network);
+            WithFaucet("50000000");
 
             Genesis = new PlatformTokenGenesis(_reserve.Object, Minter, Store, _factory.Object);
         }
@@ -392,8 +401,12 @@ public class PlatformTokenGenesisTests
 
         public int FaucetDispenses { get; private set; }
 
-        public Task<AZOAResult<PlatformTokenGenesisOutcome>> RunAsync(PlatformTokenGenesisRequest? request = null) =>
-            Genesis.RunAsync(request ?? Request(), OperatorUserId);
+        public Task<AZOAResult<PlatformTokenGenesisOutcome>> RunAsync(PlatformTokenGenesisRequest? request = null)
+        {
+            request ??= Request();
+            request.AuthenticationWitness = OperatorCredential();
+            return Genesis.RunAsync(request, OperatorUserId);
+        }
 
         public void WithoutReserveAccount() =>
             _reserve
@@ -436,8 +449,6 @@ public class PlatformTokenGenesisTests
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(AZOAResult<PlatformReserveLedger>.Success(row));
         }
-
-        /// <summary>Wires a faucet-capable provider and the reserve's native balance.</summary>
         public void WithFaucet(string nativeBalanceBaseUnits)
         {
             _reserve
@@ -445,6 +456,9 @@ public class PlatformTokenGenesisTests
                 .ReturnsAsync(AZOAResult<string>.Success(nativeBalanceBaseUnits));
 
             var provider = new Mock<IBlockchainProvider>();
+            var module = new Mock<IFungibleCreationModule>();
+            provider.Setup(p => p.TryGetModule<IFungibleCreationModule>(out It.Ref<IFungibleCreationModule?>.IsAny))
+                .Returns((out IFungibleCreationModule? value) => { value = module.Object; return true; });
             provider.SetupGet(p => p.SupportsFaucet).Returns(true);
             provider
                 .Setup(p => p.DispenseFromFaucetAsync(
@@ -458,13 +472,12 @@ public class PlatformTokenGenesisTests
                 .Returns(provider.Object);
         }
     }
-
-    /// <summary>Mint seam double: records every call so a second broadcast is visible.</summary>
     private sealed class RecordingMinter : IPlatformTokenMinter
     {
         private string? _failure;
 
         public int MintCount { get; private set; }
+        public bool ReportCompletedWithoutProjection { get; set; }
 
         public string? LastOperationKey { get; private set; }
 
@@ -488,17 +501,16 @@ public class PlatformTokenGenesisTests
                 ? AZOAResult<FungibleTokenResult>.Success(new FungibleTokenResult
                 {
                     UserId = operatorUserId,
-                    AssetId = AssetId,
+                    AssetId = ReportCompletedWithoutProjection ? AssetId : string.Empty,
                     WalletAddress = ReserveAddress,
+                    Operation = new FungibleCreationView(FungibleCreationIdentity.OperationId(operatorUserId, null, operationKey), 0,
+                        ReportCompletedWithoutProjection ? "Completed" : "AwaitingConsent", Chain, request.Network.ToString(),
+                        ReportCompletedWithoutProjection ? AssetId : null, null, null, null, Guid.Empty, ReserveAddress, false,
+                        Purpose: "PlatformGenesis"),
                 })
                 : AZOAResult<FungibleTokenResult>.Failure(_failure));
         }
     }
-
-    /// <summary>
-    /// In-memory node-state store with the same two contracts as the Surreal one: a claim
-    /// is create-if-absent, and an update only lands while the version is unchanged.
-    /// </summary>
     private sealed class InMemoryPlatformTokenStore : IPlatformTokenStore
     {
         private readonly Dictionary<string, PlatformToken> _rows = new(StringComparer.Ordinal);
@@ -510,6 +522,22 @@ public class PlatformTokenGenesisTests
         public IReadOnlyCollection<PlatformToken> Rows => _rows.Values.ToList();
 
         public PlatformToken Single() => _rows.Values.Single();
+
+        private string? _verifiedProjectionHash;
+
+        public void SeedVerifiedReadProjection()
+        {
+            var row = Single();
+            row.Status = PlatformToken.StatusActive;
+            row.AssetId = AssetId;
+            row.CreationOperationId = FungibleCreationIdentity.OperationId(OperatorUserId, null, row.GenesisOperationKey);
+            row.ActivatedAt = DateTimeOffset.UtcNow;
+            _verifiedProjectionHash = CanonicalJson.Hash(row);
+        }
+
+        public Task<bool> HasVerifiedIssuanceAsync(PlatformToken row, CancellationToken ct = default)
+            => Task.FromResult(_verifiedProjectionHash is not null && CanonicalJson.Hash(row) == _verifiedProjectionHash);
+
 
         public Task<AZOAResult<IReadOnlyList<PlatformToken>>> ListForNetworkAsync(
             string network, CancellationToken ct = default)
@@ -527,7 +555,7 @@ public class PlatformTokenGenesisTests
         }
 
         public Task<AZOAResult<PlatformTokenClaim>> ClaimIfAbsentAsync(
-            PlatformToken row, CancellationToken ct = default)
+            PlatformToken row, CancellationToken ct = default, SigningCredentialWitness? credential = null)
         {
             if (_rows.TryGetValue(row.Id, out var existing))
                 return Task.FromResult(AZOAResult<PlatformTokenClaim>.Success(
@@ -560,6 +588,7 @@ public class PlatformTokenGenesisTests
             Network = row.Network,
             Status = row.Status,
             AssetId = row.AssetId,
+            CreationOperationId = row.CreationOperationId,
             Name = row.Name,
             UnitName = row.UnitName,
             Decimals = row.Decimals,

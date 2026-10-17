@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions;
@@ -218,38 +219,47 @@ public class ActionNodeHandlerTests
     // ─── action graph bundle group (IActionGraphBundleManager) ───
 
     [Fact]
-    public async Task ActionGraphBundleDeployNodeHandler_InvokesDeploy_WithConfiguredId()
+    public async Task ActionGraphBundleDeployNodeHandler_Preserves_pending_domain_identity()
     {
-        var id = Guid.NewGuid();
-        var mgr = new Mock<IActionGraphBundleManager>();
-        mgr.Setup(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
+        var target = new DeploymentTarget("NativeContract", "Ethereum", "Devnet");
+        var request = new DeploymentStartRequest("artifact", "hash", target);
+        var mgr = new Mock<IDeploymentService>();
+        mgr.Setup(m => m.StartActionAsync(It.IsAny<ActionExternalOperationReference>(), It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
+           .ReturnsAsync((ActionExternalOperationReference reference, string _, bool _, CancellationToken _) =>
+               AZOAResult<DeploymentReceipt>.Success(new(reference.OperationId!, "artifact", "hash", target, "Submitted", "Execute", null, null, ["transaction"], null, 1)));
 
         var handler = new ActionGraphBundleDeployNodeHandler(mgr.Object);
         handler.NodeType.Should().Be(ActionNodeType.ActionGraphBundleDeploy);
 
-        var node = NodeWith(ActionNodeType.ActionGraphBundleDeploy, JsonSerializer.Serialize(new IdConfig { Id = id }));
-        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
+        var node = NodeWith(ActionNodeType.ActionGraphBundleDeploy, JsonSerializer.Serialize(new DeploymentNodeConfig { Deployment = request }));
+        var context = CtxFor(node, Guid.NewGuid());
+        var result = await handler.HandleAsync(context);
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.DeployAsync(id, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()), Times.Once);
+        result.PendingOperation.Should().NotBeNull();
+        result.PendingOperation!.Status.Should().Be(ActionExternalOperationStatus.Pending);
+        result.PendingOperation.Reference.ActorUserId.Should().Be(context.ActingUserId);
+        result.PendingOperation.Reference.RequestKey.Should().Be($"action:{context.RunId:N}:{context.NodeId:N}:deployment");
+        mgr.Verify(m => m.StartActionAsync(It.Is<ActionExternalOperationReference>(r => r.ActorUserId == context.ActingUserId
+            && r.RequestKey == result.PendingOperation.Reference.RequestKey), It.IsAny<string>(), true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ActionGraphBundleGenerateNodeHandler_InvokesGenerate_WithConfiguredActionGraphBundleId()
     {
         var bundleId = Guid.NewGuid();
-        var mgr = new Mock<IActionGraphBundleManager>();
-        mgr.Setup(m => m.GenerateAsync(bundleId, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = new ActionGraphBundle() });
+        var target = new DeploymentTarget("PlatformRuntime", "Algorand", "Devnet");
+        var mgr = new Mock<IDeploymentService>();
+        mgr.Setup(m => m.GenerateAsync(bundleId, It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<DeploymentGenerateRequest>(), It.IsAny<CancellationToken>()))
+           .ReturnsAsync(AZOAResult<DeploymentArtifactView>.Success(new("artifact", "payload", "hash", target, "export async function invoke() {}")));
 
         var handler = new ActionGraphBundleGenerateNodeHandler(mgr.Object);
-        var cfg = new ActionGraphBundleGenerateNodeConfig { ActionGraphBundleId = bundleId, Request = new ActionGraphBundleDappGenerationRequest() };
+        var cfg = new DeploymentGenerationNodeConfig { BundleId = bundleId, Request = new DeploymentGenerateRequest(target) };
         var node = NodeWith(ActionNodeType.ActionGraphBundleGenerate, JsonSerializer.Serialize(cfg));
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.GenerateAsync(bundleId, It.IsAny<ActionGraphBundleDappGenerationRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()), Times.Once);
+        mgr.Verify(m => m.GenerateAsync(bundleId, It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<DeploymentGenerateRequest>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // ─── Search (ISearchManager) ───

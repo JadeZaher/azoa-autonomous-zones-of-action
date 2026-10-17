@@ -16,32 +16,15 @@ namespace AZOA.WebAPI.Interfaces.Stores;
 /// </remarks>
 public interface IActionNodeExecutionStore
 {
+    /// <summary>Atomically persists frozen input/correlation while claiming one Pending execution at its expected version.</summary>
+    Task<AZOAResult<ActionNodeExecution?>> TryAdmitAsync(ActionNodeExecution execution, CancellationToken ct = default, long? expectedRunVersion = null);
     /// <summary>Inserts a new per-(run, node) execution row.</summary>
     Task<AZOAResult<ActionNodeExecution>> CreateAsync(ActionNodeExecution execution, CancellationToken ct = default);
 
     /// <summary>Loads an execution by its own id.</summary>
     Task<AZOAResult<ActionNodeExecution>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>
-    /// Updates an existing execution (state transition, output/error capture, ended_at).
-    ///
-    /// <para>
-    /// When <paramref name="expectedState"/> is non-null the update only
-    /// succeeds if the currently-stored execution's
-    /// <see cref="ActionNodeExecution.State"/> equals the supplied value —
-    /// otherwise an error <see cref="AZOAResult{T}"/> is returned describing
-    /// the drift. This is the G2 state-machine guard used by
-    /// <c>ActionManager</c>'s execute and fork-cancel paths to prevent a
-    /// late-arriving in-flight transition from overwriting a concurrent
-    /// fork's <see cref="ActionNodeState.Cancelled"/> stamp (and vice-versa).
-    /// Closes HIGH#7.
-    /// </para>
-    /// <para>
-    /// When <paramref name="expectedState"/> is <c>null</c> the update is
-    /// unconditional, preserving the historic behaviour for callers that
-    /// genuinely don't care about the prior state.
-    /// </para>
-    /// </summary>
+    /// <summary>Updates mutable outcome fields at the expected version and optional prior state, preserving admitted intent.</summary>
     Task<AZOAResult<ActionNodeExecution>> UpdateAsync(
         ActionNodeExecution execution,
         ActionNodeState? expectedState = null,

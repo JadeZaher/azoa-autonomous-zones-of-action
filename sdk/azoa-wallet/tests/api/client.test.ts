@@ -80,7 +80,8 @@ describe("AzoaApiClient", () => {
         name: "My NFT",
         description: "desc",
         chainId: "algorand",
-      });
+        metadataUri: "ipfs://metadata",
+      }, "mint-stable-key");
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.walletId).toBe("wallet-guid");
@@ -94,7 +95,7 @@ describe("AzoaApiClient", () => {
       await client.transferNft(nftId, {
         targetUserId: "bbbbbbbb-2222-4222-8222-222222222222",
         walletId: "cccccccc-3333-4333-8333-333333333333",
-      });
+      }, "transfer-stable-key");
 
       expect(mockFetch).toHaveBeenCalledWith(
         `http://localhost:5000/api/nft/${nftId}/transfer`,
@@ -105,7 +106,7 @@ describe("AzoaApiClient", () => {
     it("burnNft sends to /api/nft/{id}/burn", async () => {
       const nftId = "dddddddd-4444-4444-8444-444444444444";
       mockFetch.mockReturnValueOnce(azoaResponse({ id: "op3" }));
-      await client.burnNft(nftId, { walletId: "cccccccc-3333-4333-8333-333333333333" });
+      await client.burnNft(nftId, { walletId: "cccccccc-3333-4333-8333-333333333333" }, "burn-stable-key");
 
       expect(mockFetch).toHaveBeenCalledWith(
         `http://localhost:5000/api/nft/${nftId}/burn`,

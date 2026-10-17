@@ -17,8 +17,9 @@ discriminates flows, so a second flow adds a constant rather than a table.
 orphan a provider session: a crash between "create" and "persist" leaves a live
 session at the vendor that no inbound callback can ever be matched back to, and the
 retry creates a second one. Claiming first also makes the retry path a resume —
-`ClaimAdmissionAsync` returns the existing row for a repeated admission key, so two
-concurrent begins converge on one provider session instead of two.
+`ClaimAdmissionAsync` returns the existing row for a repeated admission key. Only
+its original candidate owner may create the provider session; all other callers
+resume an attached redirect or receive a reconciliation conflict.
 
 **The callback is a trigger, never an authority.** `VerifyCallback` returns a
 correlation only; `HostedCallbackTrigger` has no outcome field, so a provider
@@ -47,13 +48,14 @@ as an ordinary redelivery *after* its ledger write has already landed. Net resul
 reads the submission. So the order is: authoritative fetch → CAS into the
 non-terminal `RESUMING` state → resume on the winning branch only → CAS to terminal.
 
-`RESUMING` is a claim, not an outcome, which is why it is non-terminal. Two
-consequences follow and both are wanted: a resumption that FAILS releases the claim
-with a compensating CAS back to `AWAITING_OUTCOME`, so the next callback retries and
-a failed domain write never strands a terminal session; and a process that DIES mid
-resumption leaves a `RESUMING` row that the next delivery re-claims, because
-`RESUMING` is non-terminal and the version still matches. A stranded claim
-self-heals; it does not need an operator.
+`RESUMING` holds a random token and a two-minute lease, renewed every thirty
+seconds while the domain handler runs. A live lease cannot be reclaimed, even
+when a second callback reads its latest version. An expired lease can be reclaimed
+with a new token and version. Completion and release require both the current
+token and an unexpired lease; generic transitions cannot change a RESUMING row.
+Renewal failure cancels domain work and propagates infrastructure exceptions.
+A valid lease serializes live resumption; it does not promise exactly-once vendor
+calls after a crash. Domain writes must remain idempotent and honor cancellation.
 
 **Domain resumption still runs before terminalisation.** If the handler fails, the
 session ends up non-terminal (via the compensating transition) and the next callback
@@ -90,3 +92,77 @@ does its job. Explicit SQL `NULL` is unreachable here at all — a SCHEMAFULL
 is therefore RETAINED; it is a real guarantee that two AZOA sessions never bind one
 vendor session. `SurrealUniqueIndexNoneSemanticsTests` pins the consequences and the
 `SurrealNote` on the POCO carries the finding into the generated `.surql`.
+
+## Admission reconciliation
+
+Identomat does not document an idempotent create key. A transport failure after
+sending `/begin` is ambiguous, so an unattached claim is retained and automatic
+creation is refused. The provider's `clientUserId` is correlation, not a uniqueness
+guarantee. Operators must find and attach the existing vendor session, or obtain
+positive evidence that none exists before clearing the claim. An expired redirect
+also needs explicit provider renewal rather than an unguarded second create.
+The external recovery contract is tracked in the active closeout `deferred.md`.
+
+`PROVIDER_REQUEST_NOT_SENT` is reserved for proof that no external request was
+sent. Identomat's local request-budget refusal emits it; the admission creator
+then conditionally removes its untouched claim so a later attempt can retry.
+Timeouts, HTTP failures, unreadable successful responses and attachment failures
+never use that signal. The callback delivery counter uses bounded read/CAS retries;
+contention can omit diagnostic counts, never identity decisions.
+
+`RefreshAsync` shares authoritative polling and leased resumption with callbacks.
+Its caller must authorize the subject/tenant first; the shared flow additionally
+checks that the stored provider and flow kind match the supplied adapter.
+
+## Operator recovery
+
+`GET /api/operator/hosted-sessions/reconciliation` lists unattached admissions at
+least five minutes old as `NeedsOperator`. The JWT-only Operator reconciliation
+route requires a documented evidence reference and explicit reviewed-subject
+attestation. Attachment requires a real server-side provider result and an
+Identomat widget URL; it never trusts an operator-supplied verdict. Confirmed
+provider absence retains the old row as ABANDONED and changes its admission key,
+allowing a new attempt without deleting the actor, timestamp or evidence record.
+Concurrent attachment/resolution loses its version predicate. The age floor
+avoids interrupting an ordinary provider request still in flight.
+
+The documented results do not promise an echoed unique client-attempt reference,
+so callback-first automatic attachment is not enabled. Subject linkage is an
+explicit audited operator decision. An undecided KYB result cannot prove session
+existence with the current provider parser; recovery waits for a verifiable final
+result rather than treating an empty provider response as proof.
+
+## Creation ownership and reconciliation
+
+Every admission carries an opaque creator token. A send-start CAS commits before
+calling the provider. Operator absence may release only a token-bearing admission
+whose send has never started; sent or legacy-unknown requests stay quarantined with
+the admission key reserved. Original token responses can attach after quarantine.
+Verified operator attachment records cumulative audit entries. Recovery accepts
+recognized authoritative pending sessions, but never an unverified child alias.
+The provider API has no documented request-id lookup or authoritative absence
+barrier; automatic resolution of ambiguous creates remains vendor-dependent.
+
+## Prepared identity adapters
+
+PreparedHostedKycProvider persists exact request bytes before admission. Recovery
+retains the original attempt key, origin and policy, and uses a durable send lease
+under the current KYC authority fence. Generic v1 supports automatic same-key
+lookup/replay; Veriff permits only authoritative candidate attachment after an
+ambiguous create. Worker scheduling advances before each attempt, including
+failed authority checks, so unresolved rows cannot starve later work.
+Callbacks authenticate raw bytes before storing minimized receipt identity and
+refetching provider authority. Callback receipt replay is safe after a crash;
+domain completion still requires the shared renewable lease and terminal evidence
+pin. Operator recovery uses recent node-operator authentication and an audit reason.
+
+Authenticated Veriff/generic callbacks receive 503 until their trigger has been processed; invalid callbacks retain opaque 202 responses. This includes callback-before-attachment authoritative lookup outages. The saved callback body digest is not a replacement for the vendor retry obligation: unprocessed candidate session identifiers are not acknowledged as durable recovery work. Completed duplicate callbacks receive 202.
+
+
+Tenant custody first-send authorization
+--------------------------------------
+HostedSessionRequest.CustodialAuthority is internal and excluded from JSON. The
+flow carries it to ICustodialHostedSessionStore at the first-egress CAS. Prepared
+provider recovery may reuse only a session whose first-egress authority was
+already persisted; preparing a request is not permission to send it. The claim
+can remain inert after custody revocation and is handled by audited reconciliation.

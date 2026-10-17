@@ -47,8 +47,8 @@ const BACKEND_ACTION_NODE_TYPES = [
 
 const EXPECTED_MEMBER_COUNT = 54
 
-/** The four Phase 5 nodes that are mirrored but deliberately not enabled. */
-const PREVIEW_TYPES = ['CredentialRevoke', 'GovernanceProposalCreate', 'GovernanceVote', 'GovernanceTally']
+/** Nodes awaiting their independent activation review. */
+const PREVIEW_TYPES = ['CredentialRevoke']
 
 const missingFrom = (present: Iterable<string>) => {
   const have = new Set(present)

@@ -42,7 +42,7 @@ path. Projects and non-value collaboration must not use this gate.
 **Both value gates require TWO independent facts.** `KycGateService` (consumer) and
 `Services/Bridge/RealValueKycGate` (bridge / real value) each read a current
 policy-bound approval AND the latest AML screening verdict for the same
-`(user, tenant)` pair. Identity verification says who a person is; it says nothing
+`(user, tenant, approved attempt lineage)` tuple. Identity verification says who a person is; it says nothing
 about whether that person is sanctioned. Only `NO_HIT` on a non-truncated result
 opens a gate — `HIT` denies, `MANUAL_REVIEW` denies, a TRUNCATED hit list denies, a
 store error denies, and a MISSING result denies. Fail-closed on missing is the load
@@ -226,7 +226,7 @@ every tenant: tenant B registering a person tenant A already monitors gets
 over A's `subject_user_id` and A's `tenant_id` — a cross-tenant leak through a
 shared key, which this repo has now shipped three times. So:
 `kyc_screening_monitor` is unique on `(tenant_scope, query_full_name,
-query_birthday_time_from)` mirroring `kyc_identity`; `GetMonitorByQueryAsync`
+query_birthday_time_from, lineage_key)` mirroring `kyc_identity`; `GetMonitorByQueryAsync`
 requires a scope and refuses a row from another one; and the id of the shared
 upstream monitor is recovered through `GetProviderMonitorIdByQueryAsync`, which
 projects the opaque id ONLY and is structurally incapable of returning a row.
@@ -304,3 +304,53 @@ three stable configuration action values. Its opaque unpadded-base64url cursor
 anchors the exclusive descending `(occurred_at,id)` position; newer audit rows
 inserted between requests cannot shift, duplicate, or skip the remaining page.
 Secret configuration is never accepted by or projected through that timeline.
+
+## Hosted-outcome safety
+
+`KycHostedSessionOutcomeHandler` checks exact user, tenant, provider, session,
+active status and unexpired attempt before screening, binding or monitor writes.
+A malformed tenant id is rejected rather than treated as the node-default scope.
+The observed attempt remains unchanged while external work executes. Completion
+uses typed conditional mutation over correlation, trust provenance, original
+status, modification time and expiry, preventing an intervening terminal decision
+or attempt replacement from being overwritten. A lost race returns no applied
+submission id. Approval expiry uses the same operator lifetime as manual review.
+
+AML screening precedes identity binding; monitoring follows the idempotent binding.
+Identity approval and AML clearance remain distinct facts. Adverse screening opens
+operator review without rewriting verified identity as a document rejection.
+The hosted resumption lease cancels work when ownership is lost; the handler checks
+cancellation again before its final conditional write.
+
+Hosted identity binding uses `BindHostedAsync`: the store write-locks both the
+live hosted lease and the exact active KYC attempt before changing identity
+membership. Those checks and the identity write share one transaction, so stale
+resumptions cannot bind after lease takeover or attempt retirement. The general
+non-hosted binding path uses typed create followed by conditional membership CAS.
+An existing identity held by a different user remains untouched.
+
+## AML attempt lineage
+
+The hosted handler derives an opaque SHA-256 correlation from a versioned,
+length-delimited JSON array containing the attempt id, session id and verified
+subject fields. Only the hash is persisted; document attributes are not retained.
+The completed approval stores that same key. Value gates reject a missing key and
+read only evidence matching that approval's lineage. A late clean response from an
+obsolete attempt therefore cannot overwrite the current attempt's adverse verdict.
+Local monitor uniqueness includes lineage, and every ongoing follow-up copies the
+monitor lineage. One upstream query can serve multiple attempts without lending
+one attempt's evidence to another. Unlinked operator screenings remain audit data.
+
+Hosted approval requires successful durable monitor registration. A registration failure leaves the attempt pending and releases hosted resumption for retry; existing identity binding is idempotent and cannot authorize value without the final approval and matching screening lineage.
+
+## Renewable hosted attempts
+
+KycManager creates the active domain attempt before the external request. Its id
+is also the hosted-session id and scopes the admission key. Retries reuse it;
+rejected, expired, retired-authority, or real approvals missing lineage can start
+a new attempt. Exact-snapshot retirement cannot overwrite a concurrent decision.
+Redirect attachment never updates terminal outcomes. Missing-lineage real approval
+projects EXPIRED, allowing the existing SDK/UI renewal contract without exposing
+AML evidence. Manual Development simulation retains its existing behavior.
+Callbacks before legacy domain attachment remain retryable. Approval requires both
+screening and durable monitor evidence with the same verified-subject lineage.

@@ -137,10 +137,19 @@ below.
 | | /api/nft/{id}/burn | POST | `burnNft` | client.ts | OK (safe operation projection) |
 | | /api/nft/fungible-mint | POST | `fungibleMint` | client.ts | OK (safe response) |
 | | /api/nft/{id}/metadata | GET | `getNftMetadata` | client.ts | OK |
-| **UserNFT** | /api/usernft | POST | `mintUserNFT` | client.ts | OK |
+| **UserNFT** | /api/usernft/mint | POST | `mintUserNFT` | client.ts | Lifecycle result; required Idempotency-Key |
 | | /api/usernft/{id} | GET | `getUserNFT` | client.ts | OK |
 | | /api/usernft/{id}/transfer | POST | `transferUserNFT` | client.ts | OK |
-| | /api/usernft/{id}/burn | POST | `burnUserNFT` | client.ts | OK |
+| | /api/usernft/{id} | DELETE | `burnUserNFT` | client.ts | Lifecycle result; required Idempotency-Key |
+| | /api/usernft/lifecycle/request | GET | `getNftLifecycleByRequest` | client.ts | Actor/tenant-scoped key correlation; absence remains uncertain |
+| | /api/usernft/lifecycle/request/cancel | POST | `cancelNftRequest` | client.ts | Atomic cancellation tombstone fences delayed admission |
+| | /api/usernft/lifecycle | GET | `listNftLifecycles` | client.ts | Participant-scoped cursor page; continue even when page items are empty |
+| | /api/usernft/fee-quote | GET | `getNftFeeQuote` | client.ts | Native fee base units and immutable revision; excludes chain fees |
+| | /api/usernft/lifecycle/{operationId}/refund | POST | `refundNftTransfer` | client.ts | Original transfer reference; holder must authorize return |
+| | /api/usernft/lifecycle/{operationId} | GET | `getNftLifecycle` | client.ts | Participant-authorized durable status |
+| | /api/usernft/lifecycle/{operationId}/refresh | POST | `refreshNftLifecycle` | client.ts | Reconcile chain evidence |
+| | /api/usernft/lifecycle/{operationId}/accept | POST | `acceptNftLifecycle` | client.ts | Explicit recipient/creator authorization |
+| | /api/usernft/lifecycle/{operationId}/cancel | POST | `cancelNftLifecycle` | client.ts | Actor-authorized unsent cancellation |
 | **Bridge** | /api/bridge/routes | GET | `getBridgeRoutes` | client.ts | OK |
 | | /api/bridge/initiate | POST | `initiateBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id} | GET | `getBridgeStatus` | client.ts | OK (safe response) |
@@ -257,12 +266,12 @@ below.
 | | /api/apikey/{id}/rotate | POST | `rotateApiKey` | client.ts | OK |
 | | /api/apikey/scopes | GET | `listIssuableScopes`, `listSelfIssuableApiKeyScopes` | client.ts | OK |
 | | /api/apikey/tenant | POST | — | — | **SDK gap** (tenant-scoped key issuance) |
-| **DappComposition** | /api/dapp-series/{id}/compose | POST | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/validate | GET | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/manifest | GET | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/generate | POST | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/deploy | POST | — | — | **SDK gap** |
-| | /api/dapp-series/{id}/status | GET | — | — | **SDK gap** |
+| **DappComposition** | /api/dapp-series/{id}/compose | POST | `composeDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/validate | GET | `validateDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/manifest | GET | `getDappSeriesManifest` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/generate | POST | `generateDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/deploy | POST | `deployDappSeries` | client.ts | Typed contract; deployment remains pending until confirmed |
+| | /api/dapp-series/{id}/status | GET | `getDappSeriesDeploymentStatus` | client.ts | Typed contract; deployment remains pending until confirmed |
 | **DappSeries** | /api/dapp-series/{id} | GET | `getDappSeries` | client.ts | OK |
 | | /api/dapp-series | GET | `listDappSeries` | client.ts | OK |
 | | /api/dapp-series | POST | `createDappSeries` | client.ts | OK |
@@ -392,3 +401,42 @@ consume the public Azoa API/SDK contract as a partner dependency, add end-to-end
 coverage for Arda Nova onboarding and financial workflows, and keep a clean
 versioned seam so future agents and external partners do not depend on Azoa
 internals or a shared repository checkout.
+
+## Hosted identity recovery and renewal (Round 1)
+
+KYC begin now persists a durable attempt before contacting a hosted provider.
+Retries reuse the attempt; rejected/expired attempts and real approvals missing
+required verification evidence can renew. Missing-evidence real approvals project
+EXPIRED through the existing KYC status contract, and tenant custodial projection
+uses its existing rejected/reverification state. SDK begin/status signatures are
+unchanged; clients should start a new verification after that status, and resume
+pending attempts using begin. No AML details or lineage hashes are public.
+
+Operator hosted reconciliation returns Recovered, ResolvedUnsent, or Quarantined.
+Confirmed absence releases only provably unsent creation. Uncertain sent requests
+retain admission; late original responses or verified canonical attachment resolve
+them. Unverified callback aliases are rejected. Fresh creation remains pending;
+aged unresolved/quarantined admissions require operator reconciliation.
+
+### Durable deployment API (source authored; integrated verification pending)
+
+| Route | Method | SDK method | Contract |
+| --- | --- | --- | --- |
+| `/api/deployments/bundles/{id}/generate` | POST | `generateDeployment` | Explicit runtime/native target and immutable artifact |
+| `/api/deployments/artifacts/{id}` | GET | `getDeploymentArtifact` | Owned normalized artifact |
+| `/api/deployments/quote` | POST | `quoteDeployment` | Native intent with exact fee/rent/value quote |
+| `/api/deployments/contract-query` | POST | `queryNativeContract` | Read-only EVM simulation; no signing |
+| `/api/deployments` | POST | `startDeployment` | Idempotency key and typed request; pending receipt |
+| `/api/deployments` | GET | `listDeployments` | Actor/tenant-scoped cursor discovery |
+| `/api/deployments/{id}` | GET | `getDeployment` | Read-only current receipt |
+| `/api/deployments/request` | GET | `getDeploymentByRequest` | Recover a lost first response by exact key |
+| `/api/deployments/request/cancel` | POST | `cancelDeploymentRequest` | Exact-body cancellation/tombstone |
+| `/api/deployments/{id}/continue` | POST | `continueDeployment` | Current authority for the next stage |
+| `/api/deployments/{id}/cancel` | POST | `cancelDeployment` | Only authoritative cancellable state |
+| `/api/deployments/{id}/invoke` | POST | `invokeDeployment` | Actual caller, immutable input and invocation key; returns durable ActionRun |
+| `/api/deployments/{id}/artifact.mjs` | GET | Console authenticated download | Hash-pinned runnable loader |
+
+Solana partial-stage cleanup and recovery after fee-budget exhaustion, plus AVM
+large-ID wire precision and verified remote compiler identity, remain REQUIRED
+Round3 implementation packages. These are not external deferrals or accepted
+production-complete paths.

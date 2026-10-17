@@ -28,6 +28,11 @@ public sealed class FirstPartyCredentialBoundaryTests
         => PoliciesOn(typeof(WalletController).GetMethod(nameof(WalletController.Export))!)
             .Should().Contain("RecentFirstPartyLogin");
 
+    [Fact]
+    public void WalletAuthenticationBinding_RequiresRecentFirstPartyLogin()
+        => PoliciesOn(typeof(WalletAuthController).GetMethod(nameof(WalletAuthController.LinkWallet))!)
+            .Should().Contain("RecentFirstPartyLogin");
+
     [Theory]
     [InlineData(nameof(WalletController.Create))]
     [InlineData(nameof(WalletController.Update))]
@@ -44,7 +49,7 @@ public sealed class FirstPartyCredentialBoundaryTests
     {
         var controller = new TenantController(
             Mock.Of<ITenantManager>(),
-            Mock.Of<ITenantCustodialAccountManager>());
+            Mock.Of<ITenantCustodialAccountManager>(), ConsentFixture.Factory(Guid.NewGuid()));
 
         var result = controller.IssueChildCredential(Guid.NewGuid(), null);
 

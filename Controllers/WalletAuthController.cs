@@ -9,26 +9,7 @@ using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Controllers;
 
-/// <summary>
-/// Self-sovereign wallet-challenge authentication + claim surface
-/// (user-sovereign-identity §1/§2). Routes under <c>api/user</c>:
-/// <list type="bullet">
-///   <item><c>POST auth/challenge</c> — issue a one-time nonce to sign (anonymous,
-///   per-IP rate-limited via the <c>financial</c> policy; AC1).</item>
-///   <item><c>POST auth/verify</c> — verify the signature → standard login JWT;
-///   create-or-login only (anonymous; AC1/AC2/AC2b).</item>
-///   <item><c>POST wallet/link</c> — bind a wallet to the AUTHENTICATED user
-///   (authed AS that account; AC2b).</item>
-///   <item><c>POST claim-invite</c> — tenant mints a single-use claim token for a
-///   child it owns (TenantScope; AC4).</item>
-///   <item><c>POST claim</c> — user takes ownership with a user-side credential
-///   (claim token OR authenticated child-JWT subject; AC3/AC3b/AC4).</item>
-/// </list>
-///
-/// IDOR rule (mirrors <c>UserController</c>/<c>TenantController</c>): every owned
-/// identity id is taken from the authenticated principal or a single-use token, never
-/// a request body field.
-/// </summary>
+/// <summary>Authenticates wallet proofs and transfers account credential ownership.</summary>
 [ApiController]
 [Route("api/user")]
 public class WalletAuthController : ControllerBase
@@ -67,7 +48,7 @@ public class WalletAuthController : ControllerBase
 
     /// <summary>AC2b: bind a wallet to the ALREADY-AUTHENTICATED user (authed AS that account).</summary>
     [HttpPost("wallet/link")]
-    [Authorize]
+    [Authorize(Policy = "RecentFirstPartyLogin")]
     public async Task<ActionResult<AZOAResult<bool>>> LinkWallet([FromBody] WalletLinkRequest request)
     {
         var userId = GetUserIdFromClaims();
@@ -92,21 +73,13 @@ public class WalletAuthController : ControllerBase
         return TranslateResult(result);
     }
 
-    /// <summary>
-    /// AC3/AC3b/AC4: claim a tenant-provisioned user with a USER-SIDE credential.
-    /// Target id comes from a single-use claim token OR the authenticated child-JWT
-    /// subject — NEVER a body field. Anonymous is permitted ONLY with a claim token.
-    /// </summary>
+    /// <summary>Claims an invited identity with a user-side credential.</summary>
     [HttpPost("claim")]
     [AllowAnonymous]
     public async Task<ActionResult<AZOAResult<WalletAuthTokenResponse>>> Claim([FromBody] ClaimUserRequest request)
     {
-        // Read the authenticated subject if a JWT was presented; absent for a
-        // token-only claim. The manager rejects when NEITHER is available.
-        var authedUserId = GetUserIdFromClaims();
-
         var result = await _manager.ClaimAsync(
-            authedUserId,
+            request.TargetUserId,
             request.ClaimToken,
             request.NewPassword,
             request.Address,

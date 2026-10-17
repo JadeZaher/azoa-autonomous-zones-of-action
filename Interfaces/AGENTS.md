@@ -162,3 +162,15 @@ model binding. A node-operator cross-user view belongs on its own policy-gated r
 never as an optional parameter here, because then the safe call and the privileged call
 are one request apart. Rationale for the three-way `Pricing` / `AmountStatus`
 representations is in `Services/Analytics/AGENTS.md`.
+
+## Detached signatures
+
+`IPartialTransactionSigner` is an optional capability on a registered signer, not a
+second custody route. It accepts canonical provider-owned message bytes and a
+declared required public key. Implementations verify key/message membership and the
+resulting signature. Providers compose only their exact expected signer set through
+consent-aware custody, then verify the complete transaction. Existing `Sign` keeps
+its complete-wire return contract. Solana requires this for issuer/platform/fee-payer
+combinations without replacing the logical actor with platform authority.
+
+DEX observation continuation is provider-owned evidence in the existing persisted stage observation. The coordinator supplies it directly to both signed and externally exposed observation methods; no API accepts a history cursor or evidence override. Providers validate the cursor against the original plan/genesis before advancing bounded history work. Algorand retains its direct indexer proof and ignores this optional continuation. See the closeout track's round3-dex-solana-exposure-amendment.md for finalized block coverage.

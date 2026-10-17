@@ -28,7 +28,7 @@ public sealed class RealValueKycGateTests
     {
         var userId = Guid.NewGuid();
         SetupLatest(userId, KycStatus.APPROVED, DateTimeOffset.UtcNow.AddDays(1));
-        _screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT);
+        _screening.SeedResult(userId, null, KycScreeningDecision.NO_HIT, lineageKey: "fixture-lineage");
 
         var result = await Gate()
             .RequireCurrentApprovalAsync(userId);
@@ -189,6 +189,7 @@ public sealed class RealValueKycGateTests
     {
         Id = Guid.NewGuid().ToString("N"),
         UserId = userId.ToString("N"),
+        AmlLineageKey = "fixture-lineage",
         Provider = profile.Provider,
         ProviderKey = profile.ProviderKey,
         ProviderResult = KycApprovalTrust.CreateEnvelope(profile),

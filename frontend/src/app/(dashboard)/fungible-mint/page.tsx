@@ -1,21 +1,7 @@
 'use client'
 
-/**
- * Fungible Mint — live test harness (fungible-mint-and-render-model §11.3–11.5).
- *
- * The frontend IS the test harness for this track (there is no vitest/playwright
- * suite for the app). This page drives the new backend surface end-to-end against
- * the running .NET API via the azoa-sdk singleton:
- *
- *   (a) generate a custodial wallet (UNGATED — wallet-generate needs no KYC, §11.4);
- *   (b) attempt a one-shot fungible-mint and surface the KYC_FORBIDDEN 403 when the
- *       user is not KYC-approved (the value seam IS gated, §11.4);
- *   (c) render the wallet's holdings using ONLY the render-model DTO returned by the
- *       SINGLE portfolio call (§11.5) — no per-asset round-trips, no client-side
- *       decimals math (raw + display amounts arrive precomputed).
- */
-
 import { useState, useCallback } from 'react'
+import { FungibleCreationPanel } from '@/components/fungible/fungible-creation-panel'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,18 +18,12 @@ import { useAzoa } from '@/lib/azoa-context'
 import type {
   PortfolioResult,
   PortfolioAsset,
-  FungibleTokenResult,
 } from 'azoa-sdk'
 import type { WalletResult } from 'azoa-sdk/api'
-import { Coins, Wallet, ShieldAlert, RefreshCw } from 'lucide-react'
+import { Coins, Wallet, RefreshCw } from 'lucide-react'
 
 function truncate(addr: string, chars = 6): string {
   return addr.length <= chars * 2 + 3 ? addr : `${addr.slice(0, chars)}…${addr.slice(-chars)}`
-}
-
-/** Detects the fail-closed KYC rejection the value seam surfaces (KYC_FORBIDDEN: → 403). */
-function isKycForbidden(message: string): boolean {
-  return message.includes('KYC_FORBIDDEN')
 }
 
 /**
@@ -86,57 +66,6 @@ export default function FungibleMintPage() {
     setWalletBusy(false)
   }, [chainType])
 
-  // ── (b) fungible-mint ──
-  const [name, setName] = useState('Project Share')
-  const [unitName, setUnitName] = useState('PSHARE')
-  const [total, setTotal] = useState('1000000')
-  const [decimals, setDecimals] = useState('0')
-  const [mintBusy, setMintBusy] = useState(false)
-  const [mintResult, setMintResult] = useState<FungibleTokenResult | null>(null)
-  const [mintError, setMintError] = useState<string | null>(null)
-  const [kycBlocked, setKycBlocked] = useState(false)
-
-  const fungibleMint = useCallback(async () => {
-    setMintBusy(true)
-    setMintError(null)
-    setMintResult(null)
-    setKycBlocked(false)
-
-    const result = await azoa.api.fungibleMint(
-      {
-        chainType,
-        name,
-        unitName,
-        total: Number(total),
-        decimals: Number(decimals),
-      },
-      // A stable idempotency key so a re-click replays the original launch (no
-      // double-mint) — exercises the idempotency path of the endpoint.
-      { idempotencyKey: `harness:${userId}:${name}:${unitName}:${total}:${decimals}` }
-    )
-
-    if (isOk(result)) {
-      setMintResult(result.value)
-      toast.success(
-        result.value.replayed
-          ? `Replayed prior launch (ASA ${result.value.assetId})`
-          : `Fungible token launched (ASA ${result.value.assetId})`
-      )
-    } else {
-      const msg = result.error.message
-      if (isKycForbidden(msg)) {
-        // The value seam is KYC-gated (§11.4): a non-approved user is rejected
-        // fail-closed with KYC_FORBIDDEN: → 403. This is the EXPECTED harness path
-        // for an un-KYC'd user.
-        setKycBlocked(true)
-      } else {
-        setMintError(msg)
-      }
-    }
-    setMintBusy(false)
-  }, [chainType, name, unitName, total, decimals, userId])
-
-  // ── (c) render-model portfolio (ONE call) ──
   const [portfolio, setPortfolio] = useState<PortfolioResult | null>(null)
   const [portfolioBusy, setPortfolioBusy] = useState(false)
   const [portfolioError, setPortfolioError] = useState<string | null>(null)
@@ -171,7 +100,7 @@ export default function FungibleMintPage() {
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Fungible Mint — Live Harness</h1>
         <p className="text-sm text-muted-foreground">
-          Drives the one-shot fungible-mint endpoint + render-model portfolio against the live backend.
+          Admit an immutable creation, consent to costs and recover its confirmed result.
           Wallet-generate is ungated; the mint seam is KYC-gated.
         </p>
       </div>
@@ -203,64 +132,7 @@ export default function FungibleMintPage() {
           </CardContent>
         </Card>
 
-        {/* (b) Fungible mint */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Coins className="h-4 w-4" /> 2. Fungible Mint (KYC-gated)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" value={name} onChange={e => setName(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="unit">Unit Name</Label>
-                <Input id="unit" value={unitName} onChange={e => setUnitName(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="total">Total Supply</Label>
-                <Input id="total" type="number" value={total} onChange={e => setTotal(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="decimals">Decimals</Label>
-                <Input id="decimals" type="number" value={decimals} onChange={e => setDecimals(e.target.value)} />
-              </div>
-            </div>
-            <Button size="sm" onClick={fungibleMint} disabled={mintBusy}>
-              {mintBusy ? 'Minting…' : 'Attempt Fungible Mint'}
-            </Button>
-
-            {kycBlocked && (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950 p-3 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2">
-                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-medium">Blocked: KYC_FORBIDDEN (HTTP 403)</p>
-                  <p className="text-xs mt-0.5">
-                    The mint seam is fail-closed: this user is not KYC-approved, so the value-bearing
-                    launch was rejected. Wallet generation above still succeeded — you can make a wallet,
-                    but to mint you must be KYC-approved.
-                  </p>
-                </div>
-              </div>
-            )}
-            {mintError && <ErrorBanner message={mintError} onRetry={fungibleMint} />}
-            {mintResult && (
-              <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
-                <p><strong>ASA id:</strong> <span className="font-mono text-xs">{mintResult.assetId}</span></p>
-                <p><strong>Wallet:</strong> <span className="font-mono text-xs">{truncate(mintResult.walletAddress, 8)}</span></p>
-                <p className="flex items-center gap-2">
-                  <strong>Replayed:</strong>
-                  <Badge variant={mintResult.replayed ? 'secondary' : 'default'} className="text-[10px]">
-                    {mintResult.replayed ? 'yes (idempotent)' : 'no (fresh)'}
-                  </Badge>
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <FungibleCreationPanel key={userId} actorId={userId} />
       </div>
 
       {/* (c) Render-model portfolio */}

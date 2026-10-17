@@ -11,13 +11,7 @@ using AZOA.WebAPI.Services.HostedSessions;
 
 namespace AZOA.WebAPI.Services.Kyc;
 
-/// <summary>
-/// KYC-side resumption for <see cref="IHostedSessionFlow"/>: once an authoritative
-/// TERMINAL verdict exists, run AML screening, register ongoing monitoring, write
-/// the person-to-user binding, and terminalize the submission ledger row. Only
-/// ever called with a terminal outcome — the flow parks a non-terminal one before
-/// reaching here, and the flow's resume CLAIM guarantees exactly one caller.
-/// </summary>
+/// <summary>Applies verified hosted identity outcomes; see AGENTS.md hosted-outcome safety.</summary>
 public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandler
 {
     private const string PersistenceMessage = "The KYC outcome could not be recorded.";
@@ -45,6 +39,7 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
         _configuration = configuration;
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<string?>> ResumeAsync(
         HostedSession session,
         HostedSessionOutcome outcome,
@@ -62,11 +57,54 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
 
         if (!Guid.TryParseExact(session.SubjectUserId ?? string.Empty, "N", out var userId))
             return AZOAResult<string?>.Failure("The hosted session has no resolvable subject user.");
-        Guid? tenantId = Guid.TryParseExact(session.TenantId ?? string.Empty, "N", out var parsedTenant)
-            ? parsedTenant
-            : null;
+        Guid? tenantId = null;
+        if (!string.IsNullOrWhiteSpace(session.TenantId))
+        {
+            if (!Guid.TryParseExact(session.TenantId, "N", out var parsedTenant))
+                return AZOAResult<string?>.Failure("The hosted session has no resolvable tenant.");
+            tenantId = parsedTenant;
+        }
 
         var now = _clock.GetUtcNow();
+
+        var existing = await _kycStore.GetActiveSubmissionAsync(userId, tenantId, ct);
+        if (existing.IsError)
+        {
+            return AZOAResult<string?>.FailureWithCode(
+                PersistenceMessage,
+                AzoaErrorCodes.DependencyUnavailable);
+        }
+
+        if (existing.Result is null)
+        {
+            _logger.LogWarning(
+                "No active KYC attempt matched hosted session {SessionId}; checking terminal or superseding attempts.",
+                session.Id);
+            var latest = await _kycStore.GetLatestSubmissionAsync(userId, tenantId, ct);
+            if (latest.IsError) return AZOAResult<string?>.FailureWithCode(PersistenceMessage, AzoaErrorCodes.DependencyUnavailable);
+            if (latest.Result is { } completed && MatchesSession(completed, session)
+                && completed.Status is KycStatus.APPROVED or KycStatus.REJECTED or KycStatus.EXPIRED)
+                return AZOAResult<string?>.Success(completed.Id);
+            if (latest.Result is { } superseding && superseding.SubmittedAt > session.CreatedDate
+                && superseding.ProviderSessionId != session.Id)
+                return AZOAResult<string?>.Success(null);
+            return AZOAResult<string?>.FailureWithCode("The KYC attempt is not yet attached; retry reconciliation.", AzoaErrorCodes.Conflict);
+        }
+
+        var submission = existing.Result;
+        if (!MatchesSession(submission, session)
+            || submission.Status is not (KycStatus.PENDING or KycStatus.IN_REVIEW)
+            || submission.ExpiresAt is null || submission.ExpiresAt <= now)
+        {
+            _logger.LogError(
+                "Hosted session {SessionId} resolved an active KYC attempt that belongs to another session; refusing to terminalize it.",
+                session.Id);
+            if (submission.ProviderSessionId != session.Id && submission.SubmittedAt > session.CreatedDate)
+                return AZOAResult<string?>.Success(null);
+            if (MatchesSession(submission, session) && submission.ExpiresAt <= now)
+                return AZOAResult<string?>.Success(null);
+            return AZOAResult<string?>.FailureWithCode("The KYC attempt is not yet attached; retry reconciliation.", AzoaErrorCodes.Conflict);
+        }
 
         if (outcome.IsApproved)
         {
@@ -79,10 +117,8 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                     "The approved verification carried no verifiable person attributes.");
             }
 
-            // AML FIRST, before any durable identity write. The screening row is what
-            // the value gate reads, and the gate denies when it is missing, so an
-            // approval that fails to screen must not become a binding either.
-            var screened = await ScreenAsync(userId, tenantId, outcome.Subject, ct);
+            var lineageKey = KycAmlLineage.ForHosted(submission.Id, session.Id, outcome.Subject);
+            var screened = await ScreenAsync(userId, tenantId, outcome.Subject, lineageKey, ct);
             if (screened.IsError || screened.Result is null)
             {
                 return AZOAResult<string?>.FailureWithCode(
@@ -90,16 +126,12 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                     screened.Code ?? AzoaErrorCodes.DependencyUnavailable);
             }
 
+            if (screened.Result.LineageKey != lineageKey)
+                return AZOAResult<string?>.Failure("The identity screening evidence did not match this attempt.");
+            submission.AmlLineageKey = lineageKey;
+
             if (KycAmlClearance.RequiresManualReview(screened.Result))
             {
-                // The submission still records that IDENTITY was verified — that is
-                // true and is a distinct fact. The value gate reads the screening row
-                // and stays shut. The FINDING is never projected to the subject or the
-                // tenant — an adverse AML finding is not something to tip off about —
-                // but the fact that a review is open is, so the tenant custodial
-                // projection reports UnderReview with the SLA and a legitimate subject
-                // caught by a name collision has a route to a human instead of a
-                // permanent silent denial.
                 _logger.LogWarning(
                     "AML manual review opened: screening returned {Decision} (truncated: {Truncated}, policy {PolicyVersion}) "
                         + "for verified identity {UserId} in tenant {TenantId} at {ScreenedAt}. The value gate stays closed "
@@ -112,12 +144,14 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                     screened.Result.ScreenedAt);
             }
 
-            var bound = await _binding.BindAsync(
+            var bound = await _binding.BindHostedAsync(
                 userId,
                 tenantId,
-                KycProvider.IDENTOMAT,
+                submission.Provider,
                 session.ProviderKey,
                 outcome.Subject,
+                submission,
+                session,
                 ct);
             if (bound.IsError)
             {
@@ -126,63 +160,28 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                     bound.Code ?? AzoaErrorCodes.DependencyUnavailable);
             }
 
-            // Ongoing monitoring AFTER the binding. A failure here degrades future
-            // change detection but cannot change today's decision, which the persisted
-            // screening row already governs — so it is logged loudly rather than
-            // failing the resume and stranding an approval that did screen cleanly.
-            await RegisterMonitoringAsync(userId, tenantId, outcome.Subject, ct);
+            var monitored = await RegisterMonitoringAsync(userId, tenantId, outcome.Subject, lineageKey, ct);
+            if (monitored.IsError || monitored.Result is null || monitored.Result.LineageKey != lineageKey
+                || string.IsNullOrWhiteSpace(monitored.Result.ProviderMonitorId))
+                return AZOAResult<string?>.FailureWithCode("Ongoing identity monitoring could not be registered.",
+                    AzoaErrorCodes.DependencyUnavailable);
         }
 
-        var existing = await _kycStore.GetActiveSubmissionAsync(userId, tenantId, ct);
-        if (existing.IsError)
-        {
-            return AZOAResult<string?>.FailureWithCode(
-                PersistenceMessage,
-                AzoaErrorCodes.DependencyUnavailable);
-        }
-
-        if (existing.Result is null)
-        {
-            // No active attempt to terminalize. The hosted session itself remains the
-            // durable record of the outcome, so this is not a failure.
-            _logger.LogWarning(
-                "No active KYC attempt matched hosted session {SessionId}; the outcome was recorded on the session only.",
-                session.Id);
-            return AZOAResult<string?>.Success(null);
-        }
-
-        var submission = existing.Result;
-        if (!MatchesSession(submission, session))
-        {
-            // The active attempt is a DIFFERENT one from the attempt this session
-            // belongs to. Correlating by user alone would let a stale session's
-            // verdict terminalize whichever attempt happens to be open, writing an
-            // approval the authority never issued for it.
-            _logger.LogError(
-                "Hosted session {SessionId} resolved an active KYC attempt that belongs to another session; refusing to terminalize it.",
-                session.Id);
-            return AZOAResult<string?>.Success(null);
-        }
-
-        submission.Status = outcome.IsApproved ? KycStatus.APPROVED : KycStatus.REJECTED;
-        submission.ReviewedAt = now;
-        submission.ModifiedDate = now;
-        if (outcome.IsApproved)
-        {
-            // Begin set this to the ~30 minute SESSION window. Leaving it there makes
-            // every approval expire minutes after it is granted — invisible in a fast
-            // test, total denial in production — because both value gates require an
-            // explicit FUTURE expiry. This is the ONLY approval seam a hosted-provider
-            // sponsor reaches, so it must resolve the SAME lifetime as the manual
-            // reviewer path in KycManager — one number, one key. See docs/NODE-HOST.md §8.5.
-            submission.ExpiresAt = KycApprovalValidity.ResolveExpiry(_configuration, now);
-        }
-        else
-        {
-            submission.RejectionReason = outcome.Detail;
-        }
-
-        var saved = await _kycStore.UpsertSubmissionAsync(submission, ct);
+        ct.ThrowIfCancellationRequested();
+        var reviewedAt = _clock.GetUtcNow();
+        var approvalExpiry = KycApprovalValidity.ResolveExpiry(_configuration, reviewedAt);
+        if (outcome.EvidenceValidUntil is { } evidenceExpiry && evidenceExpiry < approvalExpiry)
+            approvalExpiry = evidenceExpiry;
+        if (outcome.IsApproved && approvalExpiry <= reviewedAt)
+            return AZOAResult<string?>.Failure("The authoritative verification evidence expired before approval could commit.");
+        var saved = await _kycStore.TryCompleteHostedAsync(
+            submission,
+            session,
+            outcome.IsApproved ? KycStatus.APPROVED : KycStatus.REJECTED,
+            reviewedAt,
+            outcome.IsApproved ? approvalExpiry : submission.ExpiresAt,
+            outcome.IsApproved ? null : outcome.Detail,
+            ct);
         if (saved.IsError)
         {
             return AZOAResult<string?>.FailureWithCode(
@@ -190,16 +189,16 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                 AzoaErrorCodes.DependencyUnavailable);
         }
 
-        return AZOAResult<string?>.Success(submission.Id);
+        return AZOAResult<string?>.Success(saved.Result?.Id);
     }
 
-    /// <summary>
-    /// The submission's <c>ProviderSessionId</c> is the AZOA hosted-session id — the
-    /// adapter puts it there deliberately so the vendor's own id never leaves the
-    /// node — which makes it the exact correlation between an attempt and a session.
-    /// </summary>
     private static bool MatchesSession(KycSubmission submission, HostedSession session)
-        => !string.IsNullOrWhiteSpace(submission.ProviderSessionId)
+        => session.FlowKind == HostedSessionFlowKinds.Kyc
+            && submission.Provider is KycProvider.IDENTOMAT or KycProvider.VERIFF or KycProvider.GENERIC_HOSTED
+            && string.Equals(submission.ProviderKey, session.ProviderKey, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(submission.UserId, session.SubjectUserId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(submission.TenantId, session.TenantId, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(submission.ProviderSessionId)
             && string.Equals(
                 submission.ProviderSessionId.Trim(),
                 session.Id?.Trim(),
@@ -209,6 +208,7 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
         Guid userId,
         Guid? tenantId,
         HostedSessionSubjectAttributes subject,
+        string lineageKey,
         CancellationToken ct)
     {
         var fullName = ComposeFullName(subject);
@@ -221,32 +221,28 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                 "The approved verification carried no verifiable person attributes.");
         }
 
-        return await _screening.ScreenAsync(userId, tenantId, fullName, subject.Birthday, ct);
+        return await _screening.ScreenAsync(userId, tenantId, fullName, subject.Birthday, ct, lineageKey: lineageKey);
     }
 
-    private async Task RegisterMonitoringAsync(
+    private async Task<AZOAResult<KycScreeningMonitor>> RegisterMonitoringAsync(
         Guid userId,
         Guid? tenantId,
         HostedSessionSubjectAttributes subject,
+        string lineageKey,
         CancellationToken ct)
     {
         var fullName = ComposeFullName(subject);
         if (string.IsNullOrWhiteSpace(fullName))
-            return;
+            return AZOAResult<KycScreeningMonitor>.Failure("A screening name is required.");
 
         var registered = await _screening.RegisterMonitorAsync(
             userId,
             tenantId,
             fullName,
             subject.Birthday,
-            ct);
-        if (registered.IsError)
-        {
-            _logger.LogError(
-                "AML ongoing monitoring could not be registered for user {UserId}; this subject will not be re-screened by the poll until it is: {Reason}",
-                userId,
-                registered.Message);
-        }
+            ct,
+            lineageKey: lineageKey);
+        return registered;
     }
 
     /// <summary>The vendor's screening query keys on a single <c>fullName</c> string.</summary>

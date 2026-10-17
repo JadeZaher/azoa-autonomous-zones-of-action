@@ -1,25 +1,13 @@
 namespace AZOA.WebAPI.Models.Requests;
 
-/// <summary>
-/// Body for <c>POST api/user/claim</c> (user-sovereign-identity AC3/AC3b/AC4). The
-/// user takes ownership of a tenant-provisioned user by setting a USER-SIDE
-/// credential (M1) — a fresh wallet challenge signature OR a user-chosen password.
-///
-/// <para><b>IDOR (AC5):</b> the claimed user id is NEVER read from this body. It is
-/// resolved from either the authenticated child-JWT subject OR the single-use
-/// <see cref="ClaimToken"/> — both server-trusted principals. A cross-tenant claim
-/// resolves to NotFound.</para>
-/// </summary>
+/// <summary>Claims the identity authorized by an invite with a user-chosen credential.</summary>
 public class ClaimUserRequest
 {
-    /// <summary>
-    /// OPTIONAL single-use claim-invite token (AC4). When present it identifies the
-    /// target user and is atomically redeemed. When absent the claim targets the
-    /// authenticated child-JWT subject.
-    /// </summary>
-    public string? ClaimToken { get; set; }
+    /// <summary>Expected identity retained for ordinary credential login after response loss.</summary>
+    public Guid TargetUserId { get; set; }
 
-    // ── User-side credential (set EXACTLY ONE; never derivable from a child JWT) ──
+    /// <summary>Required live invitation; the persisted invitation determines authority.</summary>
+    public string? ClaimToken { get; set; }
 
     /// <summary>A user-chosen password to set as the user's own login credential.</summary>
     public string? NewPassword { get; set; }

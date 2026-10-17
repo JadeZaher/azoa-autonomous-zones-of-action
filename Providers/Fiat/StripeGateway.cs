@@ -92,7 +92,7 @@ public interface IStripeGateway
 /// SDK: the surface used here is two endpoints and one HMAC, and the house rule is to minimise
 /// external dependencies on a value path. See <c>docs/FIAT-RAIL.md</c>.
 /// </summary>
-public sealed class StripeGateway : IStripeGateway
+public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
 {
     /// <summary>
     /// Pinned Stripe API version. An unpinned client silently follows the account's default
@@ -179,17 +179,38 @@ public sealed class StripeGateway : IStripeGateway
             ct);
     }
 
-    private async Task<AZOAResult<StripeCheckoutSession>> SendAsync(
+    private Task<AZOAResult<StripeCheckoutSession>> SendAsync(
+        StripeCredentials credentials, HttpMethod method, string path,
+        IReadOnlyCollection<KeyValuePair<string, string>>? form, string? idempotencyKey,
+        string attemptedAction, CancellationToken ct)
+        => SendAsync(credentials, method, path, form, idempotencyKey, attemptedAction, ct, ParseCheckoutSession);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<StripeRefund>> CreateRefundAsync(StripeCredentials credentials,
+        string paymentIntentId, long amount, string intentId, string idempotencyKey, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Post, "/v1/refunds", new Dictionary<string, string>
+        {
+            ["payment_intent"] = paymentIntentId,
+            ["amount"] = amount.ToString(CultureInfo.InvariantCulture),
+            ["metadata[azoa_intent_id]"] = intentId,
+        }, idempotencyKey, "refund a payment", ct, StripeRefund.Parse);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<StripeRefund>> GetRefundAsync(StripeCredentials credentials, string refundId, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Get, "/v1/refunds/" + Uri.EscapeDataString(refundId),
+            null, null, "read a refund", ct, StripeRefund.Parse);
+
+    private async Task<AZOAResult<T>> SendAsync<T>(
         StripeCredentials credentials,
         HttpMethod method,
         string path,
         IReadOnlyCollection<KeyValuePair<string, string>>? form,
         string? idempotencyKey,
         string attemptedAction,
-        CancellationToken ct)
+        CancellationToken ct, Func<string, T?> parse) where T : class
     {
         if (string.IsNullOrWhiteSpace(credentials.SecretKey) || string.IsNullOrWhiteSpace(credentials.ApiBaseUrl))
-            return FiatConsumerErrors.RailUnavailable<StripeCheckoutSession>();
+            return FiatConsumerErrors.RailUnavailable<T>();
 
         // One opaque id ties the consumer-visible refusal to the server-side log line that
         // carries the real Stripe text; the text itself never crosses the boundary.
@@ -217,38 +238,38 @@ public sealed class StripeGateway : IStripeGateway
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError(
-                    "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId} body={Body}",
-                    attemptedAction, (int)response.StatusCode, correlationId, body);
+                    "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId}",
+                    attemptedAction, (int)response.StatusCode, correlationId);
 
                 // 429 and 5xx are the rail being busy; anything else is a request this node
                 // built wrongly, which a consumer cannot fix by retrying.
                 return (int)response.StatusCode is 429 or >= 500
-                    ? FiatConsumerErrors.RailBusy<StripeCheckoutSession>(correlationId)
-                    : FiatConsumerErrors.RailRefused<StripeCheckoutSession>(correlationId);
+                    ? FiatConsumerErrors.RailBusy<T>(correlationId)
+                    : FiatConsumerErrors.RailRefused<T>(correlationId);
             }
 
-            var parsed = ParseCheckoutSession(body);
+            var parsed = parse(body);
             if (parsed is null)
             {
                 _logger.LogError(
-                    "Stripe returned a payment session this node could not read. correlationId={CorrelationId}",
+                    "Stripe returned an unreadable response. correlationId={CorrelationId}",
                     correlationId);
-                return FiatConsumerErrors.RailBusy<StripeCheckoutSession>(correlationId);
+                return FiatConsumerErrors.RailBusy<T>(correlationId);
             }
 
-            return AZOAResult<StripeCheckoutSession>.Success(parsed, "Success");
+            return AZOAResult<T>.Success(parsed, "Success");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
         {
             _logger.LogError(
                 exception,
                 "The payment rail could not be reached to {AttemptedAction}. correlationId={CorrelationId}",
                 attemptedAction, correlationId);
-            return FiatConsumerErrors.RailBusy<StripeCheckoutSession>(correlationId);
+            return FiatConsumerErrors.RailBusy<T>(correlationId);
         }
     }
 

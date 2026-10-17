@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Kyc;
+using AZOA.WebAPI.Services.HostedSessions;
 using AZOA.WebAPI.Settings;
 
 namespace AZOA.WebAPI.Providers.Kyc;
@@ -64,6 +65,7 @@ public sealed class IdentomatHttpTransport : IIdentomatHttpTransport
         _logger = logger ?? NullLogger<IdentomatHttpTransport>.Instance;
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<TResponse>> PostAsync<TRequest, TResponse>(
         string baseUrl,
         string path,
@@ -79,7 +81,7 @@ public sealed class IdentomatHttpTransport : IIdentomatHttpTransport
                 operation);
             return AZOAResult<TResponse>.FailureWithCode(
                 RateLimitedMessage,
-                AzoaErrorCodes.DependencyUnavailable);
+                HostedSessionFlow.RequestNotSentCode);
         }
 
         try
@@ -135,7 +137,7 @@ public sealed class IdentomatHttpTransport : IIdentomatHttpTransport
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or OperationCanceledException)
         {
             // The exception message can carry the request URI; log it, never return it.
             _logger.LogError(exception, "Identomat {Operation} failed.", operation);

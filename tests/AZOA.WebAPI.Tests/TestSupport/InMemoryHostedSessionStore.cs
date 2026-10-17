@@ -45,6 +45,21 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
             if (existing is not null)
                 return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(existing), "Resumed."));
 
+            if (_sessions.TryGetValue(candidate.Id, out var prior))
+            {
+                if (prior.State != HostedSessionStates.Abandoned || prior.CreationStartedAt is not null
+                    || string.IsNullOrWhiteSpace(prior.CreationToken)
+                    || prior.AdmissionKey != candidate.AdmissionKey + ":resolved:" + candidate.Id)
+                    return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(prior)));
+                prior.State = HostedSessionStates.Claimed;
+                prior.StateVersion++;
+                prior.CreationToken = candidate.CreationToken;
+                prior.CreationClaimedAt = candidate.CreationClaimedAt ?? DateTimeOffset.UtcNow;
+                prior.AdmissionKey = candidate.AdmissionKey;
+                prior.CompletedAt = null;
+                return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(prior)));
+            }
+
             _sessions[candidate.Id] = Clone(candidate);
             return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(candidate), "Claimed."));
         }
@@ -71,6 +86,15 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         }
     }
 
+    public Task<AZOAResult<HostedSession>> GetByAdmissionAsync(string flowKind, string providerKey, string admissionKey, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            var found = _sessions.Values.FirstOrDefault(row => row.FlowKind == flowKind && row.ProviderKey == providerKey && row.AdmissionKey == admissionKey);
+            return Task.FromResult(AZOAResult<HostedSession>.Success(found is null ? null! : Clone(found)));
+        }
+    }
+
     public Task<AZOAResult<HostedSession>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         lock (_gate)
@@ -91,15 +115,15 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         string? providerCorrelationId,
         string redirectUrl,
         DateTimeOffset? expiresAt,
+        string creationToken,
         CancellationToken ct = default)
     {
         lock (_gate)
         {
             // Mirrors the SurrealQL WHERE: CLAIMED or AWAITING_SUBJECT, exact version.
             if (!_sessions.TryGetValue(id.ToString("N"), out var session)
-                || (session.State != HostedSessionStates.Claimed
-                    && session.State != HostedSessionStates.AwaitingSubject)
-                || session.StateVersion != expectedStateVersion)
+                || session.State != HostedSessionStates.Claimed || session.ProviderSessionId is not null
+                || session.CreationToken != creationToken || session.CreationStartedAt is null)
             {
                 return Task.FromResult(new AZOAResult<HostedSession>
                 {
@@ -118,6 +142,137 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         }
     }
 
+    public Task<AZOAResult<HostedSession>> TryBeginCreationAsync(Guid id, string creationToken, DateTimeOffset now, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(id.ToString("N"), out var row)
+                || row.State != HostedSessionStates.Claimed
+                || row.CreationToken != creationToken || row.CreationStartedAt is not null
+                || row.CreationQuarantinedAt is not null || row.ProviderSessionId is not null)
+                return Task.FromResult(AZOAResult<HostedSession>.Success(null!));
+            row.CreationStartedAt = now;
+            row.StateVersion++;
+            return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(row)));
+        }
+    }
+
+    public Task<bool> ReleaseUnsentAdmissionAsync(Guid id, string creationToken, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(id.ToString("N"), out var row)
+                || row.State != HostedSessionStates.Claimed || row.CreationToken != creationToken
+                || row.ProviderSessionId is not null) return Task.FromResult(false);
+            row.State = HostedSessionStates.Abandoned;
+            row.StateVersion++;
+            row.AdmissionKey += ":resolved:" + row.Id;
+            row.CreationStartedAt = null;
+            row.CreationQuarantinedAt = null;
+            row.CompletedAt = DateTimeOffset.UtcNow;
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<IReadOnlyList<HostedSession>> ListReconciliationAsync(DateTimeOffset before, int limit, CancellationToken ct = default)
+    {
+        lock (_gate)
+            return Task.FromResult<IReadOnlyList<HostedSession>>(_sessions.Values
+                .Where(row => row.State == HostedSessionStates.Claimed && row.ProviderSessionId is null && (row.CreationClaimedAt <= before || (row.CreationClaimedAt == null && row.CreatedDate <= before)))
+                .OrderBy(row => row.CreatedDate).Take(limit).Select(Clone).ToArray());
+    }
+
+    public Task<AZOAResult<HostedSession>> ReconcileAdmissionAsync(
+        HostedSession expected, Guid actorId, string reason, HostedSessionCreation? providerSession,
+        DateTimeOffset now, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(expected.Id, out var row)
+                || row.State != HostedSessionStates.Claimed || row.StateVersion != expected.StateVersion
+                || row.ProviderSessionId is not null || (row.CreationClaimedAt ?? row.CreatedDate) > now.AddMinutes(-5))
+                return Task.FromResult(AZOAResult<HostedSession>.Success(null!));
+            row.StateVersion++;
+            row.ReconciledAt = now;
+            row.ReconciledByUserId = actorId.ToString("N");
+            row.ReconciliationReason = reason;
+            if (providerSession is null)
+            {
+                if (row.CreationStartedAt is null && !string.IsNullOrWhiteSpace(row.CreationToken))
+                {
+                    row.State = HostedSessionStates.Abandoned;
+                    row.AdmissionKey += ":resolved:" + row.Id;
+                }
+                else row.CreationQuarantinedAt = now;
+            }
+            else
+            {
+                row.State = HostedSessionStates.AwaitingSubject;
+                row.ProviderSessionId = providerSession.ProviderSessionId;
+                row.ProviderCorrelationId = providerSession.ProviderCorrelationId;
+                row.RedirectUrl = providerSession.RedirectUrl;
+            }
+            return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(row)));
+        }
+    }
+
+    public Task<AZOAResult<HostedSession>> TryClaimResumeAsync(
+        Guid id, long expectedStateVersion, string token, DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(id.ToString("N"), out var session)
+                || session.StateVersion != expectedStateVersion
+                || HostedSessionStates.IsTerminal(session.State)
+                || (session.State == HostedSessionStates.Resuming && session.ResumeLeaseExpiresAt > now))
+                return Task.FromResult(AZOAResult<HostedSession>.Success(null!));
+            session.State = HostedSessionStates.Resuming;
+            session.StateVersion++;
+            session.ResumeLeaseToken = token;
+            session.ResumeLeaseExpiresAt = leaseExpiresAt;
+            return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(session)));
+        }
+    }
+
+    public Task<bool> RenewResumeLeaseAsync(
+        Guid id, string token, DateTimeOffset now, DateTimeOffset leaseExpiresAt,
+        CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(id.ToString("N"), out var session)
+                || session.State != HostedSessionStates.Resuming
+                || session.ResumeLeaseToken != token || session.ResumeLeaseExpiresAt <= now)
+                return Task.FromResult(false);
+            session.ResumeLeaseExpiresAt = leaseExpiresAt;
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<AZOAResult<HostedSession>> TryFinishResumeAsync(
+        Guid id, long expectedStateVersion, string token, DateTimeOffset now,
+        string newState, string? authoritativeOutcome, string? outcomeDetail,
+        string? resumeTargetId, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(id.ToString("N"), out var session)
+                || session.StateVersion != expectedStateVersion || session.State != HostedSessionStates.Resuming
+                || session.ResumeLeaseToken != token || session.ResumeLeaseExpiresAt <= now)
+                return Task.FromResult(AZOAResult<HostedSession>.Success(null!));
+            session.State = newState;
+            session.StateVersion++;
+            session.AuthoritativeOutcome = authoritativeOutcome;
+            session.OutcomeDetail = outcomeDetail;
+            session.ResumeTargetId = resumeTargetId;
+            session.ResumeLeaseToken = null;
+            session.ResumeLeaseExpiresAt = null;
+            if (HostedSessionStates.IsTerminal(newState)) TerminalWriteCount++;
+            return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(session)));
+        }
+    }
+
     public Task<AZOAResult<HostedSession>> TryTransitionAsync(
         Guid id,
         long expectedStateVersion,
@@ -131,7 +286,8 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         {
             if (!_sessions.TryGetValue(id.ToString("N"), out var session)
                 || session.StateVersion != expectedStateVersion
-                || HostedSessionStates.IsTerminal(session.State))
+                || HostedSessionStates.IsTerminal(session.State)
+                || session.State == HostedSessionStates.Resuming)
             {
                 // The loser of a race gets a null result, not an error.
                 return Task.FromResult(new AZOAResult<HostedSession>
@@ -213,6 +369,12 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         FlowKind = session.FlowKind,
         ProviderKey = session.ProviderKey,
         AdmissionKey = session.AdmissionKey,
+        CreationToken = session.CreationToken,
+        CreationClaimedAt = session.CreationClaimedAt,
+        CreationStartedAt = session.CreationStartedAt,
+        CreationQuarantinedAt = session.CreationQuarantinedAt,
+        CreationCompletedAt = session.CreationCompletedAt,
+        ReconciliationAuditJson = session.ReconciliationAuditJson,
         SubjectUserId = session.SubjectUserId,
         TenantId = session.TenantId,
         ProviderSessionId = session.ProviderSessionId,
@@ -220,7 +382,15 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
         RedirectUrl = session.RedirectUrl,
         State = session.State,
         StateVersion = session.StateVersion,
+        ResumeLeaseToken = session.ResumeLeaseToken,
+        ResumeLeaseExpiresAt = session.ResumeLeaseExpiresAt,
+        ReconciledByUserId = session.ReconciledByUserId,
+        ReconciledAt = session.ReconciledAt,
+        ReconciliationReason = session.ReconciliationReason,
         AuthoritativeOutcome = session.AuthoritativeOutcome,
+        ProviderDecisionId = session.ProviderDecisionId,
+        ProviderEvidenceDigest = session.ProviderEvidenceDigest,
+        ProviderEvidenceConflict = session.ProviderEvidenceConflict,
         OutcomeDetail = session.OutcomeDetail,
         CallbackCount = session.CallbackCount,
         ResumeTargetId = session.ResumeTargetId,

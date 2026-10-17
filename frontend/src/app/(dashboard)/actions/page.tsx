@@ -23,7 +23,7 @@ import { OwnerAccessControls } from '@/components/action-access/owner-access-con
 import { MarketplaceAccessAction } from '@/components/action-access/marketplace-access-action'
 import { MyRequestsPanel } from '@/components/action-access/my-requests-panel'
 import { RunAccessBadge } from '@/components/action-access/access-badge'
-import type { ActionRunAccess } from 'azoa-sdk'
+import type { ActionRunAccess, WorkflowRunResult } from 'azoa-sdk'
 
 // ─── Types ───
 
@@ -681,7 +681,7 @@ function StartPublicAction() {
   const [loading, setLoading] = useState(false)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
-  const [startResult, setStartResult] = useState<unknown>(null)
+  const [startResult, setStartResult] = useState<WorkflowRunResult | null>(null)
 
   const [catalog, setCatalog] = useState<ActionDefinition[]>([])
   const [catalogLoading, setCatalogLoading] = useState(true)
@@ -727,11 +727,23 @@ function StartPublicAction() {
     setStarting(true)
     setStartError(null)
     setStartResult(null)
-    const result = await azoa.api.request('POST', `/api/action/${action.id}/execute`)
+    const result = await azoa.api.request<WorkflowRunResult>('POST', `/api/action/${action.id}/execute`)
     if (isOk(result)) setStartResult(result.value)
     else setStartError(result.error.message)
     setStarting(false)
   }
+
+  useEffect(() => {
+    if (!startResult || ['Succeeded', 'Failed', 'Cancelled', 'Forked'].includes(startResult.status)) return
+    let active = true
+    const timer = setTimeout(async () => {
+      const result = await azoa.api.request<WorkflowRunResult>('GET', `/api/action/runs/${startResult.id}`)
+      if (!active) return
+      if (isOk(result)) { setStartResult(result.value); setStartError(null) }
+      else setStartError(result.error.message)
+    }, 2500)
+    return () => { active = false; clearTimeout(timer) }
+  }, [startResult])
 
   const isOwner = action != null && action.userId === userId
 
@@ -842,6 +854,12 @@ function StartPublicAction() {
           {startResult !== null && startResult !== undefined && (
             <div>
               <Separator />
+              <p className="py-2 text-sm">Run {startResult.id}: {startResult.status}. Your run continues in the background until it reaches a final outcome.</p>
+              <Button variant="outline" onClick={async () => {
+                const result = await azoa.api.request<WorkflowRunResult>('GET', `/api/action/runs/${startResult.id}`)
+                if (isOk(result)) { setStartResult(result.value); setStartError(null) }
+                else setStartError(result.error.message)
+              }}>Refresh run</Button>
               <ResultDisplay result={startResult} />
             </div>
           )}

@@ -6,6 +6,36 @@ tags: [fiat, on-ramp, pricing, lots, W4.2]
 
 # Services/Fiat/OnRamp
 
+## Operator recovery
+
+The Operator-policy `intents/{id}/resume` and `intents/{id}/refund` routes require
+an identified operator and a 1–512 character reason. The lot's append-only JSON
+audit records actor, reason, prior status and time under the same version CAS.
+The operator money console and SDK expose these actions; the BFF allowlists exact
+paths and checks same-origin mutations.
+
+Resume reopens a parked lot and reuses its original allocation idempotency key.
+Refund atomically claims that exact allocation key with a distinct refund-reservation
+operation type before requesting money back. An allocation that already owns the
+key blocks refund even if the lot has no operation ID. A refund that owns it blocks
+all later issuance. Generic Failed allocation claims remain conservative blockers;
+structured no-effect proof and atomic refund transfer are Round 1 implementation
+work, not an external dependency or a completed recovery claim.
+
+Refunds refetch and validate the original Checkout session, mode, intent, amount,
+currency and PaymentIntent. `RefundPending` and `Refunded` are never eligible for
+issuance. The provider POST uses a stable key, amount and payment ID; the durable
+start time limits blind replay to 23 hours. The response must match all original
+facts. Pending refunds are subsequently read by provider ID. A lost response beyond
+the retry window requires an operator-supplied existing refund reference; that
+reference is fetched and checked before it can complete the lot. Failed/canceled
+refunds remain visible for reconciliation and do not imply money returned.
+
+Official API contracts: https://docs.stripe.com/api/refunds/create and
+https://docs.stripe.com/api/refunds/retrieve (captured under `.omc/research/`).
+No live refund was executed during implementation. HTTP fixtures and negative
+allocation-claim cases are authored; integrated execution is held until the final sweep.
+
 What happens between "a card cleared" and "the person has a balance they can spend".
 
 The rail itself (`Providers/Fiat/`, `Services/Fiat/StripeWebhookInbox.cs`) proves a payment

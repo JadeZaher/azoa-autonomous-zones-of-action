@@ -1,80 +1,48 @@
+using System.Text.Json;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Sagas;
 
 namespace AZOA.WebAPI.Services.Actions.Workflow;
 
-/// <summary>
-/// The per-RUN compensation handler for a durable action run
-/// (durable-workflow-engine §5, absorbs REVIEW Part-A M2). When a forward node
-/// step exhausts its retry budget, the saga routes to this declared compensation
-/// (<see cref="ActionWorkflowSaga.CompensateStepName"/>) via the first-class
-/// <c>CompensateStepAsync</c> path.
-///
-/// <para>Because the DAG is dynamic, compensation is computed from the RUN'S
-/// executed-node history rather than a per-node static name: the handler walks
-/// the run's <see cref="ActionNodeExecution"/> rows and settles the run back. The
-/// concrete value-reversing actions (refund a swap, claw back a grant) are the
-/// <c>economic-primitive-nodes</c> track's node handlers; this handler owns the
-/// MECHANISM — marking the run <see cref="ActionRunStatus.Cancelled"/> and giving
-/// the reversal a single, idempotent, durable home keyed on the saga step
-/// idempotency key.</para>
-///
-/// <para>Today (engine-only, before the economic node track lands) the
-/// compensation records the settlement and projects the run to
-/// <see cref="ActionRunStatus.Cancelled"/>. The hook for per-node reversal is the
-/// executed-node walk below — value reversal plugs in there.</para>
-/// </summary>
-public sealed class ActionCompensateStepHandler : IStepHandler<ActionCompensatePayload>
+/// <summary>Closes proven effect-free failures and quarantines effects requiring domain compensation.</summary>
+public sealed class ActionCompensateStepHandler(IActionRunStore runStore, IActionNodeExecutionStore executionStore,
+    ILogger<ActionCompensateStepHandler> logger) : IStepHandler<ActionCompensatePayload>
 {
-    private readonly IActionRunStore _runStore;
-    private readonly IActionNodeExecutionStore _executionStore;
-    private readonly ILogger<ActionCompensateStepHandler> _logger;
-
-    public ActionCompensateStepHandler(
-        IActionRunStore runStore,
-        IActionNodeExecutionStore executionStore,
-        ILogger<ActionCompensateStepHandler> logger)
+    /// <inheritdoc/>
+    public async Task<StepResult> ExecuteAsync(StepExecutionContext<ActionCompensatePayload> ctx, CancellationToken ct)
     {
-        _runStore = runStore;
-        _executionStore = executionStore;
-        _logger = logger;
+        var loaded = await runStore.GetByIdAsync(ctx.Payload.RunId, ct);
+        if (loaded.IsError || loaded.Result is null) return StepResult.Fail("Compensation run is unavailable.");
+        var run = loaded.Result;
+        if (run.Status != ActionRunStatus.AwaitingReconciliation)
+            return StepResult.Parked("operator:compensation:" + run.Id.ToString("N"));
+        var executions = await executionStore.GetByRunIdAsync(run.Id, ct);
+        if (executions.IsError || executions.Result is null)
+            return StepResult.Parked("operator:compensation:" + run.Id.ToString("N"));
+        var unresolved = executions.Result.Any(execution => execution.State == ActionNodeState.Running
+            || execution.State == ActionNodeState.Succeeded && !ProvenRead(execution)
+            || execution.State == ActionNodeState.Failed && !ProvenRead(execution));
+        if (unresolved)
+        {
+            logger.LogWarning("Action run {RunId} requires domain compensation evidence; no reversal was performed.", run.Id);
+            return StepResult.Parked("operator:compensation:" + run.Id.ToString("N"));
+        }
+        var expected = run.Status;
+        run.Status = ActionRunStatus.Failed;
+        run.EndedAt = DateTime.UtcNow;
+        var closed = await runStore.UpdateAsync(run, expected, ct);
+        return closed.IsError ? StepResult.Parked(string.Empty, DateTime.UtcNow.AddSeconds(2))
+            : StepResult.Ok("Workflow failed without a completed effect requiring reversal.");
     }
 
-    public async Task<StepResult> ExecuteAsync(
-        StepExecutionContext<ActionCompensatePayload> ctx, CancellationToken ct)
+    private static bool ProvenRead(ActionNodeExecution execution)
     {
-        var p = ctx.Payload;
-
-        // Walk the run's executed nodes newest-first — the order value-reversing
-        // actions would unwind in. The reversal actions themselves are the
-        // economic-primitive-nodes track; the mechanism (durable, idempotent,
-        // keyed on ctx.StepIdempotencyKey) is here.
-        var execs = await _executionStore.GetByRunIdAsync(p.RunId, ct);
-        var succeeded = (execs.Result ?? Enumerable.Empty<ActionNodeExecution>())
-            .Where(e => e.State == ActionNodeState.Succeeded)
-            .OrderByDescending(e => e.EndedAt ?? e.StartedAt)
-            .ToList();
-
-        _logger.LogInformation(
-            "Action workflow: compensating run {RunId} — {Count} succeeded node(s) to settle " +
-            "(idempotency key '{Key}').", p.RunId, succeeded.Count, ctx.StepIdempotencyKey);
-
-        // Settle the run: project Cancelled. A compensation step succeeding
-        // settles the saga as compensated (SagaProcessor.OnStepSucceededAsync),
-        // so this is the terminal projection for the cancelled branch.
-        // Settle the run Cancelled — conditional on the current (non-terminal)
-        // status so a concurrent settler/projector can't clobber it and a
-        // terminal run is never regressed (Fix 3 conditional UpdateAsync).
-        var runResult = await _runStore.GetByIdAsync(p.RunId, ct);
-        if (runResult.Result is { } run && !run.Status.IsTerminal())
-        {
-            var expected = run.Status;
-            run.Status = ActionRunStatus.Cancelled;
-            run.EndedAt = DateTime.UtcNow;
-            await _runStore.UpdateAsync(run, expectedStatus: expected, ct);
-        }
-
-        return StepResult.Ok($"compensated run {p.RunId}; settled {succeeded.Count} node(s)");
+        if (execution.FrozenInput is null || execution.ExternalOperation is not { Domain: "read" } reference) return false;
+        var input = JsonSerializer.Deserialize<ActionFrozenNodeInput>(execution.FrozenInput);
+        return input is { Version: 1 } && reference.Version == 1 && ActionReadRecovery.Supports(input.NodeType)
+            && input.RunId == execution.RunId && input.NodeId == execution.NodeId
+            && reference.IntentHash == CanonicalJson.HashCanonical(execution.FrozenInput);
     }
 }

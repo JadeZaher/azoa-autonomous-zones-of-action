@@ -3,7 +3,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Core.Surreal;   // SurrealRecordParam (record<> binding, never a bare hex id)
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.HostedSessions;
@@ -32,7 +31,7 @@ public static class FiatEventStatuses
     public const string Failed = "Failed";
 
     /// <summary>
-    /// The statuses of a delivery no handler has finished with — the operator read's filter.
+    /// The statuses of a delivery no handler has finished with â€” the operator read's filter.
     /// </summary>
     /// <remarks>Exposed read-only: a shared mutable array would let one caller silently widen or
     /// narrow what the board shows for every other caller.</remarks>
@@ -40,7 +39,7 @@ public static class FiatEventStatuses
 
     /// <summary>
     /// True when this node already answered the provider "stop retrying" for a delivery it never
-    /// finished — so only a person will move it.
+    /// finished â€” so only a person will move it.
     /// </summary>
     /// <remarks>
     /// A row is written <see cref="Received"/> at admission with no attempts. The only thing that
@@ -60,7 +59,7 @@ public static class FiatEventStatuses
 /// Ported from the retired sidecar's webhook-mapping section. The distinction that matters is
 /// between <see cref="AcceptedPending"/> and <see cref="Failed"/>: an issuance that has been
 /// submitted but not yet confirmed is NOT a failure, and returning one would make the provider
-/// retry until it gave up — leaving a person charged with nothing credited.
+/// retry until it gave up â€” leaving a person charged with nothing credited.
 /// </remarks>
 public enum FiatEventOutcome
 {
@@ -94,7 +93,9 @@ public sealed record FiatEventContext(
     string? ChargeId,
     Guid? IntentId,
     Guid? SubjectUserId,
-    RailEnvironment Environment);
+    RailEnvironment Environment,
+    string? ProviderAccountId = null,
+    string? ProviderObjectId = null);
 
 /// <summary>Something that does work when a fiat event arrives.</summary>
 /// <remarks>
@@ -117,8 +118,8 @@ public interface IFiatEventHandler
 /// A handler that turns a CLEARED PAYMENT into funds in the payer's account.
 ///
 /// <para>This marker is load-bearing, not decorative: <c>FiatRailStartup.Validate</c> refuses to
-/// boot the LIVE environment unless one is registered. Bookkeeping handlers — the intent
-/// lifecycle, reversal recording — implement <see cref="IFiatEventHandler"/> only, so their
+/// boot the LIVE environment unless one is registered. Bookkeeping handlers â€” the intent
+/// lifecycle, reversal recording â€” implement <see cref="IFiatEventHandler"/> only, so their
 /// presence can never be mistaken for "the money path is wired".</para>
 /// </summary>
 public interface IFiatSettlementHandler : IFiatEventHandler
@@ -151,10 +152,10 @@ public static class FiatEventDispositions
     /// <summary>
     /// The HTTP status the provider is answered with (the ported webhook-mapping table).
     /// <list type="bullet">
-    ///   <item><c>200</c> — applied.</item>
-    ///   <item><c>202</c> — accepted: nothing to do, or work under way that this node will
+    ///   <item><c>200</c> â€” applied.</item>
+    ///   <item><c>202</c> â€” accepted: nothing to do, or work under way that this node will
     ///     finish on its own. The provider must STOP retrying.</item>
-    ///   <item><c>500</c> — genuine failure; the provider retries with bounded backoff.</item>
+    ///   <item><c>500</c> â€” genuine failure; the provider retries with bounded backoff.</item>
     /// </list>
     /// A malformed or unsigned delivery never reaches here: the controller answers 400, which the
     /// provider does not retry.
@@ -188,7 +189,7 @@ public static class FiatEventDispositions
 }
 
 /// <summary>The result of offering one delivery to the inbox.</summary>
-/// <param name="Row">The stored row — the one just written, or the one already there.</param>
+/// <param name="Row">The stored row â€” the one just written, or the one already there.</param>
 /// <param name="Admitted">False when this provider event id had already been stored.</param>
 public sealed record FiatEventAdmission(FiatEvent Row, bool Admitted);
 
@@ -213,7 +214,7 @@ public interface IStripeWebhookInbox
     Task<AZOAResult<bool>> HasAppliedSettlementAsync(string intentId, CancellationToken ct = default);
 
     /// <summary>
-    /// Deliveries no handler has finished — <c>Received</c> or <c>Failed</c> — newest first. The
+    /// Deliveries no handler has finished â€” <c>Received</c> or <c>Failed</c> â€” newest first. The
     /// operator surface over the inbox.
     /// </summary>
     /// <remarks>
@@ -232,80 +233,23 @@ public interface IStripeWebhookInbox
 /// <c>Providers/Stores/Surreal/</c> is outside this item's file boundary; the interface is
 /// <see cref="IStripeWebhookInbox"/>, so moving it later is a file move.
 /// </summary>
-public sealed class StripeWebhookInbox : IStripeWebhookInbox
+public sealed class StripeWebhookInbox(ISurrealExecutor executor) : IStripeWebhookInbox
 {
-    private const string Table = FiatEvent.SchemaNameConst;
-
-    /// <summary>Cap on the stored failure text; the full detail lives in the server log.</summary>
-    private const int MaxErrorLength = 1024;
-
-    private const string UpdateClearErrorStatement =
-        "UPDATE type::record($_t, $_id) SET status = $_status, last_error = NONE, "
-        + "attempt_count = attempt_count + 1 RETURN AFTER";
-
-    private const string UpdateClearErrorAppliedStatement =
-        "UPDATE type::record($_t, $_id) SET status = $_status, last_error = NONE, "
-        + "attempt_count = attempt_count + 1, applied_at = $_applied RETURN AFTER";
-
-    private const string UpdateWithErrorStatement =
-        "UPDATE type::record($_t, $_id) SET status = $_status, last_error = $_error, "
-        + "attempt_count = attempt_count + 1 RETURN AFTER";
-
-    private const string UpdateWithErrorAppliedStatement =
-        "UPDATE type::record($_t, $_id) SET status = $_status, last_error = $_error, "
-        + "attempt_count = attempt_count + 1, applied_at = $_applied RETURN AFTER";
-
-    private const string NeedingOperatorStatement =
-        "SELECT * FROM fiat_event WHERE status INSIDE $_statuses ORDER BY received_at DESC LIMIT $_limit";
-
-    private readonly ISurrealExecutor _executor;
-
-    /// <summary>Trims stored failure text so one long provider message cannot bloat a row.</summary>
-    private static string Truncate(string value, int maxLength)
-        => value.Length <= maxLength ? value : value[..maxLength];
-
-    public StripeWebhookInbox(ISurrealExecutor executor)
-    {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
-    }
-
     /// <inheritdoc />
-    public async Task<AZOAResult<FiatEventAdmission>> AdmitAsync(
-        FiatEvent candidate, CancellationToken ct = default)
+    public async Task<AZOAResult<FiatEventAdmission>> AdmitAsync(FiatEvent candidate, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-
         try
         {
-            var create = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", candidate.Id)
-                .WithParam("_body", candidate);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(create, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            var created = response.GetValues<FiatEvent>(0).SingleOrDefault() ?? candidate;
-            return AZOAResult<FiatEventAdmission>.Success(
-                new FiatEventAdmission(created, Admitted: true), "Recorded.");
+            var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
+            response.EnsureAllOk();
+            return AZOAResult<FiatEventAdmission>.Success(new(response.GetValues<FiatEvent>(0).Single(), true));
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
-            // A CREATE that lost to an existing row is the redelivery case, not a fault — but only
-            // when the row really is there now. Re-read before concluding that, so a transport
-            // failure is never reported as "already seen" (which would silently drop the event).
-            var existing = await GetAsync(candidate.Id, ct);
-            if (!existing.IsError && existing.Result is not null)
-                return AZOAResult<FiatEventAdmission>.Success(
-                    new FiatEventAdmission(existing.Result, Admitted: false), "Already recorded.");
-
-            return new AZOAResult<FiatEventAdmission>()
-                .CaptureException(ex, $"Fiat event inbox write failed: {ex.Message}");
+            var existing = await executor.QuerySingleAsync<FiatEvent>(SurrealQuery<FiatEvent>.Key(candidate.Id), ct);
+            if (existing is null) throw;
+            return AZOAResult<FiatEventAdmission>.Success(new(existing, false));
         }
     }
 
@@ -313,124 +257,51 @@ public sealed class StripeWebhookInbox : IStripeWebhookInbox
     public async Task<AZOAResult<FiatEvent>> RecordOutcomeAsync(
         string recordId, string status, string? error, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(recordId))
-            return AZOAResult<FiatEvent>.Failure("A fiat event id is required.");
-
-        try
+        if (string.IsNullOrWhiteSpace(recordId)) return AZOAResult<FiatEvent>.Failure("A fiat event id is required.");
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            // Four LITERAL statements rather than one assembled string. Two reasons, both hard
-            // requirements: the optional columns must be cleared with a literal NONE (a SCHEMAFULL
-            // option<string> / option<datetime> refuses an explicit NULL, so a null-valued
-            // parameter would fail the whole statement instead of clearing the field), and the
-            // SRDB0001 analyzer refuses interpolated SurrealQL outside the safe layer.
-            var hasError = !string.IsNullOrWhiteSpace(error);
-            var isApplied = string.Equals(status, FiatEventStatuses.Applied, StringComparison.Ordinal);
-
-            var statement = (hasError, isApplied) switch
-            {
-                (false, false) => UpdateClearErrorStatement,
-                (false, true) => UpdateClearErrorAppliedStatement,
-                (true, false) => UpdateWithErrorStatement,
-                (true, true) => UpdateWithErrorAppliedStatement,
-            };
-
-            var update = SurrealQuery
-                .Of(statement)
-                .WithParam("_t", Table)
-                .WithParam("_id", recordId)
-                .WithParam("_status", status);
-
-            if (hasError)
-                update = update.WithParam("_error", Truncate(error!, MaxErrorLength));
-            if (isApplied)
-                update = update.WithParam("_applied", DateTimeOffset.UtcNow);
-
+            var existing = await executor.QuerySingleAsync<FiatEvent>(SurrealQuery<FiatEvent>.Key(recordId), ct);
+            if (existing is null) return AZOAResult<FiatEvent>.Failure("Fiat event was not found.");
+            if (existing.Status == FiatEventStatuses.Applied) return AZOAResult<FiatEvent>.Success(existing);
+            var update = SurrealWriter.UpdateOnly<FiatEvent>(recordId)
+                .Where(row => row.AttemptCount == existing.AttemptCount && row.Status == existing.Status)
+                .Set(row => row.Status, status)
+                .Set(row => row.AttemptCount, existing.AttemptCount + 1);
+            update = string.IsNullOrWhiteSpace(error) ? update.Unset(row => row.LastError)
+                : update.Set(row => row.LastError, error.Length > 1024 ? error[..1024] : error);
+            if (status == FiatEventStatuses.Applied)
+                update = update.Set(row => row.AppliedAt, (DateTimeOffset?)DateTimeOffset.UtcNow);
             var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
             {
-                var executed = await _executor.ExecuteAsync(update, ct);
-                executed.EnsureAllOk();
-                return executed;
+                var result = await executor.ExecuteAsync(update.Build(), ct);
+                result.EnsureAllOk();
+                return result;
             }, ct);
-
-            var persisted = response.GetValues<FiatEvent>(0).SingleOrDefault();
-            return persisted is null
-                ? AZOAResult<FiatEvent>.Failure($"Fiat event '{recordId}' was not found.")
-                : AZOAResult<FiatEvent>.Success(persisted, "Saved.");
+            var saved = response.GetValues<FiatEvent>(0).SingleOrDefault();
+            if (saved is not null) return AZOAResult<FiatEvent>.Success(saved);
         }
-        catch (Exception ex)
-        {
-            return new AZOAResult<FiatEvent>()
-                .CaptureException(ex, $"Fiat event outcome write failed: {ex.Message}");
-        }
+        return AZOAResult<FiatEvent>.Failure("Fiat event outcome changed concurrently; retry the delivery.");
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<bool>> HasAppliedSettlementAsync(
-        string intentId, CancellationToken ct = default)
+    public async Task<AZOAResult<bool>> HasAppliedSettlementAsync(string intentId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(intentId))
-            return AZOAResult<bool>.Success(false, "Success");
-
-        try
-        {
-            // intent_id is a record<hosted_session> column, so the parameter has to be bound as a
-            // native record id — a bare string compares equal to nothing and would answer "no
-            // funds applied" with no error at all.
-            var query = SurrealQuery
-                .Of("SELECT * FROM fiat_event WHERE intent_id = $_intent AND status = $_status LIMIT 1")
-                .WithParam("_intent", SurrealRecordParam.Of(HostedSession.SchemaNameConst, intentId))
-                .WithParam("_status", FiatEventStatuses.Applied);
-
-            var rows = await _executor.QueryAsync<FiatEvent>(query, ct);
-            return AZOAResult<bool>.Success(rows?.Any() == true, "Success");
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<bool>()
-                .CaptureException(ex, $"Fiat event read failed: {ex.Message}");
-        }
+        if (string.IsNullOrWhiteSpace(intentId)) return AZOAResult<bool>.Success(false);
+        var intent = SurrealLink.ToLink(HostedSession.SchemaNameConst, intentId);
+        var rows = await executor.QueryAsync<FiatEvent>(SurrealQuery<FiatEvent>.From()
+            .Where(row => row.IntentId == intent && row.Status == FiatEventStatuses.Applied).Limit(1), ct);
+        return AZOAResult<bool>.Success(rows.Any());
     }
 
     /// <inheritdoc />
-    public async Task<AZOAResult<IReadOnlyList<FiatEvent>>> ListNeedingOperatorAsync(
-        int limit, CancellationToken ct = default)
+    public async Task<AZOAResult<IReadOnlyList<FiatEvent>>> ListNeedingOperatorAsync(int limit, CancellationToken ct = default)
     {
-        try
-        {
-            var query = SurrealQuery
-                .Of(NeedingOperatorStatement)
-                .WithParam("_statuses", FiatEventStatuses.NeedingOperatorStatuses.ToArray())
-                .WithParam("_limit", Math.Clamp(limit, 1, 500));
-
-            var rows = await _executor.QueryAsync<FiatEvent>(query, ct);
-            return AZOAResult<IReadOnlyList<FiatEvent>>.Success(
-                rows?.ToList() ?? new List<FiatEvent>(), "Success");
-        }
-        catch (Exception ex)
-        {
-            // An empty board and an unavailable board are different answers. Saying "nothing is
-            // outstanding" because a read faulted is how a charged-and-uncredited person stays
-            // invisible.
-            return new AZOAResult<IReadOnlyList<FiatEvent>>()
-                .CaptureException(ex, $"Fiat event read failed: {ex.Message}");
-        }
-    }
-
-    private async Task<AZOAResult<FiatEvent?>> GetAsync(string recordId, CancellationToken ct)
-    {
-        try
-        {
-            var query = SurrealQuery<FiatEvent>.Key(recordId);
-            var row = await _executor.QuerySingleAsync<FiatEvent>(query, ct);
-            return new AZOAResult<FiatEvent?> { Result = row, Message = row is null ? "Not found." : "Success" };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<FiatEvent?>().CaptureException(ex, $"Fiat event read failed: {ex.Message}");
-        }
+        var rows = await executor.QueryAsync<FiatEvent>(SurrealQuery<FiatEvent>.From()
+            .Where(row => row.Status == FiatEventStatuses.Received || row.Status == FiatEventStatuses.Failed)
+            .OrderByDescending(row => row.ReceivedAt).Limit(Math.Clamp(limit, 1, 500)), ct);
+        return AZOAResult<IReadOnlyList<FiatEvent>>.Success(rows.ToList());
     }
 }
-
 /// <summary>The fields this node reads out of a Stripe event envelope. Amounts are NOT among them.</summary>
 /// <remarks>
 /// Deliberately no amount, currency or customer field. The only amount that may be converted into
@@ -439,6 +310,7 @@ public sealed class StripeWebhookInbox : IStripeWebhookInbox
 /// </remarks>
 public sealed class StripeEventEnvelope
 {
+    public string? ProviderAccountId { get; init; }
     public string EventId { get; init; } = string.Empty;
 
     public string EventType { get; init; } = string.Empty;
@@ -521,6 +393,7 @@ public sealed class StripeEventEnvelope
                     && livemode.ValueKind == JsonValueKind.True,
                 OccurredAt = ReadUnixSeconds(root, "created"),
                 ObjectId = objectId,
+                ProviderAccountId = ReadString(root, "account"),
                 ObjectType = objectType,
                 CheckoutSessionId = isSession ? objectId : null,
                 PaymentIntentId = paymentIntentId,
@@ -596,6 +469,8 @@ public static class FiatEventFactory
             CheckoutSessionId = envelope.CheckoutSessionId,
             PaymentIntentId = envelope.PaymentIntentId,
             ChargeId = envelope.ChargeId,
+            ProviderAccountId = envelope.ProviderAccountId,
+            ProviderObjectId = envelope.ObjectId,
             PayloadDigest = Convert
                 .ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rawBody)))
                 .ToLowerInvariant(),
@@ -608,7 +483,7 @@ public static class FiatEventFactory
 
 /// <summary>
 /// Moves the durable funding intent through its lifecycle when the provider reports on the
-/// payment session. Bookkeeping only — it credits nothing, which is why it implements
+/// payment session. Bookkeeping only â€” it credits nothing, which is why it implements
 /// <see cref="IFiatEventHandler"/> and NOT <see cref="IFiatSettlementHandler"/>.
 /// </summary>
 public sealed class FiatCheckoutIntentEventHandler : IFiatEventHandler

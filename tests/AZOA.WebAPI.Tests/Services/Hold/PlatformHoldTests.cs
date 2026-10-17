@@ -647,6 +647,13 @@ public class PlatformHoldTests
     /// <summary>Just enough wallet store to resolve a person's account on a chain.</summary>
     private sealed class FakeWalletStore : IWalletStore
     {
+        public Task<AZOAResult<IWallet>> CreateIfAbsentAsync(IWallet wallet, CancellationToken ct = default)
+            => throw new InvalidOperationException("Wallet creation is outside this hold fixture.");
+
+        public Task<AZOAResult<IWallet>> BootstrapTenantAsync(IWallet wallet, string externalUserId,
+            AZOA.WebAPI.Models.Signing.SigningConsentWitness authority, CancellationToken ct = default)
+            => throw new InvalidOperationException("Tenant bootstrap is outside this fixture.");
+
         private readonly List<IWallet> _wallets = new();
 
         public void Add(Guid userId, string chainType, string address) =>

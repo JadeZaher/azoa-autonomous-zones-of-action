@@ -7,13 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -24,7 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { JsonViewer } from '@/components/shared/json-viewer'
-import { ResultDisplay } from '@/components/shared/result-display'
+import { DeploymentConsole } from '@/components/deployments/deployment-console'
 import { EcosystemTreeFlow, type EcosystemTree } from '@/components/ecosystem-tree/ecosystem-tree-flow'
 import { azoa, isOk } from '@/lib/azoa'
 
@@ -189,121 +182,6 @@ function CreateBundleDialog({ onCreated }: { onCreated: () => void }) {
 
 // ─── Generate dApp Dialog ───
 
-function GenerateDAppDialog({ bundleId }: { bundleId: string }) {
-  const [open, setOpen] = useState(false)
-  const [targetChain, setTargetChain] = useState('')
-  const [boundHolonIds, setBoundHolonIds] = useState('')
-  const [configJson, setConfigJson] = useState('')
-  const [generatedCode, setGeneratedCode] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const handleGenerate = async () => {
-    setLoading(true)
-    setError(null)
-    setGeneratedCode(null)
-    try {
-      const body: Record<string, unknown> = { targetChain }
-      if (boundHolonIds.trim()) {
-        body.boundHolonIds = boundHolonIds
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      }
-      if (configJson.trim()) {
-        try {
-          body.config = JSON.parse(configJson)
-        } catch {
-          body.config = configJson
-        }
-      }
-      const result = await azoa.api.request<{ code?: string; generatedCode?: string }>(
-        'POST',
-        `/api/actiongraphbundle/${bundleId}/generate`,
-        body
-      )
-      if (isOk(result)) {
-        const val = result.value
-        setGeneratedCode(
-          typeof val === 'string'
-            ? val
-            : val?.code ?? val?.generatedCode ?? JSON.stringify(val, null, 2)
-        )
-      } else {
-        setError((result as { error: { message: string } }).error.message)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" variant="outline">Generate dApp</Button>} />
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Generate dApp</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3 py-2">
-          <div className="space-y-1.5">
-            <Label>Target Chain</Label>
-            <Select value={targetChain} onValueChange={(v) => setTargetChain(v ?? 'Algorand')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select chain" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Algorand">Algorand</SelectItem>
-                <SelectItem value="Solana">Solana</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Bound Holon IDs</Label>
-            <Input
-              placeholder="id1, id2, id3 (comma-separated)"
-              value={boundHolonIds}
-              onChange={(e) => setBoundHolonIds(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Config JSON</Label>
-            <Textarea
-              placeholder='{"key": "value"}'
-              value={configJson}
-              onChange={(e) => setConfigJson(e.target.value)}
-              rows={4}
-              className="font-mono text-xs"
-            />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {generatedCode && (
-            <div className="space-y-1">
-              <Label>Generated Code</Label>
-              <pre className="max-h-64 overflow-auto rounded-md bg-muted p-3 text-xs font-mono whitespace-pre-wrap">
-                {generatedCode}
-              </pre>
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>
-            Close
-          </Button>
-          <Button onClick={handleGenerate} disabled={loading || !targetChain}>
-            {loading ? 'Generating...' : 'Generate'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ─── Ecosystem Tree Section ───
-
-/** Fetches + renders the action graph bundle ecosystem tree, with an inline attach form
- * (interactive add). Read-only tree view via <EcosystemTreeFlow />. */
 function EcosystemSection({ bundleId }: { bundleId: string }) {
   const [tree, setTree] = useState<EcosystemTree | null>(null)
   const [loading, setLoading] = useState(false)
@@ -402,29 +280,9 @@ function BundleDetail({
   bundle: BundleItem
   onDeleted: () => void
 }) {
-  const [deployResult, setDeployResult] = useState<unknown>(null)
-  const [deployLoading, setDeployLoading] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const handleDeploy = async () => {
-    setDeployLoading(true)
-    setError(null)
-    setDeployResult(null)
-    try {
-      const result = await azoa.api.request('POST', `/api/actiongraphbundle/${bundle.id}/deploy`)
-      if (isOk(result)) {
-        setDeployResult(result.value)
-      } else {
-        setError((result as { error: { message: string } }).error.message)
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setDeployLoading(false)
-    }
-  }
 
   const handleDelete = async () => {
     setDeleteLoading(true)
@@ -448,15 +306,6 @@ function BundleDetail({
     <div className="space-y-4">
       {/* Action buttons row */}
       <div className="flex flex-wrap gap-2">
-        <GenerateDAppDialog bundleId={bundle.id} />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleDeploy}
-          disabled={deployLoading}
-        >
-          {deployLoading ? 'Deploying...' : 'Deploy'}
-        </Button>
         {!confirmDelete ? (
           <Button
             size="sm"
@@ -495,15 +344,7 @@ function BundleDetail({
       <Separator />
       <EcosystemSection bundleId={bundle.id} />
 
-      {deployResult !== null && deployResult !== undefined && (
-        <>
-          <Separator />
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Deploy Result</p>
-            <ResultDisplay result={deployResult} />
-          </div>
-        </>
-      )}
+      <DeploymentConsole bundleId={bundle.id} />
     </div>
   )
 }

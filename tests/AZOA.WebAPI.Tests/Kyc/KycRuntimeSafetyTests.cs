@@ -66,8 +66,8 @@ public sealed class KycRuntimeSafetyTests
         var registry = new KycProviderRegistry(
             Mock.Of<IKycControlStore>(),
             new ManualKycProviderService(options),
-            new VeriffKycProviderService(),
-            new GenericHostedKycProviderService(options),
+            AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Veriff(),
+            AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Generic(options),
             AZOA.WebAPI.Tests.TestSupport.IdentomatTestFactory.Create(options),
             options,
             Mock.Of<IHostEnvironment>(item => item.EnvironmentName == Environments.Development),

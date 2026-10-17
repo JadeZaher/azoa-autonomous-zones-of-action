@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -66,26 +67,28 @@ public class DappCompositionController : ControllerBase
 
     [HttpPost("generate")]
     [Authorize(Policy = "DappManage")]
-    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Generate(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Generate(Guid id, [FromBody] DeploymentGenerateRequest request, CancellationToken ct)
     {
         var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized(Fail<IActionGraphBundle>("Invalid token."));
-        var result = await _manager.GenerateAsync(id, userId.Value, ct);
+        var result = await _manager.GenerateAsync(id, userId.Value, ct, request, ActingTenantId());
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
 
     [HttpPost("deploy")]
     [Authorize(Policy = "DappManage")]
-    public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Deploy(
-        Guid id, [FromQuery] string? targetOverride, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<DeploymentReceipt>>> Deploy(
+        Guid id, [FromBody] DeploymentStartRequest request, CancellationToken ct)
     {
         var userId = GetUserIdFromClaims();
-        if (userId is null) return Unauthorized(Fail<IActionGraphBundle>("Invalid token."));
-        var result = await _manager.DeployAsync(id, userId.Value, targetOverride, ct);
+        if (userId is null) return Unauthorized(Fail<DeploymentReceipt>("Invalid token."));
+        var result = await _manager.DeployAsync(id, userId.Value, request, Request.Headers["Idempotency-Key"].ToString(), ActingTenantId(), ct);
         if (result.IsError) return BadRequest(result);
-        return Ok(result);
+        return result.Result?.State is "Confirmed" or "Failed" or "Cancelled" ? Ok(result) : StatusCode(202, result);
     }
+
+    private Guid? ActingTenantId() => Guid.TryParse(User.FindFirst("act_as_tenant")?.Value, out var id) ? id : null;
 
     [HttpGet("status")]
     public async Task<ActionResult<AZOAResult<DappSeries.StatusKind>>> GetStatus(Guid id, CancellationToken ct)

@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
@@ -24,6 +25,10 @@ public interface IWalletManager
     /// the custody predicate is answered by the implementation, never by the caller (OI-12).
     /// </summary>
     Task<AZOAResult<IWallet>> BootstrapWalletAsync(WalletGenerateRequest model, Guid userId, AZOARequest? request = null);
+
+    /// <summary>Bootstraps a child wallet under current tenant ownership and provisioning consent.</summary>
+    Task<AZOAResult<IWallet>> BootstrapTenantWalletAsync(WalletGenerateRequest model, Guid userId,
+        string externalUserId, SigningConsentWitness authority, CancellationToken ct = default);
 
     /// <summary>
     /// Connect an external wallet (e.g., MetaMask) by verifying signed message ownership.

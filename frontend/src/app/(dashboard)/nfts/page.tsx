@@ -2,19 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
-import { toast } from 'sonner'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import { ChainBadge } from '@/components/shared/chain-badge'
 import { ResultDisplay } from '@/components/shared/result-display'
 import { JsonViewer } from '@/components/shared/json-viewer'
@@ -23,106 +15,7 @@ interface NftRecord { id: string; name: string; chainId: string; tokenId?: strin
 
 // ── Mint ──
 
-function MintNftForm() {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [chainId, setChainId] = useState('')
-  const [walletId, setWalletId] = useState('')
-  const [imageUri, setImageUri] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<unknown>(null)
-  const [isError, setIsError] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true); setResult(null)
-    const res = await azoa.api.mintNft({ walletId, name, description, chainId, imageUri: imageUri || undefined })
-    if (isOk(res)) { setResult(res.value); setIsError(false) }
-    else { setResult(res.error.message); setIsError(true) }
-    setLoading(false)
-  }
-
-  return (
-    <Card>
-      <CardHeader><CardTitle className="text-sm">Mint NFT</CardTitle></CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="My NFT" required /></div>
-            <div className="space-y-1.5"><Label>Chain</Label>
-              <Select value={chainId} onValueChange={v => setChainId(v ?? '')} required>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent><SelectItem value="algorand">Algorand</SelectItem><SelectItem value="solana">Solana</SelectItem></SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5"><Label>Description</Label><Input value={description} onChange={e => setDescription(e.target.value)} /></div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label>Wallet ID</Label><Input value={walletId} onChange={e => setWalletId(e.target.value)} placeholder="GUID" required /></div>
-            <div className="space-y-1.5"><Label>Image URI</Label><Input value={imageUri} onChange={e => setImageUri(e.target.value)} placeholder="https://…" /></div>
-          </div>
-          <Button type="submit" disabled={loading} size="sm" className="w-full">{loading ? 'Minting…' : 'Mint'}</Button>
-        </form>
-        {result !== null && <div className="mt-3"><ResultDisplay result={typeof result === 'string' ? undefined : result} message={typeof result === 'string' ? result : undefined} isError={isError} /></div>}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Actions ──
-
-function TransferDialog({ nftId, onDone }: { nftId: string; onDone: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [targetUserId, setTargetUserId] = useState('')
-  const [walletId, setWalletId] = useState('')
-  const [loading, setLoading] = useState(false)
-  const handleTransfer = async () => {
-    setLoading(true)
-    const res = await azoa.api.transferNft(nftId, { targetUserId, walletId })
-    if (isOk(res)) { onDone() } else { toast.error(res.error.message) }
-    setLoading(false); setOpen(false)
-  }
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm">Transfer</Button>} />
-      <DialogContent>
-        <DialogHeader><DialogTitle>Transfer NFT</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5"><Label>Target User ID</Label><Input value={targetUserId} onChange={e => setTargetUserId(e.target.value)} placeholder="GUID" /></div>
-          <div className="space-y-1.5"><Label>Wallet ID</Label><Input value={walletId} onChange={e => setWalletId(e.target.value)} placeholder="GUID" /></div>
-          <Button onClick={handleTransfer} disabled={loading} size="sm" className="w-full">{loading ? 'Transferring…' : 'Transfer'}</Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function BurnDialog({ nftId, onDone }: { nftId: string; onDone: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [walletId, setWalletId] = useState('')
-  const [loading, setLoading] = useState(false)
-  const handleBurn = async () => {
-    setLoading(true)
-    const res = await azoa.api.burnNft(nftId, { walletId })
-    if (isOk(res)) { onDone() } else { toast.error(res.error.message) }
-    setLoading(false); setOpen(false)
-  }
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="destructive" size="sm">Burn</Button>} />
-      <DialogContent>
-        <DialogHeader><DialogTitle>Burn NFT</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">This is irreversible.</p>
-        <div className="space-y-1.5"><Label>Wallet ID</Label><Input value={walletId} onChange={e => setWalletId(e.target.value)} placeholder="GUID" /></div>
-        <Button variant="destructive" onClick={handleBurn} disabled={loading} size="sm" className="w-full">{loading ? 'Burning…' : 'Confirm'}</Button>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── Detail ──
-
-function NftDetail({ nft, onRefresh }: { nft: NftRecord; onRefresh: () => void }) {
+function NftDetail({ nft }: { nft: NftRecord }) {
   const [metaResult, setMetaResult] = useState<unknown>(null)
   const [metaError, setMetaError] = useState(false)
   const [metaLoading, setMetaLoading] = useState(false)
@@ -150,8 +43,7 @@ function NftDetail({ nft, onRefresh }: { nft: NftRecord; onRefresh: () => void }
         </div>
         <Separator />
         <div className="flex flex-wrap gap-2">
-          <TransferDialog nftId={nft.id} onDone={onRefresh} />
-          <BurnDialog nftId={nft.id} onDone={onRefresh} />
+          <Link href="/user-nfts" className="text-sm underline">Manage transfer, burn and pending operations</Link>
           <Button variant="outline" size="sm" onClick={fetchMeta} disabled={metaLoading}>{metaLoading ? 'Loading…' : 'Metadata'}</Button>
         </div>
         {metaResult !== null && <ResultDisplay result={typeof metaResult === 'string' ? undefined : metaResult} message={typeof metaResult === 'string' ? metaResult : undefined} isError={metaError} />}
@@ -200,7 +92,7 @@ function NftGallery() {
           </button>
         ))}
       </div>
-      {selected && <NftDetail nft={selected} onRefresh={fetchNfts} />}
+      {selected && <NftDetail nft={selected} />}
     </div>
   )
 }
@@ -212,7 +104,7 @@ export default function NftsPage() {
         <h1 className="text-lg font-semibold tracking-tight">NFTs</h1>
         <p className="text-sm text-muted-foreground">Mint, transfer, and burn NFTs</p>
       </div>
-      <MintNftForm />
+      <Card><CardContent className="pt-6"><Link href="/user-nfts" className="underline">Mint an NFT or resume a transaction</Link><p className="text-sm text-muted-foreground">Track chain confirmation and any required acceptance in the NFT lifecycle screen.</p></CardContent></Card>
       <div>
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Gallery</p>
         <NftGallery />

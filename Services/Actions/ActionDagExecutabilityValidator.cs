@@ -5,6 +5,8 @@ using System.Text.Json.Nodes;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Services.Actions.Predicates;
+using AZOA.WebAPI.Helpers.Deployments;
+using AZOA.WebAPI.Models.Deployments;
 using ActionModel = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
 namespace AZOA.WebAPI.Services.Actions;
@@ -25,6 +27,13 @@ public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityVal
 
     /// <inheritdoc/>
     public DagValidationResult Validate(ActionModel action)
+        => ValidateCore(action, []);
+
+    /// <inheritdoc/>
+    public DagValidationResult ValidateFrozen(ActionModel action, IReadOnlyList<DeploymentOccurrenceBoundary> boundaries)
+        => ValidateCore(action, boundaries);
+
+    private static DagValidationResult ValidateCore(ActionModel action, IReadOnlyList<DeploymentOccurrenceBoundary> boundaries)
     {
         var result = new DagValidationResult { IsValid = true };
 
@@ -59,6 +68,7 @@ public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityVal
 
         // Guaranteed-ancestor sets keyed by node id (dominator dataflow).
         var dominators = ComputeDominators(action);
+        AddOccurrenceAncestors(action, boundaries, dominators);
 
         // Direct-predecessor node names per node id (runtime scope for `upstream.`).
         var directPredNames = action.Nodes.ToDictionary(
@@ -91,7 +101,7 @@ public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityVal
                 var root = segments[0];
 
                 // holon.<guid>.<field>: dynamic state, keep runtime fail-closed. Skip A/B/C.
-                if (root == "holon") continue;
+                if (root is "holon" or "input") continue;
 
                 // ── A. Reachability / guaranteed-ancestor ──
                 var refName = segments[1];
@@ -189,6 +199,29 @@ public sealed class ActionDagExecutabilityValidator : IActionDagExecutabilityVal
 
     private static bool IsScalar(OutputFieldType t) =>
         t is OutputFieldType.String or OutputFieldType.Number or OutputFieldType.Boolean;
+
+    private static void AddOccurrenceAncestors(ActionModel graph, IReadOnlyList<DeploymentOccurrenceBoundary> boundaries,
+        Dictionary<Guid, HashSet<Guid>> ancestors)
+    {
+        foreach (var boundary in boundaries)
+        {
+            var required = boundary.RequiredNodeIds.ToHashSet();
+            if (!ancestors.ContainsKey(boundary.EntryNodeId) || required.Any(id => !ancestors.ContainsKey(id))
+                || required.Contains(boundary.EntryNodeId)) throw new InvalidOperationException("Invalid frozen occurrence boundary.");
+            var previous = new ActionModel { Nodes = graph.Nodes.Where(node => required.Contains(node.Id)).ToList(),
+                Edges = graph.Edges.Where(edge => required.Contains(edge.SourceNodeId) && required.Contains(edge.TargetNodeId)).ToList() };
+            var guaranteed = DeploymentGuaranteedOutputs.Find(previous);
+            var inherited = guaranteed.Concat(required.SelectMany(id => ancestors[id]).Where(id => !required.Contains(id))).ToHashSet();
+            var pending = new Queue<Guid>(); pending.Enqueue(boundary.EntryNodeId);
+            var visited = new HashSet<Guid>();
+            while (pending.TryDequeue(out var id))
+            {
+                if (!visited.Add(id)) continue;
+                ancestors[id].UnionWith(inherited);
+                foreach (var edge in graph.Edges.Where(edge => edge.SourceNodeId == id)) pending.Enqueue(edge.TargetNodeId);
+            }
+        }
+    }
 
     private static string? NameOf(ActionModel action, Guid nodeId) =>
         action.Nodes.FirstOrDefault(n => n.Id == nodeId)?.Name;

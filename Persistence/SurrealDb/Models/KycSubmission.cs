@@ -64,6 +64,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Provider session linkage (manual provider stamps the user id as a pseudo-session)")]
         public string? ProviderSessionId { get; set; }
 
+        /// <summary>AML lineage established by the authoritative hosted outcome.</summary>
+        public string? AmlLineageKey { get; set; }
+
         public bool HostedVerification { get; set; }
 
         public bool AcceptsDocumentReferences { get; set; }

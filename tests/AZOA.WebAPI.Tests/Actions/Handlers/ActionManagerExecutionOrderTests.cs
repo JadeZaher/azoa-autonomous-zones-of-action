@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
 using AZOA.WebAPI.Interfaces;
@@ -121,7 +122,7 @@ public class ActionManagerExecutionOrderTests
 
         var runStore = new InMemoryActionRunStore();
         var execStore = new InMemoryActionNodeExecutionStore();
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             store.Object,
             runStore,
             execStore,

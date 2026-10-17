@@ -19,7 +19,7 @@ public sealed class HolonInteractNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<HolonInteractNodeConfig>(context.Node.Config, nameof(ActionNodeType.HolonInteract), out var cfg, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         // C-2: scope to the runner (ActingUserId) so a marketplace run cannot mutate a victim's holon by GUID.
         var r = await _holonManager.InteractAsync(cfg.HolonId, cfg.Request, context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);

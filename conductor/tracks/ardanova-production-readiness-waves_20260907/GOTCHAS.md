@@ -7,6 +7,13 @@ timestamp: 2026-09-07T00:00:00Z
 
 # Gotchas that will bite in production
 
+> 2026-10-15 reconciliation: the historical claim below that Identomat has no
+> company endpoint is superseded. Identomat documents a dedicated KYB result
+> contract; implementation and verification are tracked in
+> [platform-stub-closeout](../platform-stub-closeout_20261015/spec.md).
+> The owner has not created the vendor KYC/KYB workflows yet and authorized
+> mocked local verification. This is distinct from live provider readiness.
+
 Every entry was cited to a file by an adversarial reviewer. Severity is the reviewer's.
 
 - **[HIGH]** CustodyMode=Disabled does not disable custody: AllocationManager.EnsureWalletAsync generates config-KEK wallets on any tenant allocation regardless of mode or environment; CustodyMode is read only by TenantCustodialAccountManager

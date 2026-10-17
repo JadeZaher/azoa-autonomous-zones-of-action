@@ -81,6 +81,8 @@ public static class OffRampRegistration
         services.AddScoped<IFiatPayoutLedger, SurrealFiatPayoutLedger>();
         services.AddScoped<IPayoutAccountService, PayoutAccountService>();
         services.AddScoped<IOffRamp, OffRampService>();
+        services.AddScoped<IFiatEventHandler, BankPayoutEventHandler>();
+        services.AddHostedService<BankPayoutReconciliationWorker>();
 
         // Registered as IFiatEventHandler ONLY. It credits nothing, so it must never satisfy the
         // live-boot IFiatSettlementHandler probe -- that marker is what proves a node can credit a

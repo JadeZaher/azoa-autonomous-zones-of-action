@@ -12,7 +12,7 @@ using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Managers;
 
-public class BlockchainOperationManager : IBlockchainOperationManager
+public partial class BlockchainOperationManager : IBlockchainOperationManager
 {
     private const string UnexpectedExecutionMessage =
         "Blockchain execution ended unexpectedly; automatic rebroadcast is disabled pending reconciliation.";
@@ -22,6 +22,7 @@ public class BlockchainOperationManager : IBlockchainOperationManager
     private readonly IIdempotencyStore _idempotencyStore;
     private readonly IValueRateSource _valueRateSource;
     private readonly ILogger<BlockchainOperationManager>? _logger;
+    private readonly IDeploymentService? _deployments;
 
     /// <param name="valueRateSource">D16 seam. Optional: a node that has not called
     /// <c>AddValueRateSources</c> (<c>Services/Analytics/AnalyticsRegistration</c>) falls
@@ -35,17 +36,22 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         IBlockchainProviderFactory chainFactory,
         IIdempotencyStore idempotencyStore,
         IValueRateSource? valueRateSource = null,
-        ILogger<BlockchainOperationManager>? logger = null)
+        ILogger<BlockchainOperationManager>? logger = null,
+        IDeploymentService? deployments = null)
     {
         _blockchainOperationStore = blockchainOperationStore;
         _chainFactory = chainFactory;
         _idempotencyStore = idempotencyStore;
         _valueRateSource = valueRateSource ?? UnpricedValueRateSource.Instance;
         _logger = logger;
+        _deployments = deployments;
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
     {
+        if (operation.OperationType is "DeployContract" or "CallContract")
+            return await ExecuteNativeAsync(operation, request);
+
         string requestedChain;
         try
         {
@@ -136,12 +142,6 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 case "Transfer":
                 case AzoaScopes.IssueUnitsOperationType:
                     await ExecuteTransferAsync(operation, chainProvider);
-                    break;
-                case "DeployContract":
-                    await ExecuteDeployContractAsync(operation, chainProvider);
-                    break;
-                case "CallContract":
-                    await ExecuteCallContractAsync(operation, chainProvider);
                     break;
                 case "Composite":
                     break;
@@ -257,21 +257,6 @@ public class BlockchainOperationManager : IBlockchainOperationManager
                 p.GetValueOrDefault("SourceTokenId", (operation as ITransferOperation)?.SourceHolonId?.ToString() ?? string.Empty),
                 (operation as ITransferOperation)?.RecipientAddress ?? p.GetValueOrDefault("RecipientAddress", string.Empty),
                 p.GetValueOrDefault("Amount", string.Empty),
-            },
-            "DeployContract" => new object[]
-            {
-                "deploy",
-                // ContractCode is the full payload; hashing happens inside the
-                // generator so length is bounded.
-                p.GetValueOrDefault("ContractCode", string.Empty),
-                p.GetValueOrDefault("Args", string.Empty),
-            },
-            "CallContract" => new object[]
-            {
-                "call",
-                p.GetValueOrDefault("ContractAddress", string.Empty),
-                p.GetValueOrDefault("Method", string.Empty),
-                p.GetValueOrDefault("Args", string.Empty),
             },
             // Composite / Unknown: no value-bearing params; fall back to the
             // op type alone (still deterministic, still deduped).
@@ -461,12 +446,16 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         if (result.IsError || result.Result == null) return result;
         if (userId.HasValue && result.Result.UserId != userId.Value)
             return new AZOAResult<IBlockchainOperation> { IsError = true, Message = "Operation is owned by a different user." };
+        await RefreshNativeAsync(result.Result);
         return result;
     }
 
     public async Task<AZOAResult<IEnumerable<IBlockchainOperation>>> GetByUserAsync(Guid userId, AZOARequest? request = null)
     {
-        return await _blockchainOperationStore.GetByUserAsync(userId, default);
+        var result = await _blockchainOperationStore.GetByUserAsync(userId, default);
+        if (!result.IsError && result.Result is not null)
+            foreach (var operation in result.Result) await RefreshNativeAsync(operation);
+        return result;
     }
 
     private async Task ExecuteMintAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
@@ -843,28 +832,6 @@ public class BlockchainOperationManager : IBlockchainOperationManager
         return RailAmount.TryParse(raw, ValueDimension.NativeChainAsset, out var parsed)
             ? parsed
             : RailAmount.OfChainAsset(fallback);
-    }
-
-    private async Task ExecuteDeployContractAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
-    {
-        var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
-        var contractCode = Convert.FromBase64String(operation.Parameters.GetValueOrDefault("ContractCode", string.Empty));
-        var args = operation.Parameters.GetValueOrDefault("Args") is string s && !string.IsNullOrEmpty(s)
-            ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(s)
-            : null;
-        var result = await chainProvider.DeployContractAsync(contractCode, walletAddress, args);
-        ApplyChainResult(operation, result, OperationStatus.Deployed);
-    }
-
-    private async Task ExecuteCallContractAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
-    {
-        var contractAddress = operation.Parameters.GetValueOrDefault("ContractAddress", string.Empty);
-        var method = operation.Parameters.GetValueOrDefault("Method", string.Empty);
-        var args = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(
-            operation.Parameters.GetValueOrDefault("Args", "{}")) ?? new();
-        var walletAddress = operation.Parameters.GetValueOrDefault("WalletAddress", string.Empty);
-        var result = await chainProvider.CallContractAsync(contractAddress, method, args, walletAddress);
-        ApplyChainResult(operation, result, OperationStatus.Called);
     }
 
     private static void ApplyChainResult<T>(IBlockchainOperation operation, AZOAResult<T> chainResult, string successStatus)

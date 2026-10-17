@@ -266,7 +266,9 @@ export async function operatorUpstreamFetch(
     token: string,
     init?: { method?: "GET" | "PUT" | "POST"; body?: Record<string, unknown> },
 ): Promise<Response> {
-    return fetch(new URL(`/api/operator/${path}`, resolveServerApiUrl()), {
+    const platformGenesis = path === "platform-token" || path === "platform-token/genesis"
+        || /^platform-token\/creation\/[0-9a-f]{32}(?:\/(?:quote|accept-quote|continue|replace|refresh))?$/i.test(path);
+    return fetch(new URL(`/api/${platformGenesis ? "admin" : "operator"}/${path}`, resolveServerApiUrl()), {
         method: init?.method ?? "GET",
         cache: "no-store",
         redirect: "error",

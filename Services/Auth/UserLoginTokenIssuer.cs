@@ -66,6 +66,7 @@ public sealed class UserLoginTokenIssuer : IUserLoginTokenIssuer
             ?? throw new InvalidOperationException("JWT Key missing.");
         var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+        var authenticatedAt = DateTimeOffset.UtcNow;
 
         var claims = new List<Claim>
         {
@@ -82,8 +83,9 @@ public sealed class UserLoginTokenIssuer : IUserLoginTokenIssuer
             new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
             new Claim(
                 AzoaClaims.AuthTime,
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                authenticatedAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ClaimValueTypes.Integer64),
+            new Claim(JwtRegisteredClaimNames.Iat, authenticatedAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
@@ -93,7 +95,7 @@ public sealed class UserLoginTokenIssuer : IUserLoginTokenIssuer
             issuer: configuration["Jwt:Issuer"],
             audience: configuration["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.Add(TokenLifetime),
+            expires: authenticatedAt.UtcDateTime.Add(TokenLifetime),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

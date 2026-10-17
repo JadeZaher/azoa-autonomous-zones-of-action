@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Services.Signing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Core;
@@ -5,6 +6,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace AZOA.WebAPI.Controllers;
@@ -24,10 +26,13 @@ public class TenantController : ControllerBase
     private readonly ITenantManager _manager;
     private readonly ITenantCustodialAccountManager _custodialAccounts;
 
-    public TenantController(ITenantManager manager, ITenantCustodialAccountManager custodialAccounts)
+    private readonly SigningAdmissionAuthorityFactory _authorities;
+
+    public TenantController(ITenantManager manager, ITenantCustodialAccountManager custodialAccounts, SigningAdmissionAuthorityFactory authorities)
     {
         _manager = manager;
         _custodialAccounts = custodialAccounts;
+        _authorities = authorities;
     }
 
     /// <summary>Reports whether custody, chain, and KYC dependencies are available.</summary>
@@ -53,10 +58,16 @@ public class TenantController : ControllerBase
         if (!User.HasScope(AzoaScopes.WalletManage) || !User.HasScope(AzoaScopes.KycRead))
             return MissingScope<TenantCustodialAccountStatusResponse>($"{AzoaScopes.WalletManage}, {AzoaScopes.KycRead}");
 
+        var credential = await _authorities.CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (credential.IsError || credential.Result is null) return Unauthorized();
+        var authority = await _authorities.BindConsentAsync(credential.Result, [AzoaScopes.TenantProvision, AzoaScopes.WalletManage, AzoaScopes.KycRead], HttpContext.RequestAborted);
+        if (authority.IsError || authority.Result is null) return Forbid();
+
         var result = await _custodialAccounts.EnsureAsync(
             tenantId.Value,
             externalSubject,
             idempotencyKey ?? string.Empty,
+            authority.Result,
             HttpContext.RequestAborted);
         return TranslateResult(result);
     }
@@ -72,9 +83,12 @@ public class TenantController : ControllerBase
         if (!User.HasScope(AzoaScopes.KycRead))
             return MissingScope<TenantCustodialAccountStatusResponse>(AzoaScopes.KycRead);
 
+        var authority = await CustodialAuthorityAsync(AzoaScopes.KycRead);
+        if (authority is null) return Forbid();
         var result = await _custodialAccounts.GetStatusAsync(
             tenantId.Value,
             externalSubject,
+            authority,
             HttpContext.RequestAborted);
         return TranslateResult(result);
     }
@@ -91,10 +105,13 @@ public class TenantController : ControllerBase
         if (!User.HasScope(AzoaScopes.KycSubmit))
             return MissingScope<TenantKycSessionResponse>(AzoaScopes.KycSubmit);
 
+        var authority = await CustodialAuthorityAsync(AzoaScopes.KycSubmit);
+        if (authority is null) return Forbid();
         var result = await _custodialAccounts.BeginKycAsync(
             tenantId.Value,
             externalSubject,
             idempotencyKey ?? string.Empty,
+            authority,
             HttpContext.RequestAborted);
         return TranslateResult(result);
     }
@@ -112,10 +129,13 @@ public class TenantController : ControllerBase
         if (!User.HasScope(AzoaScopes.KycSubmit))
             return MissingScope<TenantKycSubmissionResponse>(AzoaScopes.KycSubmit);
 
+        var authority = await CustodialAuthorityAsync(AzoaScopes.KycSubmit);
+        if (authority is null) return Forbid();
         var result = await _custodialAccounts.SubmitKycAsync(
             tenantId.Value,
             externalSubject,
             request,
+            authority,
             HttpContext.RequestAborted);
         return TranslateResult(result);
     }
@@ -127,8 +147,21 @@ public class TenantController : ControllerBase
         var tenantId = GetTenantIdFromClaims();
         if (tenantId is null) return Unauthorized();
 
-        var result = await _manager.ProvisionChildAsync(tenantId.Value, model, HttpContext.RequestAborted);
+        var credential = await _authorities.CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (credential.IsError || credential.Result is null) return Unauthorized();
+        var authority = await _authorities.BindConsentAsync(credential.Result, [AzoaScopes.TenantProvision], HttpContext.RequestAborted);
+        if (authority.IsError || authority.Result is null) return Forbid();
+
+        var result = await _manager.ProvisionChildAsync(tenantId.Value, model, authority.Result, HttpContext.RequestAborted);
         return TranslateResult(result);
+    }
+
+    private async Task<SigningConsentWitness?> CustodialAuthorityAsync(string scope)
+    {
+        var credential = await _authorities.CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (credential.IsError || credential.Result is null) return null;
+        var authority = await _authorities.BindConsentAsync(credential.Result, [AzoaScopes.TenantProvision, scope], HttpContext.RequestAborted);
+        return authority.IsError ? null : authority.Result;
     }
 
     /// <summary>List the tenant's child users (optionally filtered by external user id).</summary>

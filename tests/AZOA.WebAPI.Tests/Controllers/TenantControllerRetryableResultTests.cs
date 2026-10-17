@@ -23,7 +23,7 @@ public sealed class TenantControllerRetryableResultTests
                 tenantId,
                 "user-42",
                 "stable-key",
-                It.IsAny<CancellationToken>()))
+                It.IsAny<AZOA.WebAPI.Models.Signing.SigningConsentWitness>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(failure);
         var controller = BuildController(
             tenantId,
@@ -49,6 +49,7 @@ public sealed class TenantControllerRetryableResultTests
                 tenantId,
                 "user-42",
                 "stable-key",
+                It.IsAny<AZOA.WebAPI.Models.Signing.SigningConsentWitness>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(failure);
         var controller = BuildController(
@@ -70,11 +71,14 @@ public sealed class TenantControllerRetryableResultTests
     {
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, tenantId.ToString())
+            new(ClaimTypes.NameIdentifier, tenantId.ToString()),
+            new(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
+            new("iat", DateTimeOffset.UtcNow.AddSeconds(-5).ToUnixTimeSeconds().ToString()),
+            new("exp", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString())
         };
         claims.AddRange(scopes.Select(scope => new Claim("scope", scope)));
 
-        return new TenantController(Mock.Of<ITenantManager>(), custodial)
+        return new TenantController(Mock.Of<ITenantManager>(), custodial, ConsentFixture.Factory(tenantId))
         {
             ControllerContext = new ControllerContext
             {

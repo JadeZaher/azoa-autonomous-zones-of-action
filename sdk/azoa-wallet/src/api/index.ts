@@ -1,6 +1,30 @@
+export type * from "./webhooks.js";
+export type * from "./hold-commands.js";
+export type * from "./dex.js";
+export type * from "./consent.js";
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
+export type * from "./deployments.js";
 export type {
+  ActionRecoveryView,
+  ActionRecoveryRequest,
+  ActionRecoveryReceipt,
+  ActionRecoveryAudit,
   AzoaApiConfig,
+  BusinessVerificationCapabilities,
+  BusinessVerificationStatus,
+  BusinessVerificationSession,
+  FiatPayoutView,
+  EthereumPreparationView,
+  EthereumRecoveryRequest,
+  OnRampLotView,
+  FiatEventView,
+  HostedSessionRecoveryView,
+  HostedSessionRecoveryRequest,
+  WalletAuthenticationChain,
+  WalletAuthenticationChallenge,
+  WalletAuthenticationProof,
+  WalletAuthenticationToken,
+  WalletOwnershipClaim,
   UserResponse,
   TenantKycStatus,
   TenantCustodialAccountStatus,
@@ -77,6 +101,13 @@ export type {
   // Fungible mint (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,
+  FungibleCreationView,
+  FungibleCreationQuote,
+  FungibleContinuationRequest,
+  FungibleAttachmentRequest,
+  FungibleAttachmentView,
+  PlatformGenesisRequest,
+  PlatformGenesisResponse,
   // Swap types
   SwapQuoteParams,
   SwapExecuteParams,
@@ -104,6 +135,11 @@ export type {
   // UserNFT types
   UserNFTResult,
   UserNFTMintParams,
+  NftLifecycleView,
+  NftLifecyclePage,
+  NftFeeQuote,
+  NftFeeAuthorization,
+  NftOperation,
   HolonNFTBindingResult,
   WalletNFTBindingResult,
   // Action types

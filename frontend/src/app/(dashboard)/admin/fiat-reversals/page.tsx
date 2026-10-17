@@ -1,11 +1,8 @@
 'use client'
 
-// Operator board for money that has been taken back (W4.3 / D10).
-// Every figure here comes from the server-side reversal ledger (`api/admin/fiat-reversals`,
-// Operator policy); nothing on this page is derived in the browser, because a rounded number on a
-// financial board is worse than no number. Amounts stay integers: money in minor units, units in
-// base units, both formatted only for display.
+// Operator reversal ledger; amounts are formatted from server-supplied minor/base units.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FiatReversalView } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { toast } from 'sonner'
 import { useAzoaAuth } from '@/lib/azoa-auth'
@@ -23,51 +20,7 @@ import { AlertTriangle, RefreshCw, ShieldCheck, Undo2 } from 'lucide-react'
 
 const REVERSALS_PATH = '/api/admin/fiat-reversals'
 
-/** Mirrors `FiatReversalView` (Services/Fiat/Reversal/FiatReversalOperatorController.cs). */
-// TODO(OI-04): replace this hand-rolled interface with `FiatReversalView` (plus
-// `FiatReversalKind` / `FiatReversalStatus` / `FiatReversalRecoveryPath`) exported from
-// `azoa-sdk` (sdk/azoa-wallet/src/api/client.ts:1807; re-exported sdk/azoa-wallet/src/index.ts:180).
-// Deferred here, not blocked here: the SDK type already ships in the built dist this
-// package's `file:../sdk/azoa-wallet` dependency resolves, so no publish is required for
-// this repo specifically (contrast ardanova-client, which is blocked-on-operator per
-// conductor/RUNBOOK.md — see the ArdaNova repo's own runbook). What is owed before
-// swapping: several fields differ optional-vs-nullable between the two shapes (e.g. this
-// interface's `statusReason?: string | null` vs the SDK's `statusReason: string | null`),
-// so the swap needs a `tsc --noEmit` pass this item did not run to confirm parity.
-interface FiatReversalView {
-  id: string
-  kind: 'Refund' | 'Dispute'
-  status: string
-  statusReason?: string | null
-  lastEventType: string
-  chargeId: string
-  subjectUserId?: string | null
-  flowPurpose?: string | null
-  amountMinorUnits: number
-  sourceAmountMinorUnits: number
-  currencyCode: string
-  isPartial: boolean
-  fundsWithdrawn: boolean
-  assetId?: string | null
-  targetQuantityBaseUnits: string
-  recoveredQuantityBaseUnits: string
-  absorbedQuantityBaseUnits: string
-  reinstatementOwedBaseUnits: string
-  recoveryPath: string
-  accountFlagged: boolean
-  flagReason?: string | null
-  flagClearedAt?: string | null
-  attemptCount: number
-  openedAt: string
-  resolvedAt?: string | null
-  reinstatedAt?: string | null
-}
-
-/**
- * Operator-facing words for each durable status. The server's vocabulary is the ledger's; this is
- * the sentence a person reads at 2am, so it says what happened rather than what the column is
- * called.
- */
+/** Display labels for durable reversal statuses. */
 const STATUS_COPY: Record<string, { label: string; tone: 'open' | 'working' | 'done' | 'bad' }> = {
   Open: { label: 'Recorded — not started', tone: 'open' },
   Recovering: { label: 'Taking it back', tone: 'working' },

@@ -113,6 +113,9 @@ public sealed class HoldNodeHandler : IActionNodeHandler
 /// <summary>Config for <see cref="ActionNodeType.Hold"/>.</summary>
 public sealed class HoldNodeConfig
 {
+    public AZOA.WebAPI.Core.ChainNetwork? Network { get; set; }
+    public Guid? RecipientWalletId { get; set; }
+    public AZOA.WebAPI.Models.Blockchain.HoldWorkflowMandateSelection? Mandate { get; set; }
     /// <summary>Rail the hold settles on (e.g. <c>Algorand</c>).</summary>
     public string? ChainType { get; set; }
 
@@ -191,7 +194,10 @@ public sealed record HoldNodeResult(
     [property: JsonPropertyName("ReleaseNotBefore")] string ReleaseNotBefore,
     [property: JsonPropertyName("NextHoldId")] string NextHoldId,
     [property: JsonPropertyName("TransactionId")] string TransactionId,
-    [property: JsonPropertyName("Replayed")] bool Replayed)
+    [property: JsonPropertyName("Replayed")] bool Replayed,
+    [property: JsonPropertyName("HoldRecordId")] string HoldRecordId = "",
+    [property: JsonPropertyName("NextHoldRecordId")] string NextHoldRecordId = "",
+    [property: JsonPropertyName("OperationId")] string OperationId = "")
 {
     /// <summary>Projects a hold outcome onto the node output shape.</summary>
     public static HoldNodeResult From(HoldOutcome outcome)
