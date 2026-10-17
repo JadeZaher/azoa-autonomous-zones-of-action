@@ -33,7 +33,7 @@ public sealed class ConsentWebhookEventManagement(WebhookRegistrationManagement 
         var bound = await authorization.BindAsync(principal, operatorTenant, ct);
         if (bound.IsError || bound.Result is null) return AZOAResult<WebhookEventRetryReceipt>.Failure(bound.Message);
         var receipt = await events.RetryAsync(operatorTenant ?? bound.Result.Credential.ActorUserId, eventId, command, bound.Result, ct);
-        return receipt is null ? AZOAResult<WebhookEventRetryReceipt>.Failure("Retry requires the exact dead-letter version, current authority and original active destination.")
+        return receipt is null ? AZOAResult<WebhookEventRetryReceipt>.Failure("Retry requires the exact version of an undelivered event with no live attempt (dead-lettered, attempt budget exhausted or abandoned lease), current authority and the original active destination.")
             : AZOAResult<WebhookEventRetryReceipt>.Success(receipt);
     }
 }
