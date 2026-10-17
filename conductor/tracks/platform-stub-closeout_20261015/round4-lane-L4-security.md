@@ -4,7 +4,8 @@ lane: L4-security
 wave: W2
 branch: r4/security
 base: beae947
-status: ready
+status: merged
+merged: c077389b
 ---
 
 # Round 4 · W2 · L4 security lead (`r4/security`, merge #6)
