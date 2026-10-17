@@ -11,6 +11,7 @@ using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Actions.Handlers;
 using AZOA.WebAPI.Tests.Fakes;
+using AZOA.WebAPI.Tests.TestSupport;
 using Xunit;
 using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
@@ -29,7 +30,7 @@ public class ActionForkLineageTests
 {
     // ─── Test scaffolding (real InMemory stores + real validator + Condition-only registry) ───
 
-    private static (ActionManager manager, InMemoryActionRunStore runs, InMemoryActionNodeExecutionStore execs, ActionEntity action)
+    private static (DurableActionExecutionHarness manager, InMemoryActionRunStore runs, InMemoryActionNodeExecutionStore execs, ActionEntity action)
         BuildLinearAction(int nodeCount = 3)
     {
         var action = new ActionEntity
@@ -72,7 +73,7 @@ public class ActionForkLineageTests
         var runs = new InMemoryActionRunStore();
         var execs = new InMemoryActionNodeExecutionStore();
         var registry = new ActionNodeHandlerRegistry(new IActionNodeHandler[] { new ConditionNodeHandler() });
-        var manager = new ActionManager(store.Object, runs, execs, new ActionDagValidator(), new ActionDagExecutabilityValidator(), registry, new InMemorySagaStore(), WalletManagerMocks.Empty(), BlockchainProviderFactoryFakes.Returning(), BindingResolverFakes.PassThrough());
+        var manager = new DurableActionExecutionHarness(store.Object, runs, execs, new ActionDagValidator(), new ActionDagExecutabilityValidator(), registry, new InMemorySagaStore(), WalletManagerMocks.Empty(), BlockchainProviderFactoryFakes.Returning(), BindingResolverFakes.PassThrough());
 
         return (manager, runs, execs, action);
     }
@@ -158,7 +159,7 @@ public class ActionForkLineageTests
         // second (pending) node.
         var (manager, runs, execs, action) = BuildLinearAction(nodeCount: 3);
         // Validate to populate ExecutionOrder.
-        await manager.ValidateDAGAsync(action.Id);
+        await manager.Manager.ValidateDAGAsync(action.Id);
         var nodes = action.Nodes.OrderBy(n => n.ExecutionOrder).ToList();
 
         var parent = new ActionRun
@@ -169,6 +170,7 @@ public class ActionForkLineageTests
             Status = ActionRunStatus.Running,
             StartedAt = DateTime.UtcNow
         };
+        ActionRunSnapshot.Capture(parent, action);
         await runs.CreateAsync(parent);
 
         // node[0] already Succeeded
@@ -202,7 +204,7 @@ public class ActionForkLineageTests
         });
 
         // Fork at node[1] — pre-history is just node[0].
-        var fork = await manager.ForkAsync(parent.Id, nodes[1].Id, "trying-alternative-strategy", action.UserId);
+        var fork = await manager.Manager.ForkAsync(parent.Id, nodes[1].Id, "trying-alternative-strategy", action.UserId);
         fork.IsError.Should().BeFalse();
         var child = fork.Result!;
 
@@ -247,7 +249,7 @@ public class ActionForkLineageTests
 
         // Attempt fork on a Succeeded run — guard fires (ADR §2.3: only
         // Running runs are forkable; Succeeded runs are re-runnable instead).
-        var fork = await manager.ForkAsync(run.Result.Id, action.Nodes[0].Id, "trying anyway", action.UserId);
+        var fork = await manager.Manager.ForkAsync(run.Result.Id, action.Nodes[0].Id, "trying anyway", action.UserId);
         fork.IsError.Should().BeTrue();
         fork.Message.Should().Contain("Succeeded").And.Contain("Running");
     }
@@ -271,10 +273,11 @@ public class ActionForkLineageTests
             Status = ActionRunStatus.Running,
             StartedAt = DateTime.UtcNow
         };
+        ActionRunSnapshot.Capture(parent, action);
         await runs.CreateAsync(parent);
 
         var stranger = Guid.NewGuid(); // not in action.Nodes
-        var fork = await manager.ForkAsync(parent.Id, stranger, "wrong node", action.UserId);
+        var fork = await manager.Manager.ForkAsync(parent.Id, stranger, "wrong node", action.UserId);
 
         fork.IsError.Should().BeTrue();
         fork.Message.Should().Contain(stranger.ToString());
@@ -289,7 +292,7 @@ public class ActionForkLineageTests
     public async Task LineageQuery_ReturnsParentChainInOrder()
     {
         var (manager, runs, _, action) = BuildLinearAction(nodeCount: 2);
-        await manager.ValidateDAGAsync(action.Id);
+        await manager.Manager.ValidateDAGAsync(action.Id);
 
         // Build a chain of 4 runs: root -> r1 -> r2 -> r3 (each child forked
         // from the previous). We construct them directly to keep the test
@@ -349,7 +352,7 @@ public class ActionForkLineageTests
 
         var runsStore = new InMemoryActionRunStore();
         var execStore = new InMemoryActionNodeExecutionStore();
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             store.Object,
             runsStore,
             execStore,
@@ -360,8 +363,10 @@ public class ActionForkLineageTests
             BlockchainProviderFactoryFakes.Returning(),
             BindingResolverFakes.PassThrough());
 
+        // The durable step records the failure; the terminal Failed status is the saga
+        // compensation's job (covered by ActionManagerOnFailureTests), not this harness's.
         var internalFail = await manager.ExecuteAsync(action.Id, action.UserId);
-        internalFail.Result!.Status.Should().Be(ActionRunStatus.Failed);
+        internalFail.Result!.Status.Should().NotBe(ActionRunStatus.Succeeded);
         internalFail.Result.FailReason.Should().BeNull(
             "internal-error failures leave FailReason null — the error is on the ActionNodeExecution");
         var failingExec = (await execStore.GetByRunAndNodeAsync(internalFail.Result.Id, action.Nodes[0].Id)).Result!;
@@ -380,7 +385,7 @@ public class ActionForkLineageTests
         };
         await runsStore.CreateAsync(supRun);
 
-        var supResult = await manager.MarkRunFailedAsync(supRun.Id, "supervisor decided", action.UserId);
+        var supResult = await manager.Manager.MarkRunFailedAsync(supRun.Id, "supervisor decided", action.UserId);
         supResult.IsError.Should().BeFalse();
         supResult.Result!.Status.Should().Be(ActionRunStatus.Failed);
         supResult.Result.FailReason.Should().Be("supervisor decided");

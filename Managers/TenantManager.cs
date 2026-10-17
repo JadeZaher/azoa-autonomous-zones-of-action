@@ -97,7 +97,8 @@ public class TenantManager : ITenantManager
         // hashes for one address, with LoginAsync left to refuse the ambiguity. This writer
         // now applies the SAME rule as UserManager.RegisterAsync, so the index adjudicates.
         var username = string.IsNullOrWhiteSpace(model.Username) ? seed : NormalizeIdentityValue(model.Username);
-        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : NormalizeIdentityValue(model.Email);
+        // A tenant cannot prove a mailbox, so the UNIQUE email column always gets the synthetic address (no squatting).
+        var email = $"{seed}@onboard.azoa.local";
 
         var child = new User
         {
@@ -146,7 +147,7 @@ public class TenantManager : ITenantManager
         SigningConsentWitness authority,
         CancellationToken ct)
     {
-        var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user), Message = message };
+        var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user, tenantId), Message = message };
 
         if (user.OwnerTenantId != tenantId)
         {
@@ -188,7 +189,7 @@ public class TenantManager : ITenantManager
             children = children.Where(c => string.Equals(c.ExternalUserId, filter, StringComparison.Ordinal));
         }
 
-        result.Result = children.Select(ToResponse).ToList();
+        result.Result = children.Select(child => ToResponse(child, tenantId)).ToList();
         result.Message = "Success";
         return result;
     }
@@ -223,7 +224,7 @@ public class TenantManager : ITenantManager
                 && claimed.Result is not null
                 && MatchesCorrelation(claimed.Result, tenantId, externalUserId, deterministicId))
             {
-                result.Result = ToResponse(claimed.Result);
+                result.Result = ToResponse(claimed.Result, tenantId);
                 result.Message = "Success";
                 return result;
             }
@@ -240,7 +241,7 @@ public class TenantManager : ITenantManager
             return result;
         }
 
-        result.Result = ToResponse(found.Result);
+        result.Result = ToResponse(found.Result, tenantId);
         result.Message = "Success";
         return result;
     }
@@ -344,14 +345,19 @@ public class TenantManager : ITenantManager
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static ChildUserResponse ToResponse(IUser a) => new()
+    /// <summary>Projects a child for <paramref name="tenantId"/>; a claimed (self-owned) account exposes only its correlation ids (audit-1 M1).</summary>
+    private static ChildUserResponse ToResponse(IUser a, Guid tenantId)
     {
-        UserId = a.Id,
-        ExternalUserId = a.ExternalUserId ?? string.Empty,
-        ExternalRef = a.ExternalRef,
-        Username = a.Username,
-        Email = a.Email,
-    };
+        var owned = a.OwnerTenantId == tenantId;
+        return new()
+        {
+            UserId = a.Id,
+            ExternalUserId = a.ExternalUserId ?? string.Empty,
+            ExternalRef = owned ? a.ExternalRef : null,
+            Username = owned ? a.Username : string.Empty,
+            Email = owned ? a.Email : string.Empty,
+        };
+    }
 
     /// <summary>Trimmed, lower-invariant identity value; mirrors UserManager's rule exactly.</summary>
     /// <remarks>

@@ -27,10 +27,10 @@ public interface IWttOperationStore
     Task<WttOperation?> AdmitAsync(WttOperation candidate, WttStageAuthority authority, CancellationToken ct = default);
 
     /// <summary>Creates a no-admission tombstone, or cancels an operation with no unresolved stage before any source publication.
-    /// A durable-nonce source with a claimed stage cancels only at <paramref name="probedVersion"/>, the version its
-    /// reservation probe observed.</summary>
+    /// A <paramref name="durableNonce"/> source with a claimed stage cancels only at <paramref name="probedVersion"/>, the version
+    /// its reservation probe observed, and never while a signed candidate is Prepared.</summary>
     Task<WttOperation?> CancelAsync(WttOperation candidate, WttStageAuthority authority, long? probedVersion = null,
-        CancellationToken ct = default);
+        bool durableNonce = false, CancellationToken ct = default);
 
     /// <summary>Claims the next stage generation under current authority while every earlier stage is resolved.</summary>
     Task<WttOperationStage?> ClaimStageAsync(string operationId, long expectedVersion, WttOperationStage stage,
@@ -64,9 +64,19 @@ public interface IWttOperationStore
         CancellationToken ct = default);
 
     /// <summary>Retires a never-signed, never-exposed, never-authorized Planned or Preparing stage whose preparation cannot
-    /// complete; callers retire a Preparing durable-nonce stage only after its reservation probe reads none.</summary>
+    /// complete; a Preparing durable-nonce stage retires only with <paramref name="reservationProbedFree"/> from a probe that read none.</summary>
     Task<WttOperationStage?> RetireStageAsync(string operationId, long expectedVersion, string stageId,
-        long expectedStageVersion, string detail, CancellationToken ct = default);
+        long expectedStageVersion, string detail, bool reservationProbedFree = false, CancellationToken ct = default);
+
+    /// <summary>Records the direct owner's takeover of a tenant-started, never-sent target phase under the owner's current
+    /// target signing authority; clears the admitted target quote bound to the tenant intent.</summary>
+    Task<WttOperation?> TakeOverAsync(string operationId, long expectedVersion, string ownerIntentJson, WttStageAuthority authority,
+        CancellationToken ct = default);
+
+    /// <summary>Resolves an exposed, never-server-authorized participant stage from provider evidence: absence-scan progress,
+    /// proven expiry without effect, or the participant's own landed signature.</summary>
+    Task<WttOperationStage?> ResolveExposedAsync(string operationId, long expectedVersion, string stageId, long expectedStageVersion,
+        string observationJson, string verdict, string? participantPreparedJson = null, CancellationToken ct = default);
 
     /// <summary>Applies an operation-only transition; evidence fields are set once, except that an unproven envelope is
     /// replaced by the verified one in the same patch that first records its proof.</summary>

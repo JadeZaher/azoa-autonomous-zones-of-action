@@ -247,37 +247,16 @@ public class WormholeAdapterTests
     }
 
     [Fact]
-    public async Task InitiateTransferAsync_LockFails_ReturnsError()
-    {
-        _legs.LockFails("Lock failed");
-
-        _factoryMock.Setup(f => f.GetProvider("Solana", ChainNetwork.Devnet))
-            .Returns(_providerMock.Object);
-
-        var adapter = CreateAdapter();
-        var result = await adapter.InitiateTransferAsync(
-            "Solana", "Algorand", "token1", "sender", "recipient", 1);
-
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("lock failed");
-    }
-
-    [Fact]
-    public async Task InitiateTransferAsync_Success_ReturnsInitiation()
+    public async Task InitiateTransferAsync_SupportedRoute_RefusesBeforeAnySourceLock()
     {
         _legs.LockReturns("tx_hash_123");
+        _factoryMock.Setup(f => f.GetProvider("Solana", ChainNetwork.Devnet)).Returns(_providerMock.Object);
 
-        _factoryMock.Setup(f => f.GetProvider("Solana", ChainNetwork.Devnet))
-            .Returns(_providerMock.Object);
+        var result = await CreateAdapter().InitiateTransferAsync("Solana", "Algorand", "token1", "sender", "recipient", 5);
 
-        var adapter = CreateAdapter();
-        var result = await adapter.InitiateTransferAsync(
-            "Solana", "Algorand", "token1", "sender", "recipient", 5);
-
-        result.IsError.Should().BeFalse();
-        result.Result.Should().NotBeNull();
-        result.Result!.TxHash.Should().Be("tx_hash_123");
-        result.Result.EmitterChainId.Should().Be(1); // Solana
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Nothing was locked");
+        _legs.Source.Verify(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

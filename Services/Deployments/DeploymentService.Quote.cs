@@ -5,6 +5,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Helpers.Deployments;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 namespace AZOA.WebAPI.Services.Deployments;
@@ -76,15 +77,36 @@ public sealed partial class DeploymentService
         => NativeOperationAuthorization.IntentHash(intent);
 
     private static bool ValidAuthority(NativeOperationIntent intent, Guid actor, Guid? tenant)
-        => intent.Kind is "Deploy" or "Call" or "Account" or "Recovery" && intent.Authorities.Count > 0 && intent.Authorities.All(authority => !authority.SigningContext.IsPlatform
+        => ActionSigningScopes.ForNativeIntent(intent.Kind, intent.ChainType) is { } scope
+            && intent.Authorities.Count > 0 && intent.Authorities.All(authority => !authority.SigningContext.IsPlatform
             && authority.SigningContext.UserId == actor && authority.SigningContext.WalletId != Guid.Empty
             && authority.SigningContext.ActingTenantId == (tenant ?? Guid.Empty)
-            && authority.SigningContext.GrantorUserId == actor && authority.SigningContext.Scope == (intent.Kind switch
-            {
-                "Deploy" or "Recovery" => AzoaScopes.ContractDeploySign,
-                "Call" => AzoaScopes.ContractCallSign,
-                _ => AzoaScopes.SolanaAccountSign,
-            }));
+            && authority.SigningContext.GrantorUserId == actor && authority.SigningContext.Scope == scope);
+
+    /// <summary>Binds every intent signer to the caller's captured credential; null list = frozen workflow authority (action rows only).</summary>
+    private async Task<AZOAResult<IReadOnlyList<SigningAdmissionAuthority>?>> BindNativeAuthorityAsync(NativeOperationIntent intent,
+        Guid actor, Guid? tenant, string? actionRunId, SigningCredentialWitness? credential, CancellationToken ct)
+    {
+        var legacy = await CheckSigningAuthorityAsync(intent, actor, tenant, ct);
+        if (legacy is not null) return Fail<IReadOnlyList<SigningAdmissionAuthority>?>(legacy);
+        if (credential is null)
+            return actionRunId is not null ? AZOAResult<IReadOnlyList<SigningAdmissionAuthority>?>.Success(null)
+                : Fail<IReadOnlyList<SigningAdmissionAuthority>?>("Native signing requires the caller's current authenticated credential.");
+        if (signingAuthorities is null)
+            return Fail<IReadOnlyList<SigningAdmissionAuthority>?>("Signing authority capture is not registered.");
+        if (credential.ActorUserId != actor || credential.TenantId != tenant)
+            return Fail<IReadOnlyList<SigningAdmissionAuthority>?>("The signing credential belongs to another actor or acting tenant.");
+        var scope = ActionSigningScopes.ForNativeIntent(intent.Kind, intent.ChainType)!;
+        var bound = new List<SigningAdmissionAuthority>(intent.Authorities.Count);
+        foreach (var authority in intent.Authorities)
+        {
+            var result = await signingAuthorities.BindDirectAsync(credential, authority.SigningContext.WalletId, intent.ChainType,
+                authority.Address, [scope], ct);
+            if (result.IsError || result.Result is null) return Fail<IReadOnlyList<SigningAdmissionAuthority>?>(result.Message);
+            bound.Add(result.Result);
+        }
+        return AZOAResult<IReadOnlyList<SigningAdmissionAuthority>?>.Success(bound);
+    }
 
     private async Task<string?> CheckSigningAuthorityAsync(NativeOperationIntent intent, Guid actor, Guid? tenant, CancellationToken ct)
     {

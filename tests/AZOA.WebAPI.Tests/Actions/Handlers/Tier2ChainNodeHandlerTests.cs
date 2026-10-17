@@ -158,56 +158,8 @@ public class Tier2ChainNodeHandlerTests
     [Fact]
     public void RefundNodeHandler_DeclaresChainCapabilityAndType()
     {
-        var handler = new RefundNodeHandler(Mock.Of<INftLifecycleService>());
+        var handler = new RefundNodeHandler();
         handler.NodeType.Should().Be(ActionNodeType.Refund);
         handler.RequiresChainCapability.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Refund_UsesExactSucceededSourceLifecycle_RegardlessOfDirectPredecessor(bool multiHop)
-    {
-        var actor = Guid.NewGuid(); var nftId = Guid.NewGuid(); var runId = Guid.NewGuid();
-        var source = NodeWith(ActionNodeType.Transfer, JsonSerializer.Serialize(new TransferNodeConfig { NftId = nftId, Request = new() }));
-        var refund = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = nftId, Request = new() { TargetUserId = Guid.NewGuid() } }));
-        var action = new ActionEntity { Id = Guid.NewGuid(), UserId = actor, Nodes = { source, refund } };
-        var succeeded = new Dictionary<Guid, ActionNodeExecution> { [source.Id] = new() { State = ActionNodeState.Succeeded } };
-        var context = new ActionNodeExecutionContext(runId, refund.Id, action, actingUserId: actor,
-            upstreamExecutions: multiHop ? new Dictionary<Guid, ActionNodeExecution>() : succeeded, allRunExecutions: succeeded);
-        var service = new Mock<INftLifecycleService>();
-        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
-            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, "Completed", "Transfer", "asset", "chain-tx", null, "Refund")));
-        var result = await new RefundNodeHandler(service.Object).HandleAsync(context);
-        result.IsError.Should().BeFalse();
-        var expectedSource = NftLifecycleIdentity.ForRequest(actor, "Transfer", $"{runId:N}:{source.Id:N}");
-        service.Verify(item => item.RefundAsync(actor, expectedSource, $"{runId:N}:{refund.Id:N}", It.IsAny<CancellationToken>(), Guid.Empty, null, null, null), Times.Once);
-    }
-
-    [Theory]
-    [InlineData("AwaitingRefundAuthorization")]
-    [InlineData("Submitted")]
-    public async Task Refund_PendingParticipantOrChainEvidence_IsNotSuccess(string state)
-    {
-        var actor = Guid.NewGuid(); var nftId = Guid.NewGuid();
-        var source = NodeWith(ActionNodeType.Transfer, JsonSerializer.Serialize(new TransferNodeConfig { NftId = nftId, Request = new() }));
-        var refund = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = nftId, Request = new() }));
-        var action = new ActionEntity { Id = Guid.NewGuid(), UserId = actor, Nodes = { source, refund } };
-        var all = new Dictionary<Guid, ActionNodeExecution> { [source.Id] = new() { State = ActionNodeState.Succeeded } };
-        var service = new Mock<INftLifecycleService>();
-        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
-            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, state, "Transfer", "asset", null, null, "Refund")));
-        var result = await new RefundNodeHandler(service.Object).HandleAsync(new(Guid.NewGuid(), refund.Id, action, actingUserId: actor, upstreamExecutions: all, allRunExecutions: all));
-        result.IsError.Should().BeTrue(); result.Message.Should().Contain(state);
-    }
-
-    [Fact]
-    public async Task Refund_WithoutSucceededSameAssetSource_NeverCallsLifecycle()
-    {
-        var service = new Mock<INftLifecycleService>();
-        var node = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = Guid.NewGuid(), Request = new() }));
-        var result = await new RefundNodeHandler(service.Object).HandleAsync(CtxFor(node, Guid.NewGuid()));
-        result.IsError.Should().BeTrue();
-        service.Verify(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()), Times.Never);
     }
 }

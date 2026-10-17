@@ -46,7 +46,7 @@ public partial class ActionManager : IFrozenActionRuntime
             return AZOAResult<ActionRun>.Failure(string.Join("; ", structural.Errors.Concat(executable.Errors).Append(configError).Where(value => value is not null)));
         var blocked = graph.Nodes.FirstOrDefault(node => NotEnabledActionNodeTypes.IsBlocked(node.NodeType));
         if (blocked is not null) return AZOAResult<ActionRun>.Failure(NotEnabledActionNodeTypes.RefusalMessage(blocked.NodeType));
-        var dependencies = await EnforceDependenciesAsync(graph, null);
+        var dependencies = await EnforceDependenciesAsync(graph, actor, null);
         if (dependencies is not null) return dependencies;
         for (var index = 0; index < structural.TopologicalOrder.Count; index++)
             graph.Nodes.Single(node => node.Id == structural.TopologicalOrder[index]).ExecutionOrder = index;

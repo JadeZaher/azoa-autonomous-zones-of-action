@@ -107,7 +107,7 @@ internal sealed class NftLifecycleHarness
             if (!Store.Ownership.TryGetValue(id.ToString("N"), out var row)) return AZOAResult<IUserNFT>.Failure("Not found");
             var nft = new Mock<IUserNFT>();
             nft.SetupGet(item => item.Id).Returns(id);
-            nft.SetupGet(item => item.UserId).Returns(Guid.Parse(row.UserId));
+            nft.SetupGet(item => item.UserId).Returns(Guid.Parse(SurrealForge.Client.SurrealLink.FromLink(row.UserId)!)); // mirrors SurrealNftStore's link read
             nft.SetupGet(item => item.ChainType).Returns(row.ChainType);
             nft.SetupGet(item => item.TokenId).Returns(row.TokenId);
             nft.SetupGet(item => item.CurrentOwner).Returns(row.CurrentOwner);

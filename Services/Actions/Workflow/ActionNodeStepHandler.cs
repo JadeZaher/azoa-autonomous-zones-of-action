@@ -163,7 +163,7 @@ public sealed class ActionNodeStepHandler : IStepHandler<ActionStepPayload>, IVa
             : new ActionConfigBindingResolver.BindingResolveResult(true, savedInput.Config.GetRawText(), null);
         var originalConfig = node.Config;
         ActionNodeHandlerResult? refusal = null;
-        _registry.TryGet(node.NodeType, out var handler);
+        _registry.TryGetFor(node, out var handler);
         if (handler is null) refusal = ActionNodeHandlerResult.Invalid($"Unsupported node type: {node.NodeType}");
         else if (NotEnabledActionNodeTypes.IsBlocked(node.NodeType))
             refusal = ActionNodeHandlerResult.Invalid(NotEnabledActionNodeTypes.RefusalMessage(node.NodeType));

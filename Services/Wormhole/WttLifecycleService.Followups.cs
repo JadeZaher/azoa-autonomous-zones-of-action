@@ -35,7 +35,7 @@ public sealed partial class WttLifecycleService
             || !UInt64Text.TryParse(request.MaximumNetworkFee, out var maximumFee) || !UInt64Text.TryParse(request.MaximumTemporaryRent, out var maximumRent))
             return Invalid<WttOperationView>("Explicit native-output acceptance, a request key and both cost ceilings are required.");
         var operation = await ReadOwnedAsync(operationId, credential, false, ct);
-        if (operation is null || operation.Version != request.ExpectedVersion) return Changed<WttOperationView>();
+        if (operation is null || operation.Version != request.ExpectedVersion || operation.ActionRunId is not null) return Changed<WttOperationView>();
         var quoted = await NativeQuoteAsync(operationId, operation, ct);
         if (quoted.IsError || quoted.Result is not { } quote)
             return AZOAResult<WttOperationView>.FailureWithCode(quoted.Message, quoted.Code ?? AzoaErrorCodes.Conflict);
@@ -46,7 +46,7 @@ public sealed partial class WttLifecycleService
         var stageName = "Unwrap:" + CanonicalJson.Hash(new { consent.RequestKey });
         var history = await store.ReadStagesAsync(operationId, ct);
         var generation = history.Count(stage => stage.Phase == "NativeOutput" && stage.Stage == stageName);
-        var authority = await StageAuthorityAsync(intent, "NativeOutput", true, null, credential, ct);
+        var authority = await StageAuthorityAsync(intent, "NativeOutput", true, null, new(credential, null), ct);
         if (authority.IsError || authority.Result is null) return Forbidden<WttOperationView>(authority.Message);
         var quoteJson = Canonical(quote);
         var claimed = await store.ClaimStageAsync(operationId, operation.Version, new WttOperationStage
@@ -93,13 +93,13 @@ public sealed partial class WttLifecycleService
         var quote = cleanup.Quote;
         if (UInt64Text.Parse(quote.ReturnAmount) == 0) return Conflict<WttOperationView>("No residual balance remains in this stage account.");
         if (UInt64Text.Parse(quote.NetworkFee) > maximumFee) return Conflict<WttOperationView>("The residual-return fee exceeds the accepted ceiling.");
-        var intent = Intent(operation);
+        var intent = IntentFor(operation, Read<WttStageQuote>(cleanup.Original.QuoteJson).IntentHash);
         var consent = new WttCleanupConsent(1, request.RequestKey, quote.QuoteId, request.MaximumNetworkFee);
         var stageName = quote.Phase + ":" + quote.OriginalStage + ":" + quote.OriginalGeneration.ToString(CultureInfo.InvariantCulture)
             + ":" + CanonicalJson.Hash(new { consent.RequestKey });
         var history = await store.ReadStagesAsync(operationId, ct);
         var generation = history.Count(stage => stage.Phase == "Cleanup" && stage.Stage == stageName);
-        var authority = await StageAuthorityAsync(intent, "Cleanup", false, cleanup.Original.Phase, credential, ct);
+        var authority = await StageAuthorityAsync(Intent(operation), "Cleanup", false, cleanup.Original.Phase, new(credential, null), ct);
         if (authority.IsError || authority.Result is null) return Forbidden<WttOperationView>(authority.Message);
         var quoteJson = Canonical(quote);
         var claimed = await store.ClaimStageAsync(operationId, operation.Version, new WttOperationStage
@@ -118,13 +118,13 @@ public sealed partial class WttLifecycleService
         operation = (await store.GetAsync(operationId, ct))!;
         if (prepared.IsError || prepared.Result is null || !ValidPrepared(prepared.Result, claimed))
         {
-            await store.RetireStageAsync(operationId, operation.Version, BareId(claimed.Id), claimed.Version, prepared.Message, ct);
+            await store.RetireStageAsync(operationId, operation.Version, BareId(claimed.Id), claimed.Version, prepared.Message, ct: ct);
             return Conflict<WttOperationView>(prepared.Message);
         }
         var saved = await store.SavePreparedAsync(operationId, operation.Version, BareId(claimed.Id), claimed.Version,
             Canonical(prepared.Result), ct);
         if (saved is null) return Changed<WttOperationView>();
-        var authorized = await AuthorizeCurrentAsync(operationId, (await store.GetAsync(operationId, ct))!, intent, saved, credential, ct);
+        var authorized = await AuthorizeCurrentAsync(operationId, (await store.GetAsync(operationId, ct))!, intent, saved, new(credential, null), ct);
         if (authorized.IsError) return AZOAResult<WttOperationView>.FailureWithCode(authorized.Message, authorized.Code ?? AzoaErrorCodes.Conflict);
         return AZOAResult<WttOperationView>.Success(await ProjectAsync((await store.GetAsync(operationId, ct))!, ct));
     }
@@ -133,12 +133,12 @@ public sealed partial class WttLifecycleService
     {
         if (operation.Phase != "NativeOutput" || operation.State != "Ready" || operation.ProofsJson is null)
             return Conflict<WttNativeOutputQuote>("Native output is available only after finalized redemption of a native-output transfer.");
-        var intent = Intent(operation);
-        var module = modules.Resolve<IWttNativeOutputModule>(intent.Target.ChainType, intent.Target.Network);
-        if (module is null) return Unavailable<WttNativeOutputQuote>("The target native-output module is unavailable.");
         var history = await store.ReadStagesAsync(operationId, ct);
         var redeem = history.LastOrDefault(stage => stage.Phase == "Target" && stage.Stage == "Redeem" && stage.State == "Confirmed");
         if (redeem?.PreparedJson is null) return Conflict<WttNativeOutputQuote>("The finalized original redemption is unavailable.");
+        var intent = IntentFor(operation, Read<WttStageQuote>(redeem.QuoteJson).IntentHash);
+        var module = modules.Resolve<IWttNativeOutputModule>(intent.Target.ChainType, intent.Target.Network);
+        if (module is null) return Unavailable<WttNativeOutputQuote>("The target native-output module is unavailable.");
         var quoted = await module.QuoteWttNativeOutputAsync(intent, Read<WttTargetProofs>(operation.ProofsJson),
             Read<WttStageQuote>(redeem.QuoteJson), Read<WttStagePreparation>(redeem.PreparedJson), ct);
         return quoted.IsError || quoted.Result is null ? Conflict<WttNativeOutputQuote>(quoted.Message) : quoted;
@@ -152,7 +152,7 @@ public sealed partial class WttLifecycleService
         if (original is null || original.OperationId != operationId || original.IntentHash != operation.IntentHash
             || original.Phase is not ("Source" or "Target") || original.State is not ("Confirmed" or "FailedOnChain") || original.PreparedJson is null)
             return Conflict<CleanupContext>("Only a resolved original stage with its saved signed candidate can return residual funds.");
-        var intent = Intent(operation);
+        var intent = IntentFor(operation, Read<WttStageQuote>(original.QuoteJson).IntentHash);
         var network = original.Phase == "Source" ? intent.Source : intent.Target;
         var module = modules.Resolve<IWttCleanupModule>(network.ChainType, network.Network);
         if (module is null) return Unavailable<CleanupContext>("Residual return applies only to chains with protected stage payers.");

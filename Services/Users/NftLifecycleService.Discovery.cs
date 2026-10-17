@@ -40,8 +40,12 @@ public sealed partial class NftLifecycleService
 
     /// <summary>The requester sees only lifecycles admitted under the same tenant context.</summary>
     private static bool RequesterOwns(AZOA.WebAPI.Persistence.SurrealDb.Models.NftLifecycle row, Guid caller, Guid tenant)
-        => row.ActorUserId == caller.ToString("N")
-            && JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)?.ActingTenantId == tenant;
+    {
+        if (row.ActorUserId != caller.ToString("N") || JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson) is not { } command)
+            return false;
+        // After an owner takeover (F-H12) only the owner, outside any tenant, continues the lifecycle.
+        return AZOA.WebAPI.Helpers.NftActorContinuationIdentity.TakenOver(row, command) ? tenant == Guid.Empty : command.ActingTenantId == tenant;
+    }
 
     /// <summary>Requester under its admitted tenant, or the counterparty under the tenant its saved consent bound; see Services/Users/AGENTS.md §NFT tenant scope.</summary>
     private static bool Visible(AZOA.WebAPI.Persistence.SurrealDb.Models.NftLifecycle row, Guid caller, Guid tenant)

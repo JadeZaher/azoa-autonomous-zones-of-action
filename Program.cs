@@ -211,8 +211,16 @@ builder.Services.AddAuthentication(options =>
             var principal = context.Principal;
             if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
             {
-                context.Fail("Delegated child credentials are disabled until accepting endpoints are explicitly scope-allowlisted.");
-                return;
+                // D-5: allowlisted endpoint + scope + live consent + active issuing tenant; see Services/Consent/AGENTS.md.
+                var childGate = ActivatorUtilities.CreateInstance<AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate>(
+                    context.HttpContext.RequestServices);
+                var childRejection = await childGate.RejectAsync(
+                    principal!, context.HttpContext.GetEndpoint(), context.HttpContext.RequestAborted);
+                if (childRejection is not null)
+                {
+                    context.Fail(childRejection);
+                    return;
+                }
             }
 
             if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
@@ -646,7 +654,7 @@ builder.Services.AddAuthorization(o =>
         p.RequireAssertion(ctx =>
         {
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User))
-                return ctx.User.HasDappManagerRole();
+                return ctx.User.CanAssignDappRoles();
             if (!ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
                 || !long.TryParse(
                     ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.AuthTime)?.Value,
@@ -1017,6 +1025,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeSto
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthClaimTokenStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletOwnershipProofStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletOwnershipProofStore>();
 // Phase 1B federated sign-in: the (tenant_scope, provider, subject) binding and the
 // single-use handoff code that carries an OAuth result to the SPA.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IUserExternalLoginStore,
@@ -1262,6 +1272,11 @@ builder.Services.AddScoped<WttProofVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttStageKeyStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttStageKeyStore>();
 builder.Services.AddScoped<WttStageKeyVault>();
 builder.Services.AddScoped<WttStageKeyReadiness>();
+builder.Services.AddSingleton<WttStageKeyReadinessState>();
+builder.Services.AddHostedService<WttStageKeyReadinessWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWttRecipientDirectory, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttRecipientDirectory>();
+// Replaced in place by the wallet ownership challenge's persisted proof (L4); fail-closed until then.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWalletOwnershipProof, WalletOwnershipProofAdapter>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttBodyClaimStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttBodyClaimStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttOperationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttOperationStore>();
@@ -1271,6 +1286,11 @@ builder.Services.AddHttpClient<WttGuardianTransport>()
 builder.Services.AddScoped<WttRecoveryService>();
 builder.Services.AddScoped<WttLifecycleService>();
 builder.Services.AddHostedService<WttRecoveryWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.WttActionResolver>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.WttActionResolver>());
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.IActionWttRoute>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.WttActionResolver>());
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INftProtocolCostQuoteStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftProtocolCostQuoteStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumDexAllowanceStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumDexAllowanceStore>();
@@ -1385,6 +1405,10 @@ builder.Services.AddHostedService<SwapRecoveryWorker>();
 builder.Services.AddScoped<SwapActionResolver>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp => sp.GetRequiredService<SwapActionResolver>());
 builder.Services.AddScoped<IBlockchainOperationManager, BlockchainOperationManager>();
+// D-3 client-signed operations: CAS store + lifecycle service (submit-signed, stuck-row parking, operator resolution).
+builder.Services.AddScoped<AZOA.WebAPI.Services.Blockchain.ClientSigning.IClientSignedOperationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealOperationLogClientSigningStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Blockchain.ClientSigning.ClientSignedOperationService>();
 builder.Services.AddScoped<IActionGraphBundleManager, ActionGraphBundleManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
@@ -1472,7 +1496,9 @@ builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     // Faucet operations are provider-scoped: the Algorand provider owns the
     // test-ALGO top-up path and delegates the idempotent build/sign/submit to the
     // injected IAlgorandFaucet (WalletManager no longer depends on it directly).
-    faucet: sp.GetRequiredService<IAlgorandFaucet>()));
+    faucet: sp.GetRequiredService<IAlgorandFaucet>(),
+    // D9: named chain RPC clients (ChainRpcHttp.ClientName) so hosts and fixtures can supply handlers.
+    httpClientFactory: sp.GetRequiredService<IHttpClientFactory>()));
 builder.Services.AddTransient<SolanaProvider>();
 // Ethereum: a BARE AddTransient on purpose. Constructor selection then picks the 4-arg
 // overload whose every parameter is a root-resolvable singleton (config, logger, signer

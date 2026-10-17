@@ -11,9 +11,14 @@ public sealed class WttStageKeyProtector : IWttStageKeyProtector, IDisposable
 {
     private readonly Dictionary<string, byte[]> keys = new(StringComparer.Ordinal);
     private bool disposed;
+    /// <inheritdoc/>
+    public bool IsConfigured { get; }
+    /// <inheritdoc/>
+    public string? ConfigurationError { get; }
     public string ActiveKeyId { get; }
     public IReadOnlyCollection<string> AvailableKeyVersions => keys.Keys.ToArray();
 
+    /// <summary>An absent or invalid keyring degrades WTT stage-key use instead of failing host startup.</summary>
     public WttStageKeyProtector(IOptions<WttStageKeyOptions> options)
     {
         var configuration = options.Value;
@@ -34,11 +39,13 @@ public sealed class WttStageKeyProtector : IWttStageKeyProtector, IDisposable
                 keys.Add(entry.Key, key);
             }
             if (!keys.ContainsKey(ActiveKeyId)) throw new InvalidOperationException("WTT active encryption key version is unavailable.");
+            IsConfigured = true;
         }
-        catch
+        catch (Exception exception) when (exception is InvalidOperationException or FormatException)
         {
-            Dispose();
-            throw;
+            foreach (var key in keys.Values) CryptographicOperations.ZeroMemory(key);
+            keys.Clear();
+            ConfigurationError = exception.Message;
         }
     }
 
@@ -46,6 +53,7 @@ public sealed class WttStageKeyProtector : IWttStageKeyProtector, IDisposable
     public WttProtectedStageKey Protect(WttStageKeyBinding binding, string publicKey, ReadOnlySpan<byte> seed)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        RequireConfigured();
         if (seed.Length != 32) throw new ArgumentException("A protocol stage seed must contain 32 bytes.", nameof(seed));
         var aad = AssociatedData(binding, publicKey, ActiveKeyId);
         var nonce = RandomNumberGenerator.GetBytes(12);
@@ -60,6 +68,7 @@ public sealed class WttStageKeyProtector : IWttStageKeyProtector, IDisposable
     public T WithSeed<T>(WttStageKeyBinding binding, string publicKey, WttProtectedStageKey envelope, Func<byte[], T> use)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+        RequireConfigured();
         if (!keys.TryGetValue(envelope.KeyVersion, out var key))
             throw new InvalidOperationException("A retained WTT stage encryption key version is unavailable; restore it before recovery.");
         var aad = AssociatedData(binding, publicKey, envelope.KeyVersion);
@@ -88,6 +97,11 @@ public sealed class WttStageKeyProtector : IWttStageKeyProtector, IDisposable
         foreach (var key in keys.Values) CryptographicOperations.ZeroMemory(key);
         keys.Clear();
         disposed = true;
+    }
+
+    private void RequireConfigured()
+    {
+        if (!IsConfigured) throw new InvalidOperationException("WTT stage encryption is unavailable: " + ConfigurationError);
     }
 
     private static byte[] AssociatedData(WttStageKeyBinding binding, string publicKey, string version)

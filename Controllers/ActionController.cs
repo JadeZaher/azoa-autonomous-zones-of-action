@@ -101,9 +101,15 @@ public class ActionController : ControllerBase
     // ─── DAG validation ───
 
     [HttpPost("{id:guid}/validate")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<bool>>> Validate(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _actionManager.ValidateDAGAsync(id, request);
+        var userId = GetUserIdFromClaims();
+        if (userId == null)
+            return Unauthorized(new AZOAResult<bool> { IsError = true, Message = "Invalid token." });
+
+        // Owner-scoped: validation persists ExecutionOrder, so it is a write on the caller's own action.
+        var result = await _actionManager.ValidateDAGAsync(id, userId.Value, request);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -115,6 +121,7 @@ public class ActionController : ControllerBase
     /// See Managers/AGENTS.md §publish-lifecycle.
     /// </summary>
     [HttpPost("{id:guid}/publish")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionDefinition>>> Publish(Guid id, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -131,6 +138,7 @@ public class ActionController : ControllerBase
     /// Refused while any in-flight runs exist.
     /// </summary>
     [HttpPost("{id:guid}/unpublish")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionDefinition>>> Unpublish(Guid id, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -313,21 +321,17 @@ public class ActionController : ControllerBase
     }
 
     /// <summary>
-    /// Operator sweep: re-probe EVERY run parked in <c>AwaitingReconciliation</c>
-    /// (reconcile-before-retry, contract §7 / P7). The background/operator entry
-    /// point that drains the pending-settlement backlog; same chain-truth logic as
-    /// the per-run reconcile, applied to all parked runs. NEVER re-broadcasts.
-    /// OPERATOR-ONLY: SweepReconciliationAsync is cross-user (unscoped), so this
-    /// action requires the "Operator" admin policy — unlike the per-run reconcile
-    /// above, which is user-scoped and open to any authenticated caller.
+    /// Operator sweep over every run parked in <c>AwaitingReconciliation</c>; returns
+    /// <c>{ scanned, results, errors, hardStuck }</c> and NEVER re-broadcasts. Operator-only
+    /// because the sweep is cross-user. See Managers/AGENTS.md §parked-run-sweep.
     /// </summary>
     [HttpPost("runs/reconcile-sweep")]
     [Authorize(Policy = "Operator")]
-    public async Task<ActionResult<AZOAResult<IEnumerable<ActionReconciliationResult>>>> ReconcileSweep([FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<ActionReconciliationSweepResult>>> ReconcileSweep([FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null)
-            return Unauthorized(new AZOAResult<IEnumerable<ActionReconciliationResult>> { IsError = true, Message = "Invalid token." });
+            return Unauthorized(new AZOAResult<ActionReconciliationSweepResult> { IsError = true, Message = "Invalid token." });
 
         var result = await _actionManager.SweepReconciliationAsync(request);
         if (result.IsError) return BadRequest(result);
@@ -352,7 +356,7 @@ public class ActionController : ControllerBase
     [HttpGet("templates/{id:guid}")]
     public async Task<ActionResult<AZOAResult<ActionTemplate>>> GetTemplate(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _actionManager.GetTemplateAsync(id, request);
+        var result = await _actionManager.GetTemplateAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -360,11 +364,12 @@ public class ActionController : ControllerBase
     [HttpGet("templates")]
     public async Task<ActionResult<AZOAResult<IEnumerable<ActionTemplate>>>> ListTemplates([FromQuery] AZOARequest? request)
     {
-        var result = await _actionManager.ListTemplatesAsync(request);
+        var result = await _actionManager.ListTemplatesAsync(GetUserIdFromClaims(), request);
         return Ok(result);
     }
 
     [HttpPost("templates/{id:guid}/instantiate")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionDefinition>>> InstantiateTemplate(Guid id, [FromBody] Dictionary<string, string>? parameters, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -394,7 +399,7 @@ public class ActionController : ControllerBase
     [HttpGet("node-templates")]
     public async Task<ActionResult<AZOAResult<IEnumerable<ActionNodeTemplate>>>> ListNodeTemplates([FromQuery] AZOARequest? request)
     {
-        var result = await _actionManager.ListNodeTemplatesAsync(request);
+        var result = await _actionManager.ListNodeTemplatesAsync(GetUserIdFromClaims(), request);
         return Ok(result);
     }
 
@@ -413,6 +418,7 @@ public class ActionController : ControllerBase
     }
 
     [HttpPost("{actionId:guid}/nodes")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionNode>>> AddNode(Guid actionId, [FromBody] ActionNodeCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -425,6 +431,7 @@ public class ActionController : ControllerBase
     }
 
     [HttpPut("{actionId:guid}/nodes/{nodeId:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionNode>>> UpdateNode(Guid actionId, Guid nodeId, [FromBody] ActionNodeUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -437,6 +444,7 @@ public class ActionController : ControllerBase
     }
 
     [HttpDelete("{actionId:guid}/nodes/{nodeId:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> DeleteNode(Guid actionId, Guid nodeId, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -451,6 +459,7 @@ public class ActionController : ControllerBase
     // ─── Action Edges sub-resource ───
 
     [HttpPost("{actionId:guid}/edges")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionEdge>>> AddEdge(Guid actionId, [FromBody] ActionEdgeAddModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -463,6 +472,7 @@ public class ActionController : ControllerBase
     }
 
     [HttpDelete("{actionId:guid}/edges/{edgeId:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> RemoveEdge(Guid actionId, Guid edgeId, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -489,6 +499,7 @@ public class ActionController : ControllerBase
     // ─── Action Dependencies sub-resource ───
 
     [HttpPost("{actionId:guid}/dependencies")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<ActionDependency>>> AddDependency(Guid actionId, [FromBody] ActionDependencyCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -501,6 +512,7 @@ public class ActionController : ControllerBase
     }
 
     [HttpDelete("{actionId:guid}/dependencies/{depId:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> RemoveDependency(Guid actionId, Guid depId, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();

@@ -97,7 +97,8 @@ public class EthereumProviderPipelineTests
         Transaction1559Encoder.Current.Decode(Convert.FromHexString(stub.LastSubmittedRaw![2..]));
 
     private static string CallDataOf(Transaction1559 transaction) =>
-        transaction.Data.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? transaction.Data : "0x" + transaction.Data;
+        string.IsNullOrEmpty(transaction.Data) ? "0x" // Nethereum decodes empty calldata as null
+            : transaction.Data.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? transaction.Data : "0x" + transaction.Data;
 
     // ─── Native transfer ───
 
@@ -271,7 +272,7 @@ public class EthereumProviderPipelineTests
         var result = await provider.TransferAsync(null!, PlatformAddress, Recipient, 5);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("signing requires");
+        result.Message.Should().Contain("signer is unavailable");
         stub.SendTransactionCount.Should().Be(0);
     }
 

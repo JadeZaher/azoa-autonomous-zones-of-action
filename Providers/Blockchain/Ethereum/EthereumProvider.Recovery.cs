@@ -108,7 +108,12 @@ public partial class EthereumProvider : IEthereumRecoveryModule
             var prepared = await PrepareCallAsync(row.PreparationKey, call.Sender, call.Target,
                 BigInteger.Parse(call.Value, CultureInfo.InvariantCulture), Convert.FromHexString(call.Data[2..]), call.Label, recoveryContext, ct);
             if (prepared.IsError || prepared.Result is null) return Error<EthereumPreparationView>(prepared.Message);
-            await SubmitPreparationAsync(prepared.Result, ct);
+            try { await SubmitPreparationAsync(prepared.Result, ct); }
+            catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+            {
+                // D6: the signed candidate is durable; a refused or unconfirmed send is a recovery outcome (409), not a server fault.
+                return Error<EthereumPreparationView>("The recovered candidate is durable but was not sent; reconcile it: " + exception.Message);
+            }
             return Ok(PreparationView(prepared.Result));
         }
         var candidates = JsonSerializer.Deserialize<List<EthereumCancellation>>(row.RecoveryCandidatesJson) ?? [];

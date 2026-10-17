@@ -9,20 +9,9 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
 /// <summary>
 /// Real Ed25519 Algorand transaction signer (signing-core-keystone Phase 2).
-/// Crypto comes ENTIRELY from the already-referenced <c>Algorand2</c> package —
-/// no hand-rolled msgpack or curve math.
-/// <para>
-/// Seam contract: the provider builds a typed <see cref="Transaction"/> (it owns
-/// the chain-specific shape), encodes it canonically with
-/// <see cref="Encoder.EncodeToMsgPackOrdered(object)"/>, and hands those opaque
-/// bytes here. This signer decodes them back to a <see cref="Transaction"/>,
-/// reconstructs an <see cref="Account"/> from the supplied private-key bytes,
-/// signs (canonical msgpack via <c>Transaction.Sign</c>), and returns the
-/// submittable signed-envelope bytes (msgpack-ordered) ready for Algod
-/// <c>POST /v2/transactions</c>. The five asset shapes (acfg-create,
-/// acfg-destroy, axfer-transfer, axfer-clawback, axfer-opt-in) all derive from
-/// <see cref="Transaction"/>, so a single decode→sign→encode path covers them.
-/// </para>
+/// Ed25519 comes from the already-referenced <c>Algorand2</c> package (no curve math here).
+/// <para>Signs the provider's exact canonical bytes (<c>"TX" || txn</c>) and frames the canonical
+/// <c>{sig, txn}</c> envelope; see <c>Providers/Blockchain/Algorand/AGENTS.md</c> §exact-bytes signing.</para>
 /// </summary>
 public sealed class AlgorandTransactionSigner : ITransactionSigner
 {
@@ -37,28 +26,22 @@ public sealed class AlgorandTransactionSigner : ITransactionSigner
 
         try
         {
-            // Decode the canonical unsigned transaction the provider built.
-            var txn = Encoder.DecodeFromMsgPack<Transaction>(canonicalTxn);
-            if (txn is null)
+            // Decode only to prove the bytes are an Algorand transaction; the SIGNATURE covers the
+            // provider's exact bytes. The SDK cannot round-trip every shape (a zero-amount axfer decodes
+            // as an opt-in and loses aclose), so signing the decoded object could sign a different txn.
+            if (Encoder.DecodeFromMsgPack<Transaction>(canonicalTxn) is null)
                 return Fail("Failed to decode canonical Algorand transaction bytes.");
 
-            // Reconstruct the signing account from the raw private-key bytes.
-            // Algorand2's Account(byte[]) treats the input as the 32-byte Ed25519
-            // seed (the same value WalletKeyService stores as the private key hex).
+            // Algorand2's Account(byte[]) treats the input as the 32-byte Ed25519 seed
+            // (the same value WalletKeyService stores as the private key hex).
             var account = new Account(key.PrivateKey);
-
-            // Canonical msgpack sign — Algorand2 owns the domain-prefix + ordering.
-            var signed = txn.Sign(account);
-
-            var submittable = Encoder.EncodeToMsgPackOrdered(signed);
-            if (submittable is null || submittable.Length == 0)
-                return Fail("Signed transaction encoded to empty bytes.");
+            var signature = account.SignRawBytes([.. "TX"u8, .. canonicalTxn]).Bytes;
 
             return new AZOAResult<byte[]>
             {
                 IsError = false,
-                Result = submittable,
-                Message = $"Signed Algorand transaction {txn.TxID()}"
+                Result = [.. EnvelopePrefix, .. signature, .. EnvelopeTxnKey, .. canonicalTxn],
+                Message = "Signed Algorand transaction."
             };
         }
         catch (Exception ex)
@@ -66,6 +49,10 @@ public sealed class AlgorandTransactionSigner : ITransactionSigner
             return Fail($"Algorand signing failed: {ex.Message}", ex);
         }
     }
+
+    /// <summary>Canonical (key-sorted) signed envelope: fixmap(2) "sig" bin8(64) … "txn" &lt;txn map&gt;.</summary>
+    private static readonly byte[] EnvelopePrefix = [0x82, 0xa3, (byte)'s', (byte)'i', (byte)'g', 0xc4, 0x40];
+    private static readonly byte[] EnvelopeTxnKey = [0xa3, (byte)'t', (byte)'x', (byte)'n'];
 
     private static AZOAResult<byte[]> Fail(string message, Exception? ex = null) =>
         new() { IsError = true, Message = message, Exception = ex };

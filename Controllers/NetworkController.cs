@@ -94,12 +94,27 @@ public class NetworkController : ControllerBase
         // ApiToken, ApiKey, PrivateKey are intentionally never included.
         return new ChainEndpointConfig
         {
-            NodeUrl = net.NodeUrl,
-            IndexerUrl = net.IndexerUrl,
+            NodeUrl = PublicEndpoint(net.NodeUrl) ?? string.Empty,
+            IndexerUrl = PublicEndpoint(net.IndexerUrl),
             IsEnabled = net.IsEnabled,
             ExplorerUrl = chain.Metadata.TryGetValue("ExplorerUrl", out var explorer) ? explorer : null,
             NativeToken = chain.Metadata.TryGetValue("NativeToken", out var token) ? token : null,
             Decimals = decimals
         };
     }
+
+    /// <summary>An endpoint safe for an anonymous response: no credentials, query or fragment, and no key-shaped path segment (else null).</summary>
+    internal static string? PublicEndpoint(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https" or "ws" or "wss"))
+            return null;
+        if (uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Any(LooksLikeSecret))
+            return null;
+        return new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty, Query = string.Empty, Fragment = string.Empty }
+            .Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+    }
+
+    private static bool LooksLikeSecret(string segment)
+        => segment.Length >= 16 && segment.Any(char.IsDigit) && segment.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 }

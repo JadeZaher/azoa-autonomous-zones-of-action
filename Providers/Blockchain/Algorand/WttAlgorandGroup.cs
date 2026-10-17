@@ -25,7 +25,7 @@ internal static class WttAlgorandGroup
             var transaction = transactions[index];
             transaction.FirstValid = firstValid; transaction.LastValid = lastValid;
             transaction.GenesisHash = new Digest(genesisHash); transaction.GenesisId = genesisId;
-            transaction.Note = note; transaction.SetFee(fee(index));
+            transaction.Note = note; transaction.Fee = fee(index); // exact pooled fee; SetFee clamps to the minimum
         }
         TxGroup.AssignGroupID(transactions.ToArray());
     }

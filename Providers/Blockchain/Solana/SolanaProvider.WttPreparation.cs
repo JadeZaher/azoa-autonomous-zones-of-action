@@ -7,7 +7,7 @@ using AZOA.WebAPI.Services.Wormhole;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
-public partial class SolanaProvider
+public partial class SolanaProvider : AZOA.WebAPI.Interfaces.Wtt.IWttStageKeyModule
 {
     private readonly IWttPreparationStore? _wttPreparationStore;
     private readonly WttStageKeyVault? _wttStageKeyVault;

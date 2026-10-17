@@ -213,8 +213,9 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
             if (kind == NftLifecycleWrite.CostAcceptance)
                 guards.AddRange(NftProtocolCostAdmissionFence.Create((NftReplacementCostContract.Current(row)
                     ?? throw new ActionEffectAuthorityChangedException()).Quote));
+            // After an owner takeover (F-H12) the run no longer authorizes effects; the owner's renewal is fenced above instead.
             if (kind is NftLifecycleWrite.FreshAdmission or NftLifecycleWrite.Effect or NftLifecycleWrite.CostAcceptance
-                && command.ActionAuthority is { } authority)
+                && command.ActionAuthority is { } authority && !NftActorContinuationIdentity.TakenOver(row, command))
             {
                 if (command.ProtocolCostQuote is not null || command.WorkflowCostAcceptance is not null)
                     guards.AddRange(NftWorkflowCostAuthorityFence.Create(row, command));
@@ -295,8 +296,9 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
     {
         var command = JsonSerializer.Deserialize<NftLifecycleCommand>(expected.RequestJson)
             ?? throw new InvalidOperationException("NFT intent is unreadable.");
+        var expectedTenant = NftActorContinuationIdentity.TakenOver(expected, command) ? Guid.Empty : command.ActingTenantId;
         if (consent.Credential.ActorUserId.ToString("N") != expected.ActorUserId || command.Actor != consent.Credential.ActorUserId
-            || (consent.Credential.TenantId ?? Guid.Empty) != command.ActingTenantId) return false;
+            || (consent.Credential.TenantId ?? Guid.Empty) != expectedTenant) return false;
         var fence = SigningAuthorityFence.ForConsent(consent, [NftSigningScope.ForOperation(expected.Operation)], "nft_cancel");
         if (fence is null) return false;
         // raw: current requester consent, unsent cancellation and its asset reservation release commit together; see AGENTS.md.

@@ -18,6 +18,8 @@ using AZOA.WebAPI.Core.Blockchain.Bridge;
 using AZOA.WebAPI.Tests.TestSupport;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 public sealed class BridgeKycGateTests
@@ -152,7 +154,8 @@ public sealed class BridgeKycGateTests
                 Mock.Of<ILogger<CrossChainBridgeService>>(),
                 Options.Create(new BridgeOptions { RealValueEnabled = true }),
                 new ConfigurationBuilder().Build(),
-                Gate.Object);
+                Gate.Object,
+            wallets: new BridgeOwnerWalletStore());
         }
 
         public CrossChainBridgeService Service { get; }

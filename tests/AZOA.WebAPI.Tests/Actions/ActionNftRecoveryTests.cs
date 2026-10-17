@@ -80,7 +80,7 @@ public sealed class ActionNftRecoveryTests
         var completed = await h.Operations.ObserveAsync(h.Reference, h.Frozen);
         completed.Status.Should().Be(ActionExternalOperationStatus.Succeeded);
         completed.TransactionId.Should().NotBeNullOrWhiteSpace();
-        completed.Output.Should().Contain("Confirmed");
+        completed.Output.Should().Contain("\"Status\":\"Completed\"", "terminal NFT lifecycle success projects as OperationStatus.Completed (W0 mapping)");
     }
 
     [Fact]

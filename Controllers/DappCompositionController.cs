@@ -22,7 +22,14 @@ public class DappCompositionController : ControllerBase
 {
     private readonly IDappCompositionManager _manager;
 
-    public DappCompositionController(IDappCompositionManager manager) => _manager = manager;
+    private readonly AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? _signingAuthority;
+
+    public DappCompositionController(IDappCompositionManager manager,
+        AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null)
+    {
+        _manager = manager;
+        _signingAuthority = signingAuthority;
+    }
 
     [HttpPost("compose")]
     [Authorize(Policy = "DappManage")]
@@ -83,7 +90,10 @@ public class DappCompositionController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized(Fail<DeploymentReceipt>("Invalid token."));
-        var result = await _manager.DeployAsync(id, userId.Value, request, Request.Headers["Idempotency-Key"].ToString(), ActingTenantId(), ct);
+        // Audit-1 H1: native signers bind to the caller's captured credential; none ⇒ native signing fails closed.
+        var credential = _signingAuthority is null ? null : await _signingAuthority.CaptureCredentialAsync(User, ct);
+        var result = await _manager.DeployAsync(id, userId.Value, request, Request.Headers["Idempotency-Key"].ToString(), ActingTenantId(), ct,
+            credential is { IsError: false } ? credential.Result : null);
         if (result.IsError) return BadRequest(result);
         return result.Result?.State is "Confirmed" or "Failed" or "Cancelled" ? Ok(result) : StatusCode(202, result);
     }
