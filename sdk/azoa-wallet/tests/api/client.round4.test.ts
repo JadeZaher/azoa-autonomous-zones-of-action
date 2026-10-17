@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { AzoaApiClient } from "../../src/api/client.js";
-import { isKybRequired } from "../../src/core/errors.js";
+import { isKybRequired, isNftStageCostsChanged } from "../../src/core/errors.js";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -93,4 +93,23 @@ it("clears a wallet identity conflict as the server's AZOAResult<bool>", async (
   const result = await api().clearWalletIdentityConflict({ version: 3, userId: "u1", expectedIdentity: "algorand:ADDR", reason: "Stale binding confirmed" });
   expect(result.ok && result.value).toBe(true);
   expect(fetchMock.mock.calls[0][0]).toBe(`${base}/api/operator/wallet-identities/clear-conflicting-binding`);
+});
+
+it("quotes and accepts recipient-stage NFT costs on the F-M11 routes with the exact reviewed stage", async () => {
+  const c = api();
+  const stage = { requestId: uuid, expectedVersion: 4, state: "Preparing" as const, stage: "Transfer", generation: 0 };
+  await c.quoteNftStageCosts(hex32, stage);
+  expect(fetchMock.mock.calls[0][0]).toBe(`${base}/api/nft-stage-costs/${hex32}/quote`);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(stage);
+  const costs = { quoteId: hex32, quoteHash: hex64, limits: { networkFee: "5000", retainedRent: "2039280", protocolLevy: "0" } };
+  await c.acceptNftStageCosts(hex32, { stage, costs });
+  expect(fetchMock.mock.calls[1][0]).toBe(`${base}/api/nft-stage-costs/${hex32}/accept`);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ stage, costs });
+  await expect(c.quoteNftStageCosts("../x", stage)).rejects.toThrow();
+});
+
+it("recognises the changed-costs refusal so the payer can re-quote", async () => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ isError: true, code: "NFT_STAGE_COSTS_CHANGED", message: "NFT stage costs changed since acceptance; review and accept a new quote." }) });
+  const result = await api().refreshNftLifecycle(hex32);
+  expect(!result.ok && isNftStageCostsChanged(result.error)).toBe(true);
 });

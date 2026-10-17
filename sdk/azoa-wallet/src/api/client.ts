@@ -845,6 +845,12 @@ export interface NftLifecycleView {
   needsStageAcceptance?: boolean;
   needsReplacementCosts?: boolean;
   replacementCostsAccepted?: boolean;
+  /** F-M11: a cost-bearing Solana stage is parked unsigned until its paying participant accepts an exact cost quote. */
+  needsStageCosts?: boolean;
+  /** The only user who may quote and accept this stage's costs (present on cost-bearing stages). */
+  stageCostPayerUserId?: string | null;
+  /** Limits of the binding acceptance for the current stage and generation, once accepted. */
+  acceptedStageCostLimits?: NftProtocolCostLimits | null;
   /** Display hint: the original requester's direct authority lapsed and must be renewed before the next new signature. */
   needsActorContinuation?: boolean;
   /** Display hint: the accepting participant's stage credential lapsed; that participant re-accepts the same stage. */
@@ -873,6 +879,12 @@ export interface NftStageAcceptance {
 }
 
 export interface NftReplacementCostAcceptance {
+  stage: NftStageAcceptance;
+  costs: NftProtocolCostAuthorization;
+}
+
+/** `POST /api/nft-stage-costs/{id}/accept`: the payer's acceptance of one offer for the exact reviewed stage. */
+export interface NftStageCostAcceptance {
   stage: NftStageAcceptance;
   costs: NftProtocolCostAuthorization;
 }
@@ -3624,6 +3636,18 @@ export class AzoaApiClient {
   async retireNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
     assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/retire`, request);
+  }
+
+  /** F-M11: the stage's paying participant requests an immutable five-minute cost offer for the exact reviewed stage. */
+  async quoteNftStageCosts(operationId: string, stage: NftStageAcceptance): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
+    return this.request("POST", `/api/nft-stage-costs/${encodeURIComponent(operationId)}/quote`, stage);
+  }
+
+  /** F-M11: records the payer's acceptance (idempotent per stage request id); continue the lifecycle afterwards. */
+  async acceptNftStageCosts(operationId: string, request: NftStageCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
+    return this.request("POST", `/api/nft-stage-costs/${encodeURIComponent(operationId)}/accept`, request);
   }
 
   /** Discloses costs for the original frozen execution without accepting them. */
