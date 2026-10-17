@@ -19,6 +19,8 @@ internal sealed class InMemoryDeploymentStore : IDeploymentStore
     internal IReadOnlyList<NativeQuote> Quotes { get { lock (_gate) return _quotes.Values.Select(Copy).ToArray(); } }
     internal IReadOnlyList<DeploymentOperation> Operations { get { lock (_gate) return _operations.Values.Select(Copy).ToArray(); } }
     private static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
+    /// <summary>Edits a stored operation in place (fixture setup for states no public seam reaches cheaply).</summary>
+    internal void Edit(string id, Action<DeploymentOperation> edit) { lock (_gate) edit(_operations[id]); }
 
     public Task<DeploymentArtifact> AddArtifactAsync(DeploymentArtifact artifact, CancellationToken ct = default)
     { lock (_gate) { _artifacts.TryAdd(artifact.Id, Copy(artifact)); return Task.FromResult(Copy(_artifacts[artifact.Id])); } }
