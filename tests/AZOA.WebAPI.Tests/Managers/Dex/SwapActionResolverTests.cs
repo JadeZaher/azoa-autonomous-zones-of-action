@@ -254,12 +254,13 @@ public sealed class SwapActionResolverTests
 
         internal void Admit(string state, bool settled, bool cleanupStarted = false)
         {
-            var intent = JsonSerializer.Deserialize<SwapIntent>(IntentJson())!;
+            var intentJson = IntentJson(); // once: the terms carry a timestamp, so two calls would not hash alike
+            var intent = JsonSerializer.Deserialize<SwapIntent>(intentJson)!;
             Operation = new SwapOperationRecord
             {
                 Id = Reference.OperationId!, ActorUserId = _actor.ToString("N"), TenantId = "", State = state, CleanupStarted = cleanupStarted,
                 ActionRunId = _run.ToString("N"), ActionNodeId = _node.ToString("N"), ActionIntentHash = Reference.IntentHash,
-                IntentJson = IntentJson(), IntentHash = CanonicalJson.HashCanonical(IntentJson()), QuoteHash = intent.QuoteHash,
+                IntentJson = intentJson, IntentHash = CanonicalJson.HashCanonical(intentJson), QuoteHash = intent.QuoteHash,
                 SettlementReceiptJson = settled ? CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(new SwapSettlementReceipt(
                     Reference.OperationId!, intent.QuoteHash, "stage", intent.Terms.Network, ["0xoriginal-lost", "0xwinner"], "1010", "1995", "10", []))) : null,
             };

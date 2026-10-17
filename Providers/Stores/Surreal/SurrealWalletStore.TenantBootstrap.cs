@@ -99,6 +99,7 @@ public sealed partial class SurrealWalletStore
                     .Set(row => row.IsDefault, existing.IsDefault).Build(), "bootstrap_existing", "_bootstrap_wallet"));
                 statements.Add(SurrealQuery.Of("IF $_bootstrap_wallet = NONE OR $_bootstrap_wallet = [] { THROW 'TENANT_BOOTSTRAP_CHANGED' }"));
             }
+            var walletIndex = statements.Count;
             statements.Add(SurrealQuery.Of("RETURN $_bootstrap_wallet"));
             statements.Add(SurrealQuery.Of("COMMIT"));
             var query = SurrealQuery.Combine(statements.ToArray());
@@ -108,7 +109,7 @@ public sealed partial class SurrealWalletStore
                 {
                     var result = await executor.ExecuteAsync(query, ct); result.EnsureAllOk(); return result;
                 }, ct);
-                return AZOAResult<IWallet>.Success(FromPoco(response.GetValues<Row>(response.Statements.Count - 2).Single()));
+                return AZOAResult<IWallet>.Success(FromPoco(response.GetValues<Row>(walletIndex).Single()));
             }
             catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
             {

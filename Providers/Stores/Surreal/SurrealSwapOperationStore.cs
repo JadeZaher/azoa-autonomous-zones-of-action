@@ -47,7 +47,7 @@ public sealed partial class SurrealSwapOperationStore(ISurrealExecutor executor)
         saved.State = cancel ? "Cancelled" : "Admitted";
         var quoteJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(intent.Terms));
         // raw: quote consumption/expiry, current authority and request creation commit together.
-        guards.Add(SurrealQuery.Of(cancel ? """
+        var quoteGuard = SurrealQuery.Of(cancel ? """
             LET $_swap_quote = (UPDATE ONLY type::record('dex_quote', $_swap_quote_id) SET quote_hash = quote_hash
                 WHERE actor_user_id = $_swap_actor AND tenant_id = $_swap_tenant AND quote_hash = $_swap_quote_hash
                     AND quote_json = $_swap_quote_json RETURN AFTER)
@@ -59,7 +59,9 @@ public sealed partial class SurrealSwapOperationStore(ISurrealExecutor executor)
                     AND expires_at > time::now() RETURN AFTER)
             """).WithParam("_swap_quote_id", candidate.QuoteId).WithParam("_swap_actor", candidate.ActorUserId)
             .WithParam("_swap_tenant", candidate.TenantId).WithParam("_swap_quote_hash", candidate.QuoteHash)
-            .WithParam("_swap_quote_json", quoteJson).WithParam("_swap_operation", candidate.Id));
+            .WithParam("_swap_quote_json", quoteJson);
+        // SQL-11: only the admission branch reads $_swap_operation; the strict validator refuses an unreferenced binding.
+        guards.Add(cancel ? quoteGuard : quoteGuard.WithParam("_swap_operation", candidate.Id));
         guards.Add(SurrealQuery.Of("IF $_swap_quote = NONE { THROW 'SWAP_ADMISSION_CONFLICT' }"));
         var create = SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(saved), "swap_create");
         var query = Transaction(guards, create);

@@ -75,8 +75,8 @@ export default function BusinessVerificationPage() {
           <p role="status">{status ? `Status: ${status.status.toLowerCase().replaceAll('_', ' ')}` : 'No verification started.'}</p>
           {status?.reviewedAt && <p>Reviewed {new Date(status.reviewedAt).toLocaleDateString()}. Linked participants: {status.beneficiaryCount}.</p>}
           {status && <p>Valid until {new Date(status.expiresAt).toLocaleDateString()}.</p>}
-          {capabilities && !capabilities.available && <p>Business verification is currently unavailable. Contact the node operator to enable Identomat business verification.</p>}
-          {status?.status === 'NEEDS_OPERATOR' && <p>The verification request needs reconciliation. Contact the node operator before starting another review.</p>}
+          {capabilities && !capabilities.available && <p>Business verification is currently unavailable. Contact the platform operator to enable Identomat business verification.</p>}
+          {status?.status === 'NEEDS_OPERATOR' && <p>The verification request needs reconciliation. Contact the platform operator before starting another review.</p>}
           <div className="flex flex-wrap gap-3">
             <Button onClick={() => void begin()} disabled={busy || !capabilities?.available || status?.status === 'NEEDS_OPERATOR'}>
               {status?.status === 'PENDING' ? 'Resume verification' : status ? 'Start a new review' : 'Start verification'}

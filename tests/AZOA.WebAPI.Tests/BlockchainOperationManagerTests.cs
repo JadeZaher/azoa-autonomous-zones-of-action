@@ -156,19 +156,22 @@ public class BlockchainOperationManagerTests
         operation.Parameters.Should().ContainKey("Error");
     }
 
-    [Fact]
-    public async Task BuildAndExecuteAsync_ShouldUseBuilderPattern()
+    [Theory]
+    [InlineData("mint")]
+    [InlineData("exchange")]
+    public async Task CallerBuiltMintOrExchange_NeverReachesAPlatformSignedProviderCall(string kind)
     {
-        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
-
+        // M9: the holon routes build operations from caller input; a platform-key ASA create or an exchange is refused
+        // before any claim, row or provider call.
         var result = await _manager.BuildAndExecuteAsync(builder =>
-            builder.ForUser(Guid.NewGuid())
-                   .Mint("ipfs://test", 1, "NFT")
-                   .Build());
+            (kind == "mint" ? builder.ForUser(Guid.NewGuid()).Mint("ipfs://test", 1, "NFT")
+                : builder.ForUser(Guid.NewGuid()).Exchange(Guid.NewGuid(), Guid.NewGuid(), "1")).Build());
 
-        result.IsError.Should().BeFalse();
-        result.Result!.OperationType.Should().Be("Mint");
+        result.IsError.Should().BeTrue();
+        result.Code.Should().Be(AzoaErrorCodes.OperationNotAllowed);
+        _algoProvider.Verify(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
+        _idempotency.Keys.Should().BeEmpty();
     }
 
     [Fact]
@@ -525,12 +528,10 @@ public class BlockchainOperationManagerTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_AwaitingSignatureOp_IsNotMarkedCompleted()
+    public async Task ExecuteAsync_ProviderClaimingClientSigningWithoutAPlan_FailsClosed()
     {
-        // Provider signals client-side signing required (the manager maps a
-        // "Requires client-side signing" message → AwaitingSignature). Such
-        // an op was NOT broadcast server-side, so it must NOT be a terminal
-        // Completed idempotency record (no false "done").
+        // D-3: AwaitingSignature is entered only with a saved, verifiable plan. A provider that merely says a client
+        // must sign leaves nothing to verify a later signature against, so the op fails and its claim is terminal.
         _algoProvider.Setup(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
                      .ReturnsAsync(new AZOAResult<string>
                      {
@@ -542,19 +543,12 @@ public class BlockchainOperationManagerTests
                  .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
 
         var op = NewMintOp();
-        var result = await _manager.ExecuteAsync(op);
+        await _manager.ExecuteAsync(op);
 
-        result.IsError.Should().BeFalse();
-        op.Status.Should().Be(OperationStatus.AwaitingSignature);
-
-        // The idempotency record stays NON-terminal (InProgress) — never
-        // Completed/Failed — because nothing irreversible was broadcast.
-        var key = _idempotency.Keys.Single();
-        var record = await _idempotency.GetAsync(key, CancellationToken.None);
-        record.Should().NotBeNull();
-        record!.State.Should().Be(IdempotencyState.InProgress,
-            "an AwaitingSignature op was not broadcast server-side — it must NOT be a terminal Completed record");
-        record.ResultPayload.Should().BeNullOrEmpty("no TxHash exists — nothing was submitted on-chain");
+        op.Status.Should().Be(OperationStatus.Failed);
+        op.Parameters.Should().NotContainKey("TxHash");
+        var record = await _idempotency.GetAsync(_idempotency.Keys.Single(), CancellationToken.None);
+        record!.State.Should().Be(IdempotencyState.Failed, "nothing was broadcast and nothing can be submitted later");
     }
     private static IConfiguration BuildEnabledProviderConfig()
         => new ConfigurationBuilder()

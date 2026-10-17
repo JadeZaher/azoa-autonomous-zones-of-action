@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Services.Consent;
 using AZOA.WebAPI.Services.Signing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -187,14 +188,29 @@ public class TenantController : ControllerBase
         return TranslateResult(result);
     }
 
-    /// <summary>Issue a short-lived child-scoped credential to act as that child.</summary>
+    /// <summary>Issue a short-lived child credential clamped to tenant ∩ live grant ∩ allowlisted-endpoint scopes.</summary>
     [HttpPost("users/{id:guid}/credential")]
-    public ActionResult<AZOAResult<ChildCredentialResponse>> IssueChildCredential(Guid id, [FromBody] IssueChildCredentialModel? model)
+    [EnableRateLimiting("tenant-custodial")]
+    public async Task<ActionResult<AZOAResult<ChildCredentialResponse>>> IssueChildCredential(
+        Guid id,
+        [FromBody] IssueChildCredentialModel? model,
+        [FromServices] IConfiguration configuration)
     {
-        return StatusCode(
-            StatusCodes.Status503ServiceUnavailable,
-            AZOAResult<ChildCredentialResponse>.Failure(
-                "Delegated child credentials are unavailable until every accepting endpoint has an explicit scope policy."));
+        if (!configuration.GetValue<bool>(DelegatedChildCredentialGate.EnabledKey))
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                AZOAResult<ChildCredentialResponse>.Failure("Delegated child credentials are disabled on this node."));
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null || User.GetActingTenantId() is not null || AzoaClaims.IsChildCredential(User)) return Unauthorized();
+
+        var ceiling = User.GetScopes().Where(DelegatedChildCredentialCatalog.Scopes.Contains).ToList();
+        if (ceiling.Count == 0)
+            return MissingScope<ChildCredentialResponse>("a scope accepted by a child-credential endpoint");
+
+        var result = await _manager.IssueChildCredentialAsync(
+            tenantId.Value, id, model?.Scopes ?? [], ceiling, HttpContext.RequestAborted);
+        if (!result.IsError) Response.Headers.CacheControl = "no-store";
+        return TranslateResult(result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -102,7 +102,7 @@ dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj -c Debug --filter "
   Every retained raw call needs a terse `// raw: <atomic invariant or waiver>`
   pointer and a directory-level design note. Never hand-write basic CRUD merely
   because it is shorter.
-- **SDK & Provider parity**: Keep SDK and .NET providers mirrored; add chains via plugin interfaces (`ChainProvider` / `IBlockchainProvider`, `DexAdapter`).
+- **SDK & Provider parity**: Keep SDK and .NET providers mirrored; add chains via plugin interfaces (`ChainProvider` / `IBlockchainProvider`). DEX swaps go only through the backend durable swap lifecycle (`IDexTransactionModule`; SDK `startDexSwap`) — the SDK has no client-side DEX adapters.
 - **Self-documenting**: Prefer clean code and test helpers over verbose comments.
 - **Role-first layout**: Place code by role: `Managers/`, `Services/<domain>/`, `Helpers/`, `Core/` (primitives only), `Providers/`, `Middleware/`, `Interfaces/`. Folder↔namespace strictly mirrored.
 - **Exception boundaries**: Expected validation/conflict/not-found outcomes use

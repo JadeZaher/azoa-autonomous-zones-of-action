@@ -12,4 +12,6 @@ public interface IWttStageKeyStore
     Task<bool> TryRewrapAsync(WttStageKeyEnvelope expected, string newKeyVersion, string newEnvelopeJson, CancellationToken ct = default);
     /// <summary>Finds one retained envelope unreadable by the proposed keyring; any result prevents retirement/readiness.</summary>
     Task<WttStageKeyEnvelope?> FindUnavailableKeyAsync(IReadOnlyCollection<string> availableVersions, CancellationToken ct = default);
+    /// <summary>Reads up to <paramref name="limit"/> envelopes still wrapped by a version other than <paramref name="activeVersion"/>.</summary>
+    Task<IReadOnlyList<WttStageKeyEnvelope>> FindNotOnVersionAsync(string activeVersion, int limit, CancellationToken ct = default);
 }

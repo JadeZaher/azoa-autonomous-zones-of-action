@@ -176,7 +176,7 @@ export function operatorErrorMessage(status: number): string {
     if (status === 403)
         return "This operator session is not allowed to perform that action.";
     if (status === 409)
-        return "The configuration changed elsewhere. Refresh before trying again.";
+        return "The node refused this in the current state (it changed, or its evidence does not support the action). Refresh and review before trying again.";
     if (status === 429)
         return "Too many attempts. Wait a moment before trying again.";
     if (status === 503) return "The node is not ready for this action yet.";

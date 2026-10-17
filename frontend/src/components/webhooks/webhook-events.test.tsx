@@ -7,13 +7,13 @@ vi.mock('@/lib/azoa', () => ({ azoa: { api } }))
 vi.mock('@/lib/operator-client', () => ({ operatorRequest: vi.fn() }))
 const id = '11111111-1111-1111-1111-111111111111'
 const key = 'azoa:webhook-retry:actor:self'
-const row = { eventId: id, eventType: 'completed', status: 'DeadLettered', version: 4, attemptCount: 8, cycleAttemptCount: 8, retryGeneration: 0, attemptInFlight: false }
+const row = { eventId: id, eventType: 'completed', status: 'DeadLettered', version: 4, attemptCount: 8, cycleAttemptCount: 8, retryGeneration: 0, attemptInFlight: false, retryable: true }
 beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); api.listWebhookEvents.mockResolvedValue({ ok: true, value: [row] }) })
 
 it('does not let an older initial read overwrite a newer refresh', async () => {
   let resolveInitial!: (value: unknown) => void
   api.listWebhookEvents.mockImplementationOnce(() => new Promise(resolve => { resolveInitial = resolve }))
-    .mockResolvedValueOnce({ ok: true, value: [{ ...row, version: 5, status: 'Delivered' }] })
+    .mockResolvedValueOnce({ ok: true, value: [{ ...row, version: 5, status: 'Delivered', retryable: false }] })
   render(<WebhookEventsPanel userId="actor" />)
   fireEvent.click(screen.getByRole('button', { name: 'Refresh deliveries' }))
   await screen.findByText('completed: Delivered')

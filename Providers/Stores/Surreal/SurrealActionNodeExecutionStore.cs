@@ -103,7 +103,7 @@ public sealed class SurrealActionNodeExecutionStore(ISurrealExecutor executor) :
             .Set(item => item.ManualAdvanceReleased, row.ManualAdvanceReleased);
         if (expectedState is { } state)
         {
-            var expected = (Row.ActionNodeState)(int)state;
+            var expected = ToKind(state);
             update = update.Where(item => item.State == expected);
         }
         update = row.WaitUntil is null ? update.Unset(item => item.WaitUntil) : update.Set(item => item.WaitUntil, row.WaitUntil);
@@ -224,7 +224,7 @@ public sealed class SurrealActionNodeExecutionStore(ISurrealExecutor executor) :
     private static Row ToRow(ActionNodeExecution row) => new()
     {
         Id = row.Id.ToString("N"), RunId = SurrealLink.ToLink("action_run", row.RunId.ToString("N"))!, NodeId = SurrealLink.ToLink("action_node", row.NodeId.ToString("N"))!,
-        State = (Row.ActionNodeState)(int)row.State, Version = row.Version,
+        State = ToKind(row.State), Version = row.Version,
         Output = row.Output, Error = row.Error, TxHash = row.TxHash, ChainType = row.ChainType,
         StartedAt = new DateTimeOffset(DateTime.SpecifyKind(row.StartedAt, DateTimeKind.Utc)),
         EndedAt = row.EndedAt is { } ended ? new DateTimeOffset(DateTime.SpecifyKind(ended, DateTimeKind.Utc)) : null,
@@ -236,7 +236,7 @@ public sealed class SurrealActionNodeExecutionStore(ISurrealExecutor executor) :
     internal static ActionNodeExecution ToDomain(Row row) => new()
     {
         Id = SurrealRecordGuid.Parse(row.Id), RunId = SurrealRecordGuid.Parse(row.RunId), NodeId = SurrealRecordGuid.Parse(row.NodeId),
-        State = (ActionNodeState)(int)row.State, Version = row.Version,
+        State = FromKind(row.State), Version = row.Version,
         Output = row.Output, Error = row.Error, TxHash = row.TxHash, ChainType = row.ChainType,
         StartedAt = row.StartedAt.UtcDateTime, EndedAt = row.EndedAt?.UtcDateTime,
         WaitUntil = row.WaitUntil?.UtcDateTime,
@@ -245,4 +245,7 @@ public sealed class SurrealActionNodeExecutionStore(ISurrealExecutor executor) :
             : JsonSerializer.Deserialize<ActionExternalOperationReference>(row.ExternalOperationJson)
                 ?? throw new InvalidOperationException("Node operation envelope is unreadable."),
     };
+
+    private static Row.ActionNodeState ToKind(ActionNodeState state) => Enum.Parse<Row.ActionNodeState>(state.ToString());
+    private static ActionNodeState FromKind(Row.ActionNodeState state) => Enum.Parse<ActionNodeState>(state.ToString());
 }

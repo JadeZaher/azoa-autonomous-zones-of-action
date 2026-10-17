@@ -17,7 +17,7 @@ public sealed class EthereumOperatorRecoveryController(IBlockchainProviderFactor
     [HttpGet]
     public async Task<IActionResult> List(ChainNetwork network, CancellationToken ct)
     {
-        if (providers.GetProvider("Ethereum", network) is not IEthereumRecoveryModule recovery) return Conflict("Ethereum recovery is unavailable.");
+        if (RecoveryModule(network) is not { } recovery) return Conflict("Ethereum recovery is unavailable.");
         Response.Headers.CacheControl = "no-store";
         return Ok(await recovery.ListPreparationsAsync(Guid.Empty, ct));
     }
@@ -26,7 +26,7 @@ public sealed class EthereumOperatorRecoveryController(IBlockchainProviderFactor
     public async Task<IActionResult> Activate(ChainNetwork network, EthereumPlatformActivationRequest request, CancellationToken ct)
     {
         if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        if (providers.GetProvider("Ethereum", network) is not IEthereumRecoveryModule recovery) return Conflict("Ethereum recovery is unavailable.");
+        if (RecoveryModule(network) is not { } recovery) return Conflict("Ethereum recovery is unavailable.");
         var result = await recovery.ActivateSignerAsync(request.Sender, actor, ct);
         return result.IsError ? Conflict(result) : Ok(result);
     }
@@ -35,9 +35,16 @@ public sealed class EthereumOperatorRecoveryController(IBlockchainProviderFactor
     public async Task<IActionResult> Recover(ChainNetwork network, string id, EthereumRecoveryRequest request, CancellationToken ct)
     {
         if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        if (providers.GetProvider("Ethereum", network) is not IEthereumRecoveryModule recovery) return Conflict("Ethereum recovery is unavailable.");
+        if (RecoveryModule(network) is not { } recovery) return Conflict("Ethereum recovery is unavailable.");
         var result = await recovery.RecoverPreparationAsync(id, actor, Guid.Empty, true, request.Cancel,
             request.MaximumFeePerGas, request.Reason, AzoaScopes.ValueSigningScopes, ct);
         return result.IsError ? Conflict(result) : Ok(result);
+    }
+
+    /// <summary>D6: an unconfigured network is a refusal (409), never an unhandled provider-resolution fault.</summary>
+    private IEthereumRecoveryModule? RecoveryModule(ChainNetwork network)
+    {
+        try { return providers.GetProvider("Ethereum", network) as IEthereumRecoveryModule; }
+        catch (BlockchainProviderNotFoundException) { return null; }
     }
 }

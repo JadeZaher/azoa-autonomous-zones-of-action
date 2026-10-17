@@ -5,8 +5,7 @@
       "chain": 1
     },
     "src/app/(dashboard)/action-graph-bundle/page.tsx": {
-      "algorand": 1,
-      "chain": 3,
+      "chain": 1,
       "on-chain": 1
     },
     "src/app/(dashboard)/actions/page.tsx": {
@@ -25,15 +24,17 @@
     },
     "src/app/(dashboard)/bridge/page.tsx": {
       "algorand": 2,
-      "chain": 5,
+      "chain": 4,
       "mint": 1,
-      "token": 1,
+      "token": 2,
       "wallet-address": 1
     },
     "src/app/(dashboard)/fungible-mint/page.tsx": {
-      "asa": 1,
       "chain": 3,
-      "mint": 5
+      "mint": 3
+    },
+    "src/app/(dashboard)/holds/page.tsx": {
+      "custody": 1
     },
     "src/app/(dashboard)/holon-query/page.tsx": {
       "algorand": 1,
@@ -44,7 +45,6 @@
       "chain": 3
     },
     "src/app/(dashboard)/nfts/page.tsx": {
-      "algorand": 1,
       "chain": 1,
       "mint": 3,
       "token": 1
@@ -61,17 +61,18 @@
       "chain": 1
     },
     "src/app/(dashboard)/swap/page.tsx": {
-      "algorand": 1,
-      "wallet-address": 1
+      "custody": 1,
+      "gas": 1,
+      "node": 1
     },
     "src/app/(dashboard)/tests/page.tsx": {
       "chain": 1
     },
     "src/app/(dashboard)/user-nfts/page.tsx": {
       "algorand": 2,
-      "chain": 5,
+      "chain": 4,
       "mint": 3,
-      "token": 6
+      "token": 4
     },
     "src/app/(dashboard)/wallets/page.tsx": {
       "chain": 2,
@@ -84,6 +85,10 @@
       "on-chain": 2,
       "rail": 3,
       "token": 1
+    },
+    "src/components/action-builder/nft-workflow-costs.tsx": {
+      "chain": 1,
+      "mint": 1
     },
     "src/components/action-builder/node-catalog.ts": {
       "chain": 1,
@@ -112,10 +117,21 @@
       "mint": 1,
       "on-chain": 1
     },
+    "src/components/bridge/wtt-transfer.tsx": {
+      "chain": 7,
+      "token": 2
+    },
     "src/components/browser-wallet-connect.tsx": {
       "algorand": 2,
       "chain": 1,
       "wallet-address": 1
+    },
+    "src/components/deployments/deployment-console.tsx": {
+      "algorand": 1,
+      "chain": 3
+    },
+    "src/components/hold/hold-recovery-panel.tsx": {
+      "custody": 1
     },
     "src/components/layout/sidebar.tsx": {
       "blockchain": 1,
@@ -129,11 +145,19 @@
       "private-key": 2,
       "seed-phrase": 2
     },
+    "src/components/shared/nft-fee-review.tsx": {
+      "chain": 2
+    },
     "src/components/wallet-export-dialog.tsx": {
       "chain": 1,
       "mnemonic": 1,
       "private-key": 2,
       "seed-phrase": 2
+    },
+    "src/components/wallet-fund-dialog.tsx": {
+      "chain": 1,
+      "on-chain": 1,
+      "token": 1
     }
   }
 }

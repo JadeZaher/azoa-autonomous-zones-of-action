@@ -48,6 +48,9 @@ public interface ITenantPriceScheduleStore
     /// </summary>
     Task<AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>> ListLatestPerScopeAsync(
         string chainType, string assetId, CancellationToken ct = default);
+
+    /// <summary>One exact version by record id (bare or link form); null result when absent.</summary>
+    Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default);
 }
 
 /// <summary>SurrealDB-backed price-schedule store. Colocated with the seam, like the webhook inbox.</summary>
@@ -304,6 +307,17 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
             return new AZOAResult<TenantPriceSchedule>()
                 .CaptureException(ex, $"Price schedule write failed: {ex.Message}");
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(recordId))
+            return AZOAResult<RegisteredPriceSchedule?>.Success(null, "Not found.");
+        var read = await GetByIdAsync(SurrealRecordGuid.BareId(recordId), ct);
+        return read.IsError
+            ? AZOAResult<RegisteredPriceSchedule?>.Failure(read.Message)
+            : AZOAResult<RegisteredPriceSchedule?>.Success(read.Result is null ? null : Project(read.Result));
     }
 
     private async Task<AZOAResult<TenantPriceSchedule?>> GetByIdAsync(string recordId, CancellationToken ct)

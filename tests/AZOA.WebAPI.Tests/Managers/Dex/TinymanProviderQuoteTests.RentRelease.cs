@@ -5,6 +5,7 @@ using Algorand.Utils;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using FluentAssertions;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;
 
@@ -31,8 +32,7 @@ public sealed partial class TinymanProviderQuoteTests
         var plan = (await fixture.Provider.PlanSwapCleanupAsync(intent, [new(allocation, observed!)], consent, "CloseOptIn", 0)).Result!;
         using var unsigned = JsonDocument.Parse(plan.UnsignedPayloadJson);
         var envelopes = unsigned.RootElement.GetProperty("transactions").EnumerateArray()
-            .Select(value => Encoder.DecodeFromMsgPack<Transaction>(Convert.FromBase64String(value.GetString()!)))
-            .Select(transaction => Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(transaction.Sign(RpcHandler.OwnerAccount)))).ToArray();
+            .Select(value => AlgorandExactWire.Sign(Convert.FromBase64String(value.GetString()!), RpcHandler.OwnerAccount)).ToArray();
         var cleanup = fixture.Provider.ValidateSignedSwapStage(intent, plan, JsonSerializer.Serialize(envelopes)).Result!;
         var cleanupWire = JsonSerializer.Deserialize<TinymanWireParameters>(cleanup.Plan.RecoveryMetadata)!;
         var closingTx = TinymanSwapReceiptTests.Block(cleanupWire)["transactions"]![0]!.DeepClone();

@@ -12,6 +12,7 @@ import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 export function HostedSessionRecovery() {
   const [rows, setRows] = useState<HostedSessionRecoveryView[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<HostedSessionRecoveryView | null>(null)
   const [providerId, setProviderId] = useState('')
@@ -28,11 +29,15 @@ export function HostedSessionRecovery() {
   async function recover(row: HostedSessionRecoveryView, action: 'refresh' | 'reconcile') {
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
-      await operatorRequest(`hosted-sessions/${row.sessionId}/${action}`, { method: 'POST', body: action === 'refresh' ? {} : {
+      const receipt = await operatorRequest<{ status?: string }>(`hosted-sessions/${row.sessionId}/${action}`, { method: 'POST', body: action === 'refresh' ? {} : {
         reason: reason.trim(), operatorReviewedSubjectAndProvider: reviewed, confirmedProviderAbsence: absent,
         providerSessionId: absent ? undefined : providerId.trim(), redirectUrl: absent ? undefined : redirect.trim() || undefined,
       } })
+      setNotice(action === 'refresh'
+        ? `Provider re-read: the attempt is now ${receipt?.status ?? 'unchanged'}.`
+        : 'Recovery recorded against the saved attempt.')
       setSelected(null)
       await load()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Provider recovery remains unresolved.') }
@@ -46,15 +51,16 @@ export function HostedSessionRecovery() {
   return <FlatCard>
     <CardHeader><CardTitle>Hosted verification recovery</CardTitle></CardHeader>
     <CardContent className="space-y-4">
-      <p className="text-sm text-muted-foreground">These attempts have no confirmed provider session attached. Refresh checks the original request. A provider reference is verified against the saved attempt; this action cannot approve an identity.</p>
+      <p className="text-sm text-muted-foreground">Attempts with no confirmed provider session attached, and attached sessions with no provider outcome for an hour (Awaiting provider outcome). Refresh re-reads the provider for the original request. A provider reference is verified against the saved attempt; this action cannot approve an identity.</p>
       {error && <OperatorError message={error} onRetry={() => void load()} />}
-      {rows.length === 0 && <p className="text-sm text-muted-foreground">No aged unattached attempts are awaiting recovery.</p>}
+      {notice && <p role="status" className="text-sm">{notice}</p>}
+      {rows.length === 0 && <p className="text-sm text-muted-foreground">No hosted attempts are awaiting recovery.</p>}
       {rows.map(row => <div key={row.sessionId} className="border border-border p-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-2"><strong>{row.providerKey}</strong><StatusPill tone="attention">{row.status}</StatusPill><span className="text-sm">{row.flowKind}</span></div>
+        <div className="flex flex-wrap items-center gap-2"><strong>{row.providerKey}</strong><StatusPill tone="attention">{row.status === 'AwaitingProviderOutcome' ? 'Awaiting provider outcome' : row.status}</StatusPill><span className="text-sm">{row.flowKind}</span></div>
         <p className="break-all text-sm">Attempt {row.sessionId} · {formatOperatorDate(row.createdDate)}</p>
         <div className="flex gap-2">
-          {row.providerKey !== 'identomat' && <Button variant="outline" disabled={busy} onClick={() => void recover(row, 'refresh')}>Refresh original attempt</Button>}
-          <Button variant="outline" disabled={busy} onClick={() => select(row)}>Review recovery</Button>
+          <Button variant="outline" disabled={busy} onClick={() => void recover(row, 'refresh')}>Refresh from provider</Button>
+          {row.status !== 'AwaitingProviderOutcome' && <Button variant="outline" disabled={busy} onClick={() => select(row)}>Review recovery</Button>}
         </div>
       </div>)}
       {selected && <form className="space-y-3 border border-border p-4" onSubmit={event => { event.preventDefault(); void recover(selected, 'reconcile') }}>

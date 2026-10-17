@@ -410,6 +410,16 @@ public sealed class WalletAuthManager : IWalletAuthManager
     }
 
 
+    /// <inheritdoc/>
+    public async Task<AZOAResult<(string Address, string ChainType)>> VerifyAddressControlAsync(
+        string address, string chainType, string signature, string? message, CancellationToken ct = default)
+    {
+        var proof = await ConsumeAndVerifyAsync(address, chainType, signature, message, ct);
+        return proof.IsError || proof.Result is null
+            ? new AZOAResult<(string, string)> { IsError = true, Message = proof.Message, Exception = proof.Exception }
+            : AZOAResult<(string, string)>.Success((proof.Result.Address, proof.Result.ChainType));
+    }
+
     private async Task<AZOAResult<WalletAuthChallenge>> ConsumeAndVerifyAsync(
         string address, string chainType, string signature, string? clientMessage, CancellationToken ct)
     {

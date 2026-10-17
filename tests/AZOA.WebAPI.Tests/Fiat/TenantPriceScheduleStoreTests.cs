@@ -209,6 +209,9 @@ public class TenantPriceScheduleStoreTests
                     .Where(schedule => string.Equals(schedule.ScopeKey, scopeKey, StringComparison.Ordinal))
                     .ToList()));
 
+        public Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>> ListLatestPerScopeAsync(
             string chainType, string assetId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>.Success(_schedules.ToList()));

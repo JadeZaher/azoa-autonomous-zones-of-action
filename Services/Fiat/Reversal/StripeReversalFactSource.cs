@@ -54,6 +54,15 @@ public sealed record DisputeReversalFacts(
     public bool FundsWithdrawn => NetBalanceImpactMinorUnits < 0;
 }
 
+/// <summary>The server-fetched settlement of one payment: its charge and the balance transaction it produced.</summary>
+/// <param name="ChargeId">The payment's latest charge.</param>
+/// <param name="AmountMinorUnits">What the payer was charged.</param>
+/// <param name="NetMinorUnits">What reached the platform balance after Stripe's fees (<c>balance_transaction.net</c>).</param>
+/// <param name="Currency">Charge currency; the balance transaction must settle in the same currency.</param>
+/// <param name="Livemode">Whether the charge belongs to the provider's live mode.</param>
+public sealed record PaymentBalanceFacts(
+    string ChargeId, long AmountMinorUnits, long NetMinorUnits, string Currency, bool Livemode);
+
 /// <summary>
 /// Re-reads what a reversal event merely announced. Separate from
 /// <see cref="IStripeGateway"/> because the checkout surface and the reversal surface have
@@ -76,6 +85,10 @@ public interface IReversalFactSource
     /// so the dispute is looked up FROM the payment rather than trusted from the body.
     /// </summary>
     Task<AZOAResult<DisputeReversalFacts>> GetDisputeForPaymentAsync(
+        StripeCredentials credentials, string paymentIntentId, CancellationToken ct = default);
+
+    /// <summary>The payment's charge and its balance transaction net (D-8: the float is credited net of fees).</summary>
+    Task<AZOAResult<PaymentBalanceFacts>> GetPaymentBalanceAsync(
         StripeCredentials credentials, string paymentIntentId, CancellationToken ct = default);
 }
 
@@ -144,6 +157,48 @@ public sealed class StripeReversalFactSource : IReversalFactSource
             "read the disputes against a payment",
             SelectDispute,
             ct);
+    }
+
+    /// <inheritdoc />
+    public Task<AZOAResult<PaymentBalanceFacts>> GetPaymentBalanceAsync(
+        StripeCredentials credentials, string paymentIntentId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId))
+            return Task.FromResult(AZOAResult<PaymentBalanceFacts>.Failure("A payment id is required."));
+
+        return SendAsync(
+            credentials,
+            "/v1/payment_intents/" + Uri.EscapeDataString(paymentIntentId.Trim())
+                + "?expand%5B%5D=latest_charge.balance_transaction",
+            "read a payment's settlement",
+            ParsePaymentBalance,
+            ct);
+    }
+
+    /// <summary>Reads <c>latest_charge</c> and its expanded balance transaction; null unless both settled in one currency.</summary>
+    public static PaymentBalanceFacts? ParsePaymentBalance(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("latest_charge", out var charge) || charge.ValueKind != JsonValueKind.Object
+                || !charge.TryGetProperty("balance_transaction", out var balance) || balance.ValueKind != JsonValueKind.Object)
+                return null;
+            var chargeId = ReadString(charge, "id");
+            var currency = ReadString(charge, "currency");
+            if (string.IsNullOrWhiteSpace(chargeId) || string.IsNullOrWhiteSpace(currency)
+                || ReadInt64(charge, "amount") is not { } amount || ReadInt64(balance, "net") is not { } net
+                || !string.Equals(ReadString(balance, "currency"), currency, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return new PaymentBalanceFacts(chargeId!, amount, net, currency!, ReadBool(charge, "livemode"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<AZOAResult<T>> SendAsync<T>(

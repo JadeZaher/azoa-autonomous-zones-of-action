@@ -192,6 +192,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("ALWAYS \"{}\"")]
         public string ReversalMarksJson { get; set; } = "{}";
 
+        /// <summary>Scope key of the schedule that priced this lot (tenant compact id or <c>node</c>); caps node-funded exits.</summary>
+        [Column(Order = 38)]
+        public string? PricingScopeKey { get; set; }
+
         /// <summary>Deterministic record id for the one lot a funding intent may settle into.</summary>
         public static string RecordIdFor(string intentId)
         {

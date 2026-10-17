@@ -185,6 +185,7 @@ public sealed partial class OffRampService : IOffRamp
     private readonly IRealValueKycGate _kycGate;
     private readonly ISagaCoordinator _sagas;
     private readonly IKybGate _kyb;
+    private readonly ITenantPayoutFunding _funding;
     private readonly ILogger<OffRampService> _logger;
     private readonly TimeProvider _clock;
     private BankPayoutProcessor BankPayouts => new(_fiat, _payouts, _connect, _logger, _clock);
@@ -206,6 +207,7 @@ public sealed partial class OffRampService : IOffRamp
         IRealValueKycGate kycGate,
         ISagaCoordinator sagas,
         IKybGate kyb,
+        ITenantPayoutFunding funding,
         ILogger<OffRampService> logger,
         TimeProvider? clock = null)
     {
@@ -225,6 +227,7 @@ public sealed partial class OffRampService : IOffRamp
         _kycGate = kycGate ?? throw new ArgumentNullException(nameof(kycGate));
         _sagas = sagas ?? throw new ArgumentNullException(nameof(sagas));
         _kyb = kyb ?? throw new ArgumentNullException(nameof(kyb));
+        _funding = funding ?? throw new ArgumentNullException(nameof(funding));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _clock = clock ?? TimeProvider.System;
     }
@@ -357,6 +360,10 @@ public sealed partial class OffRampService : IOffRamp
             CurrencyCode = context.CurrencyCode.ToUpperInvariant(),
             PriceScheduleId = SurrealLink.ToLink(TenantPriceSchedule.SchemaNameConst, context.PriceScheduleId),
             PriceScheduleVersion = context.PriceScheduleVersion,
+            // D-8: fixed from the very schedule that priced the row, never from the caller's tenant.
+            FundingTenantId = context.FundingTenantId is { } funder
+                ? SurrealLink.ToLink(UserRecord.SchemaNameConst, funder.ToString("N"))
+                : null,
             UnitsPerMinorUnit = PriceScheduleMath.FormatRate(context.UnitsPerMinorUnit),
             ConnectedAccountId = accountId.Result,
             Status = FiatPayoutStatuses.Requested,
@@ -396,6 +403,21 @@ public sealed partial class OffRampService : IOffRamp
                 ? "Some of your balance is still on hold from a recent payment and cannot be cashed out yet."
                 : "That is more than you have available to cash out.";
             return await RefuseAsync(row, reason, ct);
+        }
+
+        // Owner decision (c): units bought at a tenant's price never leave node-funded above that price.
+        if (context.FundingTenantId is null
+            && await ExceedsSoldPriceAsync(request.SubjectUserId, quantity, context, ct) is { } capRefusal)
+            return await RefuseAsync(row, capRefusal, ct);
+
+        // D-8 coverage: reserve the tenant's money before any unit moves or any saga starts.
+        if (context.FundingTenantId is not null)
+        {
+            var reservation = await _funding.ReserveAsync(row, ct);
+            if (reservation == TenantFundingReservation.Insufficient)
+                return await RefuseAsync(row, TenantPayoutBalanceInsufficientMessage, ct, TenantPayoutBalanceInsufficientCode);
+            if (reservation != TenantFundingReservation.Reserved)
+                return await RefuseAsync(row, "The payout balance funding this cash-out could not be reserved. Nothing was sent.", ct);
         }
 
         var consumed = await ConsumeLotsAsync(request.SubjectUserId, quantity, ct);
@@ -504,6 +526,9 @@ public sealed partial class OffRampService : IOffRamp
             }
         }
 
+        row.CollectPartition = SurrealRecordGuid.ParseOptional(row.FundingTenantId) is { } funder
+            ? TenantPartitionFor(funder)
+            : null;
         var signingContext = BuildUserSigningContext(row, subjectUserId, wallet.Wallet.Id);
 
         var moved = await provider.TransferAsync(
@@ -534,14 +559,15 @@ public sealed partial class OffRampService : IOffRamp
         // The units are back in the reserve, so the partition they were issued from gets its
         // availability back. Without this draw the on-ramp partition would shrink by every
         // cash-out the node successfully completed.
-        var draw = await _reserve.DrawAsync(
-            new ReserveDrawRequest(
-                row.ChainType, row.AssetId, _options.ReservePartition,
-                ReserveDrawKind.Return, quantity, key,
-                // The node's own off-ramp rail: neither the asset (a node-written payout row)
-                // nor the partition (node configuration) can be named by a caller.
-                ReserveDrawAuthority.NodeOperator),
-            ct);
+        // The node's own off-ramp rail: neither the asset (a node-written payout row) nor the
+        // partition (node configuration) can be named by a caller.
+        var returnDraw = new ReserveDrawRequest(
+            row.ChainType, row.AssetId, _options.ReservePartition,
+            ReserveDrawKind.Return, quantity, key, ReserveDrawAuthority.NodeOperator);
+        // Owner decision (b): a tenant-funded collect returns the units to the tenant's partition.
+        var draw = row.CollectPartition is { } tenantPartition
+            ? await _reserve.ReattributeReturnAsync(returnDraw, tenantPartition, ct)
+            : await _reserve.DrawAsync(returnDraw, ct);
 
         if (draw.IsError)
         {
@@ -571,7 +597,7 @@ public sealed partial class OffRampService : IOffRamp
             return AZOAResult<OffRampStepOutcome>.Failure("This payout belongs to a different payment or chain environment.");
 
         if (row.Status == FiatPayoutStatuses.BankPending)
-            return await BankPayouts.SendAsync(row, ct);
+            return await SyncedAsync(await BankPayouts.SendAsync(row, ct), ct);
 
         if (string.Equals(row.Status, FiatPayoutStatuses.Paid, StringComparison.Ordinal)
             || FiatPayoutStatuses.NeedsPerson(row.Status)
@@ -600,6 +626,10 @@ public sealed partial class OffRampService : IOffRamp
 
         if (!string.Equals(row.ConnectedAccountId, accountId.Result, StringComparison.Ordinal))
             return await ParkAsync(row, "The payout account changed. Reconcile before sending money.", ct);
+
+        // D-8 rule 5: who pays = who priced, re-derived from the row's own schedule at send time.
+        if (await RefuseUnfundedSendAsync(row, ct) is { } unfunded)
+            return await ParkAsync(row, unfunded, ct);
 
         var manual = await _connect.ConfigureManualPayoutsAsync(
             _fiat.CredentialsFor(_fiat.ActiveEnvironment), accountId.Result!, ct);
@@ -871,7 +901,13 @@ public sealed partial class OffRampService : IOffRamp
         string CurrencyCode,
         decimal UnitsPerMinorUnit,
         string? PriceScheduleId,
-        long PriceScheduleVersion);
+        long PriceScheduleVersion,
+        string ScopeKey,
+        Guid? ScheduleTenantId)
+    {
+        /// <summary>D-8: who pays = who priced. The tenant whose schedule priced this, or null when node-priced.</summary>
+        public Guid? FundingTenantId => PriceScheduleScope.IsNode(ScopeKey) ? null : ScheduleTenantId;
+    }
 
     /// <summary>
     /// Resolves the platform unit and the registered price that converts it back into money —
@@ -936,7 +972,9 @@ public sealed partial class OffRampService : IOffRamp
                 schedule.CurrencyCode,
                 schedule.UnitsPerMinorUnit,
                 schedule.RecordId,
-                schedule.Version),
+                schedule.Version,
+                schedule.ScopeKey,
+                schedule.TenantId),
             "Success");
     }
 
@@ -1026,7 +1064,7 @@ public sealed partial class OffRampService : IOffRamp
         {
             row.UnitsReturnedTransactionId = claim.Record.ResultPayload;
             var repaired = await _reserve.DrawAsync(new ReserveDrawRequest(row.ChainType, row.AssetId,
-                _options.ReservePartition, ReserveDrawKind.Issue, quantity, key, ReserveDrawAuthority.NodeOperator), ct);
+                row.CollectPartition ?? _options.ReservePartition, ReserveDrawKind.Issue, quantity, key, ReserveDrawAuthority.NodeOperator), ct);
             return repaired.IsError ? repaired.Message : null;
         }
         if (claim.Record.State != IdempotencyState.InProgress || claim.Record.OperationType != "fiat-off-ramp-prepared")
@@ -1069,7 +1107,7 @@ public sealed partial class OffRampService : IOffRamp
 
         var draw = await _reserve.DrawAsync(
             new ReserveDrawRequest(
-                row.ChainType, row.AssetId, _options.ReservePartition,
+                row.ChainType, row.AssetId, row.CollectPartition ?? _options.ReservePartition,
                 ReserveDrawKind.Issue, quantity, key,
                 ReserveDrawAuthority.NodeOperator),
             ct);
@@ -1114,7 +1152,10 @@ public sealed partial class OffRampService : IOffRamp
             return FiatEventOutcome.Failed;
         if (read.Result is not { } row)
             return FiatEventOutcome.Ignored;
-        return await BankPayouts.ReconcileAsync(row, accountId, providerPayoutId, ct);
+        var outcome = await BankPayouts.ReconcileAsync(row, accountId, providerPayoutId, ct);
+        if (outcome == FiatEventOutcome.Applied && (await _payouts.GetAsync(payoutId, ct)).Result is { } current)
+            await SyncFundingAsync(current, ct);
+        return outcome;
     }
 
     /// <inheritdoc/>
@@ -1124,8 +1165,12 @@ public sealed partial class OffRampService : IOffRamp
         if (read.IsError || read.Result is not { } row) return AZOAResult<FiatPayout>.Failure(read.Message);
         if (!_fiat.Enabled || row.Environment != _fiat.ActiveEnvironment.Name || row.ChainNetwork != _providerFactory.DefaultNetwork.ToString())
             return AZOAResult<FiatPayout>.Failure("Recovery requires the original enabled payment environment and chain network.");
-        return await new FailedBankPayoutRecovery(_fiat, _payouts, _connect, _clock, RestoreReservedUnitsAsync)
+        var recovered = await new FailedBankPayoutRecovery(_fiat, _payouts, _connect, _clock, RestoreReservedUnitsAsync)
             .RecoverAsync(row, actor, reason, ct);
+        // Critic rule 2: the restitution's transfer reversal gives the tenant back exactly what Stripe returned.
+        if (!recovered.IsError && recovered.Result is { } restored)
+            await SyncFundingAsync(restored, ct);
+        return recovered;
     }
 
     private async Task<string?> RestoreReservedUnitsAsync(FiatPayout row, BigInteger quantity, string key, CancellationToken ct)
@@ -1146,7 +1191,7 @@ public sealed partial class OffRampService : IOffRamp
         row.UpdatedAt = _clock.GetUtcNow();
 
         var saved = await SaveAsync(row, ct);
-        return saved.IsError ? Indeterminate(row, saved.Message) : await BankPayouts.SendAsync(saved.Result!, ct);
+        return saved.IsError ? Indeterminate(row, saved.Message) : await SyncedAsync(await BankPayouts.SendAsync(saved.Result!, ct), ct);
     }
 
     private async Task<AZOAResult<OffRampStepOutcome>> SettleAsync(
@@ -1157,7 +1202,10 @@ public sealed partial class OffRampService : IOffRamp
         row.UpdatedAt = _clock.GetUtcNow();
 
         var saved = await SaveAsync(row, ct);
-        return saved.IsError ? Indeterminate(row, saved.Message) : Definite(saved.Result!);
+        if (saved.IsError)
+            return Indeterminate(row, saved.Message);
+        await SyncFundingAsync(saved.Result!, ct);
+        return Definite(saved.Result!);
     }
 
     private async Task<AZOAResult<OffRampStepOutcome>> ParkAsync(
@@ -1181,10 +1229,11 @@ public sealed partial class OffRampService : IOffRamp
 
     /// <summary>Records the refusal on the row so a person can see what happened and why.</summary>
     private async Task<AZOAResult<CashOutView>> RefuseAsync(
-        FiatPayout row, string reason, CancellationToken ct)
+        FiatPayout row, string reason, CancellationToken ct, string? code = null)
     {
+        // SettleAsync releases a reserved tenant debit: no pay claim exists before the saga runs.
         await SettleAsync(row, FiatPayoutStatuses.Refused, reason, ct);
-        return AZOAResult<CashOutView>.FailureWithCode(reason, AzoaErrorCodes.InvalidRequest);
+        return AZOAResult<CashOutView>.FailureWithCode(reason, code ?? AzoaErrorCodes.InvalidRequest);
     }
 
     /// <summary>Counts one attempt against the bound without moving the row off its status.</summary>

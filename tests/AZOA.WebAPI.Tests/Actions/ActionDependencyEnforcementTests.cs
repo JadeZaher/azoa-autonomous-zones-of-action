@@ -76,15 +76,23 @@ public class ActionDependencyEnforcementTests
         return (manager, actionStore, runStore, action);
     }
 
+    // A dependency must name an action the author can read, so seed one they own.
+    private static Guid SeedDependedOnAction(InMemoryActionStore actionStore, Guid ownerUserId)
+    {
+        var dependedOn = new ActionEntity { Id = Guid.NewGuid(), Name = "DependedOn", UserId = ownerUserId };
+        actionStore.UpsertActionAsync(dependedOn).GetAwaiter().GetResult();
+        return dependedOn.Id;
+    }
+
     // ─── ExecuteAsync (legacy path) ──────────────────────────────────────────
 
     [Fact]
     public async Task ExecuteAsync_UnsatisfiedDependency_RejectsAtStart_NoRunCreated()
     {
-        var (manager, _, runStore, action) = BuildActiveLinearAction();
+        var (manager, actionStore, runStore, action) = BuildActiveLinearAction();
 
         // A cross-action dependency with NO Succeeded run of the depended-on action.
-        var dependedOnActionId = Guid.NewGuid();
+        var dependedOnActionId = SeedDependedOnAction(actionStore, action.UserId);
         await manager.AddDependencyAsync(action.Id, new ActionDependencyCreateModel
         {
             DependsOnActionId = dependedOnActionId
@@ -103,9 +111,9 @@ public class ActionDependencyEnforcementTests
     [Fact]
     public async Task ExecuteAsync_SatisfiedDependency_PassesTheDependencyGate()
     {
-        var (manager, _, runStore, action) = BuildActiveLinearAction();
+        var (manager, actionStore, runStore, action) = BuildActiveLinearAction();
 
-        var dependedOnActionId = Guid.NewGuid();
+        var dependedOnActionId = SeedDependedOnAction(actionStore, action.UserId);
         await manager.AddDependencyAsync(action.Id, new ActionDependencyCreateModel
         {
             DependsOnActionId = dependedOnActionId
@@ -135,9 +143,9 @@ public class ActionDependencyEnforcementTests
     [Fact]
     public async Task StartWorkflowRunAsync_UnsatisfiedDependency_RejectsAtStart_NoRunCreated()
     {
-        var (manager, _, runStore, action) = BuildActiveLinearAction();
+        var (manager, actionStore, runStore, action) = BuildActiveLinearAction();
 
-        var dependedOnActionId = Guid.NewGuid();
+        var dependedOnActionId = SeedDependedOnAction(actionStore, action.UserId);
         await manager.AddDependencyAsync(action.Id, new ActionDependencyCreateModel
         {
             DependsOnActionId = dependedOnActionId

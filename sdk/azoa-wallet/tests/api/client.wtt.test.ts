@@ -38,7 +38,7 @@ it("keeps uint64-scale amounts lossless and replays the exact start under the or
 
 it("exposes then signs only the disclosed participant message and refreshes without signing", async () => {
   const api = new AzoaApiClient({ baseUrl: "https://azoa.example", token: "token" });
-  const stage = { expectedVersion: 7, stageId: "s".repeat(64), expectedStageVersion: 2 };
+  const stage = { expectedVersion: 7, stageId: "b".repeat(64), expectedStageVersion: 2 };
   await api.exposeWttParticipant(operationId, stage);
   const signature: WttParticipantSignatureCommand = { ...stage, signedTransactionBase64: "c2lnbmVk", authorizeSubmission: true };
   await api.acceptWttParticipantSignature(operationId, signature);
@@ -55,7 +55,7 @@ it("exposes then signs only the disclosed participant message and refreshes with
 it("routes cancellation through the request-key fence and cleanup through its own consent", async () => {
   const api = new AzoaApiClient({ baseUrl: "https://azoa.example", token: "token" });
   await api.cancelWtt({ offerId: "offer", offerHash: "h".repeat(64) }, "transfer-1");
-  await api.startWttCleanup(operationId, { expectedVersion: 9, stageId: "r".repeat(64), requestKey: "cleanup-1", maximumNetworkFee: "5000", acceptReturn: true });
+  await api.startWttCleanup(operationId, { expectedVersion: 9, stageId: "c".repeat(64), requestKey: "cleanup-1", maximumNetworkFee: "5000", acceptReturn: true });
   await api.listWtt("638000000000000000", 10);
   expect(fetchMock.mock.calls[0][0]).toBe("https://azoa.example/api/bridge/wtt/operations/cancel");
   expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("transfer-1");

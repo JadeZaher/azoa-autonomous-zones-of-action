@@ -89,6 +89,7 @@ DEFINE FIELD IF NOT EXISTS reversed_base_units ON TABLE on_ramp_lot TYPE string
     DEFAULT ALWAYS "0";
 DEFINE FIELD IF NOT EXISTS reversal_marks_json ON TABLE on_ramp_lot TYPE string
     DEFAULT ALWAYS "{}";
+DEFINE FIELD IF NOT EXISTS pricing_scope_key ON TABLE on_ramp_lot TYPE option<string>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

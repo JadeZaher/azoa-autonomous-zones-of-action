@@ -124,9 +124,9 @@ public class ActionGraphBundleManagerTests
     }
 
     [Fact]
-    public async Task CreateOrUpdateAsync_PUT_DifferentUser_ReturnsForbiddenMarker()
+    public async Task CreateOrUpdateAsync_PUT_DifferentUser_PrivateRecord_ReturnsNotFoundMarker()
     {
-        // PUT IDOR closure: route id resolves to a record owned by a different user -> Forbidden.
+        // PUT IDOR closure: a private record owned by a different user reads as NotFound (no existence oracle).
         var ownerUser = Guid.NewGuid();
         var attackerUser = Guid.NewGuid();
         var existing = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Owned", UserId = ownerUser };
@@ -137,7 +137,7 @@ public class ActionGraphBundleManagerTests
         var result = await _manager.CreateOrUpdateAsync(model, attackerUser, routeId: existing.Id);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.Forbidden);
+        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.NotFound);
         // Crucially -- no upsert was performed.
         _store.Verify(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -193,14 +193,17 @@ public class ActionGraphBundleManagerTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldDelegateToProvider()
+    public async Task DeleteAsync_ByOwner_DelegatesToProvider_AndANullCallerIsRefused()
     {
-        _store.Setup(p => p.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        var owner = Guid.NewGuid();
+        var bundle = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Owned", UserId = owner };
+        _store.Setup(p => p.GetByIdAsync(bundle.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = bundle });
+        _store.Setup(p => p.DeleteAsync(bundle.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<bool> { Result = true });
 
-        var result = await _manager.DeleteAsync(Guid.NewGuid());
-
-        result.Result.Should().BeTrue();
+        (await _manager.DeleteAsync(bundle.Id, userId: null)).IsError.Should().BeTrue("a delete without an acting user fails closed");
+        (await _manager.DeleteAsync(bundle.Id, owner)).Result.Should().BeTrue();
     }
 
     [Fact]
@@ -248,8 +251,11 @@ public class ActionGraphBundleManagerTests
 
         var request = Start();
         var receipt = new DeploymentReceipt("operation", "artifact", "hash", request.Target, "Prepared", "Execute", null, null, [], null, 1);
-        _deployments.Setup(service => service.StartAsync(owner, null, "key", request, default)).ReturnsAsync(AZOAResult<DeploymentReceipt>.Success(receipt));
-        var result = await _manager.DeployAsync(bundle.Id, request, "key", owner);
+        var credential = new AZOA.WebAPI.Models.Signing.SigningCredentialWitness(1, "Jwt", owner, null, null, DateTimeOffset.UtcNow.AddSeconds(-5),
+            DateTimeOffset.UtcNow.AddHours(1), null, null, [], true, TokenUse: AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin);
+        _deployments.Setup(service => service.StartWithCredentialAsync(owner, null, "key", request, credential, default))
+            .ReturnsAsync(AZOAResult<DeploymentReceipt>.Success(receipt));
+        var result = await _manager.DeployAsync(bundle.Id, request, "key", owner, credential: credential);
 
         result.IsError.Should().BeFalse();
         result.Result.Should().Be(receipt);

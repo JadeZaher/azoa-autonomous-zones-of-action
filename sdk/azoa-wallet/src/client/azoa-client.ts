@@ -64,7 +64,7 @@ export interface AzoaClientConfig {
  *   apiUrl: "https://api.azoa.example",
  *   chains: {
  *     algorand: { provider: new AlgorandProvider(cfg) },
- *     solana: { provider: new SolanaProvider(cfg), dex: new JupiterAdapter() },
+ *     solana: { provider: new SolanaProvider(cfg) },
  *   },
  *   sessionStorage: localStorageAdapter,
  * });

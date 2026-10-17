@@ -27,10 +27,10 @@ describe("identity proof and operator recovery contracts", () => {
   it("passes reviewed evidence references without manufacturing a provider decision", async () => {
     const request = { reason: "Reviewed original vendor session", operatorReviewedSubjectAndProvider: true as const,
       confirmedProviderAbsence: false, providerSessionId: "vendor/reference" };
-    await client.reconcileHostedSession("saved-attempt", request);
-    expect(fetchMock.mock.calls[0][0]).toBe("https://azoa.example/api/operator/hosted-sessions/saved-attempt/reconcile");
+    await client.reconcileHostedSession("5aced0a1-7e3b-4c2d-9f10-aabbccddeeff", request);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://azoa.example/api/operator/hosted-sessions/5aced0a1-7e3b-4c2d-9f10-aabbccddeeff/reconcile");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(request);
-    await client.refreshHostedSession("saved-attempt");
+    await client.refreshHostedSession("5aced0a1-7e3b-4c2d-9f10-aabbccddeeff");
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({});
   });
 

@@ -440,9 +440,14 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
                     "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId}",
                     attemptedAction, (int)response.StatusCode, correlationId);
 
-                // 429 and 5xx are the rail being busy; anything else is a request this node built
-                // wrongly or an account the provider will not pay, neither of which a retry fixes.
-                return (int)response.StatusCode is 429 or >= 500
+                // 429 and 5xx are the rail being busy. A 409 or an idempotency_error means another
+                // request under the same key is (or was) in flight, so the outcome is UNKNOWN, never a
+                // refusal (D-8 rule 1). Anything else is a request this node built wrongly or an
+                // account the provider will not pay, neither of which a retry fixes.
+                var idempotencyConflict = (int)response.StatusCode == 409
+                    || (error.RootElement.TryGetProperty("error", out var conflict)
+                        && ReadString(conflict, "type") == "idempotency_error");
+                return (int)response.StatusCode is 429 or >= 500 || idempotencyConflict
                     ? FiatPayoutErrors.RailBusy<T>(correlationId)
                     : FiatPayoutErrors.RailRefused<T>(correlationId);
             }

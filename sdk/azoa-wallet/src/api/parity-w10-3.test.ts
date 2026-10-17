@@ -91,8 +91,13 @@ describe("controller route parity (OI-69)", () => {
       expect(routes.length).toBeGreaterThan(0);
     });
 
-    it("declares exactly the two routes this SDK section depends on", () => {
-      expect(routes).toHaveLength(2);
+    it("declares exactly the four routes this SDK section depends on", () => {
+      expect(routes).toHaveLength(4);
+    });
+
+    it("still exposes the operator retired-row list and resolve where API_PATHS expects them", () => {
+      expect(routes).toContainEqual({ httpMethod: "GET", path: API_PATHS.EXCHANGE_RETIRED_ROWS });
+      expect(routes).toContainEqual({ httpMethod: "POST", path: API_PATHS.EXCHANGE_RETIRED_ROW_RESOLVE("operationId") });
     });
 
     it("still exposes POST {userId} where API_PATHS.EXCHANGE_RUN expects it", () => {

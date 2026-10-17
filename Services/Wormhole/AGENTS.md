@@ -4,7 +4,7 @@ WTT framing follows Wormhole commit `bb5957f321b0a9d168f52e906699ee77baa82a28`, 
 
 `WttVaaCodec` parses structure only. Its output is never a trusted proof or settlement verdict. Guardian membership, authoritative rotation/expiration, quorum, exact expected publication and target on-chain completion are separate mandatory gates. Bytes, addresses and metadata fields remain lossless; protocol uint64 sequences and uint256 quantities cross public JSON boundaries as decimal strings. WTT payload 3 is not accepted as an ordinary transfer.
 
-Normalization truncates source decimals above eight exactly as the bridge does, discloses source dust and normalized fee, and rejects zero after truncation. Target providers must additionally enforce their native amount range and expected origin/representation decimals before source egress. The legacy `WormholeAdapter`/`CrossChainBridgeService` Wormhole mode is not yet retired; `/api/bridge/wtt` is the WTT path and the legacy cutover plus six-route protocol fixtures are carried forward.
+Normalization truncates source decimals above eight exactly as the bridge does, discloses source dust and normalized fee, and rejects zero after truncation. Target providers must additionally enforce their native amount range and expected origin/representation decimals before source egress. The legacy `WormholeAdapter` initiation is retired (round 4): `InitiateTransferAsync` refuses before any source lock because only the WTT journal reads the emitter sequence from the source core-bridge message; the `string.GetHashCode` sequence fabricator is deleted. `IWormholeAdapter` stays registered for `WormholeProtocol` (guardian transport + verifier). `/api/bridge/wtt` and the `wtt` action domain (§Workflow authority) are the WTT paths; the six-route protocol fixtures are L6's.
 
 ## Protected protocol stage keys
 
@@ -12,7 +12,11 @@ Normalization truncates source decimals above eight exactly as the bridge does, 
 
 `WttStageKeyProtector` uses AES-256-GCM with canonical identity/public-key/key-version associated data. Seed buffers are zeroed on success and failure. The versioned `Wtt:StageKeys` configuration is independent of wallet encryption: `ActiveKeyId` names one key in `Keys`, whose values are base64 32-byte secrets supplied outside source control. Old decrypt versions remain configured until every retained envelope is CAS-rewrapped. `WttStageKeyReadiness` rejects any unavailable referenced version before WTT activation; retention is conservative even for completed operations. A config file edit is not permission to discard an old encryption secret. Multi-host rollout must retain old versions on every host until all old writers stop and the readiness/rewrap audit succeeds.
 
-The protector itself grants no signing authority. It is an internal encryption primitive, never a controller/SDK secret-export surface. Only the custody-bound vault is used for provider key creation/signing; rewrap is an operator maintenance path and does not authorize protocol egress. DI registration is in `Program.cs`; schema generation, a startup `WttStageKeyReadiness` gate and rewrap maintenance orchestration remain open.
+The protector itself grants no signing authority. It is an internal encryption primitive, never a controller/SDK secret-export surface. Only the custody-bound vault is used for provider key creation/signing; rewrap is an operator maintenance path and does not authorize protocol egress.
+
+**Readiness degrades, never blocks startup (owner default, round 4).** An absent or invalid `Wtt:StageKeys` keyring no longer throws from the singleton constructor: `IsConfigured` is false, every protect/use refuses, and the vault returns a degraded error instead of a 500. `WttStageKeyReadinessWorker` runs `WttStageKeyReadiness.CheckAsync` at startup and every five minutes and publishes the verdict to the singleton `WttStageKeyReadinessState`; until the first verdict the state is unknown and treated as degraded. While degraded, `WttLifecycleService` refuses new quotes and admissions (`DependencyUnavailable`) on any route whose source or target module implements the `IWttStageKeyModule` marker (Solana today); other routes and every existing operation's observation/proof/settlement continue. `Degraded` means unconfigured, or a retained envelope references a version missing from this host's keyring (`UnreadableEnvelopeId`).
+
+Rotation runbook: add the new key and make it `ActiveKeyId` on every host while keeping the old one → `POST /api/operator/wtt/stage-keys/rewrap` (one bounded batch of 100 exact-envelope CAS rewraps onto the active key; repeat until `rewrapPending` is false) → `GET /api/operator/wtt/stage-keys/readiness` → only then remove the old key everywhere. `EnsureReadyAsync` remains the retirement precondition.
 
 ## Authoritative guardian state
 
@@ -45,19 +49,18 @@ Neither ever signs, quotes a new economic effect or creates a generation.
   Cancellation by request key writes a tombstone that a delayed admission returns instead of
   consuming the offer. Relayer fees are refused (the platform redeems its own transfers, so a fee
   would only pay a front-runner). Under a tenant credential the recipient must be one of the user's
-  own key-custodied wallets on the target chain, proven by `IKeyCustodyService.CanSignAsync` (owned,
-  `Platform`, ciphertext held) rather than the wallet type: `POST /api/wallet` always registers an
-  `External` wallet, and only custody generation or tenant bootstrap creates `Platform` rows.
-  Connected external wallets carry no ownership proof, and paying someone else stays under
+  own wallets on the target chain (§Recipient rule): custody held per `IKeyCustodyService.CanSignAsync`
+  (owned, `Platform`, ciphertext held) rather than the wallet type — `POST /api/wallet` always
+  registers an `External` wallet and only custody generation or tenant bootstrap creates `Platform`
+  rows — or an `External` wallet with a verified ownership signature. Paying someone else stays under
   `transfer:sign`. Direct user credentials may name any recipient. Reads (get/lookup/list/refresh
   and read-only offers) need a WTT scope.
 - **Participant consent model.** Custody signs only stage-payer wire under that payer's scope; a
   participant step (target asset opt-in, native output) is always the recipient's own client
   signature, and custody never signs as another wallet. A quote is therefore refused when the
   recipient is one of the user's custodial wallets and the route needs such a step: any native
-  output, or an opt-in for a recipient other than the target payer. (A different user's custodial
-  recipient cannot be detected without an address index; that route still waits on a signature
-  only its owner's custody could give, and the VAA stays redeemable.)
+  output, or an opt-in for a recipient other than the target payer. Another user's custodial
+  recipient is refused the same way through `IWttRecipientDirectory` (§Recipient rule).
 - **Cancellation fence.** The store refuses cancellation once any sent or disclosed source
   `Transfer` attempt is not provably without effect (`FailedOnChain`/`ExpiredNoEffect`), while a
   cleanup stage is current, or after the source publication is recorded. Confirmed prerequisites
@@ -113,6 +116,68 @@ Neither ever signs, quotes a new economic effect or creates a generation.
 - **Cleanup.** A residual return may start from `Ready`, `AwaitingProof` or `Settled`; the journal
   records `ResumeState` and restores it when the cleanup stage resolves, so a settled transfer stays
   settled.
+
+## Recipient rule
+
+A direct (owner) credential may name any recipient. Under a tenant credential (owner decision: the
+user's own wallets only, relayer fee `"0"`), the recipient must be one of the actor's own wallets on
+the target chain: key custody actually held (`Platform` + `IKeyCustodyService.CanSignAsync`), or an
+`External` wallet whose ownership a verified signature challenge proved (`IWalletOwnershipProof`; the
+registered `NoWalletOwnershipProof` is fail-closed until L4's persisted proof flag replaces it in place).
+A route needs a **participant step** when it unwraps native output or the recipient is not ready and is
+not the target payer. Such a route is refused at quote when the recipient is custodial (custody never
+signs as a recipient), when the caller is a tenant or a workflow (neither can produce a recipient's own
+signature; the fence refuses `Participant`/`NativeOutput` for tenant and action-bound intents too), and
+when `IWttRecipientDirectory` reports the address is another user's key-custodied wallet (only that
+user's custody could sign; Algorand recipients must opt in before anyone can redeem). The directory
+compares exact canonical addresses, which is correct for the only participant-step chains (Algorand,
+Solana); a `(chain_type, address)` wallet index is requested from L4 for the lookup.
+
+## Workflow authority
+
+Bridge and Back nodes with a `wtt` config object run on the `wtt` action domain
+(`Services/Actions/WttActionResolver.cs`). The node identity fixes the request key
+`action:{run}:{node}:wtt` (direct callers cannot quote, start or cancel with an `action:` key), so the
+operation id exists before any quote. The resolver quotes and admits under the node's frozen
+`WorkflowSigningWitness`, which must have selected exactly `wtt:source:sign` + `wtt:target:sign` (+
+`action:execute`). The operation stores `ActionRunId`/`ActionNodeId`/`ActionIntentHash`; from then on
+`WttSigningAuthorityFence` accepts only that node's `Workflow` authority for Source/Target, proving
+every grant plus `ActionExecutionFence` (run still Running, frozen input unchanged) inside each claim
+and first-send transaction, and refuses direct authority. Workflow routes never carry a participant
+step and never sign cleanup (residual return stays a fresh direct-owner action). The resolver only
+continues with `AuthorizeSubmission`, reconciles finality/proof without signing, and reports
+`Succeeded` with a `WttActionOutput` (Back binds its `ReturnOfOperationId` to the Bridge node's
+`operationId`), `Cancelled`, `Ambiguous` (NeedsOperator or lost authority) or `Pending`. A disabled or
+missing route module fails the node before any quote. A cancelled run leaves an unsent admitted
+operation inert (no effect); a sent one keeps reconciling. Graph authors choose the recipient; under a
+tenant run credential the recipient rule above still applies.
+
+## Operation exits
+
+- **Exposed participant never signs.** Recovery observes an `Exposed`, never-authorized participant
+  stage through `ObserveExposedWttParticipantAsync` / `ObserveExposedWttNativeOutputAsync`.
+  `ExpiredNoEffect` carries an absence proof past the exact message's validity (Algorand: txid absent
+  from the indexer past `lastValid` with the finalized expiry block; Solana: the Jupiter
+  full-finalized-ancestry scan adapted to the exact message bytes, resumable eight blocks per pass with
+  its cursor stored in the stage observation) and resolves the stage so Continue issues generation+1.
+  `Landed` means the participant broadcast their own exact signature: the provider recovers it, the
+  ordinary acceptance path validates it, and the stage becomes `SubmissionAuthorized` with that
+  signature as its authority, after which normal observation decides. Cancellation stays refused while
+  exposed.
+- **Publication mismatch.** A confirmed source Transfer whose publication is not attributed parks
+  `NeedsOperator`. If the stage itself is `NeedsOperator`, operator `reconcile` re-observes and records
+  the atomic completion once the provider returns an attributed publication. If a legacy journal
+  parked with the Transfer already `Confirmed`, operator `resume-proof` re-observes it read-only and
+  moves to `AwaitingProof` only with an exactly attributed publication; nonce/consistency drift stays
+  refused because proof binding requires the frozen values.
+- **Tenant-started operation after revocation.** `POST /api/bridge/wtt/operations/{id}/owner-takeover`
+  (direct owner credential, `wtt:target:sign` on the frozen target payer) records `OwnerIntentJson`:
+  the admitted intent with the tenant removed and both payer contexts rebound to the owner. Allowed
+  only in `Ready`/`Target` with a verified proof and no target stage ever sent or disclosed; it clears
+  the admitted target quote. Economics, deployments, recipient and the body claim are unchanged; the
+  projection keeps the consented intent. New stages quote and sign under the owner intent's hash (stage
+  rows keep the admitted `IntentHash` as journal identity; `IntentFor` replays each stage under the
+  intent its quote bound). The tenant is locked out of further signing.
 
 ## Guardian transport
 

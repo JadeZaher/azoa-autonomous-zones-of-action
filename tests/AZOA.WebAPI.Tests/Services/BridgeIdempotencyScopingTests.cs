@@ -20,6 +20,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 /// <summary>
@@ -145,7 +147,8 @@ public class BridgeIdempotencyScopingTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
     }
 
     // ─── Test 8: Two users, same client key → distinct claim keys ──────────

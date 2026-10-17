@@ -203,13 +203,41 @@ The guard is called on every `ParentHolonId` write path:
 | `InteractAsync` | `request.NewParentHolonId.HasValue` — full cycle check |
 | `MoveSubtreeAsync` | always — full cycle check (original precedent) |
 
-If you add a new `ParentHolonId` write path, call `EnsureNotDescendantAsync`
-before persisting.
+If you add a new `ParentHolonId` write path, call `EnsureOwnedParentAsync` and then
+`EnsureNotDescendantAsync` before persisting (see §holon-owned-parent).
 
-`CloneAsync` (`HolonManager.cs:~359`) is the one intentionally-unguarded
-`ParentHolonId` write: it assigns a fresh `Guid.NewGuid()` as both the clone's
-`Id` and the new tree root, so no existing holon is named as parent and no cycle
-is reachable. No guard call is needed or correct there.
+`CloneAsync` needs no cycle guard: the clone root is a fresh id, so no existing
+holon can be its descendant. Its `NewParentId` still goes through the owned-parent
+check.
+
+## §holon-owned-parent — a holon hangs only under its owner's holons (round 4, audit-2 H1/M6)
+
+A holon tree is an ownership boundary. Three rules keep one user's writes out of
+another user's tree:
+
+1. **Owned parent.** Every `ParentHolonId` write — `CreateAsync`, `UpdateAsync`,
+   `InteractAsync` (when the parent changes), `MoveSubtreeAsync`, `CloneAsync`
+   (`NewParentId`) — calls `EnsureOwnedParentAsync`: the proposed parent must exist
+   AND be owned by the caller, else `"Parent holon not found."`. Public is not
+   enough: hanging a holon under someone else's public tree would put it in their
+   children/descendant walks and, before rule 2, in reach of their propagate.
+   `UpdateAsync`/`InteractAsync` skip the check when the parent is unchanged so a
+   legacy row is still editable. Ownership is settled before the cycle walk, so a
+   refusal never reveals subtree shape.
+2. **Owned writes only.** `PropagateAsync` walks the whole subtree (a legacy foreign
+   child may sit in it) but writes only holons the caller owns, and plans every
+   write before the first one — an election projection anywhere in the plan
+   refuses the whole call instead of leaving a half-propagated tree.
+3. **Readable copies only.** `CloneAsync` with `IncludeSubtree` copies a descendant
+   only when `CanRead(child, caller)` (owner or public, the same rule as
+   `GetDescendantsAsync`). An unreadable child is skipped together with its branch:
+   its clone would have no parent, and its public grandchildren are reachable only
+   through it. The plan is built in full before any upsert.
+
+Mutation refusals use `OwnershipRefusal`: a holon the caller cannot read answers
+`"Holon not found."` (the store's own miss sentence), a readable foreign one
+`"Holon is owned by a different user."`. `UpdateAsync`/`DeleteAsync` fail closed on
+a null acting user like the other mutators; every in-repo caller passes one.
 
 ## §holon-publication — IsPublic is an allow-list, not a toggle (D20)
 
@@ -415,9 +443,13 @@ error results so an anonymous caller cannot mine infrastructure details.
 ## §action-dependency-enforcement
 
 **final-hardening F4 — dependencies are ENFORCED at run start (fail-closed).**
-`ActionManager.CheckDependencySatisfactionAsync(action)` is the single source of truth for
-what "satisfied" means: each `ActionDependency` is satisfied iff the depended-on action has
-≥1 `Succeeded` run. It takes an ALREADY-AUTHORIZED action and does NO ownership scoping.
+`ActionManager.CheckDependencySatisfactionAsync(action, runnerUserId)` is the single source
+of truth for what "satisfied" means: each `ActionDependency` is satisfied iff the depended-on
+action has ≥1 `Succeeded` run **by the runner or by the action's owner** (round 4). Counting
+anyone's run made `GET /{id}/dependency-status` an oracle on other users' activity and let a
+stranger's success open a gate meant for the runner. It takes an ALREADY-AUTHORIZED action.
+`AddDependencyAsync` refuses a depended-on action the caller cannot read (owner or public)
+with `"Depended-on action not found."`, and a `DependsOnNodeId` absent from that action.
 Two callers:
 - `CheckDependenciesAsync(actionId, userId)` — the public manual-check endpoint —
   OWNER-scopes first (`LoadOwnedActionAsync`, IDOR) then delegates.
@@ -761,6 +793,14 @@ Three decisions are worth stating, because each is easy to undo by accident.
    that to the caller to alert on. The sweep never fails, cancels or force-completes a run: a
    value movement whose outcome is unknown is a question for a person, not for a timer.
 
+**Response shape (round 4, route contract §4.9).** `POST /api/action/runs/reconcile-sweep`
+returns `AZOAResult<ActionReconciliationSweepResult>` = `{ scanned, results, errors,
+hardStuck }`. The old body was the bare results list with a "Swept N run(s)" message, so a
+sweep that saw nothing (the enum-casing read bug, F-C6) or whose every re-probe faulted
+reported success. `scanned` is the honesty signal: `0` means nothing was parked, and the
+message says so; `errors` counts re-probes that faulted (those runs stay parked). Only a
+failed listing is `IsError`.
+
 One behaviour change worth knowing at the call site: `SweepReconciliationAsync` caps at
 `DefaultParkedRunBatchSize` (500) runs per call where it was previously unbounded. An operator
 draining a backlog larger than that calls it repeatedly; the background tick drains the rest
@@ -802,3 +842,42 @@ ordinary self-service KYC retains its actual-user controller authority. Final
 response validation is retained after reads/effects so historical provisioning
 identity cannot reveal a claimed user's current wallet or KYC state. Existing
 remote effects are accounted independently of later consent revocation.
+
+## §action-read-scope — action/template refusals are not existence oracles (round 4)
+
+`ActionManager` answers a foreign or missing resource with one sentence per kind, so a
+caller cannot tell "exists but not yours" from "absent":
+
+- **Actions.** `GetAsync`, `LoadOwnedActionAsync` and `LoadStartableActionAsync` answer
+  `"Action not found."` for a missing action and for a private foreign one (store miss
+  messages carry the id, so they are not passed through). A PUBLIC foreign action is
+  readable, so an owner-only mutation on it may say `"Action is owned by a different user."`
+  (`OwnershipRefusal`).
+- **Runs.** Never public: `LoadOwnedRunAsync` answers `"Action run not found."` for both.
+- **DAG validation.** `POST /{id}/validate` uses the owner-scoped
+  `ValidateDAGAsync(actionId, userId)`: validation persists `ExecutionOrder`, so it is a
+  write. The unscoped overload stays for the run-start path (already authorized) and the
+  MCP author tool (operates on its own just-created draft).
+- **Templates.** `GetTemplateAsync`/`ListTemplatesAsync`/`ListNodeTemplatesAsync` apply the
+  owner-or-public rule (`CanReadAuthored`). `InstantiateTemplateAsync` reads the template
+  as the caller, then resolves node templates as the **template author** could read them, so
+  a public template cannot lift another author's private node-template config.
+- **Authoring policy.** Every action write route (nodes, edges, dependencies, validate,
+  publish/unpublish, template instantiate) carries `DappDevelop`, matching create/update/
+  delete. Runner routes (execute, start-workflow, fork, signal, advance, reconcile) do not:
+  a marketplace runner is not a developer.
+
+`DappCompositionManager` follows the same rule: a foreign series answers the store's own
+`"DappSeries {id} not found."`, a foreign action in `AddActionAsync` reads like a missing
+one, and holon-binding validation counts a holon as resolved only when the series owner may
+read it. `ActionGraphBundleManager.OwnershipRefusal` answers NotFound for a bundle the caller
+cannot read and Forbidden only for a readable (public) foreign one; a null acting user is
+refused on every mutation.
+
+## §caller-built operations (M9, round 4)
+
+`BlockchainOperationManager.BuildAndExecuteAsync` serves the holon `mint`/`exchange` routes, which build an operation
+from caller input. It refuses `Mint` and `Exchange` before any claim, row or provider call: user NFT mints go through the
+NFT lifecycle (mint checks, fee/cost consent, the user's own key) and exchanges through the reserve exchange; the
+platform key never creates an ASA for a caller-built request. Reads through `BlockchainOperationController` show a
+tenant-acting caller only operations that tenant drove.
