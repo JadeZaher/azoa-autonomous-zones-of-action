@@ -590,7 +590,7 @@ public sealed class KycManager : IKycManager
             (docs.Result ?? Enumerable.Empty<KycDocument>()).Select(ToDocumentModel).ToList());
     }
 
-    // â”€â”€ Admin surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Admin surface ─────────────────────────────────────────────────────────
 
     public async Task<AZOAResult<IEnumerable<KycSubmissionModel>>> GetPendingAsync(CancellationToken ct = default)
     {
@@ -747,7 +747,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(saved.Result, tenantId, ct);
     }
 
-    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Loads a submission by id and asserts the authenticated user owns it.

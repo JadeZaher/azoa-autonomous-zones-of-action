@@ -405,7 +405,7 @@ public sealed partial class SurrealKycStore : IKycStore, IKycCustodialAdmissionS
             : persisted;
     }
 
-    // â”€â”€ Documents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Documents ───────────────────────────────────────────────────────────
 
     /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<KycDocument>>> GetDocumentsBySubmissionAsync(Guid submissionId, CancellationToken ct = default)
@@ -427,7 +427,7 @@ public sealed partial class SurrealKycStore : IKycStore, IKycCustodialAdmissionS
         return AZOAResult<bool>.Success(true);
     }
 
-    // â”€â”€ Mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Mapping ───────────────────────────────────────────────────────────────
 
 
     /// <summary>

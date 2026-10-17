@@ -48,7 +48,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         _logger = logger ?? NullLogger<SurrealKycScreeningStore>.Instance;
     }
 
-    // â”€â”€ Results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Results ─────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
     public async Task<AZOAResult<KycScreeningResult>> SaveResultAsync(
@@ -112,7 +112,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
             rows.Select(FromStorage).ToList());
     }
 
-    // â”€â”€ Monitors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Monitors ────────────────────────────────────────────────────────────
 
     /// <inheritdoc />
     public async Task<AZOAResult<KycScreeningMonitor>> SaveMonitorAsync(
@@ -265,7 +265,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         return AZOAResult<bool>.Success(true);
     }
 
-    // â”€â”€ Retention + erasure (D25) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Retention + erasure (D25) ───────────────────────────────────────────
 
     /// <inheritdoc />
     public async Task<AZOAResult<int>> EraseSubjectAsync(
@@ -364,7 +364,7 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         return AZOAResult<int>.Success(erased, "Erased.");
     }
 
-    // â”€â”€ Poll state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Poll state ──────────────────────────────────────────────────────────
 
     /// <inheritdoc />
     public async Task<AZOAResult<KycScreeningPollState>> GetPollStateAsync(CancellationToken ct = default)
