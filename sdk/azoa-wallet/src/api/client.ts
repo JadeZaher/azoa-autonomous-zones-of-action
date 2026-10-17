@@ -2024,6 +2024,8 @@ export interface FiatReversalView {
   openedAt: string;
   resolvedAt: string | null;
   reinstatedAt: string | null;
+  /** Attempt-suffixed key of a move whose outcome is ambiguous; set while the reversal is parked on it. */
+  pendingMoveKey?: string | null;
 }
 
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───

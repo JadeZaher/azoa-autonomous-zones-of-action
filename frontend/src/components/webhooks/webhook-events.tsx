@@ -117,7 +117,7 @@ function EventList({ userId, operatorTenantId, family = 'action' }: PanelProps) 
   }
   return <section className="space-y-3 rounded-lg border p-4" aria-label={family === 'consent' ? 'Consent webhook deliveries' : 'Webhook deliveries'}>
     <h3 className="font-semibold">{family === 'consent' ? 'Consent webhook deliveries' : 'Webhook deliveries'}</h3>
-    <p className="text-sm text-muted-foreground">Retry a stopped delivery after fixing the receiver. Its original destination must still be active. Lifetime attempts remain recorded.</p>
+    <p className="text-sm text-muted-foreground">Retry a delivery that stopped (dead-lettered, out of attempts, or abandoned mid-attempt) after fixing the receiver. Its original destination must still be active. Lifetime attempts remain recorded.</p>
     {error && <p role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
     {saved && <div className="space-y-2"><p>Saved retry for {saved.eventId}</p>
@@ -129,7 +129,7 @@ function EventList({ userId, operatorTenantId, family = 'action' }: PanelProps) 
       <p>{row.eventType}: {row.status}</p><p className="break-all text-sm">{row.eventId}</p>
       <p className="text-sm">Attempts: {row.attemptCount}; this cycle: {row.cycleAttemptCount}; retries: {row.retryGeneration}</p>
       {row.errorCode && <p>{row.errorCode}</p>}
-      {row.status === 'DeadLettered' && <Button disabled={busy || !ready || !!saved || row.attemptInFlight || reason.trim().length < 10}
+      {row.retryable && <Button disabled={busy || !ready || !!saved || row.attemptInFlight || reason.trim().length < 10}
         onClick={() => void run(() => start(row))}>Retry delivery</Button>}
     </li>)}</ul>
     <div className="flex gap-2">

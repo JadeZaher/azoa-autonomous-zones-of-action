@@ -5,7 +5,7 @@
 // re-probe is POST /api/action/runs/reconcile-sweep, which observes settlement truth and NEVER re-sends.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
-import type { SagaStepView, WorkflowReconciliationResult } from 'azoa-sdk'
+import type { SagaStepView, WorkflowReconciliationSweep } from 'azoa-sdk'
 import { toast } from 'sonner'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,6 +18,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { ErrorBanner } from '@/components/shared/error-banner'
+import { describeSweep } from '@/lib/operator-honesty'
 import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
 
 /** The durable saga every action run maps onto (`ActionWorkflowSaga.Name`). */
@@ -25,9 +26,6 @@ const ACTION_SAGA_NAME = 'action-workflow'
 
 /** Gate-id prefix the step handler parks a run under (`recon:{nodeId}`). */
 const RECONCILE_GATE_PREFIX = 'recon:'
-
-/** Operator sweep route (ActionController). Not yet a typed SDK method, so it goes through the raw request seam. */
-const RECONCILE_SWEEP_PATH = '/api/action/runs/reconcile-sweep'
 
 /** Mirrors the server default (ReconciliationOptions.OperationHardStuckAfterSeconds = 3600). */
 const DEFAULT_HARD_STUCK_MINUTES = 60
@@ -89,8 +87,8 @@ function groupParkedRuns(steps: SagaStepView[], hardStuckMinutes: number, now: n
   return rows.sort((a, b) => b.ageMinutes - a.ageMinutes)
 }
 
-function SweepSummary({ results }: { results: WorkflowReconciliationResult[] }) {
-  const totals = results.reduce(
+function SweepSummary({ sweep }: { sweep: WorkflowReconciliationSweep }) {
+  const totals = sweep.results.reduce(
     (acc, r) => ({
       confirmed: acc.confirmed + r.reconciledConfirmed,
       released: acc.released + r.releasedFailedOnChain,
@@ -98,31 +96,26 @@ function SweepSummary({ results }: { results: WorkflowReconciliationResult[] }) 
     }),
     { confirmed: 0, released: 0, unresolved: 0 },
   )
-  const stillParked = results.filter(r => r.status === 'AwaitingReconciliation').length
+  const verdict = describeSweep(sweep)
 
   return (
-    <Card className={stillParked > 0 ? 'border-destructive/40 bg-destructive/5' : 'border-primary/40 bg-primary/5'}>
+    <Card className={verdict.tone === 'ok' ? 'border-primary/40 bg-primary/5' : 'border-destructive/40 bg-destructive/5'}>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
-          {stillParked > 0
-            ? <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
-            : <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />}
-          <CardTitle className="text-sm">
-            Re-probe finished — {results.length} run{results.length === 1 ? '' : 's'} checked
-          </CardTitle>
+          {verdict.tone === 'ok'
+            ? <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
+            : <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />}
+          <CardTitle className="text-sm">{verdict.title}</CardTitle>
         </div>
-        <CardDescription>
-          {stillParked > 0
-            ? `${stillParked} run(s) are still waiting: the settlement outcome could not be established, so nothing was re-sent.`
-            : 'Every checked run had a definite settlement outcome and has resumed.'}
-        </CardDescription>
+        <CardDescription>{verdict.detail}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+          <div><div className="text-muted-foreground text-xs">Scanned</div><div className="font-medium">{sweep.scanned}</div></div>
           <div><div className="text-muted-foreground text-xs">Confirmed</div><div className="font-medium">{totals.confirmed}</div></div>
           <div><div className="text-muted-foreground text-xs">Released to retry</div><div className="font-medium">{totals.released}</div></div>
           <div><div className="text-muted-foreground text-xs">Still unresolved</div><div className="font-medium">{totals.unresolved}</div></div>
-          <div><div className="text-muted-foreground text-xs">Still waiting</div><div className="font-medium">{stillParked}</div></div>
+          <div><div className="text-muted-foreground text-xs">Errors / hard-stuck</div><div className="font-medium">{sweep.errors} / {sweep.hardStuck}</div></div>
         </div>
       </CardContent>
     </Card>
@@ -137,7 +130,7 @@ export default function ParkedRunsConsolePage() {
   const [loading, setLoading] = useState(false)
   const [sweeping, setSweeping] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [sweepResults, setSweepResults] = useState<WorkflowReconciliationResult[] | null>(null)
+  const [sweep, setSweep] = useState<WorkflowReconciliationSweep | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
   const fetchParked = useCallback(async () => {
@@ -173,11 +166,13 @@ export default function ParkedRunsConsolePage() {
   const runSweep = useCallback(async () => {
     setSweeping(true)
     try {
-      const res = await azoa.api.request<WorkflowReconciliationResult[]>('POST', RECONCILE_SWEEP_PATH)
+      const res = await azoa.api.reconcileParkedRuns()
       if (isOk(res)) {
-        const results = res.value ?? []
-        setSweepResults(results)
-        toast.success(`Re-probed ${results.length} waiting run${results.length === 1 ? '' : 's'}`)
+        setSweep(res.value)
+        const verdict = describeSweep(res.value)
+        if (verdict.tone === 'ok') toast.success(verdict.title)
+        else if (verdict.tone === 'bad') toast.error(verdict.title)
+        else toast.warning(verdict.title)
         await fetchParked()
       } else {
         toast.error(res.error.message)
@@ -258,7 +253,7 @@ export default function ParkedRunsConsolePage() {
 
       {error && <ErrorBanner message={error} onRetry={fetchParked} />}
 
-      {sweepResults && <SweepSummary results={sweepResults} />}
+      {sweep && <SweepSummary sweep={sweep} />}
 
       <Card>
         <CardHeader className="pb-3">
@@ -286,7 +281,7 @@ export default function ParkedRunsConsolePage() {
               </TableHeader>
               <TableBody>
                 {rows.map(row => {
-                  const outcome = sweepResults?.find(r => r.runId === row.runId)
+                  const outcome = sweep?.results.find(r => r.runId === row.runId)
                   return (
                     <TableRow key={row.runId} className={row.hardStuck ? 'bg-destructive/5' : undefined}>
                       <TableCell className="max-w-[10rem] truncate font-mono text-[11px]" title={row.runId}>

@@ -34,6 +34,10 @@ import {
   Undo2,
   Banknote,
   Scale,
+  ShieldCheck,
+  PiggyBank,
+  HandCoins,
+  Landmark,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -95,6 +99,16 @@ const navGroups: NavGroup[] = [
       { href: '/holons', label: 'Holons', icon: Box },
       { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
       { href: '/business-verification', label: 'Business verification', icon: BadgeCheck },
+    ],
+  },
+  {
+    label: 'Money',
+    audience: 'all',
+    items: [
+      { href: '/verify-identity', label: 'Verify identity', icon: ShieldCheck },
+      { href: '/funds', label: 'Add funds', icon: PiggyBank },
+      { href: '/cash-out', label: 'Cash out', icon: HandCoins },
+      { href: '/payout-balance', label: 'Payout balance', icon: Landmark },
     ],
   },
   {
