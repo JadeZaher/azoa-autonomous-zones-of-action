@@ -3,6 +3,7 @@
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Sagas;
+using SurrealForge.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -44,8 +45,8 @@ public sealed record FiatPayoutView(
             row.Id,
             row.Status,
             row.StatusReason,
-            row.SubjectUserId,
-            row.TenantId,
+            SurrealLink.FromLink(row.SubjectUserId)!,
+            SurrealLink.FromLink(row.TenantId),
             row.AmountMinorUnits,
             row.CurrencyCode,
             row.QuantityBaseUnits,
@@ -57,7 +58,7 @@ public sealed record FiatPayoutView(
             row.ProviderTransferId,
             row.UnitsCollectedTransactionId,
             row.UnitsReturnedTransactionId,
-            row.ReversalId,
+            SurrealLink.FromLink(row.ReversalId),
             row.AttemptCount,
             row.RequestedAt,
             row.UnitsCollectedAt,
