@@ -20,13 +20,20 @@ export default function OperatorWalletIdentitiesPage() {
   async function clear() {
     if (!data || !selected) return
     setNotice(null)
-    const result = await mutation.run<WalletIdentityMigrationView>('wallet-identities/clear-conflicting-binding', 'POST',
+    // The node answers `AZOAResult<bool>`; the updated status comes from re-reading the view.
+    const cleared = await mutation.run<boolean>('wallet-identities/clear-conflicting-binding', 'POST',
       { version: data.version, userId: selected.userId, expectedIdentity: selected.expectedIdentity, reason: reason.trim() })
-    if (!result) return
-    setNotice(`Cleared. Migration is ${result.status} with ${result.conflicts.length} conflict(s) left.`)
+    if (cleared === null) return
+    if (cleared !== true) {
+      mutation.setError('The node did not confirm the binding was cleared. Refresh and check the conflict list.')
+      return
+    }
     setSelected(null)
     setReason('')
-    await reload()
+    const view = await reload()
+    setNotice(view
+      ? `Cleared. Migration is ${view.status} with ${view.conflicts.length} conflict(s) left.`
+      : 'Cleared. The updated migration status could not be read; refresh to check it.')
   }
 
   return (
