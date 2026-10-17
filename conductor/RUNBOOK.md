@@ -90,8 +90,11 @@ static-review verdict, not runtime proof.
     + stale index) → WP2–WP12 in parallel → sweep. **Coverage gap:** its fail-closed SurrealQL sweep
     (binding names, strict validator, array captures, positional offsets, 3.x syntax) never reported,
     so round 4 must re-run it.
-  - reconciled `round4-plan.md` — being written by an opus planner (then an adversarial critic review,
-    then owner decisions in one round).
+  - reconciled `round4-plan.md` — drafted; adversarial critic **REJECT with 9 targeted changes**
+    (liveness CRITICALs uncovered; `Program.cs` DI order can silently bypass `RiskHoldValueGate`;
+    post-podman prerequisites; W1-vs-W0 race; SurrealQL re-sweep to W1; security-review gaps; unowned
+    files). Owner decisions taken (§3 Round 4). Plan being revised around the compact executor-lane
+    model; then a short critic re-review.
   - optimism-challenge assessment → `.../round4-assessment-optimism.md` — **DONE 2026-10-17.** Headlines:
     "KYC/KYB set up", "Stripe complete", "exactly-once" and "lanes A/C closed" are not yet true (KYC
     stores and WTT quotes don't compile; `OffRampService.cs:452` uses an undeclared `requestedQuantity`;
@@ -143,6 +146,20 @@ Full evidence for every row, with file:line, is in the [join ledger](tracks/plat
   stay with the owner.
 - **`IsUniqueViolation` becomes public; the release ships as 1.3.0** (new public API → minor).
 - **Runbook rewritten lean** (this file); old one in git.
+
+**Round 4 (2026-10-17):**
+- **SurrealForge 1.3.0 published final by the owner** (final commit `b5a7d52`; integration 47/47 on
+  3.2.4/3.1.4 × memory/RocksDB, 1202 unit). Any sweep-found library bug becomes a 1.3.1 the owner
+  publishes. No local-pack/rc machinery.
+- **Compile-only builds per lane are allowed** (`dotnet build` / `tsc` / SDK build). Tests, lint gates,
+  schema goldens and E2E still run once in the integrated sweep.
+- **`AwaitingSignature` gets a submit-signed route** (exact-byte verification against the saved plan →
+  broadcast → reconcile to terminal; idempotency key leaves `InProgress`).
+- **Execution model:** ~5–7 large executor lanes, each in its own git worktree with full permissions,
+  doing implementation + compile-check + its own self-review/fix loop, and merging its own branch into
+  `feat/platform-stub-closeout` (ordered merges; rebase + compile clean before merging; `--no-ff`;
+  never push or force). Then **one comprehensive independent review** (correctness + transaction scope,
+  security, test quality) → one fix batch → the integrated sweep. Replaces per-lane reviewers.
 
 **Standing decisions from the prior runbook that still bind** (full text: `git show 0522fdf:conductor/RUNBOOK.md`):
 - **D8** — Identomat callback is an untrusted trigger; `/result/` is the only authority.

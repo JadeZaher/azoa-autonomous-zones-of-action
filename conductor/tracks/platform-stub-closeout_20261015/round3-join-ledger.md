@@ -130,6 +130,10 @@ Liveness dead-end sweep (actions / sagas / webhooks / reconciliation / blockchai
 - **HIGH — outbound webhook delivery is inert everywhere:** `WebhookOptions.Enabled` defaults false with no override (`Services/Webhooks/WebhookOptions.cs:29`; `docker-compose.e2e.yml:111` explicit false), and the due-scan (`SurrealActionWebhookDeliveryStore.cs:18-24`, consent equivalent) uses the same enum filter; manual retry only accepts `DeadLettered`, which only the dead worker produces.
 - **MEDIUM:** no frontend for the generic saga dead-letter console (`/api/admin/sagas/dead-letters`). **LOW / UNVERIFIED:** tenant-delegated `NeedsParticipantAuthorization` resumption after consent expiry; `NodeFeeSettlementRecoveryWorker` reportedly unreferenced (peer-reported, not verified).
 
+SurrealForge 1.3.0 final review (`2067ae4..ba0783b`, 2026-10-17): **PUBLISH**. Integration 47/47 on 3.2.4 + 3.1.4 × memory + RocksDB. Follow-ups for AZOA round 4:
+- **Converter-less enums (pre-existing, documented in SurrealForge AGENTS.md):** `SurrealWriter` stores `e.ToString()` while typed reads bind camelCase, so a typed filter misses writer-written rows. AZOA exposure: `NodeFeeSettlement`/`NodeFeeAtomicGroup` state fields have no converter (read only via `Key()` today). AZOA-side fix: give every persisted enum an explicit `[JsonConverter(typeof(JsonStringEnumConverter))]` (all 31 others already have one), and add an architecture test that every enum property on a SurrealDB POCO carries a converter. A SurrealForge follow-up (`INSIDE [$name, $camel]` for converter-less enums) is optional.
+- **Captured-null semantics changed:** a captured `null` in `==` now matches absent (NONE) rows — also in `UpdateOnly`/`DeleteOnly` guard predicates. This fixes tenant-less fences, but **audit every typed owner/tenant guard comparing an optional column to a captured caller value**: an unexpectedly null caller value now widens to value-less rows instead of matching nothing. Belongs in the round-4 SurrealQL re-sweep (WP9). AZOA has no typed `!=` against a captured value.
+
 ## Round-4 carry-forward
 
 **MUST-FIX before the fiat on-ramp accepts real cards (from lane B's final review):**
