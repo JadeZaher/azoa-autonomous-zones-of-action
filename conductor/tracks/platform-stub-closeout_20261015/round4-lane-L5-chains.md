@@ -5,7 +5,8 @@ wave: W2
 lane: L5
 branch: r4/chains
 merge: 7
-status: ready
+status: merged
+merged: 9c299dfa
 ---
 
 # Round 4 · L5 chains (`r4/chains`, merge #7)
