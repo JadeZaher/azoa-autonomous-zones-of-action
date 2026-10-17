@@ -42,6 +42,7 @@ public class ActionGraphBundleController : ControllerBase
     /// <summary>Creates a new ActionGraphBundle owned by the authenticated user, or
     /// upserts an existing record they already own (by name).</summary>
     [HttpPost]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> CreateOrUpdate([FromBody] ActionGraphBundleCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -54,6 +55,7 @@ public class ActionGraphBundleController : ControllerBase
     /// <summary>Updates an existing ActionGraphBundle by route id. Verifies the record is
     /// owned by the authenticated user before writing — closes the PUT IDOR.</summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Update(Guid id, [FromBody] ActionGraphBundleCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -64,6 +66,7 @@ public class ActionGraphBundleController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -105,6 +108,7 @@ public class ActionGraphBundleController : ControllerBase
     /// ActionGraphBundle's ecosystem tree and returns the recomposed tree. The owner is the
     /// authenticated user — no owner id is read from the body (IDOR-resistant).</summary>
     [HttpPost("{id:guid}/ecosystem/dapp-series")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<EcosystemTree>>> AddDappSeries(Guid id, [FromBody] AddDappSeriesRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var userId = GetUserIdFromClaims();

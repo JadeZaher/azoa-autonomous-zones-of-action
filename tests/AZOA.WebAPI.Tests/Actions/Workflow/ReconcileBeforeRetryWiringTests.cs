@@ -287,7 +287,9 @@ public sealed class ReconcileBeforeRetryWiringTests
 
         var sweep = await sweepManager.SweepReconciliationAsync();
         sweep.IsError.Should().BeFalse(sweep.Message);
-        sweep.Result!.Should().ContainSingle()
+        sweep.Result!.Scanned.Should().Be(1, "the parked run is visible to the sweep");
+        sweep.Result.Errors.Should().Be(0);
+        sweep.Result.Results.Should().ContainSingle()
             .Which.ReconciledConfirmed.Should().Be(1, "the parked node's tx confirmed");
 
         // The node parked on a 20 s re-observation timer; let it elapse so the step replays the reconciled row.

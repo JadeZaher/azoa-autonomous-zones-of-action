@@ -78,8 +78,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
             if (loaded.IsError || loaded.Result == null)
                 return Fail(ActionGraphBundleAuthorizationError.NotFound + "action graph bundle not found.");
 
-            if (!IsOwnedBy(loaded.Result, userId))
-                return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
+            if (OwnershipRefusal(loaded.Result, userId) is { } refusal) return Fail(refusal);
 
             bundle = (ActionGraphBundle)loaded.Result;
         }
@@ -101,19 +100,25 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
     private static bool IsOwnedBy(IActionGraphBundle record, Guid userId) =>
         record.UserId.HasValue && record.UserId.Value == userId;
 
+    // Null when owned; a bundle the caller cannot read answers NotFound (no existence
+    // oracle), a readable foreign one Forbidden. A null caller is refused (fail closed).
+    private static string? OwnershipRefusal(IActionGraphBundle record, Guid? userId) =>
+        userId.HasValue && IsOwnedBy(record, userId.Value) ? null
+        : CanRead(record, userId)
+            ? ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user."
+            : ActionGraphBundleAuthorizationError.NotFound + "action graph bundle not found.";
+
     private static AZOAResult<IActionGraphBundle> Fail(string message) =>
         new() { IsError = true, Message = message };
 
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? userId = null, AZOARequest? request = null)
     {
-        if (userId.HasValue)
-        {
-            var loaded = await _bundleStore.GetByIdAsync(id, default);
-            if (loaded.IsError || loaded.Result == null)
-                return new AZOAResult<bool> { IsError = true, Message = "action graph bundle not found." };
-            if (!IsOwnedBy(loaded.Result, userId.Value))
-                return new AZOAResult<bool> { IsError = true, Message = "action graph bundle is owned by a different user." };
-        }
+        // Fail-closed: a delete with no acting user is a wiring bug, not an admin escape hatch.
+        var loaded = await _bundleStore.GetByIdAsync(id, default);
+        if (loaded.IsError || loaded.Result == null)
+            return new AZOAResult<bool> { IsError = true, Message = "action graph bundle not found." };
+        if (OwnershipRefusal(loaded.Result, userId) != null)
+            return new AZOAResult<bool> { IsError = true, Message = "action graph bundle not found." };
 
         return await _bundleStore.DeleteAsync(id, default);
     }
@@ -121,10 +126,11 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
     public async Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid id, ActionGraphBundleDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null, Guid? actingTenantId = null)
     {
         var existing = await _bundleStore.GetByIdAsync(id, default);
-        if (existing.IsError || existing.Result == null) return existing;
+        if (existing.IsError || existing.Result == null)
+            return Fail(ActionGraphBundleAuthorizationError.NotFound + "action graph bundle not found.");
         // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
-        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
-            return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
+        if (OwnershipRefusal(existing.Result, userId) is { } refusal) return Fail(refusal);
+        var caller = userId.GetValueOrDefault();
 
         var bundle = (ActionGraphBundle)existing.Result;
         if (request.Generation is null) return Fail("Select an explicit versioned generation target; legacy configuration must be regenerated.");
@@ -133,7 +139,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         bundle.ModifiedDate = DateTime.UtcNow;
         var saved = await _bundleStore.UpsertAsync(bundle, default);
         if (saved.IsError) return saved;
-        var generated = await _deployments.GenerateAsync(id, userId.Value, actingTenantId, request.Generation);
+        var generated = await _deployments.GenerateAsync(id, caller, actingTenantId, request.Generation);
         return generated.IsError ? Fail(generated.Message) : await _bundleStore.GetByIdAsync(id);
     }
 
@@ -166,14 +172,13 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         var bundleResult = await _bundleStore.GetByIdAsync(actionGraphBundleId, default);
         if (bundleResult.IsError || bundleResult.Result == null)
             return FailTree(ActionGraphBundleAuthorizationError.NotFound + "action graph bundle not found.");
-        if (userId.HasValue && !IsOwnedBy(bundleResult.Result, userId.Value))
-            return FailTree(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
+        if (OwnershipRefusal(bundleResult.Result, userId) is { } refusal) return FailTree(refusal);
         var bundle = (ActionGraphBundle)bundleResult.Result;
-        var ownerUser = userId ?? bundle.UserId ?? Guid.Empty;
+        var ownerUser = userId.GetValueOrDefault();
 
         // 2. Validate the attached reference exists AND is owned by the same user.
         //    Caller-supplied owner ids are never trusted — ownership is re-checked here.
-        var refError = await ValidateRefOwnershipAsync(request.RefKind, request.RefId, userId);
+        var refError = await ValidateRefOwnershipAsync(request.RefKind, request.RefId, ownerUser);
         if (refError != null) return FailTree(refError);
 
         // 3. Resolve (or lazily create) the ecosystem for this ActionGraphBundle.
@@ -251,8 +256,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         var bundleResult = await _bundleStore.GetByIdAsync(actionGraphBundleId, default);
         if (bundleResult.IsError || bundleResult.Result == null)
             return FailTree(ActionGraphBundleAuthorizationError.NotFound + "action graph bundle not found.");
-        if (userId.HasValue && !IsOwnedBy(bundleResult.Result, userId.Value))
-            return FailTree(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
+        if (OwnershipRefusal(bundleResult.Result, userId) is { } refusal) return FailTree(refusal);
 
         var ecoResult = await _ecosystemStore.GetByActionGraphBundleAsync(actionGraphBundleId, default);
         if (ecoResult.IsError) return FailTree(ecoResult.Message ?? "Failed to load ecosystem.");
@@ -275,26 +279,22 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         new() { IsError = true, Message = message };
 
     /// <summary>Confirms the attached DappSeries/ActionGraphBundle exists and is owned by
-    /// the calling user. Returns an error message or null when valid.</summary>
-    private async Task<string?> ValidateRefOwnershipAsync(EcosystemRefKind kind, Guid refId, Guid? userId)
+    /// the calling user; a foreign reference reads exactly like a missing one.</summary>
+    private async Task<string?> ValidateRefOwnershipAsync(EcosystemRefKind kind, Guid refId, Guid userId)
     {
         if (kind == EcosystemRefKind.DappSeries)
         {
             var series = await _dappSeriesStore.GetSeriesAsync(refId, default);
-            if (series.IsError || series.Result == null)
-                return $"DappSeries {refId} not found.";
-            if (userId.HasValue && series.Result.UserId != userId.Value.ToString("N"))
-                return ActionGraphBundleAuthorizationError.Forbidden + "DappSeries is owned by a different user.";
-            return null;
+            return series.IsError || series.Result == null || series.Result.UserId != userId.ToString("N")
+                ? ActionGraphBundleAuthorizationError.NotFound + $"DappSeries {refId} not found."
+                : null;
         }
 
         // Nested ActionGraphBundle reference.
         var bundle = await _bundleStore.GetByIdAsync(refId, default);
-        if (bundle.IsError || bundle.Result == null)
-            return $"action graph bundle {refId} not found.";
-        if (userId.HasValue && !IsOwnedBy(bundle.Result, userId.Value))
-            return ActionGraphBundleAuthorizationError.Forbidden + "Referenced action graph bundle is owned by a different user.";
-        return null;
+        return bundle.IsError || bundle.Result == null || !IsOwnedBy(bundle.Result, userId)
+            ? ActionGraphBundleAuthorizationError.NotFound + $"action graph bundle {refId} not found."
+            : null;
     }
 
     /// <summary>
