@@ -37,8 +37,7 @@ public partial class SolanaProvider
         {
             if (step.CreateSourceAta)
             {
-                var create = AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(user, user, mint);
-                create.Data = [1]; instructions.Add(create);
+                instructions.Add(SolanaAssociatedTokenAccount.CreateIdempotent(user, user, mint));
             }
             var amount = UInt64Text.Parse(intent.Amount.Debited);
             if (intent.Asset.NativeAsset)

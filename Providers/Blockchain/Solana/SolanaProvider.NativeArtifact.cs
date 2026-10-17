@@ -27,12 +27,12 @@ public partial class SolanaProvider
                     && SolanaNativeLoader.IsElf(Convert.FromBase64String(elf.ElfBase64))
                     && (elf.SourceDigest is null || elf.SourceDigest == NativeHash(Convert.FromBase64String(elf.ElfBase64))),
                 "solana-instruction/1" => artifact.Content.Deserialize<SolanaInstructionArtifact>(NativeSolanaJson) is { } instruction
-                    && ValidateAddressFormat(instruction.ProgramId) && instruction.Accounts is { Count: <= 32 }
-                    && instruction.Accounts.All(account => ValidateAddressFormat(account.Address))
+                    && SolanaAddress.IsAccount(instruction.ProgramId) && instruction.Accounts is { Count: <= 32 }
+                    && instruction.Accounts.All(account => SolanaAddress.IsAccount(account.Address))
                     && Convert.FromBase64String(instruction.DataBase64).Length <= 1024 && IsNativeHash(instruction.ExpectedProgramDataHash),
                 "solana-account/1" => artifact.Content.Deserialize<SolanaAccountArtifact>(NativeSolanaJson) is { } account
                     && account.Operation is "CreateMetadata" or "UpdateMetadata" or "CreateAta" or "CloseTokenAccount"
-                    && ValidateAddressFormat(account.Mint) && ValidateAddressFormat(account.Owner),
+                    && SolanaAddress.IsAccount(account.Mint) && SolanaAddress.IsAccount(account.Owner),
                 _ => false,
             };
             return Task.FromResult(valid ? Ok(artifact) : Error<NativeArtifact>("Invalid bounded Solana artifact."));
@@ -67,8 +67,8 @@ public partial class SolanaProvider
             else input = intent.Input.Deserialize<SolanaNativeInput>(NativeSolanaJson)!;
         }
         catch (JsonException) { return false; }
-        if (input is null || input.Artifact is null || !ValidateAddressFormat(input.Payer) || !ValidateAddressFormat(input.Authority)
-            || input.RentRecipient is not null && !ValidateAddressFormat(input.RentRecipient)) return false;
+        if (input is null || input.Artifact is null || !SolanaAddress.IsSigner(input.Payer) || !SolanaAddress.IsSigner(input.Authority)
+            || input.RentRecipient is not null && !SolanaAddress.IsAccount(input.RentRecipient)) return false;
         var scope = input.Artifact.Format switch
         {
             "solana-elf/1" when input.Operation is "Create" or "Upgrade" or "Recovery" => AzoaScopes.ContractDeploySign,
@@ -76,11 +76,12 @@ public partial class SolanaProvider
             "solana-account/1" when input.Operation == "Account" => AzoaScopes.SolanaAccountSign,
             _ => null,
         };
+        var (payer, authorityAddress) = (input.Payer, input.Authority);
         return scope is not null && intent.Kind == (input.Operation == "Recovery" ? "Recovery" : input.Operation == "Account" ? "Account" : input.Operation == "Call" ? "Call" : "Deploy")
-            && intent.Authorities.All(authority => ValidateAddressFormat(authority.Address) && !authority.SigningContext.IsPlatform
+            && intent.Authorities.All(authority => SolanaAddress.IsSigner(authority.Address) && !authority.SigningContext.IsPlatform
                 && authority.SigningContext.IsResolvableUserContext && authority.SigningContext.Scope == scope)
-            && intent.Authorities.Any(authority => authority.Address == input.Payer)
-            && intent.Authorities.Any(authority => authority.Address == input.Authority)
+            && intent.Authorities.Any(authority => authority.Address == payer)
+            && intent.Authorities.Any(authority => authority.Address == authorityAddress)
             && intent.Authorities.GroupBy(authority => authority.Address, StringComparer.Ordinal)
                 .All(group => group.Select(authority => authority.SigningContext).Distinct().Count() == 1);
     }

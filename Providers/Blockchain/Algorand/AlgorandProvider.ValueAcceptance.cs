@@ -27,7 +27,8 @@ public partial class AlgorandProvider : IValueCustodyModule
             || intent.SigningContext.Scope != AzoaScopes.TransferSign || !ValueCustodyIdentity.MatchesAcceptance(intent)
             || !UInt64Text.TryParse(intent.AssetId, out var asset) || asset == 0
             || !UInt64Text.TryParse(intent.Cost.MaximumNetworkFeeBaseUnits, out var maximumFee)
-            || intent.Cost.Quote.AcceptanceMinimumBalanceBaseUnits != "100000")
+            || intent.Cost.Quote.AcceptanceMinimumBalanceBaseUnits != "100000"
+            || intent.Cost.Generation is < 0 or > int.MaxValue)
             return AZOAResult<PreparedValueAcceptance>.Failure("Exact recipient authority and accepted account costs are required.");
         var id = ValueAcceptancePreparationId(intent);
         var hash = CanonicalJson.Hash(intent);
@@ -53,7 +54,7 @@ public partial class AlgorandProvider : IValueCustodyModule
                     || account.NativeAmount - account.MinimumBalance < checked(100000UL + transaction.Fee.Value))
                     return AZOAResult<PreparedValueAcceptance>.Failure("The recipient needs the accepted native fee and additional account minimum before acceptance.");
                 row = await store.ClaimAsync(new NativePreparation { Id = id, IntentHash = hash,
-                    Stage = "ValueAcceptance", Generation = intent.Cost.Generation,
+                    Stage = "ValueAcceptance", Generation = (int)intent.Cost.Generation,
                     PlanJson = JsonSerializer.Serialize(new ValueTransferPlan(Convert.ToBase64String(AlgorandEncoder.EncodeToMsgPackOrdered(transaction)),
                         "algorand:" + parameters.GenesisHashB64)), CreatedAt = DateTimeOffset.UtcNow }, ct);
             }
@@ -121,7 +122,7 @@ public partial class AlgorandProvider : IValueCustodyModule
             || !intent.SigningContext.IsResolvableUserContext || intent.SigningContext.Scope != AzoaScopes.TransferSign
             || signed.Tx is not AssetAcceptTransaction transaction || transaction.TxID() != prepared.TransactionId
             || transaction.Sender.EncodeAsString() != intent.Recipient || transaction.AssetReceiver?.EncodeAsString() != intent.Recipient
-            || transaction.XferAsset.ToString() != intent.AssetId || transaction.AssetCloseTo is not null
+            || transaction.XferAsset.ToString() != intent.AssetId
             || transaction.RekeyTo is not null || transaction.Group is not null || transaction.GenesisHash?.Bytes.Length != 32
             || transaction.FirstValid is null || transaction.LastValid is null || transaction.FirstValid > transaction.LastValid
             || prepared.ProtocolIdentity != "algorand:" + Convert.ToBase64String(transaction.GenesisHash.Bytes)

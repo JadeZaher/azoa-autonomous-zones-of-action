@@ -124,7 +124,7 @@ public partial class AlgorandProvider : IWttSourceModule
 
     private bool ValidWttAlgoSourceIntent(WttOperationIntent intent)
         => intent is { Version: 1, Source: not null, Target: not null, Asset: not null, Amount: not null,
-                SourceAuthority.Context: not null, SourceBudget: not null }
+                SourceAuthority: not null, SourceBudget: not null }
             && !string.IsNullOrWhiteSpace(intent.OperationId) && intent.ActorUserId != Guid.Empty
             && intent.Source.Network == ActiveNetwork && intent.Source.ChainType == ChainType && intent.Source.ProtocolChain == 8
             && intent.Target.ProtocolChain is not (0 or 8) && ValidateAddressFormat(intent.SourceAuthority.Address)

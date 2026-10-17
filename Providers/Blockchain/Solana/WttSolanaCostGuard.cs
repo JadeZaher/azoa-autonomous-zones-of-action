@@ -59,11 +59,14 @@ internal static class WttSolanaCostGuard
     {
         if (metadataCodeHash.Length != 32 || new[] { guard.Key, core.Key, tokenBridge.Key }.Contains(SolanaNftMetadata.Program.Key))
             throw new ArgumentException("Registration requires the distinct canonical metadata program and its exact SHA256 identity.");
-        var instruction = Build(guard, core, tokenBridge, exactProtocolFee, rentBytes, coreCodeHash, tokenCodeHash);
-        instruction.Data = [.. instruction.Data, .. metadataCodeHash];
-        instruction.Data[0] = 2;
-        instruction.Keys.Add(AccountMeta.ReadOnly(SolanaNftMetadata.Program, false));
-        instruction.Keys.Add(AccountMeta.ReadOnly(SolanaNativeLoader.ProgramData(SolanaNftMetadata.Program), false));
-        return instruction;
+        var transfer = Build(guard, core, tokenBridge, exactProtocolFee, rentBytes, coreCodeHash, tokenCodeHash);
+        byte[] data = [.. transfer.Data, .. metadataCodeHash];
+        data[0] = 2;
+        return new TransactionInstruction { ProgramId = transfer.ProgramId, Data = data, Keys =
+        [
+            .. transfer.Keys,
+            AccountMeta.ReadOnly(SolanaNftMetadata.Program, false),
+            AccountMeta.ReadOnly(SolanaNativeLoader.ProgramData(SolanaNftMetadata.Program), false),
+        ] };
     }
 }

@@ -104,7 +104,7 @@ public partial class EthereumProvider : IWttTargetModule
 
     private bool ValidWttTargetIntent(WttOperationIntent intent)
         => intent is { Version: 1, Source: not null, Target: not null, Asset: not null, Amount: not null,
-                TargetAuthority.Context: not null, TargetBudget: not null }
+                TargetAuthority: not null, TargetBudget: not null }
             && intent.ActorUserId != Guid.Empty && !string.IsNullOrWhiteSpace(intent.OperationId)
             && intent.Target.ChainType == ChainType && intent.Target.Network == ActiveNetwork
             && intent.Source.DeploymentIdentity is not null && intent.Target.DeploymentIdentity is not null

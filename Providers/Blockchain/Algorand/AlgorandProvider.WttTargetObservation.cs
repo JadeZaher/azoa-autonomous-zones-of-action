@@ -47,7 +47,7 @@ public partial class AlgorandProvider
             for (var index = 0; index < expected.Count; index++)
             {
                 if (expected[index] is not ApplicationCallTransaction app) continue;
-                var application = app.ApplicationId!.Value;
+                if (AlgorandApplicationCall.Id(app) is not { } application) return Error<WttStageObservation>("Unknown application in the target group.");
                 var core = application == plan.CoreApplication;
                 if (!core && application != plan.TokenApplication) return Error<WttStageObservation>("Unknown application in the target group.");
                 programs &= await ProveWttAlgoProgramAsync(new(1, id, plan.GenesisHash, application, expected[index].TxID(), "",

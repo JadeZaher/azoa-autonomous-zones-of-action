@@ -51,7 +51,7 @@ public partial class AlgorandProvider
 
     private bool ValidWttAlgoTargetIntent(WttOperationIntent intent)
         => intent is { Version: 1, Source: not null, Target: not null, Asset: not null, Amount: not null,
-                TargetAuthority.Context: not null, TargetBudget: not null }
+                TargetAuthority: not null, TargetBudget: not null }
             && intent.ActorUserId != Guid.Empty && !string.IsNullOrWhiteSpace(intent.OperationId)
             && intent.Target.ChainType == ChainType && intent.Target.Network == ActiveNetwork && intent.Target.ProtocolChain == 8
             && intent.Source.ProtocolChain is 1 or 2 && global::Algorand.Address.IsValid(intent.TargetAuthority.Address)

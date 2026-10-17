@@ -82,11 +82,7 @@ public partial class SolanaProvider
                     || (intent.Asset.OriginChain == 1 ? new PublicKey(Convert.FromHexString(intent.Asset.OriginAddress))
                         : WttSolanaAccounts.WrappedMint(token, intent.Asset.OriginChain, Convert.FromHexString(intent.Asset.OriginAddress))).Key != mint.Key)
                     throw new InvalidDataException("Redemption mint, token-account recipient or amount differs from frozen consent.");
-                void CreateAta(PublicKey owner)
-                {
-                    var create = AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(user, owner, mint);
-                    create.Data = [1]; instructions.Add(create);
-                }
+                void CreateAta(PublicKey owner) => instructions.Add(SolanaAssociatedTokenAccount.CreateIdempotent(user, owner, mint));
                 if (step.CreateRecipientAta) CreateAta(recipient);
                 if (step.CreateFeeAta && feeDestination.Key != destination.Key) CreateAta(user);
                 instructions.Add(WttSolanaAccounts.Complete(token, core, bridgePayer, posted, vaa.EmitterChain,

@@ -114,7 +114,7 @@ public partial class EthereumProvider : IWttSourceModule
 
     private bool ValidWttSourceIntent(WttOperationIntent intent)
         => intent is { Version: 1, Source: not null, Target: not null, Asset: not null, Amount: not null,
-                SourceAuthority.Context: not null, SourceBudget: not null }
+                SourceAuthority: not null, SourceBudget: not null }
             && !string.IsNullOrWhiteSpace(intent.OperationId) && intent.ActorUserId != Guid.Empty
             && intent.Source.Network == ActiveNetwork && intent.Source.ChainType == "Ethereum"
             && intent.Source.DeploymentIdentity is not null && intent.Target.DeploymentIdentity is not null
