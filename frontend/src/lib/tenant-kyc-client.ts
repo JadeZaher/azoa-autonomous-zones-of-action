@@ -1,6 +1,8 @@
 "use client";
 
+import { KYB_REQUIRED } from "azoa-sdk";
 import { azoa, isOk } from "@/lib/azoa";
+import { KYB_REQUIRED_MESSAGE } from "@/lib/refusal-messages";
 import type {
     TenantKycProviderChoiceResponse,
     TenantKycSelectionResponse,
@@ -20,8 +22,12 @@ export class TenantKycRequestError extends Error {
 function humaneTenantError(error: {
     message: string;
     status?: number;
+    serverCode?: string;
 }): TenantKycRequestError {
     const message = error.message;
+    if (error.serverCode === KYB_REQUIRED || message.includes(KYB_REQUIRED)) {
+        return new TenantKycRequestError(KYB_REQUIRED_MESSAGE);
+    }
     if (
         error.status === 403 &&
         /sign in again.*sensitive account action|RECENT_LOGIN_REQUIRED/i.test(

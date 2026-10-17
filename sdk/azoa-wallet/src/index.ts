@@ -92,6 +92,7 @@ export type {
   BusinessVerificationStatus,
   BusinessVerificationSession,
   FiatPayoutView,
+  BlockchainOperationResult,
   ActionRecoveryView,
   ActionRecoveryRequest,
   ActionRecoveryReceipt,

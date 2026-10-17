@@ -268,7 +268,9 @@ export async function operatorUpstreamFetch(
 ): Promise<Response> {
     const platformGenesis = path === "platform-token" || path === "platform-token/genesis"
         || /^platform-token\/creation\/[0-9a-f]{32}(?:\/(?:quote|accept-quote|continue|replace|refresh))?$/i.test(path);
-    return fetch(new URL(`/api/${platformGenesis ? "admin" : "operator"}/${path}`, resolveServerApiUrl()), {
+    // Round-4 console routes arrive as an exact upstream `/api/...` path from `operator-routes.ts`.
+    const upstreamPath = path.startsWith("/api/") ? path : `/api/${platformGenesis ? "admin" : "operator"}/${path}`;
+    return fetch(new URL(upstreamPath, resolveServerApiUrl()), {
         method: init?.method ?? "GET",
         cache: "no-store",
         redirect: "error",
@@ -284,6 +286,7 @@ export async function operatorUpstreamFetch(
 
 export async function sanitizedOperatorResponse(
     response: Response,
+    options?: { bare?: boolean },
 ): Promise<NextResponse> {
     if (!response.ok) {
         const authRequirement = response.headers.get("x-azoa-auth-requirement");
@@ -310,7 +313,9 @@ export async function sanitizedOperatorResponse(
         return result;
     }
 
-    const envelope = await readUpstreamEnvelope<unknown>(response);
+    const parsed = await readUpstreamEnvelope<unknown>(response);
+    // A bare upstream body (saga operator routes) is wrapped so the console sees one envelope shape.
+    const envelope = options?.bare && parsed !== null ? { isError: false, result: parsed as unknown } : parsed;
     if (!envelope || envelope.isError) {
         return NextResponse.json(
             { message: "The node returned an invalid operator response." },
