@@ -56,15 +56,17 @@ public sealed partial class WttLifecycleFlowTests
         internal const string TargetPayer = "TargetPayer11111111111111111111111111111111";
         internal const string OwnCustodial = "OwnCustodial1111111111111111111111111111111";
         internal const string ClaimedPlatform = "ClaimedPlatform11111111111111111111111111111";
+        internal const string ExternalLinked = "ExternalLinked111111111111111111111111111111";
 
-        internal Rig(bool participantRecipient = false, bool unwrapNative = false, string sourceChain = "Algorand")
+        internal Rig(bool participantRecipient = false, bool unwrapNative = false, string sourceChain = "Algorand", bool stageKeys = false)
         {
             Store = new(Clock);
             SourceChain = sourceChain;
             Source = sourceChain == "Ethereum"
                 ? new FakeWttChain("Ethereum", 2, "eip155:fake", "e3", Preparations) { NonceAllocating = true }
                 : new FakeWttChain("Algorand", 8, "algorand:fake-genesis", "a1", Preparations);
-            Target = new FakeWttChain("Solana", 1, "solana:fake-genesis", "b2", Preparations) { ParticipantOptIn = participantRecipient };
+            Target = new FakeWttChain("Solana", 1, "solana:fake-genesis", "b2", Preparations)
+                { ParticipantOptIn = participantRecipient, StageKeys = stageKeys };
             Target.Guardian = GuardianAddress;
             Target.RegisteredEmitter = (Source.ProtocolChain, Source.Emitter);
             Recipient = participantRecipient || unwrapNative ? "ExternalRecipient1111111111111111111111111111" : TargetPayer;
@@ -75,16 +77,18 @@ public sealed partial class WttLifecycleFlowTests
             var source = Wallet(SourceWallet, sourceChain, sourceChain == "Ethereum" ? "0x" + new string('5', 40) : "SOURCEPAYERALGORAND", true);
             var target = Wallet(TargetWallet, "Solana", TargetPayer, true);
             // A second key-custodied wallet, and a Platform-typed row registered before custody proof was required.
-            var owned = new[] { source, target, Wallet(Guid.NewGuid(), "Solana", OwnCustodial, true), Wallet(Guid.NewGuid(), "Solana", ClaimedPlatform, false) };
+            var owned = new[] { source, target, Wallet(Guid.NewGuid(), "Solana", OwnCustodial, true), Wallet(Guid.NewGuid(), "Solana", ClaimedPlatform, false),
+                Wallet(Guid.NewGuid(), "Solana", ExternalLinked, false, WalletType.External) };
             foreach (var wallet in owned)
                 wallets.Setup(store => store.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IWallet>.Success(wallet));
             wallets.Setup(store => store.GetByUserAsync(Actor, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(AZOAResult<IEnumerable<IWallet>>.Success(owned));
             // Tenant credentials resolve one explicit live grant covering the WTT payer scopes.
             var grants = new Mock<ISurrealExecutor>(MockBehavior.Strict);
+            var grant = new ConsentGrant { Id = Guid.NewGuid().ToString("N"), Scopes = "wtt:source:sign,wtt:target:sign",
+                Origin = "UserExplicit", GrantedAt = DateTimeOffset.UtcNow.AddMinutes(-1) };
             grants.Setup(executor => executor.QueryAsync<ConsentGrant>(It.IsAny<SurrealQuery>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new[] { new ConsentGrant { Id = Guid.NewGuid().ToString("N"), Scopes = "wtt:source:sign,wtt:target:sign",
-                    Origin = "UserExplicit", GrantedAt = DateTimeOffset.UtcNow.AddMinutes(-1) } });
+                .ReturnsAsync(() => GrantRevoked ? Array.Empty<ConsentGrant>() : new[] { grant });
             var authorities = new SigningAdmissionAuthorityFactory(new Mock<IUserStore>(MockBehavior.Strict).Object, wallets.Object, grants.Object);
             var keys = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 { ["AZOA:WalletEncryptionKey"] = "wtt-flow-fixture-encryption-key" }).Build();
@@ -101,16 +105,34 @@ public sealed partial class WttLifecycleFlowTests
             Recovery = new WttRecoveryService(Store, modules, transport, verifier, Claims, NullLogger<WttRecoveryService>.Instance);
             Service = new WttLifecycleService(Store, wallets.Object, authorities, modules, Preparations, Recovery, custody, Clock);
             UnwrapNative = unwrapNative;
+            Authorities = authorities; _wallets = wallets.Object; _modules = modules; _custody = custody;
         }
 
-        private AZOA.WebAPI.Models.Wallet Wallet(Guid id, string chain, string address, bool custodied) => new()
+        private AZOA.WebAPI.Models.Wallet Wallet(Guid id, string chain, string address, bool custodied, WalletType type = WalletType.Platform) => new()
         {
-            Id = id, UserId = Actor, ChainType = chain, Address = address, WalletType = WalletType.Platform,
+            Id = id, UserId = Actor, ChainType = chain, Address = address, WalletType = type,
             EncryptedPrivateKey = custodied ? "custody-ciphertext" : null,
         };
 
         internal bool UnwrapNative { get; }
         internal const string GuardianAddress = "5893b5a76c3f739645648885bdccc06cd70a3cd3";
+        internal SigningAdmissionAuthorityFactory Authorities { get; private set; } = null!;
+        internal WttModuleResolver Modules => _modules;
+        /// <summary>The user revoked the tenant's WTT grant: tenant credentials no longer bind payer authority.</summary>
+        internal bool GrantRevoked { get; set; }
+
+        /// <summary>A child credential acting for a tenant with the two WTT payer scopes.</summary>
+        internal SigningCredentialWitness TenantCredential(Guid tenant) => Credential with { TenantId = tenant, OwnerAuthority = false,
+            TokenUse = AzoaClaims.TokenUseChild, Scopes = [AzoaScopes.WttSourceSign, AzoaScopes.WttTargetSign] };
+
+        /// <summary>Builds a second service over the same journal with keyring readiness and the cross-user recipient directory.</summary>
+        internal WttLifecycleService ServiceWith(WttStageKeyReadinessState? stageKeys = null, IWttRecipientDirectory? recipients = null,
+            IWalletOwnershipProof? ownership = null)
+            => new(Store, _wallets, Authorities, _modules, Preparations, Recovery, _custody, Clock, stageKeys, recipients, ownership);
+
+        private IWalletStore _wallets = null!;
+        private WttModuleResolver _modules = null!;
+        private IKeyCustodyService _custody = null!;
 
         internal WttQuoteRequest Request(string key) => new(key, new(SourceChain, "Devnet", SourceWallet), "31566704", false,
             "1000000", null, new("Solana", "Devnet", TargetWallet), Recipient, UnwrapNative,
@@ -157,6 +179,11 @@ public sealed partial class WttLifecycleFlowTests
                 factory.Setup(value => value.TryGetModule(rail.Object, out participant)).Returns(true);
                 factory.Setup(value => value.TryGetModule(rail.Object, out cleanup)).Returns(true);
                 factory.Setup(value => value.TryGetModule(rail.Object, out native)).Returns(true);
+                if (chain.StageKeys)
+                {
+                    IWttStageKeyModule? keys = chain;
+                    factory.Setup(value => value.TryGetModule(rail.Object, out keys)).Returns(true);
+                }
                 if (!chain.NonceAllocating) continue;
                 IWttNonceReservationModule? nonces = chain;
                 factory.Setup(value => value.TryGetModule(rail.Object, out nonces)).Returns(true);
@@ -237,8 +264,13 @@ public sealed partial class WttLifecycleFlowTests
     /// <summary>Chain adapter edge with real canonical WTT bodies; signing, sending and finality are recorded, never assumed.</summary>
     internal sealed class FakeWttChain(string chainType, ushort protocolChain, string protocolIdentity, string seed, FakePreparationStore preparations)
         : IWttSourceModule, IWttTargetModule, IWttGuardianStateSource, IWttParticipantModule, IWttCleanupModule, IWttNativeOutputModule,
-            IWttNonceReservationModule
+            IWttNonceReservationModule, IWttStageKeyModule
     {
+        /// <summary>What an exposed, never-authorized participant message shows on chain: Pending, ExpiredNoEffect or Landed.</summary>
+        internal string ExposedVerdict { get; set; } = "Pending";
+        internal bool StageKeys { get; init; }
+        /// <summary>Publication nonce drift injected into the next source observation (publication-mismatch exit).</summary>
+        internal bool DriftPublicationNonce { get; set; }
         private readonly HashSet<string> _finalized = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _nonces = new(StringComparer.Ordinal);
         private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
@@ -324,9 +356,32 @@ public sealed partial class WttLifecycleFlowTests
             if (!_finalized.Contains(prepared.TransactionId))
                 return Task.FromResult(AZOAResult<WttStageObservation>.Success(new("Pending", prepared.TransactionId, protocolIdentity, Detail: "Not final.")));
             LastPublication ??= Publication(intent, prepared.TransactionId);
+            var publication = DriftPublicationNonce ? LastPublication with { Nonce = LastPublication.Nonce + 1 } : LastPublication;
             return Task.FromResult(AZOAResult<WttStageObservation>.Success(new("Confirmed", prepared.TransactionId, protocolIdentity,
-                "{}", LastPublication, "7")));
+                "{}", publication, "7")));
         }
+
+        public async Task<AZOAResult<WttExposedObservation>> ObserveExposedWttParticipantAsync(WttOperationIntent intent, WttStageQuote quote,
+            WttParticipantPreparation participant, string? previousEvidenceJson, CancellationToken ct = default)
+            => ExposedVerdict switch
+            {
+                "Landed" => await AcceptWttParticipantSignatureAsync(intent, quote, participant, "signed:" + participant.UnsignedTransactionBase64, ct) is
+                    { IsError: false, Result: { } signed } ? AZOAResult<WttExposedObservation>.Success(new("Landed", Landed: signed))
+                    : AZOAResult<WttExposedObservation>.Failure("Landed signature does not verify."),
+                "ExpiredNoEffect" => AZOAResult<WttExposedObservation>.Success(new("ExpiredNoEffect", "{\"absent\":true}")),
+                _ => AZOAResult<WttExposedObservation>.Success(new("Pending", "{\"scanned\":" + (previousEvidenceJson is null ? 1 : 2) + "}")),
+            };
+
+        public async Task<AZOAResult<WttExposedObservation>> ObserveExposedWttNativeOutputAsync(WttOperationIntent intent, WttNativeOutputQuote quote,
+            WttNativeOutputConsent consent, WttParticipantPreparation participant, string? previousEvidenceJson, CancellationToken ct = default)
+            => ExposedVerdict switch
+            {
+                "Landed" => await AcceptWttNativeOutputSignatureAsync(intent, quote, consent, participant, "signed:" + participant.UnsignedTransactionBase64, ct) is
+                    { IsError: false, Result: { } signed } ? AZOAResult<WttExposedObservation>.Success(new("Landed", Landed: signed))
+                    : AZOAResult<WttExposedObservation>.Failure("Landed signature does not verify."),
+                "ExpiredNoEffect" => AZOAResult<WttExposedObservation>.Success(new("ExpiredNoEffect", "{\"absent\":true}")),
+                _ => AZOAResult<WttExposedObservation>.Success(new("Pending")),
+            };
 
         public Task<AZOAResult<WttTargetInspection>> InspectWttTargetAsync(WttAssetDescriptor origin, string recipientAddress,
             bool unwrapNative, CancellationToken ct = default)

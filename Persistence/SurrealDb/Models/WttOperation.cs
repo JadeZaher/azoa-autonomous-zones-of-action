@@ -37,6 +37,12 @@ public partial class WttOperation : ISurrealRecord
     public string? SettlementJson { get; set; }
     public string? Detail { get; set; }
     public string? ReturnOfOperationId { get; set; }
+    /// <summary>Workflow node that owns signing for this operation; all three are set together or not at all.</summary>
+    public string? ActionRunId { get; set; }
+    public string? ActionNodeId { get; set; }
+    public string? ActionIntentHash { get; set; }
+    /// <summary>Direct-owner signing intent recorded by owner takeover of a tenant-started target phase.</summary>
+    public string? OwnerIntentJson { get; set; }
     public long Version { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

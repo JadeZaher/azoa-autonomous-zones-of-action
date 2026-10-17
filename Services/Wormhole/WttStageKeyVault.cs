@@ -16,6 +16,7 @@ public sealed class WttStageKeyVault(IWttStageKeyStore store, IWttStageKeyProtec
     public Task<AZOAResult<WttStageKeyEnvelope>> ClaimAsync(WttStageKeyBinding binding, SigningContext context,
         Func<byte[], string> derivePublicKey, CancellationToken ct = default)
     {
+        if (!protector.IsConfigured) return Task.FromResult(Degraded<WttStageKeyEnvelope>());
         if (!Matches(binding, context)) return Task.FromResult(Denied<WttStageKeyEnvelope>());
         return custody.WithSigningKeyAsync(context, async _ =>
         {
@@ -65,6 +66,7 @@ public sealed class WttStageKeyVault(IWttStageKeyStore store, IWttStageKeyProtec
     private Task<AZOAResult<T>> UseCoreAsync<T>(WttStageKeyBinding binding, SigningContext context,
         Func<byte[], string> derivePublicKey, Func<byte[], T> use, bool authorized, CancellationToken ct)
     {
+        if (!protector.IsConfigured) return Task.FromResult(Degraded<T>());
         if (!authorized) return Task.FromResult(Denied<T>());
         return custody.WithSigningKeyAsync(context, async _ =>
         {
@@ -98,6 +100,8 @@ public sealed class WttStageKeyVault(IWttStageKeyStore store, IWttStageKeyProtec
             && context.WalletId == binding.WalletId && context.ActingTenantId == binding.TenantId.GetValueOrDefault()
             && context.Scope == binding.SigningScope
             && context.Scope is AzoaScopes.WttSourceSign or AzoaScopes.WttTargetSign;
+
+    private AZOAResult<T> Degraded<T>() => new() { IsError = true, Message = "WTT stage encryption is degraded: " + protector.ConfigurationError };
 
     private static AZOAResult<T> Denied<T>() => new() { IsError = true, Message = "WTT stage key requires matching live source or target wallet custody." };
 }
