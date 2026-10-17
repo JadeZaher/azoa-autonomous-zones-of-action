@@ -25,6 +25,7 @@ public class WalletManager : IWalletManager
     private readonly Func<Guid> _entityId;
     private readonly IWalletAuthManager? _walletAuth;
     private readonly IWalletOwnershipProofStore? _ownershipProofs;
+    private readonly ILogger<WalletManager>? _logger;
     private const string OwnershipProofUnavailable = "Wallet ownership proof is unavailable on this node.";
 
     /// <param name="environment">
@@ -41,7 +42,8 @@ public class WalletManager : IWalletManager
         IHostEnvironment? environment = null,
         Func<Guid>? entityId = null,
         IWalletAuthManager? walletAuth = null,
-        IWalletOwnershipProofStore? ownershipProofs = null)
+        IWalletOwnershipProofStore? ownershipProofs = null,
+        ILogger<WalletManager>? logger = null)
     {
         _walletStore = walletStore;
         _holonStore = holonStore;
@@ -53,6 +55,7 @@ public class WalletManager : IWalletManager
         _entityId = entityId ?? Guid.NewGuid;
         _walletAuth = walletAuth;
         _ownershipProofs = ownershipProofs;
+        _logger = logger;
     }
 
     public async Task<AZOAResult<IWallet>> GetAsync(Guid id, Guid userId, AZOARequest? request = null)
@@ -535,26 +538,18 @@ public class WalletManager : IWalletManager
         if (owned.IsError || owned.Result is null) return AZOAResult<IWallet>.Failure(owned.Message);
         var existing = owned.Result.FirstOrDefault(w => w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase)
             && ChainAddressIdentity.Equivalent(model.ChainType, w.Address, model.Address));
-        var inlineProof = !string.IsNullOrWhiteSpace(model.SignedMessage);
-        if (existing is not null && !inlineProof)
+        // RV-L4-03: proofs bind to a purpose-bound challenge naming the wallet, so they follow connect (ownership-challenge + ownership-proof).
+        if (!string.IsNullOrWhiteSpace(model.SignedMessage))
+            return AZOAResult<IWallet>.Failure(InlineProofRetired);
+        if (existing is not null)
             return new AZOAResult<IWallet> { Result = existing, Message = "Wallet already connected." };
-        if (!inlineProof && await ProvenByAnotherUserAsync(model.ChainType, model.Address, userId))
+        if (await ProvenByAnotherUserAsync(model.ChainType, model.Address, userId))
             return new AZOAResult<IWallet> { IsError = true, Message = ProvenElsewhere };
-
-        (string Address, string ChainType)? verified = null;
-        if (inlineProof)
-        {
-            if (_walletAuth is null || _ownershipProofs is null) return AZOAResult<IWallet>.Failure(OwnershipProofUnavailable);
-            var control = await _walletAuth.VerifyAddressControlAsync(model.Address, model.ChainType, model.SignedMessage!, model.OriginalMessage);
-            if (control.IsError) return AZOAResult<IWallet>.Failure(control.Message);
-            verified = control.Result;
-        }
-
-        var saved = existing is not null ? AZOAResult<IWallet>.Success(existing) : await CreateExternalAsync(model, userId);
-        if (saved.IsError || saved.Result is null || verified is not { } proven) return saved;
-        await _ownershipProofs!.RecordAsync(new WalletOwnershipProof(userId, saved.Result.Id, proven.ChainType, proven.Address, DateTime.UtcNow));
-        return AZOAResult<IWallet>.Success(saved.Result, "Wallet connected with a verified ownership proof.");
+        return await CreateExternalAsync(model, userId);
     }
+
+    private const string InlineProofRetired =
+        "Inline ownership proofs are retired; connect the wallet, then prove it via POST /api/wallet/{id}/ownership-challenge and ownership-proof.";
 
     private async Task<AZOAResult<IWallet>> CreateExternalAsync(WalletConnectRequest model, Guid userId)
     {
@@ -581,7 +576,7 @@ public class WalletManager : IWalletManager
         var wallet = await OwnedExternalWalletAsync(walletId, userId, ct);
         if (wallet.IsError || wallet.Result is null) return AZOAResult<WalletChallengeResponse>.Failure(wallet.Message);
         if (_walletAuth is null || _ownershipProofs is null) return AZOAResult<WalletChallengeResponse>.Failure(OwnershipProofUnavailable);
-        return await _walletAuth.CreateChallengeAsync(wallet.Result.Address, wallet.Result.ChainType, ct);
+        return await _walletAuth.CreateOwnershipChallengeAsync(userId, walletId, wallet.Result.Address, wallet.Result.ChainType, ct);
     }
 
     /// <inheritdoc/>
@@ -593,12 +588,16 @@ public class WalletManager : IWalletManager
         if (_walletAuth is null || _ownershipProofs is null) return AZOAResult<WalletOwnershipProof>.Failure(OwnershipProofUnavailable);
         if (!WalletAuthIdentity.TryCreate(wallet.Result.Address, wallet.Result.ChainType, out var address, out var chain))
             return AZOAResult<WalletOwnershipProof>.Failure("This wallet's chain does not support signature ownership proofs.");
-        var control = await _walletAuth.VerifyAddressControlAsync(address, chain, signature, message, ct);
+        var control = await _walletAuth.VerifyOwnershipProofAsync(userId, walletId, address, chain, signature, message, ct);
         if (control.IsError) return AZOAResult<WalletOwnershipProof>.Failure(control.Message);
         if (control.Result.Address != address || control.Result.ChainType != chain)
             return AZOAResult<WalletOwnershipProof>.Failure("The verified challenge is bound to a different wallet identity.");
-        var proof = await _ownershipProofs.RecordAsync(new WalletOwnershipProof(userId, walletId, chain, address, DateTime.UtcNow), ct);
-        return AZOAResult<WalletOwnershipProof>.Success(proof, "Wallet ownership proven.");
+        var recorded = await _ownershipProofs.RecordAsync(new WalletOwnershipProof(userId, walletId, chain, address, DateTime.UtcNow), ct);
+        if (recorded.IsError || recorded.Result is null) return AZOAResult<WalletOwnershipProof>.Failure(recorded.Message);
+        if (recorded.Result.SupersededUserId is { } previous)
+            _logger?.LogWarning("Wallet ownership proof for {Chain}:{Address} moved from stale holder {PreviousUserId} to {UserId} (wallet {WalletId}).",
+                chain, address, previous, userId, walletId);
+        return AZOAResult<WalletOwnershipProof>.Success(recorded.Result.Proof, "Wallet ownership proven.");
     }
 
     private async Task<AZOAResult<IWallet>> OwnedExternalWalletAsync(Guid walletId, Guid userId, CancellationToken ct)

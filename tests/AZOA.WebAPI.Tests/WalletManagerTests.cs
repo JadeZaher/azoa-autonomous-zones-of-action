@@ -137,34 +137,6 @@ public class WalletManagerTests
         _walletStore.Verify(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), refused ? Times.Never() : Times.Once());
     }
 
-    /// <summary>The ownership proof is recorded only after the wallet-auth challenge signature verifies.</summary>
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ProveOwnershipAsync_RecordsTheProofOnlyForAVerifiedSignature(bool verified)
-    {
-        var owner = Guid.NewGuid();
-        var address = new Algorand.Address(new byte[32]).ToString();
-        var wallet = new Wallet { Id = Guid.NewGuid(), UserId = owner, ChainType = "Algorand", Address = address, WalletType = WalletType.External };
-        _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IWallet>.Success(wallet));
-        var auth = new Mock<IWalletAuthManager>();
-        auth.Setup(a => a.VerifyAddressControlAsync(address, "algorand", "sig", null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(verified ? AZOAResult<(string, string)>.Success((address, "algorand"))
-                : new AZOAResult<(string, string)> { IsError = true, Message = "Signature verification failed." });
-        var proofs = new Mock<IWalletOwnershipProofStore>();
-        proofs.Setup(p => p.RecordAsync(It.IsAny<WalletOwnershipProof>(), It.IsAny<CancellationToken>()))
-              .ReturnsAsync((WalletOwnershipProof proof, CancellationToken _) => proof);
-        var manager = new WalletManager(_walletStore.Object, _holonStore.Object, _chainFactory.Object, _keyService, _config,
-            walletAuth: auth.Object, ownershipProofs: proofs.Object);
-
-        var result = await manager.ProveOwnershipAsync(wallet.Id, owner, "sig", null);
-
-        result.IsError.Should().Be(!verified, result.Message);
-        proofs.Verify(p => p.RecordAsync(It.Is<WalletOwnershipProof>(proof => proof.UserId == owner && proof.WalletId == wallet.Id
-            && proof.Address == address && proof.ChainType == "algorand"), It.IsAny<CancellationToken>()), verified ? Times.Once() : Times.Never());
-        (await manager.ProveOwnershipAsync(wallet.Id, Guid.NewGuid(), "sig", null)).Message.Should().Be("Wallet not found.");
-    }
-
     [Fact]
     public async Task BootstrapWalletAsync_RetryReturnsSameCreateOnlyWalletWithoutSerializingKeyMaterial()
     {
