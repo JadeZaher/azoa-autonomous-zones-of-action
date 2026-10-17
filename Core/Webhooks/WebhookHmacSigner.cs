@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using System.Security.Cryptography;
-using System.Text;
 
 namespace AZOA.WebAPI.Core.Webhooks;
 

@@ -2,7 +2,6 @@
 using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Requests;
@@ -10,7 +9,6 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Providers.Stores.Surreal;
-using Microsoft.Extensions.DependencyInjection;
 using Encoding = System.Text.Encoding;
 using AlgorandAsaSupplyLimits = AZOA.WebAPI.Interfaces.AlgorandAsaSupplyLimits;
 

@@ -8,7 +8,6 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Admin;
 using GeneratedUser = AZOA.WebAPI.Persistence.SurrealDb.Models.User;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Services.Auth;
 using SurrealForge.Client.Idempotency;
 

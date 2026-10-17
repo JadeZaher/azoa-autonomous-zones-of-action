@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.HostedSessions;

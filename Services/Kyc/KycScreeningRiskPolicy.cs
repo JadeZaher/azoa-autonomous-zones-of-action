@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;

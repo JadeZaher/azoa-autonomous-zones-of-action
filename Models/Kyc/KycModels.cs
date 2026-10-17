@@ -5,8 +5,6 @@
 
 #nullable enable
 
-using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace AZOA.WebAPI.Models.Kyc;

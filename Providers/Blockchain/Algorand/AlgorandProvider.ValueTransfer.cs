@@ -1,15 +1,11 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text;
 using Algorand;
-using Algorand.Algod.Model;
 using Algorand.Algod.Model.Transactions;
-using Algorand.Utils;
 using AlgorandEncoder = Algorand.Utils.Encoder;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;

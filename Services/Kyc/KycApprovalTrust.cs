@@ -7,7 +7,6 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Settings;
-using Microsoft.Extensions.Hosting;
 
 namespace AZOA.WebAPI.Services.Kyc;
 

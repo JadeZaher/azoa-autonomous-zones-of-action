@@ -1,5 +1,4 @@
 using SurrealForge.Client.Query;
-using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;

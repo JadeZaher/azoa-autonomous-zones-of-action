@@ -3,7 +3,6 @@
 using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
-using System.Text;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;

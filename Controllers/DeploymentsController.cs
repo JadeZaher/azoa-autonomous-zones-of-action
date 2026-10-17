@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Responses;

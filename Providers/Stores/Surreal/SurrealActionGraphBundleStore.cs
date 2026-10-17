@@ -4,7 +4,6 @@ using SurrealForge.Client;
 using SurrealForge.Client.Json;
 using SurrealForge.Client.Query;
 using SurrealForge.Client.Schema;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;

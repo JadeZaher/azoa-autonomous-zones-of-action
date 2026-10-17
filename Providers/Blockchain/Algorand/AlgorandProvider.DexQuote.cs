@@ -1,10 +1,8 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using AZOA.WebAPI.Core.Blockchain;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;

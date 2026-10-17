@@ -1,7 +1,6 @@
 extern alias BCCrypto2;
 using System.Buffers.Binary;
 using System.Text.Json;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Services.Wormhole;
 using Sha512tDigest = BCCrypto2::Org.BouncyCastle.Crypto.Digests.Sha512tDigest;

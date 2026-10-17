@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Wtt;
 using Solnet.Wallet;
 

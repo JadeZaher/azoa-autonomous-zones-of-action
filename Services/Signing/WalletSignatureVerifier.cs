@@ -1,6 +1,5 @@
 extern alias BCCrypto2;
 using System.Numerics;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Providers.Blockchain.Ethereum;
 using Nethereum.Signer;

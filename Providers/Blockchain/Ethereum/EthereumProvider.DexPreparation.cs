@@ -2,14 +2,12 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Helpers.Dex;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using Microsoft.Extensions.DependencyInjection;
 using Nethereum.Model;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;

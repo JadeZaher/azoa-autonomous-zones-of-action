@@ -3,7 +3,6 @@
 
 #nullable enable
 
-using System;
 using System.Security.Cryptography;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;

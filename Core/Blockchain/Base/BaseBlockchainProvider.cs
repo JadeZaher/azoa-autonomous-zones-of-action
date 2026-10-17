@@ -1,6 +1,5 @@
 using System.Net.Sockets;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Core.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;

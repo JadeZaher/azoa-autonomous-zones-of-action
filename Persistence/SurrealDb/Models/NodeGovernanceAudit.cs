@@ -3,8 +3,6 @@
 
 #nullable enable
 
-using System;
-using System.Collections.Generic;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 

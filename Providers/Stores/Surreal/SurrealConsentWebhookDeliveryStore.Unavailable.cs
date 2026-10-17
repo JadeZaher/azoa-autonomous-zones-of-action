@@ -1,5 +1,4 @@
 using AZOA.WebAPI.Core.Surreal;
-using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using Event = AZOA.WebAPI.Persistence.SurrealDb.Models.ConsentWebhookEvent;
 using Registration = AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistration;

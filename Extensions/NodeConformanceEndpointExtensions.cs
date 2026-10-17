@@ -2,9 +2,6 @@ using AZOA.WebAPI.Core.Diagnostics;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Services.Auth;
 using AZOA.WebAPI.Services.Conformance;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 
 namespace AZOA.WebAPI.Extensions;
 

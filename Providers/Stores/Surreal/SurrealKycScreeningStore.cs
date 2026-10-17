@@ -5,7 +5,6 @@ using SurrealForge.Client.Query;
 using SurrealForge.Client.Idempotency;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;

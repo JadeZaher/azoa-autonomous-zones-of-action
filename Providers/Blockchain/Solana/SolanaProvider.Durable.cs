@@ -7,7 +7,6 @@ using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Signing;
 using AZOA.WebAPI.Models.Responses;
-using Microsoft.Extensions.DependencyInjection;
 using Solnet.Programs;
 using Solnet.Rpc.Builders;
 using Solnet.Rpc.Models;

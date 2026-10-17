@@ -1,7 +1,6 @@
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;

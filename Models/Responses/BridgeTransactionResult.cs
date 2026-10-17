@@ -3,7 +3,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Wormhole;
-using AZOA.WebAPI.Helpers;
 
 namespace AZOA.WebAPI.Models.Responses;
 

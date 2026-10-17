@@ -1,6 +1,5 @@
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Wtt;
 using SurrealForge.Client.Query;
 

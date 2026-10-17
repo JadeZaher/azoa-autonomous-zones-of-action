@@ -1,6 +1,5 @@
 using System.Numerics;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Wtt;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Signing;

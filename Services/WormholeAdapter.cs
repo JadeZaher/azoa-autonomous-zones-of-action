@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Blockchain.Bridge;

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Http.Json;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -13,8 +12,6 @@ using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Base;
 using AZOA.WebAPI.Services.Custody;
-using Microsoft.Extensions.DependencyInjection;
-using Nethereum.Model;
 using Nethereum.Signer;
 using Nethereum.Util;
 

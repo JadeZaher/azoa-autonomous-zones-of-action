@@ -1,6 +1,4 @@
-using System.Net.Http.Json;
 using System.Security.Cryptography;
-using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Signing;
 using AZOA.WebAPI.Interfaces;

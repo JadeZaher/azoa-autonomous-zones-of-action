@@ -6,7 +6,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Settings;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Kyc;
