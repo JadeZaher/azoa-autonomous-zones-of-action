@@ -270,7 +270,7 @@ internal static partial class SurrealQlSourceRules
     [GeneratedRegex(@"\bSurrealQuery\s*\.\s*Of\b(?!\s*<)")]
     private static partial Regex OfCall();
 
-    [GeneratedRegex(@"^L(\+L)*$")]
+    [GeneratedRegex(@"^(?:[\w.!()&|=<>]+\?)?L(\+L)*(?::L(\+L)*)?$")]
     private static partial Regex LiteralShape();
 
     [GeneratedRegex(@"^[A-Za-z_]\w*$")]

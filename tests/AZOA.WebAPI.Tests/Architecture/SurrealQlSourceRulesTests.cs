@@ -23,6 +23,8 @@ public sealed class SurrealQlSourceRulesTests
         { "non-literal", """var q = SurrealQuery.Of($"SELECT * FROM {table}");""", true },
         { "non-literal", """var all = text.Split('|').Select(SurrealQuery.Of);""", true },
         { "non-literal", """var q = SurrealQuery.Of("SELECT " + "* FROM a");""", false },
+        { "non-literal", """var q = SurrealQuery.Of(cancel ? "DELETE a" : "UPDATE a SET b = 1");""", false },
+        { "non-literal", """var q = SurrealQuery.Of(cancel ? sql : "UPDATE a SET b = 1");""", true },
         { "non-literal", "private const string Erase = \"DELETE a\";\nvar q = SurrealQuery.Of(Erase);", false },
         { "srdb0001", "#pragma warning disable SRDB0001\nvar q = 1;", true },
         { "srdb0001", "var q = 1;", false },
@@ -100,6 +102,19 @@ public sealed class SurrealQlSourceRulesTests
     /// <summary>Ratchet of reviewed residue: (rule, file) → exact count + owning fix. A new site fails; a fixed site must be removed here.</summary>
     private static readonly Dictionary<(string Rule, string File), (int Count, string Owner)> KnownViolations = new()
     {
+        // Fail-closed residue found by these rules after every W2 lane merged: W3 fix batch, round4-lane-L6-verification.md §Needs other lane.
+        [("no-where", "Providers/Stores/Surreal/SurrealActionLocalMutationStore.cs")] = (2, "W3 fix batch (L4)"),
+        [("no-where", "Providers/Stores/Surreal/SurrealActionSigningAuthorizationStore.cs")] = (2, "W3 fix batch (L4)"),
+        [("no-where", "Providers/Stores/Surreal/SurrealHolonStore.cs")] = (1, "W3 fix batch (L4)"),
+        [("no-where", "Providers/Stores/Surreal/SurrealWalletStore.cs")] = (1, "W3 fix batch (L4)"),
+        [("no-where", "Providers/Stores/Surreal/SurrealFungibleCreationStore.cs")] = (1, "W3 fix batch (L3)"),
+        [("no-where", "Providers/Stores/Surreal/SurrealGovernanceStore.Finalization.cs")] = (1, "W3 fix batch (L1)"),
+        [("no-where", "Providers/Stores/Surreal/SurrealNftLifecycleStore.cs")] = (1, "W3 fix batch (L5)"),
+        [("bare-id", "Services/Fiat/Reversal/FiatReversalEventHandler.cs")] = (1, "W3 fix batch (L3): LotId = lot?.Id is the stripped [Id]"),
+        // Convention residue (not fail-closed today): SQL-13 class.
+        [("non-literal", "Helpers/HostedSessionAliasFence.cs")] = (2, "W3 fix batch (L2/L1): per-index alias names via SurrealIdentifierTemplate"),
+        [("non-literal", "Mcp/Tools/VectorSearchTool.cs")] = (1, "W3 fix batch (L1): ternary of two consts inline"),
+        [("non-literal", "Services/Fiat/Reversal/OnRampLotLookup.cs")] = (1, "W3 fix batch (L3): pass the const at each call site"),
     };
 
     private static void AssertNone(string rule, string because)
