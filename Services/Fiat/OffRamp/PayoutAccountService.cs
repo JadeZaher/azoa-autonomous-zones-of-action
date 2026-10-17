@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;

@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Threading;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.HostedSessions;
@@ -11,7 +10,6 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Fiat;
-using Microsoft.Extensions.DependencyInjection;
 
 // The credit-capability probe reads the reserve ledger and the on-ramp's own options.
 // Aliased rather than imported wholesale so this file's type names stay unambiguous.
