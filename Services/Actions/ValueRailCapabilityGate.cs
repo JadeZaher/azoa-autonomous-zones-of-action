@@ -76,7 +76,7 @@ public readonly record struct ValueNodeAdmission(bool IsAllowed, string RefusalM
 /// engine.</para>
 /// <para><b>Why the ledger and not <c>IRealValueKycGate</c>.</b> The pause is only ONE of the two
 /// conditions that gate composes: the wrapped inner gate additionally demands current KYC
-/// provenance and an AML NO_HIT (<c>Services/Bridge/RealValueKycGate.cs</c>). Resolving the whole
+/// provenance and an AML NO_HIT (<c>Services/Kyc/KycGateService.cs</c>). Resolving the whole
 /// gate here would silently make identity verification a precondition of every internal unit move
 /// in the workflow engine — a policy nobody decided, and one that refuses the very people the
 /// platform is for. So this reads the same flag through the same ledger, refuses with the same

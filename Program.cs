@@ -1275,7 +1275,7 @@ builder.Services.AddScoped<WttStageKeyReadiness>();
 builder.Services.AddSingleton<WttStageKeyReadinessState>();
 builder.Services.AddHostedService<WttStageKeyReadinessWorker>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWttRecipientDirectory, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttRecipientDirectory>();
-// Replaced in place by the wallet ownership challenge's persisted proof (L4); fail-closed until then.
+// The wallet ownership challenge's persisted proof (L4, Services/Wormhole/WttRecipientOwnership.cs).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWalletOwnershipProof, WalletOwnershipProofAdapter>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttBodyClaimStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttBodyClaimStore>();
@@ -1785,10 +1785,10 @@ builder.Services.AddScoped<
 // because every one of these extensions VERIFIES its collaborators and throws at boot instead
 // of registering something that cannot work:
 //   AddFiatOnRamp             needs ISurrealExecutor, IAllocationManager, IPlatformTokenGenesis
-//                             and IRealValueKycGate (registered ~line 1599).
-//   AddOnRampValueRateSource  needs AddFiatOnRamp AND AddValueRateSources (~line 1539).
+//                             and IRealValueKycGate (the single registration above).
+//   AddOnRampValueRateSource  needs AddFiatOnRamp AND AddValueRateSources (above).
 //   AddFiatReversalPipeline   needs the on-ramp lot ledger, the reserve, the hold primitive,
-//                             the idempotency store, ISagaCoordinator (~line 1640), the
+//                             the idempotency store, ISagaCoordinator (above), the
 //                             provider factory, IWalletStore and the named Stripe client.
 //   AddReversalRiskValueGate  needs AddFiatReversalPipeline AND the D46 gate it wraps.
 // Ordering inside the block is therefore load-bearing and is asserted by those guards.
