@@ -148,9 +148,13 @@ Full evidence for every row, with file:line, is in the [join ledger](tracks/plat
 - **Runbook rewritten lean** (this file); old one in git.
 
 **Round 4 (2026-10-17):**
-- **SurrealForge 1.3.0 published final by the owner** (final commit `b5a7d52`; integration 47/47 on
-  3.2.4/3.1.4 × memory/RocksDB, 1202 unit). Any sweep-found library bug becomes a 1.3.1 the owner
-  publishes. No local-pack/rc machinery.
+- **SurrealForge 1.3.0 published final** (final code `b5a7d52`; integration 47/47 on
+  3.2.4/3.1.4 × memory/RocksDB, 1202 unit). No local-pack/rc machinery. **Release flow changed
+  2026-10-17 (owner-approved):** SurrealForge's `publish.yml` now runs via `workflow_run` after `CI`
+  succeeds on a push to `main`, packs the exact CI-tested `head_sha`, and `--skip-duplicate` skips
+  pushes that don't bump the version; the GitHub-Release trigger was removed (commit `203b76c`). The
+  owner authorized pushing; `main` = `586e316` (1.3.0 merge), CI → publish in progress. A sweep-found
+  library bug becomes a 1.3.1: bump `Directory.Build.props`, merge to `main`, push.
 - **Compile-only builds per lane are allowed** (`dotnet build` / `tsc` / SDK build). Tests, lint gates,
   schema goldens and E2E still run once in the integrated sweep.
 - **`AwaitingSignature` gets a submit-signed route** (exact-byte verification against the saved plan →
