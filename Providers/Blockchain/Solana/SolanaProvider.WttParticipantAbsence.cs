@@ -1,6 +1,4 @@
-            var root = upperSlot is { } known ? default : await DurableRpcAsync("getSlot", [new { commitment = "finalized" }], ct);
-            var upper = upperSlot ?? 0;
-            if (upperSlot is null && (root.ValueKind != JsonValueKind.Number || !root.TryGetUInt64(out upper)) || upper < (ulong)recovery.ContextSlot)using System.Text.Json;
+using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Interfaces.Wtt;
 using AZOA.WebAPI.Models.Responses;

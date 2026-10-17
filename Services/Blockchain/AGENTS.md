@@ -13,7 +13,8 @@ sign, with no plan, fails closed (nothing to verify a later signature against). 
 `ClientSignedOperationService` owns the rest:
 
 - **Submit** (`POST /api/blockchain/operations/{id}/submit-signed`): owner + acting tenant pinned to the row, signing scope
-  `transfer:sign`. The module accepts only the plan's exact bytes signed by the plan signer (Algorand: re-encode the saved
+  `transfer:sign`, then the risk-hold-wrapped `IRealValueKycGate` (KYC + reversal account pause, X-2) before anything is
+  persisted or broadcast. The module accepts only the plan's exact bytes signed by the plan signer (Algorand: re-encode the saved
   txn under the submitted signature and require byte equality, since the SDK cannot round-trip every axfer; Ethereum:
   `EthereumSignedEnvelope.Verify` — exact unsigned RLP + recovered signer; Solana: message equality + fee-payer
   signature). The signed bytes are persisted by a status CAS (`AwaitingSignature|NeedsOperator → PendingConfirmation`)
@@ -24,10 +25,16 @@ sign, with no plan, fails closed (nothing to verify a later signature against). 
   proves the plan never landed), or `NonceConsumed` by an attributed different transaction (submitted or not; an
   unattributed consumer parks as `NeedsOperator`, since it might be the plan itself) → `Failed` with
   `ClientSigningOutcome` = `FailedOnChain|Abandoned|Superseded`. Every terminal state settles both the derived key and
-  any parent `IdempotencyKey`, so a retry is never answered "still in progress" forever.
+  any parent `IdempotencyKey`, so a retry is never answered "still in progress" forever. A crash between the status CAS
+  and that settlement self-heals: `ReconcileAsync` (reached for terminal rows by the receipt-triggered
+  `ReconcileOperationAsync`) and a replayed submit re-settle still-`InProgress` claims from the row's own outcome (RV-L5-03).
+  Solana's resumable absence-scan cursor is kept in `Parameters["ClientSigningAbsenceEvidence"]` by a status-preserving
+  CAS; an `Unproven` observation (validity passed, node lacks history) parks like an unattributed consumer.
 - **Stuck rows** (`Reconciliation:ClientSignatureTtlSeconds`, default 1800): the chain is re-observed first, because the
-  signer may have broadcast the bytes themselves (Algorand by predicted txid; Solana by scanning the signer's finalized
-  signatures since the plan's context slot). Algorand/Solana plans past their window close as `Abandoned`. An Ethereum
+  signer may have broadcast the bytes themselves (Algorand by predicted txid; Solana by the finalized-ancestry message scan,
+  see `Providers/Blockchain/AGENTS.md` §client-signed transfers). The operator console also lists `PendingConfirmation`
+  rows older than the TTL (a dropped or underpriced Ethereum submission, RV-L5-04); they keep re-observing and settle only
+  on chain proof (replacement at the same nonce from the wallet then reads as `Superseded`). Algorand/Solana plans past their window close as `Abandoned`. An Ethereum
   signature never expires, so an unsubmitted plan parks as `NeedsOperator` (also when the nonce is consumed but the
   consumer cannot be attributed — it might be the plan itself).
 - **Operator** (`GET /api/operator/blockchain-operations/stuck`, `POST …/{id}/resolve`): the operator may supply the

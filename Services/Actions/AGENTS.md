@@ -903,3 +903,9 @@ quote). The output catalog's Bridge/Back shape is the union of the legacy `Bridg
 and the flat `WttActionOutput` receipt. Inert until L5 makes `WttActionResolver : IActionWttRoute`
 (registered as `IActionWttRoute`) and L1 adds `WttActionConfig? Wtt` to `BridgeNodeConfig` /
 `BackNodeConfig` (strict publish-time config parsing rejects the key until then).
+
+No fallback (X-8): `Applies` is true for any non-null `wtt` property, well-formed or not
+(`WttActionResolver.Selects`), so a malformed body reaches the WTT route, which fails the node. Publish refuses a Bridge/Back
+config whose `wtt` member does not parse as a typed `WttActionConfig` (`ActionNodeConfigRegistry.Validate`), and the legacy
+`BridgeNodeHandler` / `BackNodeHandler` fail any node that names `wtt`, so the trusted bridge never runs a node the author
+meant for WTT even if a registry path or options difference let it through.

@@ -10,6 +10,7 @@ using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Dex;
+using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
 using Moq;
@@ -20,6 +21,18 @@ namespace AZOA.WebAPI.Tests.Managers.Dex;
 
 public sealed class SwapOperationServiceTests
 {
+    [Fact]
+    public async Task AReversalPausedAccountCannotAdmitASwap()
+    {
+        var fixture = new Fixture();
+        fixture.ValueGate.Paused = true;
+
+        var refused = await fixture.Service.StartAsync(fixture.Credential, fixture.Request);
+
+        refused.Code.Should().Be(AzoaErrorCodes.Forbidden);
+        fixture.Saved.Should().BeNull("nothing is admitted for a paused account");
+    }
+
     [Fact]
     public async Task ExposureResponseLossReplaysOnlyOriginalWireForOriginalParticipant()
     {
@@ -187,6 +200,7 @@ public sealed class SwapOperationServiceTests
         internal readonly DexQuoteRecord Quote;
         internal readonly SwapOperationService Service;
         internal SwapOperationRecord? Saved;
+        internal readonly SwitchableValueGate ValueGate = new();
 
         internal Fixture(Mock<IDexTransactionModule>? module = null)
         {
@@ -228,7 +242,7 @@ public sealed class SwapOperationServiceTests
             }
             var modules = new DexModuleResolver(factory.Object);
             var stages = new SwapStageCoordinator(Operations.Object);
-            Service = new(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages));
+            Service = new(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages), ValueGate);
         }
     }
 }

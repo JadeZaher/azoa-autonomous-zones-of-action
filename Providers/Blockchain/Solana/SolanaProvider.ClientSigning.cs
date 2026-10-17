@@ -125,7 +125,7 @@ public partial class SolanaProvider : IClientSignedTransferModule
             return Observation(ClientSigningVerdicts.Pending, transactionId, $"Scanned {cursor.ScannedBlocks} finalized blocks toward the plan's context slot.",
                 WttCanonical(new { format = WttMessageScanFormat, history = cursor }));
         return Observation(ClientSigningVerdicts.Expired, null,
-            "Every finalized block from the plan's context slot past its blockhash expiry lacks the plan's message.");
+            "Every finalized block from the plan's context slot past its blockhash expiry lacks the plan's message.", null);
     }
 
     /// <summary>The finalized slot whose block height is the first past the plan's last valid height (consecutive heights per block).</summary>

@@ -45,8 +45,7 @@ internal static class WttSigningAuthorityFence
                     AND state = 'Running' AND crypto::sha256(frozen_input) = $_wtt_takeover_hash)
             """).WithParam("_wtt_takeover_run", action.RunId).WithParam("_wtt_takeover_node", action.NodeId)
             .WithParam("_wtt_takeover_hash", action.IntentHash),
-        SurrealQuery.Of("IF $_wtt_takeover_status INSIDE ['Running', 'AwaitingReconciliation'] AND array::len($_wtt_takeover_live) > 0 "
-            + "{ THROW 'WTT_JOURNAL_CONFLICT' }"),
+        SurrealQuery.Of("IF $_wtt_takeover_status INSIDE ['Running', 'AwaitingReconciliation'] AND array::len($_wtt_takeover_live) > 0 { THROW 'WTT_JOURNAL_CONFLICT' }"),
     ];
 
     private static IReadOnlyList<SurrealQuery>? Signing(WttOperationIntent intent, WttSigningAuthority owner, string chain,

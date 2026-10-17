@@ -56,7 +56,8 @@ public sealed class DexModuleResolver(IBlockchainProviderFactory providers, IMem
             !Enum.TryParse<ChainNetwork>(network.Network, false, out var concrete) || !Enum.IsDefined(concrete) ||
             network.Network != concrete.ToString()) return null;
         return providers.TryGetRailProvider(network.ChainType, RailEnvironment.ForChain(concrete), out var rail) && rail is IBlockchainProvider blockchain &&
-            ChainModuleActivation.TryGetUngated<IDexTransactionModule>(blockchain, out var module) && module is not null &&
+            (providers.TryGetModule<IDexTransactionModule>(blockchain, out var module) && module is not null
+                || ChainModuleActivation.TryGetUngated(blockchain, out module)) && module is not null &&
             module.ChainType == network.ChainType && module.ActiveNetwork == concrete ? module : null;
     }
 
