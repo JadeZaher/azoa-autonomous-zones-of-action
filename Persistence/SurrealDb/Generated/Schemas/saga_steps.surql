@@ -36,6 +36,8 @@ DEFINE FIELD IF NOT EXISTS step_idempotency_key ON TABLE saga_steps TYPE string
 
 -- Opaque payload (serialized typed step input)
 DEFINE FIELD IF NOT EXISTS payload ON TABLE saga_steps TYPE string;
+DEFINE FIELD IF NOT EXISTS admission_payload_hash ON TABLE saga_steps TYPE option<string>
+    READONLY;
 
 -- Lifecycle state (StepStatus enum) -- drives the G2 conditional claim
 DEFINE FIELD IF NOT EXISTS status ON TABLE saga_steps TYPE string

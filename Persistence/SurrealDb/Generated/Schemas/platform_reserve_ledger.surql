@@ -15,6 +15,8 @@ DEFINE PARAM IF NOT EXISTS $platform_reserve_ledger_network VALUE ["Devnet", "Te
 
 DEFINE TABLE IF NOT EXISTS platform_reserve_ledger SCHEMAFULL;
 
+DEFINE FIELD IF NOT EXISTS protocol_identity ON TABLE platform_reserve_ledger TYPE option<string>;
+
 -- Core identity (record id is the SHA-256 of chain|network|asset id)
 DEFINE FIELD IF NOT EXISTS id ON TABLE platform_reserve_ledger TYPE string
     ASSERT $value != NONE AND $value != "";

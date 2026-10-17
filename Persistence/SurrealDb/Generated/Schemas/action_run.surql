@@ -14,6 +14,16 @@ DEFINE PARAM IF NOT EXISTS $action_run_status VALUE ["Pending", "Running", "Succ
 
 DEFINE TABLE IF NOT EXISTS action_run SCHEMAFULL;
 
+DEFINE FIELD IF NOT EXISTS version ON TABLE action_run TYPE int
+    DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS definition_snapshot_json ON TABLE action_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS definition_snapshot_hash ON TABLE action_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS invocation_identity ON TABLE action_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS internal_dependencies_json ON TABLE action_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS occurrence_boundaries_json ON TABLE action_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS initial_input_json ON TABLE action_run TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS authentication_witness_json ON TABLE action_run TYPE option<string>;
+
 -- Run identity (record id is the Guid('N') of ActionRun.Id) -- unique across all runs of all actions
 DEFINE FIELD IF NOT EXISTS id ON TABLE action_run TYPE string
     ASSERT $value != NONE AND $value != "";

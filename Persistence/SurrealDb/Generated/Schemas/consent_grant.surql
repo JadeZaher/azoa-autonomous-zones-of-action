@@ -12,6 +12,11 @@ DEFINE PARAM IF NOT EXISTS $consent_grant_origin VALUE ["UserExplicit", "Partici
 
 DEFINE TABLE IF NOT EXISTS consent_grant SCHEMAFULL;
 
+DEFINE FIELD IF NOT EXISTS command_id ON TABLE consent_grant TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS admission_receipt_json ON TABLE consent_grant TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS version ON TABLE consent_grant TYPE int
+    DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS expiry_notified_at ON TABLE consent_grant TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS id ON TABLE consent_grant TYPE string;
 DEFINE FIELD IF NOT EXISTS grantor_user_id ON TABLE consent_grant TYPE record<user>;
 DEFINE FIELD IF NOT EXISTS tenant_id ON TABLE consent_grant TYPE record<user>;

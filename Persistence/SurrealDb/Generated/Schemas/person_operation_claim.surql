@@ -34,12 +34,17 @@ DEFINE FIELD IF NOT EXISTS released_at ON TABLE person_operation_claim TYPE opti
 DEFINE FIELD IF NOT EXISTS decision_option ON TABLE person_operation_claim TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS decided_at ON TABLE person_operation_claim TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS decision_closes_at ON TABLE person_operation_claim TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS governance_proposal_id ON TABLE person_operation_claim TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS governance_definition_hash ON TABLE person_operation_claim TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS governance_decision_hash ON TABLE person_operation_claim TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS governance_eligibility_json ON TABLE person_operation_claim TYPE option<string>;
 
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE person_operation_claim TYPE datetime
     DEFAULT time::now()
     READONLY;
 DEFINE FIELD IF NOT EXISTS modified_date ON TABLE person_operation_claim TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS version ON TABLE person_operation_claim TYPE option<int>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

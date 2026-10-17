@@ -43,6 +43,7 @@ DEFINE FIELD IF NOT EXISTS rejection_reason ON TABLE kyc_submission TYPE option<
 
 -- Provider session linkage (manual provider stamps the user id as a pseudo-session)
 DEFINE FIELD IF NOT EXISTS provider_session_id ON TABLE kyc_submission TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS aml_lineage_key ON TABLE kyc_submission TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS hosted_verification ON TABLE kyc_submission TYPE bool;
 DEFINE FIELD IF NOT EXISTS accepts_document_references ON TABLE kyc_submission TYPE bool;
 DEFINE FIELD IF NOT EXISTS verification_url ON TABLE kyc_submission TYPE option<string>;

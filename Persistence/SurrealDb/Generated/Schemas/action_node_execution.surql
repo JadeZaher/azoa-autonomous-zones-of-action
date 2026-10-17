@@ -15,6 +15,16 @@ DEFINE PARAM IF NOT EXISTS $action_node_execution_state VALUE ["Pending", "Runni
 
 DEFINE TABLE IF NOT EXISTS action_node_execution SCHEMAFULL;
 
+DEFINE FIELD IF NOT EXISTS version ON TABLE action_node_execution TYPE int
+    DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS frozen_input ON TABLE action_node_execution TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS signing_authority_json ON TABLE action_node_execution TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS admission_rejection ON TABLE action_node_execution TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS external_operation_json ON TABLE action_node_execution TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS recovery_state ON TABLE action_node_execution TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS wait_until ON TABLE action_node_execution TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS manual_advance_released ON TABLE action_node_execution TYPE bool;
+
 -- Execution row identity (record id is the Guid('N') of ActionNodeExecution.Id)
 DEFINE FIELD IF NOT EXISTS id ON TABLE action_node_execution TYPE string
     ASSERT $value != NONE AND $value != "";
