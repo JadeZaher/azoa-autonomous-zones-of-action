@@ -225,7 +225,7 @@ public sealed class AllocationManager : IAllocationManager
             if (feeObligation is not null)
             {
                 var refusal = ToConsumerSafeFailure(feeObligation);
-                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                await FailBeforeValueEffectAsync(ledgerKey, refusal.Message);
                 return refusal;
             }
 
@@ -234,7 +234,7 @@ public sealed class AllocationManager : IAllocationManager
             if (wallet is null)
             {
                 var refusal = ToConsumerSafeFailure(walletError);
-                await _idempotencyStore.FailAsync(ledgerKey, refusal.Message, CancellationToken.None);
+                await FailBeforeValueEffectAsync(ledgerKey, refusal.Message);
                 return refusal;
             }
 

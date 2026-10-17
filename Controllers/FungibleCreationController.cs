@@ -5,6 +5,7 @@ using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -14,6 +15,7 @@ public sealed class FungibleCreationController(IFungibleCreationService service,
     AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory signingAuthority) : ControllerBase
 {
     [HttpPost("{id}/replace")]
+    [EnableRateLimiting("financial")]
     public async Task<IActionResult> Replace(string id, [FromBody] FungibleContinuationRequest request)
     {
         if (Actor() is null) return Unauthorized();
@@ -23,6 +25,7 @@ public sealed class FungibleCreationController(IFungibleCreationService service,
     }
 
     [HttpPost("{id}/cancel")]
+    [EnableRateLimiting("financial")]
     public async Task<IActionResult> Cancel(string id, [FromBody] FungibleContinuationRequest request)
     {
         if (Actor() is null) return Unauthorized();
@@ -44,6 +47,7 @@ public sealed class FungibleCreationController(IFungibleCreationService service,
     }
 
     [HttpPost("{id}/attachment")]
+    [EnableRateLimiting("financial")]
     public async Task<IActionResult> Attach(string id, [FromBody] FungibleAttachmentRequest request)
     {
         if (Actor() is null) return Unauthorized();
@@ -62,6 +66,7 @@ public sealed class FungibleCreationController(IFungibleCreationService service,
         => Actor() is { } actor ? Render(await service.GetAsync(id, actor, User.GetActingTenantId(), HttpContext.RequestAborted)) : Unauthorized();
 
     [HttpPost("{id}/quote")]
+    [EnableRateLimiting("financial")]
     public async Task<IActionResult> Quote(string id)
     {
         if (Actor() is not { } actor) return Unauthorized();
@@ -70,6 +75,7 @@ public sealed class FungibleCreationController(IFungibleCreationService service,
     }
 
     [HttpPost("{id}/accept-quote")]
+    [EnableRateLimiting("financial")]
     public async Task<IActionResult> Accept(string id, [FromBody] FungibleQuoteAcceptance request)
     {
         if (Actor() is not { } actor) return Unauthorized();
@@ -78,6 +84,7 @@ public sealed class FungibleCreationController(IFungibleCreationService service,
     }
 
     [HttpPost("{id}/continue")]
+    [EnableRateLimiting("financial")]
     public async Task<IActionResult> Continue(string id, [FromBody] FungibleContinuationRequest request)
     {
         if (Actor() is not { } actor) return Unauthorized();

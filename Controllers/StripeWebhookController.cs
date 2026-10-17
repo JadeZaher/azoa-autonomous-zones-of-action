@@ -84,13 +84,24 @@ public sealed class StripeWebhookController : ControllerBase
         if (rawBody is null)
             return BadRequest(Acknowledgement());
 
+        // F-M2: platform and Connect endpoints sign with different secrets; see Providers/Fiat/AGENTS.md §webhook-secrets.
         var signatureHeader = Request.Headers[StripeWebhookSignature.HeaderName].ToString();
+        var tolerance = TimeSpan.FromSeconds(_options.WebhookToleranceSeconds <= 0 ? 300 : _options.WebhookToleranceSeconds);
         var verdict = StripeWebhookSignature.Verify(
-            rawBody,
-            signatureHeader,
-            secrets.WebhookSecret,
-            _clock.GetUtcNow(),
-            TimeSpan.FromSeconds(_options.WebhookToleranceSeconds <= 0 ? 300 : _options.WebhookToleranceSeconds));
+            rawBody, signatureHeader, secrets.WebhookSecret, _clock.GetUtcNow(), tolerance);
+        var distinctConnectSecret = !string.IsNullOrWhiteSpace(secrets.ConnectWebhookSecret)
+            && !string.Equals(secrets.ConnectWebhookSecret, secrets.WebhookSecret, StringComparison.Ordinal);
+        var signedByConnectEndpoint = false;
+        if (verdict != StripeSignatureVerdict.Valid && distinctConnectSecret)
+        {
+            var connectVerdict = StripeWebhookSignature.Verify(
+                rawBody, signatureHeader, secrets.ConnectWebhookSecret, _clock.GetUtcNow(), tolerance);
+            if (connectVerdict == StripeSignatureVerdict.Valid)
+            {
+                verdict = connectVerdict;
+                signedByConnectEndpoint = true;
+            }
+        }
 
         if (verdict != StripeSignatureVerdict.Valid)
         {
@@ -104,6 +115,15 @@ public sealed class StripeWebhookController : ControllerBase
         if (envelope is null)
         {
             _logger.LogWarning("A signed payment webhook could not be parsed and was rejected.");
+            return BadRequest(Acknowledgement());
+        }
+
+        // With a distinct Connect secret configured, each secret is valid only for its own
+        // endpoint's events: connected-account events carry `account`, platform events never do.
+        if (distinctConnectSecret
+            && signedByConnectEndpoint != !string.IsNullOrWhiteSpace(envelope.ProviderAccountId))
+        {
+            _logger.LogWarning("A signed payment webhook arrived on the wrong endpoint secret and was rejected.");
             return BadRequest(Acknowledgement());
         }
 

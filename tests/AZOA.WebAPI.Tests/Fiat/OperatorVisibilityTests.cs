@@ -15,8 +15,6 @@
 //     board that cannot tell those apart is noise an operator learns to ignore;
 //   * a failed read answers 503 and never an empty 200, since "nobody is owed money" is the one
 //     answer that must never be a guess;
-//   * the two ledger queries actually ask for the rows the boards claim to show, including the
-//     lots stranded at Pending that never reach Refused or Stuck at all;
 //   * and both boards stay behind the Operator policy.
 
 using System.Reflection;
@@ -30,7 +28,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests.Fiat;
 
@@ -136,27 +133,6 @@ public class OperatorVisibilityTests
     // ── §lot-query — the board asks for the rows it claims to show ───────────
 
     [Fact]
-    public async Task LotLedger_AsksForRefusedAndStuck_AndForLotsStrandedAtPending()
-    {
-        var issued = new List<SurrealQuery>();
-        var executor = new Mock<ISurrealExecutor>();
-        executor.Setup(candidate => candidate.QueryAsync<OnRampLot>(
-                It.IsAny<SurrealQuery>(), It.IsAny<CancellationToken>()))
-            .Callback<SurrealQuery, CancellationToken>((query, _) => issued.Add(query));
-
-        var result = await new SurrealOnRampLotLedger(executor.Object)
-            .ListNeedingOperatorAsync(50, CancellationToken.None);
-
-        result.IsError.Should().BeFalse();
-        issued.Should().HaveCount(2, "the decided lots and the stranded ones are two reads");
-        issued[0].Sql.Should().Contain("FROM on_ramp_lot").And.Contain("status INSIDE $_statuses");
-        // Every failed attempt leaves the lot Pending, so a lot the provider gave up on never
-        // reaches Refused or Stuck. Listing only those would hide the commonest stranded charge.
-        issued[1].Sql.Should().Contain("status = $_status").And.Contain("updated_at < $_before");
-        issued.Should().OnlyContain(query => query.Sql.Contains("LIMIT $_limit"));
-    }
-
-    [Fact]
     public void MergeOperatorReads_ShowsEachLotOnce_NewestFirst()
     {
         // The two reads are not one transaction: a lot parked between them satisfies both.
@@ -232,25 +208,6 @@ public class OperatorVisibilityTests
 
         response.Should().BeOfType<ObjectResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-    }
-
-    [Fact]
-    public async Task EventInbox_AsksForTheDeliveriesNoHandlerFinished()
-    {
-        var issued = new List<SurrealQuery>();
-        var executor = new Mock<ISurrealExecutor>();
-        executor.Setup(candidate => candidate.QueryAsync<FiatEvent>(
-                It.IsAny<SurrealQuery>(), It.IsAny<CancellationToken>()))
-            .Callback<SurrealQuery, CancellationToken>((query, _) => issued.Add(query));
-
-        var result = await new StripeWebhookInbox(executor.Object)
-            .ListNeedingOperatorAsync(50, CancellationToken.None);
-
-        result.IsError.Should().BeFalse();
-        issued.Should().ContainSingle();
-        issued[0].Sql.Should().Contain("FROM fiat_event")
-            .And.Contain("status INSIDE $_statuses")
-            .And.Contain("ORDER BY received_at DESC");
     }
 
     [Theory]

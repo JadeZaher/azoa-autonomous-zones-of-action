@@ -117,7 +117,7 @@ public sealed class PlatformReserveController : ControllerBase
 
         // The read asks the write's question — "is this budget yours?" — rather than a looser
         // one of its own, so a caller can never see a partition it could not have declared.
-        var scopeRefusal = ReservePartitionScope.Refuse(
+        var scopeRefusal = ReservePartitionScope.RefuseDeclaration(
             ledger.Result, authority.Authority, ledger.Result.AssetId, _options);
         if (scopeRefusal is not null)
             return StatusCode(

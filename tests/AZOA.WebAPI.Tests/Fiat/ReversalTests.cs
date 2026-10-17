@@ -1088,50 +1088,9 @@ public class ReversalTests
             return Task.FromResult(AZOAResult<bool>.Success(flagged));
         }
 
-        private static FiatReversal Clone(FiatReversal row) => new()
-        {
-            Id = row.Id,
-            Provider = row.Provider,
-            ProviderObjectId = row.ProviderObjectId,
-            Kind = row.Kind,
-            LastEventType = row.LastEventType,
-            ProviderEventId = row.ProviderEventId,
-            ChargeId = row.ChargeId,
-            PaymentIntentId = row.PaymentIntentId,
-            CheckoutSessionId = row.CheckoutSessionId,
-            IntentId = row.IntentId,
-            LotId = row.LotId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
-            FlowPurpose = row.FlowPurpose,
-            AmountMinorUnits = row.AmountMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            SourceAmountMinorUnits = row.SourceAmountMinorUnits,
-            IsPartial = row.IsPartial,
-            FundsWithdrawn = row.FundsWithdrawn,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            TargetQuantityBaseUnits = row.TargetQuantityBaseUnits,
-            RecoveredQuantityBaseUnits = row.RecoveredQuantityBaseUnits,
-            AbsorbedQuantityBaseUnits = row.AbsorbedQuantityBaseUnits,
-            ReinstatementOwedBaseUnits = row.ReinstatementOwedBaseUnits,
-            RecoveryPath = row.RecoveryPath,
-            RecoveryTransactionId = row.RecoveryTransactionId,
-            OperationId = row.OperationId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            AttemptCount = row.AttemptCount,
-            OpenedAt = row.OpenedAt,
-            ResolvedAt = row.ResolvedAt,
-            ReinstatedAt = row.ReinstatedAt,
-            AccountFlagged = row.AccountFlagged,
-            FlagReason = row.FlagReason,
-            FlagClearedAt = row.FlagClearedAt,
-            FlagClearedBy = row.FlagClearedBy,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        // A JSON round-trip, like the lot ledger: a hand-listed copy silently drops new columns.
+        private static FiatReversal Clone(FiatReversal row)
+            => System.Text.Json.JsonSerializer.Deserialize<FiatReversal>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }
 
     /// <summary>In-memory on-ramp lot ledger; only the reads the reversal pipeline uses matter.</summary>

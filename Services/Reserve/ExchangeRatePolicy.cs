@@ -17,6 +17,9 @@ public sealed class ExchangeOptions
 {
     public const string SectionName = "Exchange";
 
+    /// <summary>Most native base units the reserve may advance so a participant can accept what an exchange delivers; blank or "0" funds nothing.</summary>
+    public string? MaximumRecipientFundingBaseUnits { get; set; } = "0";
+
     /// <summary>
     /// How old a declared rate may be at the exchange it prices. Non-positive REFUSES every
     /// exchange rather than accepting any age — the fail-closed reading, never "no limit".

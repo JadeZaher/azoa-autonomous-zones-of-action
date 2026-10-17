@@ -192,3 +192,13 @@ unpriced — the honest state, not a bug, and the lot still carries the exact mo
 The reserve refuses a draw against a partition nobody declared, so a wrong `ReservePartition`
 fails closed and is operator-fixable — it can never overdraw a partition earmarked for something
 else.
+
+## §refund-window — a lost refund create past 23 h (round 4)
+
+A refund whose create response was lost is replayed under the same key for 23 h (Stripe keeps
+keys ≥ 24 h). Past that, `OnRampRecovery.ReconcileAsync` no longer refuses forever: it lists the
+payment's refunds (`GET /v1/refunds?payment_intent=…`, one page of 100). Exactly one refund with
+our `azoa_intent_id` → adopted and verified like any other; none, on a complete page → the old
+create provably never landed, so the attempt counter advances and a new key is used; more than one,
+or `has_more`, or a failed read → still refused for operator reconciliation. The list is the
+provider's own record, so this never issues a second refund over an unknown first one.

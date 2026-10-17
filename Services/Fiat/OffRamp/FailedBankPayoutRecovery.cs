@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Security.Cryptography;
-using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -32,9 +31,8 @@ public sealed class FailedBankPayoutRecovery(FiatOptions options, IFiatPayoutLed
             return Fail("The original funding transfer could not be verified.");
         if (!row.RecoveryRequested)
         {
-            var audit = JsonSerializer.Deserialize<List<RecoveryAudit>>(row.RecoveryAuditJson) ?? [];
-            audit.Add(new(actor, reason.Trim(), clock.GetUtcNow(), row.Environment, row.ProviderTransferId!, row.ProviderPayoutId!));
-            row.RecoveryAuditJson = JsonSerializer.Serialize(audit);
+            row.RecoveryAuditJson = PayoutAudit.Append(row.RecoveryAuditJson,
+                new RecoveryAudit(actor, reason.Trim(), clock.GetUtcNow(), row.Environment, row.ProviderTransferId!, row.ProviderPayoutId!));
             row.RecoveryRequested = true;
             var saved = await SaveAsync(row, ct);
             if (saved.IsError) return saved;

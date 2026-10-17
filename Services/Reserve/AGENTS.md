@@ -91,29 +91,28 @@ five; anything that constructs an evaluation without them gets a closed door, no
 and re-enters at the back under a new key. Moving the `CloseAsync` call to settlement success
 would be strictly fairer, and belongs with whoever owns `Managers/ReserveExchangeManager.cs`.
 
-## §three-outcomes — a movement the rail took and never confirmed
+## §three-outcomes — a movement the rail took and never confirmed (durable top-up, round 4)
 
-`ReserveToTreasuryBuyBackBackstop.TopUpAsync` has THREE outcomes, not two, and conflating two of
-them is how a declared partition gets drawn down for units that may never have left.
-
-Every provider's transact pipeline returns a **SUCCESS** result whose `Message` carries
-`OperationStatus.PendingConfirmationMarker` when the transaction was broadcast and the confirm
-poll ran out (`AlgorandProvider.BuildSignSubmitAsync`, and the Ethereum/Solana equivalents). So:
+`ReserveToTreasuryBuyBackBackstop.TopUpAsync` moves reserve units to the project treasury over the
+same exact-saved-wire primitive the off-ramp uses (`IValueTransferTransactionModule` +
+`IValueMoveReceiptStore`): claim `"{key}:move"`, prepare and save signed bytes once
+(`value:{key}:{generation}`), then only observe or rebroadcast those bytes. The legacy
+`provider.TransferAsync` + pending-marker path is gone.
 
 | Outcome | What the reserve does | What the seller keeps |
 | --- | --- | --- |
-| `IsError` — never broadcast | nothing; the hold stands and MAY be handed back | place + promise |
-| pending marker — broadcast, unknown | nothing; the hold stands and may **NOT** be handed back | place + promise |
-| confirmed | hold → issued, project treasury credited, claim completed | the fill |
+| preparation refused, or authoritative `FailedOnChain` | claim `Failed`; the hold stands and MAY be handed back | place + promise |
+| saved bytes not yet confirmed | claim stays `InProgress`; the hold stands and may **NOT** be handed back | place + promise |
+| `Confirmed` | hold → issued, project treasury credited, claim completed with the tx id | the fill |
 
-Reading only `IsError` converted the hold to Issued, credited the project and called
-`CompleteAsync` on the replay anchor — permanently, because a completed anchor is never
-re-attempted. The unknown outcome is now recorded on the move claim as
-`AmbiguousMoveReason`, and `ReleaseReservationAsync` **reads that back** and refuses the
-give-back: the units may already be the project's, and returning the partition's availability
-would let one declared budget back a second seller. Same rule and the same sentence shape as
-`OffRampService.AmbiguousMoveReason`. Held at the counters by
-`tests/AZOA.WebAPI.Tests/Exchange/BuyBackQueueTests.cs`.
+A retry of the same request (the seller re-asking, or the queue re-evaluating the place) resumes the
+in-progress claim with the SAME saved bytes, so one promise can never sign two transfers.
+`ReleaseReservationAsync` resumes an in-progress claim first: if it has landed the set-aside is
+spent (nothing is handed back); otherwise any `InProgress` claim — and any legacy claim failed with
+`AmbiguousMoveReason` — refuses the give-back, because the units may already be the project's.
+A move claim that failed for any other reason stays failed: one movement per request, an operator
+resolves the rest. Held at the counters by `tests/AZOA.WebAPI.Tests/Exchange/BuyBackQueueTests.cs`
+(`A_broadcast_that_never_confirmed_resumes_its_saved_bytes_and_settles_exactly_once`).
 
 ## §durable-exchange — journal before commitment, settle only the saved group
 
@@ -127,8 +126,9 @@ journals the exchange as an immutable `ExchangeHoldSource` **before** any commit
 2. **Gates.** In order: node governance, the platform unit, the rate policy (including buy-back
    admission, §buy-back), the hold window and the release request. A preview stops here. It
    journals nothing, and it returns the release disclosure when automatic release is requested.
-   That disclosure reveals the participant's wallet and readiness, so the controller runs the live
-   consent check on any preview carrying a `releaseMandate`.
+   A preview reads the participant's identity readiness (and, with a mandate, their wallet), so the
+   controller runs the live consent check on EVERY preview (round 4; previously only mandate
+   previews, which left a per-person status oracle).
 3. **Authority.** The controller captures the actual API-key credential
    (`ExchangeCallerContext.Credential`). `ExchangeAuthorityFactory` binds it together with the
    participant's watermark, wallet and `UserExplicit` swap:sign grant. Both parties are re-fenced
@@ -160,15 +160,52 @@ verbatim. The server checks it against fresh mechanics and captures transfer:sig
 key. Under the same key, an expired disclosure can be revised only while the source is still
 `Admitted`. Each revision is a versioned, audited change (`ReviseExchangeReleaseAsync`).
 
-**Fails closed until review.** The Algorand `IExchangeTransactionModule` is deliberately not
-advertised, so every exchange currently refuses with "capability unavailable" before any
-commitment. Advertising it is the independent reviewer's act. Ethereum and Solana parity is
-`round3-value-custody-parity-amendment.md`. Configuration: `Exchange:MaximumGroupNetworkFeeBaseUnits`
-(blank refuses every exchange) and `Exchange:UnsentSourceAbandonAfter`.
+## §d7-activation — the provider's declaration is the only pin
 
-**Retired rows.** Operation rows written by the old post-submit path carry no saved wire and no
-egress authorization. For any row it owns, `ExchangeSettlementReconciler` returns false and logs
-`MANUAL INTERVENTION REQUIRED`. It never credits or unwinds from the row alone.
+D-7: the exchange settles only where the provider advertises `IExchangeTransactionModule` for the
+node's settlement network (`IBlockchainProviderFactory.DefaultNetwork`). `ReserveExchangeManager`
+asks the provider before the quote and before any journal row (step 6b), so an undeclared network
+refuses with `RAIL_UNAVAILABLE` and leaves no `Admitted` source behind;
+`ExchangeHoldSourceService` repeats the check before every advance. Per-network pins live with the
+declaration in the provider lane (L5): advertise the module only on a network whose fixture passed.
+Ethereum and Solana parity is `round3-value-custody-parity-amendment.md`. Configuration:
+`Exchange:MaximumGroupNetworkFeeBaseUnits` (blank refuses every exchange),
+`Exchange:UnsentSourceAbandonAfter`, `Exchange:MaximumRecipientFundingBaseUnits`.
+
+## §recipient-readiness — acceptance folded into the exact group
+
+A direct buy delivers the project asset to the participant; a sale delivers the platform unit.
+The participant's account must accept that asset first. Round 3 did this with the synchronous
+`ICustodialRecipientPreparer` before admission (signed and sent outside any journal). Round 4
+folds it into the exchange itself: the manager only READS readiness
+(`IRecipientPreparationModule.GetRecipientAssetReadinessAsync`) and freezes the result into the
+immutable source as `ExchangeUnitsCommitment.RecipientFundingBaseUnits` (null = already ready).
+`ExchangeHoldWirePlan` turns it into `ExchangeWireIntent.Readiness`, and the provider prepends
+`[reserve → participant native funding (if > 0), participant asset acceptance]` to the SAME atomic
+group as the legs. Readiness therefore inherits everything the group has — saved exact bytes,
+rebroadcast-only recovery, absence proof after the validity window, compensation on absence — and a
+funded-but-unaccepted or accepted-but-unpaid half-state cannot exist.
+
+Bounds: funding ≤ `Exchange:MaximumRecipientFundingBaseUnits` (default `"0"` in code: an unready
+account that needs funding is refused with `RECIPIENT_NOT_READY` before any journal row;
+`appsettings.json` ships `"201000"`), and the provider's own ceiling (1 000 000 base units)
+whatever the option says. The provider accepts readiness only for the participant who signs one of
+the legs, with that leg's exact signing context, so the reserve can never be made to fund an
+arbitrary account. A blocked (frozen) holding refuses with `NOT_PERMITTED`. Held purchases need no
+readiness here: the units go to the reserve; the later release runs Hold's own acceptance stage.
+
+## §retired-rows — operator resolution, chain truth decides
+
+Operation rows written by the old post-submit path carry no saved wire and no egress
+authorization, so nothing settles them from the row alone. An operator lists them
+(`GET /api/exchange/operator/retired-rows`, Operator policy) and records ONE immutable attestation
+per row (`POST …/{operationId}/resolve`, `exchange_retired_resolution`, record id = operation id):
+`Confirmed` or `Failed`, a reason, the operator, and the row's observed `TxHash`. The attestation
+moves no value and no counter — it states that the operator made the node-side ledger good (or
+verified nothing was owed). `ExchangeSettlementReconciler` returns true only when generic
+reconciliation's own chain verdict equals the attested outcome AND the transaction hash matches;
+the transition to `Completed`/`Failed` stays reconciliation's CAS. An identical replay returns the
+original; a different second attestation is a conflict.
 
 ## §vocabulary
 
@@ -195,3 +232,20 @@ Configured chain restrictions and public expected-address checks run before cust
 Partition declaration and draw apply the same ledger-owned tenant policy. Declaration is a set operation, cannot shrink below existing promises, and never accepts settlement authority to name new partitions. A draw requires a declared partition. The 128-entry per-asset FIFO replay window is bounded: evicted keys can execute again, so every economic caller requires its own durable command/receipt anchor. Malformed partition accounting is a refusal, not zero availability.
 
 Public-address derivation catches only expected argument/format/cryptographic validation failures and returns a value-free refusal. Unexpected exceptions bubble to the centralized boundary. Secret inputs are never included in authored diagnostics. Reserve models and service comments carry terse contracts; rationale is maintained here.
+
+## §declaration-authority — budgeting is stricter than drawing (round 4)
+
+`ReservePartitionScope.RefuseDeclaration` gates partition declaration and the partition read
+(`PlatformReserveController` GET/POST). It is `Refuse` plus one rule: the node's own unit (an
+untenanted reserve row) is budgeted only by the node operator. `Reserve:PlatformUnitDrawPolicy`
+(`DeclaredTenants`, `AnyAdmittedTenant`) widens who may DRAW the platform unit; before round 4 it
+also let those tenants re-declare (and read) its partitions, i.e. re-budget the operator's supply.
+
+## §treasury-links — `project_treasury_ledger` user links (SQL-04)
+
+`tenant_id` (`record<user>`) and `closed_by_user_id` (`option<record<user>>`) are written as
+`SurrealLink.ToLink("user", …)`; a bare hex id is rejected by 3.x, which made every treasury open
+and close fail. The record id still hashes the bare tenant hex (`ProjectTreasuryLedger.RecordIdFor`),
+reads go through the record id, and `ProjectTreasuryService.ParseTenant` accepts both link and bare
+forms, so `GuardRowOwnership` compares GUIDs, never strings. Admin wire views that echo
+`row.TenantId` now show the link form (see the lane record's cross-lane note).

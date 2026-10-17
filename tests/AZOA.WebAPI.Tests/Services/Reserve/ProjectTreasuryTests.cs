@@ -430,7 +430,7 @@ public class ProjectTreasuryTests
         closed.IsError.Should().BeFalse(closed.Message);
         closed.Result!.Status.Should().Be(ProjectTreasuryStatus.Closed.ToString());
         closed.Result.CloseReason.Should().Be("project retired");
-        closed.Result.ClosedByUserId.Should().Be(OperatorUserId.ToString("N"));
+        closed.Result.ClosedByUserId.Should().Be($"user:{OperatorUserId:N}");
 
         var afterClose = await harness.MoveAsync(ProjectTreasuryMovementKind.Credit, 1, "op-late-credit");
         afterClose.IsError.Should().BeTrue("a retired treasury must not accept new value");
@@ -479,7 +479,7 @@ public class ProjectTreasuryTests
 
         listed.IsError.Should().BeFalse(listed.Message);
         listed.Result!.Should().HaveCount(2);
-        listed.Result.Should().OnlyContain(row => row.TenantId == TenantOne.ToString("N"));
+        listed.Result.Should().OnlyContain(row => row.TenantId == $"user:{TenantOne:N}");
     }
 
     [Fact]
@@ -733,7 +733,7 @@ public class ProjectTreasuryTests
             string tenantId, CancellationToken ct = default) =>
             Task.FromResult(AZOAResult<IReadOnlyList<ProjectTreasuryLedger>>.Success(
                 _rows.Values
-                    .Where(row => string.Equals(row.TenantId, tenantId, StringComparison.Ordinal))
+                    .Where(row => string.Equals(row.TenantId, $"user:{tenantId}", StringComparison.Ordinal))
                     .OrderByDescending(row => row.CreatedAt)
                     .Select(Clone)
                     .ToList()));

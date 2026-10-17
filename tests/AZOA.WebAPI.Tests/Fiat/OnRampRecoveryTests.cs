@@ -93,6 +93,33 @@ public sealed class OnRampRecoveryTests
     }
 
     [Fact]
+    public async Task UnknownRefundPastRetryWindowIsSettledFromThePaymentsRefundList()
+    {
+        // Stripe made the refund and only the response was lost; the payment's own refund list names it.
+        var fixture = new Fixture { LoseRefundResponse = true };
+        (await fixture.Service.RefundAsync(fixture.Intent, fixture.Actor, "Refund review", default)).IsError.Should().BeTrue();
+        fixture.Current.RefundStartedAt = DateTimeOffset.UtcNow.AddHours(-24);
+        fixture.ListedRefunds = new([new("re_test", "pi_test", 1000, "usd", "succeeded", fixture.Intent.ToString("N"))], HasMore: false);
+
+        (await fixture.Service.ReconcileAsync(fixture.Snapshot, default)).Result!.Status.Should().Be(OnRampLotStatuses.Refunded);
+        fixture.CreateCount.Should().Be(1, "the refund that exists is adopted, never created again");
+    }
+
+    [Fact]
+    public async Task ProvablyAbsentRefundPastRetryWindowOpensExactlyOneNewAttempt()
+    {
+        var fixture = new Fixture { LoseRefundResponse = true };
+        (await fixture.Service.RefundAsync(fixture.Intent, fixture.Actor, "Refund review", default)).IsError.Should().BeTrue();
+        fixture.Current.RefundStartedAt = DateTimeOffset.UtcNow.AddHours(-24);
+        fixture.ListedRefunds = new([], HasMore: false);
+        fixture.LoseRefundResponse = false;
+
+        (await fixture.Service.ReconcileAsync(fixture.Snapshot, default)).Result!.Status.Should().Be(OnRampLotStatuses.Refunded);
+        fixture.CreateCount.Should().Be(2);
+        fixture.Current.RefundAttempt.Should().Be(1, "the expired key is never replayed; a new attempt key is used");
+    }
+
+    [Fact]
     public async Task TerminalFailedRefundRetriesOnceForExpectedAttempt()
     {
         var fixture = new Fixture { RefundStatus = "failed" };
@@ -126,6 +153,8 @@ public sealed class OnRampRecoveryTests
         public long ProviderAmount { get; set; } = 1000;
         public string RefundStatus { get; set; } = "succeeded";
         public bool LoseRefundResponse { get; set; }
+        /// <summary>The payment's refund list as Stripe would return it; null = the read fails.</summary>
+        public StripeRefundList? ListedRefunds { get; set; }
         public int CreateCount { get; private set; }
         public int GetCount { get; private set; }
         public OnRampRecovery Service { get; }
@@ -158,6 +187,10 @@ public sealed class OnRampRecoveryTests
                 .ReturnsAsync(() => { CreateCount++; return LoseRefundResponse ? AZOAResult<StripeRefund>.Failure("Response lost") : AZOAResult<StripeRefund>.Success(Evidence()); });
             refunds.Setup(x => x.GetRefundAsync(It.IsAny<StripeCredentials>(), "re_test", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(() => { GetCount++; return AZOAResult<StripeRefund>.Success(Evidence()); });
+            refunds.Setup(x => x.ListRefundsForPaymentAsync(It.IsAny<StripeCredentials>(), "pi_test", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => ListedRefunds is { } page
+                    ? AZOAResult<StripeRefundList>.Success(page)
+                    : AZOAResult<StripeRefundList>.Failure("Refund list unavailable"));
             var handler = new OnRampSettlementHandler(options, new(), gateway.Object, Mock.Of<IHostedSessionStore>(),
                 Mock.Of<ITenantPriceScheduleStore>(), lots.Object, Mock.Of<IPlatformTokenGenesis>(), Mock.Of<IAllocationManager>(),
                 Mock.Of<IRealValueKycGate>(), Mock.Of<IValueRailProviderFactory>(), NullLogger<OnRampSettlementHandler>.Instance);

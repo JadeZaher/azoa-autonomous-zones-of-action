@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Fiat;
+using AZOA.WebAPI.Services.Kyb;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -112,10 +113,12 @@ public sealed class TenantPriceScheduleController : ControllerBase
     private const int MaxHistoryPageSize = 100;
 
     private readonly ITenantPriceScheduleStore _schedules;
+    private readonly IKybGate _kyb;
 
-    public TenantPriceScheduleController(ITenantPriceScheduleStore schedules)
+    public TenantPriceScheduleController(ITenantPriceScheduleStore schedules, IKybGate kyb)
     {
         _schedules = schedules ?? throw new ArgumentNullException(nameof(schedules));
+        _kyb = kyb ?? throw new ArgumentNullException(nameof(kyb));
     }
 
     /// <summary>Appends the next price version for the caller's own scope.</summary>
@@ -133,6 +136,16 @@ public sealed class TenantPriceScheduleController : ControllerBase
 
         if (!TryResolveScope(out var scopeKey, out var tenantId, out var callerUserId, out var refusal))
             return refusal!;
+
+        // D-6: publishing a tenant payout price needs a current KYB approval. Retiring a price only
+        // stops trading, so a tenant whose KYB lapsed can still withdraw its schedule.
+        if (tenantId is { } kybTenant && !request.Retire)
+        {
+            var kyb = await _kyb.RequireVerifiedTenantAsync(kybTenant, KybCapability.PayoutPriceSchedule, ct);
+            if (kyb.IsError)
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    AZOAResult<PriceScheduleResponse>.FailureWithCode(kyb.Message, kyb.Code ?? KybGate.RequiredCode));
+        }
 
         var result = await _schedules.RegisterAsync(
             new PriceScheduleRegistration

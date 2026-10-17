@@ -170,3 +170,16 @@ in the verdict file. Race fixtures: `SurrealGovernanceTests.Races.cs` (cancellat
 cancellation vs creation, participation revocation vs vote, vote vs finalization across the cutoff,
 membership change vs creation snapshot) beside the existing duplicate-creation, concurrent-finalizer
 and AML-append races. Each asserts the outcome of every serial order, never which order won.
+
+## node-fee-recovery — hosted settlement recovery (round 4, L3)
+
+`NodeFeeSettlementRecoveryWorker` is a hosted `BackgroundService` (registered beside the settlement
+store in `Program.cs`). Every minute it builds one bounded request (50 rows, 2 min lease, 5 min retry)
+and runs, in order: `INodeFeeSettlementAtomicGroupReconciler.ReconcileDueAsync` (claims settlements
+with an accepted atomic-group receipt, observes the group on chain, settles exact confirmations,
+records non-terminal observations), then `INodeFeeSettlementManager.RecoverDueAsync` (defers the
+remaining due rows without any chain submission). Reconciliation runs first because a deferral pushes
+a row's next attempt past the tick. Both are lease-claimed, so concurrent nodes contend safely; a
+failed tick is logged and the next tick re-reads durable state. Recovery still submits nothing: a
+`Prepared` fee with no accepted group stays uncollected (no user funds held) until a submitting path
+exists.

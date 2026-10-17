@@ -293,3 +293,147 @@ matching genesis block. Only finalized absence after the validity window or a
 positive on-chain failure may clear the expected preparation for a replacement.
 Ethereum/Solana module parity remains an active implementation subwave; unsupported
 modules refuse before any value movement, and this is not a completed parity claim.
+
+## §tenant-funded — D-8: a tenant-priced payout is paid from the tenant's own balance (design, round 4)
+
+Status: **design only, awaiting the D-8 critic verdict; nothing below is implemented yet.**
+
+**The defect (audit-2 H3).** `ResolveContextAsync` (`OffRampService.cs:866`) prices a tenant-driven
+cash-out with the tenant's own `tenant_price_schedule`, and `SendMoneyAsync` then funds the Connect
+transfer from the **node's** Stripe balance. A tenant who registers a generous price spends the
+operator's money. Owner decision D-8: tenant-priced payouts are funded from the tenant's own balance.
+
+**Who pays = who priced.** The funding party is the scope of the schedule that priced the row, never
+the caller: a row priced by a tenant scope carries `funding_tenant_id` (new `option<record<user>>` on
+`fiat_payout`, set at claim from the resolved schedule's scope) and draws on that tenant's float; a row
+priced by the node scope (including the `AllowNodeDefaultScheduleFallback` path) has no
+`funding_tenant_id` and stays node-funded exactly as today. D-6: registering a tenant payout price
+schedule and topping up a float both require an APPROVED KYB row (L2's contract in
+`round4-lane-identity.md`).
+
+### Funding source — chosen: a per-tenant top-up float
+
+- `tenant_payout_float` — one row per `(tenant, currency, environment)`, deterministic record id,
+  counters `credited_minor_units`, `reserved_minor_units`, `finalized_minor_units` and a `version`.
+  Available = `credited − finalized − reserved`.
+- `tenant_payout_credit` — one row per settled top-up, record id derived from the checkout intent
+  (UNIQUE `intent_id`). Credited **only** by a tenant top-up through the existing Stripe Checkout rail
+  with the tenant as payer, under a new allowlisted purpose `tenant-payout-float`
+  (`FiatCheckoutPurposes`). The settlement handler for that purpose re-reads `amount_total`, paid
+  status, currency and environment from Stripe (the on-ramp §pricing rule: no amount from the body)
+  and writes the credit `Pending` with `available_at = paid_at + rail reversal window` — the same
+  `SettlementProfile` window §aging uses, because a card top-up can be charged back for months and an
+  un-aged credit would let a tenant fund a payout with money it is about to claw back.
+  `OnRampSettlementHandler` ignores this purpose (it must never issue units for it).
+- A matured credit is promoted `Pending → Available` with `credited += amount` in one transaction
+  under the float's version CAS (lazily before a coverage check, and by the recovery worker).
+- A refund/dispute of a top-up (`FiatReversalEventHandler`, ledger scope `top-up`) marks the credit
+  `Reversed`: from `Pending` it never counted; from `Available` it does `credited −= amount`, which may
+  drive the float negative. A negative float refuses every new tenant payout and shows on the operator
+  view as a deficit; it is never silently absorbed.
+
+**Rejected alternative: debiting the tenant's Stripe connected account** (Connect account debits /
+reverse transfers from the tenant's account at payout time). Rejected because (1) the debit is an
+asynchronous bank pull that settles days later and can fail after the worker's transfer has already
+left, so coverage cannot be established **before** the send — the exact guarantee D-8 asks for;
+(2) it requires every pricing tenant to be a Connect account with platform-controlled debits (limited
+by country and account type), coupling KYB to Connect onboarding; (3) a failed debit leaves the
+platform holding the loss with no local record that decides it. The float moves the money to the
+platform first, so coverage is a local, synchronous compare-and-swap.
+
+### Coverage check — reserve before anything moves
+
+In `RequestAsync`, after the payout claim and the availability check and **before** consuming lots or
+starting the saga (so an uncovered payout takes nobody's units), one `BEGIN … COMMIT`:
+
+1. `CREATE tenant_payout_debit:{payoutId}` (deterministic id, UNIQUE `payout_id`; tenant, currency,
+   environment, `amount_minor_units`, `state = Reserved`, `version`). A duplicate is a replay: read
+   the row and accept it only if every field matches the payout.
+2. `UPDATE ONLY` the float `SET reserved_minor_units += $amount, version += 1 WHERE version = $expected
+   AND credited_minor_units - finalized_minor_units - reserved_minor_units >= $amount`, and `THROW`
+   when it changed no row.
+
+A THROW is classified by a re-read: a version change retries the CAS (bounded transient-conflict
+retry); insufficient funds becomes the typed refusal `TenantPayoutBalanceInsufficient` and the payout
+settles `Refused` — before any Stripe call and before any unit moves. `SendMoneyAsync` re-reads
+`tenant_payout_debit:{payoutId}` and sends only while it is `Reserved` with the payout's amount; a
+missing or mismatched debit parks the payout (fail closed). No DB transaction spans a Stripe call.
+
+### Exactly-once accounting
+
+One debit per payout (deterministic id + UNIQUE `payout_id`). Every transition is a typed CAS on the
+debit **and** the float counters in the same transaction:
+
+| Transition | Trigger (authoritative only) | Float effect |
+|---|---|---|
+| `Reserved → Finalized` | payout `Paid` (server-fetched bank payout `paid`) | `reserved −= a`, `finalized += a` |
+| `Reserved → Released` | definitive no-money outcome: `Refused`; `Returned` via `AbandonAsync` with no pay claim; completed failed-bank restitution (transfer reversal confirmed) | `reserved −= a` |
+| `Finalized` + `reversed_minor_units` raised | `transfer.reversed` re-read from Stripe; cumulative, only increases | `finalized −= delta` |
+
+A replayed trigger finds the debit already past that state and is a no-op. An ambiguous outcome
+(payout parked `NeedsOperator`) leaves the debit `Reserved` — the money may have left, so the tenant's
+balance stays committed until the operator's audited resolution (record-Paid finalizes, return-units
+releases). The bank-payout reconciliation tick repairs a debit whose payout reached a terminal state
+but whose transition write was lost.
+
+**Invariant:** `balance = credits − finalized − reserved`, where `credits = Σ Available credits
+(net of reversals)`, `finalized = Σ (Finalized amount − reversed_minor_units)`, `reserved = Σ Reserved
+amounts`. The float counters must equal those sums recomputed from the entry rows. Operator view
+`GET /api/admin/tenant-payout-floats/{tenantId}` returns both and a `consistent` flag; tenant view
+`GET /api/fiat/tenant-payout-balance` returns available / reserved / pending credits;
+`POST /api/fiat/tenant-payout-balance/top-up` starts a top-up checkout (route contracts, plan §4.9).
+
+### Fixtures (real-DB integration, through `OffRampService` with a Stripe fake)
+
+1. **Two concurrent payouts, balance covers one** — exactly one `Reserved` debit; the other payout is
+   `Refused` with the typed code and the Stripe fake records no transfer for it; invariant holds.
+2. **Payout vs top-up** racing on the same float (reserve vs credit promotion) — both land after CAS
+   retry; final counters equal the recomputed sums.
+3. **Reversal after Paid** — debit `Finalized`, then a partial and a duplicate `transfer.reversed`
+   restore exactly the cumulative reversed amount, once.
+4. **Crash between reserve and send** — reservation persisted, the process stops before the Connect
+   transfer; resume sends exactly one transfer against the same debit; an abandon instead releases it
+   exactly once.
+
+Mutation check: dropping the coverage predicate, the UNIQUE `payout_id`, or the state guard on
+finalize/release each makes one of these fixtures double-spend or double-release.
+
+## §operator-resolution — audited exits for parked and reversed cash-outs (round 4)
+
+`POST /api/admin/fiat-payouts/{id}/resolve` (Operator policy, financial limiter) with
+`{ "resolution": "record-paid" | "return-units", "reason": "…" }` → `OffRampService.ResolveForOperatorAsync`
+(`OffRampService.Resolution.cs`). Only `NeedsOperator` and `Reversed` rows qualify. Evidence is never
+the operator's word:
+
+- **Stripe transfer record:** every cash-out transfer is created in transfer group
+  `azoa-payout-{payoutId}`; the resolution lists that group (`ListTransfersByGroupAsync`). An
+  incomplete page, more than one transfer, or a transfer whose livemode/amount/currency/destination
+  differ from the row refuses with nothing changed.
+- **record-paid** (`NeedsOperator` only): requires exactly one unreversed matching transfer. With a
+  bank payout on the row, its server-fetched status decides: `paid` → `Paid`; `failed`/`canceled` →
+  refused (use `/recover`); otherwise → `BankPending`, where the bank-payout lifecycle continues.
+- **return-units** on `NeedsOperator`: refused while any transfer exists. The collect leg decides what
+  is returned: claim absent or definitively failed → nothing moved, lots released, `Refused`;
+  completed → the units are returned through the prepared-transfer path (`ReturnUnitsAsync`, keyed and
+  idempotent), lots released, `Returned`; ambiguous → the transaction id recorded with the ambiguity
+  marker (` tx=`) is re-read on chain (`GetTransactionConfirmationAsync`): confirmed = collected,
+  failed on chain = not collected, anything else refuses. An InProgress collect claim (crash with no
+  recorded transaction) still refuses: only a by-hand chain reconciliation can decide it.
+- **return-units** on `Reversed`: reinstates `units_owed_base_units` once Stripe's `amount_reversed`
+  covers the recorded reversal, under key `fiat-off-ramp:reinstate-{reversedMinorUnits}:{id}` so a
+  later, larger reversal reinstates only its own increment. Refused while a failed-bank recovery owns
+  the row.
+
+Every resolution appends `{actor, action, reason, at, priorStatus, transferId}` to
+`recovery_audit_json` through `PayoutAudit.Append`, which keeps earlier entries of other shapes
+verbatim (the failed-bank recovery writes through the same helper).
+
+## §stale-pay-claim — a pay claim left InProgress by a crash (round 4)
+
+The pay leg claims `fiat-off-ramp:pay:{id}` and creates the Connect transfer under the stable Stripe
+key `azoa-payout-{id}`. A crash between the two left the claim InProgress forever ("already in
+progress"). Now a claim InProgress for at least 5 minutes and less than 23 hours (Stripe keeps keys
+≥ 24 h) is replayed under the same Stripe key: Stripe returns the transfer the lost attempt created,
+or creates the one it never sent — never a second. A concurrent duplicate gets Stripe's 409 and parks
+for the operator resolution above. Past 23 hours the claim stays put and only the operator resolution
+(transfer-group evidence) can move the row.
