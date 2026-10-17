@@ -68,7 +68,7 @@ jobs:
         with:
           node-version: "20.x"
 
-      - name: Ethereum contracts — install, build, unit tests
+      - name: Ethereum contracts: install, build, unit tests
         working-directory: contracts/ethereum
         run: |
           npm ci
@@ -106,7 +106,18 @@ jobs:
         # Gate=WttSixRoute needs the three local chains from
         # Fixtures/Wtt/run-wtt-fixtures.ps1 -Up and fails closed without them;
         # it runs in the integrated sweep, not here (Fixtures/Wtt/AGENTS.md).
-        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf&Gate!=WttSixRoute"
+        # A hung host (e.g. a DI cycle behind a factory registration, Hosting/AGENTS.md) aborts with a dump
+        # artifact after 10 idle minutes instead of silently eating the job's 60-minute budget.
+        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf&Gate!=WttSixRoute" --blame-hang-timeout 10m --blame-hang-dump-type mini --results-directory "${{ runner.temp }}/integration-results"
+
+      - name: Upload integration hang dumps
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: integration-hang-${{ github.sha }}
+          path: ${{ runner.temp }}/integration-results/**/*.dmp
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Conformance gate evidence
         env:
@@ -310,33 +321,41 @@ jobs:
             --no-reconcile \
             --applied-by "ci/${{ github.sha }}-reference" > reference.log
 
-          python3 - <<'PY'
-          import base64, json, sys, urllib.request
+          python3 .github/scripts/schema_snapshot_diff.py azoa azoa_reference "the deploy path"
 
-          def query(database, sql):
-              request = urllib.request.Request(
-                  "http://127.0.0.1:8030/sql", data=sql.encode(), method="POST",
-                  headers={"Surreal-NS": "azoa", "Surreal-DB": database, "Accept": "application/json",
-                           "Authorization": "Basic " + base64.b64encode(b"root:root").decode()})
-              result = json.load(urllib.request.urlopen(request))[0]
-              if result.get("status") != "OK":
-                  raise SystemExit(f"{database}: {sql} -> {result}")
-              return result["result"]
-
-          def snapshot(database):
-              tables = query(database, "INFO FOR DB;")["tables"]
-              return {name: query(database, f"INFO FOR TABLE {name};")
-                      for name in sorted(tables) if name != "schema_migration"}
-
-          deployed, reference = snapshot("azoa"), snapshot("azoa_reference")
-          differences = [name for name in sorted(set(deployed) | set(reference))
-                         if deployed.get(name) != reference.get(name)]
-          for name in differences:
-              print(f"::error::{name} differs between the deploy path and Generated/Schemas")
-              print(json.dumps({"deployed": deployed.get(name), "generated": reference.get(name)}, indent=1, sort_keys=True))
-          print(f"Compared {len(reference)} table(s); {len(differences)} difference(s).")
-          sys.exit(1 if differences else 0)
-          PY
+      # RV-L1-02: every CI database starts fresh, so an edit to an EXISTING definition (IF NOT EXISTS goldens,
+      # --no-reconcile) would surface first as a checksum abort in the Railway schema job. Apply main's schema
+      # set, then this tree's, and require convergence -- unless this change declares a generation reset (D-9:
+      # Persistence/SurrealDb/SCHEMA_GENERATION bumped; the owner resets the SurrealDB volume at deploy).
+      - name: Upgrade from main converges (or a generation reset is declared)
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          main_generation=$(git show origin/main:Persistence/SurrealDb/SCHEMA_GENERATION 2>/dev/null || echo 1)
+          branch_generation=$(cat Persistence/SurrealDb/SCHEMA_GENERATION)
+          if [ "$main_generation" != "$branch_generation" ]; then
+            echo "::notice::Schema generation $main_generation -> $branch_generation: a reset is declared (D-9); deploy needs a fresh SurrealDB volume, so the in-place upgrade check is skipped."
+            exit 0
+          fi
+          main_tree="$RUNNER_TEMP/azoa-main"
+          mkdir -p "$main_tree/schemas"
+          git archive origin/main Persistence/SurrealDb | tar -x -C "$main_tree"
+          cp "$main_tree"/Persistence/SurrealDb/Generated/Schemas/*.surql "$main_tree/schemas/"
+          if [ -d "$main_tree/Persistence/SurrealDb/CompatibilityBaselines" ]; then
+            cp "$main_tree"/Persistence/SurrealDb/CompatibilityBaselines/*.surql "$main_tree/schemas/"
+          fi
+          surrealforge up --connection http://127.0.0.1:8030 --user root --pass root \
+            --namespace azoa --database azoa_upgrade \
+            --schemas-dir "$main_tree/schemas" --migrations-dir "$main_tree/Persistence/SurrealDb/Migrations" \
+            --no-reconcile --applied-by "ci/main" > upgrade-main.log
+          if ! surrealforge up --connection http://127.0.0.1:8030 --user root --pass root \
+            --namespace azoa --database azoa_upgrade \
+            --schemas-dir "$SCHEMAS_DIR" --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile --applied-by "ci/${{ github.sha }}-upgrade" > upgrade-branch.log; then
+            cat upgrade-branch.log
+            echo "::error::Upgrading main's schema to this tree aborts (checksum or apply error). Add a forward DEFINE ... OVERWRITE migration, or declare a generation reset by bumping Persistence/SurrealDb/SCHEMA_GENERATION."
+            exit 1
+          fi
+          python3 .github/scripts/schema_snapshot_diff.py azoa_upgrade azoa_reference "main upgraded to this tree"
 
       # Mirrors docker-entrypoint.sh's schema mode: the schema owner defines the
       # runtime identity the API later authenticates as.

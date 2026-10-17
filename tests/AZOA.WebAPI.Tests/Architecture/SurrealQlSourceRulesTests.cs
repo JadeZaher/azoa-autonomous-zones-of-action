@@ -41,6 +41,10 @@ public sealed class SurrealQlSourceRulesTests
         { "ordinal", "var state = Enum.Parse<Row.ActionNodeState>(execution.State.ToString());", false },
         { "end-relative", "statements.Add(SurrealQuery.Of(\"RETURN $_user\"));\nvar row = response.GetValues<User>(statements.Count - 2).Single();", true },
         { "end-relative", "var resultIndex = statements.Count;\nstatements.Add(SurrealQuery.Of(\"RETURN $_user\"));\nvar row = response.GetValues<User>(resultIndex).Single();", false },
+        { "after-return", "statements.Add(SurrealQuery.Of(\"RETURN $_fee_saved\"));\nstatements.Add(appendAudit);\nstatements.Add(SurrealQuery.Of(\"COMMIT\"));", true },
+        { "after-return", "var q = SurrealQuery.Combine(SurrealQuery.Of(\"BEGIN\"), write, SurrealQuery.Of(\"RETURN $_x\"), SurrealQuery.Of(\"UPDATE a SET b = 1\"), SurrealQuery.Of(\"COMMIT\"));", true },
+        { "after-return", "var q = SurrealQuery.Combine(SurrealQuery.Of(\"BEGIN\"), write, appendAudit, SurrealQuery.Of(\"RETURN $_x\"), SurrealQuery.Of(\"COMMIT\"));", false },
+        { "after-return", "statements.Add(SurrealQuery.Of(\"RETURN $_x\"));\nstatements.Add(SurrealQuery.Of(\"COMMIT\"));", false },
         { "bare-id", """var row = new TenantPriceSchedule { TenantId = tenantId.ToString("N"), Name = name };""", true },
         { "bare-id", """var row = new TenantPriceSchedule { TenantId = SurrealLink.ToLink("user", tenantId.ToString("N")), Name = name };""", false },
         { "bare-id", """var row = new TenantPriceSchedule { TenantId = existing.TenantId, RegisteredByUserId = actorLink };""", false },
@@ -101,7 +105,26 @@ public sealed class SurrealQlSourceRulesTests
 
     [Fact]
     public void Results_are_never_read_end_relative_after_a_top_level_RETURN()
-        => AssertNone("end-relative", "a top-level RETURN drops COMMIT from the result array (round4-sql-sweep SQL-01/02)");
+        => AssertNone("end-relative", "prefer the absolute index captured before RETURN: robust to any statement added later (RV-L4's 3.1.4 probe shows BEGIN and COMMIT keep their slots, so SQL-01/02 were not live defects)");
+
+    /// <summary>Migrations at or before this prefix shipped under checksum (bytes immutable); later ones must change definitions with OVERWRITE.</summary>
+    private const string LastShippedMigration = "20261017_130000";
+
+    [Fact]
+    public void Forward_migrations_change_definitions_with_OVERWRITE()
+    {
+        var directory = Path.Combine(CSharpSource.RepositoryRoot(), "Persistence", "SurrealDb", "Migrations");
+        var offenders = Directory.EnumerateFiles(directory, "*.surql")
+            .Where(path => string.CompareOrdinal(Path.GetFileName(path)[..15], LastShippedMigration) > 0)
+            .SelectMany(path => File.ReadAllLines(path).Select((line, index) => (path, line, index)))
+            .Where(entry => System.Text.RegularExpressions.Regex.IsMatch(entry.line, @"^\s*DEFINE\s+\w+\s+(?!OVERWRITE\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(entry => $"{Path.GetFileName(entry.path)}:{entry.index + 1} {entry.line.Trim()}");
+        offenders.Should().BeEmpty("with --no-reconcile and IF NOT EXISTS goldens, a migration that does not OVERWRITE silently no-ops on an existing database (RV-L1-02)");
+    }
+
+    [Fact]
+    public void Nothing_follows_a_top_level_RETURN_except_COMMIT()
+        => AssertNone("after-return", "SurrealDB 3.1.4 silently skips statements between a top-level RETURN and COMMIT (RV-L4 probe)");
 
     [Fact]
     public void Reference_columns_are_never_assigned_a_bare_id()
@@ -162,6 +185,7 @@ public sealed class SurrealQlSourceRulesTests
         "tenant-payout" => SurrealQlSourceRules.TenantPayoutWriteOutsideLedger(source),
         "ordinal" => SurrealQlSourceRules.OrdinalEnumCast(source),
         "end-relative" => SurrealQlSourceRules.EndRelativeResultIndex(source),
+        "after-return" => SurrealQlSourceRules.StatementAfterReturn(source),
         "bare-id" => SurrealQlSourceRules.BareIdReference(source, source.RelativePath.EndsWith("Snippet.cs", StringComparison.Ordinal) ? SnippetColumns : null),
         _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, null),
     };

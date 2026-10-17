@@ -118,7 +118,27 @@ internal static partial class SurrealQlSourceRules
             var (memberStart, memberEnd) = Member(match.Index);
             if (close > open && EndRelative().IsMatch(source.Code[open..close])
                 && returns.Any(offset => offset >= memberStart && offset < memberEnd))
-                yield return $"{source.Location(match.Index)} end-relative result index (`Count - k`) in a batch with a top-level RETURN; capture the index before adding RETURN";
+                yield return $"{source.Location(match.Index)} end-relative result index (`Count - k`) in a batch with a top-level RETURN; capture the absolute index before adding RETURN";
+        }
+    }
+
+    /// <summary>SurrealDB 3.1.4 silently skips every statement after a top-level RETURN inside BEGIN…COMMIT (RV-L4 probe).</summary>
+    public static IEnumerable<string> StatementAfterReturn(CSharpSource source)
+    {
+        var members = MemberSignature().Matches(source.Code).Select(match => match.Index).Append(source.Code.Length).ToList();
+        foreach (var literal in source.Literals.Where(literal => literal.Body.TrimStart().StartsWith("RETURN ", StringComparison.Ordinal)))
+        {
+            var memberEnd = members.First(start => start > literal.Start);
+            var commit = source.Literals.FirstOrDefault(candidate => candidate.Start > literal.End && candidate.Start < memberEnd && candidate.Body.Trim() == "COMMIT");
+            if (commit is null) continue;
+            // The COMMIT literal's own wrapper (`SurrealQuery.Of(`) sits just before it; anything else that builds a statement is skipped by the engine.
+            var between = source.Code[literal.End..commit.Start];
+            var wrapper = between.LastIndexOf("SurrealQuery", StringComparison.Ordinal);
+            var body = wrapper < 0 ? between : between[..wrapper];
+            // Only list plumbing may sit between them (`statements.Add(`); any other identifier is a statement or builds one.
+            var tokens = Identifier().Matches(body).Select(token => token.Value).Where(token => token is not ("statements" or "Add" or "AddRange" or "queries"));
+            if (tokens.Any() || source.Literals.Any(other => other.Start > literal.End && other.Start < commit.Start))
+                yield return $"{source.Location(literal.Start)} statement between a top-level RETURN and COMMIT is never executed";
         }
     }
 
@@ -323,6 +343,9 @@ internal static partial class SurrealQlSourceRules
 
     [GeneratedRegex(@"(\w+)\s*(?:<[^>]*>)?\s*\($")]
     private static partial Regex MemberName();
+
+    [GeneratedRegex(@"[A-Za-z_]\w*")]
+    private static partial Regex Identifier();
 
     [GeneratedRegex(@"\bSurrealWriter\s*\.\s*(UpdateOnly|DeleteOnly)\s*<")]
     private static partial Regex ConditionalMutation();

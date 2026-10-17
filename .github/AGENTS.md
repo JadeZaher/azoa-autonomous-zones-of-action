@@ -20,3 +20,17 @@
   all expired 2026-06-09 — allowlisted by that exact path.
 - Mutation check: a scan of a file holding a live-format Stripe key still reports a leak with the
   config applied.
+
+## §schema-upgrade — the in-place upgrade check (RV-L1-02)
+
+Goldens are `DEFINE … IF NOT EXISTS` and the deploy path runs `surrealforge up --no-reconcile`, so an edit to an
+existing definition is never applied implicitly; every other CI database starts empty and cannot notice. The schema
+job's "Upgrade from main converges" step applies `origin/main`'s composed set + migrations to `azoa_upgrade`, then
+this tree's, and compares every table against `Generated/Schemas` (`scripts/schema_snapshot_diff.py`, shared with
+the deploy-path convergence step). It fails on a checksum abort or any difference.
+
+A deliberate break is declared, not hidden: bump `Persistence/SurrealDb/SCHEMA_GENERATION` (D-9 generation reset;
+the owner resets the Railway SurrealDB volume before that deploy). Different generations on `main` and the branch
+skip the check with a notice. Otherwise the fix is a forward migration whose `DEFINE`s use `OVERWRITE`
+(`SurrealQlSourceRulesTests.Forward_migrations_change_definitions_with_OVERWRITE`; shipped migrations are exempt
+because their bytes are checksum-ledgered). Generation 2 is the round-4 reset.

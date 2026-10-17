@@ -137,6 +137,8 @@ services:
       - ./frontend/e2e/support/webhook-receiver:/receiver:ro
       - ./frontend/e2e/.generated:/certs:ro
     networks:
+      # default: carries only the published loopback control-plane port.
+      default: {}
       e2e_webhooks:
         ipv4_address: 198.51.99.10
     ports:
@@ -159,8 +161,10 @@ services:
       - "${AZOA_E2E_FRONTEND_PORT:-3200}:3000"
 
 networks:
-  # Public-range on purpose (see azoa-api extra_hosts); internal to this project, never routed out.
+  # Public-range on purpose (the SSRF guard refuses private and TEST-NET ranges); `internal` gives the
+  # bridge no outbound route, so a delivery to 198.51.99.10 can only reach the receiver (RV-L1-07).
   e2e_webhooks:
+    internal: true
     ipam:
       config:
         - subnet: 198.51.99.0/24
