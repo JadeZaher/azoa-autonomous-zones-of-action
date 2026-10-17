@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Kyb;
 
 namespace AZOA.WebAPI.Services.Consent;
 
@@ -23,15 +24,18 @@ public sealed class TenantConsentGate : ITenantConsentGate
 {
     private readonly IConsentGrantStore _grants;
     private readonly IConsentAuditStore _audit;
+    private readonly IKybGate _kyb;
     private readonly ILogger<TenantConsentGate> _logger;
 
     public TenantConsentGate(
         IConsentGrantStore grants,
         IConsentAuditStore audit,
+        IKybGate kyb,
         ILogger<TenantConsentGate> logger)
     {
         _grants = grants ?? throw new ArgumentNullException(nameof(grants));
         _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+        _kyb = kyb ?? throw new ArgumentNullException(nameof(kyb));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -93,6 +97,14 @@ public sealed class TenantConsentGate : ITenantConsentGate
                 grant is null ? "No covering grant." : "Grant not live / scope not covered.", now, ct);
             return Deny(result,
                 "No live consent grant covers this tenant-driven signing action; the action was denied.");
+        }
+
+        // D-6: a tenant acts on a user's behalf only while its business verification is current.
+        var kyb = await _kyb.RequireVerifiedTenantAsync(tenant, KybCapability.TenantOnBehalfValue, ct);
+        if (kyb.IsError)
+        {
+            await DenyAuditAsync(grant.Id, tenant, grantor, scope, "Tenant business verification is not current.", now, ct);
+            return Deny(result, KybGate.RequiredMessage);
         }
 
         // Allowed — record the immutable audit row (AC10) for the tenant-driven sign.

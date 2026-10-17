@@ -370,7 +370,7 @@ public class AllocationConsentGateTests
         };
 
     private TenantConsentGate RealGate()
-        => new(_grants.Object, _audit.Object, NullLogger<TenantConsentGate>.Instance);
+        => new(_grants.Object, _audit.Object, new AZOA.WebAPI.Tests.TestSupport.ApprovedKybGate(), NullLogger<TenantConsentGate>.Instance);
 
     private void NoCoveringGrant()
         => _grants.Setup(g => g.FindCoveringGrantAsync(

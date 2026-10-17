@@ -1,4 +1,5 @@
 using System.Net;
+using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Http.Infrastructure;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
@@ -110,6 +111,8 @@ public sealed class IdentityVerificationFlowTests(HttpFlowWebApplicationFactory 
     {
         var tenant = await OnboardTenantAsync();
         await AssignIdentomatToTenantAsync(tenant.TenantId);
+        // D-6: custodial accounts require the tenant's current business verification.
+        await TestDataBuilders.KybApprovedTenant(tenant.TenantId).SeedAsync(Factory.Services);
         var subject = "member-" + Guid.NewGuid().ToString("N")[..12];
         var request = new HttpRequestMessage(HttpMethod.Put, $"api/tenant/custodial-accounts/{subject}");
         request.Headers.Add("Idempotency-Key", "enrol-" + subject);

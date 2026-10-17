@@ -14,7 +14,6 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 using AZOA.WebAPI.Tests.TestSupport;
@@ -163,7 +162,7 @@ public sealed class KycAmlValueGateTests
         screening.SeedResult(userId, null, KycScreeningDecision.HIT, lineageKey: ApprovalLineage);
         var store = StoreWithCurrentApproval(userId);
 
-        var gate = new RealValueKycGate(
+        var gate = new KycGateService(
             store,
             screening,
             ReadyProvider(),
@@ -177,7 +176,7 @@ public sealed class KycAmlValueGateTests
     public async Task RealValueGate_WithNoScreening_StaysShut()
     {
         var userId = Guid.NewGuid();
-        var gate = new RealValueKycGate(
+        var gate = new KycGateService(
             StoreWithCurrentApproval(userId),
             new InMemoryKycScreeningStore(),
             ReadyProvider(),
@@ -272,7 +271,8 @@ public sealed class KycAmlValueGateTests
         kycStore.Setup(item => item.TryCompleteHostedAsync(
                 It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(), It.IsAny<KycStatus>(), It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+            .ReturnsAsync((KycSubmission expected, HostedSession _, KycStatus _, DateTimeOffset _, DateTimeOffset? _, string? _, CancellationToken _)
+                => AZOAResult<KycSubmission>.Success(expected));
         var order = new CallOrder();
         var screening = new RecordingScreeningService(KycScreeningDecision.NO_HIT, order);
         var binding = new RecordingBindingService(order);
@@ -514,8 +514,8 @@ public sealed class KycAmlValueGateTests
             Guid? tenantId,
             string fullName,
             string? birthdayTimeFrom,
-            CancellationToken ct = default,
-            string? lineageKey = null)
+            string lineageKey,
+            CancellationToken ct = default)
         {
             MonitorCount++;
             order?.Record("monitor");
