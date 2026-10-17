@@ -112,7 +112,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         IReadOnlyList<SurrealQuery> custodyGuards = [];
         if (custody is not null)
         {
-            if (!fenced || SurrealRecordGuid.Parse(observed.Result.SubjectUserId) != custody.UserId
+            if (!fenced || observed.Result.SubjectUserId is not { } subjectUserId
+                || SurrealRecordGuid.Parse(subjectUserId) != custody.UserId
                 || SurrealRecordGuid.ParseOptional(observed.Result.TenantId) != custody.Authority.Credential.ActorUserId)
                 return AZOAResult<HostedSession>.Success(null!);
             var guards = TenantCustodialAuthorityFence.Create(custody, AzoaScopes.KycSubmit);
@@ -228,10 +229,13 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         string redirectUrl, DateTimeOffset? expiresAt, string creationToken, CancellationToken ct = default)
     {
         var observed = await GetByIdAsync(id, ct);
-        if (observed.Result is null || observed.Result.StateVersion != expectedStateVersion)
+        if (observed.Result is null) return AZOAResult<HostedSession>.Success(null!);
+        // CAS on the caller's version; only an operator quarantine may intervene, which a late original response resolves.
+        var currentVersion = observed.Result.StateVersion;
+        if (currentVersion != expectedStateVersion && observed.Result.CreationQuarantinedAt is null)
             return AZOAResult<HostedSession>.Success(null!);
         var query = SurrealWriter.UpdateOnly<HostedSession>(id.ToString("N"))
-            .Where(row => row.StateVersion == expectedStateVersion)
+            .Where(row => row.StateVersion == currentVersion)
             .Where(row => row.State == HostedSessionStates.Claimed && row.CreationToken == creationToken
                 && row.CreationStartedAt != null)
             .Where(row => row.ProviderSessionId == null)
@@ -239,7 +243,7 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
             .Set(row => row.RedirectUrl, redirectUrl)
             .Set(row => row.CreationCompletedAt, (DateTimeOffset?)DateTimeOffset.UtcNow)
             .Set(row => row.State, HostedSessionStates.AwaitingSubject)
-            .Set(row => row.StateVersion, expectedStateVersion + 1)
+            .Set(row => row.StateVersion, currentVersion + 1)
             .Set(row => row.ModifiedDate, (DateTimeOffset?)DateTimeOffset.UtcNow);
         query = providerCorrelationId is null ? query.Unset(row => row.ProviderCorrelationId) : query.Set(row => row.ProviderCorrelationId, providerCorrelationId);
         query = expiresAt is null ? query.Unset(row => row.ExpiresAt) : query.Set(row => row.ExpiresAt, expiresAt);

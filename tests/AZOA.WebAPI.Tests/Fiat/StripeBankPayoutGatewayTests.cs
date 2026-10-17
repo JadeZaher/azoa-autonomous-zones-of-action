@@ -24,7 +24,8 @@ public sealed class StripeBankPayoutGatewayTests
         options.Live.WebhookSecret = "whsec_unit_test_fixture";
         options.Checkout.AllowedReturnOrigins.Add("https://example.test");
         var sessions = new Mock<IHostedSessionStore>();
-        sessions.Setup(x => x.ClaimAdmissionAsync(It.IsAny<HostedSession>(), It.IsAny<CancellationToken>()))
+        sessions.Setup(x => x.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+                PayoutAccountFlow.AdmissionKeyFor(subject), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<HostedSession>.Success(new HostedSession
             { SubjectUserId = subject.ToString("N"), ProviderSessionId = "acct_owner" }));
         var gateway = new Mock<IStripeConnectGateway>(MockBehavior.Strict);
