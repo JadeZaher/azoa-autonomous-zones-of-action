@@ -445,6 +445,13 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
     {
         var builder = new BlockchainOperationBuilder();
         var operation = build(builder);
+        // M9: this caller-built path (the holon mint/exchange routes) never reaches platform-key ASA creation or an exchange.
+        // User NFT mints go through the NFT lifecycle (mint checks, fee and cost consent, the user's own key); exchanges
+        // through the reserve exchange. See Managers/AGENTS.md §caller-built operations.
+        if (operation.OperationType is "Mint" or "Exchange")
+            return AZOAResult<IBlockchainOperation>.FailureWithCode(operation.OperationType == "Mint"
+                ? "Mint user assets through POST /api/nft/mint, which applies the NFT mint checks and signs with your own key."
+                : "Exchanges run through the reserve exchange routes.", AzoaErrorCodes.OperationNotAllowed, operation);
         return await ExecuteAsync(operation, request);
     }
 

@@ -156,19 +156,22 @@ public class BlockchainOperationManagerTests
         operation.Parameters.Should().ContainKey("Error");
     }
 
-    [Fact]
-    public async Task BuildAndExecuteAsync_ShouldUseBuilderPattern()
+    [Theory]
+    [InlineData("mint")]
+    [InlineData("exchange")]
+    public async Task CallerBuiltMintOrExchange_NeverReachesAPlatformSignedProviderCall(string kind)
     {
-        _store.Setup(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync((IBlockchainOperation op, CancellationToken _) => new AZOAResult<IBlockchainOperation> { Result = op });
-
+        // M9: the holon routes build operations from caller input; a platform-key ASA create or an exchange is refused
+        // before any claim, row or provider call.
         var result = await _manager.BuildAndExecuteAsync(builder =>
-            builder.ForUser(Guid.NewGuid())
-                   .Mint("ipfs://test", 1, "NFT")
-                   .Build());
+            (kind == "mint" ? builder.ForUser(Guid.NewGuid()).Mint("ipfs://test", 1, "NFT")
+                : builder.ForUser(Guid.NewGuid()).Exchange(Guid.NewGuid(), Guid.NewGuid(), "1")).Build());
 
-        result.IsError.Should().BeFalse();
-        result.Result!.OperationType.Should().Be("Mint");
+        result.IsError.Should().BeTrue();
+        result.Code.Should().Be(AzoaErrorCodes.OperationNotAllowed);
+        _algoProvider.Verify(p => p.MintAsync(It.IsAny<string>(), It.IsAny<RailAmount>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()), Times.Never);
+        _store.Verify(p => p.UpsertAsync(It.IsAny<IBlockchainOperation>(), It.IsAny<CancellationToken>()), Times.Never);
+        _idempotency.Keys.Should().BeEmpty();
     }
 
     [Fact]

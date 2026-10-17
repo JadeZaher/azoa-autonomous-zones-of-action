@@ -37,7 +37,7 @@ public class BlockchainOperationController : ControllerBase
         if (userId == null) return Unauthorized();
 
         var result = await _manager.GetAsync(id, userId.Value, request);
-        if (result.IsError || result.Result == null)
+        if (result.IsError || result.Result == null || !InCallerTenant(result.Result))
         {
             return NotFound(AZOAResult<BlockchainOperationResponse>.FailureWithCode(
                 "Operation not found.", AzoaErrorCodes.NotFound));
@@ -63,8 +63,12 @@ public class BlockchainOperationController : ControllerBase
         }
 
         return Ok(AZOAResult<IEnumerable<BlockchainOperationResponse>>.Success(
-            result.Result.Select(BlockchainOperationResponse.From), result.Message));
+            result.Result.Where(InCallerTenant).Select(BlockchainOperationResponse.From), result.Message));
     }
+
+    /// <summary>A tenant-acting caller sees only operations that tenant drove; the owner's own credential sees all of its own.</summary>
+    private bool InCallerTenant(IBlockchainOperation operation)
+        => User.GetActingTenantId() is not { } tenant || operation.ActingTenantId == tenant;
 
     /// <summary>D-3: the exact unsigned bytes the caller's External wallet must sign for this operation.</summary>
     [HttpGet("~/api/blockchain/operations/{id:guid}/signing-plan")]
