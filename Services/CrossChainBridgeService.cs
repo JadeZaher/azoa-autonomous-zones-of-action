@@ -40,6 +40,8 @@ public class CrossChainBridgeService : ICrossChainBridgeService
     private readonly ILogger<CrossChainBridgeService> _logger;
     private readonly BridgeOptions _bridgeOptions;
     private readonly ChainNetwork _network;
+    private readonly IWalletStore? _wallets;
+    private readonly IWalletOwnershipProofStore? _ownershipProofs;
 
     public CrossChainBridgeService(
         IBlockchainProviderFactory factory,
@@ -50,7 +52,9 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         ILogger<CrossChainBridgeService> logger,
         IOptions<BridgeOptions> bridgeOptions,
         IConfiguration config,
-        IRealValueKycGate realValueKycGate)
+        IRealValueKycGate realValueKycGate,
+        IWalletStore? wallets = null,
+        IWalletOwnershipProofStore? ownershipProofs = null)
     {
         _factory = factory;
         _protocol = protocol;
@@ -58,12 +62,31 @@ public class CrossChainBridgeService : ICrossChainBridgeService
         _bridgeStore = bridgeStore;
         _idempotency = idempotency;
         _realValueKycGate = realValueKycGate;
+        _wallets = wallets;
+        _ownershipProofs = ownershipProofs;
         _logger = logger;
         _bridgeOptions = bridgeOptions.Value;
         // Single config-driven network for provider resolution + row stamping. An
         // unparseable value THROWS rather than pinning the whole bridge to devnet
         // (see ChainNetworkResolution).
         _network = ChainNetworkResolution.FromConfiguration(config);
+    }
+
+    /// <summary>Audit-2 M8: the release destination is the owner's custodial wallet or a signature-proven external wallet.</summary>
+    private async Task<bool> OwnsReversalRecipientAsync(Guid userId, string chain, string address, CancellationToken ct)
+    {
+        if (_wallets is null) return false;
+        var owned = await _wallets.GetByUserAsync(userId, ct);
+        if (owned.IsError || owned.Result is null) return false;
+        foreach (var wallet in owned.Result.Where(candidate => candidate.UserId == userId
+            && string.Equals(candidate.ChainType, chain, StringComparison.OrdinalIgnoreCase)
+            && ChainAddressIdentity.Equivalent(chain, candidate.Address, address)))
+        {
+            if (wallet.WalletType == WalletType.Platform) return true;
+            if (_ownershipProofs is not null && await _ownershipProofs.GetAsync(chain, address, ct) is { } proof && proof.UserId == userId)
+                return true;
+        }
+        return false;
     }
 
     // ─── Capability resolution: the one gate, in one place ───
@@ -722,6 +745,9 @@ public class CrossChainBridgeService : ICrossChainBridgeService
 
         if (string.IsNullOrWhiteSpace(sourceRecipientAddress))
             return Error<BridgeTransactionResult>("Source recipient address is required for reversal");
+        if (!await OwnsReversalRecipientAsync(tx.UserId, tx.SourceChain, sourceRecipientAddress, ct))
+            return Error<BridgeTransactionResult>(
+                "Reversal releases only to one of the bridge owner's wallets on the source chain (custodial, or external with a verified ownership proof).");
 
         // A reversal needs BOTH capabilities: the target must be able to burn the wrapped
         // asset and the source must be able to release the original. A route missing either

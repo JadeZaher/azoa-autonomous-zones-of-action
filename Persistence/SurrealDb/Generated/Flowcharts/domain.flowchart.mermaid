@@ -11,9 +11,9 @@ graph LR
     %%   dapp_composition: dapp_series, dapp_series_action, ecosystem, ecosystem_node
     %%   deployment: deployment_artifact, deployment_operation, deployment_recovery_audit, deployment_recovery_audit_entry, native_preparation, native_quote
     %%   ethereum_custody: ethereum_preparation, ethereum_signer_checkpoint
-    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, exchange_hold_settlement_receipt, exchange_hold_source, exchange_purchase_allocation, fiat_event, fiat_payout, fiat_reversal, governance_command_receipt, governance_proposal, hold_command, hold_command_authorization, hold_command_receipt, hold_ledger, hold_mandate_use_receipt, hold_recovery_receipt, hold_release_mandate, hold_release_mandate_offer, holon, holon_type_registry, hosted_provider_attempt, hosted_provider_callback, hosted_session, hosted_session_provider_alias, kyb_verification, kyc_authority_guard, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_governance_policy_lock, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_challenge_budget, wallet_auth_claim_token, wallet_auth_identity_migration
+    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, exchange_hold_settlement_receipt, exchange_hold_source, exchange_purchase_allocation, exchange_retired_resolution, fiat_event, fiat_payout, fiat_reversal, governance_command_receipt, governance_proposal, hold_command, hold_command_authorization, hold_command_receipt, hold_ledger, hold_mandate_use_receipt, hold_recovery_receipt, hold_release_mandate, hold_release_mandate_offer, holon, holon_type_registry, hosted_provider_attempt, hosted_provider_callback, hosted_session, hosted_session_provider_alias, kyb_verification, kyc_authority_guard, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_governance_policy_lock, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_challenge_budget, wallet_auth_claim_token, wallet_auth_identity_migration
     %%   swap: dex_quote, ethereum_dex_allowance, swap_operation, swap_stage
-    %%   wallet_nft: fungible_asset_authority, fungible_creation_attachment, fungible_creation_authorization, fungible_creation_cancellation, fungible_creation_operation, fungible_creation_projection, nft_asset_authority, nft_lifecycle, nft_ownership, nft_protocol_cost_quote, nft_workflow_cost_acceptance, nft_workflow_cost_retirement, wallet
+    %%   wallet_nft: fungible_asset_authority, fungible_creation_attachment, fungible_creation_authorization, fungible_creation_cancellation, fungible_creation_operation, fungible_creation_projection, nft_asset_authority, nft_lifecycle, nft_ownership, nft_protocol_cost_quote, nft_workflow_cost_acceptance, nft_workflow_cost_retirement, wallet, wallet_ownership_proof
     %%   wtt: wtt_body_claim, wtt_evidence_progress, wtt_offer, wtt_operation, wtt_operation_stage, wtt_preparation, wtt_stage_key
     %% 
     %% Enums:
@@ -35,6 +35,7 @@ graph LR
     %%   consent_webhook_event.status: Pending, Delivered, DeadLettered  (ConsentWebhookEvent.DeliveryStatus)
     %%   dapp_series.status: Draft, Building, Ready, Deploying, DeploymentFailed, Deployed, Archived  (DappSeries.StatusKind)
     %%   ecosystem_node.ref_kind: DappSeries, ActionGraphBundle  (EcosystemNode.RefKindValue)
+    %%   exchange_retired_resolution.outcome: Confirmed, Failed
     %%   fiat_event.environment: test, live
     %%   fiat_event.status: Received, Applied, Ignored, Failed
     %%   fiat_payout.status: Requested, UnitsCollected, BankPending, Paid, Reversed, Returned, Refused, NeedsOperator
@@ -158,6 +159,7 @@ graph LR
         exchange_hold_settlement_receipt["exchange_hold_settlement_receipt: Node"]:::nodeClass
         exchange_hold_source["exchange_hold_source: Node"]:::nodeClass
         exchange_purchase_allocation["exchange_purchase_allocation: Node"]:::nodeClass
+        exchange_retired_resolution["exchange_retired_resolution: Node"]:::nodeClass
         fiat_event["fiat_event: Node"]:::nodeClass
         fiat_payout["fiat_payout: Node"]:::nodeClass
         fiat_reversal["fiat_reversal: Node"]:::nodeClass
@@ -231,6 +233,7 @@ graph LR
         nft_workflow_cost_acceptance["nft_workflow_cost_acceptance: Node"]:::nodeClass
         nft_workflow_cost_retirement["nft_workflow_cost_retirement: Node"]:::nodeClass
         wallet["wallet: Node"]:::nodeClass
+        wallet_ownership_proof["wallet_ownership_proof: Node"]:::nodeClass
     end
 
     subgraph slice_wtt ["wtt"]
@@ -370,6 +373,7 @@ graph LR
     wallet -- "user_id [N:1]" --> user
     wallet_auth_claim_token -- "target_user_id [N:1]" --> user
     wallet_auth_claim_token -- "tenant_id [N:1]" --> user
+    wallet_ownership_proof -- "user_id [N:1]" --> user
     webhook_registration -- "tenant_id [N:1]" --> user
 
     classDef nodeClass fill:#f9f9f9,stroke:#333,stroke-width:2px,rx:10px,ry:10px;

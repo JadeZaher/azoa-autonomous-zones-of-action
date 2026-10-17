@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 namespace AZOA.WebAPI.Tests.TestSupport;
@@ -12,6 +13,9 @@ internal sealed class InMemoryDeploymentStore : IDeploymentStore
     private readonly Dictionary<string, DeploymentOperation> _operations = [];
     internal bool ActionActive { get; set; } = true;
     internal bool LoseNextAdmissionResponse { get; set; }
+    /// <summary>Simulates the signing-authority fence throwing inside the update transaction.</summary>
+    internal bool SigningRevoked { get; set; }
+    internal List<IReadOnlyList<SigningAdmissionAuthority>> FencedSigning { get; } = [];
     internal IReadOnlyList<NativeQuote> Quotes { get { lock (_gate) return _quotes.Values.Select(Copy).ToArray(); } }
     internal IReadOnlyList<DeploymentOperation> Operations { get { lock (_gate) return _operations.Values.Select(Copy).ToArray(); } }
     private static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
@@ -58,10 +62,16 @@ internal sealed class InMemoryDeploymentStore : IDeploymentStore
             return Task.FromResult<DeploymentOperation?>(Copy(child));
         }
     }
-    public Task<DeploymentOperation?> UpdateAsync(DeploymentOperation row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false)
+    public Task<DeploymentOperation?> UpdateAsync(DeploymentOperation row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false,
+        IReadOnlyList<SigningAdmissionAuthority>? signing = null)
     {
         lock (_gate)
         {
+            if (signing is not null)
+            {
+                FencedSigning.Add(signing);
+                if (SigningRevoked) return Task.FromResult<DeploymentOperation?>(null);
+            }
             if (!_operations.TryGetValue(row.Id, out var current) || current.Version != expectedVersion || current.RecoveryChildId is not null || current.RecoveryProjected || current.ReplacedByOperationId is not null
                 || current.ParentOperationId != row.ParentOperationId || current.RecoveryBindingHash != row.RecoveryBindingHash
                 || requireActionAuthority && row.ActionRunId is not null && !ActionActive) return Task.FromResult<DeploymentOperation?>(null);
@@ -155,6 +165,9 @@ internal sealed class InMemoryDeploymentStore : IDeploymentStore
     public Task<IReadOnlyList<DeploymentOperation>> ListActorAsync(string actorId, string tenantId, DateTimeOffset snapshot, int offset, int limit, CancellationToken ct = default)
     { lock (_gate) return Task.FromResult<IReadOnlyList<DeploymentOperation>>(_operations.Values.Where(row => row.ActorUserId == actorId && row.TenantId == tenantId && row.CreatedAt <= snapshot)
         .OrderByDescending(row => row.CreatedAt).ThenBy(row => row.Id).Skip(offset).Take(limit).Select(Copy).ToArray()); }
+    public Task<IReadOnlyList<DeploymentOperation>> ListNeedsOperatorAsync(int limit, CancellationToken ct = default)
+    { lock (_gate) return Task.FromResult<IReadOnlyList<DeploymentOperation>>(_operations.Values.Where(row => row.State == "NeedsOperator")
+        .OrderBy(row => row.UpdatedAt).ThenBy(row => row.Id).Take(limit).Select(Copy).ToArray()); }
     public Task<IReadOnlyList<DeploymentOperation>> ListPendingAsync(int limit, CancellationToken ct = default)
     { lock (_gate) return Task.FromResult<IReadOnlyList<DeploymentOperation>>(_operations.Values.Where(row => (row.SubmissionAuthorized && row.State is "Submitted" or "NeedsOperator")
         || (row.ParentOperationId is not null && row.State == "Confirmed" && !row.RecoveryProjected))

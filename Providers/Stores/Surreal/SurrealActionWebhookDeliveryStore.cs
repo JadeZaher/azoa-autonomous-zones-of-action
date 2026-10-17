@@ -4,14 +4,19 @@ using AZOA.WebAPI.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Services.Webhooks;
+using Microsoft.Extensions.Options;
 using Event = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionWebhookEvent;
 using Registration = AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistration;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <inheritdoc/>
-public sealed partial class SurrealActionWebhookDeliveryStore(ISurrealExecutor executor, IActionEmitStore receipts) : IActionWebhookDeliveryStore
+public sealed partial class SurrealActionWebhookDeliveryStore(ISurrealExecutor executor, IActionEmitStore receipts,
+    IOptions<WebhookOptions>? options = null) : IActionWebhookDeliveryStore
 {
+    private int MaximumAttempts => (options?.Value ?? new WebhookOptions()).BoundedMaxAttempts;
+
     private const string Conflict = "WEBHOOK_DELIVERY_CHANGED";
 
     /// <inheritdoc/>

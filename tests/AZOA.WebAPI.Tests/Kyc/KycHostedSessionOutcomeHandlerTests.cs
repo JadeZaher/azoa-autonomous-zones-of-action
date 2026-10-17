@@ -140,7 +140,8 @@ public sealed class KycHostedSessionOutcomeHandlerTests
 
         var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());
 
-        result.IsError.Should().Be(mismatch != "expired");
+        // A retired/superseded attempt ("session", "expired") terminalizes the stale session quietly.
+        result.IsError.Should().Be(mismatch is not ("expired" or "session"));
         result.Result.Should().BeNull();
         _binding.VerifyNoOtherCalls();
         _screening.VerifyNoOtherCalls();
@@ -178,8 +179,9 @@ public sealed class KycHostedSessionOutcomeHandlerTests
 
         var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());
 
-        result.IsError.Should().BeFalse();
-        result.Result.Should().BeNull();
+        // Lost CAS is retryable: the flow releases the lease and the next resume converges.
+        result.IsError.Should().BeTrue("a lost completion must never close the session without the decision");
+        result.Code.Should().Be(AzoaErrorCodes.Conflict);
         submission.Status.Should().Be(KycStatus.PENDING);
         submission.ExpiresAt.Should().Be(originalExpiry);
         _kycStore.Verify(store => store.UpsertSubmissionAsync(
@@ -265,8 +267,8 @@ public sealed class KycHostedSessionOutcomeHandlerTests
                 It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<CancellationToken>(), It.IsAny<string?>()))
-            .ReturnsAsync((Guid user, Guid? tenant, string name, string? birthday, CancellationToken ct, string? lineageKey) => AZOAResult<KycScreeningMonitor>.Success(new KycScreeningMonitor
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid user, Guid? tenant, string name, string? birthday, string lineageKey, CancellationToken ct) => AZOAResult<KycScreeningMonitor>.Success(new KycScreeningMonitor
             {
                 Id = Guid.NewGuid().ToString("N"),
                 ProviderMonitorId = "monitor-1", LineageKey = lineageKey
@@ -309,7 +311,7 @@ public sealed class KycHostedSessionOutcomeHandlerTests
         SeedScreening(KycScreeningDecision.NO_HIT, false);
         _screening.Setup(service => service.RegisterMonitorAsync(
             It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string?>(),
-            It.IsAny<CancellationToken>(), It.IsAny<string?>()))
+            It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycScreeningMonitor>.Failure("Temporarily unavailable"));
 
         var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());

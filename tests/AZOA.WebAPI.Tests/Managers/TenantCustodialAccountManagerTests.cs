@@ -807,6 +807,7 @@ public sealed class TenantCustodialAccountManagerTests
             _providers.Object,
             idempotencyStore ?? _idempotency.Object,
             configuration,
-            Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == "Development"), _access.Object);
+            Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == "Development"), _access.Object,
+            new AZOA.WebAPI.Tests.TestSupport.ApprovedKybGate());
     }
 }

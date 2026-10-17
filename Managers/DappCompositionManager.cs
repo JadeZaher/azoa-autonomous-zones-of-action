@@ -58,7 +58,8 @@ public sealed class DappCompositionManager : IDappCompositionManager
     {
         var load = await _seriesStore.GetSeriesAsync(seriesId, ct);
         if (load.IsError || load.Result is null) return load;
-        if (!load.Result.OwnedBy(userId)) return Fail<DappSeries>("Forbidden: series is owned by a different user.");
+        // Same sentence as the store's miss: a foreign series is no existence oracle.
+        if (!load.Result.OwnedBy(userId)) return Fail<DappSeries>($"DappSeries {seriesId} not found.");
         await ReadDeploymentStatusAsync(load.Result, ct);
         return load;
     }
@@ -124,10 +125,8 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
         // Verify the referenced action exists and is owned by the same user.
         var actionLoad = await _actionStore.GetActionAsync(model.ActionId, ct);
-        if (actionLoad.IsError || actionLoad.Result is null)
+        if (actionLoad.IsError || actionLoad.Result is null || actionLoad.Result.UserId != userId)
             return Fail<DappSeriesAction>($"Action {model.ActionId} not found.");
-        if (actionLoad.Result.UserId != userId)
-            return Fail<DappSeriesAction>("Forbidden: action is owned by a different user.");
 
         // Reject a duplicate (series, action) up front. See Managers/AGENTS.md §dapp-series-duplicates.
         var existing = await _seriesStore.GetActionsBySeriesAsync(seriesId, ct);
@@ -241,7 +240,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         {
             var actionGuid = entry.ActionIdGuid;
             var qLoad = await _actionStore.GetActionAsync(actionGuid, ct);
-            if (qLoad.IsError || qLoad.Result is null)
+            if (qLoad.IsError || qLoad.Result is null || qLoad.Result.UserId != userId)
             {
                 report.Diagnostics.Add($"Action {actionGuid} not found.");
                 continue;
@@ -255,7 +254,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         ValidateChainCompleteness(entries, actions, report);
         ValidateInputMappingConsistency(entries, actions, report);
         ValidateNoCircularDependencies(entries, actions, report);
-        await ValidateHolonBindingsResolvedAsync(actions, report, ct);
+        await ValidateHolonBindingsResolvedAsync(actions, userId, report, ct);
 
         return new AZOAResult<CompositionValidationResult> { Result = report, Message = report.IsValid ? "Valid." : "One or more validation rules failed." };
     }
@@ -276,7 +275,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         foreach (var entry in entries)
         {
             var qLoad = await _actionStore.GetActionAsync(entry.ActionIdGuid, ct);
-            if (!qLoad.IsError && qLoad.Result is not null) actions.Add(qLoad.Result);
+            if (!qLoad.IsError && qLoad.Result is not null && qLoad.Result.UserId == userId) actions.Add(qLoad.Result);
         }
 
         var boundHolonIds = ExtractBoundHolonIds(actions).ToList();
@@ -365,7 +364,8 @@ public sealed class DappCompositionManager : IDappCompositionManager
     }
 
     public async Task<AZOAResult<DeploymentReceipt>> DeployAsync(
-        Guid seriesId, Guid userId, DeploymentStartRequest request, string requestKey, Guid? actingTenantId = null, CancellationToken ct = default)
+        Guid seriesId, Guid userId, DeploymentStartRequest request, string requestKey, Guid? actingTenantId = null, CancellationToken ct = default,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null)
     {
         var seriesLoad = await GetAsync(seriesId, userId, ct);
         if (seriesLoad.IsError || seriesLoad.Result is null) return Fail<DeploymentReceipt>(seriesLoad.Message);
@@ -377,7 +377,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
         if (bundleId is null)
             return Fail<DeploymentReceipt>("Series has no associated ActionGraphBundle; call Generate first.");
 
-        var deployed = await _bundleManager.DeployAsync(bundleId.Value, request, requestKey, userId, actingTenantId, ct);
+        var deployed = await _bundleManager.DeployAsync(bundleId.Value, request, requestKey, userId, actingTenantId, ct, credential);
         if (deployed.IsError || deployed.Result is null) return Fail<DeploymentReceipt>(deployed.Message);
 
         series.DeploymentOperationId = deployed.Result.OperationId;
@@ -547,15 +547,17 @@ public sealed class DappCompositionManager : IDappCompositionManager
         }
     }
 
+    // A bound holon counts as resolved only when the series owner may read it (owner or
+    // public); anything else reads as "not found" so validation is no holon-existence oracle.
     private async Task ValidateHolonBindingsResolvedAsync(
-        Dictionary<Guid, ActionDef> actions, CompositionValidationResult report, CancellationToken ct)
+        Dictionary<Guid, ActionDef> actions, Guid userId, CompositionValidationResult report, CancellationToken ct)
     {
         report.HolonBindingsResolved = true;
         var allHolonRefs = ExtractBoundHolonIds(actions.Values).Distinct().ToList();
         foreach (var holonId in allHolonRefs)
         {
             var holon = await _holonStore.GetByIdAsync(holonId, ct);
-            if (holon.IsError || holon.Result is null)
+            if (holon.IsError || holon.Result is null || holon.Result.UserId != userId && !holon.Result.IsPublic)
             {
                 report.HolonBindingsResolved = false;
                 report.Diagnostics.Add($"Referenced holon {holonId} not found.");

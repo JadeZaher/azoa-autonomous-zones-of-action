@@ -7,10 +7,13 @@ namespace AZOA.WebAPI.Services.Actions;
 public sealed class ActionNodeHandlerRegistry : IActionNodeHandlerRegistry
 {
     private readonly IReadOnlyDictionary<ActionNodeType, IActionNodeHandler> _handlers;
+    private readonly IReadOnlyList<IActionWttRoute> _wttRoutes;
 
     public ActionNodeHandlerRegistry(IEnumerable<IActionNodeHandler> handlers, ActionLocalMutationService? localMutations = null,
-        ActionNftOperationService? nftOperations = null, ActionHoldOperationService? holdOperations = null)
+        ActionNftOperationService? nftOperations = null, ActionHoldOperationService? holdOperations = null,
+        IEnumerable<IActionWttRoute>? wttRoutes = null)
     {
+        _wttRoutes = wttRoutes?.ToArray() ?? [];
         var map = new Dictionary<ActionNodeType, IActionNodeHandler>();
         foreach (var handler in handlers)
         {
@@ -35,4 +38,16 @@ public sealed class ActionNodeHandlerRegistry : IActionNodeHandlerRegistry
     /// <inheritdoc/>
     public bool TryGet(ActionNodeType type, out IActionNodeHandler handler)
         => _handlers.TryGetValue(type, out handler!);
+
+    /// <inheritdoc/>
+    public bool TryGetFor(ActionNode node, out IActionNodeHandler handler)
+    {
+        if (node.NodeType is ActionNodeType.Bridge or ActionNodeType.Back
+            && _wttRoutes.FirstOrDefault(route => route.Applies(node)) is { } route)
+        {
+            handler = new ActionWttNodeHandler(node.NodeType, route);
+            return true;
+        }
+        return TryGet(node.NodeType, out handler);
+    }
 }

@@ -77,3 +77,24 @@ requires each enum-typed property (or its enum type) to carry
 while SurrealForge 1.3.0 typed reads bind the camelCase form, so a typed filter silently misses
 writer-written rows (found for `NodeFeeSettlement`/`NodeFeeAtomicGroup`, round 4 W0). Storage
 mappers convert enums by name (`Enum.Parse(x.ToString())`), never by ordinal cast.
+
+## Gate inventories
+
+`RouteAuthorizationGateTests` and `CrossTenantGateTests` load every lane's
+`Inventories/RouteAuthorization/*.json` and `Inventories/CrossTenant/*.json` (each file is a JSON array).
+Each lane classifies only the routes and stores it owns.
+
+- **Route rows:** `route` (`"VERB /template"`, compared after normalizing case and constraints),
+  `controller`, `action`, `class` (`value-moving` | `non-value`), `scope` (required when value-moving),
+  `enforcement`, plus optional `childCredentialScope` and `childSigningScopes`. Every POST/PUT/DELETE/PATCH
+  action must have exactly one row. A row that names a missing action is stale and fails. The
+  `[DelegatedChildCredential]` endpoints and the delegable scope vocabulary must equal the inventoried
+  child-credential rows.
+- **Store rows:** `store` (interface name, or the concrete `Surreal*Store` when it has no interface),
+  `method`, `tenantCheck`. An owned-resource method is any public method on an `Interfaces.Stores`
+  interface, or on an interface-less `Surreal*Store`, that takes an ownership-named parameter (`userId`,
+  `tenantId`, `actor`, ...) or takes or returns a type with an owner/tenant property. Overloads share one
+  row.
+
+Both "every ... is classified" tests fail until every lane's inventory has merged, which is intended: they
+are the sweep's completeness gate.

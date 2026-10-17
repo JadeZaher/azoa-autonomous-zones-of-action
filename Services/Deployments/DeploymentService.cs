@@ -20,7 +20,8 @@ public sealed partial class DeploymentService(IDeploymentStore store, IActionGra
     IActionStore actions, IHolonManager holons, DeploymentArtifactCompiler compiler,
     IBlockchainProviderFactory providers, IValueAccessService valueAccess, INodeGovernanceGuard governance,
     IFrozenActionRuntime runtime, IWalletStore wallets, ITenantConsentGate consent,
-    IEcosystemStore ecosystems, IDappSeriesStore series, IDeploymentRecoveryAuditStore recoveryAudits) : IDeploymentService
+    IEcosystemStore ecosystems, IDappSeriesStore series, IDeploymentRecoveryAuditStore recoveryAudits,
+    AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthorities = null) : IDeploymentService
 {
     /// <inheritdoc/>
     public async Task<AZOAResult<DeploymentArtifactView>> GenerateAsync(Guid bundleId, Guid actor, Guid? tenant,
@@ -113,6 +114,11 @@ public sealed partial class DeploymentService(IDeploymentStore store, IActionGra
         => StartCoreAsync(actor, tenant, requestKey, request, true, ct);
 
     /// <inheritdoc/>
+    public Task<AZOAResult<DeploymentReceipt>> StartWithCredentialAsync(Guid actor, Guid? tenant, string requestKey,
+        DeploymentStartRequest request, AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential, CancellationToken ct = default)
+        => StartCoreAsync(actor, tenant, requestKey, request, true, ct, credential: credential);
+
+    /// <inheritdoc/>
     public async Task<AZOAResult<object>> QueryContractAsync(ContractQueryRequest request, CancellationToken ct = default)
     {
         if (!Enum.TryParse<ChainNetwork>(request.Network, false, out var network)) return Fail<object>("An explicit network is required.");
@@ -127,7 +133,8 @@ public sealed partial class DeploymentService(IDeploymentStore store, IActionGra
         => StartCoreAsync(actor, tenant, requestKey, request, false, ct);
 
     private async Task<AZOAResult<DeploymentReceipt>> StartCoreAsync(Guid actor, Guid? tenant, string requestKey,
-        DeploymentStartRequest request, bool authorize, CancellationToken ct, ActionFrozenNodeInput? actionInput = null, string? actionHash = null)
+        DeploymentStartRequest request, bool authorize, CancellationToken ct, ActionFrozenNodeInput? actionInput = null, string? actionHash = null,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null)
     {
         if (request.NativeIntent?.Kind == "Recovery")
             return Fail<DeploymentReceipt>("Native recovery requires an exclusively linked original operation.");
@@ -190,7 +197,7 @@ public sealed partial class DeploymentService(IDeploymentStore store, IActionGra
             return Fail<DeploymentReceipt>("Deployment request belongs to another action authority.");
         if (row.IntentHash != CanonicalJson.HashCanonical(requestJson) || row.RequestJson != requestJson)
             return Fail<DeploymentReceipt>("Idempotency-Key belongs to another immutable deployment intent.");
-        return authorize ? await AdvanceAsync(row, actor, tenant, true, ct)
+        return authorize ? await AdvanceAsync(row, actor, tenant, true, ct, credential)
             : AZOAResult<DeploymentReceipt>.Success(View(row));
     }
 

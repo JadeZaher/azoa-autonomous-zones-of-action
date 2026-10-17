@@ -189,8 +189,13 @@ public class ActionNodeOutputSchemaGoldenTests
     [MemberData(nameof(FlatTypes))]
     public void FlatBridgeShape_MatchesSerializedBridgeTransactionResult(ActionNodeType type)
     {
-        var json = Serialize(RepresentativeBridge());
-        AssertShape(type, json, closed: true);
+        // Bridge/Back serialize either the legacy BridgeTransactionResult or, on the WTT route, the flat
+        // WttActionOutput receipt; the declared shape is exactly their union (Services/Actions/AGENTS.md §wtt-route).
+        var union = System.Text.Json.Nodes.JsonNode.Parse(Serialize(RepresentativeBridge()))!.AsObject();
+        foreach (var (field, value) in new (string, string?)[] { ("OperationId", "op"), ("RecipientAddress", "recipient"),
+                     ("RecipientAmount", "10"), ("TargetTransactionId", "tx"), ("BodyDigest", "digest"), ("ReturnOfOperationId", null) })
+            union[field] = value;
+        AssertShape(type, union.ToJsonString(), closed: true);
     }
 
     public static IEnumerable<object[]> FlatTypes() =>

@@ -36,7 +36,7 @@ public sealed class HostedSessionReconciliationFlowTests(HttpFlowWebApplicationF
             ConfirmedProviderAbsence = false,
             Reason = EvidenceReason,
             ProviderSessionId = vendorSession.Id,
-            RedirectUrl = $"https://widget.identomat.com/?session_token={vendorSession.SessionToken}",
+            RedirectUrl = $"https://{IdentomatVendor.WidgetHost}/?session_token={vendorSession.SessionToken}",
         };
 
         // A creation that may still be in flight is never reconciled out from under itself.

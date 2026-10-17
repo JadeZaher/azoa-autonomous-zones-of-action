@@ -201,7 +201,7 @@ public class TenantIdentityFoldingTests
     }
 
     [Fact]
-    public async Task ProvisionChild_FoldsTheTenantSuppliedEmailAndUsername()
+    public async Task ProvisionChild_FoldsTheUsername_AndNeverStoresTheTenantSuppliedEmail()
     {
         var (store, rows) = StoreHolding();
 
@@ -216,33 +216,22 @@ public class TenantIdentityFoldingTests
 
         result.IsError.Should().BeFalse(result.Message);
         rows.Should().ContainSingle();
-        rows[0].Email.Should().Be("alice@example.com");
+        rows[0].Email.Should().EndWith("@onboard.azoa.local");
         rows[0].Username.Should().Be("alice");
     }
 
     [Fact]
-    public async Task ProvisionChild_RecasedEmail_CollidesWithTheAccountThatAlreadyHoldsIt()
+    public async Task ProvisionChild_CannotSquatAVictimsAddress()
     {
-        var (store, rows) = StoreHolding(new User
-        {
-            Id = Guid.NewGuid(),
-            Username = "someone-else",
-            Email = "alice@example.com"
-        });
+        var (store, rows) = StoreHolding();
 
-        var result = await NewTenantManager(store).ProvisionFixtureAsync(
+        (await NewTenantManager(store).ProvisionFixtureAsync(
             Guid.NewGuid(),
-            new ProvisionChildModel
-            {
-                ExternalUserId = "alice-1",
-                Username = "alice-tenant",
-                Email = "Alice@Example.com"
-            });
+            new ProvisionChildModel { ExternalUserId = "victim-1", Username = "victim-tenant", Email = "victim@example.com" }))
+            .IsError.Should().BeFalse();
 
-        // The counter, not the doorway: no second row for one address.
-        result.IsError.Should().BeTrue();
-        rows.Should().ContainSingle("a re-cased address must not become a second account");
-        rows[0].Email.Should().Be("alice@example.com");
+        rows.Should().NotContain(row => row.Email == "victim@example.com",
+            "the victim can still register their own address afterwards (audit-1 LOW)");
     }
 
     [Fact]

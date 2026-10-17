@@ -211,8 +211,16 @@ builder.Services.AddAuthentication(options =>
             var principal = context.Principal;
             if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
             {
-                context.Fail("Delegated child credentials are disabled until accepting endpoints are explicitly scope-allowlisted.");
-                return;
+                // D-5: allowlisted endpoint + scope + live consent + active issuing tenant; see Services/Consent/AGENTS.md.
+                var childGate = ActivatorUtilities.CreateInstance<AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate>(
+                    context.HttpContext.RequestServices);
+                var childRejection = await childGate.RejectAsync(
+                    principal!, context.HttpContext.GetEndpoint(), context.HttpContext.RequestAborted);
+                if (childRejection is not null)
+                {
+                    context.Fail(childRejection);
+                    return;
+                }
             }
 
             if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
@@ -646,7 +654,7 @@ builder.Services.AddAuthorization(o =>
         p.RequireAssertion(ctx =>
         {
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User))
-                return ctx.User.HasDappManagerRole();
+                return ctx.User.CanAssignDappRoles();
             if (!ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
                 || !long.TryParse(
                     ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.AuthTime)?.Value,
@@ -1017,6 +1025,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeSto
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthClaimTokenStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletOwnershipProofStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletOwnershipProofStore>();
 // Phase 1B federated sign-in: the (tenant_scope, provider, subject) binding and the
 // single-use handoff code that carries an OAuth result to the SPA.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IUserExternalLoginStore,
@@ -1188,6 +1198,11 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.HostedIdentityRec
 builder.Services.AddHttpClient(AZOA.WebAPI.Providers.Kyc.HostedIdentityHttp.ClientName)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<AZOA.WebAPI.Services.HostedSessions.HostedIdentityRecoveryWorker>();
+// Identomat persists no provider attempt, so its lost callbacks recover through the backoff outcome poll.
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionRecoveryStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealHostedSessionStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.HostedIdentityProviderResolver>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.HostedSessions.HostedOutcomePollWorker>();
 // ─── Identomat hosted KYC + AML screening ───
 // The named client has NO base address: the adapter genuinely spans two hosts
 // (external-api for /begin and screening, widget for the authoritative /result/),
@@ -1238,6 +1253,7 @@ builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyb.IdentomatKybProvider>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKybVerificationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealKybVerificationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKybService, AZOA.WebAPI.Services.Kyb.KybService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyb.IKybGate, AZOA.WebAPI.Services.Kyb.KybGate>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Users.NftLifecycleService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.NftWorkflowCostConsentService>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INftLifecycleService>(sp => sp.GetRequiredService<AZOA.WebAPI.Services.Users.NftLifecycleService>());
@@ -1283,8 +1299,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IIdentomatScreeningService,
     AZOA.WebAPI.Services.Kyc.IdentomatScreeningService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.IdentomatKycProviderService>();
 // Cold poll for AML ongoing monitoring. There is NO push channel for monitoring at
-// all, so this worker is the only change-detection path; it self-disables unless
-// Kyc:Identomat:Screening:MonitorPollEnabled is set.
+// all, so this worker is the only change-detection path; it runs wherever an Identomat
+// config id is set unless Kyc:Identomat:Screening:MonitorPollEnabled is false.
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Kyc.KycScreeningMonitorPollWorker>();
 // PII retention/erasure sweep. Without this registration the retention window is
 // decorative: nothing ever expires a KYC identity record (GDPR Art. 17 vs the
@@ -1683,12 +1699,13 @@ builder.Services.AddScoped<IVaaSignatureVerifier, Secp256k1VaaSignatureVerifier>
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IIdempotencyStore,
     AZOA.WebAPI.Core.Idempotency.SurrealIdempotencyStore>();
 
-// Receipt reconciliation is a scoped, explicitly invoked observation seam. It is
-// deliberately not a hosted worker or fee-consumer activation path.
+// Node-fee settlement recovery: the hosted worker drives atomic-group reconciliation, then
+// deferral of the remaining due settlements (Services/Governance/AGENTS.md §node-fee-recovery).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INodeFeeSettlementStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealNodeFeeSettlementStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeFeeSettlementAtomicGroupReconciler,
     AZOA.WebAPI.Services.Governance.NodeFeeSettlementAtomicGroupReconciler>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Governance.NodeFeeSettlementRecoveryWorker>();
 
 // ─── Cross-chain bridge (hybrid trusted + Wormhole) ───
 // surrealdb-migration wave-2 task 8: routes through IBridgeStore +
@@ -1698,7 +1715,7 @@ builder.Services.AddOptions<AZOA.WebAPI.Services.Bridge.BridgeOptions>()
     .Bind(builder.Configuration.GetSection(
         AZOA.WebAPI.Services.Bridge.BridgeOptions.SectionName));
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IRealValueKycGate,
-    AZOA.WebAPI.Services.Bridge.RealValueKycGate>();
+    AZOA.WebAPI.Services.Kyc.KycGateService>();
 // CrossChainBridgeService takes IBridgeProtocol<WormholeVAA>; this registers the
 // protocol implementations that satisfy it. Registered by request of the bridge
 // agent, which owns the extension itself (Services/Bridge/BridgeProtocolServiceCollectionExtensions.cs).

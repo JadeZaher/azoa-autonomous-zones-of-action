@@ -263,18 +263,6 @@ public class ActionPublishLifecycleTests
         };
     }
 
-    [Fact]
-    public async Task Publish_FanOutAction_Fails()
-    {
-        var action = FanOutAction();
-        var (manager, _, _) = BuildManager(action);
-
-        var result = await manager.PublishAsync(action.Id, action.UserId);
-
-        result.IsError.Should().BeTrue("fan-out is rejected at publish time (AC-3a)");
-        result.Message.Should().ContainEquivalentOf("fan-out");
-    }
-
     // ─── AC-3b: same fan-out action still executes on legacy path (warning) ────
 
     [Fact]

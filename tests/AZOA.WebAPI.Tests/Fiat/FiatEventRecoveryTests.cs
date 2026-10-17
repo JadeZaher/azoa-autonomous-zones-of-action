@@ -17,7 +17,6 @@ public sealed class FiatEventRecoveryTests
         var row = new FiatEvent { Id = "event", Environment = "test", Status = FiatEventStatuses.Received,
             EventType = "payout.paid", IntentId = $"hosted_session:{intent:N}", ProviderAccountId = "acct_stored", ProviderObjectId = "po_stored" };
         var handler = new Mock<IFiatEventHandler>();
-        handler.SetupGet(x => x.Name).Returns("test");
         handler.Setup(x => x.Handles(row.EventType)).Returns(true);
         handler.Setup(x => x.ApplyAsync(It.Is<FiatEventContext>(c => c.IntentId == intent
                 && c.ProviderAccountId == "acct_stored" && c.ProviderObjectId == "po_stored"), It.IsAny<CancellationToken>()))

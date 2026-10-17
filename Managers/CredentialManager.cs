@@ -22,6 +22,10 @@ public sealed class CredentialManager(INftLifecycleStore store, INftLifecycleSer
     {
         if (request is null || callerUserId == Guid.Empty || string.IsNullOrWhiteSpace(assetId) || string.IsNullOrWhiteSpace(request.ChainType))
             return AZOAResult<CredentialRevokeResult>.Failure("Caller, chain, and asset identity are required.");
+        // Issuance provenance records the issuer user only, so a tenant-delegated caller cannot be bound to the issuing tenant: fail closed.
+        if (actingTenantId is { } tenant && tenant != Guid.Empty)
+            return AZOAResult<CredentialRevokeResult>.FailureWithCode(
+                "Tenant-delegated credential revocation requires issuing-tenant provenance, which this credential does not record.", AzoaErrorCodes.Forbidden);
         ChainNetwork? requestedNetwork = null;
         if (request.Network is not null)
         {

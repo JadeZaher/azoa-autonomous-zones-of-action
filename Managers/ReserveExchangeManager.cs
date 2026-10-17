@@ -53,7 +53,6 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
     private readonly IProjectTreasury _treasury;
     private readonly IPlatformTokenGenesis _platformToken;
     private readonly IWalletStore _wallets;
-    private readonly ICustodialRecipientPreparer _recipientPreparer;
     private readonly IExchangeRatePolicy _ratePolicy;
     private readonly IExchangeDeclaredRateWriter _declaredRates;
     private readonly IExchangeHoldSourceStore _sources;
@@ -72,7 +71,6 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         IProjectTreasury treasury,
         IPlatformTokenGenesis platformToken,
         IWalletStore wallets,
-        ICustodialRecipientPreparer recipientPreparer,
         IExchangeRatePolicy ratePolicy,
         IExchangeDeclaredRateWriter declaredRates,
         IExchangeHoldSourceStore sources,
@@ -91,7 +89,6 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         _treasury = treasury ?? throw new ArgumentNullException(nameof(treasury));
         _platformToken = platformToken ?? throw new ArgumentNullException(nameof(platformToken));
         _wallets = wallets ?? throw new ArgumentNullException(nameof(wallets));
-        _recipientPreparer = recipientPreparer ?? throw new ArgumentNullException(nameof(recipientPreparer));
         _ratePolicy = ratePolicy ?? throw new ArgumentNullException(nameof(ratePolicy));
         _declaredRates = declaredRates ?? throw new ArgumentNullException(nameof(declaredRates));
         _sources = sources ?? throw new ArgumentNullException(nameof(sources));
@@ -169,6 +166,10 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         if (windowError is not null)
             return Invalid(windowError);
 
+        // ── Step 6b: D-7 — settle only where the provider declares the exchange module for this network ──
+        if (!ExchangeDeclared(chainType))
+            return AZOAResult<ExchangeReceipt>.FailureWithCode(UnavailableMessage, ConsumerSafeErrorCodes.RailUnavailable);
+
         // ── Step 7: quote-only ────────────────────────────────────────────────
         if (request.PreviewOnly)
             return await PreviewAsync(request, caller, chainType, projectAssetId, platformAssetId, partition, projectReference,
@@ -196,32 +197,24 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             return AZOAResult<ExchangeReceipt>.FailureWithCode(
                 "The rate for this exchange could not be recorded, so it was not run.", AzoaErrorCodes.DependencyUnavailable);
 
-        // ── Step 11: make the recipient able to hold what they receive ────────
+        // ── Step 11: what the recipient needs to hold what they receive (folded into the exact group) ──
         var takesDeliveryOf = request.Direction == ExchangeDirection.Buy
             ? (request.ReleaseNotBefore is null ? projectAssetId : null)
             : platformAssetId;
+        string? recipientFunding = null;
         if (takesDeliveryOf is not null)
         {
-            var recipientContext = SigningContext.ForUser(caller.TargetUserId, resolved.Wallet.Id).ForChain(resolved.Asset.ChainType)
-                .ActingAs(caller.ActingTenantId, ExchangeSigningScope, caller.TargetUserId);
-            var reserveContext = SigningContext.PlatformFor(resolved.Asset.ChainType)
-                .ActingAs(caller.ActingTenantId, ExchangeSigningScope, caller.TargetUserId);
-            var prepared = await _recipientPreparer.PrepareAsync(new CustodialRecipientPreparation(
-                resolved.Asset.ChainType, takesDeliveryOf, resolved.Wallet.Address, recipientContext,
-                resolved.Asset.HoldingAddress, reserveContext), ct);
-            if (prepared.IsError || prepared.Result is null)
-                return RailRefusal<ExchangeReceipt>(prepared.Message);
-            if (prepared.Result.PendingConfirmation)
-                return AZOAResult<ExchangeReceipt>.FailureWithCode(
-                    "This account is being made ready and has not finished settling. Retry shortly; nothing was moved.",
-                    ConsumerSafeErrorCodes.SettlementPending);
+            var readiness = await RecipientFundingAsync(resolved, takesDeliveryOf, ct);
+            if (readiness.IsError)
+                return AZOAResult<ExchangeReceipt>.FailureWithCode(readiness.Message, readiness.Code ?? ConsumerSafeErrorCodes.RecipientNotReady);
+            recipientFunding = readiness.Result;
         }
 
         // ── Step 12: the immutable source, its two-party authority and release consent ──
         var terms = await TermsAsync(request, chainType, platformAssetId, projectAssetId, partition, projectReference,
             platformAmount, projectUnitAmount, decision.Result, now);
         var draft = Draft(request, caller, requestKey, resolved, partition, projectReference, platformAssetId,
-            platformAmount, projectUnitAmount, terms);
+            platformAmount, projectUnitAmount, terms, recipientFunding);
         if (draft is null)
             return AZOAResult<ExchangeReceipt>.FailureWithCode(
                 "This node has no accepted network-fee cap for exchange settlement.", AzoaErrorCodes.DependencyUnavailable);
@@ -422,11 +415,47 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             offered.DisclosureHash));
     }
 
+    /// <summary>
+    /// Reads, without signing, whether the participant can hold <paramref name="assetId"/>: null when ready, else the
+    /// reserve-paid funding the exact group carries ahead of its acceptance (Services/Reserve/AGENTS.md §recipient-readiness).
+    /// </summary>
+    private async Task<AZOAResult<string?>> RecipientFundingAsync(ResolvedAccounts accounts, string assetId, CancellationToken ct)
+    {
+        var provider = _providers.GetProvider(accounts.Asset.ChainType, accounts.Asset.Network);
+        if (!provider.TryGetModule<IRecipientPreparationModule>(out var module) || module is not { SupportsRecipientPreparation: true })
+            return AZOAResult<string?>.FailureWithCode(UnavailableMessage, ConsumerSafeErrorCodes.RailUnavailable);
+        var readiness = await module.GetRecipientAssetReadinessAsync(assetId, accounts.Wallet.Address, ct);
+        if (readiness.IsError || readiness.Result is not { } state)
+            return RailRefusal<string?>(readiness.Message);
+        if (state.IsBlocked)
+            return RailRefusal<string?>("frozen");
+        if (state.CanReceive)
+            return AZOAResult<string?>.Success(null);
+        if (!UnsignedIntegerText.TryParse(state.ShortfallBaseUnits, out var shortfall)
+            || !UnsignedIntegerText.TryParse(_options.MaximumRecipientFundingBaseUnits?.Trim(), out var cap) || shortfall > cap)
+            return RailRefusal<string?>("minimum balance");
+        return AZOAResult<string?>.Success(shortfall.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// D-7: the provider's own <see cref="IExchangeTransactionModule"/> advertisement for the settlement network is the single
+    /// activation pin; absent, an exchange (and its quote) refuses before any journal row (Services/Reserve/AGENTS.md §d7-activation).
+    /// </summary>
+    private bool ExchangeDeclared(string chainType)
+    {
+        try
+        {
+            return _providers.GetProvider(chainType, _providers.DefaultNetwork).TryGetModule<IExchangeTransactionModule>(out var module)
+                && module is not null;
+        }
+        catch (ValueRailProviderNotFoundException) { return false; }
+    }
+
     // ── Source construction ──────────────────────────────────────────────────
 
     private ExchangeHoldSourceIntent? Draft(ExchangeRequest request, ExchangeCallerContext caller, string requestKey,
         ResolvedAccounts accounts, string partition, string projectReference, string platformAssetId,
-        BigInteger platformAmount, BigInteger projectUnitAmount, ExchangeSourceTerms terms)
+        BigInteger platformAmount, BigInteger projectUnitAmount, ExchangeSourceTerms terms, string? recipientFunding = null)
     {
         if (!UnsignedIntegerText.TryParse(_options.MaximumGroupNetworkFeeBaseUnits?.Trim(), out var cap) || cap <= 0)
             return null;
@@ -447,7 +476,8 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
                 accounts.Asset, definition);
         }
         else
-            units = new(request.Direction == ExchangeDirection.Buy ? "Issue" : "Return", accounts.Asset, Format(projectUnitAmount), partition);
+            units = new(request.Direction == ExchangeDirection.Buy ? "Issue" : "Return", accounts.Asset, Format(projectUnitAmount), partition,
+                recipientFunding);
         return new ExchangeHoldSourceIntent(1, requestKey, caller.ApiKeyId, tenant, participant,
             CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(terms)), opening, platformAssetId, Format(platformAmount),
             projectReference, accounts.TreasuryAddress, wallet, cap.ToString(CultureInfo.InvariantCulture), Units: units);

@@ -42,8 +42,11 @@ public class HolonParentCycleGuardTests
     private void SetupDescendant(Guid holonId, Guid childId, Guid descendantId)
     {
         // GetDescendantsAsync uses QueryAsync with ParentHolonId filter.
-        var child      = new Holon { Id = childId,      Name = "Child",      ParentHolonId = holonId };
-        var descendant = new Holon { Id = descendantId, Name = "Grandchild", ParentHolonId = childId };
+        var child      = new Holon { Id = childId,      Name = "Child",      ParentHolonId = holonId, UserId = Owner };
+        var descendant = new Holon { Id = descendantId, Name = "Grandchild", ParentHolonId = childId, UserId = Owner };
+        // The owned-parent check (Managers/AGENTS.md holon-owned-parent) loads the proposed parent first.
+        SetupExisting(childId);
+        SetupExisting(descendantId);
 
         _store
             .Setup(s => s.QueryAsync(
@@ -110,7 +113,7 @@ public class HolonParentCycleGuardTests
         var result = await _manager.UpdateAsync(holonId, new HolonUpdateModel
         {
             ParentHolonId = holonId, // self-parent
-        });
+        }, Owner);
 
         result.IsError.Should().BeTrue("a holon cannot be its own parent (AC-6a, self-parent via UpdateAsync)");
         result.Message.Should().ContainEquivalentOf("own parent");
@@ -133,7 +136,7 @@ public class HolonParentCycleGuardTests
         var result = await _manager.UpdateAsync(parentId, new HolonUpdateModel
         {
             ParentHolonId = grandChildId,
-        });
+        }, Owner);
 
         result.IsError.Should().BeTrue("setting a descendant as parent creates a cycle (AC-6b)");
         result.Message.Should().ContainEquivalentOf("cycle");
@@ -146,6 +149,7 @@ public class HolonParentCycleGuardTests
         var newParent = Guid.NewGuid(); // unrelated holon — no cycle
 
         SetupExisting(holonId);
+        SetupExisting(newParent);
 
         // No descendants configured — GetDescendantsAsync returns empty.
         _store
@@ -159,7 +163,7 @@ public class HolonParentCycleGuardTests
         var result = await _manager.UpdateAsync(holonId, new HolonUpdateModel
         {
             ParentHolonId = newParent,
-        });
+        }, Owner);
 
         result.IsError.Should().BeFalse("unrelated parent causes no cycle");
     }
@@ -205,6 +209,7 @@ public class HolonParentCycleGuardTests
     public async Task MoveSubtreeAsync_SelfParent_Rejected()
     {
         var holonId = Guid.NewGuid();
+        SetupExisting(holonId);
 
         // No descendants needed — self-parent check is before the BFS.
         _store

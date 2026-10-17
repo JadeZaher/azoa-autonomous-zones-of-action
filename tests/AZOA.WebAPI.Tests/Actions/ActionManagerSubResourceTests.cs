@@ -83,6 +83,14 @@ public class ActionManagerSubResourceTests
         return (manager, actionStore, runStore, execStore, action);
     }
 
+    // Dependencies must name an action the author can read; seed one they own.
+    private static Guid SeedOwnedAction(InMemoryActionStore actionStore, Guid ownerUserId)
+    {
+        var owned = new ActionEntity { Id = Guid.NewGuid(), Name = "DependedOn", UserId = ownerUserId };
+        actionStore.UpsertActionAsync(owned).GetAwaiter().GetResult();
+        return owned.Id;
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Action Nodes sub-resource
     // ═══════════════════════════════════════════════════════════════════
@@ -279,7 +287,7 @@ public class ActionManagerSubResourceTests
     public async Task AddAndRemoveDependency_RoundTrip()
     {
         var (manager, actionStore, _, _, action) = BuildPersistedLinearAction(nodeCount: 1);
-        var otherActionId = Guid.NewGuid();
+        var otherActionId = SeedOwnedAction(actionStore, action.UserId);
 
         var added = await manager.AddDependencyAsync(action.Id, new ActionDependencyCreateModel
         {
@@ -316,12 +324,12 @@ public class ActionManagerSubResourceTests
     [Fact]
     public async Task CheckDependenciesAsync_UnsatisfiedAndSatisfied_BothSurface()
     {
-        var (manager, _, runStore, _, action) = BuildPersistedLinearAction(nodeCount: 1);
+        var (manager, actionStore, runStore, _, action) = BuildPersistedLinearAction(nodeCount: 1);
 
         // Two cross-action dependencies — one will be satisfied by a Succeeded
         // run, the other will not.
-        var satisfiedActionId = Guid.NewGuid();
-        var unsatisfiedActionId = Guid.NewGuid();
+        var satisfiedActionId = SeedOwnedAction(actionStore, action.UserId);
+        var unsatisfiedActionId = SeedOwnedAction(actionStore, action.UserId);
 
         var satisfiedDep = await manager.AddDependencyAsync(action.Id, new ActionDependencyCreateModel
         {

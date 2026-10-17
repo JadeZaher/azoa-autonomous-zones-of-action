@@ -239,7 +239,7 @@ public sealed record ProjectTreasuryLedgerView(
         return new ProjectTreasuryLedgerView(
             row.Chain,
             row.Network,
-            row.TenantId,
+            string.IsNullOrWhiteSpace(row.TenantId) ? row.TenantId : SurrealRecordGuid.BareId(row.TenantId),
             row.ProjectReference,
             row.TreasuryAddress,
             row.DerivationVersion,

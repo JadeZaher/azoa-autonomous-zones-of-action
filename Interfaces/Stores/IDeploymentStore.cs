@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 namespace AZOA.WebAPI.Interfaces.Stores;
@@ -21,7 +22,11 @@ public interface IDeploymentStore
         DeploymentOperation replacement, CancellationToken ct = default);
     /// <summary>Advances a quoted parent's admission version while preserving and fencing its exact current child.</summary>
     Task<DeploymentOperation?> InvalidateReplacementQuoteAsync(DeploymentOperation parent, DeploymentOperation predecessor, CancellationToken ct = default);
-    Task<DeploymentOperation?> UpdateAsync(DeploymentOperation row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false);
+    /// <summary>Version-fenced stage change; <paramref name="signing"/> locks each bound signer's credential, grants and wallet in the same transaction.</summary>
+    Task<DeploymentOperation?> UpdateAsync(DeploymentOperation row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false,
+        IReadOnlyList<SigningAdmissionAuthority>? signing = null);
+    /// <summary>Oldest-first page of native operations parked for operator investigation.</summary>
+    Task<IReadOnlyList<DeploymentOperation>> ListNeedsOperatorAsync(int limit, CancellationToken ct = default);
     Task<IReadOnlyList<DeploymentOperation>> ListActorAsync(string actorId, string tenantId, DateTimeOffset snapshot, int offset, int limit, CancellationToken ct = default);
     Task<IReadOnlyList<DeploymentOperation>> ListPendingAsync(int limit, CancellationToken ct = default);
 }

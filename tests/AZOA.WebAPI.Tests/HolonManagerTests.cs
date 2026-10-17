@@ -65,14 +65,14 @@ public class HolonManagerTests
     [Fact]
     public async Task UpdateAsync_ShouldApplyPartialChanges()
     {
-        var holon = new Holon { Id = Guid.NewGuid(), Name = "Old", Description = "Old Desc", IsActive = true };
+        var holon = new Holon { Id = Guid.NewGuid(), Name = "Old", Description = "Old Desc", IsActive = true, UserId = Owner };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
         var model = new HolonUpdateModel { Name = "New" };
-        var result = await _manager.UpdateAsync(holon.Id, model);
+        var result = await _manager.UpdateAsync(holon.Id, model, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.Name.Should().Be("New");
@@ -123,11 +123,11 @@ public class HolonManagerTests
     public async Task DeleteAsync_ShouldReturnProviderResult()
     {
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = Guid.NewGuid() } });
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = Guid.NewGuid(), UserId = Owner } });
         _store.Setup(p => p.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<bool> { Result = true });
 
-        var result = await _manager.DeleteAsync(Guid.NewGuid());
+        var result = await _manager.DeleteAsync(Guid.NewGuid(), Owner);
 
         result.Result.Should().BeTrue();
     }
@@ -336,6 +336,8 @@ public class HolonManagerTests
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
+        _store.Setup(p => p.GetByIdAsync(newParent, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = newParent, UserId = Owner } });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IHolon h, CancellationToken _) => new AZOAResult<IHolon> { Result = h });
 
@@ -356,6 +358,10 @@ public class HolonManagerTests
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = new[] { b } });
         _store.Setup(p => p.QueryAsync(It.Is<HolonQueryRequest>(q => q.ParentHolonId == b.Id), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IHolon>> { Result = Array.Empty<IHolon>() });
+        _store.Setup(p => p.GetByIdAsync(a.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = a });
+        _store.Setup(p => p.GetByIdAsync(b.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = b });
 
         var result = await _manager.MoveSubtreeAsync(a.Id, b.Id, Owner);
 

@@ -195,6 +195,30 @@ public sealed class SurrealWalletAuthenticationTests : IAsyncLifetime
         (await _users.GetByIdAsync(child.Id)).Result!.OwnerTenantId.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task Committed_claim_returns_the_claimed_user_whatever_the_revocation_count(int grantCount)
+    {
+        await _migration.SweepAsync(default);
+        var tenant = DomainUser(); var child = DomainUser(); child.OwnerTenantId = tenant.Id;
+        (await _users.CreateIfAbsentAsync(tenant)).IsError.Should().BeFalse();
+        (await _users.CreateIfAbsentAsync(child)).IsError.Should().BeFalse();
+        for (var index = 0; index < grantCount; index++)
+            await CreateAsync(new ConsentGrant { Id = Guid.NewGuid().ToString("N"),
+                GrantorUserId = "user:" + child.Id.ToString("N"), TenantId = "user:" + tenant.Id.ToString("N"),
+                Scopes = "action:execute", Origin = "UserExplicit", GrantedAt = DateTimeOffset.UtcNow.AddMinutes(-1 - index) });
+        child.OwnerTenantId = null; child.AuthNotBefore = DateTime.UtcNow; child.PasswordHash = "owner-secret";
+
+        var claimed = await _users.TryClaimAuthenticationAsync(child, null, null, tenant.Id, null, await InviteAsync(child.Id, tenant.Id));
+
+        claimed.IsError.Should().BeFalse(claimed.Message);
+        claimed.Result!.Id.Should().Be(child.Id);
+        claimed.Result.OwnerTenantId.Should().BeNull();
+        claimed.Result.PasswordHash.Should().Be("owner-secret");
+        (await _users.GetByIdAsync(child.Id)).Result!.OwnerTenantId.Should().BeNull();
+    }
+
     [Fact]
     public async Task Unadvanceable_grant_aborts_claim_without_partial_ownership_change()
     {

@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using SurrealForge.Client.Schema;
 using AZOA.WebAPI.Core.Surreal;
+using StoredApiKey = AZOA.WebAPI.Persistence.SurrealDb.Models.ApiKey;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -147,18 +148,12 @@ public sealed class SurrealApiKeyStore : IApiKeyStore
 
     public async Task<bool> RevokeAsync(Guid id, Guid userId, DateTime revokedAt, CancellationToken ct)
     {
-        var surrealId = SurrealId.ToSurrealId(id);
-        var userHex = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId));
-        var revokedUtc = DateTime.SpecifyKind(revokedAt, DateTimeKind.Utc);
-
-        var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET is_active = false, revoked_at = $_revoked WHERE user_id = $_user RETURN AFTER")
-            .WithParam("_t", Table)
-            .WithParam("_id", surrealId)
-            .WithParam("_user", SurrealRecordParam.OfLink(userHex))
-            .WithParam("_revoked", revokedUtc);
-
-        var response = await _executor.ExecuteAsync(q, ct);
+        var owner = SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId))!;
+        var revokedUtc = new DateTimeOffset(DateTime.SpecifyKind(revokedAt, DateTimeKind.Utc));
+        // Active-key CAS: a second revoke (or a concurrent rotate) affects nothing.
+        var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<StoredApiKey>(SurrealId.ToSurrealId(id))
+            .Where(row => row.UserId == owner && row.IsActive && row.RevokedAt == null)
+            .Set(row => row.IsActive, false).Set(row => row.RevokedAt, revokedUtc).Build(), ct);
         response.EnsureAllOk();
         return response[0].AffectedCount() == 1;
     }

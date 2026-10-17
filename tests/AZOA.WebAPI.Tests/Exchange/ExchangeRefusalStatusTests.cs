@@ -110,24 +110,24 @@ public sealed class ExchangeRefusalStatusTests
     }
 
     [Theory]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    public async Task A_release_preview_reveals_nothing_about_a_participant_who_has_not_consented(bool withMandate, bool reachesManager)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_preview_reveals_nothing_about_a_participant_who_has_not_consented(bool withMandate)
     {
         var manager = new Mock<IReserveExchangeManager>();
         manager.Setup(candidate => candidate.ExchangeAsync(It.IsAny<ExchangeRequest>(), It.IsAny<ExchangeCallerContext>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<ExchangeReceipt>.Success(new ExchangeReceipt()));
+            .ReturnsAsync(AZOAResult<ExchangeReceipt>.Failure(KycAuthorizationError.Forbidden + " identity not verified"));
         var request = new ExchangeRequest { PreviewOnly = true,
             ReleaseMandate = withMandate ? new ExchangeReleaseMandateRequest { ExpiresAt = Now.AddDays(60) } : null };
 
         var response = await Controller(manager.Object, consentGiven: false).Exchange(Guid.NewGuid(), request, "idem-3", CancellationToken.None);
 
-        manager.Verify(candidate => candidate.ExchangeAsync(It.IsAny<ExchangeRequest>(), It.IsAny<ExchangeCallerContext>(),
-            It.IsAny<CancellationToken>()), reachesManager ? Times.Once() : Times.Never());
-        if (!reachesManager)
-            response.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden,
-                "the disclosure names the participant's wallet and readiness");
+        // The preview reads identity readiness (and, with a mandate, the wallet): a non-consenting
+        // participant gets the same consent refusal whatever their status, never the manager's answer.
+        var refusal = response.Result.Should().BeOfType<ObjectResult>().Which;
+        refusal.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        refusal.Value.Should().BeOfType<AZOAResult<ExchangeReceipt>>().Which.Message.Should().Be("No live consent.");
     }
 
     // ── Fixtures ──────────────────────────────────────────────────────────────

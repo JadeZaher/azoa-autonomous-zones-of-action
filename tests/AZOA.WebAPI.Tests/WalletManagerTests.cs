@@ -65,7 +65,7 @@ public class WalletManagerTests
     [Fact]
     public async Task CreateAsync_ShouldSetUserIdAndSave()
     {
-        _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
+        _walletStore.Setup(p => p.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
@@ -83,12 +83,13 @@ public class WalletManagerTests
     [Fact]
     public async Task CreateAsync_DuplicateAddressPerChain_ReturnsError()
     {
-        var existing = new Wallet { Id = Guid.NewGuid(), ChainType = "Solana", Address = "addr1" };
-        _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
+        var owner = Guid.NewGuid();
+        var existing = new Wallet { Id = Guid.NewGuid(), UserId = owner, ChainType = "Solana", Address = "addr1" };
+        _walletStore.Setup(p => p.GetByUserAsync(owner, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { existing } });
 
         var model = new WalletCreateModel { ChainType = "Solana", Address = "addr1" };
-        var result = await _manager.CreateAsync(model, Guid.NewGuid());
+        var result = await _manager.CreateAsync(model, owner);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("already exists");
@@ -100,6 +101,8 @@ public class WalletManagerTests
         var prev = new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), ChainType = "Solana", Address = "old", IsDefault = true };
         _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { prev } });
+        _walletStore.Setup(p => p.GetByUserAsync(prev.UserId, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { prev } });
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
 
@@ -108,6 +111,58 @@ public class WalletManagerTests
 
         result.IsError.Should().BeFalse();
         _walletStore.Verify(p => p.UpsertAsync(It.Is<IWallet>(w => w.Id == prev.Id && !w.IsDefault), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Audit-1 M2: registering an address proves nothing, so only another user's PROOF blocks a create.</summary>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task CreateAsync_IsBlockedOnlyByAnotherUsersOwnershipProof(bool provenElsewhere, bool refused)
+    {
+        var caller = Guid.NewGuid();
+        var squatter = Guid.NewGuid();
+        _walletStore.Setup(p => p.GetByUserAsync(caller, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
+        _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
+        var proofs = new Mock<IWalletOwnershipProofStore>();
+        proofs.Setup(p => p.GetAsync("Solana", "addr1", It.IsAny<CancellationToken>()))
+              .ReturnsAsync(provenElsewhere ? new WalletOwnershipProof(squatter, Guid.NewGuid(), "solana", "addr1", DateTime.UtcNow) : null);
+        var manager = new WalletManager(_walletStore.Object, _holonStore.Object, _chainFactory.Object, _keyService, _config,
+            ownershipProofs: proofs.Object);
+
+        var result = await manager.CreateAsync(new WalletCreateModel { ChainType = "Solana", Address = "addr1" }, caller);
+
+        result.IsError.Should().Be(refused, result.Message);
+        _walletStore.Verify(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), refused ? Times.Never() : Times.Once());
+    }
+
+    /// <summary>The ownership proof is recorded only after the wallet-auth challenge signature verifies.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProveOwnershipAsync_RecordsTheProofOnlyForAVerifiedSignature(bool verified)
+    {
+        var owner = Guid.NewGuid();
+        var address = new Algorand.Address(new byte[32]).ToString();
+        var wallet = new Wallet { Id = Guid.NewGuid(), UserId = owner, ChainType = "Algorand", Address = address, WalletType = WalletType.External };
+        _walletStore.Setup(p => p.GetByIdAsync(wallet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IWallet>.Success(wallet));
+        var auth = new Mock<IWalletAuthManager>();
+        auth.Setup(a => a.VerifyAddressControlAsync(address, "algorand", "sig", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(verified ? AZOAResult<(string, string)>.Success((address, "algorand"))
+                : new AZOAResult<(string, string)> { IsError = true, Message = "Signature verification failed." });
+        var proofs = new Mock<IWalletOwnershipProofStore>();
+        proofs.Setup(p => p.RecordAsync(It.IsAny<WalletOwnershipProof>(), It.IsAny<CancellationToken>()))
+              .ReturnsAsync((WalletOwnershipProof proof, CancellationToken _) => proof);
+        var manager = new WalletManager(_walletStore.Object, _holonStore.Object, _chainFactory.Object, _keyService, _config,
+            walletAuth: auth.Object, ownershipProofs: proofs.Object);
+
+        var result = await manager.ProveOwnershipAsync(wallet.Id, owner, "sig", null);
+
+        result.IsError.Should().Be(!verified, result.Message);
+        proofs.Verify(p => p.RecordAsync(It.Is<WalletOwnershipProof>(proof => proof.UserId == owner && proof.WalletId == wallet.Id
+            && proof.Address == address && proof.ChainType == "algorand"), It.IsAny<CancellationToken>()), verified ? Times.Once() : Times.Never());
+        (await manager.ProveOwnershipAsync(wallet.Id, Guid.NewGuid(), "sig", null)).Message.Should().Be("Wallet not found.");
     }
 
     [Fact]

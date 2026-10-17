@@ -40,3 +40,7 @@ DEFINE INDEX IF NOT EXISTS wallet_user_chain_address
 DEFINE INDEX IF NOT EXISTS wallet_user_chain
     ON TABLE wallet
     FIELDS user_id, chain_type;
+
+DEFINE INDEX IF NOT EXISTS wallet_chain_address
+    ON TABLE wallet
+    FIELDS chain_type, address;

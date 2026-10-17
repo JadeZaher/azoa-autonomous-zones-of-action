@@ -1,0 +1,90 @@
+[
+  {
+    "route": "POST api/tenant/webhook-events/{eventId}/retry",
+    "controller": "WebhookEventController",
+    "action": "Retry",
+    "class": "non-value",
+    "scope": "tenant:provision",
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+  },
+  {
+    "route": "POST api/operator/tenants/{tenantId}/webhook-events/{eventId}/retry",
+    "controller": "WebhookEventOperatorController",
+    "action": "Retry",
+    "class": "non-value",
+    "scope": "operator",
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+  },
+  {
+    "route": "POST api/tenant/consent-webhook-events/{eventId}/retry",
+    "controller": "ConsentWebhookEventController",
+    "action": "Retry",
+    "class": "non-value",
+    "scope": "tenant:provision",
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+  },
+  {
+    "route": "POST api/operator/tenants/{tenantId}/consent-webhook-events/{eventId}/retry",
+    "controller": "ConsentWebhookEventOperatorController",
+    "action": "Retry",
+    "class": "non-value",
+    "scope": "operator",
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; version + status + lease CAS; immutable retry audit keyed by actor/tenant/event/request"
+  },
+  {
+    "route": "PUT api/tenant/webhook-registration",
+    "controller": "WebhookRegistrationController",
+    "action": "Put",
+    "class": "non-value",
+    "scope": "tenant:provision",
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; versioned registration CAS; persisted command identity"
+  },
+  {
+    "route": "POST api/tenant/webhook-registration/withdraw",
+    "controller": "WebhookRegistrationController",
+    "action": "Withdraw",
+    "class": "non-value",
+    "scope": "tenant:provision",
+    "enforcement": "[Authorize] + WebhookRegistrationManagement.BindAsync (actual principal, no acting tenant) + SigningAuthorityFence.ForConsent in the mutation transaction; versioned registration CAS; persisted command identity"
+  },
+  {
+    "route": "PUT api/operator/tenants/{tenantId}/webhook-registration",
+    "controller": "WebhookRegistrationOperatorController",
+    "action": "Put",
+    "class": "non-value",
+    "scope": "operator",
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; versioned registration CAS; persisted command identity"
+  },
+  {
+    "route": "POST api/operator/tenants/{tenantId}/webhook-registration/withdraw",
+    "controller": "WebhookRegistrationOperatorController",
+    "action": "Withdraw",
+    "class": "non-value",
+    "scope": "operator",
+    "enforcement": "RecentNodeOperatorSession + operator credential issued within 5 min + SigningAuthorityFence.ForConsent(operator) in the mutation transaction; versioned registration CAS; persisted command identity"
+  },
+  {
+    "route": "PUT api/node-governance/parameters",
+    "controller": "NodeGovernanceController",
+    "action": "UpdateParameters",
+    "class": "non-value",
+    "scope": "node:govern",
+    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row"
+  },
+  {
+    "route": "PUT api/node-governance/fee-schedule",
+    "controller": "NodeGovernanceController",
+    "action": "UpdateFeeSchedule",
+    "class": "value-moving",
+    "scope": "node:govern",
+    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row; fee changes the amount taken from future value operations"
+  },
+  {
+    "route": "PUT api/node-governance/treasury",
+    "controller": "NodeGovernanceController",
+    "action": "UpdateTreasuryDestination",
+    "class": "value-moving",
+    "scope": "node:govern",
+    "enforcement": "NodeGovern policy (node operator JWT with node:govern scope; API keys refused); versioned CAS + audit row; destination receives future node fees"
+  }
+]

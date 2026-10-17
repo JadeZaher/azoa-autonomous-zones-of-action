@@ -13,7 +13,7 @@ namespace AZOA.WebAPI.Providers.Kyb;
 
 /// <summary>Identomat business verification using the documented modern begin/result contracts.</summary>
 public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOptions<KybSettings> options,
-    IIdentomatHttpTransport transport) : IHostedSessionProvider
+    IIdentomatHttpTransport transport) : IHostedSessionProvider, IDeletableHostedSessionProvider
 {
     private readonly IdentomatKycSettings _credentials = kycOptions.Value.Identomat;
     private readonly KybSettings _settings = options.Value;
@@ -37,7 +37,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
         if (string.IsNullOrWhiteSpace(_settings.ConfigId)) missing.Add("Kyb__ConfigId");
         if (string.IsNullOrWhiteSpace(_settings.PolicyVersion)) missing.Add("Kyb__PolicyVersion");
         if (!IdentomatKycProviderService.IsUsableCallbackSecret(_credentials.CallbackApiKey)) missing.Add("Kyc__Identomat__CallbackApiKey");
-        if (_settings.ReturnUrl is not null && !ValidPublicUrl(_settings.ReturnUrl, false)) missing.Add("Kyb__ReturnUrl");
+        if (!string.IsNullOrWhiteSpace(_settings.ReturnUrl) && !ValidPublicUrl(_settings.ReturnUrl, false)) missing.Add("Kyb__ReturnUrl");
         return new HostedSessionCapabilities
         {
             ProviderKey = ProviderKey, FlowKind = FlowKind, Available = missing.Count == 0,
@@ -57,7 +57,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
             ["companyKey"] = _credentials.CompanyKey!.Trim(), ["configId"] = _settings.ConfigId!.Trim(),
             ["clientUserId"] = request.AdmissionKey,
         };
-        if (_settings.ReturnUrl is not null)
+        if (!string.IsNullOrWhiteSpace(_settings.ReturnUrl))
             body["general"] = new Dictionary<string, string> { ["returnUrl"] = _settings.ReturnUrl };
         var response = await transport.PostAsync<Dictionary<string, object>, IdentomatBeginResponse>(
             _credentials.BeginBaseUrl!, "/begin", body, "kyb-begin", ct);
@@ -108,6 +108,13 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
         using var document = response.Result;
         return AZOAResult<HostedSessionOutcome>.Success(IdentomatKybResultParser.Parse(document.RootElement));
     }
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
+        => GetHostedCapabilities().Available && ValidPublicUrl(_credentials.ResultBaseUrl, true)
+            ? IdentomatSessionDeletion.DeleteAsync(transport, _credentials.ResultBaseUrl!, _credentials.CompanyKey!,
+                providerSessionId, "kyb-delete", ct)
+            : Task.FromResult(AZOAResult<bool>.Failure("Business verification is unavailable."));
 
     private static AZOAResult<HostedCallbackTrigger> Rejected()
         => AZOAResult<HostedCallbackTrigger>.FailureWithCode(HostedSessionFlow.OpaqueCallbackFailure, AzoaErrorCodes.Forbidden);

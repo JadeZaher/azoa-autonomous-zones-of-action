@@ -273,6 +273,43 @@ public class ApiKeyScopeRbacIntegrationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    // Audit-2 H2: a manager may not demote (or otherwise change) another current manager.
+    [Fact]
+    public async Task AssignRole_AsManager_ChangingACurrentManager_Returns403_AndLeavesTheRole()
+    {
+        var target = await SeedUserAsync();
+        using var operatorClient = Factory.CreateOperatorClient();
+        (await AssignRoleAsync(operatorClient, target.Id, AzoaDappRoles.Manager)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var manager = Factory.CreateAuthenticatedClient(AzoaDappRoles.Manager);
+
+        var response = await AssignRoleAsync(manager, target.Id, AzoaDappRoles.User);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var scope = Factory.Services.CreateScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<IUserStore>().GetByIdAsync(target.Id);
+        stored.Result!.DappRole.Should().Be(AzoaDappRoles.Manager);
+    }
+
+    // Audit-2 H2: an API key reaches role assignment only when it explicitly carries dapp:manage.
+    [Theory]
+    [InlineData(AzoaScopes.DappDevelop, HttpStatusCode.Forbidden)]
+    [InlineData(null, HttpStatusCode.Forbidden)]
+    [InlineData(AzoaScopes.DappManage, HttpStatusCode.OK)]
+    public async Task AssignRole_WithManagerApiKey_RequiresExplicitDappManageScope(string? scopes, HttpStatusCode expected)
+    {
+        var owner = await SeedUserAsync();
+        var target = await SeedUserAsync();
+        using var operatorClient = Factory.CreateOperatorClient();
+        (await AssignRoleAsync(operatorClient, owner.Id, AzoaDappRoles.Manager)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var ownerClient = Factory.CreateAuthenticatedClientForUser(owner.Id, AzoaDappRoles.Manager);
+        var rawKey = scopes is null ? await SeedLegacyApiKeyAsync(owner.Id) : await MintRealApiKeyAsync(ownerClient, scopes);
+        using var apiKeyClient = Factory.CreateApiKeyClient(rawKey);
+
+        var response = await AssignRoleAsync(apiKeyClient, target.Id, AzoaDappRoles.Developer);
+
+        response.StatusCode.Should().Be(expected);
+    }
+
     // The CRITICAL invariant: the endpoint can never assign operator:admin. An invalid
     // role token is rejected (not silently normalized to a privileged value).
     [Fact]

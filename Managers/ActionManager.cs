@@ -124,11 +124,20 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     {
         var actionResult = await _actionStore.GetActionAsync(actionId);
         if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "Action not found." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action not found." };
         if (actionResult.Result.UserId != userId)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is owned by a different user." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = OwnershipRefusal(actionResult.Result) };
         return actionResult;
     }
+
+    // A private action the caller cannot read answers "not found", so an ownership
+    // refusal is never an existence oracle. See Managers/AGENTS.md §action-read-scope.
+    private static string OwnershipRefusal(ActionDefinition action) =>
+        action.IsPublic ? "Action is owned by a different user." : "Action not found.";
+
+    // Owner-or-public read rule shared by action/template/node-template surfaces.
+    private static bool CanReadAuthored(Guid authorUserId, bool isPublic, Guid? callerUserId) =>
+        isPublic || callerUserId.HasValue && authorUserId == callerUserId.Value;
 
     /// <summary>
     /// Loads an action for a run-start (marketplace mechanic): the OWNER may start
@@ -143,7 +152,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     {
         var actionResult = await _actionStore.GetActionAsync(actionId);
         if (actionResult.IsError || actionResult.Result == null)
-            return (new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "Action not found." }, false);
+            return (new AZOAResult<ActionDefinition> { IsError = true, Message = "Action not found." }, false);
 
         var action = actionResult.Result;
         if (action.UserId == userId)
@@ -244,9 +253,10 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     {
         var runResult = await _runStore.GetByIdAsync(runId);
         if (runResult.IsError || runResult.Result == null)
-            return new AZOAResult<ActionRun> { IsError = true, Message = runResult.Message ?? "Action run not found." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = "Action run not found." };
+        // A run is never public: a foreign run answers exactly like a missing one.
         if (runResult.Result.UserId != userId)
-            return new AZOAResult<ActionRun> { IsError = true, Message = "Action run is owned by a different user." };
+            return new AZOAResult<ActionRun> { IsError = true, Message = "Action run not found." };
         return runResult;
     }
 
@@ -316,11 +326,11 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         // owner-only and surface the same "different user" rejection.
         var actionResult = await _actionStore.GetActionAsync(id);
         if (actionResult.IsError || actionResult.Result == null)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = actionResult.Message ?? "Action not found." };
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action not found." };
         var action = actionResult.Result;
         if (action.UserId == userId || action.IsPublic)
             return actionResult;
-        return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is owned by a different user." };
+        return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action not found." };
     }
 
     /// <summary>
@@ -544,6 +554,16 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     // DAG VALIDATION
     // ═══════════════════════════════════════════════════════════════════
 
+    /// <inheritdoc/>
+    public async Task<AZOAResult<bool>> ValidateDAGAsync(Guid actionId, Guid userId, AZOARequest? request = null)
+    {
+        // The HTTP route validates (and persists ExecutionOrder on) the caller's OWN action only.
+        var owned = await LoadOwnedActionAsync(actionId, userId);
+        if (owned.IsError || owned.Result == null)
+            return new AZOAResult<bool> { IsError = true, Message = owned.Message };
+        return await ValidateDAGAsync(actionId, request);
+    }
+
     public async Task<AZOAResult<bool>> ValidateDAGAsync(Guid actionId, AZOARequest? request = null)
     {
         var actionResult = await _actionStore.GetActionAsync(actionId);
@@ -610,7 +630,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         if (node is null) return AZOAResult<ActionNodeExecution>.Failure("Node not found.");
         var quota = await EnforceRunQuotaAsync(actionId, userId, true);
         if (quota is not null) return AZOAResult<ActionNodeExecution>.Failure(quota.Message);
-        var dependencies = await EnforceDependenciesAsync(source, request);
+        var dependencies = await EnforceDependenciesAsync(source, userId, request);
         if (dependencies is not null) return AZOAResult<ActionNodeExecution>.Failure(dependencies.Message);
         var graph = System.Text.Json.JsonSerializer.Deserialize<ActionDefinition>(System.Text.Json.JsonSerializer.Serialize(source))
             ?? throw new InvalidOperationException("Action snapshot is unreadable.");
@@ -879,27 +899,41 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         return await _actionStore.UpsertActionTemplateAsync(template);
     }
 
-    public async Task<AZOAResult<ActionTemplate>> GetTemplateAsync(Guid id, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionTemplate>> GetTemplateAsync(Guid id, Guid? callerUserId, AZOARequest? request = null)
     {
-        return await _actionStore.GetActionTemplateAsync(id);
+        var template = await _actionStore.GetActionTemplateAsync(id);
+        return template.IsError || template.Result == null
+            || !CanReadAuthored(template.Result.AuthorUserId, template.Result.IsPublic, callerUserId)
+            ? AZOAResult<ActionTemplate>.Failure("Action template not found.")
+            : template;
     }
 
-    public async Task<AZOAResult<IEnumerable<ActionTemplate>>> ListTemplatesAsync(AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IEnumerable<ActionTemplate>>> ListTemplatesAsync(Guid? callerUserId, AZOARequest? request = null)
     {
-        return await _actionStore.GetAllActionTemplatesAsync();
+        var all = await _actionStore.GetAllActionTemplatesAsync();
+        if (all.IsError || all.Result == null) return all;
+        return new AZOAResult<IEnumerable<ActionTemplate>>
+        {
+            Result = all.Result.Where(t => CanReadAuthored(t.AuthorUserId, t.IsPublic, callerUserId)).ToList(),
+            Message = all.Message
+        };
     }
 
     public async Task<AZOAResult<ActionDefinition>> InstantiateTemplateAsync(Guid templateId, Guid userId, Dictionary<string, string>? parameters = null, AZOARequest? request = null)
     {
-        var templateResult = await _actionStore.GetActionTemplateAsync(templateId);
+        var templateResult = await GetTemplateAsync(templateId, userId, request);
         if (templateResult.IsError || templateResult.Result == null)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = templateResult.Message };
 
         var template = templateResult.Result;
 
-        // Load node templates referenced by this action template
+        // Node templates resolve as the TEMPLATE AUTHOR could read them: a public template
+        // cannot be used to lift another author's private node-template config.
         var nodeTemplatesResult = await _actionStore.GetAllActionNodeTemplatesAsync();
         var nodeTemplates = (nodeTemplatesResult.Result ?? Enumerable.Empty<ActionNodeTemplate>())
+            .Where(nt => CanReadAuthored(nt.AuthorUserId, nt.IsPublic, template.AuthorUserId))
             .ToDictionary(nt => nt.Id);
 
         var action = new ActionDefinition
@@ -998,9 +1032,16 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         return await _actionStore.UpsertActionNodeTemplateAsync(template);
     }
 
-    public async Task<AZOAResult<IEnumerable<ActionNodeTemplate>>> ListNodeTemplatesAsync(AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IEnumerable<ActionNodeTemplate>>> ListNodeTemplatesAsync(Guid? callerUserId, AZOARequest? request = null)
     {
-        return await _actionStore.GetAllActionNodeTemplatesAsync();
+        var all = await _actionStore.GetAllActionNodeTemplatesAsync();
+        if (all.IsError || all.Result == null) return all;
+        return new AZOAResult<IEnumerable<ActionNodeTemplate>>
+        {
+            Result = all.Result.Where(t => CanReadAuthored(t.AuthorUserId, t.IsPublic, callerUserId)).ToList(),
+            Message = all.Message
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1264,6 +1305,16 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         if (model.DependsOnActionId == actionId)
             return new AZOAResult<ActionDependency> { IsError = true, Message = "An action may not depend on itself." };
 
+        // A dependency on an action the caller cannot read would turn dependency-status
+        // into a probe of someone else's private action. See Managers/AGENTS.md
+        // §action-dependency-enforcement.
+        var dependsOn = await _actionStore.GetActionAsync(model.DependsOnActionId);
+        if (dependsOn.IsError || dependsOn.Result == null
+            || !CanReadAuthored(dependsOn.Result.UserId, dependsOn.Result.IsPublic, userId))
+            return new AZOAResult<ActionDependency> { IsError = true, Message = "Depended-on action not found." };
+        if (model.DependsOnNodeId.HasValue && dependsOn.Result.Nodes.All(n => n.Id != model.DependsOnNodeId.Value))
+            return new AZOAResult<ActionDependency> { IsError = true, Message = "Depended-on node not found." };
+
         var dependency = new ActionDependency
         {
             Id = Guid.NewGuid(),
@@ -1309,7 +1360,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         if (actionResult.IsError || actionResult.Result == null)
             return new AZOAResult<DependencyCheckResult> { IsError = true, Message = actionResult.Message };
 
-        var (check, fault) = await CheckDependencySatisfactionAsync(actionResult.Result);
+        var (check, fault) = await CheckDependencySatisfactionAsync(actionResult.Result, userId);
         if (fault != null)
             return new AZOAResult<DependencyCheckResult> { IsError = true, Message = $"Dependency check failed (fail-closed): {fault}" };
 
@@ -1317,12 +1368,13 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     }
 
     /// <summary>
-    /// Computes dependency satisfaction for an ALREADY-AUTHORIZED action (any Succeeded
-    /// run of each depended-on action). No ownership scoping — the caller must have
-    /// established run-authorization first (LoadStartableActionAsync / LoadOwnedActionAsync).
-    /// Single source of truth shared by the manual check endpoint and the run-start gate.
+    /// Computes dependency satisfaction for an ALREADY-AUTHORIZED action: a Succeeded run of
+    /// each depended-on action by the runner or by the action's owner. Single source of truth
+    /// for the manual check and the run-start gate; see Managers/AGENTS.md
+    /// §action-dependency-enforcement.
     /// </summary>
-    private async Task<(DependencyCheckResult result, string? fault)> CheckDependencySatisfactionAsync(ActionDefinition action)
+    private async Task<(DependencyCheckResult result, string? fault)> CheckDependencySatisfactionAsync(
+        ActionDefinition action, Guid runnerUserId)
     {
         var unsatisfied = new List<Guid>();
         foreach (var dep in action.Dependencies)
@@ -1333,7 +1385,8 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
             // rejects with a fault message rather than a misleading "not satisfied").
             if (runs.IsError)
                 return (default!, $"dependency read for action {dep.DependsOnActionId} failed: {runs.Message}");
-            var anySucceeded = runs.Result?.Any(r => r.Status == ActionRunStatus.Succeeded) ?? false;
+            var anySucceeded = runs.Result?.Any(r => r.Status == ActionRunStatus.Succeeded
+                && (r.UserId == runnerUserId || r.UserId == action.UserId)) ?? false;
             if (!anySucceeded)
                 unsatisfied.Add(dep.Id);
         }
@@ -1361,12 +1414,12 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     /// a null return means the run may proceed. See <c>Managers/AGENTS.md</c>
     /// §action-dependency-enforcement.
     /// </summary>
-    private async Task<AZOAResult<ActionRun>?> EnforceDependenciesAsync(ActionDefinition action, AZOARequest? request)
+    private async Task<AZOAResult<ActionRun>?> EnforceDependenciesAsync(ActionDefinition action, Guid runnerUserId, AZOARequest? request)
     {
         // Runs on an ALREADY-AUTHORIZED action (LoadStartableActionAsync ran upstream),
         // so it computes satisfaction directly — NOT via the owner-scoped
         // CheckDependenciesAsync, which would reject a non-owner marketplace run.
-        var (depCheck, fault) = await CheckDependencySatisfactionAsync(action);
+        var (depCheck, fault) = await CheckDependencySatisfactionAsync(action, runnerUserId);
 
         // Fail closed on a store fault (distinct from an unsatisfied dependency).
         if (fault != null)
@@ -1540,7 +1593,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         if (validationResult.IsError)
             return new AZOAResult<ActionRun> { IsError = true, Message = validationResult.Message };
 
-        var depGate = await EnforceDependenciesAsync(startable.Result, request);
+        var depGate = await EnforceDependenciesAsync(startable.Result, userId, request);
         if (depGate is not null)
             return depGate;
 
@@ -1708,13 +1761,8 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         return new AZOAResult<ActionReconciliationResult> { Result = result, Message = "Reconciliation re-probe complete." };
     }
 
-    /// <summary>
-    /// Operator/background sweep: re-probe EVERY run parked in
-    /// <see cref="ActionRunStatus.AwaitingReconciliation"/>. Unscoped (operator
-    /// context). Each run runs through the same <see cref="ReprobeReconciliationAsync"/>
-    /// chain-truth logic; a probe failure on one run does not abort the sweep.
-    /// </summary>
-    public async Task<AZOAResult<IEnumerable<ActionReconciliationResult>>> SweepReconciliationAsync(AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionReconciliationSweepResult>> SweepReconciliationAsync(AZOARequest? request = null)
     {
         var report = await SweepParkedRunsAsync(
             TimeSpan.FromSeconds(DefaultParkedRunHardStuckSeconds),
@@ -1722,16 +1770,25 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
             CancellationToken.None);
 
         if (report.Error is not null)
-            return new AZOAResult<IEnumerable<ActionReconciliationResult>> { IsError = true, Message = report.Error };
+            return AZOAResult<ActionReconciliationSweepResult>.Failure(report.Error);
 
-        var message = report.HardStuck.Count > 0
-            ? $"Swept {report.Results.Count} run(s) awaiting reconciliation; {report.HardStuck.Count} " +
-              $"remain parked past the {DefaultParkedRunHardStuckSeconds}s hard-stuck threshold - manual intervention required."
-            : $"Swept {report.Results.Count} run(s) awaiting reconciliation.";
+        // The scanned count is the honesty signal: zero scanned is "nothing parked",
+        // never "swept successfully". See Managers/AGENTS.md §parked-run-sweep.
+        var message = report.Scanned == 0
+            ? "No runs are awaiting reconciliation."
+            : $"Scanned {report.Scanned} run(s) awaiting reconciliation; re-probed {report.Results.Count}, " +
+              $"{report.Errors} failed to re-probe, {report.HardStuck.Count} remain parked past the " +
+              $"{DefaultParkedRunHardStuckSeconds}s hard-stuck threshold.";
 
-        return new AZOAResult<IEnumerable<ActionReconciliationResult>>
+        return new AZOAResult<ActionReconciliationSweepResult>
         {
-            Result = report.Results,
+            Result = new ActionReconciliationSweepResult
+            {
+                Scanned = report.Scanned,
+                Results = report.Results,
+                Errors = report.Errors,
+                HardStuck = report.HardStuck.Count,
+            },
             Message = message
         };
     }

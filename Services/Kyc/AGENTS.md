@@ -39,8 +39,10 @@ provider registry. This keeps consumer policy out of AZOA while ensuring a
 manual, unavailable, stale, or untrusted provider approval never opens a value
 path. Projects and non-value collaboration must not use this gate.
 
-**Both value gates require TWO independent facts.** `KycGateService` (consumer) and
-`Services/Bridge/RealValueKycGate` (bridge / real value) each read a current
+**The value gate requires TWO independent facts.** `KycGateService` is the node's one
+KYC gate: it implements both `IKycGateService` (consumer) and `IRealValueKycGate`
+(bridge / real value) — round-4 F-M12 deleted the near-verbatim fork
+`Services/Bridge/RealValueKycGate`. It reads a current
 policy-bound approval AND the latest AML screening verdict for the same
 `(user, tenant, approved attempt lineage)` tuple. Identity verification says who a person is; it says nothing
 about whether that person is sanctioned. Only `NO_HIT` on a non-truncated result
@@ -354,3 +356,35 @@ projects EXPIRED, allowing the existing SDK/UI renewal contract without exposing
 AML evidence. Manual Development simulation retains its existing behavior.
 Callbacks before legacy domain attachment remain retryable. Approval requires both
 screening and durable monitor evidence with the same verified-subject lineage.
+
+## First-party verification and refresh (round 4, F-C3/F-H1)
+
+`POST /api/kyc/session` (`FirstPartyLogin`, no acting tenant) calls `KycManager.BeginAsync`
+for the caller's own tenant-less attempt; before it, only tenants could start hosted KYC, so
+every first-party value gate stayed closed. `POST /api/kyc/refresh` re-fetches `/result/`
+for the caller's open hosted attempt through the shared flow (lost or failed callback) and
+returns the status. `GET /api/kyc/status/summary` from an acting-tenant credential reads that
+tenant's attempt, never the person's first-party one. Lost callbacks also recover without
+anyone asking: see `Services/HostedSessions/AGENTS.md` §recovery.
+
+## Manual review (MANUAL_CHECK)
+
+`MANUAL_CHECK` is non-terminal, so it never opens a gate. But a hosted attempt expires after
+`SessionExpiryMinutes` (30), and a terminal verdict that lands after expiry terminalizes the
+session with no identity effect — a vendor human review would always lose. When the
+authoritative re-fetch reports a session that exists but is undecided, the flow calls the
+`IHostedSessionProgressHandler` hook; `KycHostedSessionOutcomeHandler.ObserveProgressAsync`
+moves the matching live attempt to `IN_REVIEW` and extends its expiry to
+`SubmissionExpiryDays` through `IKycHostedProgressStore` (CAS on the observed row, inside the
+evidence fence). A stale or mismatched attempt is a silent no-op.
+
+A hosted outcome whose open attempt belongs to a different session (the session's own attempt
+was retired or superseded) now terminalizes that session quietly instead of retrying forever.
+
+## Monitor polling and lineage (round 4)
+
+`Kyc:Identomat:Screening:MonitorPollEnabled` is now `bool?`: unset means the AML monitor cold
+poll runs wherever an Identomat `ConfigId` is set (plan A-4); `false` still turns it off.
+`IdentomatScreeningService.RegisterMonitorAsync` takes a required `lineageKey`: a NONE
+`lineage_key` escapes the UNIQUE `kyc_screening_monitor_query` index (W1 probe), so a
+lineage-less monitor would not be single-winner.
