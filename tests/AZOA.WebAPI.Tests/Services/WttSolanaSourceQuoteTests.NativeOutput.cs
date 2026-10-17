@@ -36,7 +36,7 @@ public sealed partial class WttSolanaSourceQuoteTests
         Assert.True((await signing.Provider.AcceptWttNativeOutputSignatureAsync(intent, quote.Result, consent, unsigned.Result,
             Convert.ToBase64String(changed))).IsError);
         var accepted = await signing.Provider.AcceptWttNativeOutputSignatureAsync(intent, quote.Result, consent, unsigned.Result,
-            Convert.ToBase64String(signed.Result));
+            Convert.ToBase64String(signed.Result!));
         Assert.False(accepted.IsError, accepted.Message); Assert.Equal(before, signing.CustodyCalls);
         rpc.LoseSendResponse = true;
         await Assert.ThrowsAsync<HttpRequestException>(() => signing.Provider.SubmitWttNativeOutputAsync(intent, quote.Result, consent, accepted.Result!));

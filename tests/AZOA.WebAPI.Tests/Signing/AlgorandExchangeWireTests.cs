@@ -265,7 +265,7 @@ public sealed class AlgorandExchangeWireTests
             {
                 var payment = (PaymentTransaction)transaction;
                 result["tx-type"] = "pay";
-                result["payment-transaction"] = new Dictionary<string, object> { ["receiver"] = payment.Receiver.ToString(), ["amount"] = payment.Amount };
+                result["payment-transaction"] = new Dictionary<string, object> { ["receiver"] = payment.Receiver.ToString(), ["amount"] = payment.Amount! };
             }
             return result;
         }

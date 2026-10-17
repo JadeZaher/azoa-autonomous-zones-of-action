@@ -48,7 +48,7 @@ public sealed class EthereumDexProtocolTests : IAsyncLifetime
 
     private EthereumProvider NewProvider() => new(_config, NullLogger<EthereumProvider>.Instance,
         new TransactionSignerFactory(new ITransactionSigner[] { new EthereumTransactionSigner() }), new OwnerCustody(_keys[1], _actor, _wallet),
-        _services!.GetRequiredService<IServiceScopeFactory>(), null, _services.GetRequiredService<IEthereumPreparationStore>());
+        _services!.GetRequiredService<IServiceScopeFactory>(), null, _services!.GetRequiredService<IEthereumPreparationStore>());
 
     public async Task InitializeAsync()
     {

@@ -504,7 +504,7 @@ public class PlatformTokenGenesisTests
                     AssetId = ReportCompletedWithoutProjection ? AssetId : string.Empty,
                     WalletAddress = ReserveAddress,
                     Operation = new FungibleCreationView(FungibleCreationIdentity.OperationId(operatorUserId, null, operationKey), 0,
-                        ReportCompletedWithoutProjection ? "Completed" : "AwaitingConsent", Chain, request.Network.ToString(),
+                        ReportCompletedWithoutProjection ? "Completed" : "AwaitingConsent", Chain, request.Network.ToString()!,
                         ReportCompletedWithoutProjection ? AssetId : null, null, null, null, Guid.Empty, ReserveAddress, false,
                         Purpose: "PlatformGenesis"),
                 })
