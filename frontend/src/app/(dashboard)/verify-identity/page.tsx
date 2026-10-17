@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from 'react'
 import type { KycSessionStart, KycSubmission } from 'azoa-sdk'
 import { ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react'
 import { azoa, isOk } from '@/lib/azoa'
-import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
@@ -21,7 +20,6 @@ const STATUS_COPY: Record<KycSubmission['status'], string> = {
 }
 
 export default function VerifyIdentityPage() {
-  const { isAuthenticated } = useAzoaAuth()
   const [status, setStatus] = useState<KycSubmission | null>(null)
   const [session, setSession] = useState<KycSessionStart | null>(null)
   const [busy, setBusy] = useState(false)
@@ -42,15 +40,18 @@ export default function VerifyIdentityPage() {
     }
   }, [])
 
-  useEffect(() => { if (isAuthenticated) void load() }, [isAuthenticated, load])
+  useEffect(() => { void load() }, [load])
 
   async function begin() {
     setBusy(true)
     setError(null)
     try {
       const started = await azoa.api.startKycSession()
-      if (isOk(started)) setSession(started.value)
-      else setError(refusalMessage(started.error, 'Verification could not start.'))
+      if (isOk(started)) {
+        setSession(started.value)
+        const current = await azoa.api.getKycStatus()
+        if (isOk(current)) setStatus(current.value)
+      } else setError(refusalMessage(started.error, 'Verification could not start.'))
     } finally { setBusy(false) }
   }
 
@@ -92,16 +93,16 @@ export default function VerifyIdentityPage() {
           {status?.rejectionReason && status.status === 'REJECTED' && <p className="text-sm">Reason given: {status.rejectionReason}</p>}
           {status?.expiresAt && status.status === 'APPROVED' && <p className="text-sm">Valid until {new Date(status.expiresAt).toLocaleDateString()}.</p>}
           {session?.developmentSimulation && (
-            <p className="text-sm text-amber-600" role="note">This node runs a development simulation; no real verification happens.</p>
+            <p className="text-sm text-amber-600" role="note">This is a development simulation; no real verification happens.</p>
           )}
           {session?.instructions && <p className="text-sm">{session.instructions}</p>}
           <div className="flex flex-wrap gap-3">
             {!terminal && (
-              <Button onClick={() => void begin()} disabled={busy || !isAuthenticated}>
+              <Button onClick={() => void begin()} disabled={busy || !loaded}>
                 {status?.status === 'PENDING' ? 'Resume verification' : 'Start verification'}
               </Button>
             )}
-            <Button variant="outline" onClick={() => void refresh()} disabled={busy || !status}>
+            <Button variant="outline" onClick={() => void refresh()} disabled={busy || (!status && !session)}>
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${busy ? 'animate-spin' : ''}`} />
               Refresh result
             </Button>

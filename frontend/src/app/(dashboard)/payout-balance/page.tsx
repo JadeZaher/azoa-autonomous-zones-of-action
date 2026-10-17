@@ -70,13 +70,13 @@ export default function PayoutBalancePage() {
       <div>
         <h1 className="text-2xl font-semibold">Payout balance</h1>
         <p className="text-muted-foreground">
-          When your price schedule sets what a person receives on cash-out, the money comes from this balance — never from the node.
+          When your price schedule sets what a person receives on cash-out, the money comes from this balance — never from the platform.
           A cash-out it cannot cover is refused before anything is sent.
         </p>
       </div>
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
       {!offered ? (
-        <Card><CardContent className="pt-6 text-sm">This node does not offer tenant payout balances yet. Tenant-priced cash-outs stay unavailable until it does.</CardContent></Card>
+        <Card><CardContent className="pt-6 text-sm">Tenant payout balances are not offered here yet. Tenant-priced cash-outs stay unavailable until it does.</CardContent></Card>
       ) : (
         <>
           <Card>

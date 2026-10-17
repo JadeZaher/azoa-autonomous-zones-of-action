@@ -47,7 +47,8 @@ node e2e/scripts/e2e-stack.mjs down    # stop the project; keeps its volume (add
 
 `docker-compose.e2e.yml` points `Kyc__Identomat__*BaseUrl` and `Fiat__ApiBaseUrl` at
 `https://${AZOA_E2E_VENDOR_HOST}:9443/9444`, injects the generated credentials (`:?` makes a bare
-compose up fail loudly), disables webhook delivery, and sets **both** `SSL_CERT_FILE` and
+compose up fail loudly), turns webhook delivery on (round 4; the pinned receiver is unroutable, so
+events dead-letter), and sets **both** `SSL_CERT_FILE` and
 `SSL_CERT_DIR` to the mounted trust directory. .NET on Linux reads trust roots from OpenSSL's
 `SSL_CERT_FILE` and `SSL_CERT_DIR`, and only falls back to `/etc/ssl/certs` when `SSL_CERT_DIR` is
 not set (`.omc/research/dotnet-linux-x509-2026-10-16.md`), so the per-run CA is the only root.

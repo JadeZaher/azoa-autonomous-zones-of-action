@@ -1,6 +1,6 @@
 import type { WorkflowReconciliationSweep } from 'azoa-sdk'
 
-/** Tone of an operator outcome: only `ok` may be shown as success. See `src/lib/AGENTS.md` §operator-honesty. */
+/** Tone of an operator outcome: only `ok` may be shown as success. See `src/app/(dashboard)/AGENTS.md` §operator-boards. */
 export type OutcomeTone = 'ok' | 'warn' | 'bad'
 
 export interface OutcomeVerdict {

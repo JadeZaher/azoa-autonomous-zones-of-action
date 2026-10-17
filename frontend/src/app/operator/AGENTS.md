@@ -85,3 +85,29 @@ opaque pagination tokens.
 ## Platform genesis
 
 The genesis console uses the operator-cookie BFF with a narrow platform-token admin-route allowlist. Persist the exact irreversible definition and versioned continuation before egress. Cost consent is separate from admission/signing; all supply/fee values remain decimal strings. No ordinary cancellation is offered: withholding continuation pauses new effects but cannot recall already-authorized bytes. New sessions recover the original operation; observed finality/accounting does not require a renewed signing session. Browser storage contains no credentials.
+
+## Round-4 console
+
+Round-4 pages (`chains`, `deployments`, `exchange`, `wallet-identities`, `sagas`, `fees`) and the
+hosted-session refresh use a second, declarative allowlist: `lib/operator-routes.ts`
+(`CONSOLE_ROUTES`). Each entry is one page action with an anchored console-path pattern, the exact
+upstream `/api/...` path it maps to, a query normalizer (bounded `limit`, the three saga statuses)
+and a body rebuilder that drops unknown fields and refuses out-of-range values. Ids are pinned to
+the server's shape (UUID, 32-hex deployment ids, 64-hex swap/WTT ids). The legacy `resolvePath`
+table is untouched; `route.ts` consults the round-4 table first and falls through.
+
+- Upstreams outside `/api/operator` are explicit: retired exchange rows
+  (`/api/exchange/operator/...`, Operator policy), sagas (`/api/admin/sagas/...`) and node fees
+  (`/api/node-governance/...`, NodeGovern scope, which the operator token carries).
+- Saga operator routes answer bare JSON; `sanitizedOperatorResponse(..., { bare: true })` wraps
+  them in the same `{ result }` shape. Action-workflow steps are refused upstream and hidden here;
+  they recover under `/operator/actions`.
+- Upstream error text is still never forwarded. The shared 409 copy now says the node refused the
+  action in the row's current state, which covers both version conflicts and evidence refusals.
+- Pages never report success on their own: a mutation's result is shown as the new state the node
+  returned (`lib/use-operator-resource.ts` `useOperatorMutation` returns null on refusal), and a
+  refresh with no change says so.
+- Hosted sessions: Identomat attempts can now be refreshed from the provider; rows in
+  `AwaitingProviderOutcome` (attached, untouched for an hour) offer refresh only, not the
+  attach/absence reconcile form.
+- `src/lib/__tests__/operator-routes.test.ts` is the allowlist's table-driven guard.

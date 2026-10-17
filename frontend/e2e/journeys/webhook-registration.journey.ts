@@ -9,8 +9,8 @@ test('a tenant registers a webhook destination and sees the secret only once', a
   const panel = page.getByRole('region', { name: 'Webhook registration' })
   const save = panel.getByRole('button', { name: 'Save registration' })
   await expect(save).toBeEnabled()
-  // Pinned in docker-compose.e2e.yml (extra_hosts) to a public-range address: no real DNS, and
-  // delivery is disabled in E2E (Webhooks__Enabled=false), so nothing is ever sent there.
+  // Pinned in docker-compose.e2e.yml (extra_hosts) to an unroutable public-range address. Delivery
+  // is ON in e2e since round 4, so events sent here dead-letter; no journey proves delivery yet.
   await panel.getByLabel('HTTPS destination').fill('https://webhook-receiver.e2e.azoa.test/azoa')
   await panel.getByLabel('Registration change reason').fill('Register the journey test receiver.')
   await save.click()

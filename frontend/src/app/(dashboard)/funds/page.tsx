@@ -37,7 +37,7 @@ export default function FundsPage() {
   useEffect(() => {
     void azoa.api.getFiatCheckoutCapabilities().then(result => {
       if (isOk(result)) setCapabilities(result.value)
-      else setError(refusalMessage(result.error, 'This node could not say whether it takes payments.'))
+      else setError(refusalMessage(result.error, 'Payment availability could not be read.'))
     })
   }, [])
 
@@ -89,7 +89,7 @@ export default function FundsPage() {
       {error && <ErrorBanner message={error} />}
       {unavailable && (
         <Card><CardContent className="pt-6 text-sm">
-          This node is not taking payments right now{capabilities?.unavailableReason ? `: ${capabilities.unavailableReason}` : '.'}
+          Payments are not available right now{capabilities?.unavailableReason ? `: ${capabilities.unavailableReason}` : '.'}
         </CardContent></Card>
       )}
       <Card>
