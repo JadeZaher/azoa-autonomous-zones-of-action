@@ -58,7 +58,7 @@ public sealed class FrozenSoulboundClawbackTests
 
         _submitCount.Should().Be(3, "creation, recipient opt-in, and delivery are distinct confirmed stages");
         _issuerAuthorizations.Should().HaveCount(2, "platform creation and delivery require actual issuer signatures");
-        _issuerAuthorizations.Should().OnlyContain(payment => payment.Amount == 0 && payment.Sender.EncodeAsString() == _issuerA.Address.EncodeAsString());
+        _issuerAuthorizations.Should().OnlyContain(payment => (payment.Amount ?? 0UL) == 0UL && payment.Sender.EncodeAsString() == _issuerA.Address.EncodeAsString());
         _holdings[_issuerA.Address.EncodeAsString()] = 0;
 
         var treasury = new AlgoAccount().Address.EncodeAsString();

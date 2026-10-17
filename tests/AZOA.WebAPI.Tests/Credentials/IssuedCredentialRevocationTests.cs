@@ -48,7 +48,8 @@ public sealed class IssuedCredentialRevocationTests
         authority!.HolderUserId.Should().Be(_rail.IssuerA.ToString("N"));
         authority.Revoked.Should().BeTrue();
         var ownership = _rail.Rail.Store.Ownership[credential.Id.ToString("N")];
-        ownership.UserId.Should().Be(_rail.IssuerA.ToString("N"));
+        ownership.UserId.Should().Be("user:" + _rail.IssuerA.ToString("N"),
+            "nft_ownership.user_id is record<user>; a bare id is refused by the schema (SQL-05)");
         ownership.CurrentOwner.Should().Be(_rail.IssuerAddress);
         ownership.IsActive.Should().BeFalse();
     }

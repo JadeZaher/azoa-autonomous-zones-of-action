@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SurrealForge.Client;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -216,6 +217,8 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
         if (authority is null || authority.Burned || authority.Revoked || !authority.Soulbound
             || authority.IssuerUserId != actor.ToString("N") || authority.HolderUserId == actor.ToString("N"))
             return Refused("Only the original issuer may revoke a live credential.");
+        if (string.IsNullOrWhiteSpace(authority.OwnerAddress))
+            return Refused("The credential holder's on-chain address is unrecorded; it cannot be clawed back.");
         var provenance = await store.FindCredentialAsync(authority.ChainType, authority.Network, authority.AssetId, authority.ContractAddress, ct);
         if (provenance is not { HasVerifiedIssuance: true }) return Refused("Credential issuance has no confirmed chain provenance.");
         var issuance = await store.GetAsync(authority.IssuanceLifecycleId, ct);
@@ -528,13 +531,13 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
         var m = command.Metadata;
         var ownership = new NftOwnership
         {
-            Id = row.NftId, UserId = authority.HolderUserId, ChainType = row.ChainType,
+            Id = row.NftId, UserId = SurrealLink.ToLink("user", authority.HolderUserId)!, ChainType = row.ChainType,
             ContractAddress = row.ContractAddress, TokenId = row.AssetId, TokenStandard = authority.TokenStandard,
             MetadataUri = m.MetadataURI, Name = m.Name, Description = m.Description, ImageUri = m.ImageURI,
             Attributes = JsonSerializer.SerializeToElement(m.Attributes), RoyaltyPercentage = m.RoyaltyPercentage,
             RoyaltyRecipient = m.RoyaltyRecipient, IsSoulbound = authority.Soulbound, IsTransferable = !authority.Soulbound && m.IsTransferable,
             IsCurrent = !authority.Burned, CurrentOwner = authority.OwnerAddress,
-            IssuerUserId = string.IsNullOrEmpty(authority.IssuerUserId) ? null : authority.IssuerUserId,
+            IssuerUserId = string.IsNullOrEmpty(authority.IssuerUserId) ? null : SurrealLink.ToLink("user", authority.IssuerUserId),
             IsActive = !authority.Burned && !authority.Revoked, MintedDate = issuance.CreatedAt, LastTransferDate = authority.UpdatedAt,
         };
         await store.CommitAsync(row, authority, ownership, ct);
