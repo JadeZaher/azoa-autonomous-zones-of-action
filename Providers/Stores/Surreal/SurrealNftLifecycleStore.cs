@@ -9,6 +9,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Providers.Blockchain.Ethereum;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -106,10 +107,14 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         => executor.QuerySingleAsync<NftLifecycle>(SurrealQuery<NftLifecycle>.Key(id), ct);
 
     /// <inheritdoc/>
-    public async Task<NftLifecycle?> UpdateAsync(NftLifecycle row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false)
+    public async Task<NftLifecycle?> UpdateAsync(NftLifecycle row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false,
+        bool workflowAuthority = false)
     {
         var before = await GetAsync(row.Id, ct);
         if (before is null || before.Version != expectedVersion) return null;
+        // RV-L5-09: after an owner takeover a stale workflow run may not commit; the UPDATE below re-proves the unchanged continuations.
+        if (workflowAuthority && NftActorContinuationIdentity.TakenOver(before, JsonSerializer.Deserialize<NftLifecycleCommand>(before.RequestJson)!))
+            return null;
         var consentAdded = before.StageConsentsJson != row.StageConsentsJson;
         var participantRenewal = consentAdded && NftStageConsentIdentity.CanRenew(before, row);
         if (consentAdded && (!requireActionAuthority || !(participantRenewal || NftStageConsentIdentity.CanAppend(before, row)))) return null;
@@ -119,11 +124,16 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         if (costsRetired && !AZOA.WebAPI.Helpers.NftReplacementCostContract.CanRetire(before, row)) return null;
         var renewed = before.ActorContinuationsJson != row.ActorContinuationsJson;
         if (renewed && (!requireActionAuthority || !NftActorContinuationIdentity.CanAppend(before, row))) return null;
+        var stageCostsAdded = before.StageCostConsentsJson != row.StageCostConsentsJson;
+        if (stageCostsAdded && (!requireActionAuthority || !NftStageCostContract.CanAppend(before, row))) return null;
+        if (requireActionAuthority && !NftStageCostContract.AdmitsWrite(before, row)) return null;
         // A renewal-only write re-checks just the new credential; signing steps later fence every authority again.
         NftLifecycleWrite? write = !requireActionAuthority ? null : renewed ? NftLifecycleWrite.RequesterRenewal
-            : participantRenewal ? NftLifecycleWrite.ParticipantRenewal : costsAdded ? NftLifecycleWrite.CostAcceptance : NftLifecycleWrite.Effect;
+            : participantRenewal ? NftLifecycleWrite.ParticipantRenewal : costsAdded ? NftLifecycleWrite.CostAcceptance
+            : stageCostsAdded ? NftLifecycleWrite.StageCostAcceptance : NftLifecycleWrite.Effect;
+        var continuations = before.ActorContinuationsJson;
         var update = SurrealWriter.UpdateOnly<NftLifecycle>(row.Id).Where(item => item.Version == expectedVersion
-            && item.RequestHash == row.RequestHash && item.RequestJson == row.RequestJson)
+            && item.RequestHash == row.RequestHash && item.RequestJson == row.RequestJson && item.ActorContinuationsJson == continuations)
             .Set(item => item.State, row.State).Set(item => item.Stage, row.Stage)
             .Set(item => item.ConfirmedStageCount, row.ConfirmedStageCount)
             .Set(item => item.TransactionHistoryJson, row.TransactionHistoryJson)
@@ -141,6 +151,8 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
         update = row.CreationTransactionId is null ? update.Unset(item => item.CreationTransactionId) : update.Set(item => item.CreationTransactionId, row.CreationTransactionId);
         update = row.FinalTransactionId is null ? update.Unset(item => item.FinalTransactionId) : update.Set(item => item.FinalTransactionId, row.FinalTransactionId);
         update = row.Detail is null ? update.Unset(item => item.Detail) : update.Set(item => item.Detail, row.Detail);
+        update = row.StageCostConsentsJson is null ? update.Unset(item => item.StageCostConsentsJson)
+            : update.Set(item => item.StageCostConsentsJson, row.StageCostConsentsJson);
         try
         {
             var fenced = Fenced(update.Build(), row, write, costsRetired);
@@ -207,11 +219,15 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
             if (kind == NftLifecycleWrite.FreshAdmission)
             {
                 if (row.StageConsentsJson != "[]" || row.ReplacementCostConsentsJson != "[]" || row.ReplacementCostRetirementsJson != "[]"
-                    || row.ActorContinuationsJson != "[]") throw new ActionEffectAuthorityChangedException();
+                    || row.ActorContinuationsJson != "[]" || row.StageCostConsentsJson is not null) throw new ActionEffectAuthorityChangedException();
                 if (command.ProtocolCostQuote is { } quote) guards.AddRange(NftProtocolCostAdmissionFence.Create(quote));
             }
             if (kind == NftLifecycleWrite.CostAcceptance)
                 guards.AddRange(NftProtocolCostAdmissionFence.Create((NftReplacementCostContract.Current(row)
+                    ?? throw new ActionEffectAuthorityChangedException()).Quote));
+            // The paying participant's receipt and its database-time expiry commit with the stage cost acceptance.
+            if (kind == NftLifecycleWrite.StageCostAcceptance)
+                guards.AddRange(NftProtocolCostAdmissionFence.Create((NftStageCostContract.Current(row)
                     ?? throw new ActionEffectAuthorityChangedException()).Quote));
             // After an owner takeover (F-H12) the run no longer authorizes effects; the owner's renewal is fenced above instead.
             if (kind is NftLifecycleWrite.FreshAdmission or NftLifecycleWrite.Effect or NftLifecycleWrite.CostAcceptance
@@ -243,6 +259,27 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
             response.EnsureAllOk();
             return response;
         }, ct);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<Guid>> FindCustodialWalletIdsAsync(string chainType, string address, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(chainType) || string.IsNullOrWhiteSpace(address)) return [];
+        var forms = new HashSet<string>(StringComparer.Ordinal) { address };
+        if (chainType.Equals("Ethereum", StringComparison.OrdinalIgnoreCase) && EthereumAddress.TryParse(address, out var checksummed))
+        {
+            forms.Add(checksummed);
+            forms.Add(checksummed.ToLowerInvariant());
+        }
+        var ids = new List<Guid>();
+        foreach (var form in forms)
+        {
+            var rows = await executor.QueryAsync<Wallet>(SurrealQuery<Wallet>.From()
+                .Where(row => row.ChainType == chainType && row.Address == form && row.WalletType == Wallet.WalletTypeKind.Platform)
+                .Limit(16), ct);
+            ids.AddRange(rows.Select(row => SurrealRecordGuid.Parse(row.Id)));
+        }
+        return ids.Distinct().ToArray();
+    }
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<NftLifecycle>> ListPendingAsync(int limit, CancellationToken ct = default)

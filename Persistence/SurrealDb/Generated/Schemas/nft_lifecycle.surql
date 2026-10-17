@@ -26,6 +26,7 @@ DEFINE FIELD IF NOT EXISTS stage_consents_json ON TABLE nft_lifecycle TYPE strin
 DEFINE FIELD IF NOT EXISTS replacement_cost_consents_json ON TABLE nft_lifecycle TYPE string;
 DEFINE FIELD IF NOT EXISTS replacement_cost_retirements_json ON TABLE nft_lifecycle TYPE string;
 DEFINE FIELD IF NOT EXISTS actor_continuations_json ON TABLE nft_lifecycle TYPE string;
+DEFINE FIELD IF NOT EXISTS stage_cost_consents_json ON TABLE nft_lifecycle TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS asset_id ON TABLE nft_lifecycle TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS protocol_identity ON TABLE nft_lifecycle TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS contract_address ON TABLE nft_lifecycle TYPE option<string>;

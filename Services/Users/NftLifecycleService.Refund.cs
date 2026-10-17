@@ -33,7 +33,8 @@ public sealed partial class NftLifecycleService
             if (replay.Stage == "Cancellation") return original.ActingTenantId == actingTenantId ? AZOAResult<NftLifecycleView>.Success(View(replay)) : Refused("NFT request not found.");
             if (original.SourceLifecycleId != sourceLifecycleId || original.ActingTenantId != actingTenantId
                 || original.ActionAuthority != actionAuthority || original.FeeAuthorization != feeAuthorization) return Refused("Idempotency-Key is bound to another refund.");
-            return admissionOnly ? AZOAResult<NftLifecycleView>.Success(View(replay)) : await AdvanceAsync(replay, actor, false, ct, actingTenantId);
+            return admissionOnly ? AZOAResult<NftLifecycleView>.Success(View(replay))
+                : await AdvanceAsync(replay, actor, false, ct, actingTenantId, workflowCaller: actionAuthority is not null);
         }
         var source = await store.GetAsync(sourceLifecycleId, ct);
         if (source is null || source.Operation != "Transfer" || source.State != "Completed" || !RequesterOwns(source, actor, actingTenantId))
