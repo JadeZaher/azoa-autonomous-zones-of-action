@@ -142,6 +142,7 @@ public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampL
         update = update.Set(lot => lot.RefundAttempt, row.RefundAttempt)
             .Set(lot => lot.RefundedMinorUnits, row.RefundedMinorUnits);
         update = row.PriceScheduleId is null ? update.Unset(lot => lot.PriceScheduleId) : update.Set(lot => lot.PriceScheduleId, row.PriceScheduleId);
+        update = row.PricingScopeKey is null ? update.Unset(lot => lot.PricingScopeKey) : update.Set(lot => lot.PricingScopeKey, row.PricingScopeKey);
         update = row.SourceCheckoutSessionId is null ? update.Unset(lot => lot.SourceCheckoutSessionId) : update.Set(lot => lot.SourceCheckoutSessionId, row.SourceCheckoutSessionId);
         update = row.SourcePaymentIntentId is null ? update.Unset(lot => lot.SourcePaymentIntentId) : update.Set(lot => lot.SourcePaymentIntentId, row.SourcePaymentIntentId);
         update = row.SourceChargeId is null ? update.Unset(lot => lot.SourceChargeId) : update.Set(lot => lot.SourceChargeId, row.SourceChargeId);

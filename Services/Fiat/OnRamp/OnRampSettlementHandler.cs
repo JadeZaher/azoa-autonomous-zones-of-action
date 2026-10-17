@@ -353,6 +353,7 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
 
         lot.PriceScheduleId = SurrealLink.ToLink(TenantPriceSchedule.SchemaNameConst, schedule.RecordId);
         lot.PriceScheduleVersion = schedule.Version;
+        lot.PricingScopeKey = schedule.ScopeKey;
         lot.UnitsPerMinorUnit = PriceScheduleMath.FormatRate(schedule.UnitsPerMinorUnit);
         lot.GrossQuantityBaseUnits = PriceScheduleMath.FormatBaseUnits(grossBaseUnits);
 

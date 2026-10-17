@@ -175,6 +175,8 @@ public sealed class SurrealFiatPayoutLedger(ISurrealExecutor executor) : IFiatPa
         update = row.UnitsCollectedAt is null ? update.Unset(payout => payout.UnitsCollectedAt) : update.Set(payout => payout.UnitsCollectedAt, row.UnitsCollectedAt);
         update = row.PaidAt is null ? update.Unset(payout => payout.PaidAt) : update.Set(payout => payout.PaidAt, row.PaidAt);
         update = row.ReversedAt is null ? update.Unset(payout => payout.ReversedAt) : update.Set(payout => payout.ReversedAt, row.ReversedAt);
+        // funding_tenant_id is immutable after the claim (D-8: who pays = who priced, fixed at claim time).
+        update = row.CollectPartition is null ? update.Unset(payout => payout.CollectPartition) : update.Set(payout => payout.CollectPartition, row.CollectPartition);
         var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
             var result = await executor.ExecuteAsync(update.Build(), ct);
