@@ -3,7 +3,8 @@ type: lane-checkpoint
 lane: L7-frontend
 wave: W2
 branch: r4/frontend
-status: ready
+status: merged
+merged: 43be8f25
 ---
 
 # Round 4 — L7 frontend / SDK (W2 `r4/frontend`, merge #9)
