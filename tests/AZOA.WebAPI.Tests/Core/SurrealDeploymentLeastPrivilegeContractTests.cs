@@ -104,7 +104,9 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
             .And.Contain("DEFINE USER OVERWRITE")
             .And.Contain("ROLES EDITOR")
             .And.Contain("setpriv --reuid")
-            .And.NotContain("--force");
+            .And.Contain("--no-reconcile")
+            .And.NotContain("--force")
+            .And.NotContain("--allow-destructive");
     }
 
     [Fact]

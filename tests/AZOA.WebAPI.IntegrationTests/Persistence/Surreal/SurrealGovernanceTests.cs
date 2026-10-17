@@ -20,7 +20,7 @@ using ActionDefinition = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
-public sealed class SurrealGovernanceTests : IAsyncLifetime
+public sealed partial class SurrealGovernanceTests : IAsyncLifetime
 {
     private readonly string _namespace = $"test{Guid.NewGuid():N}";
     private readonly string _tenant = Guid.NewGuid().ToString("N");
@@ -233,9 +233,9 @@ public sealed class SurrealGovernanceTests : IAsyncLifetime
         var append = screening.SaveResultAsync(hit);
         var vote = _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, receipt, default);
         await Task.WhenAll(append, vote);
-        append.Result.IsError.Should().BeFalse();
+        (await append).IsError.Should().BeFalse();
         var decisions = await _store.DecisionsAsync(_proposal, default);
-        if (vote.Result.IsError)
+        if ((await vote).IsError)
         {
             decisions.Should().BeEmpty();
             (await _store.ReceiptAsync(receipt.Id, default)).Should().BeNull();
