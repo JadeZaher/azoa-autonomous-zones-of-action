@@ -24,6 +24,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     [Slice("wallet_nft")]
     [Index("wallet_user_chain_address", Fields = new[] { "user_id", "chain_type", "address" }, Unique = true)]
     [Index("wallet_user_chain", Fields = new[] { "user_id", "chain_type" })]
+    [Index("wallet_chain_address", Fields = new[] { "chain_type", "address" })]
     public partial class Wallet : ISurrealRecord
     {
         public const string SchemaNameConst = "wallet";

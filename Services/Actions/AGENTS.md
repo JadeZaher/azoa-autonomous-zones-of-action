@@ -887,3 +887,19 @@ successful output. Deterministic invalid input records HoldAdmissionRejected by
 execution-version CAS before failure; missing authority/provider/source evidence
 remains recoverable. The quartet is not activated until legacy caller cutover and
 registration are complete. Tests are authored but the integrated sweep is pending.
+
+## wtt-route
+
+Round 4 (L4 seam for L5's WTT helper). A Bridge/Back node whose config carries a `wtt` object runs on
+the durable WTT journal instead of the legacy bridge: `ActionNodeHandlerRegistry.TryGetFor(node)`
+returns a recoverable `ActionWttNodeHandler` (domain `wtt`) when a registered `IActionWttRoute`
+`Applies(node)`; every other node resolves by type exactly as before. The dispatch site
+(`ActionNodeStepHandler`) is the only caller of `TryGetFor`; classification paths (economic manifest)
+keep `TryGet(type)` because both routes are economic. Selection is per node, so legacy Bridge/Back
+nodes never gain an external-operation reference. The route supplies the signing scopes
+(`wtt:source:sign` + `wtt:target:sign`), the settlement rail (source chain) and the reference;
+WTT `Enabled` and module checks stay inside the route (a disabled route fails the node before any
+quote). The output catalog's Bridge/Back shape is the union of the legacy `BridgeTransactionResult`
+and the flat `WttActionOutput` receipt. Inert until L5 makes `WttActionResolver : IActionWttRoute`
+(registered as `IActionWttRoute`) and L1 adds `WttActionConfig? Wtt` to `BridgeNodeConfig` /
+`BackNodeConfig` (strict publish-time config parsing rejects the key until then).

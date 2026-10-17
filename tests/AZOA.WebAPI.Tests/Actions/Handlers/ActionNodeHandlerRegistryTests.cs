@@ -2,6 +2,7 @@ using FluentAssertions;
 using Moq;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.ActionExecution;
+using AZOA.WebAPI.Interfaces.Actions;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Actions;
@@ -96,5 +97,21 @@ public class ActionNodeHandlerRegistryTests
         var execution = (await execStore.GetByRunAndNodeAsync(run.Result!.Id, node.Id)).Result!;
         execution.State.Should().Be(ActionNodeState.Failed);
         execution.Error.Should().Be($"Unsupported node type: {ActionNodeType.BlockchainExecute}");
+    }
+
+    [Fact]
+    public void Bridge_node_with_a_wtt_config_dispatches_to_the_recoverable_wtt_route_and_others_keep_their_handler()
+    {
+        var legacy = Handler(ActionNodeType.Bridge);
+        var route = new Mock<IActionWttRoute>();
+        route.Setup(r => r.Applies(It.Is<ActionNode>(n => n.Config.Contains("\"wtt\"")))).Returns(true);
+        route.SetupGet(r => r.SigningScopes).Returns(["wtt:source:sign", "wtt:target:sign"]);
+        var registry = new ActionNodeHandlerRegistry(new[] { legacy }, wttRoutes: [route.Object]);
+
+        registry.TryGetFor(new ActionNode { NodeType = ActionNodeType.Bridge, Config = "{\"wtt\":{}}" }, out var wtt).Should().BeTrue();
+        wtt.Should().BeAssignableTo<IRecoverableActionNodeHandler>();
+        wtt.ResolveSigningScopes(new ActionNode()).Should().Equal("wtt:source:sign", "wtt:target:sign");
+        registry.TryGetFor(new ActionNode { NodeType = ActionNodeType.Bridge, Config = "{\"sourceChain\":\"Algorand\"}" }, out var plain).Should().BeTrue();
+        plain.Should().BeSameAs(legacy, "a legacy Bridge node never gains an external-operation reference");
     }
 }

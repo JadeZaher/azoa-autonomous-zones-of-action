@@ -5,6 +5,7 @@ using AZOA.WebAPI.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using Row = AZOA.WebAPI.Persistence.SurrealDb.Models.WalletOwnershipProof;
+using WalletRow = AZOA.WebAPI.Persistence.SurrealDb.Models.Wallet;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -17,6 +18,16 @@ public sealed class SurrealWalletOwnershipProofStore(ISurrealExecutor executor) 
         if (!WalletAuthIdentity.TryCreate(address, chainType, out var canonicalAddress, out var canonicalChain)) return null;
         var row = await executor.QuerySingleAsync<Row>(SurrealQuery<Row>.Key(RecordId(canonicalChain, canonicalAddress)), ct);
         return row is null || row.ChainType != canonicalChain || row.Address != canonicalAddress ? null : ToDomain(row);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> IsSignatureProvenAsync(Guid walletId, Guid ownerUserId, CancellationToken ct = default)
+    {
+        if (walletId == Guid.Empty || ownerUserId == Guid.Empty) return false;
+        var wallet = await executor.QuerySingleAsync<WalletRow>(SurrealQuery<WalletRow>.Key(walletId.ToString("N")), ct);
+        if (wallet is null || wallet.WalletType != WalletRow.WalletTypeKind.External
+            || SurrealRecordGuid.Parse(wallet.UserId) != ownerUserId) return false;
+        return await GetAsync(wallet.ChainType, wallet.Address, ct) is { } proof && proof.UserId == ownerUserId;
     }
 
     /// <inheritdoc/>
