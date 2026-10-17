@@ -27,7 +27,7 @@ public class NftManagerTests
             .Returns(async (Guid owner, CancellationToken ct) =>
             {
                 var rows = new List<IUserNFT>();
-                foreach (var row in _rail.Store.Ownership.Values.Where(item => item.UserId == owner.ToString("N")))
+                foreach (var row in _rail.Store.Ownership.Values.Where(item => item.UserId == "user:" + owner.ToString("N")))
                 {
                     var found = await _rail.Nfts.Object.GetUserNFTByIdAsync(Guid.Parse(row.Id), ct);
                     if (found.Result is not null) rows.Add(found.Result);
@@ -121,7 +121,7 @@ public class NftManagerTests
         _rail.Confirm = false;
         var result = await _manager.TransferAsync(nftId, new() { WalletId = _wallet.Id, TargetUserId = recipient }, _actor, Key("transfer-key"));
         result.Code.Should().Be("NFT_PENDING");
-        _rail.Store.Ownership[nftId.ToString("N")].UserId.Should().Be(_actor.ToString("N"));
+        _rail.Store.Ownership[nftId.ToString("N")].UserId.Should().Be("user:" + _actor.ToString("N"));
     }
 
     [Fact]

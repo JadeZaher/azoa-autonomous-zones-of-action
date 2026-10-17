@@ -58,7 +58,7 @@ public sealed class AlgorandGroupReceiptTests
     internal static Dictionary<string, object> Indexed(Transaction tx, ulong round, ulong offset)
     {
         var value = new Dictionary<string, object> { ["id"] = tx.TxID(), ["sender"] = tx.Sender.ToString(),
-            ["confirmed-round"] = round, ["intra-round-offset"] = offset, ["fee"] = tx.Fee!.Value,
+            ["confirmed-round"] = round, ["intra-round-offset"] = offset, ["fee"] = tx.Fee ?? 0UL,
             ["first-valid"] = tx.FirstValid!.Value, ["last-valid"] = tx.LastValid!.Value,
             ["note"] = Convert.ToBase64String(tx.Note), ["group"] = Convert.ToBase64String(tx.Group.Bytes) };
         if (tx.RekeyTo is not null) value["rekey-to"] = tx.RekeyTo.ToString();

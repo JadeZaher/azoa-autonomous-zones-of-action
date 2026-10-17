@@ -212,3 +212,27 @@ exact defect the guard exists to catch invisible. Its registered-chain list in `
 
 `BlockchainProviderNotFoundException` now derives from `ValueRailProviderNotFoundException`,
 so every existing `catch` keeps working.
+
+## §client-signed transfers (D-3, round 4)
+
+`ClientSigning/IClientSignedTransferModule` is implemented by Algorand, Ethereum and Solana
+(`*Provider.ClientSigning.cs`). Plans are built by the same code paths custody uses (Solana shares
+`PlanValueMessageAsync` with `PrepareValueTransferAsync`), never signed or sent at plan time, and every module re-derives
+the plan from its recovery fields before trusting it. See `Services/Blockchain/AGENTS.md` §client-signed operations.
+
+## §module activation (D-7, round 4)
+
+Algorand declares `IDexTransactionModule` and `IExchangeTransactionModule`; Ethereum and Solana declare
+`IDexTransactionModule`. Declaration is not activation: each provider re-maps `IBlockchainProvider.TryGetModule<T>`
+through `ChainModuleActivation`, which advertises a DEX or exchange module only where
+`{Dex|Exchange}:Activation:{Chain}:{Network}` is explicitly `true` (`BlockchainProviderFactory.TryGetModule` delegates to
+the provider so the pin applies on every path). `appsettings.Development.json` turns the devnet pins on for fixtures;
+production stays off until that chain's protocol fixture passes in the sweep; anything still off at the end goes to
+`deferred.md`.
+
+## §rpc-http-clients (D9, round 4)
+
+`ChainRpcHttp.Create` builds every chain RPC client: an explicit handler (unit tests) wins, then the host's
+`IHttpClientFactory` named client `chain-rpc:{chain}` (production constructors take the factory), else a bare client.
+Fake-RPC flows configure the named client instead of reflection. Never put a node URL (it can embed a provider API key)
+into a result, log message or chain-info dictionary — `GetChainInfoAsync` no longer returns `rpcEndpoint`.

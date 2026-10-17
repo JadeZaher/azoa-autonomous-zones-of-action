@@ -1272,6 +1272,11 @@ builder.Services.AddScoped<WttProofVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttStageKeyStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttStageKeyStore>();
 builder.Services.AddScoped<WttStageKeyVault>();
 builder.Services.AddScoped<WttStageKeyReadiness>();
+builder.Services.AddSingleton<WttStageKeyReadinessState>();
+builder.Services.AddHostedService<WttStageKeyReadinessWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWttRecipientDirectory, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttRecipientDirectory>();
+// Replaced in place by the wallet ownership challenge's persisted proof (L4); fail-closed until then.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWalletOwnershipProof, WalletOwnershipProofAdapter>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttBodyClaimStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttBodyClaimStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttOperationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttOperationStore>();
@@ -1281,6 +1286,11 @@ builder.Services.AddHttpClient<WttGuardianTransport>()
 builder.Services.AddScoped<WttRecoveryService>();
 builder.Services.AddScoped<WttLifecycleService>();
 builder.Services.AddHostedService<WttRecoveryWorker>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.WttActionResolver>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.WttActionResolver>());
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.IActionWttRoute>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.WttActionResolver>());
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.INftProtocolCostQuoteStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealNftProtocolCostQuoteStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEthereumDexAllowanceStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealEthereumDexAllowanceStore>();
@@ -1395,6 +1405,10 @@ builder.Services.AddHostedService<SwapRecoveryWorker>();
 builder.Services.AddScoped<SwapActionResolver>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp => sp.GetRequiredService<SwapActionResolver>());
 builder.Services.AddScoped<IBlockchainOperationManager, BlockchainOperationManager>();
+// D-3 client-signed operations: CAS store + lifecycle service (submit-signed, stuck-row parking, operator resolution).
+builder.Services.AddScoped<AZOA.WebAPI.Services.Blockchain.ClientSigning.IClientSignedOperationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealOperationLogClientSigningStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Blockchain.ClientSigning.ClientSignedOperationService>();
 builder.Services.AddScoped<IActionGraphBundleManager, ActionGraphBundleManager>();
 builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
@@ -1482,7 +1496,9 @@ builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     // Faucet operations are provider-scoped: the Algorand provider owns the
     // test-ALGO top-up path and delegates the idempotent build/sign/submit to the
     // injected IAlgorandFaucet (WalletManager no longer depends on it directly).
-    faucet: sp.GetRequiredService<IAlgorandFaucet>()));
+    faucet: sp.GetRequiredService<IAlgorandFaucet>(),
+    // D9: named chain RPC clients (ChainRpcHttp.ClientName) so hosts and fixtures can supply handlers.
+    httpClientFactory: sp.GetRequiredService<IHttpClientFactory>()));
 builder.Services.AddTransient<SolanaProvider>();
 // Ethereum: a BARE AddTransient on purpose. Constructor selection then picks the 4-arg
 // overload whose every parameter is a root-resolvable singleton (config, logger, signer

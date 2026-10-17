@@ -92,7 +92,7 @@ public sealed partial class EthereumDexQuoteTests
         observed.FinalizedCandidate!.OriginalPreparedHash.Should().Be(CanonicalJson.Hash(original.Prepared));
         observed.FinalizedCandidate.Candidate.TransactionIds.Should().Equal(alternate.Id);
         SwapObservationContract.IsValid(intent, original.Prepared, observed).Should().BeTrue();
-        original.Prepared.TransactionIds.Should().Equal(original.Id, "the immutable original candidate is never rewritten");
+        original.Prepared.TransactionIds.Should().Equal(new[] { original.Id }, "the immutable original candidate is never rewritten");
     }
 
     [Fact]
@@ -260,7 +260,8 @@ public sealed partial class EthereumDexQuoteTests
         first.IsError.Should().BeFalse(first.Message);
         replay.Result.Should().Equal(swap.Id);
         var expected = condition is "fresh" or "already-known" ? 2 : 0;
-        fixture.Sent.Should().HaveCount(expected).And.OnlyContain(hex => hex == EthereumHex.Data(swap.Wire));
+        fixture.Sent.Should().HaveCount(expected);
+        fixture.Sent.Where(hex => hex != EthereumHex.Data(swap.Wire)).Should().BeEmpty("only the exact saved wire is ever sent");
     }
 
     [Fact]

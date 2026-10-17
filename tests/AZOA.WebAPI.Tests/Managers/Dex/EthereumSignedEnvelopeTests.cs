@@ -38,8 +38,8 @@ public sealed class EthereumSignedEnvelopeTests
         var s = mutation == "zero-s" ? new byte[] { 0 } : mutation == "high-s"
             ? (order - new BigInteger(signature.S, true, true)).ToByteArray(true, true) : signature.S;
         var parity = mutation == "parity" ? new byte[] { 2 } : signature.V;
-        transaction.SetSignature(new Signature(r, s, parity));
-        var read = () => EthereumSignedEnvelope.Verify(transaction.GetRLPEncoded(), unsigned, key.GetPublicAddress());
+        var wire = SignedWire(unsigned, parity, r, s);
+        var read = () => EthereumSignedEnvelope.Verify(wire, unsigned, key.GetPublicAddress());
         read.Should().Throw<InvalidDataException>();
     }
 
@@ -78,6 +78,26 @@ public sealed class EthereumSignedEnvelopeTests
 
     private static Transaction1559 Transaction(int nonce = 7, int chain = 31337, int fee = 100, string? target = null)
         => new(chain, nonce, 1, fee, 300000, target ?? "0x" + new string('a', 40), 0, "0x12345678", null);
+
+    /// <summary>Hand-encodes 0x02 || rlp([...unsigned fields, yParity, r, s]); Nethereum's encoder cannot emit a zero scalar.</summary>
+    private static byte[] SignedWire(byte[] unsigned, byte[] parity, byte[] r, byte[] s)
+    {
+        var header = unsigned[1];
+        var bodyStart = header >= 0xf8 ? 2 + (header - 0xf7) : 2;
+        var body = unsigned[bodyStart..].Concat(Item(parity)).Concat(Item(r)).Concat(Item(s)).ToArray();
+        var length = body.Length < 56 ? [(byte)(0xc0 + body.Length)] : LongHeader(0xf7, body.Length);
+        return new byte[] { 0x02 }.Concat(length).Concat(body).ToArray();
+        static byte[] Item(byte[] value)
+        {
+            var trimmed = value.SkipWhile(b => b == 0).ToArray();
+            return trimmed.Length == 1 && trimmed[0] < 0x80 ? trimmed : [(byte)(0x80 + trimmed.Length), .. trimmed];
+        }
+        static byte[] LongHeader(int offset, int length)
+        {
+            var bytes = BitConverter.GetBytes(length).Reverse().SkipWhile(b => b == 0).ToArray();
+            return [(byte)(offset + bytes.Length), .. bytes];
+        }
+    }
 
     private static byte[] Sign(EthECKey key, byte[] unsigned)
     {

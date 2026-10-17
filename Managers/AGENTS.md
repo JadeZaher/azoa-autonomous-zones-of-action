@@ -873,3 +873,11 @@ one, and holon-binding validation counts a holon as resolved only when the serie
 read it. `ActionGraphBundleManager.OwnershipRefusal` answers NotFound for a bundle the caller
 cannot read and Forbidden only for a readable (public) foreign one; a null acting user is
 refused on every mutation.
+
+## §caller-built operations (M9, round 4)
+
+`BlockchainOperationManager.BuildAndExecuteAsync` serves the holon `mint`/`exchange` routes, which build an operation
+from caller input. It refuses `Mint` and `Exchange` before any claim, row or provider call: user NFT mints go through the
+NFT lifecycle (mint checks, fee/cost consent, the user's own key) and exchanges through the reserve exchange; the
+platform key never creates an ASA for a caller-built request. Reads through `BlockchainOperationController` show a
+tenant-acting caller only operations that tenant drove.

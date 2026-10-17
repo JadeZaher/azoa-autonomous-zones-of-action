@@ -71,4 +71,10 @@ public sealed class ReconciliationOptions
     /// Default 3600s (1 hour).
     /// </summary>
     public int OperationHardStuckAfterSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// D-3: an operation still awaiting its client signature this long is re-observed on chain; an expired Algorand/Solana plan
+    /// closes as abandoned, an Ethereum plan (signatures never expire) parks as NeedsOperator. Default 1800s.
+    /// </summary>
+    public int ClientSignatureTtlSeconds { get; set; } = 1800;
 }

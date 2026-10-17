@@ -125,6 +125,9 @@ public class UserNFTService : IUserNFTService
         var ownership = await VerifyNftOwnedByAsync(binding.UserNFTId, userId);
         if (ownership != null)
             return new AZOAResult<bool> { IsError = true, Message = ownership };
+        // M7: a binding outlives an NFT transfer; the new holder may not raise permissions on the old owner's holon.
+        if (!await HolonOwnedByAsync(binding.HolonId, userId))
+            return new AZOAResult<bool> { IsError = true, Message = "Target holon is owned by a different user." };
 
         if (model.Role != null) binding.Role = model.Role;
         if (model.PermissionLevel != null) binding.PermissionLevel = model.PermissionLevel;
@@ -146,8 +149,9 @@ public class UserNFTService : IUserNFTService
         if (loadResult.IsError || loadResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = loadResult.Message ?? "Holon binding not found." };
 
+        // The current NFT holder, or the target holon's owner (revoking a binding left behind by a transfer), may remove it.
         var ownership = await VerifyNftOwnedByAsync(loadResult.Result.UserNFTId, userId);
-        if (ownership != null)
+        if (ownership != null && !await HolonOwnedByAsync(loadResult.Result.HolonId, userId))
             return new AZOAResult<bool> { IsError = true, Message = ownership };
 
         return await _nftStore.DeleteHolonNFTBindingAsync(id, default);
@@ -201,6 +205,9 @@ public class UserNFTService : IUserNFTService
         var ownership = await VerifyNftOwnedByAsync(binding.UserNFTId, userId);
         if (ownership != null)
             return new AZOAResult<bool> { IsError = true, Message = ownership };
+        // M7: same rule for wallet bindings carried across a transfer.
+        if (!await WalletOwnedByAsync(binding.WalletId, userId))
+            return new AZOAResult<bool> { IsError = true, Message = "Target wallet is owned by a different user." };
 
         if (model.BindingType != null) binding.BindingType = model.BindingType;
         if (model.AccessLevel != null) binding.AccessLevel = model.AccessLevel;
@@ -223,7 +230,7 @@ public class UserNFTService : IUserNFTService
             return new AZOAResult<bool> { IsError = true, Message = loadResult.Message ?? "Wallet binding not found." };
 
         var ownership = await VerifyNftOwnedByAsync(loadResult.Result.UserNFTId, userId);
-        if (ownership != null)
+        if (ownership != null && !await WalletOwnedByAsync(loadResult.Result.WalletId, userId))
             return new AZOAResult<bool> { IsError = true, Message = ownership };
 
         return await _nftStore.DeleteWalletNFTBindingAsync(id, default);
@@ -292,6 +299,8 @@ public class UserNFTService : IUserNFTService
             return new AZOAResult<bool> { IsError = true, Message = bindingsResult.Message ?? "No holon bindings found." };
 
         var binding = bindingsResult.Result.FirstOrDefault(b => b.HolonId == holonId && b.IsActive);
+        if (binding != null && !await HolonOwnedByAsync(holonId, callerUserId.Value))
+            return new AZOAResult<bool> { Result = false, Message = "The binding targets another user's holon; it grants nothing after a transfer." };
         if (binding == null)
             return new AZOAResult<bool> { Result = false, Message = "No active binding found for the specified holon." };
 
@@ -312,6 +321,8 @@ public class UserNFTService : IUserNFTService
             return new AZOAResult<bool> { IsError = true, Message = bindingsResult.Message ?? "No wallet bindings found." };
 
         var binding = bindingsResult.Result.FirstOrDefault(b => b.WalletId == walletId && b.IsActive);
+        if (binding != null && !await WalletOwnedByAsync(walletId, callerUserId.Value))
+            return new AZOAResult<bool> { Result = false, Message = "The binding targets another user's wallet; it grants nothing after a transfer." };
         if (binding == null)
             return new AZOAResult<bool> { Result = false, Message = "No active binding found for the specified wallet." };
 
@@ -320,6 +331,12 @@ public class UserNFTService : IUserNFTService
         return new AZOAResult<bool> { Result = hasAccess, Message = hasAccess ? "Access verified." : "Insufficient access." };
     }
 
+
+    private async Task<bool> HolonOwnedByAsync(Guid holonId, Guid userId)
+        => await _holonStore.GetByIdAsync(holonId, default) is { IsError: false, Result: { } holon } && holon.UserId == userId;
+
+    private async Task<bool> WalletOwnedByAsync(Guid walletId, Guid userId)
+        => await _walletStore.GetByIdAsync(walletId, default) is { IsError: false, Result: { } wallet } && wallet.UserId == userId;
 
     private async Task<string?> VerifyNftOwnedByAsync(Guid userNFTId, Guid userId)
     {

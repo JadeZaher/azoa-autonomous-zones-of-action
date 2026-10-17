@@ -42,7 +42,7 @@ public sealed class WttAlgorandHoldingWireTests
         altered.Should().Throw<InvalidDataException>();
         var wrongOwner = new AlgoAccount();
         Action impersonated = () => WttAlgorandHoldingWire.ValidateSigned(input, Sign(WttAlgorandHoldingWire.Build(input), wrongOwner));
-        impersonated.Should().Throw<InvalidOperationException>();
+        impersonated.Should().Throw<InvalidDataException>().WithInnerException<InvalidOperationException>();
     }
 
     private static WttAlgorandHoldingParameters Parameters(AlgoAccount owner) => new("CustodyOptIn", "bridge:holding:0",

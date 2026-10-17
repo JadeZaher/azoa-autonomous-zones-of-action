@@ -5,6 +5,7 @@ using Algorand.Utils;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using FluentAssertions;
+using AZOA.WebAPI.Tests.TestSupport;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;
 
@@ -49,11 +50,10 @@ public sealed partial class TinymanProviderQuoteTests
             result.Result.Purpose.Should().Be("Cleanup");
             result.Result.ReservedNetworkFee.Should().Be("1000");
             using var unsigned = JsonDocument.Parse(result.Result.UnsignedPayloadJson);
-            var transaction = Encoder.DecodeFromMsgPack<Transaction>(Convert.FromBase64String(unsigned.RootElement.GetProperty("transactions")[0].GetString()!))
-                .Should().BeOfType<AssetTransferTransaction>().Subject;
-            transaction.AssetCloseTo.EncodeAsString().Should().Be(RpcHandler.Owner);
-            transaction.AssetAmount.Should().Be(0);
-            transaction.AssetReceiver.EncodeAsString().Should().Be(RpcHandler.Owner);
+            var transaction = Convert.FromBase64String(unsigned.RootElement.GetProperty("transactions")[0].GetString()!);
+            AlgorandExactWire.HasAddressField(transaction, "aclose", RpcHandler.Owner).Should().BeTrue("the close-out returns to the owner");
+            AlgorandExactWire.HasField(transaction, "aamt").Should().BeFalse("a close-out moves no explicit amount");
+            AlgorandExactWire.HasAddressField(transaction, "arcv", RpcHandler.Owner).Should().BeTrue();
         }
         fixture.Rpc.Posts.Should().Be(0);
         fixture.Custody.VerifyNoOtherCalls();

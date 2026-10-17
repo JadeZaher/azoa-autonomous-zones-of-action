@@ -195,6 +195,9 @@ public class BridgeNodeConfig
     /// fails the node closed rather than silently defaulting.
     /// </summary>
     public string? Mode { get; set; }
+
+    /// <summary>Optional WTT route (round 4 L5): when present the node runs on the durable <c>wtt</c> domain instead.</summary>
+    public AZOA.WebAPI.Models.Wtt.WttActionConfig? Wtt { get; set; }
 }
 
 /// <summary>
@@ -212,4 +215,7 @@ public class BackNodeConfig
 
     /// <summary>Source-chain address to release the original asset back to.</summary>
     public string SourceRecipientAddress { get; set; } = string.Empty;
+
+    /// <summary>Optional WTT route (round 4 L5); <c>ReturnOfOperationId</c> names the forward transfer being returned.</summary>
+    public AZOA.WebAPI.Models.Wtt.WttActionConfig? Wtt { get; set; }
 }

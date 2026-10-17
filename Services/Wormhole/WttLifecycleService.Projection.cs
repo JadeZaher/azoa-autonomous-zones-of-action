@@ -17,7 +17,7 @@ public sealed partial class WttLifecycleService
         var stages = await store.ReadStagesAsync(id, ct);
         var current = operation.CurrentStageId is { } currentId ? stages.LastOrDefault(stage => SurrealRecordGuid.BareId(stage.Id) == currentId) : null;
         var (publicState, nextAction) = Status(operation, current);
-        return new(id, operation.OfferId, operation.Version, operation.State, publicState, operation.Phase, Intent(operation),
+        return new(id, operation.OfferId, operation.Version, operation.State, publicState, operation.Phase, AdmittedIntent(operation),
             stages.Select(StageView).ToArray(), operation.CurrentStageId,
             operation.TransferPublicationJson is { } transfer ? Read<WttPublication>(transfer).Sequence : null,
             operation.AttestationPublicationJson is { } attestation ? Read<WttPublication>(attestation).Sequence : null,
@@ -97,7 +97,19 @@ public sealed partial class WttLifecycleService
         }
     }
 
-    internal static WttOperationIntent Intent(WttOperation operation) => Read<WttOperationIntent>(operation.IntentJson);
+    /// <summary>Current signing intent: the owner-takeover intent once recorded, otherwise the admitted one.</summary>
+    internal static WttOperationIntent Intent(WttOperation operation) => Read<WttOperationIntent>(operation.OwnerIntentJson ?? operation.IntentJson);
+
+    /// <summary>The intent the participant originally consented to; projections and evidence identity use it.</summary>
+    internal static WttOperationIntent AdmittedIntent(WttOperation operation) => Read<WttOperationIntent>(operation.IntentJson);
+
+    /// <summary>Hash every new provider quote must bind: the current signing intent's.</summary>
+    internal static string IntentHashOf(WttOperation operation)
+        => operation.OwnerIntentJson is { } owner ? CanonicalJson.HashCanonical(owner) : operation.IntentHash;
+
+    /// <summary>The exact intent a saved quote was bound to, so stages quoted before a takeover replay under their own identity.</summary>
+    internal static WttOperationIntent IntentFor(WttOperation operation, string quoteIntentHash)
+        => quoteIntentHash == operation.IntentHash ? AdmittedIntent(operation) : Intent(operation);
 
     internal static T Read<T>(string json)
         => JsonSerializer.Deserialize<T>(json) ?? throw new InvalidOperationException("Persisted WTT journal evidence is missing.");

@@ -46,11 +46,11 @@ public sealed class SwapStageCoordinatorTests
         var previous = new SwapStageObservation("Pending", ["tx"], "genesis", EvidenceJson: "{\"checkpoint\":1}");
         fixture.Stage.ObservationJson = JsonSerializer.Serialize(previous);
         var observation = new SwapStageObservation(verdict, ["tx"], "genesis");
-        fixture.Module.Setup(module => module.ObserveExposedSwapStageAsync(It.IsAny<SwapIntent>(), fixture.Prepared.Plan,
+        fixture.Module.Setup(module => module.ObserveExposedSwapStageAsync(It.IsAny<SwapIntent>(), SamePlan(fixture),
             It.IsAny<CancellationToken>(), It.Is<SwapStageObservation?>(value => value != null && value.EvidenceJson == previous.EvidenceJson)))
             .ReturnsAsync(AZOAResult<SwapExternalStageObservation>.Success(new(observation)));
         if (verdict == "ExpiredAbsent")
-            fixture.Module.Setup(module => module.ValidateExposedSwapNoEffect(It.IsAny<SwapIntent>(), fixture.Prepared.Plan, observation)).Returns(true);
+            fixture.Module.Setup(module => module.ValidateExposedSwapNoEffect(It.IsAny<SwapIntent>(), SamePlan(fixture), observation)).Returns(true);
         fixture.Store.Setup(store => store.RecordObservationAsync("op", 1, "stage", 0, observation, It.IsAny<CancellationToken>()))
             .ReturnsAsync(fixture.Stage);
         await fixture.Service.RecoverAuthorizedAsync("op", fixture.Module.Object);
@@ -191,6 +191,11 @@ public sealed class SwapStageCoordinatorTests
         fixture.Store.Verify(store => store.ClaimInitialStageAsync("op", 1, plan, fixture.Authority, It.IsAny<CancellationToken>()),
             exhausted ? Times.Never() : Times.Once());
     }
+
+    /// <summary>The saved plan round-trips through JSON, so record equality (list members) cannot match it by reference.</summary>
+    private static SwapStagePlan SamePlan(Fixture fixture) => It.Is<SwapStagePlan>(plan =>
+        CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(plan, (JsonSerializerOptions?)null))
+            == CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(fixture.Prepared.Plan, (JsonSerializerOptions?)null)));
 
     private sealed class Fixture
     {
