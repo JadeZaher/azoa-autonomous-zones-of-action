@@ -13,14 +13,20 @@ public sealed class EnumColumnRoundTripTests
 {
     public static IEnumerable<object[]> EnumColumns() => Columns().Select(column => new object[] { column.Type.Name + "." + column.Property.Name });
 
+    /// <summary>Reviewed members that are never persisted, so their absence from [Inside] is the fail-closed guard.</summary>
+    private static readonly Dictionary<string, string> UnpersistedMembers = new()
+    {
+        ["KycProvider.UNAVAILABLE"] = "sentinel adapter (UnavailableKycProviderService); KycApprovalTrust refuses it before any write",
+    };
+
     [Fact]
     public void Every_Inside_list_names_exactly_the_enum_members()
     {
         var drift = Columns()
             .Select(column => (column, inside: column.Property.GetCustomAttribute<InsideAttribute>()))
             .Where(pair => pair.inside is not null)
-            .Where(pair => !pair.inside!.Values.ToHashSet().SetEquals(Enum.GetNames(EnumType(pair.column.Property))))
-            .Select(pair => $"{pair.column.Type.Name}.{pair.column.Property.Name}: [Inside] {string.Join(",", pair.inside!.Values)} vs enum {string.Join(",", Enum.GetNames(EnumType(pair.column.Property)))}");
+            .Where(pair => !pair.inside!.Values.ToHashSet().SetEquals(PersistedNames(EnumType(pair.column.Property))))
+            .Select(pair => $"{pair.column.Type.Name}.{pair.column.Property.Name}: [Inside] {string.Join(",", pair.inside!.Values)} vs enum {string.Join(",", PersistedNames(EnumType(pair.column.Property)))}");
         drift.Should().BeEmpty("a member missing from [Inside] makes every write of that state fail the ASSERT; an extra literal is a state the code can never read back");
     }
 
@@ -37,7 +43,8 @@ public sealed class EnumColumnRoundTripTests
         await using var database = await InterleavingDatabase.CreateAsync();
         var check = typeof(EnumColumnRoundTripTests).GetMethod(nameof(RoundTripAsync), BindingFlags.NonPublic | BindingFlags.Static)!
             .MakeGenericMethod(type);
-        foreach (var member in Enum.GetValues(EnumType(property)))
+        foreach (var member in Enum.GetValues(EnumType(property)).Cast<object>()
+                     .Where(value => !UnpersistedMembers.ContainsKey($"{EnumType(property).Name}.{value}")))
             await (Task)check.Invoke(null, [database.Executor, property, member])!;
     }
 
@@ -47,6 +54,8 @@ public sealed class EnumColumnRoundTripTests
         var row = new T();
         var id = Guid.NewGuid().ToString("N");
         IdProperty(typeof(T)).SetValue(row, id);
+        foreach (var json in typeof(T).GetProperties().Where(candidate => candidate.CanWrite && candidate.PropertyType == typeof(System.Text.Json.JsonElement)))
+            json.SetValue(row, System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone());
         property.SetValue(row, member);
         (await executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 
@@ -67,6 +76,9 @@ public sealed class EnumColumnRoundTripTests
                 .Where(property => property.CanWrite && EnumTypeOrNull(property) is not null)
                 .Select(property => (type, property)))
             .OrderBy(column => column.type.Name).ThenBy(column => column.property.Name);
+
+    private static IEnumerable<string> PersistedNames(Type enumType)
+        => Enum.GetNames(enumType).Where(name => !UnpersistedMembers.ContainsKey($"{enumType.Name}.{name}"));
 
     private static Type? EnumTypeOrNull(PropertyInfo property)
         => (Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType) is { IsEnum: true } type ? type : null;
