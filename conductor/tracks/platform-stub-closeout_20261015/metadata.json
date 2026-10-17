@@ -3,14 +3,26 @@
   "name": "Platform stub closeout and Git consolidation",
   "status": "in_progress",
   "created_at": "2026-10-15",
-  "updated_at": "2026-10-17",
-  "priority": ["git-consolidation", "identomat-kyc-kyb", "stripe", "remaining-platform-stubs"],
+  "updated_at": "2026-10-17T15:40:00Z",
+  "priority": [
+    "git-consolidation",
+    "identomat-kyc-kyb",
+    "stripe",
+    "remaining-platform-stubs"
+  ],
   "loop": {
     "rounds_total": 4,
     "current_round": 4,
-    "round_states": {"1": "closed", "2": "closed", "3": "closed", "4": "assessing"},
+    "round_states": {
+      "1": "closed",
+      "2": "closed",
+      "3": "closed",
+      "4": "executing"
+    },
     "round3_join_commit": "baf1224",
-    "merged_with_vocabulary_sweep": "0522fdf"
+    "merged_with_vocabulary_sweep": "0522fdf",
+    "round4_plan_commit": "c854f2c",
+    "round4_wave": "W0"
   },
   "verification": {
     "compiled": false,
@@ -25,6 +37,7 @@
       "branch": "fix/1.2.1-reserved-tables-and-declared-variables",
       "target_version": "1.3.0",
       "published": false
-    }
+    },
+    "surrealforge_1_3_0": "published nuget.org 2026-10-17 (run 39045148834)"
   }
 }

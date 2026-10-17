@@ -4,8 +4,8 @@ type: runbook
 
 # AZOA — Session Runbook
 
-**Last updated:** 2026-10-17 07:20 MDT · **Branch:** `feat/platform-stub-closeout` ·
-**Last commit:** see `git log -1` (this rewrite lands on top of `0522fdf merge: feat/platform-stub-closeout round-3 join baf1224 into the vocabulary sweep`) — unpushed; `main` at `bb512cf`.
+**Last updated:** 2026-10-17 09:40 MDT · **Branch:** `feat/platform-stub-closeout` ·
+**Last commit:** see `git log -1` (round-4 plan final = `c854f2c`, on top of `0522fdf`) — unpushed; `main` at `bb512cf`.
 
 > **Rewritten from scratch 2026-10-17** at the owner's request. The previous 2,127-line runbook
 > (Aug–Sep 2026 programs: Phases 0–4, the ArdaNova production-readiness waves, launch-readiness L0,
@@ -62,12 +62,10 @@ static-review verdict, not runtime proof.
   `.omc/research/round3-join-compile-errors-2026-10-16.txt` and
   [round3-join-ledger.md](tracks/platform-stub-closeout_20261015/round3-join-ledger.md) §Post-join state.
   Test projects never compiled.
-- **SurrealForge (owner's library, `C:\Users\atooz\Programming\Projects\surrealforge`):** release
-  **1.3.0** on branch `fix/1.2.1-reserved-tables-and-declared-variables`, last known commit **`2067ae4`**
-  (reviewed through `3aacd25`, verdict PUBLISH; `318f2ad`/`a0edfa4` add the public, tightened
-  `IsUniqueViolation`, verified identical on SurrealDB 3.1.4 and 3.2.4; `2067ae4` makes
-  `SurrealResponse.EnsureAllOk` blame the culprit slot — see below). Pre-publish re-review of
-  `3aacd25..2067ae4` was running at handoff. **Not published.**
+- **SurrealForge (owner's library, `C:\Users\atooz\Programming\Projects\surrealforge`):** **1.3.0 is
+  on nuget.org** (published 2026-10-17 09:29 MDT by the CI-gated publish workflow, run `39045148834`;
+  all seven packages + symbols; restorable from 09:34). Code final at `b5a7d52`, `main` = `586e316`.
+  Final review verdict PUBLISH (integration 47/47 on 3.2.4/3.1.4 × memory/RocksDB, 1202 unit).
 - **CONFIRMED + FIXED (in SurrealForge, 2026-10-17): raw-transaction error attribution.** Measured on
   3.1.4 and 3.2.4: an aborted `BEGIN; …; COMMIT;` fails every slot ([1] "not executed due to a failed
   transaction", [2] culprit, [3] "…cancelled transaction", [4] "Cannot COMMIT: …"; a write conflict's
@@ -75,8 +73,15 @@ static-review verdict, not runtime proof.
   catch on a raw transaction (THROW markers, `IsUniqueViolation`) and every `RetryOnConflictAsync` was
   dead.** 1.3.0 throws the first non-collateral slot (`SurrealResponse.cs:107`, `FindBlamedSlot` `:125`).
   AZOA needs no edits — only the 1.3.0 bump.
-- **Round 4, in flight at handoff** (background agents of the previous session; they may not
-  survive the session ending):
+- **Round 4 plan is FINAL** — [`round4-plan.md`](tracks/platform-stub-closeout_20261015/round4-plan.md)
+  (R3, `c854f2c`): seven worktree lanes (L1 core/platform W0→W1→W2, L2 identity, L3 money incl. D-8
+  tenant-funded payouts, L4 security, L5 chains, L6 verification, L7 frontend/SDK), self-merge in a fixed
+  order guarded by `scripts/round4/merge-check.mjs`, per-lane + cross-cutting review → one fix batch →
+  the sweep. Estimate 35–45 agent runs (~10 short re-checks), ~60–120M tokens, 5–7 days. Inputs, all
+  recorded in the ledger §Round-4 inputs: both assessments, two controller audits, two liveness sweeps
+  (the identity/consent one recovered from its transcript → `round4-input-liveness-identity.md`).
+  **Next: W0** (§7).
+- *Historical — how the round-4 inputs arrived:*
   - adversarial assessment → `tracks/platform-stub-closeout_20261015/round4-assessment-adversarial.md` —
     **DONE 2026-10-17.** Bottom line: no KYC, KYB or Stripe journey works end to end even in principle,
     and the causes are internal defects. New: C2 the generated schema predates rounds 1–3 (61 tables, ~120
@@ -121,9 +126,11 @@ static-review verdict, not runtime proof.
 | R3 lane C — DEX/Ethereum | opus correctness + security, 2 cycles | executed-swap-as-absent HIGH, cleanup lane-pin HIGH, nonce holes, resolver never Fails, RPC-key leak → fixed; nonce reuse verified safe | **PASS-with-deferred** (LOWs + deploy-blocking index) |
 | R3 lane V — verification harness | opus review, 1 cycle + LOWs | fakes encoded our assumption (D4 unsound), non-hermetic E2E, CI build broken → fixed | **PASS** |
 | R3 orchestrator fixes | lane reviewers verified | signing-fence binding names; validator FOR/closure workarounds; `AssignRecord` for array captures (14 sites); compile cascade | **PASS** (verified by reviewers) |
-| SurrealForge 1.2.1→1.3.0 | opus pre-publish review + re-review | regex-literal regression, breaking `ToString()` → fixed; `\z`, escape list, graph hops | **PUBLISH** through `3aacd25`; delta after it needs a re-review |
+| SurrealForge 1.2.1→1.3.0 | opus pre-publish review + 2 re-reviews | regex-literal regression, breaking `ToString()`, unanchored classifiers, buffered-flush blame → fixed | **PUBLISH** final `b5a7d52`; **published** 2026-10-17 |
 | R3 join | `round3-closeout.md` | — | **CLOSED 2026-10-16** (`baf1224`) |
-| Round 4 | — | — | **in progress** (assessments) |
+| Round 4 assessments | adversarial + optimism + 2 controller audits + 2 liveness sweeps | ledger §Round-4 inputs | **DONE** |
+| Round 4 plan | opus critic: R1 REJECT (9 changes) → R2 ACCEPT-WITH-CHANGES → R3 final | `round4-plan.md` §Revision history | **FINAL** (`c854f2c`) |
+| Round 4 execution | — | — | **W0 launching** |
 
 Full evidence for every row, with file:line, is in the [join ledger](tracks/platform-stub-closeout_20261015/round3-join-ledger.md).
 
@@ -212,6 +219,9 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 
 - **Repo/branch:** `feat/platform-stub-closeout` (local only, unpushed). `main` = `bb512cf`, 60 ahead of `upstream/main`.
   Single remote: `upstream` (`github.com/JadeZaher/azoa-autonomous-zones-of-action`).
+- **Round-4 worktrees** (created by the lanes; `git worktree list`): `..\oasis-sleek-r4-<lane>` on
+  `r4/<lane>`; W0 helpers on `r4/core-chains` and `r4/core-fiat`. The main checkout must stay clean —
+  lanes merge into it. Worktrees are removed after the W3 review.
 - **Parallel session `oasis-sleek-38`** works in worktree `C:\Users\atooz\Programming\Projects\oasis-sleek-vocab`
   on `chore/retired-vocabulary-sweep`. Protocol: it merges our checkpoints only at quiet points (we
   send a hash), re-applies its rename as a logged pass, returns a merged hash; we fast-forward. It
@@ -240,14 +250,15 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
   `Fiat__Test__WebhookSecret`, `Kyc__Identomat__CallbackApiKey`. Never print them; scan commits for
   them (a node one-liner compared every `.env` value against staged files at each checkpoint — keep
   doing that).
-- **Sweep prerequisites, in order** (full list: ledger §Final-sweep prerequisites): `.\dev-up.ps1 -Reset`
-  once (also drops the stale unique index `ethereum_preparation_nonce`); regenerate `.surql` for every
-  new POCO field (lanes A/B/C/N); `npm run build` the SDK before any frontend typecheck (frontend
-  imports the *built* `azoa-sdk`).
-- **DEPLOY-BLOCKING:** don't deploy this branch to Railway until `ethereum_preparation_nonce` is
-  removed there. **Verified 2026-10-17: `surrealforge up` skips index drops without
-  `--allow-destructive`**, so ship an explicit `REMOVE INDEX ethereum_preparation_nonce ON
-  ethereum_preparation` migration step. Otherwise every new nonce reservation for a sender fails.
+- **Sweep prerequisites, in order:** `round4-plan.md` §8 (P-1 compose provider under rootless podman →
+  P0 1.3.0 restore → P1 schema regen → P2 upgrade rehearsal → P3 `dev-up -ResetDb` → P4 SDK build →
+  P5 local chains, Stripe CLI, Identomat configs). The frontend imports the *built* `azoa-sdk`, so
+  `npm run build` the SDK before any frontend typecheck.
+- **Railway upgrade risk (was "DEPLOY-BLOCKING"; downgraded by the round-4 plan §1):** no `.surql` on
+  `main` defines `ethereum_preparation`, so the stale `ethereum_preparation_nonce` index can't exist
+  there; W1 ships a defensive `REMOVE INDEX IF EXISTS` anyway (`surrealforge up` never drops indexes
+  without `--allow-destructive`). The real risk is new non-optional fields and UNIQUE indexes against
+  old rows — W1's old-row rule and sweep P2 (upgrade rehearsal) cover it.
 - **Root `AZOA.WebAPI.csproj` compiles every `**/*.cs` in the repo**, including under `frontend/` —
   lane V's .NET egress probe is a `.csx` file for that reason.
 - **Codex trace tools:** `.omc/research/claude-resume/codex-tail.mjs <rollout.jsonl> N` prints the last
@@ -273,78 +284,41 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 
 ## 7. Continuation plan
 
-### ▶ RESUME HERE (2026-10-17 — round 3 closed, round 4 starting)
+### ▶ RESUME HERE (2026-10-17 09:40 — round-4 plan final, W0 launching)
 
-1. **Verify state.** `git status` (expect clean) and `git log -3` (expect the runbook commits on top
-   of `0522fdf`). In the SurrealForge repo, `git log --oneline -3` on
-   `fix/1.2.1-reserved-tables-and-declared-variables` (expect `2067ae4` or later). Check the runbook
-   §2 ledger / §8 entry for the 1.3.0 re-review verdict, and whether
-   `round4-assessment-adversarial.md` and `round4-assessment-optimism.md` exist in the track directory.
-2. **Finish SurrealForge 1.3.0.** The code is done at `2067ae4`. If the pre-publish re-review of
-   `3aacd25..2067ae4` has no recorded verdict, re-run it (an opus reviewer, read-only, prompted to
-   refute: the public and tightened `IsUniqueViolation`, and `EnsureAllOk` culprit selection). Apply
-   any fixes, then hand the owner the publish commands (merge → `git tag v1.3.0` →
-   `git push origin v1.3.0` → `gh release create v1.3.0`). After the publish, bump AZOA to 1.3.0 at
-   `AZOA.WebAPI.csproj:109,110,113`, `tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj:30`
-   and `tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj:45`.
-3. **Round 4 assessments.** If either file is missing, re-run it. Two independent opus agents,
-   read-only on code, each writing its own file:
-   - **Adversarial:** hidden semantic stubs; states with no exit; fail-closed classes not yet swept;
-     cross-tenant/IDOR; end-to-end traces of KYC, KYB and the Stripe on-ramp → webhook → funds → payout →
-     reversal; the original inventory in `plan.md`; the 247 errors by root cause; whether `deferred.md`
-     meets its bar.
-   - **Optimism-challenge:** audit every completion claim against the evidence that actually exists;
-     find a "do it now" path for each deferral and carry-forward; check that one sweep is realistic;
-     produce a three-way table (done / built-but-unverified / not done).
-4. **Reconcile both into `round4-plan.md`** (OKF frontmatter). **Put one decision to the owner in
-   the plan:** the optimism assessment's sequencing (compile-until-clean over 6–8 builds, then one full
-   sweep, then ≤3–4 targeted batches) bends the one-sweep rule; ask whether compile iterations count
-   as "the sweep". Also decide each of the ten unrecorded deferrals it lists: do it in round 4, or
-   record it in `deferred.md` with evidence. Seed the plan from the ledger in this order:
-   1. Compile convergence. Root causes: `Helpers.Encoding` vs `System.Text.Encoding` (50),
-      `Algorand.Utils.Encoder` vs `System.Text.Encoder` (17), `ValidateAddressFormat` never written (17),
-      missing `using SurrealForge.Client` for `SurrealLink` (11), then the long tail.
-   2. **Security findings received during round 4** (ledger §Round-4 inputs; two controller audits,
-      4 HIGH + 11 MEDIUM):
-      - Deployments and contract calls skip signing-scope checks (a `dapp:manage` key moves wallet value).
-      - Holon subtree clone copies private descendants.
-      - `dapp-role` accepts any-scope keys and lets a manager demote other managers.
-      - Tenants price node-funded cash-outs (blocked while off-ramp is disabled).
-      - Then the MEDIUMs, plus a **route-authorization gate**: every value-moving route captures the
-        credential and requires its signing scope.
-      Then lane B's two clawback crash-path MEDIUMs, a gate before real cards. Consider fixing the
-      idempotency ledger's `Failed`-key re-claim in SurrealForge.
-   3. Stripe defects D1, D2 and D8.
-   4. The SRDB0001 layer (~35 interpolated `SurrealQuery.Of` sites). Consider an analyzer-recognized
-      identifier-template builder in SurrealForge.
-   5. The stale-index deploy fix.
-   6. D5, D6, D7 and D9 (providers take an injected HttpClient).
-   7. SDK `DexAdapter` retirement and the `AGENTS.md:86` update.
-   8. Architecture gates: transaction scope, cross-tenant, allow-path real-DB fixtures for every
-      fence, interleaving tests.
-   9. Mock debt in the integration tests.
-   10. Per-lane slice/journey specs on lane V's harness.
-   11. Per-lane LOW carry-forwards.
-5. **Adversarial plan review** (`oh-my-claudecode:critic`, opus) → fix the plan → dispatch waves with
-   **disjoint file ownership**. Compile convergence is wave 1, because everything runtime depends on
-   it. Use `/slice` for partitioning.
-6. **Per lane: review → fix (≤2 cycles) → re-review**, correctness plus security on money and auth
-   paths, loading `round3-transaction-scope-review.md`. **Challenge every carry-forward on a money
-   path;** in round 3 that found two reachable over-recovery bugs. Then write `round4-closeout.md`,
-   commit, and offer `oasis-sleek-38` a merge hash at a quiet point.
-7. **Integrated sweep, once,** in the ledger's prerequisite order:
-   1. `dotnet build azoa.sln`
-   2. unit tests
-   3. integration tests (dev SurrealDB :8020)
-   4. lane V's HTTP flows
-   5. SDK vitest and build
-   6. frontend `npm test`, `test:browser`, lint, typecheck and build
-   7. E2E via `node e2e/scripts/e2e-stack.mjs up`
-   8. schema goldens
+The plan is the brief: [`round4-plan.md`](tracks/platform-stub-closeout_20261015/round4-plan.md). Every
+lane's scope, owned globs, merge order and acceptance live there; this list is only the orchestration.
 
-   Record failures as one batch, fix them, and re-run only the affected gates.
-8. **Merge-to-main sweep:** `--no-ff` the feature branch into `main`, sweep on main, and report READY
-   TO PUSH. The owner pushes.
+1. **Verify state.** `git status` (main checkout clean), `git log -5 --oneline`, `git worktree list`,
+   `git branch --list "r4/*"`. Each lane writes `round4-lane-<lane>.md` (`type: lane-checkpoint`) in
+   the track directory; `merged: <hash>` in its frontmatter means that merge is done. A lane branch with
+   commits but no record is in flight or died mid-run — read its last commit before relaunching.
+2. **W0 — L1 `r4/core`** (plan §4 L1 W0). Lead (opus executor) creates
+   `..\oasis-sleek-r4-core` on `r4/core`, bumps SurrealForge to **1.3.0 from nuget.org** (published; no
+   local source), does the prelude (`Helpers/Encoding.cs` → `ByteEncoding`; `AlgorandEncoder` alias) and
+   commits it as `r4(core): prelude …`. Then two opus helpers branch from that commit in their own
+   worktrees: **A** `r4/core-chains` (`Providers/Blockchain/**`), **B** `r4/core-fiat` (fiat subtree).
+   They commit `r4(core-…): ready …` when their subtree compiles clean; the lead merges both into
+   `r4/core`, converges both test projects, writes `scripts/round4/merge-check.mjs`, the `Program.cs`
+   order rule and host tests, the `TestDataBuilders` partial + KYB-approved builder, then **merge #1**
+   per plan §3.3. Gate: `azoa.sln` 0 errors, warnings ≤ 25, SDK + frontend compile.
+3. **W1 — L1 `r4/schema`** from the merged tree (schema regen, unique-index audit, old-row rule,
+   defensive `REMOVE INDEX IF EXISTS`) **∥** the read-only SurrealQL re-sweep (opus) →
+   `round4-sql-sweep.md`, findings tagged by owning lane → **merge #2**.
+4. **W2 — seven lanes in worktrees** (L1 platform, L2–L7, helpers per plan §4). Start L2–L5 first, then
+   L6/L7 (peak ≤10 agents). Raise the Identomat configs request to the owner when L2 starts. L3 writes
+   the D-8 design note → one short opus critic pass → implement. Lanes report "ready to merge"; signal
+   them in order L1p → L2 → L3 → L4 → L5 → L6 → L7 (merges #3–#9), one at a time.
+5. **W3 — review** (plan §7): RV-L1…RV-L6L7 + RV-X in separate contexts, prompted to refute, writing
+   `round4-review-ledger.md` → one fix batch (≤3 fixers, `r4/fix-<domain>`) → bounded re-check of every
+   CRITICAL/HIGH fix → `round4-closeout.md` → offer `oasis-sleek-38` a merge hash → remove worktrees.
+6. **Sweep, once** (plan §8): prerequisites P-1…P5, then the ranked gates (KYC/KYB, Stripe and
+   exactly-once first), ≤3 failure batches, stop rule on batch 3.
+7. **Merge-to-main** (plan §9) → READY TO PUSH in §2. The owner pushes `main` and does the Railway steps.
+
+**Owner actions outstanding:** create the Identomat KYC + KYB configs and authorize ~8 live sessions
+(else KYC/KYB end as *Built (vendor-doc fakes)*); optional Veriff test credentials; redeploy
+`logseq-ai-hub` (lost in the podman incident).
 
 ---
 
@@ -358,12 +332,13 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
   with the vocabulary sweep → `0522fdf`; SurrealForge 1.2.1 → 1.3.0 prepared and reviewed; runbook
   rewritten.
 - Reviewed: every lane plus SurrealForge — see §2 ledger.
-- In flight: round-4 assessments (×2, plus their controller-audit sub-agents); SurrealForge 1.3.0
-  pre-publish re-review of `3aacd25..2067ae4`.
-- Confirmed 2026-10-17: the raw-transaction error-attribution class was real (every AZOA raw-transaction
-  conflict catch and transient retry was dead); fixed in SurrealForge `2067ae4`.
-- Blocked: SurrealForge publish (owner); real Identomat workflows (owner — `deferred.md`
-  IDENTOMAT-WORKFLOWS).
+- Done since (2026-10-17 morning): podman machine recreated (rootless) after the incident; round-4
+  assessments, two controller audits and two liveness sweeps recorded; SurrealForge 1.3.0 finished,
+  reviewed, release flow switched to publish-after-CI (`203b76c`) and **published** (`586e316`);
+  round-4 plan through three critic rounds to **final** (`c854f2c`).
+- In flight: round-4 W0 (L1 `r4/core` + helpers A/B).
+- Blocked on the owner: Identomat KYC/KYB configs + live sessions (`deferred.md`
+  IDENTOMAT-WORKFLOWS); `logseq-ai-hub` redeploy.
 - Retro:
   - **Fail-closed code passes deny-path review.** Every big round-3 bug made a feature *refuse
     everything*. Only allow-path real-database tests catch that.
@@ -373,20 +348,21 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
     over-recovery bugs plus a full-share clawback.
   - **When two APIs return the same error class, check they agree on which error they report**
     (`EnsureAllOk` vs the unit-of-work path).
+  - **A sub-agent report delivered mid-turn can be silently absorbed.** The identity/consent liveness
+    sweep (2 CRITICAL) never reached the ledger until its transcript was read back. At every join,
+    reconcile the list of launched agents against the reports recorded.
 - Next: §7 step 1.
 
 ---
 
 ## 9. Recommended invocations
 
-1. **§7 step 2, finishing SurrealForge:** **one agent** (opus executor) in the SurrealForge repo,
-   then **one opus code-reviewer** pre-publish. Trigger: a library-internal change with a real-server
-   measurement; it's an injection-guard library, so the review is mandatory.
-2. **§7 step 3, assessments:** **two parallel opus agents**, read-only, each writing its own file.
-   Trigger: the owner's loop requires independent adversarial and optimism assessments.
-3. **§7 step 5, waves:** **`/slice`, then a wave-ordered fan-out.** Trigger: wave 1 (compile
-   convergence) must realize a tree before runtime waves; files partition by root cause and domain;
-   two lanes must never share a store file.
-4. **§7 steps 6–7, per-lane review and the sweep:** **`/code-review` high, plus `/security-review`**
-   on fiat/custody/auth paths (non-negotiable). Trigger: money and auth paths. The sweep runs
-   **inline**, because it's one sequential gate pass and failures batch.
+1. **W0 / W2 lanes:** **one opus executor per lane** (`oh-my-claudecode:executor-high`), background,
+   each owning a worktree; opus helpers only on the disjoint subtrees plan §4 names. Trigger: the
+   owner's compact executor-lane model, with lanes that self-review and self-merge.
+2. **W1 re-sweep and the D-8 design critic:** **one read-only opus agent each.** Trigger: new
+   fail-closed classes are found only by reading; D-8 is new money design.
+3. **W3:** **parallel opus reviewers** (`/code-review` high + `/security-review` on every money/auth
+   lane), separate contexts prompted to refute, then ≤3 fixers. Trigger: plan §7; never self-approve.
+4. **Sweep:** **inline**, because it's one sequential gate pass and failures batch; fixers by domain in
+   worktrees.
