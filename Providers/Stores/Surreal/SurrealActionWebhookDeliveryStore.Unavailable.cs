@@ -33,7 +33,7 @@ public sealed partial class SurrealActionWebhookDeliveryStore
         if (reason is null) return false;
         // raw: unavailable evidence cannot retire an active or newly acquired event lease.
         var query = SurrealQuery.Combine(SurrealQuery.Of("BEGIN"),
-            SurrealGeneratedStatementScope.Assign(SurrealQuery<Event>.Key(eventId), "delivery_unavailable_read", "_delivery_before"),
+            SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<Event>.Key(eventId), "delivery_unavailable_read", "_delivery_before"),
             SurrealQuery.Of("""
                 IF $_delivery_before = NONE OR $_delivery_before.next_attempt_at > time::now()
                     OR ($_delivery_before.lease_expires_at != NONE AND $_delivery_before.lease_expires_at > time::now())

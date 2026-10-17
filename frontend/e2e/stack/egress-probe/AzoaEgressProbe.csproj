@@ -1,0 +1,12 @@
+<!-- E2E egress probe (BCL only, no packages): built by e2e/scripts/e2e-stack.mjs in an SDK
+     container, run by global setup inside the API container. See frontend/e2e/AGENTS.md §hermetic. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseAppHost>false</UseAppHost>
+    <AssemblyName>AzoaEgressProbe</AssemblyName>
+  </PropertyGroup>
+</Project>

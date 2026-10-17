@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core.Surreal;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
@@ -24,15 +25,15 @@ public static class KycEvidenceFence
     public static SurrealQuery Create(IEnumerable<string?> userIds, string? tenantId)
         => CreateScopes(userIds.Select(user => (user, tenantId)));
 
+    // Exactly one statement, no loop variable; see Helpers/AGENTS.md §Identity evidence serialization.
     public static SurrealQuery CreateScopes(IEnumerable<(string? UserId, string? TenantId)> scopes)
         => SurrealQuery.Of("""
-            FOR $_evidence_guard IN $_evidence_guard_ids {
-                UPSERT type::record('kyc_authority_guard', $_evidence_guard)
-                    SET kind = 'attempt', authority_revision = math::max([authority_revision ?? 0, 0]) + 1,
-                        touched_at = time::now() RETURN NONE
-            }
-            """).WithParam("_evidence_guard_ids", scopes.Where(scope => !string.IsNullOrWhiteSpace(scope.UserId))
-                .Select(scope => GuardId(scope.UserId!, scope.TenantId)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray());
+            UPSERT $_evidence_guards
+                SET kind = 'attempt', authority_revision = math::max([authority_revision ?? 0, 0]) + 1,
+                    touched_at = time::now() RETURN NONE
+            """).WithParam("_evidence_guards", scopes.Where(scope => !string.IsNullOrWhiteSpace(scope.UserId))
+                .Select(scope => GuardId(scope.UserId!, scope.TenantId)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+                .Select(guardId => SurrealRecordParam.Of("kyc_authority_guard", guardId)).ToArray());
 
     public static SurrealQuery Mutation(string? userId, string? tenantId, SurrealQuery mutation)
         => SurrealQuery.Combine(SurrealQuery.Of("BEGIN"), Create(userId, tenantId), mutation, SurrealQuery.Of("COMMIT"));

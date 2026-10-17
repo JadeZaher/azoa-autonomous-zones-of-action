@@ -140,7 +140,7 @@ public sealed partial class JupiterProviderQuoteTests
             if (missingBlock && slot == 119 && details == "full") return null;
             var rows = slot == 100 ? new[] { originalTx } : slot == 120 && cleanupTx is not null
                 ? externalTx is null ? new[] { cleanupTx } : new[] { externalTx, cleanupTx } : Array.Empty<object>();
-            var signatures = slot == 100 ? original.TransactionIds : slot == 120 && cleanup is not null
+            var signatures = slot == 100 ? original.TransactionIds : slot == 120 && cleanupTx is not null && cleanup is not null
                 ? externalId is null ? cleanup.TransactionIds : new[] { externalId, cleanup.TransactionIds[0] } : [];
             return new { blockhash = Fixture.BlockHash(slot), previousBlockhash = Fixture.BlockHash(slot - 1), parentSlot = slot - 1,
                 blockHeight = slot, transactions = rows, signatures };

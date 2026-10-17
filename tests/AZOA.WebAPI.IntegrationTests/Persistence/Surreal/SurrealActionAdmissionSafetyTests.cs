@@ -9,7 +9,9 @@ using FluentAssertions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Models.Signing;
 using RunRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionRun;
+using NodeRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionNodeExecution;
 using NftRow = AZOA.WebAPI.Persistence.SurrealDb.Models.NftLifecycle;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
@@ -23,7 +25,7 @@ public sealed class SurrealActionAdmissionSafetyTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await SurrealTestSchema.BootstrapAsync(_namespace, "action_run", "action_node_execution", "saga_steps", "nft_lifecycle");
+        await SurrealTestSchema.BootstrapAsync(_namespace, "action_run", "action_node_execution", "saga_steps", "nft_lifecycle", "user", "wallet");
         _connection = new SurrealDbNetConnection(new SurrealConnectionOptions { Endpoint = SurrealTestDefaults.Endpoint,
             Namespace = _namespace, Database = "test", User = SurrealTestDefaults.User, Password = SurrealTestDefaults.Password });
         _executor = new DefaultSurrealExecutor(_connection);
@@ -98,8 +100,9 @@ public sealed class SurrealActionAdmissionSafetyTests : IAsyncLifetime
         execution.FrozenInput = "{\"nft\":true}";
         (await _nodes.UpdateAsync(execution, ActionNodeState.Running)).IsError.Should().BeFalse();
         var authority = new ActionEffectAuthority(run, execution.NodeId, actor, null, CanonicalJson.HashCanonical(execution.FrozenInput));
-        var command = new NftLifecycleCommand(actor, actor, Guid.NewGuid(), Guid.NewGuid(), "actor", "actor", new(), -1, Guid.Empty,
-            ActionAuthority: authority);
+        var original = await OriginalWorkflowAuthority(execution, authority);
+        var command = new NftLifecycleCommand(actor, actor, original.Wallet.Id, original.Wallet.Id, "actor", "actor", new(), -1, Guid.Empty,
+            ActionAuthority: authority, ActorAuthority: original);
         var json = JsonSerializer.Serialize(command);
         var row = new NftRow { Id = Guid.NewGuid().ToString("N"), ActorUserId = actor.ToString("N"), RecipientUserId = actor.ToString("N"),
             NftId = Guid.NewGuid().ToString("N"), Operation = "Mint", ChainType = "Algorand", Network = "Devnet", State = "Prepared",
@@ -122,6 +125,22 @@ public sealed class SurrealActionAdmissionSafetyTests : IAsyncLifetime
         row.Id = Guid.NewGuid().ToString("N");
         var delayedAdmission = () => nfts.ClaimAsync(row);
         await delayedAdmission.Should().ThrowAsync<ActionEffectAuthorityChangedException>();
+    }
+
+    /// <summary>Saves the node's original signing witness and owned wallet that NFT admission now fences.</summary>
+    private async Task<SigningAdmissionAuthority> OriginalWorkflowAuthority(ActionNodeExecution execution, ActionEffectAuthority action)
+    {
+        var wallet = Guid.NewGuid();
+        (await _executor.ExecuteAsync(SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.User { Id = action.ActorUserId.ToString("N"),
+            Username = action.ActorUserId.ToString("N"), Email = action.ActorUserId + "@test.invalid", PasswordHash = "fixture", IsActive = true }))).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.Wallet { Id = wallet.ToString("N"),
+            UserId = "user:" + action.ActorUserId.ToString("N"), Address = "actor", ChainType = "Algorand" }))).EnsureAllOk();
+        var credential = new SigningCredentialWitness(1, "Jwt", action.ActorUserId, null, null, DateTimeOffset.UtcNow.AddMinutes(-1),
+            DateTimeOffset.UtcNow.AddHours(1), null, null, [AzoaScopes.ActionExecute, AzoaScopes.NftMint], true, TokenUse: AzoaClaims.TokenUseLogin);
+        var witness = new WorkflowSigningWitness(1, credential, action, [AzoaScopes.ActionExecute, AzoaScopes.NftMint], []);
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<NodeRow>(execution.Id.ToString("N"))
+            .Set(row => row.SigningAuthorityJson, CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(witness))).Build())).EnsureAllOk();
+        return new(1, "Workflow", credential, new(wallet, action.ActorUserId, "actor", "Algorand"), witness.RequiredScopes, witness.Grants, action);
     }
 
     private async Task<(Guid Run, Guid Actor)> Run()

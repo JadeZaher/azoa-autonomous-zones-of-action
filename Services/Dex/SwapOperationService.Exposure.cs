@@ -34,6 +34,9 @@ public sealed partial class SwapOperationService
             stage = exposed.Result;
             operation = (await operations.GetAsync(operationId, ct))!;
         }
+        // A replayed disclosure still needs the caller's live swap-signing consent, never only the original exposure record.
+        else if ((await authorities.BindConsentAsync(credential, [AzoaScopes.SwapSign], ct)) is { IsError: true } or { Result: null })
+            return Refused();
         if (stage.ExternalExposureHash is null) return Refused();
         return AZOAResult<SwapExternalSigningView>.Success(new(operationId, command.StageId, operation.Version, stage.Version,
             intent.Terms.Network, stage.PlanHash, stage.ExternalExposureHash, plan.RequiredSignerAddresses,

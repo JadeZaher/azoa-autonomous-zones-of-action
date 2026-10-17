@@ -3,14 +3,12 @@
 // defaults that meant "no restriction" (OI-74), and a replay window that ages out (OI-75).
 
 using System.Numerics;
-using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Consent;
-using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Reserve;
 using FluentAssertions;
 using Moq;
@@ -340,57 +338,6 @@ public class ReserveDrawReplayWindowTests
             Mock.Of<IKeyCustodyService>(), providers.Object, ledger, new ReserveOptions());
 
         return (reserve, ledger);
-    }
-}
-
-/// <summary>
-/// OI-75, the other half: the hold's own durable anchor. The reserve window cannot be the
-/// anchor, so the hold row's state is -- and a hold parked in <c>Releasing</c> by a failed
-/// payout must never draw its release again when the sweep retries it.
-/// </summary>
-public class HoldDrawAnchorTests
-{
-    [Fact]
-    public void A_hold_already_releasing_never_draws_its_release_again()
-    {
-        // Before OI-75 this state re-entered the draw on every retry, and only the reserve's
-        // 128-entry window stood between a retried payout and a partition counted twice.
-        PlatformHoldService.DrawsFrom(HoldDrawStage.Release, HoldState.Releasing)
-            .Should().BeFalse();
-        PlatformHoldService.DrawsFrom(HoldDrawStage.Release, HoldState.Held)
-            .Should().BeTrue("Held is the one state whose release draw is still owed");
-    }
-
-    [Fact]
-    public void Each_stage_draws_from_exactly_one_state()
-    {
-        var states = Enum.GetValues<HoldState>();
-
-        foreach (var stage in Enum.GetValues<HoldDrawStage>())
-        {
-            states.Count(state => PlatformHoldService.DrawsFrom(stage, state))
-                .Should().Be(1, $"{stage} must have exactly one state its draw is owed from");
-        }
-    }
-
-    [Theory]
-    [InlineData(HoldState.Released)]
-    [InlineData(HoldState.Refunded)]
-    [InlineData(HoldState.ReleasedIntoHold)]
-    public void A_terminal_hold_draws_nothing_under_any_stage(HoldState terminal)
-    {
-        foreach (var stage in Enum.GetValues<HoldDrawStage>())
-        {
-            PlatformHoldService.DrawsFrom(stage, terminal)
-                .Should().BeFalse($"{terminal} is terminal, so no {stage} draw is owed");
-        }
-    }
-
-    [Fact]
-    public void An_opening_draw_is_owed_only_before_the_row_moved_to_held()
-    {
-        PlatformHoldService.DrawsFrom(HoldDrawStage.Open, HoldState.Pending).Should().BeTrue();
-        PlatformHoldService.DrawsFrom(HoldDrawStage.Open, HoldState.Held).Should().BeFalse();
     }
 }
 

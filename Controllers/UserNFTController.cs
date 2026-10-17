@@ -263,7 +263,7 @@ public class UserNFTController : ControllerBase
     {
         var actor = GetUserIdFromClaims();
         if (actor is null) return Unauthorized();
-        var result = await _lifecycle.ListPendingAsync(actor.Value, cursor, limit, HttpContext.RequestAborted);
+        var result = await _lifecycle.ListPendingAsync(actor.Value, cursor, limit, HttpContext.RequestAborted, User.GetActingTenantId() ?? Guid.Empty);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
@@ -272,7 +272,8 @@ public class UserNFTController : ControllerBase
     {
         var actor = GetUserIdFromClaims();
         if (actor is null) return Unauthorized();
-        var result = await _lifecycle.QuoteFeeAsync(actor.Value, chainType, operation, HttpContext.RequestAborted, nftId, sourceOperationId);
+        var result = await _lifecycle.QuoteFeeAsync(actor.Value, chainType, operation, HttpContext.RequestAborted, nftId, sourceOperationId,
+            User.GetActingTenantId() ?? Guid.Empty);
         return result.IsError ? BadRequest(result) : Ok(result);
     }
 
@@ -290,7 +291,8 @@ public class UserNFTController : ControllerBase
     {
         var actor = GetUserIdFromClaims();
         if (actor is null) return Unauthorized();
-        var result = await _lifecycle.CancelRequestAsync(actor.Value, request.Operation, request.RequestKey, User.GetActingTenantId() ?? Guid.Empty, HttpContext.RequestAborted);
+        var result = await _lifecycle.CancelRequestAsync(actor.Value, request.Operation, request.RequestKey, User.GetActingTenantId() ?? Guid.Empty,
+            HttpContext.RequestAborted, await CaptureOptionalAsync());
         return result.IsError ? Conflict(result) : Ok(result);
     }
 
@@ -321,7 +323,7 @@ public class UserNFTController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
-        var current = await _lifecycle.GetAsync(userId.Value, operationId, HttpContext.RequestAborted);
+        var current = await _lifecycle.GetAsync(userId.Value, operationId, HttpContext.RequestAborted, User.GetActingTenantId() ?? Guid.Empty);
         if (current.IsError || current.Result is null) return NotFound(current);
         var scope = current.Result.Operation switch
         {
@@ -338,12 +340,27 @@ public class UserNFTController : ControllerBase
             HttpContext.RequestAborted, User.GetActingTenantId() ?? Guid.Empty, captured.Result, acceptance));
     }
 
+    /// <summary>Records the original requester's fresh authority for the reviewed stage; continuing remains a separate call.</summary>
+    [HttpPost("lifecycle/{operationId}/renew-authority")]
+    public async Task<IActionResult> RenewLifecycleAuthority(string operationId, [FromBody] NftStageAcceptance request)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId is null) return Unauthorized();
+        var current = await _lifecycle.GetAsync(userId.Value, operationId, HttpContext.RequestAborted, User.GetActingTenantId() ?? Guid.Empty);
+        if (current.IsError || current.Result is null) return NotFound(current);
+        if (!User.HasSigningScope(NftSigningScope.ForOperation(current.Result.Operation))) return Forbid();
+        var captured = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (captured.IsError || captured.Result is null) return BadRequest(captured);
+        return LifecycleResponse(await _lifecycle.RenewActorAuthorityAsync(operationId, request, captured.Result, HttpContext.RequestAborted));
+    }
+
     [HttpGet("lifecycle/{operationId}")]
     public async Task<IActionResult> GetLifecycle(string operationId)
     {
         var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
-        var result = await _lifecycle.GetAsync(userId.Value, operationId, HttpContext.RequestAborted);
+        var result = await _lifecycle.GetAsync(userId.Value, operationId, HttpContext.RequestAborted, User.GetActingTenantId() ?? Guid.Empty);
         return result.IsError ? NotFound(result) : Ok(result);
     }
 
@@ -355,8 +372,17 @@ public class UserNFTController : ControllerBase
     {
         var userId = GetUserIdFromClaims();
         if (userId is null) return Unauthorized();
-        var result = await _lifecycle.CancelAsync(userId.Value, operationId, HttpContext.RequestAborted);
+        var result = await _lifecycle.CancelAsync(userId.Value, operationId, HttpContext.RequestAborted,
+            User.GetActingTenantId() ?? Guid.Empty, await CaptureOptionalAsync());
         return result.IsError ? Conflict(result) : Ok(result);
+    }
+
+    /// <summary>Captures the caller's credential when available; only a never-admitted cancellation marker may proceed without one.</summary>
+    private async Task<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?> CaptureOptionalAsync()
+    {
+        if (_signingAuthority is null) return null;
+        var captured = await _signingAuthority.CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        return captured.IsError ? null : captured.Result;
     }
 
     private string ReadIdempotencyKey() => Request.Headers["Idempotency-Key"].ToString();

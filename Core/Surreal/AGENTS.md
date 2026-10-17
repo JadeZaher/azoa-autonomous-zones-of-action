@@ -154,6 +154,17 @@ comments, and unbound variables. It accepts trusted generated SQL only, never us
 SQL. This preserves the typed writer's record-link marshalling. The single raw
 factory reconstructs identical generated SQL with disjoint binding names.
 
+**Capturing a read vs a mutation.** `Assign` captures a statement's result verbatim:
+right for `UPDATE ONLY …` (one object or `NONE`), wrong for a read.
+`SurrealQuery<T>.Key(id)` emits `SELECT * FROM type::record($_t, $_id)`, and a
+`SELECT` returns an **array** even for one record id — so after `Assign`,
+`$v.field` is `[value]`, every scalar comparison (`$v.hash != $_hash`) is true,
+`crypto::sha256($v.x)` errors, and the fence fails closed on every call. Use
+`AssignRecord` for single-record reads: it emits `LET $v = (SELECT …)[0]`, giving
+the record or `NONE`, and refuses non-`SELECT` statements. `RequireResult`
+accepts both shapes (`NONE` or `[]`). Found 2026-10-16 by the lane B review;
+14 `Assign(Key(…))` sites existed at the time.
+
 ## Policy-sensitive local commits
 
 NodeGovernancePolicyFence reads the singleton version before manager validation. Its
@@ -173,7 +184,7 @@ nested references additionally require their exact selected descriptor. Existing
 invocation receipt replay precedes these live gates and cannot create another run.
 # Signing authority transaction fences
 
-`SigningAuthorityFence` composes credential, exact selected grant and wallet checks into the owning admission or first-egress transaction. The raw statements are multi-record locking invariants, not ordinary CRUD. Parameter prefixes isolate the generated snippets; operator credentials also pin bootstrap credential/session revisions. Workflow callers compare the saved run credential at node admission and the exact node witness at first egress. Explicit legacy participant consent has its own immutable receipt; it never rewrites the original run credential.
+`SigningAuthorityFence` composes credential, exact selected grant and wallet checks into the owning admission or first-egress transaction. The raw statements are multi-record locking invariants, not ordinary CRUD. Parameter prefixes isolate the generated snippets: templates are written with `$_sa_<name>` and `Sql()` rewrites them to `$<prefix>_<name>`, which must equal the bound `WithParam(prefix + "_<name>")` key exactly (SurrealQL binds `$x` to parameter `x`). A mismatch leaves every variable unbound, so every fenced batch fails closed (a `SIGNING_AUTHORITY_CHANGED` throw or a query error), which reads like a real authority change and is invisible to deny-path fixtures — only an allow-path fixture against the real database catches it; operator credentials also pin bootstrap credential/session revisions. Workflow callers compare the saved run credential at node admission and the exact node witness at first egress. Explicit legacy participant consent has its own immutable receipt; it never rewrites the original run credential.
 ## Fungible genesis and captured mutations
 
 `PlatformGenesisFence` composes current validated operator/bootstrap evidence with the original pending platform definition and exact lifecycle identity. Its definition-only branch is used only in finalized accounting, which cannot require a renewed signing session. Activation and reserve/issuance projection commit together. `FungibleCreationAuthorityFence` selects mutually exclusive ordinary signing or genesis purpose; it never treats a node-operator credential as an unrestricted user.
@@ -187,3 +198,11 @@ an independently consenting participant's current watermark, owned wallet and ex
 UserExplicit swap grant. Its typed updates supply row locks; the raw assertions
 join that credential/participant boundary inside source commitment and egress.
 No synthetic participant credential or inferred tenant ownership is created.
+
+`SurrealGeneratedStatementScope.RequireResult(variable, marker)` is the shared abort for a
+captured conditional mutation that matched no row (`IF $v = NONE OR $v = [] { THROW 'MARKER' }`).
+It validates both tokens, so a raw composition needs no interpolated SQL of its own.
+`ExchangeAuthorityFence` uses it for `$_<prefix>_participant`, `_wallet` and `_grant`. Its only
+other raw assertion (grant expiry against database time) is a `$$"""` raw string whose single
+interpolation is the caller-fixed lowercase prefix. In a single-`$` raw string, `{{` is not an
+escape, so literal SurrealQL braces need `$$`.

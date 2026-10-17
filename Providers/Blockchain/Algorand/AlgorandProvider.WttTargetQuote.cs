@@ -7,7 +7,7 @@ using AZOA.WebAPI.Models.Wtt;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
-public partial class AlgorandProvider
+public partial class AlgorandProvider : IWttTargetModule
 {
     /// <inheritdoc cref="IWttTargetModule.QuoteWttTargetAsync"/>
     public async Task<AZOAResult<WttStageQuote>> QuoteWttTargetAsync(WttOperationIntent intent,

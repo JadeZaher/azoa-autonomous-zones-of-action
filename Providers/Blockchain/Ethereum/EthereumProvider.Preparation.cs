@@ -89,31 +89,68 @@ public partial class EthereumProvider
                     label, context, (feeAuthorization?.GasLimit ?? gas.Result).ToString(CultureInfo.InvariantCulture),
                     (feeAuthorization?.PriorityFee ?? fees.Result.MaxPriorityFeePerGas).ToString(CultureInfo.InvariantCulture),
                     (feeAuthorization?.MaxFee ?? fees.Result.MaxFeePerGas).ToString(CultureInfo.InvariantCulture), ownerIntentJson, owner);
+                EthereumPreparation Candidate(BigInteger value) => new()
+                {
+                    Id = id, ProtocolIdentity = protocol, Network = ActiveNetwork.ToString(), Sender = sender,
+                    PreparationKey = preparationKey, Nonce = value.ToString("D78", CultureInfo.InvariantCulture),
+                    CallFingerprint = fingerprint, IntentJson = JsonSerializer.Serialize(call),
+                    OwnerUserId = (owner?.ActorUserId ?? (context!.Value.IsPlatform ? context.Value.GrantorUserId : context.Value.UserId)).ToString("N"),
+                    CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                };
                 for (var attempt = 0; attempt < 32 && row is null; attempt++)
                 {
                     var pending = await RpcCallAsync("eth_getTransactionCount", new object?[] { sender, "pending" }, ct);
                     if (pending.IsError || !pending.TryGetString(out var nonceText) || !EthereumHex.TryParseQuantity(nonceText, out var nonce))
                         return Error<EthereumPreparation>("Ethereum pending nonce is unavailable.");
+                    var floor = BigInteger.Max(nonce, BigInteger.Parse(checkpoint.InitialNonce, CultureInfo.InvariantCulture));
+                    // Released reservations were never signed or disclosed, so their nonces are provably unused: fill those holes first.
+                    var released = await ReusableReleasedNonceAsync(store, protocol, sender, floor, ct);
+                    if (released is not null)
+                    {
+                        row = await store.TryClaimReleasedAsync(released, Candidate(BigInteger.Parse(released.Nonce, CultureInfo.InvariantCulture)), ct);
+                        continue;
+                    }
                     var highest = await store.GetHighestNonceAsync(protocol, sender, ct);
                     if (highest is not null) nonce = BigInteger.Max(nonce, BigInteger.Parse(highest.Nonce, CultureInfo.InvariantCulture) + 1);
-                    nonce = BigInteger.Max(nonce, BigInteger.Parse(checkpoint.InitialNonce, CultureInfo.InvariantCulture));
+                    nonce = BigInteger.Max(nonce, floor);
                     if (nonce < 0 || nonce >= (BigInteger.One << 256)) return Error<EthereumPreparation>("Ethereum nonce is outside uint256.");
-                    row = await store.TryClaimAsync(new EthereumPreparation
-                    {
-                        Id = id, ProtocolIdentity = protocol, Network = ActiveNetwork.ToString(), Sender = sender,
-                        PreparationKey = preparationKey, Nonce = nonce.ToString("D78", CultureInfo.InvariantCulture),
-                        CallFingerprint = fingerprint, IntentJson = JsonSerializer.Serialize(call),
-                        OwnerUserId = (owner?.ActorUserId ?? (context!.Value.IsPlatform ? context.Value.GrantorUserId : context.Value.UserId)).ToString("N"),
-                        CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
-                    }, ct);
+                    row = await store.TryClaimAsync(Candidate(nonce), ct);
                 }
                 if (row is null) return Error<EthereumPreparation>("Ethereum nonce admission is busy; retry the same preparation key.");
             }
             if (row.CallFingerprint != fingerprint || row.ProtocolIdentity != protocol || row.Sender != sender)
                 return Error<EthereumPreparation>("Ethereum preparation key belongs to another immutable call.");
-            if (row.State == "Canceled") return Error<EthereumPreparation>("Ethereum preparation was authoritatively canceled.");
+            if (row.State == "Canceled" || ReleasedReservation(row.State))
+                return Error<EthereumPreparation>("Ethereum preparation was authoritatively canceled or released.");
             return Ok(row);
         });
+    }
+
+    /// <summary>Never-signed reservations that no longer own their nonce: released, consumed elsewhere, or a refilled key-lock tombstone.</summary>
+    private static bool ReleasedReservation(string state) => state is "Released" or "ReleasedConsumedExternally" or "ReleasedRefilled";
+
+    /// <summary>Lowest released nonce still at or above the chain floor; released nonces below it were consumed outside the allocator.</summary>
+    private static async Task<EthereumPreparation?> ReusableReleasedNonceAsync(IEthereumPreparationStore store, string protocol, string sender,
+        BigInteger floor, CancellationToken ct)
+    {
+        foreach (var released in await store.ListReleasedAsync(protocol, sender, 16, ct))
+        {
+            if (BigInteger.Parse(released.Nonce, CultureInfo.InvariantCulture) >= floor) return released;
+            released.State = "ReleasedConsumedExternally";
+            released.UpdatedAt = DateTimeOffset.UtcNow;
+            await store.UpdateAsync(released, released.Version, ct);
+        }
+        return null;
+    }
+
+    /// <summary>Releases an unsigned, never-disclosed owner-domain reservation so the allocator can refill its nonce.</summary>
+    private async Task<bool> ReleaseUnsignedReservationAsync(string reservationId, CancellationToken ct)
+    {
+        var row = await WithPreparationStoreAsync(store => store.GetAsync(reservationId, ct));
+        if (row is not { State: "Reserved", SignedTransactionBase64: null, TransactionId: null }) return false;
+        row.State = "Released";
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        return await WithPreparationStoreAsync(store => store.UpdateAsync(row, row.Version, ct)) is { State: "Released" };
     }
 
     private async Task<AZOAResult<EthereumPreparation>> SignReservedCallAsync(EthereumPreparation reserved,

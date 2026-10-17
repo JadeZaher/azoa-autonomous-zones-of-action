@@ -98,7 +98,7 @@ public class WalletManager : IWalletManager
             PublicKey = model.PublicKey,
             Label = model.Label,
             IsDefault = model.IsDefault,
-            WalletType = model.WalletType
+            WalletType = WalletType.External
         };
 
         if (model.IsDefault)

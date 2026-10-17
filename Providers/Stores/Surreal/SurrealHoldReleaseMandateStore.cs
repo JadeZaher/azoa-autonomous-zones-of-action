@@ -62,7 +62,8 @@ public sealed partial class SurrealHoldReleaseMandateStore(ISurrealExecutor exec
         statements.AddRange(guards);
         statements.Add(SurrealQuery.Of("IF $_mandate_expiry <= time::now() OR $_mandate_quote_expiry <= time::now() { THROW 'HOLD_MANDATE_CHANGED' }")
             .WithParam("_mandate_expiry", row.ExpiresAt).WithParam("_mandate_quote_expiry", request.Quote.ExpiresAt));
-        statements.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<HoldCommandReceipt>.Key(hold.OpeningCommandId!),
+        // lock: the opening receipt is create-only; the liability version CAS below serializes mandate activation.
+        statements.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<HoldCommandReceipt>.Key(hold.OpeningCommandId!),
             "mandate_original", "_mandate_original"));
         statements.Add(SurrealQuery.Of("IF $_mandate_original = NONE OR $_mandate_original.hold_record_id != $_mandate_hold OR $_mandate_original.outcome_json != $_mandate_outcome { THROW 'HOLD_MANDATE_CHANGED' }")
             .WithParam("_mandate_hold", original.HoldRecordId).WithParam("_mandate_outcome", original.OutcomeJson));

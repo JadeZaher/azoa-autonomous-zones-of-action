@@ -9,8 +9,7 @@ public static class SurrealGeneratedStatementScope
     /// <summary>Captures one scoped typed-generated result for a surrounding atomic transaction.</summary>
     public static SurrealQuery Assign(SurrealQuery statement, string scope, string variable)
     {
-        if (string.IsNullOrEmpty(variable) || variable.Any(character => character is not (>= 'a' and <= 'z') and not '_'))
-            throw new ArgumentException("A lowercase transaction variable is required.", nameof(variable));
+        ValidateVariable(variable);
         var scoped = Apply(statement, scope);
         // raw: binds a typed mutation result used by later statements in the same atomic transaction.
 #pragma warning disable SRDB0001
@@ -18,6 +17,33 @@ public static class SurrealGeneratedStatementScope
 #pragma warning restore SRDB0001
         foreach (var parameter in scoped.Params) assigned = assigned.WithParam(parameter.Key, parameter.Value);
         return assigned;
+    }
+
+    /// <summary>Captures one scoped single-record read (e.g. <c>SurrealQuery&lt;T&gt;.Key(id)</c>) as the record, or NONE when absent.</summary>
+    public static SurrealQuery AssignRecord(SurrealQuery statement, string scope, string variable)
+    {
+        ValidateVariable(variable);
+        var scoped = Apply(statement, scope);
+        if (!scoped.Sql.StartsWith("SELECT ", StringComparison.Ordinal))
+            throw new ArgumentException("AssignRecord captures single-record SELECTs; use Assign for ONLY mutations.", nameof(statement));
+        // raw: a SELECT yields an array even for one record id; [0] is the record or NONE. See AGENTS.md §generated-statement-scope.
+#pragma warning disable SRDB0001
+        var assigned = SurrealQuery.Of($"LET ${variable} = ({scoped.Sql})[0]");
+#pragma warning restore SRDB0001
+        foreach (var parameter in scoped.Params) assigned = assigned.WithParam(parameter.Key, parameter.Value);
+        return assigned;
+    }
+
+    /// <summary>Aborts the surrounding transaction when a captured conditional mutation matched no row.</summary>
+    public static SurrealQuery RequireResult(string variable, string failureMarker)
+    {
+        ValidateVariable(variable);
+        if (string.IsNullOrEmpty(failureMarker) || failureMarker.Any(character => character is not (>= 'A' and <= 'Z') and not '_'))
+            throw new ArgumentException("An uppercase failure marker is required.", nameof(failureMarker));
+        // raw: validated variable and marker tokens only; no value is interpolated.
+#pragma warning disable SRDB0001
+        return SurrealQuery.Of($"IF ${variable} = NONE OR ${variable} = [] {{ THROW '{failureMarker}' }}");
+#pragma warning restore SRDB0001
     }
 
     /// <summary>Renames parameter tokens outside quoted content; accepts no batches, comments, or unbound variables.</summary>
@@ -70,5 +96,11 @@ public static class SurrealGeneratedStatementScope
         foreach (var parameter in statement.Params)
             scoped = scoped.WithParam(scope + "_" + parameter.Key, parameter.Value);
         return scoped;
+    }
+
+    private static void ValidateVariable(string variable)
+    {
+        if (string.IsNullOrEmpty(variable) || variable.Any(character => character is not (>= 'a' and <= 'z') and not '_'))
+            throw new ArgumentException("A lowercase transaction variable is required.", nameof(variable));
     }
 }

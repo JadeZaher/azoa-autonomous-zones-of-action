@@ -59,3 +59,6 @@ public sealed record WttTargetInspection(WttNetworkDescriptor Network, string? A
 /// <summary>Persisted exact participant message to be signed by that wallet; never an authority to sign as the participant.</summary>
 public sealed record WttParticipantPreparation(string OperationId, string Stage, int Generation, string ParticipantAddress,
     string ProtocolIdentity, string UnsignedTransactionBase64, string RecoveryMetadata, WttStageReservation Reservation);
+
+/// <summary>Provider-owned publication bytes a new intent must freeze; never inferred from the chain family.</summary>
+public sealed record WttPublicationRules(byte ConsistencyLevel, bool RequiresZeroNonce);

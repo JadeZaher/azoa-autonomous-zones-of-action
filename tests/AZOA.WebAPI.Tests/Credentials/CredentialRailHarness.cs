@@ -80,7 +80,7 @@ internal sealed class CredentialRailHarness
     };
 
     internal Task<AZOAResult<CredentialRevokeResult>> RevokeAsync(string assetId, Guid callerUserId, string? idempotencyKey = null) =>
-        Manager.RevokeAsync(assetId, new() { ChainType = Chain }, callerUserId, idempotencyKey);
+        Manager.RevokeAsync(assetId, new() { ChainType = Chain, AuthenticationWitness = AZOA.WebAPI.Tests.TestSupport.NftLifecycleHarness.Credential(callerUserId) }, callerUserId, idempotencyKey);
 }
 internal sealed class InMemoryCredentialStore : ICredentialIssuerStore
 {

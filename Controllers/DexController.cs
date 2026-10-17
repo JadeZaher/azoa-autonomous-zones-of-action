@@ -14,8 +14,13 @@ namespace AZOA.WebAPI.Controllers;
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class DexController(DexQuoteService quotes, SwapOperationService swaps,
-    SigningAdmissionAuthorityFactory authority) : ControllerBase
+    SigningAdmissionAuthorityFactory authority, DexModuleResolver modules) : ControllerBase
 {
+    [HttpGet("capabilities")]
+    [EnableRateLimiting("financial")]
+    public async Task<IActionResult> Capabilities(CancellationToken ct)
+        => Ok(AZOAResult<IReadOnlyList<DexCapabilityView>>.Success(await modules.DescribeAsync(ct)));
+
     [HttpPost("quotes")]
     [EnableRateLimiting("financial")]
     public async Task<IActionResult> Quote([FromBody] DexQuoteRequest request, CancellationToken ct)

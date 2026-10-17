@@ -69,7 +69,7 @@ public sealed class DexQuoteService(IDexQuoteStore quotes, IWalletStore wallets,
 
     public async Task<DexQuoteView?> GetAsync(string quoteId, SigningCredentialWitness credential, CancellationToken ct = default)
     {
-        if (!Guid.TryParseExact(quoteId, "N", out var id) || id == Guid.Empty) return null;
+        if (!Guid.TryParseExact(quoteId, "N", out var id) || id == Guid.Empty || !SwapOperationService.SwapScope(credential)) return null;
         var row = await quotes.GetAsync(quoteId, ct);
         return row is null || row.ActorUserId != credential.ActorUserId.ToString("N") ||
             row.TenantId != (credential.TenantId?.ToString("N") ?? "") ? null

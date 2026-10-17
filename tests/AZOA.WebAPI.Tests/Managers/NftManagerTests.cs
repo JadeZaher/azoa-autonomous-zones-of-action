@@ -36,7 +36,7 @@ public class NftManagerTests
     }
 
     private NftMintRequest Request() => new() { Name = "NFT", ChainId = "Algorand", WalletId = _wallet.Id, MetadataUri = "ipfs://metadata" };
-    private static AZOARequest Key(string key = "mint-key") => new() { IdempotencyKey = key };
+    private AZOARequest Key(string key = "mint-key") => new() { IdempotencyKey = key, AuthenticationWitness = NftLifecycleHarness.Credential(_actor) };
 
     private async Task<Guid> MintConfirmedAsync()
     {

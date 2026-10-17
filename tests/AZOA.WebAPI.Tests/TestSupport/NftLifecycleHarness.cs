@@ -38,10 +38,15 @@ internal sealed class NftLifecycleHarness
     internal Func<NftTransactionIntent, Task>? BeforePrepare { get; set; }
     internal IConfigurationRoot Configuration { get; }
     internal NftLifecycleService Service { get; }
+    internal string ChainType { get; }
+    /// <summary>Shared service and store clock; advance it to lapse direct credentials without sleeping.</summary>
+    internal ShiftedClock Clock { get; } = new();
     private readonly List<IWallet> _wallets = new();
 
-    internal NftLifecycleHarness()
+    internal NftLifecycleHarness(string chainType = "Algorand")
     {
+        ChainType = chainType;
+        Store.Now = Clock.GetUtcNow;
         Configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["NftFees:Policies:0:ChainType"] = "Algorand", ["NftFees:Policies:0:Network"] = "Devnet",
@@ -49,9 +54,14 @@ internal sealed class NftLifecycleHarness
             ["NftFees:Policies:0:MintNativeBaseUnits"] = "0", ["NftFees:Policies:0:TransferNativeBaseUnits"] = "0",
             ["NftFees:Policies:0:BurnNativeBaseUnits"] = "0", ["NftFees:Policies:0:RevokeNativeBaseUnits"] = "0",
             ["NftFees:Policies:0:RefundNativeBaseUnits"] = "0",
+            ["NftFees:Policies:1:ChainType"] = "Solana", ["NftFees:Policies:1:Network"] = "Devnet",
+            ["NftFees:Policies:1:Revision"] = "1", ["NftFees:Policies:1:TreasuryAddress"] = "treasury",
+            ["NftFees:Policies:1:MintNativeBaseUnits"] = "0", ["NftFees:Policies:1:TransferNativeBaseUnits"] = "0",
+            ["NftFees:Policies:1:BurnNativeBaseUnits"] = "0", ["NftFees:Policies:1:RevokeNativeBaseUnits"] = "0",
+            ["NftFees:Policies:1:RefundNativeBaseUnits"] = "0",
         }).Build();
         var provider = new Mock<IBlockchainProvider>();
-        provider.SetupGet(item => item.ChainType).Returns("Algorand");
+        provider.SetupGet(item => item.ChainType).Returns(chainType);
         provider.SetupGet(item => item.ActiveNetwork).Returns(ChainNetwork.Devnet);
         provider.Setup(item => item.TryGetModule<INftTransactionModule>(out It.Ref<INftTransactionModule?>.IsAny))
             .Returns((out INftTransactionModule? module) => { module = Module.Object; return true; });
@@ -118,7 +128,7 @@ internal sealed class NftLifecycleHarness
         governance.Setup(item => item.EnsureAllowedAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(NodeGovernanceDecision.Allowed);
         var authorities = new AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), Wallets.Object,
             Mock.Of<SurrealForge.Client.ISurrealExecutor>());
-        Service = new(Store, Wallets.Object, Nfts.Object, Factory.Object, Access.Object, governance.Object, Configuration, TimeProvider.System, ProtocolCosts.Object, WorkflowCosts.Object, authorities, ActionExecutions.Object);
+        Service = new(Store, Wallets.Object, Nfts.Object, Factory.Object, Access.Object, governance.Object, Configuration, Clock, ProtocolCosts.Object, WorkflowCosts.Object, authorities, ActionExecutions.Object);
     }
 
     internal ActionNodeExecution AuthorizeWorkflow(string frozen, ActionExternalOperationReference reference)
@@ -147,12 +157,22 @@ internal sealed class NftLifecycleHarness
 
     internal IWallet AddWallet(Guid owner)
     {
-        var wallet = Mock.Of<IWallet>(item => item.Id == Guid.NewGuid() && item.UserId == owner && item.ChainType == "Algorand" && item.Address == owner.ToString("N"));
+        var wallet = Mock.Of<IWallet>(item => item.Id == Guid.NewGuid() && item.UserId == owner && item.ChainType == ChainType && item.Address == owner.ToString("N"));
         _wallets.Add(wallet);
         return wallet;
     }
     internal static UserNFTMintModel MintRequest(bool transferable = true) => new() { ChainType = "Algorand", MetadataURI = "ipfs://metadata", Name = "Test asset", IsTransferable = transferable };
+    /// <summary>A credential live at the harness clock, for flows that advance time past earlier credentials.</summary>
+    internal AZOA.WebAPI.Models.Signing.SigningCredentialWitness FreshCredential(Guid actor)
+        => Credential(actor) with { IssuedAt = Clock.GetUtcNow().AddMinutes(-1), ExpiresAt = Clock.GetUtcNow().AddHours(1) };
     internal static AZOA.WebAPI.Models.Signing.SigningCredentialWitness Credential(Guid actor)
         => new(1, "Jwt", actor, null, null, DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1),
             null, null, [], true, TokenUse: AzoaClaims.TokenUseLogin);
+}
+
+/// <summary>System time plus an adjustable offset for expiry-sensitive NFT flows.</summary>
+internal sealed class ShiftedClock : TimeProvider
+{
+    internal TimeSpan Offset { get; set; }
+    public override DateTimeOffset GetUtcNow() => base.GetUtcNow() + Offset;
 }

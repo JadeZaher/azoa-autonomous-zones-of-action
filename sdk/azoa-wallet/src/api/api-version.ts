@@ -128,8 +128,6 @@ export const API_PATHS = {
   SEARCH_FACETS: "/api/search/facets",
 
   // Swap (SwapController)
-  SWAP_QUOTE: "/api/swap/quote",
-  SWAP_EXECUTE: "/api/swap/execute",
 
   // Marketplace browse: public + Active actions any authenticated user may fork/start.
   ACTION_PUBLIC: "/api/action/public",
@@ -192,19 +190,6 @@ export const API_PATHS = {
 
   // Wallet wrapping-key rotation (KeyRotationController, final-hardening B5). Operator-scoped.
   KEY_ROTATION_ROTATE: "/api/admin/key-rotation/rotate",
-
-  // Hold rails (HoldController, D14 / W3.4): commit-and-later-release units out of a
-  // declared reserve partition. Route (not body) carries chain + hold id.
-  HOLD_OPEN: "/api/holds",
-  HOLD_GET: (chain: string, holdId: string) =>
-    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}`,
-  HOLD_RELEASE: (chain: string, holdId: string) =>
-    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}/release`,
-  HOLD_REFUND: (chain: string, holdId: string) =>
-    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}/refund`,
-  HOLD_RELEASE_INTO_HOLD: (chain: string, holdId: string) =>
-    `/api/holds/${encodeURIComponent(chain)}/${encodeURIComponent(holdId)}/release-into-hold`,
-  HOLD_MINE: "/api/holds/mine",
 
   // Fiat on-ramp checkout (FiatCheckoutController). The subject is always the
   // route userId — no body field can redirect a payment to a different account.

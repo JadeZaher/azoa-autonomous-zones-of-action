@@ -26,50 +26,7 @@ public class Tier2ChainNodeHandlerTests
     private static ActionNodeExecutionContext CtxFor(ActionNode node, Guid userId) =>
         new(Guid.NewGuid(), node.Id, ActionWithUserAndNode(userId, node), actingUserId: userId);
 
-    // ─── T5 Swap ───
-
-    [Fact]
-    public void SwapNodeHandler_DeclaresChainCapabilityAndType()
-    {
-        var handler = new SwapNodeHandler(new Mock<ISwapManager>().Object);
-        handler.NodeType.Should().Be(ActionNodeType.Swap);
-        ((IActionNodeHandler)handler).RequiresChainCapability.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task SwapNodeHandler_ForwardsRequest_NoRateComputedInHandler()
-    {
-        var mgr = new Mock<ISwapManager>();
-        SwapExecuteRequest? captured = null;
-        // The mock returns the quote; the handler must NOT compute a rate itself.
-        mgr.Setup(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()))
-           .Callback<SwapExecuteRequest, string?>((req, _) => captured = req)
-           .ReturnsAsync(new AZOAResult<SwapQuoteResponse> { Result = new SwapQuoteResponse() });
-
-        var handler = new SwapNodeHandler(mgr.Object);
-        var cfg = new SwapNodeConfig { Request = new SwapExecuteRequest() };
-        var node = NodeWith(ActionNodeType.Swap, JsonSerializer.Serialize(cfg));
-        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
-
-        result.IsError.Should().BeFalse();
-        captured.Should().NotBeNull();
-        mgr.Verify(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task SwapNodeHandler_ManagerError_MapsToFailed()
-    {
-        var mgr = new Mock<ISwapManager>();
-        mgr.Setup(m => m.GetSwapTransactionAsync(It.IsAny<SwapExecuteRequest>(), It.IsAny<string?>()))
-           .ReturnsAsync(new AZOAResult<SwapQuoteResponse> { IsError = true, Message = "dex down" });
-
-        var handler = new SwapNodeHandler(mgr.Object);
-        var node = NodeWith(ActionNodeType.Swap, JsonSerializer.Serialize(new SwapNodeConfig()));
-        var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
-
-        result.IsError.Should().BeTrue();
-        result.Message.Should().Be("dex down");
-    }
+    // T5 Swap: covered as a durable workflow flow in Managers/Dex/SwapActionResolverTests.
 
     // ─── T6 Grant ───
 
@@ -219,12 +176,12 @@ public class Tier2ChainNodeHandlerTests
         var context = new ActionNodeExecutionContext(runId, refund.Id, action, actingUserId: actor,
             upstreamExecutions: multiHop ? new Dictionary<Guid, ActionNodeExecution>() : succeeded, allRunExecutions: succeeded);
         var service = new Mock<INftLifecycleService>();
-        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>()))
+        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
             .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, "Completed", "Transfer", "asset", "chain-tx", null, "Refund")));
         var result = await new RefundNodeHandler(service.Object).HandleAsync(context);
         result.IsError.Should().BeFalse();
         var expectedSource = NftLifecycleIdentity.ForRequest(actor, "Transfer", $"{runId:N}:{source.Id:N}");
-        service.Verify(item => item.RefundAsync(actor, expectedSource, $"{runId:N}:{refund.Id:N}", It.IsAny<CancellationToken>(), Guid.Empty, null), Times.Once);
+        service.Verify(item => item.RefundAsync(actor, expectedSource, $"{runId:N}:{refund.Id:N}", It.IsAny<CancellationToken>(), Guid.Empty, null, null, null), Times.Once);
     }
 
     [Theory]
@@ -238,7 +195,7 @@ public class Tier2ChainNodeHandlerTests
         var action = new ActionEntity { Id = Guid.NewGuid(), UserId = actor, Nodes = { source, refund } };
         var all = new Dictionary<Guid, ActionNodeExecution> { [source.Id] = new() { State = ActionNodeState.Succeeded } };
         var service = new Mock<INftLifecycleService>();
-        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>()))
+        service.Setup(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
             .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, state, "Transfer", "asset", null, null, "Refund")));
         var result = await new RefundNodeHandler(service.Object).HandleAsync(new(Guid.NewGuid(), refund.Id, action, actingUserId: actor, upstreamExecutions: all, allRunExecutions: all));
         result.IsError.Should().BeTrue(); result.Message.Should().Contain(state);
@@ -251,6 +208,6 @@ public class Tier2ChainNodeHandlerTests
         var node = NodeWith(ActionNodeType.Refund, JsonSerializer.Serialize(new RefundNodeConfig { NftId = Guid.NewGuid(), Request = new() }));
         var result = await new RefundNodeHandler(service.Object).HandleAsync(CtxFor(node, Guid.NewGuid()));
         result.IsError.Should().BeTrue();
-        service.Verify(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>()), Times.Never);
+        service.Verify(item => item.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()), Times.Never);
     }
 }

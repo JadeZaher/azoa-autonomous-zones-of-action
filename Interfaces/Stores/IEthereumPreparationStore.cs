@@ -11,6 +11,10 @@ public interface IEthereumPreparationStore
     Task<EthereumPreparation?> GetHighestNonceAsync(string protocol, string sender, CancellationToken ct = default);
     /// <summary>Claims one preparation and nonce, returning null when a different claim owns either.</summary>
     Task<EthereumPreparation?> TryClaimAsync(EthereumPreparation candidate, CancellationToken ct = default);
+    /// <summary>Lists released, never-signed reservations for this protocol and sender, lowest nonce first.</summary>
+    Task<IReadOnlyList<EthereumPreparation>> ListReleasedAsync(string protocol, string sender, int limit, CancellationToken ct = default);
+    /// <summary>Atomically turns one unchanged released reservation into a key-locking tombstone and claims its nonce for the candidate; null when either races.</summary>
+    Task<EthereumPreparation?> TryClaimReleasedAsync(EthereumPreparation released, EthereumPreparation candidate, CancellationToken ct = default);
     /// <summary>Changes only recovery state with optimistic version fencing.</summary>
     Task<EthereumPreparation?> UpdateAsync(EthereumPreparation row, long expectedVersion, CancellationToken ct = default);
     /// <summary>Lists one owner's admitted preparations, newest first.</summary>

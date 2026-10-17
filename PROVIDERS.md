@@ -19,7 +19,7 @@ Four providers are registered in `Program.cs` (~L1373): **Algorand**, **Solana**
 Bridge capability is a **module, not a boolean**: there is no `SupportsBridging` flag. A chain that can bridge implements `IBridgeSourceLeg` (`LockAsync`/`ReleaseAsync`) and/or `IBridgeTargetLeg` (`MintWrappedAsync`/`BurnWrappedAsync`), and `TryGetModule` resolves it at runtime. Absence *is* the fail-closed refusal, structurally — there is no method to call and no boolean that can be set true by mistake — and it expresses a direction asymmetry the boolean could not (Algorand is a proven source and deliberately not a target). Adding a chain still requires implementation, registration, and conformance review; registration alone does not make it launchable.
 
 **DEX Adapters:**
-Swap routing is dispatched by `SwapManager` to chain-specific `IDexAdapter` implementations (Tinyman for Algorand, Jupiter for Solana). Adding a DEX requires implementing `IDexAdapter` + one DI line.
+Swaps run through the durable `/api/dex` journal over provider-owned `IDexTransactionModule` grammar (Tinyman V2 on Algorand, Jupiter/Whirlpool on Solana, classic Uniswap V3 via `AzoaDexExecutor` on Ethereum). See `Services/Dex/AGENTS.md`; modules are discoverable at `GET /api/dex/capabilities` only after activation. Ethereum additionally needs `AZOA:Ethereum:Dex:Networks:<net>:ArchiveStateConfirmed=true`. Set it only after confirming the node serves historical nonce state; nonce-winner proofs need it (see `Providers/Blockchain/Ethereum/AGENTS.md`).
 
 **KYC Providers:**
 Identity verification is selected through `Kyc:Provider` and the
@@ -68,7 +68,7 @@ prefix rather than enumerated.
 | ActionGraphBundleController | `api/actiongraphbundle` | 9 |
 | SagaOperatorController | `api/admin/sagas` | 3 |
 | SearchController | `api/search` | 2 |
-| SwapController | `api/swap` | 2 |
+| DexController | `api/dex` | 15 |
 | TenantConsentController | `api/tenant/consent` | 2 |
 | TenantController | `api/tenant` | 9 |
 | TenantKycConfigurationController | `api/tenant/kyc` | 3 |
@@ -231,9 +231,12 @@ wire surface is unaffected by the C# suffix — do not add `-definition` to a ro
 - `GET /api/actiongraphbundle/{id}/ecosystem` — Read the ecosystem tree
 - `POST /api/actiongraphbundle/{id}/ecosystem/dapp-series` — Attach a series to the tree
 
-### SwapController
-- `GET /api/swap/quote` — Get swap quote (query params: chain, tokenIn, tokenOut, amount, slippage)
-- `POST /api/swap/execute` — Build unsigned swap transaction; accepts optional `Idempotency-Key` header; rate-limited ("financial" policy)
+### DexController
+- `GET /api/dex/capabilities` — Structurally complete DEX modules per enabled network (grammar, not liquidity)
+- `POST /api/dex/quotes`, `GET /api/dex/quotes/{id}` — Immutable owner-bound exact-input quote (unavailable liquidity is a successful `unavailable` result)
+- `POST /api/dex/operations`, `GET /api/dex/operations/{id}` — Admit/replay one operation per stable request key
+- `POST /api/dex/operations/{id}/prepare|sign|external-signing|external-signature|submit|withdraw-submission|refresh|cancel` — Versioned stage lifecycle; only finalized settlement completes
+- `POST /api/dex/operations/{id}/cleanup`, `/cleanup/prepare` — Separately consented holding close or allowance revocation
 
 ### WalletController
 - `GET /api/wallet/{id}` — Get wallet by ID
@@ -256,7 +259,7 @@ tracked here — they went stale every track; read the interface in `Interfaces/
 
 | Group | Managers |
 |---|---|
-| Core domain | `ActionManager`, `HolonManager`, `HolonTypeRegistryManager`, `NftManager`, `UserManager`, `WalletManager`, `SearchManager`, `BlockchainOperationManager`, `SwapManager` |
+| Core domain | `ActionManager`, `HolonManager`, `HolonTypeRegistryManager`, `NftManager`, `UserManager`, `WalletManager`, `SearchManager`, `BlockchainOperationManager` |
 | Dapp / action graph bundle | `DappCompositionManager`, `ActionGraphBundleManager` |
 | Identity & consent | `ConsentManager`, `WalletAuthManager`, `TenantManager`, `TenantCustodialAccountManager` |
 | KYC control plane | `KycManager`, `KycControlPlaneManager` |

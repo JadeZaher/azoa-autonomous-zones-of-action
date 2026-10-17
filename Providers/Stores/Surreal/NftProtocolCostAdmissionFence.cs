@@ -33,7 +33,7 @@ internal static class NftProtocolCostAdmissionFence
         // raw: exact immutable offer and database-time freshness are asserted within lifecycle creation.
         return
         [
-            SurrealGeneratedStatementScope.Assign(SurrealQuery<NftProtocolCostQuoteRecord>.Key(quote.QuoteId),
+            SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<NftProtocolCostQuoteRecord>.Key(quote.QuoteId),
                 "nft_cost_receipt", "_nft_cost_receipt"),
             SurrealQuery.Of("""
                 IF $_nft_cost_receipt = NONE OR $_nft_cost_receipt.quote_json != $_nft_cost_json

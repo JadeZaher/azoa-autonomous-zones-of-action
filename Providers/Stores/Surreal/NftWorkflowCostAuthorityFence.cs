@@ -35,7 +35,7 @@ internal static class NftWorkflowCostAuthorityFence
                 && execution.ExternalOperationJson == referenceJson)
             .Set(execution => execution.State, ActionNodeExecution.ActionNodeState.Running).Build(),
             "nft_workflow_execution", "_nft_workflow_execution"));
-        result.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<NftWorkflowCostAcceptanceRecord>.Key(id),
+        result.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<NftWorkflowCostAcceptanceRecord>.Key(id),
             "nft_workflow_acceptance", "_nft_workflow_acceptance"));
         // raw: exact accepted receipt and original credential/grants participate in each new lifecycle effect.
         result.Add(SurrealQuery.Of("""

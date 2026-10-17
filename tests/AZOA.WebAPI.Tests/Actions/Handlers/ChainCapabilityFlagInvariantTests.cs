@@ -161,7 +161,7 @@ public class ChainCapabilityFlagInvariantTests
             return mockOf.MakeGenericMethod(type).Invoke(null, null)!;
         }
 
-        return Activator.CreateInstance(type)
-               ?? throw new InvalidOperationException($"cannot construct ctor arg of type {type}");
+        // Concrete domain services (e.g. durable action resolvers) are never invoked by the pure declarations under test.
+        return type.IsValueType ? Activator.CreateInstance(type)! : null!;
     }
 }

@@ -56,7 +56,7 @@ public sealed partial class SurrealConsentWebhookDeliveryStore(ISurrealExecutor 
                 && row.SecretRevision == registration.SecretRevision && row.EncryptedSecret == registration.EncryptedSecret)
             .Set(row => row.Version, registration.Version).Build(), "delivery_registration", "_delivery_registration"));
         statements.Add(SurrealQuery.Of("IF $_delivery_registration = NONE OR $_delivery_registration = [] { THROW 'WEBHOOK_DELIVERY_CHANGED' }"));
-        statements.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<Event>.Key(eventId), "delivery_read", "_delivery_before"));
+        statements.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<Event>.Key(eventId), "delivery_read", "_delivery_before"));
         statements.Add(SurrealQuery.Of("""
             IF $_delivery_before = NONE OR $_delivery_before.next_attempt_at > time::now()
                 OR ($_delivery_before.lease_expires_at != NONE AND $_delivery_before.lease_expires_at > time::now())

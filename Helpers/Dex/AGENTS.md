@@ -21,3 +21,9 @@ the full unresolved reservation separately from known actual costs. A later
 provider history proof appends immutable rent accounting once; paired stage and
 operation CAS removes exactly that reservation and adds only the proven actual.
 Effect confirmation and accounting completeness are separate public statuses.
+
+Cleanup consent is semantic-specific (`SwapCleanupContract`): closing the current
+zero holding binds the original output asset and its own flag; revoking the
+current allowance binds the original non-native input token and its own flag.
+The request derives exactly one semantic from its two flags. Workflow swap
+operations use `SwapOperationIdentity.RequestKey` over `action:{run}:{node}:swap`.

@@ -87,8 +87,10 @@
 | **SearchController** | `Search` | `POST /api/search` | Inherited `[Authorize]` (class) | MultiScheme |
 | SearchController | `GetFacets` | `GET /api/search/facets` | Inherited `[Authorize]` (class) | MultiScheme |
 | **NetworkController** | `Get` | `GET /api/network` | `[AllowAnonymous]` (class) | None |
-| **SwapController** | `GetQuote` | `GET /api/swap/quote` | Inherited `[Authorize]` (class) | MultiScheme |
-| SwapController | `ExecuteSwap` | `POST /api/swap/execute` + `[EnableRateLimiting("financial")]` | Inherited `[Authorize]` (class) | MultiScheme |
+| **DexController** | `Capabilities` | `GET /api/dex/capabilities` + `[EnableRateLimiting("financial")]`, 30 s shared cache | Inherited `[Authorize]` (class) | MultiScheme |
+| DexController | `GetQuote`, `Get` | `GET /api/dex/...` | Inherited `[Authorize]` (class); `swap:sign` ceiling (owner authority or explicit scope), else 404 | MultiScheme |
+| DexController | quote/admission/stage/cleanup commands | `POST /api/dex/...` + `[EnableRateLimiting("financial")]` | Inherited `[Authorize]` (class); credential captured per command | MultiScheme |
+| **DexOperatorController** | `SettleReview` | `POST /api/operator/dex/operations/{id}/settle-review` + `[EnableRateLimiting("financial")]` | `[Authorize(Policy = "RecentNodeOperatorSession")]`; operator id + reason in the immutable settlement audit; never signs or sends | Operator session |
 | **BridgeController** | `GetRoutes` | `GET /api/bridge/routes` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `InitiateBridge` | `POST /api/bridge/initiate` + `[EnableRateLimiting("financial")]` | Inherited `[Authorize]` (class) | MultiScheme |
 | BridgeController | `FetchVAA` | `POST /api/bridge/{id}/fetch-vaa` | Inherited `[Authorize]` (class) | MultiScheme |

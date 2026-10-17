@@ -18,6 +18,7 @@ public sealed class HoldMandateUseReceipt : ISurrealRecord
     public string TermsHash { get; set; } = string.Empty;
     public string AuthorityJson { get; set; } = string.Empty;
     public string? WorkflowSourceJson { get; set; }
+    public string? ExchangeSourceJson { get; set; }
     public string? AuthorizationId { get; set; }
     public string? PreparedHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

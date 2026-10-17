@@ -8,8 +8,10 @@
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --project unit --project slices",
+    "test:watch": "vitest --project unit --project slices",
+    "test:browser": "vitest run --project slices-browser",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
+    "@playwright/test": "^1.64.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -35,10 +38,13 @@
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/browser": "^3.2.7",
     "autoprefixer": "^10.4.16",
     "eslint": "^9.39.2",
     "eslint-config-next": "16.3.1",
     "jsdom": "^26.1.0",
+    "msw": "^2.15.0",
+    "playwright": "^1.64.1",
     "postcss": "^8.5.23",
     "tailwindcss": "^3.3.0",
     "tailwindcss-animate": "1.0.7",
@@ -47,5 +53,10 @@
   },
   "overrides": {
     "postcss": "$postcss"
+  },
+  "msw": {
+    "workerDirectory": [
+      "src/test/msw/public"
+    ]
   }
 }

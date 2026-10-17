@@ -30,6 +30,16 @@ public class WalletControllerIntegrationTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task Create_ClaimingPlatformCustody_StillRegistersAnExternalWallet()
+    {
+        var response = await Client.PostAsJsonAsync("api/wallet", new { chainType = "Solana", address = "claimedplatform1", walletType = "Platform" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await ReadResultAsync<Wallet>(response);
+        result!.Result!.WalletType.Should().Be(AZOA.WebAPI.Core.WalletType.External);
+    }
+
+    [Fact]
     public async Task Create_DuplicateAddress_ReturnsBadRequest()
     {
         var userId = Guid.Parse(TestAuthHandler.DefaultUserId);

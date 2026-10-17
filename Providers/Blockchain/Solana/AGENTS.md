@@ -210,9 +210,9 @@ The closed atomic source message puts the guard after ComputeBudget, then fixed
 funding, optional explicit native wrapping, actual-owner approval, real protocol
 publication and delegate revocation. An existing unrelated delegate is refused.
 The protected bridge payer never substitutes for the wrapped token's actual owner.
-The current source quote/prepare/submit/observe methods are not yet advertised as
-a completed capability: domain first-send/body ownership and residual cleanup
-remain required integration work.
+The provider declares `IWttSourceModule`; first-send authority, body ownership and
+residual cleanup admission live in the WTT operation journal (Services/Wormhole/AGENTS.md
+§Operation journal). `Enabled` configuration and the protocol gates still decide activation.
 
 Reliable publication reads follow the pinned `msg` account layout. The canonical
 guardian timestamp is `submission_time`, confirmed by official watcher client.go
@@ -322,8 +322,8 @@ and target. Target evidence separately proves verification bitmap, immutable
 posted body, registered mint origin/authority, or actual redemption claim and
 recipient/relayer/custody token changes. Confirmed verification/posting is an
 intermediate stage, not overall bridge settlement. Recipient-owned native unwrap
-and protected-payer cleanup remain explicit required stages. These provider methods
-are not capability-advertised pending domain integration and protocol gates.
+and protected-payer cleanup remain explicit stages driven by the journal; the provider
+declares `IWttTargetModule`, `IWttCleanupModule` and `IWttNativeOutputModule`.
 
 Whirlpool Oracle decoding follows the same pinned Orca revision's packed `Oracle` (254 bytes), adaptive constants (34 bytes), and variables (44 bytes). It binds the derived Oracle PDA and stored pool, validates the protocol's constant bounds and trading timestamps against the finalized Clock, and rejects nonzero reserved bytes as an unreviewed layout. RPC ownership/executable checks and same-context collection remain the caller's responsibility. The original source is captured in `.omc/research/round3-orca-oracle-2026-10-15.md`; this decoder is not an independent price quote or completed route authorization.
 
@@ -359,10 +359,10 @@ Jupiter expiry observation uses full finalized block ancestry rather than addres
 
 Cleanup offers reobserve the original saved source/target transaction and repeat exact finalized wire/block/fee proof. Original refundable allocation is the positive protected-payer post-minus-pre delta, bounded by the original deposit and exact funding less permanent protocol costs. Original precredits and later unsolicited deposits may be returned but never counted as original rent recovery. An unexplained lower current balance is ambiguous. Each offer freezes the original observation hash and exact return amount; credits after quotation remain explicitly reported in RemainingStageBalance.
 
-Cleanup preparation uses a fresh direct original-wallet WttCleanupSign context and the existing protected payer envelope only. It never creates a replacement stage key or revives the original workflow. A separate canonical request/generation Memo and durable unsigned winner precede both signatures; signed replay precedes mutable price/expiry checks. Publication-message and verification-signature-set keys cannot use cleanup authority. Missing expired transaction history is still unresolved. The outer operation journal must atomically resolve and fence all original attempts, admit the cleanup offer, authorize first send, and credit original allocation once; provider methods are not advertised until that domain integration exists. Zero residual is a read-only result, not a fabricated cleanup transaction.
+Cleanup preparation uses a fresh direct original-wallet WttCleanupSign context and the existing protected payer envelope only. It never creates a replacement stage key or revives the original workflow. A separate canonical request/generation Memo and durable unsigned winner precede both signatures; signed replay precedes mutable price/expiry checks. Publication-message and verification-signature-set keys cannot use cleanup authority. Missing expired transaction history is still unresolved. The operation journal claims cleanup only while every original attempt is terminal, authorizes its first send under fresh direct-owner `wtt:cleanup:sign` authority and restores the operation's prior state afterwards. Zero residual is a read-only result, not a fabricated cleanup transaction.
 
 ## Recipient native output
 
 Native-output quotation reobserves exact original Redeem finality and binds its receipt hash, mint, net recipient amount and persistent ATA. It requires original UnwrapNative intent, native mint origin, fresh recipient funding, exact Rent and the independently pinned immutable guard. Actual unsigned simulation and fee RPC price the whole closed instruction sequence. A distinct domain-separated seeded token account receives only the accepted net amount and is atomically closed to the recipient; the original ATA remains open. The shared SolanaSeededNativeAccount preserves Jupiter's original fixed domain through its thin wrapper.
 
-Recipient preparation persists one canonical unsigned winner without custody and accepts only its real recipient signature. Original-token redemption does not grant target-payer authority over this wallet. The domain must atomically record exposure before disclosing the message and enforce fresh exact recipient consent, no competing generations, and first egress. Submitted recovery validates exact saved bytes, finality, persistent ATA token/native debit, recipient net SOL credit and complete temporary-rent return; missing expired history remains unresolved. Only an originally requested native-output operation waits for this stage. These provider paths remain unadvertised pending domain integration and actual protocol gates.
+Recipient preparation persists one canonical unsigned winner without custody and accepts only its real recipient signature. Original-token redemption does not grant target-payer authority over this wallet. The journal records exposure before disclosing the message, requires fresh recipient cost ceilings, allows no competing generation while exposure is unresolved, and separately authorizes first egress. Submitted recovery validates exact saved bytes, finality, persistent ATA token/native debit, recipient net SOL credit and complete temporary-rent return; missing expired history remains unresolved. Only an originally requested native-output operation waits for this stage; settlement then records both the redemption and the native output.

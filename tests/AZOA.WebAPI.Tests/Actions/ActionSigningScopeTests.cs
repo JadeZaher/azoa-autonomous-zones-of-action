@@ -14,6 +14,10 @@ public sealed class ActionSigningScopeTests
     [InlineData(ActionNodeType.Bridge, AzoaScopes.WttSourceSign)]
     [InlineData(ActionNodeType.Back, AzoaScopes.WttSourceSign)]
     [InlineData(ActionNodeType.CredentialRevoke, AzoaScopes.CredentialRevokeSign)]
+    [InlineData(ActionNodeType.Hold, AzoaScopes.TransferSign)]
+    [InlineData(ActionNodeType.Release, AzoaScopes.TransferSign)]
+    [InlineData(ActionNodeType.HoldRefund, AzoaScopes.TransferSign)]
+    [InlineData(ActionNodeType.ReleaseIntoHold, AzoaScopes.TransferSign)]
     public void EconomicNodeRetainsItsDomainScope(ActionNodeType type, string scope)
         => ActionSigningScopes.Required(type, "{}").Should().Equal(scope);
 

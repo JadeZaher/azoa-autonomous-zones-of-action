@@ -44,7 +44,7 @@ public sealed partial class SurrealGovernanceStore
         foreach (var pair in counts)
         {
             var suffix = (index++).ToString(System.Globalization.CultureInfo.InvariantCulture);
-            queries.Add(SurrealQuery.Of($"IF array::len(array::filter($_decisions, |$decision| $decision.decision_option = $_option{suffix})) != $_count{suffix} {{ THROW 'GOVERNANCE_CONCURRENT_OR_UNAUTHORIZED' }}")
+            queries.Add(SurrealQuery.Of($"IF array::len((SELECT VALUE decision_option FROM $_decisions WHERE decision_option = $_option{suffix})) != $_count{suffix} {{ THROW 'GOVERNANCE_CONCURRENT_OR_UNAUTHORIZED' }}")
                 .WithParam("_option" + suffix, pair.Key).WithParam("_count" + suffix, pair.Value));
         }
         queries.Add(Scope(SurrealWriter.UpdateOnly<GovernanceProposal>(proposal.Id)

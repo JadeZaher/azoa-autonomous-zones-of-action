@@ -30,7 +30,7 @@ public sealed partial class SwapStageCoordinator(ISwapOperationStore store)
         var history = records is null ? null : ValidatedHistory(operation, records, module, intent, false);
         if (records is null || history is null) return AZOAResult<SwapOperationRecord>.Failure("The saved swap history is incomplete or unresolved.");
         var next = await module.GetNextSwapStageAsync(intent, history, ct);
-        if (next.IsError || next.Result is null) return AZOAResult<SwapOperationRecord>.Failure(next.Message);
+        if (next.IsError || next.Result is null) return Carried<SwapOperationRecord>(next.Message, next.Code);
         if (next.Result.Complete)
         {
             if (next.Result.Stage is not null || records.Count == 0)
@@ -43,7 +43,14 @@ public sealed partial class SwapStageCoordinator(ISwapOperationStore store)
         if (string.IsNullOrWhiteSpace(next.Result.Stage)) return AZOAResult<SwapOperationRecord>.Failure(next.Result.Detail ?? "No next stage is available.");
         var generation = records.Count > 0 && records[0].Stage == next.Result.Stage ? checked(records[0].Generation + 1) : 0;
         var planned = await module.PlanSwapStageAsync(intent, next.Result.Stage, generation, ct);
-        if (planned.IsError || planned.Result is null) return AZOAResult<SwapOperationRecord>.Failure(planned.Message);
+        if (planned.IsError || planned.Result is null) return Carried<SwapOperationRecord>(planned.Message, planned.Code);
+        if (!SwapBudget.WithinRemaining(intent, operation, planned.Result))
+        {
+            // The plan was never claimed or signed: hand its provider reservation back before reporting exhaustion.
+            if (module is IDexRetainedResourceModule resources) await resources.ReleaseUnsentStageAsync(intent, planned.Result, ct);
+            return AZOAResult<SwapOperationRecord>.FailureWithCode("The consented cost caps cannot fund another stage; the swap can no longer settle.",
+                DexResultCodes.Unsettleable);
+        }
         var claimed = operation.CurrentStageId is null
             ? await store.ClaimInitialStageAsync(operationId, expectedVersion, planned.Result, authority, ct)
             : await store.ClaimNextStageAsync(operationId, expectedVersion, planned.Result, authority, ct);
@@ -89,7 +96,7 @@ public sealed partial class SwapStageCoordinator(ISwapOperationStore store)
             signingTenant ?? Guid.Empty, intent.Terms.ActorUserId, AzoaScopes.SwapSign, intent.Terms.Network.ChainType);
         var signed = await module.SignSwapStageAsync(intent, plan, [new(intent.Terms.Owner, context)], ct);
         if (signed.IsError || signed.Result is null)
-            return AZOAResult<SwapStageRecord>.Failure(signed.Message);
+            return Carried<SwapStageRecord>(signed.Message, signed.Code);
         var validated = module.ValidateSignedSwapStage(intent, plan, signed.Result.SignedPayloadJson);
         if (validated.IsError || validated.Result is null ||
             !validated.Result.TransactionIds.SequenceEqual(signed.Result.TransactionIds)) return Refused();
@@ -236,6 +243,15 @@ public sealed partial class SwapStageCoordinator(ISwapOperationStore store)
             if ((record.AuthorizedAt is null && record.ExternalExposedAt is null) || record.ObservationJson is null) return null;
             var observation = JsonSerializer.Deserialize<SwapStageObservation>(record.ObservationJson)!;
             if (observation.Verdict != record.State || !SwapObservationContract.IsTerminal(record.State)) return null;
+            if (SwapOperatorSettlementContract.IsOperatorSettlement(observation))
+            {
+                // Proven by the recorded same-call winner; any saved candidate stays the immutable original.
+                PreparedSwapStage? original = null;
+                if (module is not IDexOperatorSettlementModule settlement || !settlement.ValidateOperatorSettlement(intent, plan, observation) ||
+                    record.PreparedJson is not null && !TryPrepared(record, plan, module, intent, out original)) return null;
+                history.Add(new(original, observation, ExposedPlan: original is null ? plan : null));
+                continue;
+            }
             if (record.PreparedJson is null)
             {
                 if (record.ExternalExposedAt is null || !module.ValidateExposedSwapNoEffect(intent, plan, observation)) return null;
@@ -275,6 +291,10 @@ public sealed partial class SwapStageCoordinator(ISwapOperationStore store)
             actual.SignedPayloadJson == winner.Candidate.SignedPayloadJson &&
             actual.TransactionIds.SequenceEqual(winner.Candidate.TransactionIds);
     }
+
+    /// <summary>Keeps a provider's typed code (e.g. unsettleable or dependency outage) instead of flattening it to a plain refusal.</summary>
+    private static AZOAResult<T> Carried<T>(string message, string? code)
+        => code is { Length: > 0 } ? AZOAResult<T>.FailureWithCode(message, code) : AZOAResult<T>.Failure(message);
 
     private static AZOAResult<SwapStageRecord> Refused()
         => AZOAResult<SwapStageRecord>.FailureWithCode("The original stage or current signing authority changed; reload before retrying.", "Conflict");

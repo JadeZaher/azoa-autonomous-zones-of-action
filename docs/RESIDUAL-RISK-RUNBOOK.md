@@ -282,13 +282,11 @@ Then re-apply with `dotnet ef database update`.
 
 ---
 
-### Risk: Swap-Execute Accepts Idempotency-Key But Does Not Consume It
+### Resolved: Swap-Execute Ignored Its Idempotency-Key
 
-**Scenario:** `SwapController.GetSwapTransaction` reads the `Idempotency-Key` header (task 10 threading) but does not pass it to `ISwapManager.GetSwapTransactionAsync` for use.
-
-**Impact:** None. Swap-execute returns an unsigned transaction; the client signs and broadcasts it. There is no server-side irreversible effect to dedupe. The header is accepted (for forward-compat and audit) but intentionally unused.
-
-**Note:** This is correct behavior for a client-signed swap. If a future server-side submit endpoint is added, wire the key at that time.
+The legacy `/api/swap/execute` route and `ISwapManager` are retired (platform-stub-closeout round 3).
+Swaps admit through `/api/dex/operations`, where the stable request key is the durable operation
+identity and replay returns the original operation without a new quote or signature.
 
 ---
 

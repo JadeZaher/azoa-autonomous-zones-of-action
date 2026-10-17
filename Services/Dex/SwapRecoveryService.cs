@@ -17,6 +17,7 @@ public sealed class SwapRecoveryService(ISwapOperationStore operations, DexModul
         if (module is null) return;
         await stages.RecoverAuthorizedAsync(operationId, module, ct);
         await stages.FinalizeObservedAsync(operationId, module, ct);
+        await stages.ReleaseRetainedResourcesAsync(operationId, module, ct);
         operation = await operations.GetAsync(operationId, ct);
         if (operation?.CurrentStageId is not { } currentId) return;
         var page = await operations.ReadHistoryPageAsync(operationId, operation.RecoveryHistoryCursor ?? currentId, ct);

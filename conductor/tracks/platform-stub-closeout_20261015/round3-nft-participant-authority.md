@@ -15,3 +15,17 @@ Stages requiring another participant record a separate immutable consent bound t
 Implement stage replacement with an explicit fresh quote/acceptance for the exact next generation after authoritative no-effect. Preserve original receipt, preparation history and participant records. A changed platform authority, wallet, recipient or cost policy requires new explicit review and must not reuse a quote for a different full intent. An expired offer may be retired under the same atomic absence/version rule as workflow cost acceptance.
 
 Required evidence: direct API key/JWT/tenant grant revocation before preparation and first send; replay after revocation without signing; changed actor wallet; recipient credential cannot replace original actor authority; recipient acceptance racing revocation; observation after revocation; exact workflow witness retained; platform authority rotation/replacement generation requires fresh consent; legacy unwitnessed recovery cannot sign. Implement and review before integrated gates.
+
+## Requester renewal (lane N resume, 2026-10-16)
+
+Resume review found that the original direct witness is fenced at every later new effect while
+direct JWTs lapse after 24 hours, so a participant answering later could never continue and a
+lifecycle with a confirmed stage could not be cancelled. Following the reviewed fungible
+continuation pattern, the original requester (same actor, tenant, wallet and operation scope)
+may append a fresh direct authority for the exact reviewed version/state/stage/generation
+(`ActorContinuationsJson`, `RenewActorAuthorityAsync`, `POST /api/usernft/lifecycle/{id}/renew-authority`).
+The store fences the latest matching renewal instead of the lapsed original; a non-matching
+renewal fails closed; RequestJson is unchanged; workflow witnesses are never replaced by a
+direct credential. The view's `NeedsActorContinuation` is a display hint. Unit, real-store,
+SDK and panel fixtures authored; runtime NOT RUN. Needs independent review at the join.
+

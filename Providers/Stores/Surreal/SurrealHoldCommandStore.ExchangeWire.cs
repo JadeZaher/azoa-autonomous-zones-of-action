@@ -96,8 +96,9 @@ public sealed partial class SurrealHoldCommandStore
         var intent = JsonSerializer.Deserialize<ExchangeHoldSourceIntent>(source.IntentJson);
         var authority = JsonSerializer.Deserialize<ExchangeParticipantAuthority>(source.AuthorityJson);
         if (intent is null || authority is null || !ValidExchangeSource(intent, authority)
-            || source.HoldCommandId != HoldCommandIdentity.Operation(intent.Opening)
-            || source.HoldRecordId != HoldCommandIdentity.Hold(intent.Opening)) return null;
+            || source.Id != ExchangeHoldSourceIdentity.ForIntent(intent)
+            || source.HoldCommandId != (intent.Opening is null ? null : HoldCommandIdentity.Operation(intent.Opening))
+            || source.HoldRecordId != (intent.Opening is null ? null : HoldCommandIdentity.Hold(intent.Opening))) return null;
         var wire = ExchangeHoldWirePlan.Create(source.Id, source.Generation, intent, authority);
         return wire is null ? null : (wire, authority);
     }
@@ -107,16 +108,26 @@ public sealed partial class SurrealHoldCommandStore
     {
         var guards = authority is null ? Array.Empty<SurrealQuery>() : ExchangeAuthorityFence.Create(authority, "exchange_wire");
         if (guards is null) return null;
-        // raw: first custody/egress authorization and the exact source version commit under both original authorities.
-        var query = guards.Count == 0 ? mutation : SurrealQuery.Combine(new[] { SurrealQuery.Of("BEGIN") }.Concat(guards)
-            .Append(SurrealGeneratedStatementScope.Apply(mutation, "exchange_wire_update")).Append(SurrealQuery.Of("COMMIT")).ToArray());
+        var query = mutation;
+        var resultIndex = 0;
+        if (guards.Count > 0)
+        {
+            // raw: first custody/egress authorization and the exact source version commit under both original authorities.
+            var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+            statements.AddRange(guards);
+            statements.Add(SurrealGeneratedStatementScope.Assign(mutation, "exchange_wire_update", "_exchange_wire_row"));
+            resultIndex = statements.Count;
+            statements.Add(SurrealQuery.Of("RETURN $_exchange_wire_row"));
+            statements.Add(SurrealQuery.Of("COMMIT"));
+            query = SurrealQuery.Combine(statements.ToArray());
+        }
         try
         {
             return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
             {
                 var response = await executor.ExecuteAsync(query, ct);
                 response.EnsureAllOk();
-                return response.GetValues<ExchangeHoldSource>(guards.Count == 0 ? 0 : guards.Count + 1).SingleOrDefault();
+                return response.GetValues<ExchangeHoldSource>(resultIndex).SingleOrDefault();
             }, ct);
         }
         catch (SurrealStatementException exception) when (exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal)

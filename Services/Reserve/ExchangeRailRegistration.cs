@@ -4,6 +4,9 @@
 //
 // See Services/Reserve/AGENTS.md §buy-back.
 
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Providers.Stores.Surreal;
+using AZOA.WebAPI.Services.Custody;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AZOA.WebAPI.Services.Reserve;
@@ -42,11 +45,21 @@ public static class ExchangeRailRegistration
 
         services.TryAddScoped<IBuyBackBackstop, ReserveToTreasuryBuyBackBackstop>();
 
-        // OI-33. Registered from the SAME call as the backstop so a node cannot end up running
-        // exchanges with nothing to finish the ones the rail only accepted. ReconciliationService
-        // takes it optionally and, when it is absent, refuses to advance an exchange that owes
-        // something rather than reporting it Completed — so a missing registration is loud.
+        // A direct-delivery purchase or sale readies the participant's account before journaling its source.
+        if (services.All(descriptor => descriptor.ServiceType != typeof(ICustodialRecipientPreparer)))
+            services.AddCustodialRecipientPreparation();
+
+        // Retired post-submit exchange rows are surfaced for operator recovery, never settled from the row.
         services.TryAddScoped<IExchangeSettlementReconciler, ExchangeSettlementReconciler>();
+
+        // Durable exchange settlement (see Services/Reserve/AGENTS.md §durable-exchange): the source journal shares the
+        // hold command store instance, the coordinator advances exact saved wire, and the worker only observes,
+        // rebroadcasts, accounts for or abandons never-sent commitments.
+        services.TryAddScoped<SurrealHoldCommandStore>();
+        services.TryAddScoped<IExchangeHoldSourceStore>(provider => provider.GetRequiredService<SurrealHoldCommandStore>());
+        services.TryAddScoped<ExchangeAuthorityFactory>();
+        services.TryAddScoped<ExchangeHoldSourceService>();
+        services.AddHostedService<ExchangeSourceReconciliationWorker>();
         return services;
     }
 }

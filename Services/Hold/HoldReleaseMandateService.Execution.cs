@@ -4,9 +4,7 @@ using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
-using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using AZOA.WebAPI.Providers.Blockchain;
 
 namespace AZOA.WebAPI.Services.Hold;
 

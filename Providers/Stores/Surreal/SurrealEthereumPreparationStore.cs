@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
@@ -9,6 +10,8 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// <inheritdoc/>
 public sealed class SurrealEthereumPreparationStore(ISurrealExecutor executor) : IEthereumPreparationStore
 {
+    private const string ReleasedConflict = "ETHEREUM_RELEASED_NONCE_CONFLICT";
+
     /// <inheritdoc/>
     public Task<EthereumPreparation?> GetAsync(string id, CancellationToken ct = default)
         => executor.QuerySingleAsync<EthereumPreparation>(SurrealQuery<EthereumPreparation>.Key(id), ct);
@@ -30,6 +33,52 @@ public sealed class SurrealEthereumPreparationStore(ISurrealExecutor executor) :
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
             return await GetAsync(candidate.Id, ct);
+        }
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<EthereumPreparation>> ListReleasedAsync(string protocol, string sender, int limit, CancellationToken ct = default)
+        => executor.QueryAsync<EthereumPreparation>(SurrealQuery<EthereumPreparation>.From()
+            .Where(row => row.ProtocolIdentity == protocol && row.Sender == sender && row.State == "Released")
+            .OrderBy(row => row.Nonce).Limit(Math.Clamp(limit, 1, 50)), ct);
+
+    /// <inheritdoc/>
+    public async Task<EthereumPreparation?> TryClaimReleasedAsync(EthereumPreparation released, EthereumPreparation candidate, CancellationToken ct = default)
+    {
+        if (released.State != "Released" || released.SignedTransactionBase64 is not null || released.Nonce != candidate.Nonce ||
+            released.Sender != candidate.Sender || released.ProtocolIdentity != candidate.ProtocolIdentity ||
+            released.NonceSlot.Length != 0 || candidate.NonceSlot.Length != 0 || released.Id == candidate.Id) return null;
+        // The released row stays as a tombstone: its id keeps the preparation-key lock, its own slot frees the live nonce.
+        var tombstone = SurrealWriter.UpdateOnly<EthereumPreparation>(released.Id)
+            .Where(row => row.Version == released.Version && row.State == "Released" && row.Nonce == released.Nonce && row.NonceSlot == "")
+            .Set(row => row.State, "ReleasedRefilled").Set(row => row.NonceSlot, released.Id)
+            .Set(row => row.Version, released.Version + 1).Set(row => row.UpdatedAt, DateTimeOffset.UtcNow).Build();
+        // raw: retiring the unchanged released reservation and claiming its nonce commit together or not at all.
+        var statements = new List<SurrealQuery>
+        {
+            SurrealQuery.Of("BEGIN"),
+            SurrealGeneratedStatementScope.Assign(tombstone, "released_guard", "released_nonce"),
+            SurrealGeneratedStatementScope.RequireResult("released_nonce", ReleasedConflict),
+            SurrealGeneratedStatementScope.Assign(SurrealWriter.Create(candidate), "released_claim", "released_successor"),
+        };
+        var resultIndex = statements.Count;
+        statements.Add(SurrealQuery.Of("RETURN $released_successor"));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        try
+        {
+            var query = SurrealQuery.Combine(statements.ToArray());
+            var result = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var response = await executor.ExecuteAsync(query, ct);
+                response.EnsureAllOk();
+                return response;
+            }, ct);
+            return result.GetValues<EthereumPreparation>(resultIndex).SingleOrDefault();
+        }
+        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message) ||
+            exception.Message.Contains(ReleasedConflict, StringComparison.Ordinal))
+        {
+            return null;
         }
     }
 

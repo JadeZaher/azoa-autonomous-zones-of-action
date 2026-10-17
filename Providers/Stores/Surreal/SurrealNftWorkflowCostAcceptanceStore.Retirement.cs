@@ -44,8 +44,8 @@ public sealed partial class SurrealNftWorkflowCostAcceptanceStore
         // raw: retirement and admission contend on one execution version; the audit and version advance commit together.
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
         statements.AddRange(fence);
-        statements.Add(SurrealGeneratedStatementScope.Assign(SurrealQuery<NftWorkflowCostAcceptanceRecord>.Key(id), "nft_retire_audit", "_nft_retire_audit"));
-        statements.Add(SurrealQuery.Of("IF $_nft_retire_audit != NONE AND $_nft_retire_audit != [] { THROW 'NFT_WORKFLOW_COST_CHANGED' }"));
+        statements.Add(SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<NftWorkflowCostAcceptanceRecord>.Key(id), "nft_retire_audit", "_nft_retire_audit"));
+        statements.Add(SurrealQuery.Of("IF $_nft_retire_audit != NONE { THROW 'NFT_WORKFLOW_COST_CHANGED' }"));
         statements.Add(SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<ExecutionRow>(receipt.ExecutionId)
             .Where(row => row.Version == request.ExpectedExecutionVersion && row.State == ExecutionRow.ActionNodeState.Running
                 && row.ExternalOperationJson == referenceJson && row.FrozenInput == frozen && row.SigningAuthorityJson == execution.SigningAuthorityJson)

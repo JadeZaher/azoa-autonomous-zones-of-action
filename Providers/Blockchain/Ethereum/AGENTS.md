@@ -24,8 +24,107 @@ domain records explicit external-signing exposure.
 `EthereumSignedEnvelope` checks the full canonical type-2 frame, exact unsigned
 bytes, low-S/scalar/parity and real sender recovery. Successful upload validates
 bytes; it does not authorize server submission. Browser and server wire share
-this validator. Provider/module activation awaits completion and final runtime
-conformance; these source slices alone do not advertise readiness.
+this validator. The module implements every `IDexTransactionModule` member but
+does not declare the interface until independent review (see
+`Services/Dex/AGENTS.md` §Capability discovery and activation).
+
+### DEX submission, settlement and recovery
+
+Submission replays only the exact saved signed type-2 bytes, and only while the
+allocator row is not canceling/terminal, the finalized sender nonce is still
+unconsumed and (for the swap) the executor deadline is live. It never marks the
+shared allocator row `SubmissionAuthorized`; the generic recovery worker also
+skips every owner-descriptor row, so the swap journal's withdrawal and live
+authorization checks are the only path to egress. "already known", "nonce too low" and an
+underpriced replacement are no-send results; finalized observation decides the outcome.
+
+Settlement requires the exact finalized receipt (`ReadDexFinalizedAsync`) and a
+closed log grammar (`EthereumDexReceipt`): exactly one executor `SwapExecuted`
+binding operation, quote hash, owner, recipient, pool, tokens, gross, fee,
+treasury and fee revision; exactly one factory-proven pool `Swap` from the router
+to the executor with `+net`/`-output`; and the exact multiset of token value
+movements (`Transfer`, or WETH `Deposit`/`Withdrawal` for native legs). Approval
+logs are ignored; any other log or movement is `NeedsOperator`, never success.
+Allowance stages require exactly one `Approval(owner, executor, value)`. Each
+receipt records `AllowanceAfter` read at the receipt block; a swap or
+revocation leaving zero allowance carries `AllowanceRelease` evidence. A mined
+revert is `FailedOnChain` with its actual fee.
+
+When the saved candidate is not finalized, a bounded binary search over
+finalized blocks (`eth_getTransactionCount` at block heights, 24 probes per pass,
+persisted as the Pending observation's checkpoint and bound to the exact plan)
+finds the block where the reserved nonce was consumed. A winner whose unsigned
+payload is byte-identical is an alternate signature: it settles as
+`FinalizedCandidate` with the original prepared/plan hashes retained, or is
+adopted as the actual candidate of an exposed plan. A different finalized winner
+is plan-bound `ExpiredAbsent` (`ethereum-finalized-nonce-winner/1`, zero fee for
+this stage). It must be a different call: different `to`, `value` or `input`.
+A winner with the same `to`, `value` and `input` but a wallet-chosen envelope
+(fees, gas limit or signature over different bytes) may have executed the planned
+call. That winner is never a no-effect proof. It becomes `NeedsOperator` with
+`ethereum-nonce-winner-same-call/1` evidence: the winner id, block, success, fee,
+`EffectProven`, and `ActualOutput` read from the closed swap/approval log grammar.
+`ValidDexNoEffect` rejects that format, so no replacement generation can be
+planned on top of it.
+
+### Operator settlement
+
+Settlement is operator-only and runs through `IDexOperatorSettlementModule`.
+`ProveOperatorSettlementAsync` accepts only a `NeedsOperator` review whose
+evidence is same-call format bound to this plan hash, protocol, sender and
+nonce. It then re-proves the winner from finalized chain state; it never takes
+the review on trust:
+
+- `ReadDexFinalizedCoreAsync(sameCallEnvelope: true)` reconstructs the winner's
+  own signed type-2 bytes (`EthereumRpcEnvelope.ReadOwnEnvelope`, which recovers
+  the owner's signature).
+- It requires the same to/value/input, the reserved nonce and the chain id.
+- It runs the full finality proof: genesis, block body position, code pins at
+  the parent and receipt blocks, and a stable repeated receipt.
+- Fee and gas bounds are skipped, because they belong to the wallet's envelope.
+  The finalized receipt must sit at the recorded winner block.
+- `DexReceiptObservationAsync` classifies it with the same closed receipt
+  grammar as any stage. It records `AllowanceAfter` read at the receipt block,
+  plus `AllowanceRelease` when that is zero after a Swap or RevokeAllowance.
+  The `SameCallWinner` and `OperatorSettlement` members join the evidence.
+
+`ValidateOperatorSettlement` re-checks the recorded evidence offline for history
+replay: the receipt binds plan, stage, generation, winner, block and fee, and the
+amounts equal the `Settlement` member. The allowance lane then releases through
+the existing evidence-bound `ReleaseAsync`. The allowance store accepts a
+recorded operator settlement in place of a saved candidate.
+
+A winner with identical fields but an unverifiable signature, an ambiguous block
+body, or a nonce consumed before the quote block is `NeedsOperator`.
+
+Pruned historical state keeps the stage Pending with its checkpoint. The
+checkpoint carries a miss count. After 10 consecutive historical-state misses the
+stage escalates to `NeedsOperator`, keeping the checkpoint as evidence, instead of
+polling a non-archive node forever. Any successful probe resets the count.
+
+Activation gate: `ReadDexDeployment` requires
+`AZOA:Ethereum:Dex:Networks:<net>:ArchiveStateConfirmed=true`. An operator sets it
+only after confirming that the configured node answers `eth_getTransactionCount`
+at an EIP-1898 `{blockHash, requireCanonical}` older than the execution lifetime.
+Without it, new quotes and fresh first-generation plans fail closed. Observation
+of already-sent stages still runs, so recovery is never stranded by the gate.
+
+Unsettleable outcomes carry `DexResultCodes.Unsettleable` (`SWAP_UNSETTLEABLE`).
+An elapsed executor deadline at planning or signing can never settle the original
+swap. That outcome is typed so the workflow resolver fails the node rather than
+retrying a dead quote. Network-identity mismatch is an ordinary error, not a
+deadline.
+
+### Allowance cleanup
+
+`RevokeCurrentAllowance` plans `approve(executor, 0)` on the original input token
+at a newly reserved nonce, with the reviewed `CleanupGasLimit`, current fees
+capped by the separately accepted cleanup fee, the original token code pin and
+the consent tenant on the owner descriptor. It requires the operation to still
+own the exact allowance resource and every original stage to be terminal; the
+executor deadline does not apply to cleanup signing. Ethereum has no rent: the
+accounting and rent-release members always refuse.
+
 
 Directory-level rationale for the Ethereum provider. Terse one-line doc-comments live in
 the code; the "why" lives here. Cross-provider rules are in `Providers/Blockchain/AGENTS.md`.
@@ -127,6 +226,44 @@ EVM port and creates a fresh loopback-only chain and development overlay. It can
 replace a running chain. Production activation requires the same deployment
 quiescence discipline; rolling old/new allocators are unsupported.
 
+### Nonce holes: reuse vs same-nonce cancellation
+
+A reserved nonce that is never used leaves a hole, and the hole blocks every later
+nonce for that sender. The rule depends on how far the reservation got.
+
+- **Released (never signed, never exposed).** A cancelled unsent DEX plan, or a
+  plan that exceeds its remaining cost caps, calls `ReleaseUnsentStageAsync`. That
+  call moves a `Reserved` row with no signed wire and no transaction id to
+  `Released`. The coordinator first proves the stage is `Cancelled`, has no
+  `PreparedJson`, and was never authorized or exposed. The allocator then refills
+  the lowest released nonce at or above the chain floor before minting a new one.
+  `TryClaimReleasedAsync` deletes the released row and creates the successor in one
+  transaction, so the unique protocol/sender/nonce index never sees two owners. A
+  released nonce already below the chain floor was consumed elsewhere and becomes
+  `ReleasedConsumedExternally`. A released or consumed preparation key can never
+  be planned again.
+- **Signed or exposed.** Bytes may sit in a wallet or a mempool, so the nonce is
+  never reused. The swap view exposes `preparationKey` and `signedCandidateSaved`.
+  The swap page offers the owner a same-nonce cancellation through
+  `/api/ethereum/recovery/{network}/{id}` (`cancel: true`, a fee cap and a reason).
+  That route signs a zero-value self-send with fresh custody authority, and
+  finality then proves the original impossible (`ExpiredAbsent` via a different
+  call). An operator can drive the same route.
+- **Refill tombstone.** A refill never deletes the released row. It becomes
+  `ReleasedRefilled`, with `NonceSlot` set to its own id. Its id keeps the
+  preparation-key lock, so that key can never reserve a fresh nonce. The unique
+  index is `(protocol, sender, nonce, nonce_slot)`, and every live row has an
+  empty slot, so exactly one live owner per nonce remains.
+  `ReleasedReservation(state)` is the single list of released states. It
+  covers planning refusals, WTT's `ReadWttNonceHoldAsync` (still `None`) and
+  `RecoverPreparationAsync`. Recovery now refuses released rows outright,
+  because a same-nonce cancel would hit the successor.
+- **Hidden holes.** The swap page also reads the allocator row for a cancelled
+  stage. `Prepared` (custody-signed, but the journal never saved the
+  candidate) gets the same-nonce cancellation panel. `Reserved` (an interrupted
+  release) gets a fee-free "release the unused nonce" action, which repeats the
+  idempotent cancel.
+
 ## Prepared NFT and value effects
 
 NFT wire binds the complete immutable lifecycle authorization, final/intermediary
@@ -189,7 +326,10 @@ dictionary) precisely so the mempool lookup can separate `Pending` from `Unknown
 The chain id is signed *inside* the payload. The node's `eth_chainId` is cached for the
 provider's (single) network binding, and when the configured network pins
 `Metadata.ChainId` a mismatch is **fatal** — a repointed node URL is exactly how a
-transaction meant for a test network gets signed for mainnet.
+transaction meant for a test network gets signed for mainnet. The mismatch text
+names only the reported chain id, never the node URL: hosted node URLs embed
+provider API keys. `DescribeDexNetworkAsync` (public capabilities route) returns a
+fixed failure string for the same reason.
 
 ## §erc20 — the codeless-address trap
 
@@ -298,7 +438,7 @@ Wrapped representation decimals do not prove original decimals above eight. `Ori
 
 WTT source quotes reserve every prerequisite, including zero-reset/exact allowance when needed, metadata attestation and actual transfer. `StageGasLimits:<stage>` is an explicit per-network upper bound, not a fabricated gas estimate; current EIP-1559 prices price the whole plan, and real estimation must fit that immutable bound before each later nonce/signature allocation. Quote construction never signs, allocates a nonce or submits. Total native fee and message/native-value requirements are checked independently against caller caps. Origin attestation is not synthesized from a wrapped source.
 
-Source preparation reuses the durable Ethereum allocator with operation/phase/stage/generation identity and the full frozen intent/quote. Restart returns the winning signed wire; submission validates its exact stored fingerprint and original genesis. Finalized observation requires exact receipt identity, paid fee, unique authorized publication, and actual token debit/burn or allowance logs. Core, token bridge and asset code are checked at parent and execution block; an execution-block upgrade is retained as unknown until position-specific evidence resolves it. A finalized same-nonce cancellation retains its own receipt and paid fee as separate original-stage failure evidence. These methods are not yet an advertised complete WTT module: journal first-send authorization, target settlement and all-six-route protocol acceptance remain required.
+Source preparation reuses the durable Ethereum allocator with operation/phase/stage/generation identity and the full frozen intent/quote. Restart returns the winning signed wire; submission validates its exact stored fingerprint and original genesis. Finalized observation requires exact receipt identity, paid fee, unique authorized publication, and actual token debit/burn or allowance logs. Core, token bridge and asset code are checked at parent and execution block; an execution-block upgrade is retained as unknown until position-specific evidence resolves it. A finalized same-nonce cancellation retains its own receipt and paid fee as separate original-stage failure evidence. The provider declares `IWttSourceModule`/`IWttTargetModule`; journal first-send authorization and finalized target settlement live in Services/Wormhole, and all-six-route protocol acceptance remains required.
 
 Target plans freeze original or wrapped-token code policies, canonical VAA call bytes,
 registration prerequisites and the total payer fee cap. New preparation revalidates
@@ -322,6 +462,6 @@ The cancellation hash and status are retained explicitly, with no deployed resou
 
 ## Unsigned DEX reservations
 
-ReserveCallAsync shares the existing nonce checkpoint and unique reservation with legacy, NFT, native and WTT callers. A DEX reservation carries an explicit immutable owner descriptor and no custody context; null never authorizes a platform key. SignReservedCallAsync requires the actual current participant context, matching actor/wallet/tenant/scope, and a still-reserved row before custody. Generic recovery may cancel an owner nonce using fresh authority, but cannot resume a DEX operation outside its domain admission. Exposure and first-send remain separate domain transitions. The reviewed design and remaining browser/nonce-winner gates are in round3-ethereum-dex-allocation-amendment.md.
+ReserveCallAsync shares the existing nonce checkpoint and unique reservation with legacy, NFT, native and WTT callers. A DEX reservation carries an explicit immutable owner descriptor and no custody context; null never authorizes a platform key. SignReservedCallAsync requires the actual current participant context, matching actor/wallet/tenant/scope, and a still-reserved row before custody. Generic recovery may cancel an owner nonce using fresh authority, but cannot resume a DEX operation outside its domain admission. Exposure and first-send remain separate domain transitions. The reviewed design is in round3-ethereum-dex-allocation-amendment.md; exposure and nonce-winner recovery are described under DEX submission, settlement and recovery above.
 
 EthereumPayloadPermit shares exact EIP-712 Execution(bytes32 payloadHash) framing with explicit name/version domains; the NFT wrapper preserves AZOA NFT/1. DEX uses a distinct retained policy authority and AZOA DEX/1. ContractReads preserves the existing pinned-block eth_call and strict single-word uint decoding; WTT wrappers remain for current callers. The DEX executor tuple has nineteen static ABI words and rejects noncanonical or overflowing decimal amounts before encoding. These helpers do not establish deployed-bytecode readiness or successful settlement.

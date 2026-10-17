@@ -54,3 +54,12 @@ export interface HoldMandateAcceptance { offerId: string; requestHash: string }
 export interface HoldMandateView { id: string; version: number; status: string; terms: HoldMandateTerms; operationId?: string | null; detail?: string | null }
 export interface HoldMandatePage { items: HoldMandateView[]; nextOffset?: number | null }
 export interface HoldMandateResolution { state: 'Applied' | 'Obsolete' | 'Unresolved'; mandate?: HoldMandateView | null }
+
+/** Owner-chosen automatic-release deadline and independent cost caps for a held exchange purchase. */
+export interface ExchangeReleaseMandateRequest {
+  expiresAt: string; maximumNetworkFeeBaseUnits: string; maximumLockedBalanceBaseUnits: string; maximumNonrefundableCostBaseUnits: string;
+}
+/** Server-authored release terms and current quote a preview returns; accept it verbatim. */
+export interface ExchangeReleaseDisclosure { terms: HoldMandateTerms; quote: HoldCostQuote; disclosureHash: string }
+/** Explicit acceptance of one previewed disclosure; a revised disclosure needs a new requestId. */
+export interface ExchangeReleaseAcceptance { requestId: string; disclosure: ExchangeReleaseDisclosure }

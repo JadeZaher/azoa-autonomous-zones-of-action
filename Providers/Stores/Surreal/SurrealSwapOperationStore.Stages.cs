@@ -108,7 +108,11 @@ public sealed partial class SurrealSwapOperationStore
         var plan = JsonSerializer.Deserialize<SwapStagePlan>(stage.PlanJson)!;
         if (cancel ? !SamePrincipal(intent, authority, true) : authority.Signing is null || !StagePrincipal(intent, plan, authority.Signing)) return null;
         if (!cancel && stage.ServerSubmissionWithdrawnAt is not null) return null;
-        if (cancel && operation.State == "Cancelled" && stage.State == "Cancelled") return stage;
+        // Cancelling an unsent cleanup keeps CleanupReady only when an earlier stage had egress to clean up; a never-sent
+        // operation returns to Cancelled so its allowance lane can be handed over (see Services/Dex/AGENTS.md §Cleanup semantics).
+        var cancelledState = cancel && plan.Purpose == "Cleanup" && operation.CleanupConsentJson is not null &&
+            await HadEgressAsync(operationId, ct) ? "CleanupReady" : "Cancelled";
+        if (cancel && operation.State == cancelledState && stage.State == "Cancelled") return stage;
         if (!cancel && operation.State == "Pending" && stage.State == "SubmissionAuthorized") return stage;
         var exposed = stage.ExternalExposedAt is not null;
         if (operation.Version != expectedOperationVersion ||
@@ -124,7 +128,7 @@ public sealed partial class SurrealSwapOperationStore
         var previousOperationState = operation.State;
         var operationMutation = SurrealWriter.UpdateOnly<SwapOperationRecord>(operationId)
             .Where(row => row.Version == expectedOperationVersion && row.State == previousOperationState && row.CurrentStageId == stageId)
-            .Set(row => row.State, cancel ? "Cancelled" : "Pending").Set(row => row.Version, expectedOperationVersion + 1)
+            .Set(row => row.State, cancel ? cancelledState : "Pending").Set(row => row.Version, expectedOperationVersion + 1)
             .Set(row => row.UpdatedAt, now).Build();
         var previousStageState = stage.State;
         var stageMutation = SurrealWriter.UpdateOnly<SwapStageRecord>(stageId)
@@ -134,6 +138,11 @@ public sealed partial class SurrealSwapOperationStore
         if (!cancel) stageMutation = stageMutation.Set(row => row.AuthorizedAt, now);
         return await CommitStageAsync(guards, operationMutation, stageMutation.Build(), ct);
     }
+
+    /// <summary>True when any stage of the operation was ever authorized for server send or disclosed for external signing.</summary>
+    private async Task<bool> HadEgressAsync(string operationId, CancellationToken ct)
+        => (await executor.QueryAsync<SwapStageRecord>(SurrealQuery<SwapStageRecord>.From()
+            .Where(row => row.OperationId == operationId && (row.AuthorizedAt != null || row.ExternalExposedAt != null)).Limit(1), ct)).Count != 0;
 
     private async Task<SwapStageRecord?> CommitStageAsync(IReadOnlyList<SurrealQuery> guards,
         SurrealQuery operationMutation, SurrealQuery stageMutation, CancellationToken ct)

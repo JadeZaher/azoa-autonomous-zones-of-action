@@ -112,7 +112,8 @@ public sealed partial class SurrealActionLocalMutationStore(ISurrealExecutor exe
                     AND revoked_at = NONE AND (expires_at = NONE OR expires_at > time::now()) RETURN AFTER)
             """).WithParam("_local_actor_id", receipt.ActorId).WithParam("_local_tenant_id", receipt.TenantId ?? receipt.ActorId)
             .WithParam("_local_delegated", receipt.TenantId is not null && receipt.TenantId != receipt.ActorId),
-        SurrealQuery.Of("LET $_local_scopes = array::flatten(array::map($_local_grants, |$grant| array::map(string::split($grant.scopes, ','), |$scope| string::trim($scope))))"),
+        // No closures: strict SurrealForge validation reports |$x| parameters as unbound. Scope tokens contain no spaces.
+        SurrealQuery.Of("LET $_local_scopes = array::flatten((SELECT VALUE string::split(string::replace(scopes, ' ', ''), ',') FROM $_local_grants))"),
         SurrealQuery.Of("""
             IF $_local_delegated AND ($_local_tenant = NONE OR !($_local_scopes CONTAINS $_local_scope)
                 OR ($_local_wallet AND !($_local_scopes CONTAINS $_local_wallet_scope))) { THROW 'ACTION_LOCAL_WITNESS_CHANGED' }

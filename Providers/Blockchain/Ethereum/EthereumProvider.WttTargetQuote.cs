@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 
-public partial class EthereumProvider
+public partial class EthereumProvider : IWttTargetModule
 {
     private readonly WttProofVerifier? _wttProofVerifier;
     private sealed record WttEvmTargetPlan(int Version, string IntentHash, string Sender, string ProtocolIdentity,

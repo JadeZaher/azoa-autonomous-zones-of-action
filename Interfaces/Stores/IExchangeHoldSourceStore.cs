@@ -17,6 +17,12 @@ public interface IExchangeHoldSourceStore
     /// <summary>Commits source linkage, original hold receipt and reserve accounting in one transaction.</summary>
     Task<HoldCommandReceipt?> CommitExchangeOpeningAsync(string sourceId, CancellationToken ct = default);
 
+    /// <summary>Commits the source's exact reserve, hold or treasury commitment under both original authorities; returns the current source.</summary>
+    Task<ExchangeHoldSource?> CommitExchangeAsync(string sourceId, CancellationToken ct = default);
+
+    /// <summary>Replaces only an unaccepted, uncommitted release disclosure with a fresh quote for unchanged terms, keeping an immutable audit.</summary>
+    Task<ExchangeHoldSource?> ReviseExchangeReleaseAsync(string sourceId, ExchangeReleaseRevision revision, CancellationToken ct = default);
+
     /// <summary>Claims an exact provider intent under the original two-party authority before custody.</summary>
     Task<ExchangeHoldSource?> BeginExchangePreparationAsync(string sourceId, long expectedVersion, CancellationToken ct = default);
 
@@ -36,4 +42,35 @@ public interface IExchangeHoldSourceStore
 
     /// <summary>Returns only the original reserve commitment after exact authoritative no-effect proof.</summary>
     Task<ExchangeHoldSettlementReceipt?> CompensateExchangeAbsenceAsync(string sourceId, CancellationToken ct = default);
+
+    /// <summary>Releases the commitment of a source never authorized for transmission once it has been idle since <paramref name="staleBefore"/>.</summary>
+    Task<ExchangeHoldSettlementReceipt?> AbandonUnsentExchangeAsync(string sourceId, DateTimeOffset staleBefore, CancellationToken ct = default);
+
+    /// <summary>Lists a bounded due page of sources awaiting observation, accounting or abandonment; grants no new authority.</summary>
+    Task<IReadOnlyList<ExchangeHoldSource>> ListExchangeReconciliationAsync(DateTimeOffset now, int limit, CancellationToken ct = default);
+
+    /// <summary>Advances the observed version's schedule without changing its state or authority.</summary>
+    Task<bool> ScheduleExchangeReconciliationAsync(ExchangeHoldSource expected, DateTimeOffset next, CancellationToken ct = default);
+
+    /// <summary>Lists one participant's settled purchases oldest-first; the immutable input to reversal attribution.</summary>
+    Task<IReadOnlyList<ExchangeHoldSource>> ListParticipantPurchasesAsync(Guid participant, int limit, CancellationToken ct = default);
+
+    /// <summary>Recovers only what this reversal has not yet taken from the purchase, within the lot's attributed share; null when nothing more is due.</summary>
+    Task<ExchangePurchaseRecoveryResult?> RecoverExchangePurchaseAsync(ExchangePurchaseRecovery request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reserves a clawback of delivered units for the same cumulative want, before anything is sent: the step's receipt is
+    /// the clawback's idempotency anchor. Null when nothing more is due or deliverable.
+    /// </summary>
+    Task<ExchangePurchaseRecoveryResult?> ReserveExchangeClawbackAsync(ExchangePurchaseRecovery request, CancellationToken ct = default);
+
+    /// <summary>Every purchase recovery and clawback step one reversal has committed, oldest first.</summary>
+    Task<IReadOnlyList<ExchangePurchaseRecoveryResult>> ListReversalRecoveriesAsync(string reversalId, Guid subjectUserId,
+        CancellationToken ct = default);
+
+    /// <summary>The settled held purchase's current liability, following recovery remainders; null when it has none.</summary>
+    Task<ExchangePurchaseLiability?> GetPurchaseLiabilityAsync(string sourceId, CancellationToken ct = default);
+
+    /// <summary>Lists the actual tenant API key's own sources, newest first, for discovery after a lost response.</summary>
+    Task<IReadOnlyList<ExchangeHoldSource>> ListExchangeSourcesAsync(Guid tenant, Guid apiKey, int offset, int limit, CancellationToken ct = default);
 }

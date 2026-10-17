@@ -39,7 +39,7 @@ public sealed class NftWorkflowCostConsentService(IActionNodeExecutionStore exec
         var prior = await acceptances.GetAsync(credential.ActorUserId, credential.TenantId, request.ExecutionId, request.RequestId, ct);
         if (prior is not null)
             return prior.RequestHash == NftWorkflowCostAcceptanceIdentity.RequestHash(request, prior.LifecycleId, prior.FrozenInputHash)
-                ? await lifecycle.GetAsync(credential.ActorUserId, prior.LifecycleId, ct)
+                ? await lifecycle.GetAsync(credential.ActorUserId, prior.LifecycleId, ct, credential.TenantId ?? Guid.Empty)
                 : AZOAResult<NftLifecycleView>.Failure("This acceptance key belongs to another request.");
         var context = await ReadContextAsync(request.ExecutionId, credential.ActorUserId, credential.TenantId, ct);
         if (context is null || context.Execution.Version != request.ExpectedExecutionVersion)
@@ -74,7 +74,7 @@ public sealed class NftWorkflowCostConsentService(IActionNodeExecutionStore exec
         {
             if (audit.RequestHash != NftWorkflowCostAcceptanceIdentity.RequestHash(request, audit.LifecycleId, audit.FrozenInputHash))
                 return AZOAResult<NftWorkflowCostResolution>.Failure("This acceptance key belongs to another request.");
-            var original = await lifecycle.GetAsync(actor, audit.LifecycleId, ct);
+            var original = await lifecycle.GetAsync(actor, audit.LifecycleId, ct, tenant ?? Guid.Empty);
             return original.IsError || original.Result is null ? AZOAResult<NftWorkflowCostResolution>.Failure(original.Message)
                 : AZOAResult<NftWorkflowCostResolution>.Success(new("Applied", original.Result));
         }

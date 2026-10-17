@@ -130,6 +130,8 @@ public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampL
             .Set(lot => lot.GrossQuantityBaseUnits, row.GrossQuantityBaseUnits)
             .Set(lot => lot.NodeFeeBaseUnits, row.NodeFeeBaseUnits)
             .Set(lot => lot.ConsumedBaseUnits, row.ConsumedBaseUnits)
+            .Set(lot => lot.ReversedBaseUnits, row.ReversedBaseUnits)
+            .Set(lot => lot.ReversalMarksJson, row.ReversalMarksJson)
             .Set(lot => lot.PriceScheduleVersion, row.PriceScheduleVersion)
             .Set(lot => lot.UnitsPerMinorUnit, row.UnitsPerMinorUnit)
             .Set(lot => lot.Status, row.Status)

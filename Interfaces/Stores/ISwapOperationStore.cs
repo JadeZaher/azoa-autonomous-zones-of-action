@@ -58,6 +58,10 @@ public interface ISwapOperationStore
     Task<SwapStageRecord?> RecordObservationAsync(string operationId, long expectedOperationVersion,
         string stageId, long expectedStageVersion, SwapStageObservation observation, CancellationToken ct = default);
 
+    /// <summary>Operator-only: replaces the exact current operator-review observation with a provider-proven terminal settlement and its audit.</summary>
+    Task<SwapStageRecord?> SettleOperatorReviewAsync(string operationId, long expectedOperationVersion,
+        string stageId, long expectedStageVersion, SwapStageObservation settled, CancellationToken ct = default);
+
     /// <summary>Claims a successor under current authority and remaining caps, retaining full reservations for unresolved rent.</summary>
     Task<SwapStageRecord?> ClaimNextStageAsync(string operationId, long expectedVersion,
         SwapStagePlan plan, SigningAdmissionAuthority authority, CancellationToken ct = default);

@@ -5,7 +5,6 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
-using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Reserve;
 using SurrealForge.Client.Query;
 
@@ -30,7 +29,7 @@ public static class ReversalRegistration
 {
     /// <summary>
     /// Registers the reversal pipeline. Call it AFTER <c>AddFiatOnRamp</c>, the reserve, the hold
-    /// primitive, the saga layer and the Stripe named HTTP client.
+    /// command store, the saga layer and the Stripe named HTTP client.
     /// </summary>
     public static IServiceCollection AddFiatReversalPipeline(IServiceCollection services)
     {
@@ -44,14 +43,9 @@ public static class ReversalRegistration
             "a reversal unwinds an on-ramp issuance and reads its lot (AddFiatOnRamp)");
         Require(services, Caller, typeof(IPlatformReserve),
             "recovered units go back to the reserve and its partition counters");
-        Require(services, Caller, typeof(IPlatformHold),
-            "rung 2 of the ladder gives back an open hold the reversed money funded (AddPlatformHold)");
-        Require(services, Caller, typeof(IHoldLedgerStore),
-            "attribution reads the person's OWN commitments to decide which hold a reversed "
-            + "payment funded, and refuses every hold that is somebody else's (AddPlatformHold)");
-        Require(services, Caller, typeof(IBlockchainOperationStore),
-            "what a payment's units were spent on is read off the person's own exchange "
-            + "purchases; with no operation store rung 2 has nothing to attribute");
+        Require(services, Caller, typeof(IExchangeHoldSourceStore),
+            "rung 2 attributes a payment to the person's OWN settled exchange purchases and recovers "
+            + "exactly the held share it funded (AddPlatformHold)");
         Require(services, Caller, typeof(IIdempotencyStore),
             "every recovery move is claimed before it is attempted, so a retry replays instead of "
             + "taking units twice");

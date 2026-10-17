@@ -10,7 +10,9 @@ name: CI
 #                    G1 by name, so Chaos is covered too)
 #   perf        -> the Perf-traited SurrealPerfBudgets class the dotnet job excludes
 #   sdk         -> sdk/azoa-wallet vitest
-#   frontend    -> frontend vitest, plus lint/typecheck/build
+#   frontend    -> frontend vitest (unit + MSW slices on jsdom), plus lint/typecheck/build
+#   frontend-browser -> the MSW slices in real Chromium (Vitest browser mode)
+#   e2e         -> Playwright journeys on the azoa-e2e compose project with fake vendors
 #   secret-scan -> gitleaks over the working tree AND the full history
 on:
   push:
@@ -416,6 +418,131 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # The MSW feature slices again, in real Chromium (Vitest browser mode, Playwright
+  # provider): real layout, real fetch, a real Service Worker. `npm test` above already
+  # runs the same slice files on jsdom. See frontend/src/test/AGENTS.md.
+  frontend-browser:
+    name: Frontend slices in Chromium (Vitest browser mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            sdk/azoa-wallet/package-lock.json
+
+      # Slices resolve azoa-sdk to the SDK SOURCE (vitest.config.ts), so the SDK's own
+      # dependencies must be installed; no tsup build is needed.
+      - name: Install SDK dependencies
+        working-directory: sdk/azoa-wallet
+        run: npm ci
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed by the exact Playwright version so a bump downloads matching browsers.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Slices in Chromium
+        run: npm run test:browser
+
+  # Playwright journeys against the self-contained `azoa-e2e` compose project (its own SurrealDB,
+  # API and frontend images): the API calls host-run fake Identomat/Stripe servers over HTTPS with
+  # per-run secrets and trusts only a throwaway CA, and global setup proves real vendors are
+  # unreachable. The frontend image builds the SDK itself (frontend/e2e/stack/frontend.Dockerfile).
+  # See frontend/e2e/AGENTS.md.
+  e2e:
+    name: E2E journeys (Playwright, azoa-e2e stack, fake vendors)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Host side runs only Playwright and the fake vendors; neither imports the SDK.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      # Generates the CA, the trust directory and per-run secrets, builds both images, waits for health.
+      - name: Bring up the E2E stack
+        run: node e2e/scripts/e2e-stack.mjs up
+
+      - name: Journeys
+        run: npm run test:e2e
+
+      - name: Collect stack logs on failure
+        if: failure()
+        run: node e2e/scripts/e2e-stack.mjs logs || true
+
+      - name: Upload traces, screenshots and the report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-${{ github.sha }}
+          path: frontend/e2e/.output/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Compose needs the run's generated values to interpolate the file, so teardown goes through
+      # the same script; CI=true makes it remove the project's volumes too.
+      - name: Tear down the stack
+        if: always()
+        run: node e2e/scripts/e2e-stack.mjs down || true
 
   perf:
     name: SurrealDB perf budgets

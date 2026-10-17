@@ -11,13 +11,13 @@ public static class ActionSigningScopes
     {
         ActionNodeType.NftMint or ActionNodeType.Grant => [AzoaScopes.NftMint],
         ActionNodeType.NftTransfer or ActionNodeType.Transfer or ActionNodeType.Refund => [AzoaScopes.TransferSign],
+        ActionNodeType.Hold or ActionNodeType.Release or ActionNodeType.HoldRefund or ActionNodeType.ReleaseIntoHold => [AzoaScopes.TransferSign],
         ActionNodeType.NftBurn => [AzoaScopes.NftBurn],
         ActionNodeType.CredentialRevoke => [AzoaScopes.CredentialRevokeSign],
         ActionNodeType.FungibleTokenCreate => [AzoaScopes.TokenCreateSign],
         ActionNodeType.Swap => [AzoaScopes.SwapSign],
         ActionNodeType.Bridge or ActionNodeType.Back => [AzoaScopes.WttSourceSign],
         ActionNodeType.ActionGraphBundleDeploy => Deployment(configuration),
-        ActionNodeType.Hold or ActionNodeType.Release or ActionNodeType.HoldRefund or ActionNodeType.ReleaseIntoHold => null,
         ActionNodeType.HolonCreate or ActionNodeType.HolonUpdate or ActionNodeType.HolonDelete or ActionNodeType.HolonGet
             or ActionNodeType.HolonQuery or ActionNodeType.HolonInteract or ActionNodeType.HolonGetChildren or ActionNodeType.HolonGetPeers
             or ActionNodeType.HolonGetAncestors or ActionNodeType.HolonGetDescendants or ActionNodeType.HolonPropagate

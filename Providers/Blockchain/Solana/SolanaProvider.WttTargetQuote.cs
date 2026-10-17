@@ -12,7 +12,7 @@ using Solnet.Wallet;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
-public partial class SolanaProvider
+public partial class SolanaProvider : IWttTargetModule
 {
     /// <inheritdoc cref="IWttTargetModule.QuoteWttTargetAsync"/>
     public async Task<AZOAResult<WttStageQuote>> QuoteWttTargetAsync(WttOperationIntent intent, WttTargetProofs proofs,

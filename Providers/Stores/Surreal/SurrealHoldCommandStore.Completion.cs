@@ -32,6 +32,12 @@ public sealed partial class SurrealHoldCommandStore
         var reserveId = PlatformReserveLedger.RecordIdFor(intent.Asset.ChainType, intent.Asset.Network.ToString(), intent.Asset.AssetId);
         var reserve = await executor.QuerySingleAsync<PlatformReserveLedger>(SurrealQuery<PlatformReserveLedger>.Key(reserveId), ct);
         if (aggregate is null || reserve is null || reserve.Version is < 0 or long.MaxValue) return null;
+        HoldReleaseMandate? displaced = null;
+        if (aggregate.ActiveReleaseMandateId is { } otherMandate && otherMandate != originalAuthority.ReleaseMandateId)
+        {
+            displaced = await executor.QuerySingleAsync<HoldReleaseMandate>(SurrealQuery<HoldReleaseMandate>.Key(otherMandate), ct);
+            if (displaced is null || displaced.Status != "Active" || displaced.Version is < 0 or long.MaxValue) return null;
+        }
         var planned = HoldRailCompletionPlan.Create(expected, evidence, aggregate, reserve);
         if (planned.IsError || planned.Result is not { } plan)
         {
@@ -49,6 +55,15 @@ public sealed partial class SurrealHoldCommandStore
                 .Set(row => row.Detail, "The original authorized release finalized and its custody accounting was recorded.")
                 .Set(row => row.UpdatedAt, evidence.ObservedAt).Build(), "hold_final_mandate", "_hold_final_mandate"));
             statements.Add(SurrealQuery.Of("IF $_hold_final_mandate = NONE OR $_hold_final_mandate = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
+        }
+        if (displaced is not null)
+        {
+            statements.Add(SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<HoldReleaseMandate>(displaced.Id)
+                .Where(row => row.Version == displaced.Version && row.Status == "Active")
+                .Set(row => row.Version, displaced.Version + 1).Set(row => row.Status, "Cancelled")
+                .Set(row => row.Detail, "Another authorized command settled this custody liability; the delayed release permission is closed.")
+                .Set(row => row.UpdatedAt, evidence.ObservedAt).Build(), "hold_final_displaced", "_hold_final_displaced"));
+            statements.Add(SurrealQuery.Of("IF $_hold_final_displaced = NONE OR $_hold_final_displaced = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
         }
         var reserveWrite = SurrealWriter.UpdateOnly<PlatformReserveLedger>(reserveId)
             .Where(row => row.Version == reserve.Version && row.Chain == reserve.Chain && row.Network == reserve.Network

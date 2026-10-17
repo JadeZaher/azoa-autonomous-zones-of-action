@@ -425,3 +425,41 @@ signed type-2 bytes. These are not yet a complete provider module: actual submit
 hashless exposed nonce-winner observation, finalized settlement, generation
 recovery and allowance cleanup remain in progress. No legacy caller was cut over
 and no readiness flag was enabled by this checkpoint.
+
+## Round 3 resume (Claude Code lane C, 2026-10-16)
+
+Source-only; no build, test, lint, schema or protocol execution. Record of items:
+`round3-lane-C-resume.md`.
+
+Ethereum module completed as source: exact-saved-wire submission fenced by the
+allocator row, finalized nonce and executor deadline (never marks the shared row
+`SubmissionAuthorized`; the generic worker skips owner-descriptor rows);
+finalized settlement through the closed `EthereumDexReceipt` grammar with
+`AllowanceAfter`/`AllowanceRelease` evidence; bounded persisted finalized
+nonce-winner search producing alternate-signature `FinalizedCandidate`,
+exposed-plan candidate adoption or plan-bound `ExpiredAbsent`; stage lineage with
+live-allowance first-stage selection inside the consented prerequisites; and
+`RevokeCurrentAllowance` cleanup (`approve(executor, 0)` at a new nonce, separate
+cleanup cap, consent tenant). Allowance resources are released by the provider
+from the saved confirmed stage (`IDexRetainedResourceModule`) and self-heal on
+contention in the allowance store.
+
+Cleanup consent is now two mutually exclusive semantics with their own flags;
+Tinyman/Jupiter planners require the close semantic. All three providers expose
+`DexCapability` and `DescribeDexNetworkAsync`; `GET /api/dex/capabilities`
+lists declared modules only. Structural `IDexTransactionModule` declarations stay
+off until the independent review. The Swap action node is a recoverable handler
+over `SwapActionResolver`; the legacy `/api/swap`, `SwapManager`, `IDexAdapter`
+(including the Tinyman instructions-as-success builder), legacy request/response
+models, validators and their mock tests are retired. SDK, swap dashboard, wallet
+fund dialog and test page now use the durable lifecycle; the SDK workflow
+`SwapConfig` mirrors the frozen quote request and the SDK gained governed fee
+schedule read/update for the swap denomination.
+
+New flow fixtures: Ethereum settlement/winner/pruned/exposed/submission/lineage/
+cleanup/recovery-skip provider fixtures over a scripted finalized chain;
+allowance-store self-heal (real Surreal); coordinator retained-resource release;
+action resolver projection/terminal/drift/unenabled; cleanup-contract table;
+capability discovery; SDK capability/revocation/fee-schedule; and an actual
+pinned Uniswap V3 + executor .NET protocol fixture (`EthereumDexProtocolTests`
+with `Fixtures/Ethereum/dex-chain.mjs`). None has run.

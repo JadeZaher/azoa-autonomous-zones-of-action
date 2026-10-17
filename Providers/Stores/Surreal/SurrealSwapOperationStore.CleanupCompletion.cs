@@ -17,16 +17,15 @@ public sealed partial class SurrealSwapOperationStore
         var stage = await GetStageAsync(cleanupStageId, ct);
         if (operation is null || stage is null || operation.CurrentStageId != cleanupStageId || !operation.CleanupStarted ||
             operation.CleanupConsentJson is null || stage.OperationId != operationId || stage.IntentHash != operation.IntentHash ||
-            stage.State != "Confirmed" || (stage.AuthorizedAt is null && stage.ExternalExposedAt is null) || stage.PreparedJson is null || stage.ObservationJson is null ||
+            stage.State != "Confirmed" || (stage.AuthorizedAt is null && stage.ExternalExposedAt is null) || stage.ObservationJson is null ||
             operation.CostAccountingVersion != 1 || operation.UnresolvedRentStageCount != 0 || operation.UnresolvedRentReservation != "0" ||
             !UnsignedIntegerText.TryParse(operation.ConfirmedRetainedRent, out var allocated) ||
             !UnsignedIntegerText.TryParse(operation.ConfirmedReleasedRent, out var released) || released != allocated) return null;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var prepared = JsonSerializer.Deserialize<PreparedSwapStage>(stage.PreparedJson)!;
         var observation = JsonSerializer.Deserialize<SwapStageObservation>(stage.ObservationJson)!;
-        if (prepared.Plan.Purpose != "Cleanup" || prepared.Plan.CleanupConsent is not { } consent || !SwapCleanupContract.IsValid(intent, consent) ||
-            operation.CleanupConsentJson != CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(consent)) ||
-            !SwapObservationContract.IsValid(intent, prepared, observation) || observation.ActualInput != "0" ||
+        if (!ProvenConfirmedStage(intent, stage, observation, out var plan, out _) ||
+            plan.Purpose != "Cleanup" || plan.CleanupConsent is not { } consent || !SwapCleanupContract.IsValid(intent, consent) ||
+            operation.CleanupConsentJson != CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(consent)) || observation.ActualInput != "0" ||
             observation.ActualOutput != "0" || observation.PlatformFeePaid != "0" || observation.LockedBalance != "0") return null;
         var receipt = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(new SwapCleanupReceipt(operationId, operation.QuoteHash,
             cleanupStageId, CanonicalJson.Hash(consent), observation.TransactionIds, operation.ConfirmedReleasedRent,

@@ -17,6 +17,8 @@ namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 public partial class EthereumProvider
 {
     private sealed record DexEvmOwnerIntent(int Version, string IntentHash, string Stage, int Generation, string Permit);
+    private sealed record DexEvmCleanupIntent(int Version, string IntentHash, string Stage, int Generation, string ConsentHash,
+        string GasLimit, string PriorityFee, string MaxFee);
     private sealed record DexEvmPlan(int Version, string ReservationId, string ProtocolIdentity, string Nonce, EthereumCall Call);
 
     /// <inheritdoc cref="IDexTransactionModule.PlanSwapStageAsync"/>
@@ -34,7 +36,7 @@ public partial class EthereumProvider
             var prior = await WithPreparationStoreAsync(store => store.GetAsync(id, ct));
             if (prior is not null)
             {
-                if (prior.State is "Canceling" or "Canceled" or "Reverted")
+                if (prior.State is "Canceling" or "Canceled" or "Reverted" || ReleasedReservation(prior.State))
                     return Error<SwapStagePlan>("The original nonce is canceling or resolved without the intended effect; reconcile its saved stage.");
                 return Ok(DexPlanFromReservation(intent, stage, generation, prior));
             }
@@ -42,8 +44,11 @@ public partial class EthereumProvider
                 return Error<SwapStagePlan>("The original accepted Ethereum deployment policy changed before preparation.");
             var snapshot = await ReadDexSnapshotAsync(quote.Deployment, ct);
             if (!CurrentDexTime(snapshot.ChainTime)) return AZOAResult<SwapStagePlan>.FailureWithCode("Finalized Ethereum evidence is not current.", AzoaErrorCodes.DependencyUnavailable);
-            if (snapshot.ProtocolIdentity != intent.Terms.Network.ProtocolIdentity || snapshot.ChainTime >= EthereumDexExecutionCodec.Amount(quote.ExecutionDeadline))
-                return Error<SwapStagePlan>("The original physical network or executor authorization lifetime is no longer current.");
+            if (snapshot.ProtocolIdentity != intent.Terms.Network.ProtocolIdentity)
+                return Error<SwapStagePlan>("The original physical network is no longer current.");
+            if (snapshot.ChainTime >= EthereumDexExecutionCodec.Amount(quote.ExecutionDeadline))
+                return AZOAResult<SwapStagePlan>.FailureWithCode("The executor authorization deadline elapsed; the original swap can no longer settle.",
+                    DexResultCodes.Unsettleable);
             if (await ReadDexTokenAsync(intent.Terms.InputAsset, snapshot, ct) != quote.Input ||
                 await ReadDexTokenAsync(intent.Terms.OutputAsset, snapshot, ct) != quote.Output)
                 return Error<SwapStagePlan>("The reviewed immutable token policy changed before preparation.");
@@ -73,15 +78,19 @@ public partial class EthereumProvider
         { return Error<SwapStagePlan>("Ethereum preparation differs from its accepted protocol or immutable authority."); }
     }
 
-    private SwapStagePlan DexPlanFromReservation(SwapIntent intent, string stage, int generation, EthereumPreparation row)
+    private SwapStagePlan DexPlanFromReservation(SwapIntent intent, string stage, int generation, EthereumPreparation row,
+        SwapCleanupConsent? consent = null)
     {
         var call = JsonSerializer.Deserialize<EthereumCall>(row.IntentJson) ?? throw new InvalidDataException("Reserved Ethereum call is missing.");
         var saved = new DexEvmPlan(1, SurrealRecordGuid.BareId(row.Id), row.ProtocolIdentity,
             Text(BigInteger.Parse(row.Nonce, CultureInfo.InvariantCulture)), call);
         var hash = CanonicalJson.Hash(intent);
-        var plan = new SwapStagePlan(stage, generation, SwapOperationIdentity.Preparation(intent.OperationId, stage, generation, hash),
-            hash, [intent.Terms.Owner.Address], JsonSerializer.Serialize(Convert.ToBase64String(DexUnsigned(saved))),
-            CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(saved)), Text(DexStageFees(call).MaximumFee), "0");
+        var key = consent is null ? SwapOperationIdentity.Preparation(intent.OperationId, stage, generation, hash)
+            : SwapOperationIdentity.CleanupPreparation(intent.OperationId, stage, generation, hash, consent);
+        var plan = new SwapStagePlan(stage, generation, key, hash, [intent.Terms.Owner.Address],
+            JsonSerializer.Serialize(Convert.ToBase64String(DexUnsigned(saved))),
+            CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(saved)), Text(DexStageFees(call).MaximumFee), "0",
+            consent is null ? "Effect" : "Cleanup", consent);
         var read = ReadEthereumDexPlan(intent, plan);
         if (row.Network != ActiveNetwork.ToString() || row.PreparationKey != plan.PreparationKey || row.CallFingerprint != DexCallFingerprint(read.Call))
             throw new InvalidDataException("Durable Ethereum reservation differs from the exact DEX call.");
@@ -91,9 +100,12 @@ public partial class EthereumProvider
     private DexEvmPlan ReadEthereumDexPlan(SwapIntent intent, SwapStagePlan plan)
     {
         var quote = ReadDexAcceptedIntent(intent);
-        if (plan is null || plan.Purpose != "Effect" || plan.CleanupConsent is not null || plan.Generation < 0 ||
-            plan.IntentHash != CanonicalJson.Hash(intent) || plan.ReservedLockedBalance != "0" ||
-            plan.PreparationKey != SwapOperationIdentity.Preparation(intent.OperationId, plan.Stage, plan.Generation, plan.IntentHash) ||
+        var cleanup = plan?.Purpose == "Cleanup";
+        if (plan is null || plan.Generation < 0 || plan.IntentHash != CanonicalJson.Hash(intent) || plan.ReservedLockedBalance != "0" ||
+            (cleanup ? plan.CleanupConsent is not { } consent || !ValidRevokeConsent(intent, consent) || plan.Stage != "RevokeAllowance" ||
+                    plan.PreparationKey != SwapOperationIdentity.CleanupPreparation(intent.OperationId, plan.Stage, plan.Generation, plan.IntentHash, consent)
+                : plan.Purpose != "Effect" || plan.CleanupConsent is not null ||
+                    plan.PreparationKey != SwapOperationIdentity.Preparation(intent.OperationId, plan.Stage, plan.Generation, plan.IntentHash)) ||
             plan.RequiredSignerAddresses is not { Count: 1 } || plan.RequiredSignerAddresses[0] != intent.Terms.Owner.Address)
             throw new InvalidDataException("Ethereum plan identity differs from the original operation.");
         var saved = JsonSerializer.Deserialize<DexEvmPlan>(plan.RecoveryMetadata);
@@ -102,13 +114,43 @@ public partial class EthereumProvider
             saved.ReservationId != EthereumIdentity(saved.ProtocolIdentity, intent.Terms.Owner.Address.ToLowerInvariant(), plan.PreparationKey) ||
             plan.RecoveryMetadata != CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(saved)))
             throw new InvalidDataException("Ethereum plan has no exact durable reservation identity.");
-        var owner = JsonSerializer.Deserialize<DexEvmOwnerIntent>(saved.Call.OwnerIntentJson);
-        if (owner is not { Version: 1 } || owner.IntentHash != plan.IntentHash || owner.Stage != plan.Stage || owner.Generation != plan.Generation ||
-            saved.Call != DexStageCall(intent, quote, owner) ||
-            EthereumDexExecutionCodec.Amount(plan.ReservedNetworkFee) != DexStageFees(saved.Call).MaximumFee ||
+        EthereumCall expected;
+        if (cleanup)
+        {
+            var owner = JsonSerializer.Deserialize<DexEvmCleanupIntent>(saved.Call.OwnerIntentJson);
+            if (owner is not { Version: 1 } || owner.IntentHash != plan.IntentHash || owner.Stage != plan.Stage || owner.Generation != plan.Generation)
+                throw new InvalidDataException("Ethereum cleanup reservation belongs to another stage.");
+            expected = DexCleanupCall(intent, quote, plan.CleanupConsent!, owner);
+        }
+        else
+        {
+            var owner = JsonSerializer.Deserialize<DexEvmOwnerIntent>(saved.Call.OwnerIntentJson);
+            if (owner is not { Version: 1 } || owner.IntentHash != plan.IntentHash || owner.Stage != plan.Stage || owner.Generation != plan.Generation)
+                throw new InvalidDataException("Ethereum reservation belongs to another stage.");
+            expected = DexStageCall(intent, quote, owner);
+        }
+        if (saved.Call != expected || EthereumDexExecutionCodec.Amount(plan.ReservedNetworkFee) != DexStageFees(saved.Call).MaximumFee ||
             plan.UnsignedPayloadJson != JsonSerializer.Serialize(Convert.ToBase64String(DexUnsigned(saved))))
             throw new InvalidDataException("Ethereum plan changes the original permit, economics, nonce or transaction bytes.");
         return saved;
+    }
+
+    private static bool ValidRevokeConsent(SwapIntent intent, SwapCleanupConsent consent)
+        => consent.Semantics == SwapCleanupContract.RevokeCurrentAllowance && SwapCleanupContract.IsValid(intent, consent);
+
+    private EthereumCall DexCleanupCall(SwapIntent intent, DexEvmQuoteEvidence quote, SwapCleanupConsent consent, DexEvmCleanupIntent owner)
+    {
+        if (intent.Terms.InputAsset.Native || owner.Stage != "RevokeAllowance" || owner.ConsentHash != CanonicalJson.Hash(consent) ||
+            owner.GasLimit != quote.Costs.CleanupGas)
+            throw new InvalidDataException("Ethereum allowance cleanup differs from its separate owner consent.");
+        var call = new EthereumCall(intent.Terms.Owner.Address.ToLowerInvariant(), quote.Input.Address, "0",
+            EthereumAbi.EncodeCall("approve(address,uint256)", quote.Deployment.Executor, BigInteger.Zero), "DEX RevokeAllowance", null,
+            owner.GasLimit, owner.PriorityFee, owner.MaxFee, CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(owner)),
+            new("swap", intent.OperationId, owner.Stage, owner.Generation, intent.Terms.ActorUserId, intent.Terms.Owner.WalletId,
+                consent.TenantId, AzoaScopes.SwapSign, owner.IntentHash));
+        if (DexStageFees(call).MaximumFee > EthereumDexExecutionCodec.Amount(consent.MaximumNetworkFee))
+            throw new InvalidDataException("Ethereum cleanup fee exceeds its separately accepted cap.");
+        return call;
     }
 
     private DexEvmQuoteEvidence ReadDexAcceptedIntent(SwapIntent intent)

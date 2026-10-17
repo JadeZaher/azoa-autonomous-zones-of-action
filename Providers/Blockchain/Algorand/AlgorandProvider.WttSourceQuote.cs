@@ -11,8 +11,19 @@ using AZOA.WebAPI.Services.Wormhole;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 
-public partial class AlgorandProvider
+public partial class AlgorandProvider : IWttSourceModule
 {
+    /// <inheritdoc/>
+    public Task<AZOAResult<WttPublicationRules>> ReadWttPublicationRulesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            _ = WttAlgorandDeployment();
+            return Task.FromResult(Ok(new WttPublicationRules(0, true)));
+        }
+        catch (InvalidDataException exception) { return Task.FromResult(Error<WttPublicationRules>(exception.Message)); }
+    }
+
     /// <inheritdoc cref="IWttSourceModule.QuoteWttSourceAsync"/>
     public async Task<AZOAResult<WttStageQuote>> QuoteWttSourceAsync(WttOperationIntent intent, CancellationToken ct = default)
     {

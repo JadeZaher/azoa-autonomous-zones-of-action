@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Actions.Handlers;
 using AZOA.WebAPI.Services.Hold;
 using AZOA.WebAPI.Services.Reserve;
 
@@ -109,11 +110,7 @@ public sealed partial class ActionHoldOperationService(IHoldCommandStore holds, 
     }
 
     private static string Output(HoldCommandView view, HoldCommandIntent intent)
-        => JsonSerializer.Serialize(new { view.HoldId, ChainType = view.Asset.ChainType, AssetId = view.Asset.AssetId,
-            Amount = view.QuantityBaseUnits, State = view.Kind switch { "Open" => "Held", "Refund" => "Refunded", "ReleaseIntoHold" => "ReleasedIntoHold", _ => "Released" },
-            BeneficiaryUserId = view.BeneficiaryUserId.ToString("D"), ReleaseNotBefore = intent.Definition?.ReleaseNotBefore?.ToString("O") ?? "",
-            NextHoldId = intent.NextHoldId ?? "", TransactionId = view.TransactionId ?? "", Replayed = true,
-            view.HoldRecordId, NextHoldRecordId = view.NextHoldRecordId ?? "", view.OperationId }, ActionNodeJson.Options);
+        => HoldNodeResult.Serialize(HoldNodeResult.From(view, intent));
 
     private static ActionExternalOperationObservation Unknown(ActionExternalOperationReference reference, string reason)
         => new(ActionExternalOperationStatus.Ambiguous, reference, Detail: reason);

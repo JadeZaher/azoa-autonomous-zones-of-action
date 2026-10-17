@@ -65,6 +65,9 @@ PROTECTED_LINE = re.compile(
 HISTORICAL_LINES = {
     ("CHANGELOG.md", "released as STAR-ODK"),
     ("conductor/tracks/ardanova-production-readiness-waves_20260907/REVIEW-EVIDENCE.json", "pre-value-rail product"),
+    # The stub-closeout ledger quotes the guard's own word list.
+    ("conductor/tracks/platform-stub-closeout_20261015/round3-join-ledger.md", "quest/avatar/STAR/ODK/game-word renames"),
+    ("conductor/tracks/platform-stub-closeout_20261015/round3-join-ledger.md", "fails on any `quest`/`avatar`"),
 }
 
 SENTENCE_START = set("\"'.:|(#>*-`[")

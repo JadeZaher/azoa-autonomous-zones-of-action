@@ -1,7 +1,6 @@
 using FluentAssertions;
 using FluentValidation.TestHelper;
 using AZOA.WebAPI.Controllers;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
@@ -123,145 +122,9 @@ public class HolonCreateValidatorTests
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  FINANCIAL / SAFETY-RELEVANT VALIDATORS  (AZOA.WebAPI.Validators)
-//  These guard money-moving and irreversible operations: swaps, transfers,
+//  These guard money-moving and irreversible operations: transfers,
 //  faucet top-ups, NFT mint/transfer/burn, cross-chain bridge, action graphs.
 // ═══════════════════════════════════════════════════════════════════════════
-
-public class SwapQuoteRequestValidatorTests
-{
-    private readonly FV.SwapQuoteRequestValidator _validator = new();
-
-    private static SwapQuoteRequest Valid() => new()
-    {
-        Chain = "solana",
-        TokenIn = "SOL",
-        TokenOut = "USDC",
-        AmountIn = "1.5",
-        SlippageBps = 50,
-        WalletAddress = "Abc123XYZ"
-    };
-
-    [Fact]
-    public void Valid_Passes()
-    {
-        _validator.TestValidate(Valid()).IsValid.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("ethereum")]
-    public void InvalidChain_Fails(string chain)
-    {
-        var m = Valid(); m.Chain = chain;
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.Chain);
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("0")]
-    [InlineData("-1")]
-    [InlineData("abc")]
-    public void NonPositiveOrNonNumericAmountIn_Fails(string amount)
-    {
-        var m = Valid(); m.AmountIn = amount;
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.AmountIn);
-    }
-
-    [Fact]
-    public void EmptyTokenIn_Fails()
-    {
-        var m = Valid(); m.TokenIn = "";
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.TokenIn);
-    }
-
-    [Fact]
-    public void TokenOutWithInvalidChars_Fails()
-    {
-        var m = Valid(); m.TokenOut = "bad token!";
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.TokenOut);
-    }
-
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(10_001)]
-    public void SlippageBpsOutOfRange_Fails(int bps)
-    {
-        var m = Valid(); m.SlippageBps = bps;
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.SlippageBps);
-    }
-
-    [Fact]
-    public void WalletAddressWithSymbols_Fails()
-    {
-        var m = Valid(); m.WalletAddress = "addr-with-dash";
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.WalletAddress);
-    }
-}
-
-public class SwapExecuteRequestValidatorTests
-{
-    private readonly FV.SwapExecuteRequestValidator _validator = new();
-
-    // Realistic Algorand base32 address (58 chars) — passes the permissive,
-    // chain-agnostic address charset (HIGH-4).
-    private const string AlgoAddr = "MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43UOV3HO6DZPJBHK4DUPJ2HK4DUPI";
-
-    private static SwapExecuteRequest Valid() => new()
-    {
-        Chain = "algorand",
-        QuoteId = "quote-abc-123",
-        WalletAddress = AlgoAddr
-    };
-
-    [Fact]
-    public void Valid_Passes()
-    {
-        _validator.TestValidate(Valid()).IsValid.Should().BeTrue();
-    }
-
-    [Fact]
-    public void EmptyQuoteId_Fails()
-    {
-        var m = Valid(); m.QuoteId = "";
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.QuoteId);
-    }
-
-    [Fact]
-    public void InvalidChain_Fails()
-    {
-        var m = Valid(); m.Chain = "bitcoin";
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.Chain);
-    }
-
-    [Theory]
-    [InlineData("9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM")] // Solana base58
-    [InlineData("MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43UOV3HO6DZPJBHK4DUPJ2HK4DUPI")] // Algorand base32
-    public void RealChainAddresses_Pass(string addr)
-    {
-        var m = Valid(); m.WalletAddress = addr;
-        _validator.TestValidate(m).IsValid.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("")]                                       // empty
-    [InlineData("addr with space inside the value")]       // whitespace
-    [InlineData("..\\..\\..\\windows\\system32\\configxx")] // path traversal (backslash not in charset)
-    [InlineData("addr\twith\tcontrolcharacterssss")]       // control chars
-    [InlineData("bad!address$with%symbolsssss")]           // out-of-charset symbols
-    [InlineData("short")]                                  // below min length
-    public void InvalidWalletAddress_Fails(string addr)
-    {
-        var m = Valid(); m.WalletAddress = addr;
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.WalletAddress);
-    }
-
-    [Fact]
-    public void TooLongWalletAddress_Fails()
-    {
-        var m = Valid(); m.WalletAddress = new string('A', 129);
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.WalletAddress);
-    }
-}
 
 public class WalletTopUpRequestValidatorTests
 {
@@ -384,7 +247,6 @@ public class WalletCreateModelValidatorTests
     {
         ChainType = "Solana",
         Address = "Addr123",
-        WalletType = WalletType.External
     };
 
     [Fact]
@@ -408,13 +270,6 @@ public class WalletCreateModelValidatorTests
     {
         var m = Valid(); m.Address = addr;
         _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.Address);
-    }
-
-    [Fact]
-    public void InvalidWalletTypeEnum_Fails()
-    {
-        var m = Valid(); m.WalletType = (WalletType)99;
-        _validator.TestValidate(m).ShouldHaveValidationErrorFor(x => x.WalletType);
     }
 
     [Fact]

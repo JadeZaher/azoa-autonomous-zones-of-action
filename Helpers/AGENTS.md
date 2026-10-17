@@ -88,6 +88,16 @@ mutations remain typed; the raw guard is retained only as part of the atomic
 evidence/decision invariant. Null-subject screening records cannot authorize a
 user and contribute no subject guard.
 
+The guard is a single `UPSERT $_evidence_guards` over an array of
+`SurrealRecordParam.Of("kyc_authority_guard", id)` links, sorted by guard ID so
+concurrent writers lock in the same order. Two constraints shape it: (1) it must
+stay **exactly one statement** — about fifteen callers read later results by
+position (`GetValues(2)`, `statements.Count - 2`), so splitting it into one
+statement per guard would silently shift every index; (2) it must not declare a
+`FOR $var` (or closure `|$var|`) — SurrealForge's strict `Validate` exempts only
+`LET $x =` targets, so a loop variable is reported as an unbound parameter and
+the whole batch throws before reaching the database (fixed 2026-10-16).
+
 
 ## Person-operation claim mutation fence
 

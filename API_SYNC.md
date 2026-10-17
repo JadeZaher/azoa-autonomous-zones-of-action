@@ -18,7 +18,7 @@ allocation receipt endpoint for allocation status.
 ## SDK 0.3.1 — Waves 3-4 parity (W4.7)
 
 Adds typed coverage for the Wave 3-4 value-rail surfaces that had shipped
-backend-first with no SDK method: Hold (`HoldController`), fiat on-ramp
+backend-first with no SDK method: Hold (retired `HoldController`), fiat on-ramp
 checkout (`FiatCheckoutController`), and the two Admin/Operator-scoped read
 surfaces (`PlatformTokenController`, `ProjectTreasuryController`). See the
 new rows below. `AllocationRequest.kind` gains `"IssueUnits"` plus
@@ -159,12 +159,27 @@ below.
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
 | **Exchange** | /api/exchange/{userId} | POST | `exchange` | client.ts | OK — requires an API-key principal carrying the exchange-signing scope, exactly like `allocate`; idempotencyKey is REQUIRED (not optional, unlike allocate) |
 | | /api/exchange/receipt/{idempotencyKey} | GET | `getExchangeReceipt` | client.ts | OK |
-| **Hold** | /api/holds | POST | `openHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId} | GET | `getHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId}/release | POST | `releaseHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId}/refund | POST | `refundHold` | client.ts | OK |
-| | /api/holds/{chain}/{holdId}/release-into-hold | POST | `releaseHoldIntoHold` | client.ts | OK |
-| | /api/holds/mine | GET | `listMyHolds` | client.ts | OK |
+| **Hold commands** | /api/hold-commands | POST | `startHoldCommand` | client.ts | Keyed admission; quote before any custody |
+| | /api/hold-commands | GET | `listHoldCommands` | client.ts | Participant discovery after a lost response |
+| | /api/hold-commands/{id} | GET | `getHoldCommand` | client.ts | Participant-safe progress |
+| | /api/hold-commands/{id}/refresh | POST | `refreshHoldCommand` | client.ts | Observes/rebroadcasts authorized wire only |
+| | /api/hold-commands/{id}/continue | POST | `continueHoldCommand` | client.ts | Explicit quote consent; renews current authority |
+| | /api/hold-commands/{id}/accept | POST | `acceptHoldRecipient` | client.ts | Actual recipient acceptance |
+| | /api/hold-commands/{id}/replace | POST | `replaceHoldCommand` | client.ts | Proven no-effect generation replacement |
+| | /api/hold-commands/{id}/cancel | POST | `cancelHoldCommand` | client.ts | Unsent/no-effect cancellation |
+| | /api/hold-commands/{id}/reconcile-request | POST | `reconcileHoldCommand` | client.ts | Saved-request resolution |
+| | /api/hold-commands/{id}/accept-opening | POST | `acceptHoldOpening` | client.ts | Workflow opening disclosure acceptance |
+| | /api/hold-commands/{id}/reconcile-opening | POST | `reconcileHoldOpening` | client.ts | |
+| | /api/hold-commands/{id}/replace-opening | POST | `replaceHoldOpening` | client.ts | |
+| | /api/hold-commands/{id}/withdraw-opening | POST | `withdrawHoldOpening` | client.ts | |
+| | /api/hold-commands/{id}/reconcile-opening-recovery | POST | `reconcileHoldOpeningRecovery` | client.ts | |
+| **Hold release mandates** | /api/hold-release-mandates/offers | POST | `quoteHoldReleaseMandate` | client.ts | Server-authored disclosure |
+| | /api/hold-release-mandates/accept | POST | `acceptHoldReleaseMandate` | client.ts | Explicit acceptance |
+| | /api/hold-release-mandates | GET | `listHoldReleaseMandates` | client.ts | |
+| | /api/hold-release-mandates/{id} | GET | `getHoldReleaseMandate` | client.ts | |
+| | /api/hold-release-mandates/{id}/reauthorize | POST | `reauthorizeHoldReleaseMandate` | client.ts | |
+| | /api/hold-release-mandates/{id}/revoke | POST | `revokeHoldReleaseMandate` | client.ts | |
+| | /api/hold-release-mandates/{id}/reconcile-request | POST | `reconcileHoldReleaseMandate` | client.ts | |
 | **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
 | | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
 | | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
@@ -282,8 +297,13 @@ below.
 | | /api/dapp-series/{seriesId}/actions/{actionId} | DELETE | `removeSeriesAction` | client.ts | OK |
 | | /api/dapp-series/{seriesId}/actions/{actionId}/order | PUT | `reorderSeriesAction` | client.ts | OK |
 | | /api/dapp-series/{seriesId}/actions/{actionId}/mappings | PUT | `updateSeriesMappings` | client.ts | OK |
-| **Swap** | /api/swap/quote | GET | `getSwapQuote` | client.ts | OK |
-| | /api/swap/execute | POST | `executeSwap` | client.ts | OK |
+| **DEX** | /api/dex/capabilities | GET | `getDexCapabilities` | client.ts | OK |
+| | /api/dex/quotes | POST | `quoteDex` | client.ts | OK |
+| | /api/dex/operations (+ lifecycle subroutes) | POST/GET | `startDexSwap` … `prepareDexSwapCleanup` | client.ts | OK |
+| | /api/operator/dex/operations/{id}/settle-review | POST | — | — | Operator-only; no SDK method by design |
+| **WTT** | /api/bridge/wtt/quotes | POST | `quoteWtt` | client.ts | OK (source-authored; runtime pending) |
+| | /api/bridge/wtt/operations (+ by-request-key, cancel, continue, submit, participant, participant-signature, refresh, native-output, cleanup) | POST/GET | `startWtt` … `startWttCleanup` | client.ts | OK (source-authored; runtime pending) |
+| | /api/operator/wtt/operations/{id} (+ reconcile, resume-proof) | GET/POST | — | — | Operator-only; no SDK method by design |
 | **Network** | /api/network | GET | — | — | **SDK gap** (`getNetworkInfo` no longer in the SDK) |
 | **Credential** | /api/credential/issue/{recipientUserId} | POST | — | — | **SDK gap** — backend two-party mint route (D41) has no typed SDK method yet |
 | | /api/credential/{assetId}/revoke | POST | `revokeCredential` | client.ts | OK — see caveat below |

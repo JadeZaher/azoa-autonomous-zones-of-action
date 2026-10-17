@@ -1,7 +1,7 @@
 /**
  * Tests for self-audit-one-fix findings.
  * Covers: Jupiter (F1), listNfts (F6), getComposite path (F8),
- * getApiUrl (F4), getSwapQuote/executeSwap (F2), updateActionGraphBundle PUT (F7).
+ * getApiUrl (F4), updateActionGraphBundle PUT (F7); F2 legacy swap routes are retired.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -174,93 +174,7 @@ describe("Finding 4 — getApiUrl() on AzoaClient and AzoaApiClient", () => {
   });
 });
 
-describe("Finding 2 — getSwapQuote() and executeSwap() on AzoaApiClient", () => {
-  let client: AzoaApiClient;
-
-  beforeEach(() => {
-    mockFetch.mockReset();
-    client = new AzoaApiClient(new ApiConfigBuilder().withToken("tok").build());
-  });
-
-  it("getSwapQuote sends GET /api/swap/quote with query params", async () => {
-    const quoteResp = {
-      chain: "solana",
-      tokenIn: "TOKEN_A",
-      tokenOut: "TOKEN_B",
-      amountIn: "1000000",
-      expectedAmountOut: "998000",
-      priceImpact: 0.2,
-      fee: "500",
-    };
-    mockFetch.mockReturnValueOnce(azoaResponse(quoteResp));
-
-    const result = await client.getSwapQuote({
-      chain: "solana",
-      tokenIn: "TOKEN_A",
-      tokenOut: "TOKEN_B",
-      amountIn: "1000000",
-      slippageBps: 50,
-    });
-
-    expect(isOk(result)).toBe(true);
-    const url: string = mockFetch.mock.calls[0][0];
-    expect(url).toContain("/api/swap/quote");
-    expect(url).toContain("chain=solana");
-    expect(url).toContain("tokenIn=TOKEN_A");
-    expect(url).toContain("amountIn=1000000");
-    expect(mockFetch.mock.calls[0][1].method).toBe("GET");
-
-    if (result.ok) {
-      expect(result.value.expectedAmountOut).toBe("998000");
-    }
-  });
-
-  it("executeSwap sends POST /api/swap/execute with body", async () => {
-    const execResp = {
-      chain: "solana",
-      tokenIn: "TOKEN_A",
-      tokenOut: "TOKEN_B",
-      amountIn: "1000000",
-      expectedAmountOut: "998000",
-      priceImpact: 0.2,
-      fee: "500",
-      swapTransaction: "base64-encoded-tx",
-    };
-    mockFetch.mockReturnValueOnce(azoaResponse(execResp));
-
-    const result = await client.executeSwap({
-      chain: "solana",
-      quoteId: "quote-uuid-abc",
-      walletAddress: "WALLET_ADDR",
-    });
-
-    expect(isOk(result)).toBe(true);
-    const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toBe("http://localhost:5000/api/swap/execute");
-    expect(init.method).toBe("POST");
-    const body = JSON.parse(init.body);
-    expect(body.chain).toBe("solana");
-    expect(body.quoteId).toBe("quote-uuid-abc");
-    expect(body.walletAddress).toBe("WALLET_ADDR");
-  });
-
-  it("executeSwap forwards Idempotency-Key header when provided", async () => {
-    mockFetch.mockReturnValueOnce(azoaResponse({ chain: "solana", tokenIn: "A", tokenOut: "B", amountIn: "1", expectedAmountOut: "1", priceImpact: 0, fee: "0" }));
-
-    await client.executeSwap(
-      { chain: "solana", quoteId: "qid", walletAddress: "ADDR" },
-      { idempotencyKey: "my-key-123" }
-    );
-
-    const init = mockFetch.mock.calls[0][1];
-    expect(init.headers["Idempotency-Key"]).toBe("my-key-123");
-  });
-
-  it("API_PATHS includes SWAP_QUOTE and SWAP_EXECUTE", () => {
-    expect(API_PATHS.SWAP_QUOTE).toBe("/api/swap/quote");
-    expect(API_PATHS.SWAP_EXECUTE).toBe("/api/swap/execute");
-  });
-});
+// Finding 2 (legacy /api/swap quote/execute) is retired: swaps run through the durable /api/dex lifecycle (tests/api/client.dex.test.ts).
 
 describe("Finding 7 — updateActionGraphBundle() uses PUT /api/actiongraphbundle/{id}", () => {
   let client: AzoaApiClient;

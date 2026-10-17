@@ -167,7 +167,7 @@ public class ActionNodeHandlerTests
         var walletId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         var mgr = new Mock<INftManager>();
-        mgr.Setup(m => m.BurnAsync(nftId, walletId, userId, It.IsAny<AZOARequest?>()))
+        mgr.Setup(m => m.BurnAsync(nftId, walletId, userId, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
            .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
         var handler = new NftBurnNodeHandler(mgr.Object);
@@ -176,7 +176,7 @@ public class ActionNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, userId));
 
         result.IsError.Should().BeFalse();
-        mgr.Verify(m => m.BurnAsync(nftId, walletId, userId, It.IsAny<AZOARequest?>()), Times.Once);
+        mgr.Verify(m => m.BurnAsync(nftId, walletId, userId, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
     }
 
     // ─── Wallet group (IWalletManager) ───
@@ -288,7 +288,7 @@ public class ActionNodeHandlerTests
     {
         var id = Guid.NewGuid();
         var svc = new Mock<IUserNFTService>();
-        svc.Setup(s => s.GetUserNFTCompositeAsync(id, It.IsAny<AZOARequest?>()))
+        svc.Setup(s => s.GetUserNFTCompositeAsync(id, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
            .ReturnsAsync(new AZOAResult<UserNFTCompositeResult> { Result = new UserNFTCompositeResult() });
 
         var handler = new UserNFTGetCompositeNodeHandler(svc.Object);
@@ -298,7 +298,7 @@ public class ActionNodeHandlerTests
         var result = await handler.HandleAsync(CtxFor(node, Guid.NewGuid()));
 
         result.IsError.Should().BeFalse();
-        svc.Verify(s => s.GetUserNFTCompositeAsync(id, It.IsAny<AZOARequest?>()), Times.Once);
+        svc.Verify(s => s.GetUserNFTCompositeAsync(id, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()), Times.Once);
     }
 
     // ─── Blockchain (IBlockchainOperationManager) ───

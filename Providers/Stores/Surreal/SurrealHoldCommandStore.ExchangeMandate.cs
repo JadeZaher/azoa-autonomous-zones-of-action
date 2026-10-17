@@ -6,17 +6,83 @@ using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Hold;
 using SurrealForge.Client;
+using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 public sealed partial class SurrealHoldCommandStore
 {
+    /// <inheritdoc/>
+    public async Task<ExchangeHoldSource?> ReviseExchangeReleaseAsync(string sourceId, ExchangeReleaseRevision revision,
+        CancellationToken ct = default)
+    {
+        var context = ReadExchangeSource(await GetExchangeSourceAsync(sourceId, ct));
+        if (context is null || revision is null || revision.RequestId == Guid.Empty || revision.Consent is null) return null;
+        var source = context.Source;
+        var auditId = CanonicalJson.Hash(new { Domain = "exchange-release-revision-v1", SourceId = source.Id, revision.RequestId });
+        var requestHash = CanonicalJson.Hash(revision);
+        var prior = await GetRecoveryAsync(auditId, ct);
+        if (prior is not null)
+            return prior.Kind == "ExchangeReleaseRevise" && prior.OperationId == source.Id && prior.RequestHash == requestHash
+                ? await GetExchangeSourceAsync(sourceId, ct) : null;
+        var consent = revision.Consent;
+        if (source.State != "Admitted" || source.Version != revision.ExpectedVersion || source.Version is < 0 or long.MaxValue
+            || context.Intent.ReleaseConsent is not { } current || consent.RequestId == Guid.Empty || consent.Terms != current.Terms
+            || CanonicalJson.Hash(consent.Authority.Credential) != CanonicalJson.Hash(context.Authority.Tenant.Credential)
+            || !consent.Authority.RequiredScopes.SequenceEqual([AzoaScopes.TransferSign]) || !ValueCustodyIdentity.ValidQuote(consent.Quote)
+            || consent.DisclosureHash != CanonicalJson.Hash(new { consent.Terms, consent.Quote })) return null;
+        var revised = context.Intent with { ReleaseConsent = consent };
+        if (!ValidExchangeSource(revised, context.Authority)) return null;
+        var guards = SigningAuthorityFence.ForConsent(consent.Authority, [AzoaScopes.TransferSign], "exchange_release_revise");
+        if (guards is null) return null;
+        var revisedJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(revised));
+        var now = DateTimeOffset.UtcNow;
+        var audit = new HoldRecoveryReceipt { Id = auditId, OperationId = source.Id, Kind = "ExchangeReleaseRevise",
+            ActorUserId = source.TenantUserId, RequestHash = requestHash,
+            AuthorityJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(consent.Authority)),
+            OriginalState = source.State, OriginalVersion = source.Version,
+            OutcomeJson = JsonSerializer.Serialize(new { PreviousIntentHash = source.IntentHash, PreviousConsent = current,
+                RevisedIntentHash = CanonicalJson.HashCanonical(revisedJson) }), CreatedAt = now };
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(guards);
+        // raw: a revised disclosure must still be unexpired by database time when it replaces the unaccepted original.
+        statements.Add(SurrealQuery.Of("IF $_exchange_revise_quote_expiry <= time::now() { THROW 'HOLD_COMMAND_CHANGED' }")
+            .WithParam("_exchange_revise_quote_expiry", consent.Quote.ExpiresAt));
+        statements.Add(SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<ExchangeHoldSource>(source.Id)
+            .Where(row => row.Version == source.Version && row.State == "Admitted" && row.IntentHash == source.IntentHash
+                && row.IntentJson == source.IntentJson && row.HoldCommandId == null)
+            .Set(row => row.IntentJson, revisedJson).Set(row => row.IntentHash, CanonicalJson.HashCanonical(revisedJson))
+            .Set(row => row.Version, source.Version + 1).Set(row => row.UpdatedAt, now).Build(),
+            "exchange_release_revised", "_exchange_release_revised"));
+        statements.Add(SurrealGeneratedStatementScope.RequireResult("_exchange_release_revised", Conflict));
+        statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "exchange_release_revision"));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        var query = SurrealQuery.Combine(statements.ToArray());
+        try
+        {
+            await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var response = await executor.ExecuteAsync(query, ct);
+                response.EnsureAllOk();
+                return response;
+            }, ct);
+        }
+        catch (SurrealStatementException exception) when (exception.Message.Contains(Conflict, StringComparison.Ordinal)
+            || SurrealIdempotencyLedger.IsUniqueViolation(exception.Message)
+            || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal))
+        {
+            prior = await GetRecoveryAsync(auditId, ct);
+            if (prior?.RequestHash != requestHash) return null;
+        }
+        return await GetExchangeSourceAsync(sourceId, ct);
+    }
+
     private static IReadOnlyList<SurrealQuery>? ComposeExchangeMandate(ExchangeOpeningCommit exchange,
         HoldLocalCommandPlan plan, DateTimeOffset now)
     {
         var consent = exchange.Intent.ReleaseConsent;
-        if (consent is null || consent.RequestId == Guid.Empty || exchange.Intent.Opening.Definition?.AutoRelease != true
+        if (consent is null || consent.RequestId == Guid.Empty || exchange.Intent.Opening?.Definition?.AutoRelease != true
             || consent.Authority.Credential.Kind != "ApiKey"
             || CanonicalJson.Hash(consent.Authority.Credential) != CanonicalJson.Hash(exchange.Authority.Tenant.Credential)
             || !consent.Authority.RequiredScopes.SequenceEqual([AzoaScopes.TransferSign])

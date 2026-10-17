@@ -11,7 +11,7 @@ using AZOA.WebAPI.Services.Wormhole;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 
-public partial class EthereumProvider
+public partial class EthereumProvider : IWttNonceReservationModule
 {
     private sealed record WttEvmRecovery(string PreparationId, string AllocatorProtocol, string IntentHash,
         string QuoteId, string Stage, int Generation);
@@ -182,6 +182,37 @@ public partial class EthereumProvider
         var genesis = await RpcReadAsync("eth_getBlockByNumber", ["0x0", false], ct);
         if (genesis.IsError || genesis.IsNullResult || !TryReadStringProperty(genesis.Value, "hash", out var actual)
             || !SameWttHash(actual, "0x" + genesisHex)) throw new InvalidDataException("WTT original genesis changed.");
+    }
+
+    /// <inheritdoc/>
+    public async Task<WttNonceHold> ReadWttNonceHoldAsync(WttOperationIntent intent, string phase, string stage, int generation,
+        CancellationToken ct = default)
+    {
+        var id = await WttPreparationRowIdAsync(intent, phase, stage, generation, ct);
+        if (id is null) return WttNonceHold.Held;
+        return (await WithPreparationStoreAsync(store => store.GetAsync(id, ct))) switch
+        {
+            null => WttNonceHold.None,
+            { SignedTransactionBase64: null, TransactionId: null, State: "Released" or "ReleasedConsumedExternally" or "ReleasedRefilled" } => WttNonceHold.None,
+            { SignedTransactionBase64: null, TransactionId: null, State: "Reserved" } => WttNonceHold.Unsigned,
+            _ => WttNonceHold.Held,
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> ReleaseUnsignedWttReservationAsync(WttOperationIntent intent, string phase, string stage, int generation,
+        CancellationToken ct = default)
+        => await WttPreparationRowIdAsync(intent, phase, stage, generation, ct) is { } id && await ReleaseUnsignedReservationAsync(id, ct);
+
+    /// <summary>The allocator row id the preparation path derives for this exact operation/phase/stage/generation and payer.</summary>
+    private async Task<string?> WttPreparationRowIdAsync(WttOperationIntent intent, string phase, string stage, int generation,
+        CancellationToken ct)
+    {
+        var sender = phase switch { "Source" => intent.SourceAuthority.Address, "Target" => intent.TargetAuthority.Address, _ => null };
+        if (sender is null || generation < 0 || string.IsNullOrWhiteSpace(stage)) return null;
+        var chain = await GetChainIdAsync(ct);
+        return chain.IsError ? null : EthereumIdentity("eip155:" + chain.Result.ToString(CultureInfo.InvariantCulture),
+            sender.ToLowerInvariant(), WttPreparationKey(intent.OperationId, phase, stage, generation));
     }
 
     private static string WttOwnerIntent(WttOperationIntent intent, WttStageQuote quote)

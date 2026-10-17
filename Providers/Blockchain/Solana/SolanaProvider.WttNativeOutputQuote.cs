@@ -10,7 +10,7 @@ using Solnet.Wallet;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
-public partial class SolanaProvider
+public partial class SolanaProvider : IWttNativeOutputModule
 {
     private sealed record WttSolanaNativeOutputPlan(int Version, WttSolanaGuard Guard, uint ComputeUnits, ulong ComputePrice,
         ulong RedemptionSlot, string RedemptionBlockIdentity, WttTargetProofs Proofs, WttStageQuote TargetQuote,

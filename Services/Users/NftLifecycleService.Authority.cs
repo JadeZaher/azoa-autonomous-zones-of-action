@@ -34,6 +34,23 @@ public sealed partial class NftLifecycleService
         return NftStageConsentIdentity.Matches(row, command, consent);
     }
 
+    /// <summary>Appends a fresher credential for the participant who already consented to this exact stage and generation.</summary>
+    private async Task<bool> RenewStageConsentAsync(NftLifecycle row, NftLifecycleCommand command, Guid actor, Guid tenant,
+        SigningCredentialWitness? credential, NftStageAcceptance acceptance, CancellationToken ct)
+    {
+        if (NftStageConsentIdentity.Current(row) is not { } held || held.Authority.Credential.ActorUserId != actor
+            || (held.Authority.Credential.TenantId ?? Guid.Empty) != tenant) return false;
+        var wallet = await wallets.GetByIdAsync(held.Authority.Wallet.Id, ct);
+        if (wallet.IsError || wallet.Result is null || wallet.Result.Address != held.Authority.Wallet.Address
+            || wallet.Result.ChainType != held.Authority.Wallet.ChainType) return false;
+        var authority = await BindActorAsync(actor, tenant, wallet.Result, row.Operation, credential, ct);
+        var intent = NftLifecycleIntentFactory.Create(row, command, Enum.Parse<ChainNetwork>(row.Network), command.PlatformAuthorityAddress, tenant);
+        if (authority is null || intent is null || NftStageConsentIdentity.Hash(row, intent) != held.IntentHash) return false;
+        var renewal = held with { Authority = authority, AcceptedAt = clock.GetUtcNow(), Request = acceptance };
+        row.StageConsentsJson = JsonSerializer.Serialize(NftStageConsentIdentity.Read(row).Append(renewal));
+        return NftStageConsentIdentity.Matches(row, command, renewal);
+    }
+
     private async Task<SigningAdmissionAuthority?> BindActorAsync(Guid actor, Guid tenant, IWallet wallet,
         string operation, SigningCredentialWitness? credential, CancellationToken ct, ActionEffectAuthority? action = null)
     {

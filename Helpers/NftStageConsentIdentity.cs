@@ -17,9 +17,47 @@ public static class NftStageConsentIdentity
         => JsonSerializer.Deserialize<NftStageConsent[]>(row.StageConsentsJson)
             ?? throw new InvalidOperationException("NFT stage consent history is unreadable.");
 
+    /// <summary>The latest consent for the current stage and generation; a renewal supersedes the earlier credential.</summary>
     public static NftStageConsent? Current(NftLifecycle row)
-        => Read(row).SingleOrDefault(item => item.LifecycleId == row.Id && item.Stage == row.Stage
+        => Read(row).LastOrDefault(item => item.LifecycleId == row.Id && item.Stage == row.Stage
             && item.Generation == row.PreparationGeneration);
+
+    /// <summary>The consent a participant renewal supersedes: the entry before the latest for the current stage and generation.</summary>
+    public static NftStageConsent? Superseded(NftLifecycle row)
+    {
+        var matching = Read(row).Where(item => item.LifecycleId == row.Id && item.Stage == row.Stage
+            && item.Generation == row.PreparationGeneration).ToArray();
+        return matching.Length >= 2 ? matching[^2] : null;
+    }
+
+    /// <summary>A participant renewal: same participant, tenant, wallet and intent for the unchanged stage and generation.</summary>
+    public static bool CanRenew(NftLifecycle before, NftLifecycle after)
+    {
+        if (before.State is not ("Preparing" or "Prepared") || Current(before) is not { } held) return false;
+        var old = Read(before);
+        var next = Read(after);
+        if (next.Count != old.Count + 1 || old.Where((item, index) =>
+            JsonSerializer.Serialize(item) != JsonSerializer.Serialize(next[index])).Any()) return false;
+        var latest = next[^1];
+        var request = latest.Request;
+        if (request is null || request.RequestId == Guid.Empty || request.ExpectedVersion != before.Version
+            || request.State != before.State || request.Stage != before.Stage || request.Generation != before.PreparationGeneration
+            || old.Any(item => item.Request?.RequestId == request.RequestId)
+            || latest.LifecycleId != held.LifecycleId || latest.Stage != held.Stage || latest.Generation != held.Generation
+            || latest.IntentHash != held.IntentHash || latest.Authority.Credential.ActorUserId != held.Authority.Credential.ActorUserId
+            || (latest.Authority.Credential.TenantId ?? Guid.Empty) != (held.Authority.Credential.TenantId ?? Guid.Empty)
+            || latest.Authority.Wallet != held.Authority.Wallet) return false;
+        var unchanged = JsonSerializer.Deserialize<NftLifecycle>(JsonSerializer.Serialize(after))!;
+        unchanged.StageConsentsJson = before.StageConsentsJson;
+        unchanged.UpdatedAt = before.UpdatedAt;
+        return CanonicalJson.Hash(unchanged) == CanonicalJson.Hash(before)
+            && Matches(after, JsonSerializer.Deserialize<NftLifecycleCommand>(after.RequestJson)!, latest);
+    }
+
+    /// <summary>Display hint only: the fenced participant consent credential has lapsed before signing.</summary>
+    public static NftStageConsent? LapsedConsent(NftLifecycle row, NftLifecycleCommand command, DateTimeOffset now)
+        => row.State is "Preparing" or "Prepared" && Required(row, command) && Current(row) is { } consent
+            && consent.Authority.Credential.ExpiresAt is { } expires && expires <= now ? consent : null;
 
     public static bool ReplacementReady(NftLifecycle row)
     {
@@ -66,7 +104,7 @@ public static class NftStageConsentIdentity
         var next = Read(after);
         if (next.Count != old.Count + 1 || old.Where((item, index) =>
             JsonSerializer.Serialize(item) != JsonSerializer.Serialize(next[index])).Any()
-            || next.Select(item => (item.LifecycleId, item.Stage, item.Generation)).Distinct().Count() != next.Count
+            || old.Any(item => item.LifecycleId == next[^1].LifecycleId && item.Stage == next[^1].Stage && item.Generation == next[^1].Generation)
             || after.State != "Preparing" || after.PreparedTransactionJson is not null
             || before.PreparationGeneration != after.PreparationGeneration
             || before.Id != after.Id || before.RequestJson != after.RequestJson || before.RequestHash != after.RequestHash

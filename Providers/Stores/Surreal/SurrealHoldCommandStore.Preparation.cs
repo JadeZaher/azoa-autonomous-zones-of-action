@@ -67,7 +67,7 @@ public sealed partial class SurrealHoldCommandStore
             var use = new HoldMandateUseReceipt { Id = CanonicalJson.Hash(new { Domain = "hold-mandate-use-v1", expected.Id, expected.Version }),
                 OperationId = expected.Id, CommandVersion = expected.Version, Stage = target, MandateId = mandate.Id,
                 MandateVersion = mandate.Version, TermsHash = mandate.TermsHash, AuthorityJson = mandate.CurrentAuthorityJson,
-                WorkflowSourceJson = mandate.WorkflowSourceJson,
+                WorkflowSourceJson = mandate.WorkflowSourceJson, ExchangeSourceJson = mandate.ExchangeSourceJson,
                 AuthorizationId = mandate.CurrentAuthorizationId, PreparedHash = preparedJson is null ? null : CanonicalJson.HashCanonical(preparedJson),
                 CreatedAt = DateTimeOffset.UtcNow };
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(use), "hold_mandate_use_receipt"));
@@ -95,7 +95,7 @@ public sealed partial class SurrealHoldCommandStore
                 && row.CurrentAuthorityJson == expected.CurrentAuthorityJson && row.CurrentAuthorizationId == expected.CurrentAuthorizationId
                 && row.PreparedJson == expected.PreparedJson && row.Generation == expected.Generation)
             .Set(row => row.Version, expected.Version + 1).Set(row => row.State, target).Set(row => row.UpdatedAt, DateTimeOffset.UtcNow);
-        if (preparedJson is not null) write.Set(row => row.PreparedJson, preparedJson);
+        if (preparedJson is not null) write = write.Set(row => row.PreparedJson, preparedJson);
         statements.Add(SurrealGeneratedStatementScope.Assign(write.Build(), "hold_stage", "_hold_stage"));
         statements.Add(SurrealQuery.Of("IF $_hold_stage = NONE OR $_hold_stage = [] { THROW 'HOLD_COMMAND_CHANGED' }"));
         statements.Add(SurrealQuery.Of("COMMIT"));

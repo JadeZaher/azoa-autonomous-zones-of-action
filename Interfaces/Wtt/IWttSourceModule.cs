@@ -10,6 +10,9 @@ public interface IWttSourceModule : IBlockchainProviderModule
     Task<AZOAResult<(WttNetworkDescriptor Network, WttAssetDescriptor Asset)>> InspectWttSourceAsync(
         string tokenAddress, bool nativeAsset, CancellationToken ct = default);
 
+    /// <summary>Reads the actual publication consistency byte and nonce rule the source bridge enforces for new intents.</summary>
+    Task<AZOAResult<WttPublicationRules>> ReadWttPublicationRulesAsync(CancellationToken ct = default);
+
     /// <summary>Quotes every required source prerequisite and exact publication under the frozen caller caps, without custody or egress.</summary>
     Task<AZOAResult<WttStageQuote>> QuoteWttSourceAsync(WttOperationIntent intent, CancellationToken ct = default);
 

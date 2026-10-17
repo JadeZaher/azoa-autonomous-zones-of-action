@@ -85,7 +85,7 @@ public sealed class ExchangeRefusalStatusTests
             BuyBackLiquidityPolicy.ClosedMessage, ConsumerSafeErrorCodes.Declined);
 
         var response = await Controller(manager).Exchange(
-            Guid.NewGuid(), new ExchangeRequest(), "idem-1", CancellationToken.None);
+            Guid.NewGuid(), new ExchangeRequest { PreviewOnly = true }, "idem-1", CancellationToken.None);
 
         var status = response.Result.Should().BeOfType<ObjectResult>().Which;
         status.StatusCode.Should().Be(
@@ -101,12 +101,33 @@ public sealed class ExchangeRefusalStatusTests
             "This project is no longer accepting funds.", AzoaErrorCodes.OperationNotAllowed);
 
         var response = await Controller(manager).Exchange(
-            Guid.NewGuid(), new ExchangeRequest(), "idem-2", CancellationToken.None);
+            Guid.NewGuid(), new ExchangeRequest { PreviewOnly = true }, "idem-2", CancellationToken.None);
 
         // 409 must keep meaning "this may already have run": widening it would let a consumer
         // unlock units over an outcome the node cannot vouch for.
         response.Result.Should().BeOfType<ObjectResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task A_release_preview_reveals_nothing_about_a_participant_who_has_not_consented(bool withMandate, bool reachesManager)
+    {
+        var manager = new Mock<IReserveExchangeManager>();
+        manager.Setup(candidate => candidate.ExchangeAsync(It.IsAny<ExchangeRequest>(), It.IsAny<ExchangeCallerContext>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<ExchangeReceipt>.Success(new ExchangeReceipt()));
+        var request = new ExchangeRequest { PreviewOnly = true,
+            ReleaseMandate = withMandate ? new ExchangeReleaseMandateRequest { ExpiresAt = Now.AddDays(60) } : null };
+
+        var response = await Controller(manager.Object, consentGiven: false).Exchange(Guid.NewGuid(), request, "idem-3", CancellationToken.None);
+
+        manager.Verify(candidate => candidate.ExchangeAsync(It.IsAny<ExchangeRequest>(), It.IsAny<ExchangeCallerContext>(),
+            It.IsAny<CancellationToken>()), reachesManager ? Times.Once() : Times.Never());
+        if (!reachesManager)
+            response.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden,
+                "the disclosure names the participant's wallet and readiness");
     }
 
     // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -145,7 +166,7 @@ public sealed class ExchangeRefusalStatusTests
     }
 
     /// <summary>An API-key principal carrying the exchange scope, with consent already given.</summary>
-    private static ExchangeController Controller(IReserveExchangeManager manager)
+    private static ExchangeController Controller(IReserveExchangeManager manager, bool consentGiven = true)
     {
         var userId = Guid.NewGuid();
         var claims = new List<Claim>
@@ -160,7 +181,7 @@ public sealed class ExchangeRefusalStatusTests
         var gate = new Mock<ITenantConsentGate>();
         gate.Setup(candidate => candidate.EnsureAllowedAsync(
                 It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<bool> { Result = true });
+            .ReturnsAsync(consentGiven ? new AZOAResult<bool> { Result = true } : AZOAResult<bool>.Failure("No live consent."));
 
         return new ExchangeController(manager, gate.Object)
         {

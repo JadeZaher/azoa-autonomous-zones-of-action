@@ -10,4 +10,6 @@ public interface IWttPreparationStore
     Task<WttPreparation> ClaimAsync(WttPreparation candidate, CancellationToken ct = default);
     /// <summary>Fills the signed candidate only under the exact unsealed version and winning unsigned plan.</summary>
     Task<WttPreparation?> TrySaveSignedAsync(WttPreparation expected, string signedPreparationJson, CancellationToken ct = default);
+    /// <summary>Permanently retires a journal-proven never-authorized generation; signing persistence and replay then refuse it.</summary>
+    Task<WttPreparation?> SealAsync(string id, string bindingJson, CancellationToken ct = default);
 }

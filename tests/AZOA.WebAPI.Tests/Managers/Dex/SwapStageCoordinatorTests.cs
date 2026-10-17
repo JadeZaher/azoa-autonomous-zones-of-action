@@ -143,6 +143,55 @@ public sealed class SwapStageCoordinatorTests
             It.IsAny<long>(), It.IsAny<SigningAdmissionAuthority>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData("Confirmed", true)]
+    [InlineData("FailedOnChain", false)]
+    public async Task RetainedResourcesAreReleasedOnlyAgainstTheSavedConfirmedCurrentStage(string verdict, bool released)
+    {
+        var fixture = new Fixture();
+        var resources = fixture.Module.As<IDexRetainedResourceModule>();
+        fixture.Authorize();
+        var observation = verdict == "Confirmed"
+            ? new SwapStageObservation("Confirmed", ["tx"], "genesis", "100", "95", "0", "1000", "0", "{\"proof\":true}")
+            : new SwapStageObservation("FailedOnChain", ["tx"], "genesis", "0", "0", "0", "1000", "0", "{\"proof\":true}");
+        fixture.Stage.State = verdict;
+        fixture.Stage.ObservationJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(observation));
+        resources.Setup(module => module.ReleaseRetainedResourcesAsync(It.IsAny<SwapIntent>(), "stage", It.Is<PreparedSwapStage>(stage =>
+                stage.SignedPayloadJson == fixture.Prepared.SignedPayloadJson), It.IsAny<SwapStageObservation>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        (await fixture.Service.ReleaseRetainedResourcesAsync("op", fixture.Module.Object)).Should().Be(released);
+    }
+
+    [Theory]
+    [InlineData("3000", false)]
+    [InlineData("3001", true)]
+    public async Task ACapExhaustingPlanIsUnsettleableAndHandsItsUnclaimedReservationBack(string reservedFee, bool exhausted)
+    {
+        var fixture = new Fixture();
+        var resources = fixture.Module.As<IDexRetainedResourceModule>();
+        fixture.Operation.State = "Admitted";
+        fixture.Operation.CurrentStageId = null;
+        var plan = fixture.Prepared.Plan with { ReservedNetworkFee = reservedFee };
+        fixture.Module.Setup(module => module.GetNextSwapStageAsync(It.IsAny<SwapIntent>(),
+            It.Is<IReadOnlyList<SwapStageHistory>>(history => history.Count == 0), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<SwapNextStage>.Success(new("Swap", false, [])));
+        fixture.Module.Setup(module => module.PlanSwapStageAsync(It.IsAny<SwapIntent>(), "Swap", 0, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<SwapStagePlan>.Success(plan));
+        resources.Setup(module => module.ReleaseUnsentStageAsync(It.IsAny<SwapIntent>(), plan, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        fixture.Store.Setup(store => store.ClaimInitialStageAsync("op", 1, plan, fixture.Authority, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(fixture.Stage);
+
+        var progressed = await fixture.Service.ProgressAsync("op", 1, fixture.Authority, fixture.Module.Object);
+
+        progressed.IsError.Should().Be(exhausted);
+        progressed.Code.Should().Be(exhausted ? DexResultCodes.Unsettleable : null);
+        resources.Verify(module => module.ReleaseUnsentStageAsync(It.IsAny<SwapIntent>(), plan, It.IsAny<CancellationToken>()),
+            exhausted ? Times.Once() : Times.Never());
+        fixture.Store.Verify(store => store.ClaimInitialStageAsync("op", 1, plan, fixture.Authority, It.IsAny<CancellationToken>()),
+            exhausted ? Times.Never() : Times.Once());
+    }
+
     private sealed class Fixture
     {
         public Mock<ISwapOperationStore> Store { get; } = new(MockBehavior.Strict);

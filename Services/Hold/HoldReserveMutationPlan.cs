@@ -8,15 +8,15 @@ using AZOA.WebAPI.Services.Reserve;
 
 namespace AZOA.WebAPI.Services.Hold;
 
-/// <summary>Builds conserved partition changes for an atomic hold command transaction.</summary>
+/// <summary>Builds conserved partition changes for an atomic hold or exchange-source transaction.</summary>
 public sealed record HoldReserveMutationPlan(string LedgerId, long ExpectedVersion, string IdentityHash,
     JsonElement Partitions, ReservePartitionCounters Counters)
 {
-    /// <summary>Calculates one hold draw using the existing reserve accounting rules.</summary>
+    /// <summary>Calculates one hold or sale-return draw using the existing reserve accounting rules.</summary>
     public static AZOAResult<HoldReserveMutationPlan> Create(PlatformReserveLedger ledger, string partition,
         ReserveDrawKind kind, string quantity, string protocolIdentity)
     {
-        if (kind is not (ReserveDrawKind.Hold or ReserveDrawKind.ReleaseHold or ReserveDrawKind.CancelHold)
+        if (kind is not (ReserveDrawKind.Hold or ReserveDrawKind.ReleaseHold or ReserveDrawKind.CancelHold or ReserveDrawKind.Return)
             || ledger.Version is < 0 or long.MaxValue || string.IsNullOrWhiteSpace(protocolIdentity)
             || ledger.ProtocolIdentity != protocolIdentity
             || !BigInteger.TryParse(quantity, NumberStyles.None, CultureInfo.InvariantCulture, out var amount)

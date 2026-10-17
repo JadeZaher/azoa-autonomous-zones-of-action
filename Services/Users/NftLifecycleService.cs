@@ -262,10 +262,10 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<NftLifecycleView>> GetAsync(Guid actor, string operationId, CancellationToken ct = default)
+    public async Task<AZOAResult<NftLifecycleView>> GetAsync(Guid actor, string operationId, CancellationToken ct = default, Guid actingTenantId = default)
     {
         var row = await store.GetAsync(operationId, ct);
-        return row is null || (row.ActorUserId != actor.ToString("N") && row.RecipientUserId != actor.ToString("N"))
+        return row is null || !Visible(row, actor, actingTenantId)
             ? Refused("NFT operation not found.") : AZOAResult<NftLifecycleView>.Success(View(row));
     }
 
@@ -274,8 +274,7 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
         AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null, NftStageAcceptance? acceptance = null)
     {
         var row = await store.GetAsync(operationId, ct);
-        if (row is null || (row.ActorUserId != actor.ToString("N") && row.RecipientUserId != actor.ToString("N")))
-            return Refused("NFT operation not found.");
+        if (row is null || !Visible(row, actor, actingTenantId)) return Refused("NFT operation not found.");
         if (accept)
         {
             if (acceptance is null || acceptance.RequestId == Guid.Empty) return Refused("Exact NFT stage acceptance is required.");
@@ -291,6 +290,16 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
             if (acceptance.ExpectedVersion != row.Version || acceptance.State != row.State
                 || acceptance.Stage != row.Stage || acceptance.Generation != row.PreparationGeneration)
                 return Refused("NFT stage changed; review its current state before accepting.");
+            if (row.State is "Preparing" or "Prepared" && AZOA.WebAPI.Helpers.NftStageConsentIdentity.Current(row) is not null
+                && AZOA.WebAPI.Helpers.NftStageConsentIdentity.Required(row, JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!))
+            {
+                var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!;
+                if (!await RenewStageConsentAsync(row, command, actor, actingTenantId, credential, acceptance, ct))
+                    return Refused("Only the participant who accepted this stage can renew its authority.");
+                var renewed = await SaveAsync(row, ct, requireActionAuthority: true);
+                if (renewed is null) return Refused("Your accepted stage credential is still valid or the stage changed; resume the saved acceptance instead.");
+                return await AdvanceAsync(renewed, actor, true, ct, actingTenantId, credential: credential, acceptance: acceptance);
+            }
             if (row.State is not ("AwaitingRecipientAcceptance" or "AwaitingCreatorDestruction" or "AwaitingRefundAuthorization"
                 or "AwaitingRefundDestinationAcceptance" or "Preparing"))
                 return Refused("This NFT stage is not awaiting new participant acceptance.");
@@ -532,19 +541,25 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<NftLifecycleView>> CancelAsync(Guid actor, string operationId, CancellationToken ct = default)
+    public async Task<AZOAResult<NftLifecycleView>> CancelAsync(Guid actor, string operationId, CancellationToken ct = default,
+        Guid actingTenantId = default, AZOA.WebAPI.Models.Signing.SigningCredentialWitness? credential = null)
     {
         var row = await store.GetAsync(operationId, ct);
-        if (row is null || row.ActorUserId != actor.ToString("N")) return Refused("NFT operation not found.");
+        if (row is null || !RequesterOwns(row, actor, actingTenantId)) return Refused("NFT operation not found.");
         if (row.State == "Cancelled") return AZOAResult<NftLifecycleView>.Success(View(row));
+        if (credential is null || credential.ActorUserId != actor || (credential.TenantId ?? Guid.Empty) != actingTenantId)
+            return Refused("Cancelling an admitted NFT operation requires the requester's current authority.");
+        var consent = await signingAuthorities.BindConsentAsync(credential, [AZOA.WebAPI.Helpers.NftSigningScope.ForOperation(row.Operation)], ct);
+        if (consent.IsError || consent.Result is null) return Refused(consent.Message);
         var authority = await store.GetAuthorityAsync(row.NftId, ct);
-        if (!await store.CancelUnsentAsync(row, authority, ct))
-            return Refused("This NFT operation has progressed beyond cancellation; reconcile its persisted transaction.");
+        if (!await store.CancelUnsentAsync(row, authority, consent.Result, ct))
+            return Refused("This NFT operation has progressed beyond cancellation or its requester authority changed; reconcile it.");
         return AZOAResult<NftLifecycleView>.Success(View(await ReloadAsync(row.Id, ct)));
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<NftFeeQuote>> QuoteFeeAsync(Guid actor, string chainType, string operation, CancellationToken ct = default, Guid? nftId = null, string? sourceOperationId = null)
+    public async Task<AZOAResult<NftFeeQuote>> QuoteFeeAsync(Guid actor, string chainType, string operation, CancellationToken ct = default, Guid? nftId = null, string? sourceOperationId = null,
+        Guid actingTenantId = default)
     {
         if (nftId.HasValue && sourceOperationId is not null) return AZOAResult<NftFeeQuote>.Failure("Choose one NFT fee target.");
         var network = providers.DefaultNetwork;
@@ -559,7 +574,7 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
         if (sourceOperationId is not null)
         {
             var source = await store.GetAsync(sourceOperationId, ct);
-            if (operation != "Refund" || source is null || source.Operation != "Transfer" || source.State != "Completed" || source.ActorUserId != actor.ToString("N"))
+            if (operation != "Refund" || source is null || source.Operation != "Transfer" || source.State != "Completed" || !RequesterOwns(source, actor, actingTenantId))
                 return AZOAResult<NftFeeQuote>.Failure("Original NFT transfer not found.");
             chainType = source.ChainType;
             network = Enum.Parse<ChainNetwork>(source.Network);
@@ -610,11 +625,17 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
     }
     private static bool ValidRequestKey(string key) => !string.IsNullOrWhiteSpace(key) && key.Length <= 200;
     private static AZOAResult<NftLifecycleView> Refused(string reason) => AZOAResult<NftLifecycleView>.FailureWithCode(reason, AzoaErrorCodes.OperationNotAllowed);
-    private static NftLifecycleView View(NftLifecycle row) => new(row.Id, Guid.Parse(row.NftId), row.State, row.Stage,
-        row.AssetId, row.FinalTransactionId, row.Detail, row.Operation,
-        JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)?.FeeQuote, Guid.Parse(row.ActorUserId), Guid.Parse(row.RecipientUserId),
-        row.Version, row.PreparationGeneration, AZOA.WebAPI.Helpers.NftStageConsentIdentity.Current(row)?.Request,
-        AZOA.WebAPI.Helpers.NftStageConsentIdentity.NeedsReplacementConsent(row, JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!),
-        AZOA.WebAPI.Helpers.NftReplacementCostContract.Eligible(row) && AZOA.WebAPI.Helpers.NftReplacementCostContract.Current(row) is null,
-        AZOA.WebAPI.Helpers.NftReplacementCostContract.Current(row) is not null);
+    private NftLifecycleView View(NftLifecycle row)
+    {
+        var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!;
+        var lapsed = AZOA.WebAPI.Helpers.NftStageConsentIdentity.LapsedConsent(row, command, clock.GetUtcNow());
+        return new(row.Id, Guid.Parse(row.NftId), row.State, row.Stage,
+            row.AssetId, row.FinalTransactionId, row.Detail, row.Operation, command.FeeQuote, Guid.Parse(row.ActorUserId), Guid.Parse(row.RecipientUserId),
+            row.Version, row.PreparationGeneration, AZOA.WebAPI.Helpers.NftStageConsentIdentity.Current(row)?.Request,
+            AZOA.WebAPI.Helpers.NftStageConsentIdentity.NeedsReplacementConsent(row, command),
+            AZOA.WebAPI.Helpers.NftReplacementCostContract.Eligible(row) && AZOA.WebAPI.Helpers.NftReplacementCostContract.Current(row) is null,
+            AZOA.WebAPI.Helpers.NftReplacementCostContract.Current(row) is not null,
+            AZOA.WebAPI.Helpers.NftActorContinuationIdentity.NeedsRenewal(row, command, clock.GetUtcNow()),
+            lapsed is not null, lapsed?.Authority.Credential.ActorUserId);
+    }
 }

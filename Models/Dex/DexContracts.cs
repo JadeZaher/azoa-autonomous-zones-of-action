@@ -33,6 +33,8 @@ public sealed record SwapStageObservation(string Verdict, IReadOnlyList<string> 
     string? PlatformFeePaid = null, string? NetworkFeePaid = null, string? LockedBalance = null,
     string? EvidenceJson = null, string? Detail = null, SwapFinalizedCandidate? FinalizedCandidate = null);
 public sealed record SwapFinalizedCandidate(PreparedSwapStage Candidate, string OriginalPreparedHash, string PlanHash);
+/// <summary>Immutable audit of an operator settlement, recorded inside the terminal observation evidence it produced.</summary>
+public sealed record SwapOperatorSettlement(int Version, Guid OperatorId, string Reason, DateTimeOffset SettledAt, string ReplacedObservationHash);
 public sealed record SwapStageHistory(PreparedSwapStage? Prepared, SwapStageObservation Observation,
     SwapStageRentAccounting? RentAccounting = null, SwapStagePlan? ExposedPlan = null)
 {
@@ -43,7 +45,7 @@ public sealed record SwapRentReleaseProgress(string CheckpointJson, bool Complet
     string? ReleasedLockedBalance = null, string? EvidenceJson = null);
 public sealed record SwapCleanupConsent(int Version, string OperationId, string QuoteHash, string RequestKeyHash,
     Guid ActorUserId, Guid? TenantId, DexParticipant Owner, string AssetId, string Semantics,
-    string MaximumNetworkFee, bool AcceptCurrentZeroHoldingReplacement);
+    string MaximumNetworkFee, bool AcceptCurrentZeroHoldingReplacement, bool AcceptCurrentAllowanceRevocation = false);
 public sealed record SwapNextStage(string? Stage, bool Complete,
     IReadOnlyList<DexEffectDisclosure> RetainedEffects, string? Detail = null);
 public sealed record SwapOperationView(string OperationId, string QuoteId, string QuoteHash,
@@ -54,7 +56,8 @@ public sealed record SwapOperationView(string OperationId, string QuoteId, strin
 public sealed record SwapStageReceipt(string StageId, string Stage, long Version, string State, string Purpose,
     IReadOnlyList<string> TransactionIds, string? ActualInput, string? ActualOutput, string? PlatformFeePaid,
     string? NetworkFeePaid, string? LockedBalance, bool SubmissionAuthorized,
-    bool ExternalSigningExposed = false, bool ServerSubmissionWithdrawn = false);
+    bool ExternalSigningExposed = false, bool ServerSubmissionWithdrawn = false, string? PreparationKey = null,
+    bool SignedCandidateSaved = false);
 public sealed record SwapAccountingView(bool Complete, string ConfirmedExecutionNetworkFee,
     string ConfirmedCleanupNetworkFee, string ConfirmedRentAllocated, string UnresolvedRentReservation,
     long UnresolvedRentStages, string ConfirmedRentReleased = "0");
@@ -67,4 +70,11 @@ public sealed record SwapCleanupReceipt(string OperationId, string QuoteHash, st
     bool OriginalEconomicSettlementPreserved);
 public sealed record DexCapability(string Provider, string ProtocolVersion, bool ExactInput,
     bool ExactOutput, bool NativeInput, bool NativeOutput, bool SelfRecipientOnly,
-    IReadOnlyList<string> Restrictions);
+    IReadOnlyList<string> Restrictions, IReadOnlyList<string>? CleanupSemantics = null);
+
+/// <summary>Typed DEX outcomes callers must distinguish from retryable refusals.</summary>
+public static class DexResultCodes
+{
+    /// <summary>The original consented terms can no longer settle (deadline elapsed or caps exhausted); nothing further will be sent.</summary>
+    public const string Unsettleable = "SWAP_UNSETTLEABLE";
+}

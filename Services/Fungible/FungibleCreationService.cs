@@ -15,6 +15,7 @@ using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Core;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Services.Fungible;
 

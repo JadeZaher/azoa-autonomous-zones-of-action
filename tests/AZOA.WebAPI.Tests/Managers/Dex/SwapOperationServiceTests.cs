@@ -125,8 +125,59 @@ public sealed class SwapOperationServiceTests
             It.IsAny<SigningAdmissionAuthority>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(false, false, false)]
+    public async Task SwapReadsCarryTheSwapSigningCeiling(bool ownerAuthority, bool swapScope, bool visible)
+    {
+        var fixture = new Fixture();
+        (await fixture.Service.StartAsync(fixture.Credential, fixture.Request)).IsError.Should().BeFalse();
+        var reader = fixture.Credential with
+        {
+            OwnerAuthority = ownerAuthority, Scopes = swapScope ? [AzoaScopes.SwapSign] : ["wallet:read"], Kind = ownerAuthority ? "Jwt" : "ApiKey",
+        };
+
+        var read = await fixture.Service.GetAsync(fixture.Saved!.Id, reader);
+
+        read.IsError.Should().Be(!visible, "a narrower credential sees the same not-found as another participant");
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task CleanupAdmissionRefusesASemanticTheOriginalModuleDoesNotOffer(bool closeZeroHolding, bool offered)
+    {
+        var module = new Mock<IDexTransactionModule>();
+        module.SetupGet(item => item.ChainType).Returns("Ethereum");
+        module.SetupGet(item => item.ActiveNetwork).Returns(ChainNetwork.Devnet);
+        module.SetupGet(item => item.DexCapability).Returns(new DexCapability("fixture", "1", true, false, true, true, true, [],
+            [SwapCleanupContract.RevokeCurrentAllowance]));
+        var fixture = new Fixture(module);
+        (await fixture.Service.StartAsync(fixture.Credential, fixture.Request)).IsError.Should().BeFalse();
+        var saved = fixture.Saved!;
+        var intent = JsonSerializer.Deserialize<SwapIntent>(saved.IntentJson)!;
+        var request = new SwapCleanupRequest(saved.Version, "cleanup-semantic", closeZeroHolding ? intent.Terms.OutputAsset.Id : intent.Terms.InputAsset.Id,
+            "1000", closeZeroHolding, !closeZeroHolding);
+        fixture.Operations.Setup(store => store.BeginCleanupAsync(saved.Id, saved.Version, It.IsAny<SwapCleanupConsent>(),
+            It.IsAny<SigningAdmissionAuthority>(), It.IsAny<CancellationToken>())).ReturnsAsync(saved);
+        fixture.Wallets.Invocations.Clear();
+
+        var begun = await fixture.Service.BeginCleanupAsync(saved.Id, request, fixture.Credential);
+
+        fixture.Operations.Verify(store => store.BeginCleanupAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<SwapCleanupConsent>(),
+            It.IsAny<SigningAdmissionAuthority>(), It.IsAny<CancellationToken>()), offered ? Times.Once() : Times.Never());
+        if (offered) return;
+        begun.IsError.Should().BeTrue();
+        begun.Message.Should().Contain("does not offer this cleanup semantic");
+        fixture.Wallets.VerifyNoOtherCalls();
+    }
+
     private sealed class Fixture
     {
+        private delegate bool TryRail(string railId, RailEnvironment environment, out IValueRailProvider? provider);
+        private delegate bool TryModule(IBlockchainProvider provider, out IDexTransactionModule? module);
+
         internal readonly Mock<ISwapOperationStore> Operations = new(MockBehavior.Strict);
         internal readonly Mock<IDexQuoteStore> Quotes = new(MockBehavior.Strict);
         internal readonly Mock<IWalletStore> Wallets = new(MockBehavior.Strict);
@@ -136,7 +187,7 @@ public sealed class SwapOperationServiceTests
         internal readonly SwapOperationService Service;
         internal SwapOperationRecord? Saved;
 
-        internal Fixture()
+        internal Fixture(Mock<IDexTransactionModule>? module = null)
         {
             var actor = Guid.NewGuid();
             var wallet = new AZOA.WebAPI.Models.Wallet { Id = Guid.NewGuid(), UserId = actor, ChainType = "Ethereum",
@@ -159,7 +210,22 @@ public sealed class SwapOperationServiceTests
                 .ReturnsAsync((SwapOperationRecord candidate, SigningAdmissionAuthority _, CancellationToken _) => Saved = candidate);
             var authority = new SigningAdmissionAuthorityFactory(new Mock<IUserStore>(MockBehavior.Strict).Object, Wallets.Object,
                 new Mock<ISurrealExecutor>(MockBehavior.Strict).Object);
-            var modules = new DexModuleResolver(new Mock<IBlockchainProviderFactory>(MockBehavior.Strict).Object);
+            var factory = new Mock<IBlockchainProviderFactory>(MockBehavior.Strict);
+            if (module is not null)
+            {
+                var resolved = module.Object;
+                var provider = new Mock<IBlockchainProvider>();
+                provider.SetupGet(item => item.ChainType).Returns("Ethereum");
+                factory.Setup(item => item.TryGetRailProvider("Ethereum", It.IsAny<RailEnvironment>(), out It.Ref<IValueRailProvider?>.IsAny))
+                    .Returns(new TryRail((string _, RailEnvironment environment, out IValueRailProvider? rail) =>
+                    {
+                        rail = environment == RailEnvironment.ForChain(ChainNetwork.Devnet) ? provider.Object : null;
+                        return rail is not null;
+                    }));
+                factory.Setup(item => item.TryGetModule(provider.Object, out It.Ref<IDexTransactionModule?>.IsAny))
+                    .Returns(new TryModule((IBlockchainProvider _, out IDexTransactionModule? found) => { found = resolved; return true; }));
+            }
+            var modules = new DexModuleResolver(factory.Object);
             var stages = new SwapStageCoordinator(Operations.Object);
             Service = new(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages));
         }
