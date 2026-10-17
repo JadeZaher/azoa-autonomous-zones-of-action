@@ -66,7 +66,17 @@ like a user, assert what the user sees and what the fake API ended up holding (i
 request counts. Fake APIs enforce the real API's rules (the webhook fake refuses a reused request
 id with a different command, as the store's command hash does), so a UI outcome such as "The
 original change was accepted" proves the client resent the identical command. Slices so far: business verification (KYB),
-tenant KYC provider policy, webhook registration.
+tenant KYC provider policy, webhook registration, verify identity, first-party money (cash-out, funds),
+NFT stage costs, and the operator console.
+
+- **Pages that read `useAzoaAuth`** (money, NFT lifecycle) get a hand-built `AzoaContext.Provider`
+  value carrying only `userId`. The full `AzoaProvider` would fetch profile and wallets the slice
+  does not model. The SDK session is still the real one `renderSlice` restored.
+- **Operator console slices** (`operator-console.slice.test.tsx`) route the page's relative
+  `/api/operator/...` fetch into the real BFF handler (`app/api/operator/[...path]/route.ts`, with
+  `next/headers` cookies mocked and `API_URL` stubbed to the slice origin). The handler's upstream
+  fetch reaches MSW, whose bodies follow each named controller's real return type, bare or
+  `AZOAResult`. That is the layer where a wrong `bare` flag in `lib/operator-routes.ts` shows up.
 
 ## §migration — from `vi.mock('@/lib/azoa')` to slices
 
