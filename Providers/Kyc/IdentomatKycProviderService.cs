@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.Providers.Kyc;
 /// and the reusable <see cref="IHostedSessionProvider"/> lifecycle. See
 /// <c>Providers/Kyc/AGENTS.md</c> Â§identomat for the contract this satisfies.
 /// </summary>
-public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSessionProvider
+public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSessionProvider, IDeletableHostedSessionProvider
 {
     /// <summary>Stable registry key.</summary>
     public const string ProviderKeyValue = "identomat";
@@ -411,6 +411,13 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
 
         return AZOAResult<HostedSessionOutcome>.Success(MapOutcome(response.Result));
     }
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
+        => GetHostedCapabilities().Available
+            ? IdentomatSessionDeletion.DeleteAsync(_transport, _settings.ResultBaseUrl!, _settings.CompanyKey!,
+                providerSessionId, "delete", ct)
+            : Task.FromResult(AZOAResult<bool>.Failure(UnconfiguredMessage));
 
     /// <summary>
     /// Maps a raw vendor result onto the outcome contract. Anything that is not an

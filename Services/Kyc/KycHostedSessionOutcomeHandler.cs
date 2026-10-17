@@ -12,8 +12,11 @@ using AZOA.WebAPI.Services.HostedSessions;
 namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>Applies verified hosted identity outcomes; see AGENTS.md hosted-outcome safety.</summary>
-public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandler
+public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandler, IHostedSessionProgressHandler
 {
+    private const string SubmissionExpiryDaysKey = "Kyc:SubmissionExpiryDays";
+    private const int DefaultSubmissionExpiryDays = 30;
+
     private const string PersistenceMessage = "The KYC outcome could not be recorded.";
 
     private readonly IKycStore _kycStore;
@@ -192,6 +195,38 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
         }
 
         return AZOAResult<string?>.Success(saved.Result?.Id);
+    }
+
+    /// <summary>
+    /// The vendor holds the attempt in manual review: mark it IN_REVIEW and extend its expiry to the
+    /// submission lifetime so the human decision can still approve it. See AGENTS.md §manual review.
+    /// </summary>
+    public async Task ObserveProgressAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(outcome);
+        if (outcome.IsTerminal || !outcome.SessionExists || _kycStore is not IKycHostedProgressStore progress)
+            return;
+        if (!Guid.TryParseExact(session.SubjectUserId ?? string.Empty, "N", out var userId))
+            return;
+        Guid? tenantId = null;
+        if (!string.IsNullOrWhiteSpace(session.TenantId))
+        {
+            if (!Guid.TryParseExact(session.TenantId, "N", out var parsedTenant))
+                return;
+            tenantId = parsedTenant;
+        }
+
+        var active = await _kycStore.GetActiveSubmissionAsync(userId, tenantId, ct);
+        var now = _clock.GetUtcNow();
+        if (active.IsError || active.Result is not { } submission || !MatchesSession(submission, session)
+            || submission.ExpiresAt is null || submission.ExpiresAt <= now)
+            return;
+
+        var days = Math.Clamp(_configuration?.GetValue<int?>(SubmissionExpiryDaysKey) ?? DefaultSubmissionExpiryDays, 1, 365);
+        var marked = await progress.TryMarkHostedInReviewAsync(submission, session, now, now.AddDays(days), ct);
+        if (!marked.IsError && marked.Result is not null)
+            _logger.LogInformation("Hosted KYC attempt {SubmissionId} is in vendor manual review; expiry extended.", submission.Id);
     }
 
     private static bool MatchesSession(KycSubmission submission, HostedSession session)

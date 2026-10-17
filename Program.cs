@@ -1188,6 +1188,11 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.HostedIdentityRec
 builder.Services.AddHttpClient(AZOA.WebAPI.Providers.Kyc.HostedIdentityHttp.ClientName)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHostedService<AZOA.WebAPI.Services.HostedSessions.HostedIdentityRecoveryWorker>();
+// Identomat persists no provider attempt, so its lost callbacks recover through the backoff outcome poll.
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.IHostedSessionRecoveryStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealHostedSessionStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.HostedSessions.HostedIdentityProviderResolver>();
+builder.Services.AddHostedService<AZOA.WebAPI.Services.HostedSessions.HostedOutcomePollWorker>();
 // ─── Identomat hosted KYC + AML screening ───
 // The named client has NO base address: the adapter genuinely spans two hosts
 // (external-api for /begin and screening, widget for the authoritative /result/),

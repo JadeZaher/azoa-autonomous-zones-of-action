@@ -15,7 +15,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <inheritdoc/>
-public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialHostedSessionStore
+public sealed partial class SurrealHostedSessionStore : IHostedSessionStore, ICustodialHostedSessionStore
 {
     private readonly ISurrealExecutor _executor;
 
@@ -436,6 +436,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         OutcomeDetail = session.OutcomeDetail,
         CallbackCount = session.CallbackCount,
         ResumeTargetId = session.ResumeTargetId,
+        NextPollAt = session.NextPollAt?.ToUniversalTime(),
+        PollAttemptCount = session.PollAttemptCount,
         CreatedDate = session.CreatedDate.ToUniversalTime(),
         ModifiedDate = session.ModifiedDate?.ToUniversalTime(),
         ExpiresAt = session.ExpiresAt?.ToUniversalTime(),
@@ -478,6 +480,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         OutcomeDetail = session.OutcomeDetail,
         CallbackCount = session.CallbackCount,
         ResumeTargetId = session.ResumeTargetId,
+        NextPollAt = session.NextPollAt,
+        PollAttemptCount = session.PollAttemptCount,
         CreatedDate = session.CreatedDate,
         ModifiedDate = session.ModifiedDate,
         ExpiresAt = session.ExpiresAt,

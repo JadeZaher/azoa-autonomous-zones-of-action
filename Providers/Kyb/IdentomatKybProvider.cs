@@ -13,7 +13,7 @@ namespace AZOA.WebAPI.Providers.Kyb;
 
 /// <summary>Identomat business verification using the documented modern begin/result contracts.</summary>
 public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOptions<KybSettings> options,
-    IIdentomatHttpTransport transport) : IHostedSessionProvider
+    IIdentomatHttpTransport transport) : IHostedSessionProvider, IDeletableHostedSessionProvider
 {
     private readonly IdentomatKycSettings _credentials = kycOptions.Value.Identomat;
     private readonly KybSettings _settings = options.Value;
@@ -108,6 +108,14 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
         using var document = response.Result;
         return AZOAResult<HostedSessionOutcome>.Success(IdentomatKybResultParser.Parse(document.RootElement));
     }
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
+        => GetHostedCapabilities().Available && Uri.TryCreate(_credentials.ResultBaseUrl, UriKind.Absolute, out var widget)
+            && widget.Scheme == Uri.UriSchemeHttps
+            ? IdentomatSessionDeletion.DeleteAsync(transport, _credentials.ResultBaseUrl!, _credentials.CompanyKey!,
+                providerSessionId, "kyb-delete", ct)
+            : Task.FromResult(AZOAResult<bool>.Failure("Business verification is unavailable."));
 
     private static AZOAResult<HostedCallbackTrigger> Rejected()
         => AZOAResult<HostedCallbackTrigger>.FailureWithCode(HostedSessionFlow.OpaqueCallbackFailure, AzoaErrorCodes.Forbidden);
