@@ -18,6 +18,7 @@ public sealed partial class SurrealHoldCommandTests
     [InlineData(false, "Replace")]
     [InlineData(false, "WithdrawRace")]
     [InlineData(false, "Chain")]
+    [InlineData(false, "TenantedRun")]
     public async Task WorkflowOpeningConsentCommitsLiabilityAndMandateTogetherAndCancelledSourceCannotRelease(bool cancelBeforeConsent, string recovery)
     {
         var open = Open(); var direct = Authority(); var now = DateTimeOffset.UtcNow;
@@ -134,6 +135,14 @@ public sealed partial class SurrealHoldCommandTests
         (await _store.ClaimRailAsync(release, plan, releaseAuthority)).Should().BeNull();
         await Execute(SurrealWriter.UpdateOnly<ActionNodeExecution>(executionId.ToString("N")).Set(row => row.State, ActionNodeExecution.ActionNodeState.Succeeded).Build());
         await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Set(row => row.Status, ActionRun.ActionRunStatusKind.Succeeded).Build());
+        if (recovery == "TenantedRun")
+        {
+            // Captured-null negative (HoldReleaseWorkflowFence run guard): a tenant-less mandate never matches a tenant-driven run.
+            await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N"))
+                .Set(row => row.ActingTenantId, "user:" + Guid.NewGuid().ToString("N")).Build());
+            (await _store.ClaimRailAsync(release, plan, releaseAuthority)).Should().BeNull();
+            await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Set(row => row.ActingTenantId, (string?)null).Build());
+        }
         var releaseCommand = (await _store.ClaimRailAsync(release, plan, releaseAuthority))!;
         releaseCommand.State.Should().Be("Admitted");
         await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Set(row => row.Status, ActionRun.ActionRunStatusKind.Cancelled).Build());

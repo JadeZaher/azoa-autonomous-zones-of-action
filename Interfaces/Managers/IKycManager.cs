@@ -53,6 +53,12 @@ public interface IKycManager
     Task<AZOAResult<KycSessionStartModel>> BeginAsync(Guid userId, CancellationToken ct = default);
 
     /// <summary>
+    /// Re-fetches the authoritative provider result for the caller's open first-party hosted attempt
+    /// (lost or failed callback), then returns the current status.
+    /// </summary>
+    Task<AZOAResult<KycSubmissionModel>> RefreshAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
     /// Submits a KYC request for <paramref name="userId"/>. Rejects when an
     /// active (PENDING/IN_REVIEW) submission already exists; validates documents
     /// via the active provider; persists the submission + its documents; opens a

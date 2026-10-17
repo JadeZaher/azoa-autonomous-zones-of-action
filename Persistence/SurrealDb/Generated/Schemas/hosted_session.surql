@@ -62,6 +62,10 @@ DEFINE FIELD IF NOT EXISTS callback_count ON TABLE hosted_session TYPE int
     DEFAULT 0;
 DEFINE FIELD IF NOT EXISTS resume_target_id ON TABLE hosted_session TYPE option<string>;
 
+-- Outcome poll (lost-callback recovery)
+DEFINE FIELD IF NOT EXISTS next_poll_at ON TABLE hosted_session TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS poll_attempt_count ON TABLE hosted_session TYPE option<int>;
+
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE hosted_session TYPE datetime
     READONLY;
@@ -85,3 +89,7 @@ DEFINE INDEX IF NOT EXISTS hosted_session_provider_session
 DEFINE INDEX IF NOT EXISTS hosted_session_subject
     ON TABLE hosted_session
     FIELDS subject_user_id;
+
+DEFINE INDEX IF NOT EXISTS hosted_session_poll
+    ON TABLE hosted_session
+    FIELDS state, next_poll_at;

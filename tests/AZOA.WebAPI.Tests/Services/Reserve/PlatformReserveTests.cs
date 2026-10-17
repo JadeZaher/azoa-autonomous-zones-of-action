@@ -515,6 +515,27 @@ public class PlatformReserveTests
         draw.Result!.Counters.Issued.Should().Be(new BigInteger(10));
     }
 
+    [Theory]
+    [InlineData(ReservePlatformUnitDrawPolicies.AnyAdmittedTenant)]
+    [InlineData(ReservePlatformUnitDrawPolicies.DeclaredTenants)]
+    public async Task DeclarePartitionsAsync_keeps_the_platform_unit_budget_with_the_operator_under_every_policy(string policy)
+    {
+        var harness = await AuthorityHarnessAsync(tenantId: null, options =>
+        {
+            options.PlatformUnitDrawPolicy = policy;
+            options.PlatformUnitDrawTenants = new List<string> { TenantOne.ToString() };
+        });
+
+        var widened = await harness.DeclareAsAsync(ReserveDrawAuthority.ForTenant(TenantOne), (ContributorPartition, 900));
+        var drawn = await harness.IssueAsync(
+            ContributorPartition, 10, "admitted-draw", ReserveDrawAuthority.ForTenant(TenantOne));
+
+        widened.IsError.Should().BeTrue("a policy that admits a tenant to draw never lets it re-budget the node's unit");
+        widened.Code.Should().Be(AzoaErrorCodes.Forbidden);
+        drawn.IsError.Should().BeFalse(drawn.Message);
+        (await harness.CountersAsync(ContributorPartition)).Declared.Should().NotBe(new BigInteger(900));
+    }
+
     [Fact]
     public async Task DrawAsync_still_refuses_a_tenantless_caller_under_the_widest_policy()
     {

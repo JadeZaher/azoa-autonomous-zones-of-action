@@ -42,6 +42,14 @@ public sealed class NotEnabledActionNodeTypesTests
         "conductor", "tracks", "platform-stub-closeout_20261015", "round2-governance-source-review.md",
     };
 
+    private static readonly string[] RuntimeVerdictRelativePath =
+    {
+        "conductor", "tracks", "platform-stub-closeout_20261015", "round4-governance-runtime-verdict.md",
+    };
+
+    private static readonly Regex RuntimeVerdictMarker =
+        new(@"^RUNTIME_VERDICT:[ \t]*(PENDING|ACCEPTED|REJECTED)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
     // Line-anchored, and tolerant of this tree's mixed CRLF/LF: Multiline '^' matches
     // after either ending. The file is written so exactly ONE line starts with VERDICT:.
     private static readonly Regex VerdictMarker =
@@ -58,19 +66,29 @@ public sealed class NotEnabledActionNodeTypesTests
             + "write exactly one line starting 'SOURCE_VERDICT: ACCEPTED' or 'SOURCE_VERDICT: REJECTED'");
     }
 
+    [Fact]
+    public void TheRuntimeVerdict_IsRecordedExactlyOnce()
+    {
+        RuntimeVerdictMarker.Matches(SourceOf(RuntimeVerdictRelativePath)).Count.Should().Be(
+            1,
+            "the runtime verdict file must carry exactly one 'RUNTIME_VERDICT: PENDING|ACCEPTED|REJECTED' line");
+    }
+
+    /// <summary>Plan §0.2: source acceptance alone never lifts the gate; a runtime verdict after green race fixtures does.</summary>
     [Theory]
     [MemberData(nameof(GovernanceNodeTypes))]
-    public void GovernanceTypes_AreBlocked_ExactlyWhileTheIndependentVerdictIsFail(ActionNodeType nodeType)
+    public void GovernanceTypes_AreBlocked_UntilBothSourceAndRuntimeVerdictsAccept(ActionNodeType nodeType)
     {
-        var verdictIsPass = RecordedVerdict() == "ACCEPTED";
+        var runtime = RuntimeVerdictMarker.Match(SourceOf(RuntimeVerdictRelativePath)).Groups[1].Value;
+        var lifted = RecordedVerdict() == "ACCEPTED" && runtime == "ACCEPTED";
 
         NotEnabledActionNodeTypes.IsBlocked(nodeType).Should().Be(
-            !verdictIsPass,
-            "the governance gate lifts on the recorded independent verdict and on nothing else — "
-            + "the verdict says {0}, so {1} must be {2}",
+            !lifted,
+            "the governance gate lifts only on both recorded verdicts — source says {0}, runtime says {1}, so {2} must be {3}",
             RecordedVerdict(),
+            runtime,
             nodeType,
-            verdictIsPass ? "enabled" : "blocked");
+            lifted ? "enabled" : "blocked");
     }
 
     [Fact]
@@ -81,7 +99,8 @@ public sealed class NotEnabledActionNodeTypesTests
         gateSource.Should().Contain(
             "round2-governance-source-review.md",
             "a gate that stops naming its verdict is a gate whose reason has gone folkloric — "
-            + "the previous reason (a tally that read raw holons) was already stale when L4.1 read it");
+            + "the previous reason (a tally that read raw holons) was already stale when L4.1 read it")
+            .And.Contain("round4-governance-runtime-verdict.md");
     }
 
     private static string RecordedVerdict()

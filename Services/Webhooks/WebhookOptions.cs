@@ -19,13 +19,7 @@ public sealed class WebhookOptions
     /// <summary>Configuration section name: <c>"Webhooks"</c>.</summary>
     public const string SectionName = "Webhooks";
 
-    /// <summary>
-    /// Whether the background delivery worker is enabled. <b>Default <c>false</c></b> —
-    /// like the saga processor, a consumerless outbound loop must not run in the
-    /// production graph until a real consumer (a registered tenant endpoint) exists. The
-    /// scoped stores can still be exercised directly (tests / an ops trigger) when this
-    /// is false.
-    /// </summary>
+    /// <summary>Runs both delivery workers. Off by default (production); on in Development, IntegrationTest and e2e. See AGENTS.md §activation.</summary>
     public bool Enabled { get; set; } = false;
 
     /// <summary>Seconds between due-scan ticks. Default 5. Clamped to a 1s floor by the
@@ -42,6 +36,9 @@ public sealed class WebhookOptions
 
     /// <summary>Max delivery attempts before an event is dead-lettered. Default 8.</summary>
     public int MaxAttempts { get; set; } = 8;
+
+    /// <summary><see cref="MaxAttempts"/> clamped to [1, 100]; the one value workers and retry eligibility share.</summary>
+    public int BoundedMaxAttempts => Math.Clamp(MaxAttempts, 1, 100);
 
     /// <summary>Base backoff (seconds) for the exponential retry schedule
     /// (<c>BaseBackoffSeconds * 2^attempt</c>, capped by <see cref="MaxBackoffSeconds"/>).

@@ -212,6 +212,10 @@ public sealed class PayoutAccountCreationFenceTests
             StripeCredentials credentials, string transferId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<AZOAResult<StripeTransferList>> ListTransfersByGroupAsync(
+            StripeCredentials credentials, string transferGroup, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
             StripeCredentials credentials, string accountId, CancellationToken ct = default)
             => throw new NotSupportedException();

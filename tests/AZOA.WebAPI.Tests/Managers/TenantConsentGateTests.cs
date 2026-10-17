@@ -7,6 +7,7 @@ using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Services.Consent;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Kyb;
 
 namespace AZOA.WebAPI.Tests.Managers;
 
@@ -20,13 +21,36 @@ public class TenantConsentGateTests
 {
     private readonly Mock<IConsentGrantStore> _grants = new();
     private readonly Mock<IConsentAuditStore> _audit = new();
+    private readonly Mock<IKybGate> _kyb = new();
     private readonly TenantConsentGate _gate;
 
     public TenantConsentGateTests()
     {
         _audit.Setup(a => a.AppendAsync(It.IsAny<ConsentAuditEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<bool> { Result = true });
-        _gate = new TenantConsentGate(_grants.Object, _audit.Object, NullLogger<TenantConsentGate>.Instance);
+        _kyb.Setup(k => k.RequireVerifiedTenantAsync(It.IsAny<Guid>(), KybCapability.TenantOnBehalfValue, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Success(true));
+        _gate = new TenantConsentGate(_grants.Object, _audit.Object, _kyb.Object, NullLogger<TenantConsentGate>.Instance);
+    }
+
+    [Fact]
+    public async Task TenantDriven_LiveGrant_ButTenantKybNotCurrent_Denied_AndAudited()
+    {
+        var tenant = Guid.NewGuid(); var grantor = Guid.NewGuid();
+        LiveGrant(grantor, tenant, AzoaScopes.TransferSign);
+        _kyb.Setup(k => k.RequireVerifiedTenantAsync(tenant, KybCapability.TenantOnBehalfValue, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { IsError = true, Code = KybGate.RequiredCode, Message = KybGate.RequiredMessage });
+
+        var r = await _gate.EnsureAllowedAsync(TenantCtx(tenant, grantor, AzoaScopes.TransferSign));
+
+        r.IsError.Should().BeTrue();
+        r.Message.Should().StartWith(KybGate.RequiredCode);
+        _audit.Verify(a => a.AppendAsync(
+            It.Is<ConsentAuditEntry>(e => e.Action == ConsentAuditAction.TenantSignDenied && e.TenantId == tenant),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _audit.Verify(a => a.AppendAsync(
+            It.Is<ConsentAuditEntry>(e => e.Action == ConsentAuditAction.TenantSignAllowed),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static SigningContext TenantCtx(Guid tenant, Guid grantor, string scope)

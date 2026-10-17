@@ -9,6 +9,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -189,22 +190,28 @@ public sealed class BuyBackQueueTests
     }
 
     [Fact]
-    public async Task A_broadcast_that_never_confirmed_leaves_a_claim_no_retry_can_complete_over()
+    public async Task A_broadcast_that_never_confirmed_resumes_its_saved_bytes_and_settles_exactly_once()
     {
         var world = new BuyBackWorld(declaredBackstop: 1000);
         world.RailTakesItAndSaysNothing();
 
         await world.Policy().EnsureSellAllowedAsync(world.Sell("sale-1", 500));
+        await world.Policy().EnsureSellAllowedAsync(world.Sell("sale-1", 500));
 
-        var claim = world.MoveClaim("sale-1");
-        claim.Should().NotBeNull("the movement was claimed before it was sent");
-        claim!.State.Should().NotBe(
-            IdempotencyState.Completed,
+        world.MoveClaim("sale-1")!.State.Should().Be(
+            IdempotencyState.InProgress,
             "completing the anchor over an unknown outcome is what makes the damage permanent");
-        claim.Error.Should().Contain(
-            ReserveToTreasuryBuyBackBackstop.AmbiguousMoveReason,
-            "'did not happen' and 'we do not know' are settled differently, so the ledger has to "
-            + "say which one this was");
+        world.PreparedTransfers.Should().Be(1, "a retry rebroadcasts the saved bytes; it never signs a second transfer");
+
+        world.RailConfirmsWhatItTook();
+        var settled = await world.Policy().EnsureSellAllowedAsync(world.Sell("sale-1", 500));
+
+        settled.IsError.Should().BeFalse(settled.Message);
+        world.MoveClaim("sale-1")!.State.Should().Be(IdempotencyState.Completed);
+        world.PreparedTransfers.Should().Be(1);
+        world.TreasuryCredits.Should().ContainSingle().Which.Should().Be(new BigInteger(500));
+        world.Partition().Issued.Should().Be(new BigInteger(500));
+        world.Partition().Held.Should().Be(BigInteger.Zero);
     }
 
     [Fact]
@@ -296,30 +303,12 @@ public sealed class BuyBackQueueTests
                             Replayed: false));
                 });
 
-            // A rail that actually moves value: the treasury's chain balance is what the policy
-            // re-reads before it admits anything, so a transfer that does not change it would let
-            // the test pass on a claim rather than on the money.
-            _provider
-                .Setup(provider => provider.TransferAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<RailAmount>(), It.IsAny<SigningContext?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync((string _, string _, string _, RailAmount amount, SigningContext? _, CancellationToken _) =>
-                {
-                    if (RailRefuses)
-                        return AZOAResult<string>.Failure("The rail refused this movement.");
-
-                    if (RailBroadcastsWithoutConfirming)
-                    {
-                        return AZOAResult<string>.Success(
-                            "rail-reference-1",
-                            $"{OperationStatus.PendingConfirmationMarker}: Algorand transfer "
-                            + "(tx rail-reference-1) submitted but not yet confirmed; reconcile "
-                            + "against chain truth.");
-                    }
-
-                    TreasuryBalance += amount.BaseUnits;
-                    return AZOAResult<string>.Success("rail-reference-1");
-                });
+            // A durable rail that actually moves value: the treasury's chain balance is what the
+            // policy re-reads before it admits anything, so a transfer that does not change it
+            // would let the test pass on a claim rather than on the money.
+            _rail = new DurableRail(this);
+            IValueTransferTransactionModule? module = _rail;
+            _provider.Setup(provider => provider.TryGetModule(out module)).Returns(true);
 
             _providers.SetupGet(factory => factory.DefaultNetwork).Returns(ChainNetwork.Devnet);
             _providers
@@ -327,7 +316,15 @@ public sealed class BuyBackQueueTests
                 .Returns(() => _provider.Object);
         }
 
+        private readonly DurableRail _rail;
+
         public BuyBackOptions Options { get; }
+
+        /// <summary>Signed transfers the rail was asked to prepare; one per request is the exact-wire invariant.</summary>
+        public int PreparedTransfers => _rail.Prepared;
+
+        /// <summary>Lets a broadcast that never confirmed finally confirm on chain.</summary>
+        public void RailConfirmsWhatItTook() => RailBroadcastsWithoutConfirming = false;
 
         public BigInteger TreasuryBalance { get; private set; } = BigInteger.Zero;
 
@@ -336,6 +333,12 @@ public sealed class BuyBackQueueTests
         private bool RailRefuses { get; set; }
 
         private bool RailBroadcastsWithoutConfirming { get; set; }
+
+        internal bool Refuses => RailRefuses;
+
+        internal bool Pending => RailBroadcastsWithoutConfirming;
+
+        internal void Land(BigInteger amount) => TreasuryBalance += amount;
 
         /// <summary>Makes every movement fail before anything is signed, so nothing is ever filled.</summary>
         public void RailRefusesToMove() => RailRefuses = true;
@@ -421,6 +424,41 @@ public sealed class BuyBackQueueTests
             && row.Metadata.TryGetValue("enqueuedAt", out var text)
             && DateTimeOffset.TryParse(text, out var enqueuedAt)
             && asOf - enqueuedAt > Options.QueueEntryTtl;
+    }
+
+    /// <summary>Exact-wire rail edge: prepares once per key, confirms only what was sent, and moves the balance once.</summary>
+    private sealed class DurableRail(BuyBackWorld world) : IValueTransferTransactionModule
+    {
+        private readonly HashSet<string> _sent = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _landed = new(StringComparer.Ordinal);
+
+        public string CapabilityName => "value-transfer";
+        public string ChainType => Chain;
+        public int Prepared { get; private set; }
+
+        public Task<AZOAResult<PreparedValueTransfer>> PrepareValueTransferAsync(ValueTransferIntent intent, CancellationToken ct)
+        {
+            if (world.Refuses)
+                return Task.FromResult(AZOAResult<PreparedValueTransfer>.Failure("The rail refused this movement."));
+            Prepared++;
+            return Task.FromResult(AZOAResult<PreparedValueTransfer>.Success(
+                new PreparedValueTransfer("rail-reference-" + Prepared, "c2lnbmVk", "genesis", intent)));
+        }
+
+        public Task SubmitValueTransferAsync(PreparedValueTransfer prepared, CancellationToken ct)
+        {
+            _sent.Add(prepared.TransactionId);
+            return Task.CompletedTask;
+        }
+
+        public Task<AZOAResult<ChainConfirmation>> ObserveValueTransferAsync(PreparedValueTransfer prepared, CancellationToken ct)
+        {
+            if (!_sent.Contains(prepared.TransactionId) || world.Pending)
+                return Task.FromResult(AZOAResult<ChainConfirmation>.Success(ChainConfirmation.Unknown));
+            if (_landed.Add(prepared.TransactionId))
+                world.Land(System.Numerics.BigInteger.Parse(prepared.Intent.QuantityBaseUnits));
+            return Task.FromResult(AZOAResult<ChainConfirmation>.Success(ChainConfirmation.Confirmed));
+        }
     }
 
     /// <summary>

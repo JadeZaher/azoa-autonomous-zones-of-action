@@ -227,9 +227,9 @@ jobs:
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       # docker-entrypoint.sh's schema mode applies Generated/Schemas PLUS
-      # CompatibilityBaselines from one directory. Composing the same set here
-      # is what makes this job test the deploy path rather than a subset of it:
-      # the two produce different reconcile plans.
+      # CompatibilityBaselines from one directory with --no-reconcile. Composing
+      # the same set here is what makes this job test the deploy path rather
+      # than a subset of it (Persistence/SurrealDb/AGENTS.md §deploy-path).
       - name: Compose the schema set the deploy path applies
         run: |
           mkdir -p "$RUNNER_TEMP/azoa-schemas"
@@ -248,13 +248,12 @@ jobs:
             --namespace azoa --database azoa \
             --schemas-dir "$SCHEMAS_DIR" \
             --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile \
             --applied-by "ci/${{ github.sha }}" \
             | tee apply.log
 
       # The migration path has to be re-runnable: a second `up` against an
-      # already-current database must change nothing. Phase 3 reconcile
-      # previously re-evolved 144 fields on every run because it read SurrealDB's
-      # own spelling of a definition back as drift, so this never settled.
+      # already-current database must change nothing.
       - name: Re-run must be a no-op
         run: |
           surrealforge up \
@@ -263,6 +262,7 @@ jobs:
             --namespace azoa --database azoa \
             --schemas-dir "$SCHEMAS_DIR" \
             --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile \
             --applied-by "ci/${{ github.sha }}-rerun" \
             | tee rerun.log
 
@@ -276,6 +276,48 @@ jobs:
             echo "::error::Schema job is not idempotent: re-run applied=$applied evolved=$evolved (both must be 0)."
             exit 1
           fi
+
+      # The deploy path (baselines + forward migrations) must land on exactly the
+      # schema the POCOs generate. Apply Generated/Schemas alone to a reference
+      # database and require identical INFO FOR TABLE output for every table.
+      - name: Deploy path converges to the generated model
+        run: |
+          surrealforge up \
+            --connection http://127.0.0.1:8030 \
+            --user root --pass root \
+            --namespace azoa --database azoa_reference \
+            --schemas-dir Persistence/SurrealDb/Generated/Schemas \
+            --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile \
+            --applied-by "ci/${{ github.sha }}-reference" > reference.log
+
+          python3 - <<'PY'
+          import base64, json, sys, urllib.request
+
+          def query(database, sql):
+              request = urllib.request.Request(
+                  "http://127.0.0.1:8030/sql", data=sql.encode(), method="POST",
+                  headers={"Surreal-NS": "azoa", "Surreal-DB": database, "Accept": "application/json",
+                           "Authorization": "Basic " + base64.b64encode(b"root:root").decode()})
+              result = json.load(urllib.request.urlopen(request))[0]
+              if result.get("status") != "OK":
+                  raise SystemExit(f"{database}: {sql} -> {result}")
+              return result["result"]
+
+          def snapshot(database):
+              tables = query(database, "INFO FOR DB;")["tables"]
+              return {name: query(database, f"INFO FOR TABLE {name};")
+                      for name in sorted(tables) if name != "schema_migration"}
+
+          deployed, reference = snapshot("azoa"), snapshot("azoa_reference")
+          differences = [name for name in sorted(set(deployed) | set(reference))
+                         if deployed.get(name) != reference.get(name)]
+          for name in differences:
+              print(f"::error::{name} differs between the deploy path and Generated/Schemas")
+              print(json.dumps({"deployed": deployed.get(name), "generated": reference.get(name)}, indent=1, sort_keys=True))
+          print(f"Compared {len(reference)} table(s); {len(differences)} difference(s).")
+          sys.exit(1 if differences else 0)
+          PY
 
       # Mirrors docker-entrypoint.sh's schema mode: the schema owner defines the
       # runtime identity the API later authenticates as.

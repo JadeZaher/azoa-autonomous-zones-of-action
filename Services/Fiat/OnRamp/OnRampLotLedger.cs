@@ -119,7 +119,7 @@ public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampL
     /// <inheritdoc/>
     public async Task<AZOAResult<OnRampLot?>> GetByIntentAsync(string intentId, CancellationToken ct = default)
         => new() { Result = string.IsNullOrWhiteSpace(intentId) ? null
-            : await executor.QuerySingleAsync<OnRampLot>(SurrealQuery<OnRampLot>.Key(OnRampLot.RecordIdFor(intentId)), ct) };
+            : await executor.QuerySingleAsync<OnRampLot>(SurrealQuery<OnRampLot>.Key(OnRampLot.RecordIdFor(SurrealLink.FromLink(intentId)!)), ct) };
 
     /// <inheritdoc/>
     public async Task<AZOAResult<OnRampLot>> UpdateIfVersionAsync(OnRampLot row, long expectedVersion, CancellationToken ct = default)

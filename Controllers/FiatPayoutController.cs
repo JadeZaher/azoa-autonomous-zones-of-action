@@ -109,6 +109,13 @@ public sealed class FiatPayoutController : ControllerBase
         if (authorised.Refusal is not null)
             return authorised.Refusal;
 
+        // F-H8: the payout account is the person's own bank destination, so only a first-party
+        // login may open or resume its onboarding link; a tenant's consent does not reach it.
+        if (authorised.TenantId is not null)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                AZOAResult<PayoutAccountStatus>.FailureWithCode(
+                    "Payout account setup can only be done by the account holder.", AzoaErrorCodes.Forbidden));
+
         var result = await _accounts.BeginSetupAsync(
             userId, authorised.TenantId, HttpContext.RequestAborted);
 
@@ -163,7 +170,7 @@ public sealed class FiatPayoutController : ControllerBase
             return authorised.Refusal;
 
         var result = await _offRamp.ListForUserAsync(
-            userId, limit ?? DefaultHistoryLimit, HttpContext.RequestAborted);
+            userId, limit ?? DefaultHistoryLimit, authorised.TenantId, HttpContext.RequestAborted);
 
         if (result.IsError)
             return Map(result);

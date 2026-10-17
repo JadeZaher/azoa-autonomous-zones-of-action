@@ -464,8 +464,12 @@ public static class FiatEventFactory
                 : RailEnvironmentNames.Test,
             Livemode = envelope.Livemode,
             Status = FiatEventStatuses.Received,
-            IntentId = envelope.IntentId?.ToString("N"),
-            SubjectUserId = envelope.SubjectUserId?.ToString("N"),
+            IntentId = envelope.IntentId is { } intent
+                ? SurrealLink.ToLink(HostedSession.SchemaNameConst, intent.ToString("N"))
+                : null,
+            SubjectUserId = envelope.SubjectUserId is { } subject
+                ? SurrealLink.ToLink(User.SchemaNameConst, subject.ToString("N"))
+                : null,
             CheckoutSessionId = envelope.CheckoutSessionId,
             PaymentIntentId = envelope.PaymentIntentId,
             ChargeId = envelope.ChargeId,
