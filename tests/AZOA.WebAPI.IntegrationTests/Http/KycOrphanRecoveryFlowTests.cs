@@ -35,7 +35,7 @@ public sealed class KycOrphanRecoveryFlowTests(HttpFlowWebApplicationFactory fac
             "inside the bounded wait the possibly-sent create is never repeated");
 
         var orphan = (await AdmissionsAsync(user.Id)).Should().ContainSingle().Which;
-        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(orphan.Id)
+        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(orphan.Id).Where(seed => true)
             .Set(row => row.CreationClaimedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-6)).Build());
 
         using var fresh = await client.PostAsync("api/kyc/session", null);
@@ -62,7 +62,7 @@ public sealed class KycOrphanRecoveryFlowTests(HttpFlowWebApplicationFactory fac
         var replacement = await ReadOkAsync<KycSessionStartModel>(await client.PostAsync("api/kyc/session", null));
 
         // The replacement attempt lapses, and the next attempt's create response is lost too.
-        await WriteAsync(SurrealWriter.UpdateOnly<KycSubmission>(replacement.ProviderSessionId!)
+        await WriteAsync(SurrealWriter.UpdateOnly<KycSubmission>(replacement.ProviderSessionId!).Where(seed => true)
             .Set(row => row.ExpiresAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-1)).Build());
         await OrphanTheNextBeginAsync(client, user.Id);
 
@@ -98,7 +98,7 @@ public sealed class KycOrphanRecoveryFlowTests(HttpFlowWebApplicationFactory fac
         using var uncertain = await client.PostAsync("api/kyc/session", null);
         await ShouldReturnAsync(uncertain, HttpStatusCode.Conflict);
         var open = (await AdmissionsAsync(user)).Single(row => row.State == HostedSessionStates.Claimed);
-        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(open.Id)
+        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(open.Id).Where(seed => true)
             .Set(row => row.CreationClaimedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-6)).Build());
     }
 

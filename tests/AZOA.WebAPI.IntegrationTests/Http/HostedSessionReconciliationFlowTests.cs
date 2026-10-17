@@ -43,7 +43,7 @@ public sealed class HostedSessionReconciliationFlowTests(HttpFlowWebApplicationF
         using var tooEarly = await Operator.PostAsJsonAsync(reconcileRoute, recovery, JsonOptions);
         await ShouldReturnAsync(tooEarly, HttpStatusCode.Conflict);
 
-        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(admission.Id)
+        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(admission.Id).Where(seed => true)
             .Set(row => row.CreationClaimedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-6)).Build());
         (await StatusAsync(tenant)).Status.Should().Be("NEEDS_OPERATOR");
 

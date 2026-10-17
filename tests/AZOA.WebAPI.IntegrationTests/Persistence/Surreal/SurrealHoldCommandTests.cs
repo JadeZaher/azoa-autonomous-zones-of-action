@@ -60,7 +60,7 @@ public sealed partial class SurrealHoldCommandTests : IAsyncLifetime
         (await _store.CommitLocalAsync(refund, authority)).Should().NotBeNull();
         (await Counters()).Held.Should().Be(0);
         (await Counters()).Available.Should().Be(1000);
-        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Set(row => row.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true).Set(row => row.IsActive, false).Build());
         (await _store.CommitLocalAsync(intent, authority))!.OutcomeJson.Should().Be(results[0]!.OutcomeJson);
         var original = JsonSerializer.Deserialize<HoldCommandView>(results[0]!.OutcomeJson)!;
         original.Kind.Should().Be("Open");
@@ -109,7 +109,7 @@ public sealed partial class SurrealHoldCommandTests : IAsyncLifetime
             .Should().BeNull();
         var other = intent with { RequestKey = "another", HoldId = "another", OwnerUserId = Guid.NewGuid() };
         (await _store.CommitLocalAsync(other, authority)).Should().BeNull();
-        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build());
         (await _store.CommitLocalAsync(intent with { RequestKey = "revoked", HoldId = "revoked" }, authority)).Should().BeNull();
         (await Counters()).Held.Should().Be(400);

@@ -50,10 +50,10 @@ public sealed partial class SurrealHoldCommandTests
         var (intent, authority) = await ExchangeAsync();
         var source = (await _store.AdmitExchangeSourceAsync(intent, authority))!;
         if (tenantKey)
-            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Where(seed => true)
                 .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         else
-            await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N")).Where(seed => true)
                 .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         (await _store.CommitExchangeOpeningAsync(source.Id)).Should().BeNull();
         (await _store.GetExchangeSourceAsync(source.Id))!.State.Should().Be("Admitted");
@@ -62,7 +62,7 @@ public sealed partial class SurrealHoldCommandTests
         var (another, live) = await ExchangeAsync("another");
         var admitted = (await _store.AdmitExchangeSourceAsync(another, live))!;
         var committed = (await _store.CommitExchangeOpeningAsync(admitted.Id))!;
-        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(live.Grant.Id.ToString("N"))
+        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(live.Grant.Id.ToString("N")).Where(seed => true)
             .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         (await _store.CommitExchangeOpeningAsync(admitted.Id))!.OutcomeJson.Should().Be(committed.OutcomeJson);
         (await Counters()).Held.Should().Be(400);
@@ -99,10 +99,10 @@ public sealed partial class SurrealHoldCommandTests
         var prepared = new PreparedExchangeWire(wireIntent, "provider-preparation", "group", ["tx"], ["c2lnbmVk"]);
         source = (await _store.SaveExchangePreparedAsync(source.Id, source.Version, prepared))!;
         if (tenantKey)
-            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Where(seed => true)
                 .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         else
-            await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N")).Where(seed => true)
                 .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         (await _store.AuthorizeExchangeSubmissionAsync(source.Id, source.Version)).Should().BeNull();
         (await _store.GetExchangeSourceAsync(source.Id))!.State.Should().Be("Prepared");
@@ -126,7 +126,7 @@ public sealed partial class SurrealHoldCommandTests
             _store.AuthorizeExchangeSubmissionAsync(source.Id, source.Version)).WaitAsync(TimeSpan.FromSeconds(15));
         overlap.Count(row => row is not null).Should().Be(1);
         source = overlap.Single(row => row is not null)!;
-        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N"))
+        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grant.Id.ToString("N")).Where(seed => true)
             .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         var evidence = new ExchangeWireObservation("Confirmed", prepared.PreparationId, prepared.GroupId,
             CanonicalJson.Hash(prepared), prepared.Intent.ProtocolIdentity, "100");
@@ -182,15 +182,16 @@ public sealed partial class SurrealHoldCommandTests
     {
         var participant = Guid.NewGuid(); var wallet = Guid.NewGuid(); var apiKey = Guid.NewGuid(); var grant = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
+        var keyHash = apiKey.ToString("N") + apiKey.ToString("N"); // 64 hex, unique per key (api_key_unique_hash)
         await Save(new User { Id = participant.ToString("N"), Username = participant.ToString("N"),
             Email = $"{participant:N}@example.test", PasswordHash = "fixture-no-login", IsActive = true });
         await Save(new ApiKey { Id = apiKey.ToString("N"), UserId = $"user:{_actor:N}", IsActive = true,
-            KeyHash = new string('b', 64), KeyPrefix = "fixture", CreatedDate = now, Scopes = [AzoaScopes.SwapSign] });
+            KeyHash = keyHash, KeyPrefix = "fixture", CreatedDate = now, Scopes = [AzoaScopes.SwapSign] });
         await Save(new Wallet { Id = wallet.ToString("N"), UserId = $"user:{participant:N}", ChainType = "Algorand", Address = "participant" });
         await Save(new ConsentGrant { Id = grant.ToString("N"), GrantorUserId = $"user:{participant:N}", TenantId = $"user:{_actor:N}",
             Origin = "UserExplicit", Scopes = AzoaScopes.SwapSign, GrantedAt = now });
         var credential = new SigningCredentialWitness(1, "ApiKey", _actor, null, null, null, null, apiKey,
-            new string('b', 64), [AzoaScopes.SwapSign], false, [AzoaScopes.SwapSign]);
+            keyHash, [AzoaScopes.SwapSign], false, [AzoaScopes.SwapSign]);
         var authority = new ExchangeParticipantAuthority(1, new(1, credential, [AzoaScopes.SwapSign], []), participant, null,
             new(wallet, participant, "participant", "Algorand"), new(grant, AzoaScopes.SwapSign, AzoaScopes.SwapSign, now, null));
         var opening = Open() with { RequestKey = "exchange:" + ExchangeHoldSourceIdentity.ForRequest(_actor, apiKey, key),

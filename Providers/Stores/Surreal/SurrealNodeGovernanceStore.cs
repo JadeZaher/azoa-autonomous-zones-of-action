@@ -56,9 +56,11 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
         };
         if (parameters.AllowedChains is null)
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NodeGovernanceParameters>(NodeGovernanceParameters.LocalId)
+                .Where(row => row.Version == parameters.Version)
                 .Unset(row => row.AllowedChains).Build(), "policy_chains"));
         if (parameters.AllowedAssetTypes is null)
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NodeGovernanceParameters>(NodeGovernanceParameters.LocalId)
+                .Where(row => row.Version == parameters.Version)
                 .Unset(row => row.AllowedAssetTypes).Build(), "policy_assets"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "policy_audit"));
         var resultIndex = statements.Count;

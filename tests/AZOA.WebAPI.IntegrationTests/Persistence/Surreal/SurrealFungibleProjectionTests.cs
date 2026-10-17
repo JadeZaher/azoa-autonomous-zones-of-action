@@ -56,9 +56,9 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
         var (row, _, _, actor, _) = await SeedAsync();
         var intent = JsonSerializer.Deserialize<FungibleCreationIntent>(row.IntentJson)!;
         var prepared = new PreparedFungibleCreation(FungibleCreationIdentity.PreparationId(intent), "original-tx", "original-signed-wire", "genesis", intent);
-        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Set(value => value.State, "Submitted")
+        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Where(seed => true).Set(value => value.State, "Submitted")
             .Set(value => value.PreparedJson, JsonSerializer.Serialize(prepared)).Unset(value => value.ObservationJson).Unset(value => value.AssetId).Build());
-        await Execute(SurrealWriter.UpdateOnly<UserRow>(actor.ToString("N")).Set(value => value.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<UserRow>(actor.ToString("N")).Where(seed => true).Set(value => value.IsActive, false).Build());
         var module = new Mock<IFungibleCreationModule>(MockBehavior.Strict);
         module.SetupSequence(value => value.ObserveFungibleCreationAsync(It.IsAny<PreparedFungibleCreation>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<FungibleCreationObservation>.Success(new("Pending", "original-tx", "genesis")))
@@ -89,7 +89,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     public async Task RestrictedRecoveryNeverSignsOrFirstSendsAnUnsubmittedStage(string state)
     {
         var (row, _, _, actor, _) = await SeedAsync();
-        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Set(value => value.State, state)
+        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Where(seed => true).Set(value => value.State, state)
             .Unset(value => value.ObservationJson).Unset(value => value.AssetId).Build());
         var module = new Mock<IFungibleCreationModule>(MockBehavior.Strict);
         (await RecoveryService(module.Object).RefreshAsync(row.Id, actor, null)).Result!.State.Should().Be(state);
@@ -115,7 +115,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     {
         var (candidate, _, _) = await SeedGenesisAsync(confirmed: false, seedDefinition: false);
         var command = JsonSerializer.Deserialize<FungibleCreationCommand>(candidate.RequestJson)!;
-        if (revoke) await Execute(SurrealWriter.UpdateOnly<AdminBootstrapState>("local").Set(row => row.SessionRevision, 2L).Build());
+        if (revoke) await Execute(SurrealWriter.UpdateOnly<AdminBootstrapState>("local").Where(seed => true).Set(row => row.SessionRevision, 2L).Build());
         var definition = new PlatformToken { Id = command.GenesisAuthority!.PlatformTokenId, Chain = "Algorand", Network = "Devnet",
             Name = "Unit", UnitName = "UNT", Decimals = 2, TotalSupply = "1000", ReserveAddress = "reserve",
             GenesisOperationKey = command.RequestKey, GenesisUserId = command.ActorUserId.ToString("N"),
@@ -153,11 +153,11 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     public async Task GenesisAdmissionRejectsChangedOperatorOrDefinition(string change)
     {
         var (candidate, _, _) = await SeedGenesisAsync(confirmed: false);
-        if (change == "session-revoked") await Execute(SurrealWriter.UpdateOnly<AdminBootstrapState>("local").Set(row => row.SessionRevision, 2L).Build());
+        if (change == "session-revoked") await Execute(SurrealWriter.UpdateOnly<AdminBootstrapState>("local").Where(seed => true).Set(row => row.SessionRevision, 2L).Build());
         else if (change == "different-reserve")
         {
             var definition = (await _executor.QueryAsync<PlatformToken>(SurrealQuery<PlatformToken>.From())).Single();
-            await Execute(SurrealWriter.UpdateOnly<PlatformToken>(definition.Id).Set(row => row.ReserveAddress, "another-reserve").Build());
+            await Execute(SurrealWriter.UpdateOnly<PlatformToken>(definition.Id).Where(seed => true).Set(row => row.ReserveAddress, "another-reserve").Build());
         }
         else
         {
@@ -178,8 +178,8 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     public async Task FinalizedGenesisActivatesWithAuthorityAndReserveAfterOperatorSessionRevocation()
     {
         var (row, authority, reserve) = await SeedGenesisAsync(confirmed: true);
-        await Execute(SurrealWriter.UpdateOnly<AdminBootstrapState>("local").Set(value => value.SessionRevision, 2L).Build());
-        await Execute(SurrealWriter.UpdateOnly<UserRow>(NodeOperatorIdentity.UserId.ToString("N")).Set(value => value.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<AdminBootstrapState>("local").Where(seed => true).Set(value => value.SessionRevision, 2L).Build());
+        await Execute(SurrealWriter.UpdateOnly<UserRow>(NodeOperatorIdentity.UserId.ToString("N")).Where(seed => true).Set(value => value.IsActive, false).Build());
         var completions = await Task.WhenAll(Enumerable.Range(0, 3).Select(_ => _store.CompleteAsync(row, authority, reserve)))
             .WaitAsync(TimeSpan.FromSeconds(20));
         completions.Count(value => value).Should().Be(1);
@@ -203,7 +203,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
             ChainType = "Algorand", Address = "creator", CreatedDate = DateTimeOffset.UtcNow }));
         var prepared = JsonSerializer.Serialize(new PreparedFungibleCreation("candidate", "expired-tx", "retained-wire", "genesis", intent));
         var proof = JsonSerializer.Serialize(new FungibleCreationObservation("ExpiredAbsent", "expired-tx", "genesis", EvidenceJson: "complete-final-history"));
-        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Set(value => value.State, "FailedNoEffect")
+        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Where(seed => true).Set(value => value.State, "FailedNoEffect")
             .Set(value => value.PreparedJson, prepared).Set(value => value.ObservationJson, proof).Unset(value => value.AssetId).Build());
         row = (await _store.GetAsync(row.Id))!;
         var nextIntent = intent with { Generation = 1, Quote = null };
@@ -237,7 +237,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
         var intent = JsonSerializer.Deserialize<FungibleCreationIntent>(row.IntentJson)!;
         var prepared = JsonSerializer.Serialize(new PreparedFungibleCreation("candidate", "original-tx", "retained-wire", "genesis", intent));
         var proof = JsonSerializer.Serialize(new FungibleCreationObservation("ExpiredAbsent", "original-tx", "genesis", EvidenceJson: "complete-indexer-history"));
-        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Set(value => value.State, "FailedNoEffect")
+        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Where(seed => true).Set(value => value.State, "FailedNoEffect")
             .Set(value => value.PreparedJson, prepared).Set(value => value.ObservationJson, proof).Unset(value => value.AssetId).Build());
         var request = new FungibleContinuationRequest(Guid.NewGuid(), row.Version);
         var cancelled = await _store.CancelAsync(row.Id, request, Consent(issuer).Credential);
@@ -256,7 +256,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     {
         var (row, _, _, issuer, _) = await SeedAsync();
         var intent = JsonSerializer.Deserialize<FungibleCreationIntent>(row.IntentJson)!;
-        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Set(value => value.State, state)
+        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Where(seed => true).Set(value => value.State, state)
             .Set(value => value.PreparedJson, JsonSerializer.Serialize(new PreparedFungibleCreation("candidate", "original-tx", "retained-wire", "genesis", intent)))
             .Set(value => value.ObservationJson, JsonSerializer.Serialize(new FungibleCreationObservation(verdict, proofTransaction, "genesis")))
             .Unset(value => value.AssetId).Build());
@@ -268,7 +268,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     public async Task TransferredHolonCannotHideFinalizedIssuanceAndNewOwnerCanAcceptExactAssociation()
     {
         var (row, authority, holon, issuer, owner) = await SeedAsync();
-        await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N"))
+        await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Where(seed => true)
             .Set(value => value.UserId, $"user:{owner:N}").Build());
         (await _store.CompleteAsync(row, authority, null)).Should().BeTrue();
         var projected = (await _store.GetAsync(row.Id))!;
@@ -285,7 +285,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
         var receipts = await _executor.QueryAsync<FungibleCreationAttachment>(SurrealQuery<FungibleCreationAttachment>.From());
         receipts.Should().ContainSingle();
         (await _executor.QuerySingleAsync<SurrealHolonStore.HolonPoco>(SurrealQuery<SurrealHolonStore.HolonPoco>.Key(holon.ToString("N"))))!.TokenId.Should().Be("42");
-        await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N"))
+        await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Where(seed => true)
             .Set(value => value.UserId, $"user:{issuer:N}").Build());
         (await _store.ReplayAttachmentAsync(row.Id, request, owner, null))!.State.Should().Be("Completed");
         (await _store.ReplayAttachmentAsync(row.Id, request with { ProjectionAuthorityId = "another" }, owner, null)).Should().BeNull();
@@ -300,14 +300,14 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     public async Task StaleAttachmentConsentCannotOverwriteAnotherBindingOrAuthority(string change)
     {
         var (row, authority, holon, issuer, owner) = await SeedAsync();
-        await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N"))
+        await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Where(seed => true)
             .Set(value => value.UserId, $"user:{owner:N}").Build());
         (await _store.CompleteAsync(row, authority, null)).Should().BeTrue();
         var view = (await _store.GetAttachmentAsync(row.Id, owner, null))!;
         var request = new FungibleAttachmentRequest(Guid.NewGuid(), view.Version, authority.Id);
         var consent = Consent(owner);
-        if (change == "rebound") await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Set(value => value.TokenId, "99").Build());
-        if (change == "owner-changed") await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Set(value => value.UserId, $"user:{issuer:N}").Build());
+        if (change == "rebound") await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Where(seed => true).Set(value => value.TokenId, "99").Build());
+        if (change == "owner-changed") await Execute(SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(holon.ToString("N")).Where(seed => true).Set(value => value.UserId, $"user:{issuer:N}").Build());
         if (change == "cross-tenant")
         {
             var tenant = Guid.NewGuid();
@@ -324,7 +324,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     public async Task OriginalOwnerProjectionIsAtomicAndDoesNotNeedRenewedSigningCredentials()
     {
         var (row, authority, holon, issuer, _) = await SeedAsync();
-        await Execute(SurrealWriter.UpdateOnly<UserRow>(issuer.ToString("N")).Set(value => value.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<UserRow>(issuer.ToString("N")).Where(seed => true).Set(value => value.IsActive, false).Build());
         (await _store.CompleteAsync(row, authority, null)).Should().BeTrue();
         (await _store.GetAsync(row.Id))!.State.Should().Be("Completed");
         (await _executor.QuerySingleAsync<SurrealHolonStore.HolonPoco>(SurrealQuery<SurrealHolonStore.HolonPoco>.Key(holon.ToString("N"))))!.TokenId.Should().Be("42");
@@ -338,7 +338,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
         var owner = Guid.NewGuid();
         var holon = Guid.NewGuid();
         foreach (var actor in new[] { issuer, owner }) await Execute(SurrealWriter.Create(new UserRow
-        { Id = actor.ToString("N"), Username = actor.ToString("N"), IsActive = true, CreatedDate = DateTimeOffset.UtcNow }));
+        { Id = actor.ToString("N"), Username = actor.ToString("N"), IsActive = true, CreatedDate = DateTimeOffset.UtcNow, Email = Guid.NewGuid().ToString("N") + "@example.test", PasswordHash = "fixture-no-login" }));
         await Execute(SurrealWriter.Create(new SurrealHolonStore.HolonPoco { Id = holon.ToString("N"), UserId = $"user:{issuer:N}",
             Name = "Original requested attachment", ProviderName = "SurrealDB", CreatedDate = DateTimeOffset.UtcNow, IsActive = true }));
         var id = FungibleCreationIdentity.OperationId(issuer, null, "creation");
@@ -366,7 +366,7 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     private async Task<(FungibleCreationOperation, FungibleAssetAuthority, PlatformReserveLedger)> SeedGenesisAsync(bool confirmed, bool seedDefinition = true)
     {
         var actor = NodeOperatorIdentity.UserId;
-        await Execute(SurrealWriter.Create(new UserRow { Id = actor.ToString("N"), Username = "node-operator", IsActive = true, CreatedDate = DateTimeOffset.UtcNow }));
+        await Execute(SurrealWriter.Create(new UserRow { Id = actor.ToString("N"), Username = "node-operator", IsActive = true, CreatedDate = DateTimeOffset.UtcNow, Email = Guid.NewGuid().ToString("N") + "@example.test", PasswordHash = "fixture-no-login" }));
         await Execute(SurrealWriter.Create(new AdminBootstrapState { Id = "local", UserId = $"user:{actor:N}", CredentialRevision = 1, SessionRevision = 1, ActivatedAt = DateTimeOffset.UtcNow }));
         const string key = "original-genesis";
         var id = FungibleCreationIdentity.OperationId(actor, null, key);

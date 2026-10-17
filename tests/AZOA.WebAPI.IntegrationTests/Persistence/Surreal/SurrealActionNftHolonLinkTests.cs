@@ -75,7 +75,7 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
         changed.UserId = Guid.NewGuid();
         changed.TokenId = "later-owner-binding";
         (await _holons.UpsertAsync(changed)).IsError.Should().BeFalse();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Set(row => row.IsActive, false).Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true).Set(row => row.IsActive, false).Build())).EnsureAllOk();
         (await service.LinkAsync(reference, input, confirmed, default)).Should().BeNull();
         (await _holons.GetByIdAsync(holon.Id)).Result!.TokenId.Should().Be("later-owner-binding");
     }
@@ -94,7 +94,7 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
             .Returns(async (ActionLocalMutationPlan plan, Receipt receipt, long? policy, bool wallet, CancellationToken ct) =>
             {
                 if (change == "cancel")
-                    (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<RunRow>(input.RunId.ToString("N"))
+                    (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<RunRow>(input.RunId.ToString("N")).Where(seed => true)
                         .Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build(), ct)).EnsureAllOk();
                 else
                 {

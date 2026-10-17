@@ -84,7 +84,7 @@ public sealed class WebhookOutboxDrainFlowTests(WebhookDrainWebApplicationFactor
 
         // A worker crashed mid-attempt: Pending, holding a lease, not due again for an hour.
         var id = dead.EventId.ToString("N");
-        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id)
+        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id).Where(seed => true)
             .Set(row => row.Status, Event.DeliveryStatus.Pending).Set(row => row.Version, dead.Version + 1)
             .Set(row => row.LeaseId, Guid.NewGuid().ToString("N")).Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(5))
             .Set(row => row.NextAttemptAt, DateTimeOffset.UtcNow.AddHours(1)).Build());
@@ -95,7 +95,7 @@ public sealed class WebhookOutboxDrainFlowTests(WebhookDrainWebApplicationFactor
                    new WebhookEventRetryCommand(Guid.NewGuid(), live.Version, "Retry while the attempt is in flight."), JsonOptions))
             await ShouldReturnAsync(refused, HttpStatusCode.Conflict);
 
-        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id).Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)).Build());
+        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id).Where(seed => true).Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)).Build());
         var abandoned = await StatusAsync(tenant, dead.EventId);
         abandoned.Retryable.Should().BeTrue();
         using var retried = await tenant.Client.PostAsJsonAsync($"{Events}/{dead.EventId}/retry",

@@ -65,6 +65,18 @@ internal static partial class SurrealQlSourceRules
             yield return $"{source.Location(match.Index)} Assign(Key(...)) captures a single-record read as an array; use AssignRecord";
     }
 
+    public static IEnumerable<string> ConditionalMutationWithoutWhere(CSharpSource source)
+    {
+        foreach (Match match in ConditionalMutation().Matches(source.Code))
+        {
+            var build = source.Code.IndexOf(".Build(", match.Index, StringComparison.Ordinal);
+            var statementEnd = source.Code.IndexOf(';', match.Index);
+            if (build < 0 || (statementEnd >= 0 && statementEnd < build)) continue;
+            if (!WhereCall().IsMatch(source.Code[match.Index..build]))
+                yield return $"{source.Location(match.Index)} SurrealWriter.{match.Groups[1].Value} without Where: Build() throws on SurrealForge 1.3.0";
+        }
+    }
+
     public static IEnumerable<string> OrdinalEnumCast(CSharpSource source)
     {
         foreach (Match match in OrdinalCast().Matches(source.Code))
@@ -275,6 +287,12 @@ internal static partial class SurrealQlSourceRules
 
     [GeneratedRegex(@"\(\s*([A-Z][\w.]*)\??\s*\)\s*\(\s*(?:int|long|short|byte|uint|ulong)\s*\)")]
     private static partial Regex OrdinalCast();
+
+    [GeneratedRegex(@"\bSurrealWriter\s*\.\s*(UpdateOnly|DeleteOnly)\s*<")]
+    private static partial Regex ConditionalMutation();
+
+    [GeneratedRegex(@"\.\s*Where\s*\(")]
+    private static partial Regex WhereCall();
 
     [GeneratedRegex(@"\bGetValues?\s*(?:<[^()]*?>)?\s*\(")]
     private static partial Regex ResultRead();

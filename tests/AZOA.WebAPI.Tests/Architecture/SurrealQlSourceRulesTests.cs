@@ -28,6 +28,9 @@ public sealed class SurrealQlSourceRulesTests
         { "srdb0001", "var q = 1;", false },
         { "assign-key", """var s = SurrealGeneratedStatementScope.Assign(SurrealQuery<Row>.Key(id), "x", "_x");""", true },
         { "assign-key", """var s = SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<Row>.Key(id), "x", "_x");""", false },
+        { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Unset(row => row.AllowedChains).Build();", true },
+        { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Where(row => row.Version == version).Unset(row => row.AllowedChains).Build();", false },
+        { "no-where", "var q = SurrealWriter.DeleteOnly<Row>(id).Build();", true },
         { "ordinal", "var state = (Row.ActionNodeState)(int)execution.State;", true },
         { "ordinal", "var state = Enum.Parse<Row.ActionNodeState>(execution.State.ToString());", false },
         { "end-relative", "statements.Add(SurrealQuery.Of(\"RETURN $_user\"));\nvar row = response.GetValues<User>(statements.Count - 2).Single();", true },
@@ -79,6 +82,10 @@ public sealed class SurrealQlSourceRulesTests
         => AssertNone("assign-key", "Assign wraps the read as an array; guards comparing it to NONE never fire");
 
     [Fact]
+    public void Typed_conditional_mutations_always_carry_a_Where()
+        => AssertNone("no-where", "SurrealForge 1.3.0 UpdateOnly/DeleteOnly Build() throws without a predicate, failing the flow at runtime");
+
+    [Fact]
     public void Persisted_enums_are_never_cast_by_ordinal()
         => AssertNone("ordinal", "a member reorder silently remaps states, including inside CAS guards (round4-sql-sweep SQL-10)");
 
@@ -128,6 +135,7 @@ public sealed class SurrealQlSourceRulesTests
         "non-literal" => SurrealQlSourceRules.NonLiteralOf(source),
         "srdb0001" => SurrealQlSourceRules.Srdb0001Suppression(source),
         "assign-key" => SurrealQlSourceRules.AssignOfKey(source),
+        "no-where" => SurrealQlSourceRules.ConditionalMutationWithoutWhere(source),
         "ordinal" => SurrealQlSourceRules.OrdinalEnumCast(source),
         "end-relative" => SurrealQlSourceRules.EndRelativeResultIndex(source),
         "bare-id" => SurrealQlSourceRules.BareIdReference(source, source.RelativePath.EndsWith("Snippet.cs", StringComparison.Ordinal) ? SnippetColumns : null),
