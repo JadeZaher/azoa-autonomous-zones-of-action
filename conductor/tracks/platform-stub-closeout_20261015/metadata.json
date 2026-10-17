@@ -34,10 +34,12 @@
   "external_dependency": {
     "surrealforge": {
       "repo": "C:/Users/atooz/Programming/Projects/surrealforge",
-      "branch": "fix/1.2.1-reserved-tables-and-declared-variables",
+      "branch": "main",
       "target_version": "1.3.0",
-      "published": false
-    },
-    "surrealforge_1_3_0": "published nuget.org 2026-10-17 (run 39045148834)"
+      "published": true,
+      "published_at": "2026-10-17T15:29:13Z",
+      "publish_run": "39045148834",
+      "commit": "586e316"
+    }
   }
 }
