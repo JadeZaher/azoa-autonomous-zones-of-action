@@ -1,173 +1,222 @@
-using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.HostedSessions;
-using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Stores.Surreal;
-using AZOA.WebAPI.Services.HostedSessions;
 using FluentAssertions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Models.Kyc;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
-/// <summary>
-/// IDENTOMAT-RECOVERY and outcome-poll persistence on a real SurrealDB 3.x namespace (round-4 L2):
-/// late create responses after supersession are deleted, poll claims have one winner across
-/// replicas, and the NONE-valued poll columns select exactly the due rows.
-/// Driven through <see cref="HostedSessionFlow"/> and the store, the hosted-session public seams;
-/// the HTTP flow cannot hold a vendor response open across a supersede.
-/// </summary>
 public sealed class SurrealHostedSessionRecoveryTests : IAsyncLifetime
 {
     private readonly string _namespace = $"test{Guid.NewGuid():N}";
     private ISurrealConnection _connection = null!;
-    private ISurrealExecutor _executor = null!;
     private SurrealHostedSessionStore _store = null!;
+    private ISurrealExecutor _executor = null!;
 
     public async Task InitializeAsync()
     {
-        await SurrealTestSchema.BootstrapAsync(_namespace, "hosted_session", "hosted_session_provider_alias", "user");
-        _connection = new SurrealDbNetConnection(new SurrealConnectionOptions { Endpoint = SurrealTestDefaults.Endpoint,
-            Namespace = _namespace, Database = "test", User = SurrealTestDefaults.User, Password = SurrealTestDefaults.Password });
+        await SurrealTestSchema.BootstrapAsync(_namespace, "hosted_session", "hosted_session_provider_alias",
+            "kyc_screening_monitor", "kyc_screening_result", "kyc_screening_poll_state", "kyc_submission",
+            "tenant_kyc_provider_selection", "kyc_provider_profile", "kyc_authority_guard");
+        _connection = new SurrealDbNetConnection(new SurrealConnectionOptions
+        {
+            Endpoint = SurrealTestDefaults.Endpoint, Namespace = _namespace, Database = "test",
+            User = SurrealTestDefaults.User, Password = SurrealTestDefaults.Password,
+        });
         _executor = new DefaultSurrealExecutor(_connection);
-        _store = new(_executor);
+        _store = new SurrealHostedSessionStore(_executor);
     }
 
-    public async Task DisposeAsync() { _connection.Dispose(); await SurrealTestSchema.DropAsync(_namespace); }
-
-    [Fact]
-    public async Task A_create_response_that_lands_after_supersession_is_deleted_and_never_attaches()
+    public async Task DisposeAsync()
     {
-        var provider = new HeldCreateProvider("vendor-late-" + Guid.NewGuid().ToString("N"));
-        var flow = new HostedSessionFlow(_store, new NoResume());
-        var request = Request(Guid.NewGuid());
-        var begin = flow.BeginAsync(provider, request);
-        await provider.CreateStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
-
-        var inFlight = (await _store.GetByIdAsync(request.SessionId!.Value)).Result!;
-        inFlight.CreationStartedAt.Should().NotBeNull("the provider request was fenced before sending");
-        (await _store.TrySupersedeOrphanAsync(inFlight, DateTimeOffset.UtcNow)).Result.Should().NotBeNull();
-
-        provider.ReleaseCreate();
-        var started = await begin.WaitAsync(TimeSpan.FromSeconds(30));
-
-        started.IsError.Should().BeTrue();
-        provider.Deleted.Should().Equal(provider.ProviderSessionId);
-        var closed = (await _store.GetByIdAsync(request.SessionId.Value)).Result!;
-        closed.State.Should().Be(HostedSessionStates.Abandoned);
-        closed.OutcomeDetail.Should().Be(HostedSessionRecoveryOutcomes.SupersededOrphan);
-        closed.ProviderSessionId.Should().BeNull();
-        closed.ReconciliationAuditJson.Should().Contain("LateProviderSessionDeleted");
-        (await _store.GetByProviderSessionAsync(HostedSessionFlowKinds.Kyc, provider.ProviderKey, provider.ProviderSessionId))
-            .Result.Should().BeNull("a callback naming the late session finds nothing to decide");
+        _connection?.Dispose();
+        await SurrealTestSchema.DropAsync(_namespace);
     }
 
     [Fact]
-    public async Task Concurrent_poll_claims_on_one_due_session_have_exactly_one_winner()
+    public async Task QuarantinePreservesAdmissionAndOriginalCreatorCanAttachBothAliases()
     {
-        var session = await AttachedSessionAsync();
+        var candidate = Candidate();
+        var id = Guid.ParseExact(candidate.Id, "N");
+        await _store.ClaimAdmissionAsync(candidate);
+        var send = await _store.TryBeginCreationAsync(id, candidate.CreationToken!, DateTimeOffset.UtcNow);
+        var parked = await _store.ReconcileAdmissionAsync(send.Result!, Guid.NewGuid(), "Provider lookup inconclusive", null, DateTimeOffset.UtcNow);
+        parked.Result!.State.Should().Be(HostedSessionStates.Claimed);
+        parked.Result.ReconciliationAuditJson.Should().Contain("QuarantineSent");
+        var replacement = Candidate();
+        replacement.AdmissionKey = candidate.AdmissionKey;
+        (await _store.ClaimAdmissionAsync(replacement)).Result!.Id.Should().Be(candidate.Id);
+        var result = await _store.TryAttachProviderSessionAsync(id, send.Result!.StateVersion,
+            "parent-one", "child-one", "https://widget.identomat.com/", null, candidate.CreationToken!);
+        result.Result!.CreationCompletedAt.Should().NotBeNull();
+        foreach (var alias in new[] { "parent-one", "child-one" })
+            (await _store.GetByProviderSessionAsync(candidate.FlowKind, candidate.ProviderKey, alias)).Result!.Id.Should().Be(candidate.Id);
+    }
+
+    [Fact]
+    public async Task ConflictingAlias_RollsBackSessionAttachment()
+    {
+        var first = Candidate();
+        var second = Candidate();
+        foreach (var row in new[] { first, second })
+        {
+            await _store.ClaimAdmissionAsync(row);
+            await _store.TryBeginCreationAsync(Guid.ParseExact(row.Id, "N"), row.CreationToken!, DateTimeOffset.UtcNow);
+        }
+        await _store.TryAttachProviderSessionAsync(Guid.ParseExact(first.Id, "N"), 1,
+            "parent-one", "shared-child", "https://widget.identomat.com/", null, first.CreationToken!);
+        var collision = await _store.TryAttachProviderSessionAsync(Guid.ParseExact(second.Id, "N"), 1,
+            "shared-child", "different-child", "https://widget.identomat.com/", null, second.CreationToken!);
+        collision.Result.Should().BeNull();
+        var unchanged = await _store.GetByIdAsync(Guid.ParseExact(second.Id, "N"));
+        unchanged.Result!.ProviderSessionId.Should().BeNull();
+        unchanged.Result.State.Should().Be(HostedSessionStates.Claimed);
+    }
+
+    [Fact]
+    public async Task ActiveNodeDefaultAttempt_AcquiresProviderSendOwnership()
+    {
+        var candidate = Candidate();
+        candidate.SubjectUserId = Guid.NewGuid().ToString("N");
+        candidate.AdmissionKey = "kyc-attempt:" + candidate.Id;
+        var attempt = new KycSubmission
+        {
+            Id = candidate.Id, UserId = candidate.SubjectUserId, Provider = KycProvider.IDENTOMAT,
+            ProviderKey = candidate.ProviderKey, ProviderSessionId = candidate.Id, HostedVerification = true,
+            Status = KycStatus.PENDING, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+            SubmittedAt = candidate.CreatedDate, CreatedDate = candidate.CreatedDate,
+        };
+        await new SurrealKycStore(_executor).UpsertSubmissionAsync(attempt);
+        await _store.ClaimAdmissionAsync(candidate);
+        var started = await _store.TryBeginCreationAsync(Guid.ParseExact(candidate.Id, "N"), candidate.CreationToken!, DateTimeOffset.UtcNow);
+        started.IsError.Should().BeFalse();
+        started.Result.Should().NotBeNull();
+        (await _store.GetByIdAsync(Guid.ParseExact(candidate.Id, "N"))).Result!.CreationStartedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ExpiredAttempt_PreventsProviderSendOwnership()
+    {
+        var candidate = Candidate();
+        candidate.SubjectUserId = Guid.NewGuid().ToString("N");
+        candidate.AdmissionKey = "kyc-attempt:" + candidate.Id;
+        var attempt = new KycSubmission
+        {
+            Id = candidate.Id, UserId = candidate.SubjectUserId, Provider = KycProvider.IDENTOMAT,
+            ProviderKey = candidate.ProviderKey, ProviderSessionId = candidate.Id, HostedVerification = true,
+            Status = KycStatus.PENDING, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            SubmittedAt = candidate.CreatedDate, CreatedDate = candidate.CreatedDate,
+        };
+        await new SurrealKycStore(_executor).UpsertSubmissionAsync(attempt);
+        await _store.ClaimAdmissionAsync(candidate);
+        var started = await _store.TryBeginCreationAsync(Guid.ParseExact(candidate.Id, "N"), candidate.CreationToken!, DateTimeOffset.UtcNow);
+        started.Result.Should().BeNull();
+        (await _store.GetByIdAsync(Guid.ParseExact(candidate.Id, "N"))).Result!.CreationStartedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ChangedOrDisabledTenantAuthority_PreventsSuspendedCreatorSend()
+    {
+        var tenant = Guid.NewGuid().ToString("N");
+        var candidate = Candidate();
+        candidate.SubjectUserId = Guid.NewGuid().ToString("N");
+        candidate.TenantId = tenant;
+        candidate.AdmissionKey = "kyc-attempt:" + candidate.Id;
+        await new SurrealKycStore(_executor).UpsertSubmissionAsync(new KycSubmission
+        {
+            Id = candidate.Id, UserId = candidate.SubjectUserId, TenantId = tenant,
+            Provider = KycProvider.IDENTOMAT, ProviderKey = candidate.ProviderKey,
+            ProviderSelectionVersion = 1, ProviderTrustRevision = 1,
+            ProviderSessionId = candidate.Id, HostedVerification = true, Status = KycStatus.PENDING,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30), SubmittedAt = candidate.CreatedDate, CreatedDate = candidate.CreatedDate,
+        });
+        await _executor.ExecuteAsync(SurrealWriter.Upsert(new TenantKycProviderSelection
+        {
+            Id = tenant, TenantId = "user:" + tenant, ProviderKey = candidate.ProviderKey, SelectionVersion = 2,
+            UpdatedByUserId = "user:" + tenant, UpdatedAt = DateTimeOffset.UtcNow,
+        }));
+        var profile = new KycProviderProfile
+        {
+            Id = candidate.ProviderKey, AdapterKey = "identomat", DisplayName = "Test Identomat", Enabled = true,
+            PolicyVersion = "v1", AssuranceLevel = "identity", TrustRevision = 1,
+            UpdatedByUserId = "user:" + tenant, UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        await _executor.ExecuteAsync(SurrealWriter.Upsert(profile));
+        await _store.ClaimAdmissionAsync(candidate);
+        var id = Guid.ParseExact(candidate.Id, "N");
+        (await _store.TryBeginCreationAsync(id, candidate.CreationToken!, DateTimeOffset.UtcNow)).Result.Should().BeNull();
+        await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<TenantKycProviderSelection>(tenant).Set(row => row.SelectionVersion, 1L).Build());
+        profile.Enabled = false;
+        await _executor.ExecuteAsync(SurrealWriter.Upsert(profile));
+        (await _store.TryBeginCreationAsync(id, candidate.CreationToken!, DateTimeOffset.UtcNow)).Result.Should().BeNull();
+        (await _store.GetByIdAsync(id)).Result!.CreationStartedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AmlPollAndMonitorMutationsPersistTheirActualFieldsAndEraseBothTables()
+    {
+        var screening = new SurrealKycScreeningStore(_executor);
         var now = DateTimeOffset.UtcNow;
-        var due = await _store.ListPollDueAsync(now, 100);
-        var observed = due.Should().ContainSingle(row => row.Id == session.Id).Which;
-        observed.NextPollAt.Should().BeNull("a never-polled session is due immediately");
-
-        var claims = await Task.WhenAll(Enumerable.Range(0, 6)
-            .Select(_ => _store.TryClaimPollAsync(observed, now.AddMinutes(1))));
-
-        claims.Count(won => won).Should().Be(1);
-        (await _store.ListPollDueAsync(now, 100)).Should().NotContain(row => row.Id == session.Id);
-        var reclaimed = (await _store.ListPollDueAsync(now.AddMinutes(2), 100)).Should().ContainSingle(row => row.Id == session.Id).Which;
-        reclaimed.PollAttemptCount.Should().Be(1);
+        var monitor = new KycScreeningMonitor
+        {
+            Id = Guid.NewGuid().ToString("N"), ProviderMonitorId = "provider-monitor", TenantScope = "node",
+            QueryFullName = "Fixture Subject", QueryBirthdayTimeFrom = "", LineageKey = "attempt-lineage",
+            State = KycMonitorState.ACTIVE, RegisteredAt = now, CreatedDate = now, RetentionExpiresAt = now.AddMinutes(-1),
+        };
+        await screening.SaveMonitorAsync(monitor);
+        await screening.RecordMonitorFollowUpAsync(monitor.Id, "2026-10-15T10:00:00Z", now);
+        var persisted = await _executor.QuerySingleAsync<KycScreeningMonitor>(SurrealQuery<KycScreeningMonitor>.Key(monitor.Id));
+        persisted!.LastObservedUpdateDate.Should().Be("2026-10-15T10:00:00Z");
+        await screening.RecordPollFailureAsync(now);
+        await screening.RecordPollFailureAsync(now.AddSeconds(1));
+        (await screening.GetPollStateAsync()).Result!.ConsecutiveFailures.Should().Be(2);
+        await screening.RecordPollSuccessAsync("2026-10-15T10:00:00Z", now.AddSeconds(2), 3);
+        var poll = (await screening.GetPollStateAsync()).Result!;
+        poll.ConsecutiveFailures.Should().Be(0);
+        poll.BackoffUntil.Should().BeNull();
+        poll.HighWaterMarkDate.Should().Be("2026-10-15T10:00:00Z");
+        poll.LastPollChangedCount.Should().Be(3);
+        var evidence = new KycScreeningResult
+        {
+            Id = Guid.NewGuid().ToString("N"), QueryFullName = "Fixture Subject", QueryBirthdayTimeFrom = "",
+            LineageKey = monitor.LineageKey, Decision = KycScreeningDecision.HIT, PolicyVersion = "test",
+            ScreenedAt = now, CreatedDate = now, RetentionExpiresAt = now.AddMinutes(-1),
+        };
+        await screening.SaveResultAsync(evidence);
+        (await screening.EraseRetentionExpiredAsync(now, "Fixture retention expiry", 1)).Result.Should().Be(2);
+        var erased = await _executor.QuerySingleAsync<KycScreeningResult>(SurrealQuery<KycScreeningResult>.Key(evidence.Id));
+        erased!.QueryFullName.Should().BeNull();
+        erased.Decision.Should().Be(KycScreeningDecision.HIT);
+        erased.LineageKey.Should().Be(monitor.LineageKey);
     }
 
     [Fact]
-    public async Task The_supersede_budget_counts_only_this_subjects_orphans_in_the_window()
+    public async Task ReleasedUnsentAdmission_RejectsSuspendedCreatorToken()
     {
-        var subject = Guid.NewGuid();
-        var orphan = await SentUnattachedAsync(subject);
-        var other = await SentUnattachedAsync(Guid.NewGuid());
-        await _store.TrySupersedeOrphanAsync(orphan, DateTimeOffset.UtcNow);
-        await _store.TrySupersedeOrphanAsync(other, DateTimeOffset.UtcNow);
-
-        (await _store.CountSupersededSinceAsync(HostedSessionFlowKinds.Kyc, subject, DateTimeOffset.UtcNow.AddDays(-1))).Should().Be(1);
-        (await _store.CountSupersededSinceAsync(HostedSessionFlowKinds.Kyb, subject, DateTimeOffset.UtcNow.AddDays(-1))).Should().Be(0);
-        (await _store.CountSupersededSinceAsync(HostedSessionFlowKinds.Kyc, subject, DateTimeOffset.UtcNow.AddMinutes(1))).Should().Be(0);
-        (await _store.TrySupersedeOrphanAsync(orphan, DateTimeOffset.UtcNow)).Result.Should().BeNull("a superseded row cannot be superseded twice");
+        var candidate = Candidate();
+        await _store.ClaimAdmissionAsync(candidate);
+        var released = await _store.ReconcileAdmissionAsync(candidate, Guid.NewGuid(), "No send began", null, DateTimeOffset.UtcNow);
+        released.Result!.State.Should().Be(HostedSessionStates.Abandoned);
+        (await _store.TryBeginCreationAsync(Guid.ParseExact(candidate.Id, "N"), candidate.CreationToken!, DateTimeOffset.UtcNow)).Result.Should().BeNull();
+        var oldToken = candidate.CreationToken;
+        candidate.CreationToken = Guid.NewGuid().ToString("N");
+        var reclaimed = await _store.ClaimAdmissionAsync(candidate);
+        reclaimed.Result!.ReconciliationAuditJson.Should().Contain("ReleaseUnsent");
+        reclaimed.Result.CreationToken.Should().Be(candidate.CreationToken);
+        reclaimed.Result.CreationClaimedAt.Should().BeAfter(DateTimeOffset.UtcNow.AddMinutes(-1));
+        (await _store.ListReconciliationAsync(DateTimeOffset.UtcNow.AddMinutes(-5), 50)).Should().BeEmpty();
+        (await _store.TryBeginCreationAsync(Guid.ParseExact(candidate.Id, "N"), oldToken!, DateTimeOffset.UtcNow)).Result.Should().BeNull();
+        (await _store.TryBeginCreationAsync(Guid.ParseExact(candidate.Id, "N"), candidate.CreationToken!, DateTimeOffset.UtcNow)).Result.Should().NotBeNull();
     }
 
-    private async Task<HostedSession> SentUnattachedAsync(Guid subject)
+    private static HostedSession Candidate() => new()
     {
-        var request = Request(subject);
-        var candidate = Candidate(request);
-        var claimed = (await _store.ClaimAdmissionAsync(candidate)).Result!;
-        return (await _store.TryBeginCreationAsync(Guid.ParseExact(claimed.Id, "N"), candidate.CreationToken!, DateTimeOffset.UtcNow)).Result!;
-    }
-
-    private async Task<HostedSession> AttachedSessionAsync()
-    {
-        var sent = await SentUnattachedAsync(Guid.NewGuid());
-        return (await _store.TryAttachProviderSessionAsync(Guid.ParseExact(sent.Id, "N"), sent.StateVersion,
-            "vendor-" + Guid.NewGuid().ToString("N"), null, "https://widget.vendor.test/?session_token=x", null,
-            sent.CreationToken!)).Result!;
-    }
-
-    private static HostedSessionRequest Request(Guid subject) => new()
-    {
-        FlowKind = HostedSessionFlowKinds.Kyc, SubjectUserId = subject,
-        AdmissionKey = "recovery-test:" + Guid.NewGuid().ToString("N"), SessionId = Guid.NewGuid(),
+        Id = Guid.NewGuid().ToString("N"), AdmissionKey = Guid.NewGuid().ToString("N"),
+        FlowKind = HostedSessionFlowKinds.Kyc, ProviderKey = "identomat",
+        State = HostedSessionStates.Claimed, CreationToken = Guid.NewGuid().ToString("N"),
+        CreatedDate = DateTimeOffset.UtcNow.AddMinutes(-10), ModifiedDate = DateTimeOffset.UtcNow,
     };
-
-    private static HostedSession Candidate(HostedSessionRequest request) => new()
-    {
-        Id = request.SessionId!.Value.ToString("N"), FlowKind = request.FlowKind, ProviderKey = "identomat",
-        AdmissionKey = request.AdmissionKey, CreationToken = Guid.NewGuid().ToString("N"),
-        CreationClaimedAt = DateTimeOffset.UtcNow, SubjectUserId = request.SubjectUserId.ToString("N"),
-        State = HostedSessionStates.Claimed, CreatedDate = DateTimeOffset.UtcNow, ModifiedDate = DateTimeOffset.UtcNow,
-    };
-
-    /// <summary>Holds the vendor create response open until the test releases it, like a slow network.</summary>
-    private sealed class HeldCreateProvider(string providerSessionId) : IHostedSessionProvider, IDeletableHostedSessionProvider
-    {
-        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public string ProviderSessionId { get; } = providerSessionId;
-        public TaskCompletionSource CreateStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public List<string> Deleted { get; } = [];
-        public string ProviderKey => "identomat";
-        public string FlowKind => HostedSessionFlowKinds.Kyc;
-
-        public void ReleaseCreate() => _release.TrySetResult();
-
-        public HostedSessionCapabilities GetHostedCapabilities()
-            => new() { ProviderKey = ProviderKey, FlowKind = FlowKind, Available = true };
-
-        public async Task<AZOAResult<HostedSessionCreation>> CreateHostedSessionAsync(HostedSessionRequest request, CancellationToken ct = default)
-        {
-            CreateStarted.TrySetResult();
-            await _release.Task.WaitAsync(ct);
-            return AZOAResult<HostedSessionCreation>.Success(new HostedSessionCreation
-            {
-                ProviderSessionId = ProviderSessionId, RedirectUrl = $"https://widget.vendor.test/?session_token={ProviderSessionId}",
-            });
-        }
-
-        public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
-        {
-            lock (Deleted) Deleted.Add(providerSessionId);
-            return Task.FromResult(AZOAResult<bool>.Success(true));
-        }
-
-        public AZOAResult<HostedCallbackTrigger> VerifyCallback(string rawBody)
-            => AZOAResult<HostedCallbackTrigger>.Failure("not used");
-
-        public Task<AZOAResult<HostedSessionOutcome>> FetchAuthoritativeOutcomeAsync(string providerSessionId, CancellationToken ct = default)
-            => Task.FromResult(AZOAResult<HostedSessionOutcome>.Failure("not used"));
-    }
-
-    private sealed class NoResume : IHostedSessionOutcomeHandler
-    {
-        public Task<AZOAResult<string?>> ResumeAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default)
-            => Task.FromResult(AZOAResult<string?>.Failure("not used"));
-    }
 }
