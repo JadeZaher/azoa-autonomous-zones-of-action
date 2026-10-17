@@ -231,6 +231,15 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("ALWAYS 0")]
         public long RecoveryReversalAttempt { get; set; }
 
+        /// <summary>D-8: the tenant whose schedule priced this cash-out and whose payout float funds it; absent = node-funded.</summary>
+        [Column(Order = 48)]
+        [References(typeof(User), Optional = true)]
+        public string? FundingTenantId { get; set; }
+
+        /// <summary>The reserve partition the collected units were credited to; returns draw from the same one.</summary>
+        [Column(Order = 49)]
+        public string? CollectPartition { get; set; }
+
         /// <summary>
         /// Deterministic record id for the one cash-out a request key may settle into: a compact
         /// Guid over the first 16 bytes of SHA-256(subject|key).

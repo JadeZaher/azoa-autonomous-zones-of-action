@@ -10,6 +10,8 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Fiat;
+using AZOA.WebAPI.Services.Fiat.OffRamp;
+using AZOA.WebAPI.Services.Kyb;
 
 // The credit-capability probe reads the reserve ledger and the on-ramp's own options.
 // Aliased rather than imported wholesale so this file's type names stay unambiguous.
@@ -488,19 +490,43 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         // D46: every value action needs a current identity approval, and buying funds is a value
         // action. The check runs here — inside the rail — rather than only in the controller, so
         // a second caller of this seam cannot inherit the surface without the gate.
-        var kycGate = scope.ServiceProvider.GetService<IRealValueKycGate>();
-        if (kycGate is null)
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "Identity verification cannot be checked; adding funds was refused.",
-                AzoaErrorCodes.DependencyUnavailable);
+        var topUp = string.Equals(request.Purpose?.Trim(), TenantPayoutTopUp.Purpose, StringComparison.OrdinalIgnoreCase);
+        if (topUp)
+        {
+            // D-8: a tenant float top-up is the tenant's own business money. It needs the tenant's KYB
+            // approval for payout pricing (D-6), a server-built top-up admission key and no acting tenant.
+            var kyb = scope.ServiceProvider.GetService<IKybGate>();
+            if (kyb is null)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "Business verification cannot be checked; the top-up was refused.", AzoaErrorCodes.DependencyUnavailable);
+            if (request.TenantId is not null
+                || !TenantPayoutTopUp.TryReadTenant(request.AdmissionKey, out var keyTenant) || keyTenant != request.SubjectUserId)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "That kind of payment is not offered here.", AzoaErrorCodes.InvalidRequest);
+            var verified = await kyb.RequireVerifiedTenantAsync(request.SubjectUserId, KybCapability.PayoutPriceSchedule, ct);
+            if (verified.IsError)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(verified.Message, AzoaErrorCodes.Forbidden);
+        }
+        else
+        {
+            if (TenantPayoutTopUp.IsTopUpAdmission(request.AdmissionKey))
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "That request key is not allowed.", AzoaErrorCodes.InvalidRequest);
 
-        var approval = request.TenantId is { } tenantId
-            ? await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, tenantId, ct)
-            : await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, ct);
-        if (approval.IsError)
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This account has to finish identity verification before adding funds.",
-                AzoaErrorCodes.Forbidden);
+            var kycGate = scope.ServiceProvider.GetService<IRealValueKycGate>();
+            if (kycGate is null)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "Identity verification cannot be checked; adding funds was refused.",
+                    AzoaErrorCodes.DependencyUnavailable);
+
+            var approval = request.TenantId is { } tenantId
+                ? await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, tenantId, ct)
+                : await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, ct);
+            if (approval.IsError)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "This account has to finish identity verification before adding funds.",
+                    AzoaErrorCodes.Forbidden);
+        }
 
         // OI-29: a registered IFiatSettlementHandler proves a TYPE is in the container, not that
         // this node can credit anything. The two facts that decide creditability live in data --
