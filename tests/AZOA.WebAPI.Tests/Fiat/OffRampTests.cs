@@ -288,6 +288,28 @@ public class OffRampTests
     }
 
     [Fact]
+    public async Task Another_driver_reusing_a_request_key_gets_a_conflict_and_never_sees_the_cash_out()
+    {
+        // F-H8: the replay is honoured only for the tenant (or the person) that drove the cash-out.
+        var harness = new Harness();
+        var tenantOne = Guid.NewGuid();
+        var tenantTwo = Guid.NewGuid();
+
+        var original = await harness.RequestAsync(amountMinorUnits: 500, tenantId: tenantOne);
+        var otherTenant = await harness.RequestAsync(amountMinorUnits: 500, tenantId: tenantTwo);
+        var firstParty = await harness.RequestAsync(amountMinorUnits: 500);
+        var otherHistory = await harness.Service.ListForUserAsync(SubjectUserId, 25, tenantTwo);
+        var ownHistory = await harness.Service.ListForUserAsync(SubjectUserId, 25, tenantOne);
+
+        original.IsError.Should().BeFalse();
+        otherTenant.Code.Should().Be(AzoaErrorCodes.Conflict);
+        firstParty.Code.Should().Be(AzoaErrorCodes.Conflict);
+        otherHistory.Result.Should().BeEmpty();
+        ownHistory.Result.Should().ContainSingle().Which.Id.Should().Be(original.Result!.Id);
+        harness.SagasStarted.Should().Be(1);
+    }
+
+    [Fact]
     public async Task An_account_the_value_gate_refuses_cannot_cash_out()
     {
         // The registered gate is wrapped by RiskHoldValueGate, so this one refusal is BOTH the
@@ -1006,7 +1028,7 @@ public class OffRampTests
             Guid userId, int limit, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<FiatPayout>>.Success(
                 _rows.Values
-                    .Where(row => row.SubjectUserId == userId.ToString("N"))
+                    .Where(row => SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N"))
                     .OrderByDescending(row => row.RequestedAt)
                     .Take(limit)
                     .Select(Clone)
@@ -1016,7 +1038,7 @@ public class OffRampTests
             Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<FiatPayout>>.Success(
                 _rows.Values
-                    .Where(row => row.SubjectUserId == userId.ToString("N")
+                    .Where(row => SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N")
                                   && FiatPayoutStatuses.Committing.Contains(row.Status))
                     .Select(Clone)
                     .ToList()));
@@ -1078,7 +1100,7 @@ public class OffRampTests
             Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
                 _rows.Values
-                    .Where(row => row.SubjectUserId == userId.ToString("N")
+                    .Where(row => SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N")
                                   && row.Status == OnRampLotStatuses.Issued)
                     .OrderBy(row => row.IssuedAt)
                     .Select(Clone)
@@ -1137,7 +1159,7 @@ public class OffRampTests
 
         public Task<AZOAResult<bool>> HasActiveFlagAsync(Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<bool>.Success(
-                _rows.Values.Any(row => row.AccountFlagged && row.SubjectUserId == userId.ToString("N"))));
+                _rows.Values.Any(row => row.AccountFlagged && SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N"))));
     }
 
     /// <summary>A clock that does not move, so a window assertion is exact.</summary>
