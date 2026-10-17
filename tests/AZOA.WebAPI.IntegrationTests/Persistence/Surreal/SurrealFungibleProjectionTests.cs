@@ -104,8 +104,9 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
             .Returns((out IFungibleCreationModule? selected) => { selected = module; return true; });
         var providers = new Mock<IBlockchainProviderFactory>();
         providers.Setup(value => value.GetProvider("Algorand", ChainNetwork.Devnet)).Returns(provider.Object);
-        return new(_store, providers.Object, Mock.Of<IValueAccessService>(), NodeGovernanceGuard.Unrestricted, _executor,
-            new SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), Mock.Of<IWalletStore>(), _executor));
+        // Only the chain edge is faked; stores are real and value access refuses loudly (recovery must not consult it).
+        return new(_store, providers.Object, new RecoveryMustNotConsultValueAccess(), NodeGovernanceGuard.Unrestricted, _executor,
+            new SigningAdmissionAuthorityFactory(new SurrealUserStore(_executor), new SurrealWalletStore(_executor), _executor));
     }
 
     [Theory]
@@ -399,4 +400,13 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     }
 
     private async Task Execute(SurrealQuery query) => (await _executor.ExecuteAsync(query)).EnsureAllOk();
+
+    private sealed class RecoveryMustNotConsultValueAccess : IValueAccessService
+    {
+        public Task<AZOA.WebAPI.Models.Kyc.ValueAccessDecision> GetDecisionAsync(Guid participantId, Guid? tenantId = null, CancellationToken ct = default)
+            => throw new InvalidOperationException("Submitted-stage recovery must not depend on the actor's current value access.");
+
+        public Task<AZOAResult<bool>> RequireValueAccessAsync(Guid participantId, Guid? tenantId = null, CancellationToken ct = default)
+            => throw new InvalidOperationException("Submitted-stage recovery must not depend on the actor's current value access.");
+    }
 }
