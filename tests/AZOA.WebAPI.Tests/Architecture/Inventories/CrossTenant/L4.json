@@ -1,0 +1,517 @@
+[
+  {
+    "store": "IActionEmitStore",
+    "method": "AcceptAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionEmitStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionEmitStore",
+    "method": "HasAcceptedEventAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionGraphBundleStore",
+    "method": "GetAllAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionGraphBundleStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionGraphBundleStore",
+    "method": "GetByNameAndUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IActionGraphBundleStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IActionLocalMutationStore",
+    "method": "CommitAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionLocalMutationStore",
+    "method": "GetReceiptAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "CreateAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "GetByActionIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "GetByStatusAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "GetByUserIdAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "GetLineageAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionRunStore",
+    "method": "UpdateAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionStore",
+    "method": "GetActionAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionStore",
+    "method": "GetActionsByDappSeriesAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionStore",
+    "method": "GetActionsByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IActionStore",
+    "method": "GetPublicActionsAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IActionStore",
+    "method": "UpsertActionAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IActionWorkflowAdmissionStore",
+    "method": "AdmitAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IApiKeyStore",
+    "method": "CreateAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IApiKeyStore",
+    "method": "DeleteAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IApiKeyStore",
+    "method": "GetByHashAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IApiKeyStore",
+    "method": "GetByIdForUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IApiKeyStore",
+    "method": "ListByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IApiKeyStore",
+    "method": "RevokeAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IBridgeStore",
+    "method": "AddBridgeAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IBridgeStore",
+    "method": "GetBridgeAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IBridgeStore",
+    "method": "GetBridgeByIdempotencyKeyAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IBridgeStore",
+    "method": "GetBridgeHistoryAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IBridgeStore",
+    "method": "GetOperationAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IConsentAuditStore",
+    "method": "AppendAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IConsentAuditStore",
+    "method": "ListByTenantAsync",
+    "tenantCheck": "query-scoped: filters by tenantId"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "FindCoveringGrantAsync",
+    "tenantCheck": "query-scoped: filters by grantorUserId, tenantId"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "ListByGrantorAsync",
+    "tenantCheck": "query-scoped: filters by grantorUserId"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "ListByTenantAndParticipationRefAsync",
+    "tenantCheck": "query-scoped: filters by tenantId"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "ListByTenantAsync",
+    "tenantCheck": "query-scoped: filters by tenantId"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "RevokeAllByGrantorAsync",
+    "tenantCheck": "query-scoped: filters by grantorUserId"
+  },
+  {
+    "store": "IConsentGrantStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IDappSeriesStore",
+    "method": "GetSeriesAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IDappSeriesStore",
+    "method": "GetSeriesByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IDappSeriesStore",
+    "method": "UpsertSeriesAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IDeploymentRecoveryAuditStore",
+    "method": "AdvanceAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IDeploymentRecoveryAuditStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IDeploymentRecoveryAuditStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "AddArtifactAsync",
+    "tenantCheck": "row carries claims actor + acting tenant; content-addressed id"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "AddQuoteAsync",
+    "tenantCheck": "row carries claims actor + acting tenant"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "row carries claims actor + acting tenant; id derived from (actor, tenant, key) so another tenant cannot collide"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ClaimQuoteAsync",
+    "tenantCheck": "row carries actor + tenant; caller re-compares on restore (RestoreActionQuote)"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ClaimRecoveryChildAsync",
+    "tenantCheck": "child copies the owned parent actor/tenant; transaction asserts parent actor/tenant equal child"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "CompleteRecoveryChildAsync",
+    "tenantCheck": "child/parent link fence (recovery_child_id + binding hash) inside one transaction"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "GetArtifactAsync",
+    "tenantCheck": "caller-checked: owner_user_id = actor AND tenant_id = acting tenant before any use"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: DeploymentService.OwnedAsync requires actor_user_id = actor AND tenant_id = acting tenant; record id is DeploymentIdentity.Operation(actor, tenant, key); operator resolution is node-operator-only"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "GetQuoteAsync",
+    "tenantCheck": "caller-checked: actor_user_id + tenant_id + intent hash compared before use"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "InvalidateReplacementQuoteAsync",
+    "tenantCheck": "owned parent loaded via OwnedAsync before the fenced CAS"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ListActorAsync",
+    "tenantCheck": "query-scoped: WHERE actor_user_id = $actor AND tenant_id = $tenant (DeploymentService.ListAsync passes claims actor + acting tenant; cursor re-checked against both)"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ListNeedsOperatorAsync",
+    "tenantCheck": "operator-only cross-tenant list (DeploymentOperatorController, RecentNodeOperatorSession)"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ListPendingAsync",
+    "tenantCheck": "worker-only cross-tenant scan; observes already-authorized wires, never authorizes"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "ReplaceRecoveryChildAsync",
+    "tenantCheck": "owned parent loaded via OwnedAsync; replacement copies parent actor/tenant"
+  },
+  {
+    "store": "IDeploymentStore",
+    "method": "UpdateAsync",
+    "tenantCheck": "caller-checked owned row; signing guards assert credential actor/tenant equal the row (SurrealDeploymentStore.Fenced) and lock credential, grants and wallet"
+  },
+  {
+    "store": "IHolonStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IHolonStore",
+    "method": "QueryAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IHolonStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IOAuthExchangeCodeStore",
+    "method": "CreateAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IOAuthExchangeCodeStore",
+    "method": "TryConsumeAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserExternalLoginStore",
+    "method": "CreateAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IUserExternalLoginStore",
+    "method": "DeleteAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IUserExternalLoginStore",
+    "method": "GetBySubjectAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserExternalLoginStore",
+    "method": "GetByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IUserStore",
+    "method": "AdvanceAuthenticationWatermarkAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IUserStore",
+    "method": "CreateIfAbsentAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IUserStore",
+    "method": "GetAllAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserStore",
+    "method": "GetByAuthWalletAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserStore",
+    "method": "GetByTenantAndExternalUserAsync",
+    "tenantCheck": "query-scoped: filters by tenantId"
+  },
+  {
+    "store": "IUserStore",
+    "method": "ListByOwnerTenantAsync",
+    "tenantCheck": "query-scoped: filters by tenantId"
+  },
+  {
+    "store": "IUserStore",
+    "method": "ListTenantPrincipalsPageAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserStore",
+    "method": "TryAssignDappRoleAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IUserStore",
+    "method": "TryClaimAuthenticationAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserStore",
+    "method": "TrySetActiveAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IUserStore",
+    "method": "TryUpdateAuthenticationAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IUserStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IWalletAuthClaimTokenStore",
+    "method": "CreateAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IWalletAuthClaimTokenStore",
+    "method": "GetByTokenAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IWalletStore",
+    "method": "BootstrapTenantAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IWalletStore",
+    "method": "CreateIfAbsentAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "IWalletStore",
+    "method": "GetAllAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IWalletStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IWalletStore",
+    "method": "GetByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IWalletStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
+  },
+  {
+    "store": "SurrealActionRecoveryStore",
+    "method": "RetryAsync",
+    "tenantCheck": "query-scoped: filters by actorId, tenantId"
+  },
+  {
+    "store": "SurrealActionSigningAuthorizationStore",
+    "method": "AuthorizeAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "SurrealActionSigningAuthorizationStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "AdmitParticipationAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "AdmitProvisionedAsync",
+    "tenantCheck": "query-scoped: filters by grantorId"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "AdmitUserExplicitAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "ListUnnotifiedExpiryAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "OffboardAsync",
+    "tenantCheck": "query-scoped: filters by tenantId"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "RevokeUserExplicitAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "WithdrawAsync",
+    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  }
+]

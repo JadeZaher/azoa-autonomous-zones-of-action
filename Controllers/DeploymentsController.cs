@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Responses;
@@ -17,6 +18,7 @@ public sealed class DeploymentsController(IDeploymentService deployments,
     SigningAdmissionAuthorityFactory? signingAuthority = null) : ControllerBase
 {
     [HttpPost("bundles/{bundleId:guid}/generate")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     [Authorize(Policy = "DappManage")]
     [RequestSizeLimit(3 * 1024 * 1024)]
     public async Task<IActionResult> Generate(Guid bundleId, DeploymentGenerateRequest request, CancellationToken ct)
@@ -24,16 +26,19 @@ public sealed class DeploymentsController(IDeploymentService deployments,
 
     [HttpPost]
     [Authorize(Policy = "DappManage")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     [RequestSizeLimit(3 * 1024 * 1024)]
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.StartWithCredentialAsync(actor, User.GetActingTenantId(),
             Request.Headers["Idempotency-Key"].ToString(), request, await CredentialAsync(ct), ct));
 
     [HttpGet("artifacts/{artifactId}")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     public async Task<IActionResult> Artifact(string artifactId, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Respond(await deployments.GetArtifactAsync(artifactId, actor, User.GetActingTenantId(), ct));
 
     [HttpPost("quote")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     [Authorize(Policy = "DappManage")]
     [RequestSizeLimit(3 * 1024 * 1024)]
     public async Task<IActionResult> Quote(DeploymentQuoteRequest request, CancellationToken ct)
@@ -45,14 +50,17 @@ public sealed class DeploymentsController(IDeploymentService deployments,
         => Respond(await deployments.QueryContractAsync(request, ct));
 
     [HttpGet]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     public async Task<IActionResult> List([FromQuery] string? cursor, [FromQuery] int limit = 25, CancellationToken ct = default)
         => Actor() is not { } actor ? Unauthorized() : Respond(await deployments.ListAsync(actor, User.GetActingTenantId(), cursor, limit, ct));
 
     [HttpGet("{id}")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     public async Task<IActionResult> Get(string id, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Respond(await deployments.GetAsync(id, actor, User.GetActingTenantId(), ct));
 
     [HttpGet("request")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     public async Task<IActionResult> GetRequest([FromQuery] string requestKey, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Respond(await deployments.GetRequestAsync(requestKey, actor, User.GetActingTenantId(), ct));
 
@@ -63,11 +71,13 @@ public sealed class DeploymentsController(IDeploymentService deployments,
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.CancelRequestAsync(request, actor, User.GetActingTenantId(), ct));
 
     [HttpPost("{id}/continue")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     [Authorize(Policy = "DappManage")]
     public async Task<IActionResult> Continue(string id, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.ContinueAsync(id, actor, User.GetActingTenantId(), ct, await CredentialAsync(ct)));
 
     [HttpPost("{id}/cancel")]
+    [DelegatedChildCredential(AzoaScopes.DappManage)]
     [Authorize(Policy = "DappManage")]
     public async Task<IActionResult> Cancel(string id, CancellationToken ct)
         => Actor() is not { } actor ? Unauthorized() : Receipt(await deployments.CancelAsync(id, actor, User.GetActingTenantId(), ct));
