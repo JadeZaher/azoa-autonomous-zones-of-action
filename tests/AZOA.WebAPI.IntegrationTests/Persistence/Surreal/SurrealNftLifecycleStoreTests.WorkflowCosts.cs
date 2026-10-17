@@ -279,7 +279,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
             Email = actor + "@test.invalid", PasswordHash = "fixture", IsActive = true }))).EnsureAllOk();
         (await _executor.ExecuteAsync(SurrealWriter.Create(new Wallet { Id = mint.WalletId.ToString("N"),
             UserId = "user:" + actor.ToString("N"), ChainType = "Solana", Address = "payer" }))).EnsureAllOk();
-        (await _executor.ExecuteAsync(SurrealWriter.Create(new ActionRun { Id = run.ToString("N"), ActionId = "action_definition:" + Guid.NewGuid().ToString("N"),
+        (await _executor.ExecuteAsync(SurrealWriter.Create(new ActionRun { Id = run.ToString("N"), ActionId = "action:" + Guid.NewGuid().ToString("N"),
             UserId = "user:" + actor.ToString("N"), Status = ActionRun.ActionRunStatusKind.Running, StartedAt = now }))).EnsureAllOk();
         (await _executor.ExecuteAsync(SurrealWriter.Create(new ActionNodeExecution { Id = execution.ToString("N"), RunId = "action_run:" + run.ToString("N"),
             NodeId = "action_node:" + node.ToString("N"), State = ActionNodeExecution.ActionNodeState.Running, Version = 3,

@@ -183,7 +183,7 @@ public sealed partial class SurrealHoldCommandTests
         var participant = Guid.NewGuid(); var wallet = Guid.NewGuid(); var apiKey = Guid.NewGuid(); var grant = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         await Save(new User { Id = participant.ToString("N"), Username = participant.ToString("N"),
-            Email = $"{participant:N}@example.test", IsActive = true });
+            Email = $"{participant:N}@example.test", PasswordHash = "fixture-no-login", IsActive = true });
         await Save(new ApiKey { Id = apiKey.ToString("N"), UserId = $"user:{_actor:N}", IsActive = true,
             KeyHash = new string('b', 64), KeyPrefix = "fixture", CreatedDate = now, Scopes = [AzoaScopes.SwapSign] });
         await Save(new Wallet { Id = wallet.ToString("N"), UserId = $"user:{participant:N}", ChainType = "Algorand", Address = "participant" });

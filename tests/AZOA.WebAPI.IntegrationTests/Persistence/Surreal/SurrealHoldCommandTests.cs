@@ -24,7 +24,7 @@ public sealed partial class SurrealHoldCommandTests : IAsyncLifetime
     {
         await SurrealTestSchema.BootstrapAsync(_namespace, "user", "hold_ledger", "hold_command", "hold_command_receipt",
             "platform_reserve_ledger", "consent_grant", "wallet", "hold_command_authorization", "hold_recovery_receipt", "hold_release_mandate", "hold_release_mandate_offer", "hold_mandate_use_receipt",
-            "action_definition", "action_node", "action_run", "action_node_execution", "exchange_hold_source", "api_key",
+            "action", "action_node", "action_run", "action_node_execution", "exchange_hold_source", "api_key",
             "exchange_hold_settlement_receipt", "project_treasury_ledger", "exchange_purchase_allocation", "operation_log",
             "exchange_retired_resolution");
         _connection = new SurrealDbNetConnection(new SurrealConnectionOptions { Endpoint = SurrealTestDefaults.Endpoint,
