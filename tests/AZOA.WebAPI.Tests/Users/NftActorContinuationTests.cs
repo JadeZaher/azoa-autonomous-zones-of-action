@@ -48,7 +48,7 @@ public sealed class NftActorContinuationTests
 
     [Theory]
     [InlineData("direct", true)]
-    [InlineData("workflow-original", false)]
+    [InlineData("workflow-original", true)] // F-H12: the owner's direct credential takes over a workflow-admitted lifecycle
     [InlineData("other-actor", false)]
     [InlineData("other-tenant", false)]
     [InlineData("other-wallet", false)]
