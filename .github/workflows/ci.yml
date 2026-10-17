@@ -630,6 +630,8 @@ jobs:
           # the default shallow clone would hide precisely those.
           fetch-depth: 0
 
+      # Allowlist: .gitleaks.toml -- exact reviewed values only, default rules kept
+      # (review notes: .github/AGENTS.md §gitleaks).
       # Two passes, because they answer different questions. `detect` walks the
       # commit graph (was a secret ever committed?); `detect --no-git` reads the
       # working tree (is one sitting in the checkout right now, e.g. arriving
@@ -646,6 +648,7 @@ jobs:
             "$GITLEAKS_IMAGE" \
             detect \
               --source /repo \
+              --config /repo/.gitleaks.toml \
               --redact \
               --no-banner \
               --exit-code 1 \
@@ -661,6 +664,7 @@ jobs:
             "$GITLEAKS_IMAGE" \
             detect \
               --source /repo \
+              --config /repo/.gitleaks.toml \
               --no-git \
               --redact \
               --no-banner \

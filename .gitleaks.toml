@@ -1,0 +1,43 @@
+# gitleaks config for CI (`.github/workflows/ci.yml` secret-scan job; gitleaks v8.18.4).
+# Default rules stay on. Every allowlist entry below is one exact, reviewed value or one
+# history-only file, never a source directory. Review notes: .github/AGENTS.md §gitleaks.
+title = "azoa"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Reviewed false positives (round 4 L6, CI run 39051444396)"
+regexTarget = "secret"
+regexes = [
+  # Published test vectors and well-known samples.
+  '''^f8f8a2f43c8376ccb0871305060d7b27b0554d2cc72bccf41b2705608452f315$''',                 # Mastering Ethereum worked-example key (EthereumKeygenTests)
+  '''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ\.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c$''', # jwt.io sample token (malicious-input fixtures)
+  # Public on-chain addresses (not credentials).
+  '''^0xdAC17F958D2ee523a2206206994597C13D831ec7$''',                                       # USDT mainnet contract
+  '''^EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v$''',                                     # USDC Solana mint
+  '''^wormDTUJ6AWPNvk59vGQbDvGJmqbDTdgWgAqcL6gibu$''',                                      # Wormhole token bridge (Solana)
+  '''^0x3ee18B2214AFF97000D974cf647E7C347E8fa585$''',                                       # Wormhole token bridge (Ethereum)
+  '''^DZnkkTmCiFWfYTfT41X3Rd1kDgozqzxWaHqsw6W4x2oe$''',                                     # Wormhole token bridge (Solana devnet)
+  # Self-describing unit-test fixture keys.
+  '''^federated-parity-test-signing-key-at-least-32-chars$''',
+  '''^wallet-parity-test-signing-key-at-least-32-chars$''',
+  '''^custody-chain-aware-test-encryption-key-0001$''',
+  '''^0123456789abcdef0123456789abcdef0123456789$''',
+  '''^6a4575a6-4187-46ad-a248-baa0b9823138$''',                                             # RateLimitPartitionKeyTests api-key id
+  '''^azoa_secretkey123$''',
+  '''^azoa_test12345$''',
+  # Local-only SurrealDB default credentials (dev container / CI service container).
+  '''^["']root:root["']$''',
+  # Prose and placeholders matched by generic-api-key / curl-auth-header.
+  '''^fundingRaised/totalSupply$''',
+  '''^empty/disabled$''',
+  '''^Reservation/idempotency$''',
+  '''^G2_exactly_once$''',
+  '''^your-jwt-token$''',
+]
+paths = [
+  # Deleted in 0726c0f9; history only. 50 JWTs from a 2026-06 local live-test run, issuer
+  # "OASIS.WebAPI" (retired), dev signing key, all expired 2026-06-09.
+  '''^tests/live-test-results\.md$''',
+]
