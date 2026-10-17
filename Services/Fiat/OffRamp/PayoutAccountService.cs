@@ -307,11 +307,14 @@ public sealed class PayoutAccountService : IPayoutAccountService
         if (found.Result is not { } row || !string.Equals(row.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase))
             return SetupConflict("This account has no payout-account setup.", AzoaErrorCodes.NotFound);
 
+        // Classified read-only (never BeginOrResume, which would start a fence): only a begun, unattached claim the
+        // creation fence can no longer replay (past the window, or quarantined) is operator work.
         var now = _clock.GetUtcNow();
-        var turn = await FiatHostedCreation.BeginOrResumeAsync(_sessions, row, now, ct);
-        if (turn.Verdict != FiatCreationVerdict.NeedsOperator || turn.Session is not { } stuck
-            || stuck.State != HostedSessionStates.Claimed || stuck.CreationStartedAt is not { } started
-            || string.IsNullOrWhiteSpace(stuck.CreationToken) || !Guid.TryParseExact(stuck.Id, "N", out var sessionId))
+        var stuck = row;
+        if (stuck.State != HostedSessionStates.Claimed || !string.IsNullOrWhiteSpace(stuck.ProviderSessionId)
+            || stuck.CreationStartedAt is not { } started || string.IsNullOrWhiteSpace(stuck.CreationToken)
+            || (stuck.CreationQuarantinedAt is null && started > now - FiatHostedCreation.ReplayWindow)
+            || !Guid.TryParseExact(stuck.Id, "N", out var sessionId))
             return SetupConflict("This setup is not stuck past its replay window; it resumes on its own.", AzoaErrorCodes.Conflict);
 
         // Stripe cannot search accounts by metadata: list the window the claim's create (and its replays) ran in.

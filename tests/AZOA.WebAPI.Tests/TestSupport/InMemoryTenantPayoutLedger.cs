@@ -20,6 +20,9 @@ public sealed class InMemoryTenantPayoutLedger(TimeProvider clock) : ITenantPayo
     /// <summary>Awaited by every commit after its caller's reads and before the atomic apply.</summary>
     public Func<Task>? BeforeCommit { get; set; }
 
+    /// <summary>Awaited by every commit with its transition, so a test can gate one kind of commit only.</summary>
+    public Func<TenantPayoutTransition, Task>? BeforeCommitOf { get; set; }
+
     public int Commits { get; private set; }
     public int LostCommits { get; private set; }
 
@@ -96,11 +99,12 @@ public sealed class InMemoryTenantPayoutLedger(TimeProvider clock) : ITenantPayo
         lock (_gate) return Task.FromResult(_credits.Values.Where(c => c.PaymentIntentId == paymentIntentId).Select(Clone).FirstOrDefault());
     }
 
-    public Task<IReadOnlyList<TenantPayoutCredit>> ListMaturedPendingAsync(DateTimeOffset now, int limit, CancellationToken ct = default)
+    public Task<IReadOnlyList<TenantPayoutCredit>> ListMaturedPendingAsync(DateTimeOffset now, int limit, string? floatId = null, CancellationToken ct = default)
     {
         lock (_gate)
             return Task.FromResult<IReadOnlyList<TenantPayoutCredit>>(_credits.Values
-                .Where(c => c.State == TenantPayoutCreditStates.Pending && c.AvailableAt is { } at && at <= now)
+                .Where(c => (floatId is null || c.FloatId == floatId)
+                    && c.State == TenantPayoutCreditStates.Pending && c.AvailableAt is { } at && at <= now)
                 .OrderBy(c => c.AvailableAt).Take(limit).Select(Clone).ToList());
     }
 
@@ -109,11 +113,11 @@ public sealed class InMemoryTenantPayoutLedger(TimeProvider clock) : ITenantPayo
         lock (_gate) return Task.FromResult(_debits.TryGetValue(payoutId, out var row) ? Clone(row) : null);
     }
 
-    public Task<IReadOnlyList<TenantPayoutDebit>> ListStaleReservedAsync(DateTimeOffset before, int limit, CancellationToken ct = default)
+    public Task<IReadOnlyList<TenantPayoutDebit>> ListStaleReservedAsync(DateTimeOffset before, DateTimeOffset? from, int limit, CancellationToken ct = default)
     {
         lock (_gate)
             return Task.FromResult<IReadOnlyList<TenantPayoutDebit>>(_debits.Values
-                .Where(d => d.State == TenantPayoutDebitStates.Reserved && d.CreatedAt < before)
+                .Where(d => d.State == TenantPayoutDebitStates.Reserved && d.CreatedAt < before && (from is null || d.CreatedAt >= from))
                 .OrderBy(d => d.CreatedAt).Take(limit).Select(Clone).ToList());
     }
 
@@ -121,6 +125,8 @@ public sealed class InMemoryTenantPayoutLedger(TimeProvider clock) : ITenantPayo
     {
         if (BeforeCommit is { } hold)
             await hold();
+        if (BeforeCommitOf is { } holdOf)
+            await holdOf(transition);
         lock (_gate)
         {
             if (!_floats.TryGetValue(transition.Observed.Id, out var row) || row.Version != transition.Observed.Version)

@@ -648,6 +648,8 @@ public partial class OffRampTests
         GrossQuantityBaseUnits = quantity,
         ConsumedBaseUnits = consumed,
         CurrencyCode = "USD",
+        PricingScopeKey = PriceScheduleScope.Node,
+        UnitsPerMinorUnit = "100",
         Status = OnRampLotStatuses.Issued,
         IssuedAt = windowEnds?.AddDays(-120) ?? Now.AddDays(-1),
         ReversalWindowEnds = windowEnds,
@@ -709,8 +711,27 @@ public partial class OffRampTests
         /// <summary>When true a tenant-scoped request with no tenant schedule falls back to the node's.</summary>
         public bool NodeFallback { get; set; } = true;
 
-        /// <summary>Stripe answers the funding transfer with an idempotency conflict (409 → busy).</summary>
+        /// <summary>
+        /// Stripe answers the funding transfer with an idempotency conflict (409 → busy): a concurrent request under
+        /// the same key created the transfer, so the transfer group lists it.
+        /// </summary>
         public bool TransferConflict { get; set; }
+
+        /// <summary>The process dies right after Stripe created the transfer, before the pay claim completes.</summary>
+        public bool CrashAfterTransferCreated { get; set; }
+
+        /// <summary>The transfer group also holds a transfer whose metadata names another cash-out (L2).</summary>
+        public bool ForeignGroupTransfer { get; set; }
+
+        /// <summary>The collect broadcast was sent and not acknowledged: an outcome-unknown provider error (M2).</summary>
+        public bool TransferOutcomeUnknown { get; set; }
+
+        /// <summary>What the chain says about a recorded transaction id.</summary>
+        public ChainConfirmation ChainVerdict { get; set; } = ChainConfirmation.Unknown;
+
+        /// <summary>Transfers Stripe actually created, one per idempotency key (Stripe's key contract).</summary>
+        public IReadOnlyCollection<StripeTransferRequest> CreatedTransfers => _created.Values;
+        private readonly Dictionary<string, StripeTransferRequest> _created = new(StringComparer.Ordinal);
 
         /// <summary>Stripe's cumulative <c>amount_reversed</c> on the cash-out transfer.</summary>
         public long TransferReversedMinorUnits { get; set; }
@@ -823,11 +844,17 @@ public partial class OffRampTests
                 .ReturnsAsync((StripeCredentials _, StripeTransferRequest request, CancellationToken __) =>
                 {
                     SentTransfers.Add(request);
+                    if (TransferRefused)
+                        return FiatPayoutErrors.RailRefused<StripeTransfer>("corr");
+                    _created.TryAdd(request.IdempotencyKey, request);
                     if (TransferConflict)
                         return FiatPayoutErrors.RailBusy<StripeTransfer>("corr");
-                    return TransferRefused
-                        ? FiatPayoutErrors.RailRefused<StripeTransfer>("corr")
-                        : AZOAResult<StripeTransfer>.Success(new StripeTransfer
+                    if (CrashAfterTransferCreated)
+                    {
+                        CrashAfterTransferCreated = false;
+                        throw new InvalidOperationException("The process stopped after Stripe created the transfer.");
+                    }
+                    return AZOAResult<StripeTransfer>.Success(new StripeTransfer
                         {
                             TransferId = "tr_test_1",
                             AmountMinorUnits = request.AmountMinorUnits,
@@ -860,14 +887,19 @@ public partial class OffRampTests
 
             connect.Setup(c => c.ListTransfersByGroupAsync(It.IsAny<StripeCredentials>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((StripeCredentials _, string group, CancellationToken _) =>
-                    AZOAResult<StripeTransferList>.Success(new StripeTransferList(SentTransfers
-                        .Where(sent => !TransferRefused && !TransferConflict && OffRampService.TransferGroupFor(sent.PayoutId) == group)
+                    AZOAResult<StripeTransferList>.Success(new StripeTransferList(_created.Values
+                        .Where(sent => OffRampService.TransferGroupFor(sent.PayoutId) == group)
                         .Select(sent => new StripeTransfer
                         {
                             TransferId = "tr_test_1", IntentId = sent.PayoutId, AmountMinorUnits = sent.AmountMinorUnits,
                             AmountReversedMinorUnits = TransferReversedMinorUnits, Currency = sent.Currency,
                             Destination = sent.ConnectedAccountId, Livemode = false,
-                        }).ToList(), HasMore: false)));
+                        })
+                        .Concat(ForeignGroupTransfer
+                            ? [new StripeTransfer { TransferId = "tr_foreign", IntentId = "someone-else", AmountMinorUnits = 500,
+                                Currency = "usd", Destination = ConnectedAccountId }]
+                            : Array.Empty<StripeTransfer>())
+                        .ToList(), HasMore: false)));
             return connect;
         }
 
@@ -980,6 +1012,9 @@ public partial class OffRampTests
 
                     if (TransferFails)
                         return AZOAResult<string>.Failure("The node could not be reached.");
+                    if (TransferOutcomeUnknown)
+                        return AZOAResult<string>.Failure(
+                            "Broadcast failed to transfer (tx AMBIGTX); reconcile against chain truth before re-sending: timeout");
 
                     return TransferConfirms
                         ? AZOAResult<string>.Success("MOVETX", "confirmed in round 42")
@@ -1009,6 +1044,9 @@ public partial class OffRampTests
                     : TransferConfirms ? ChainConfirmation.Confirmed : ChainConfirmation.Pending));
             provider.Setup(p => p.TryGetModule<IValueTransferTransactionModule>(out It.Ref<IValueTransferTransactionModule?>.IsAny))
                 .Returns((out IValueTransferTransactionModule? valueModule) => { valueModule = preparedModule.Object; return true; });
+
+            provider.Setup(p => p.GetTransactionConfirmationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => AZOAResult<ChainConfirmation>.Success(ChainVerdict));
 
             var factory = new Mock<IBlockchainProviderFactory>();
             factory
@@ -1207,6 +1245,14 @@ public partial class OffRampTests
                     .Where(row => OnRampLotStatuses.NeedsOperator(row.Status))
                     .Select(Clone)
                     .ToList()));
+
+        public bool FailSoldRead { get; set; }
+
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(FailSoldRead
+                ? AZOAResult<IReadOnlyList<OnRampLot>>.Failure("lot store unavailable")
+                : AZOAResult<IReadOnlyList<OnRampLot>>.Success(_rows.Values
+                    .Where(row => row.CreatedAt >= since && row.IssuedAt is not null).Select(Clone).ToList()));
 
         private static OnRampLot Clone(OnRampLot row) => System.Text.Json.JsonSerializer.Deserialize<OnRampLot>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }

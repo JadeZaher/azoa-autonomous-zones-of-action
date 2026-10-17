@@ -91,13 +91,26 @@ public partial class OffRampTests
         {
             Id = "credit-topup", IntentId = "intent-topup", FloatId = floatRow.Id, TenantId = floatRow.TenantId,
             CurrencyCode = "USD", Environment = "test", PaymentIntentId = "pi_topup", GrossMinorUnits = 1000,
-            NetMinorUnits = 970, State = TenantPayoutCreditStates.Pending, AvailableAt = Now.AddMinutes(-1),
+            NetMinorUnits = 970, State = TenantPayoutCreditStates.Pending, AvailableAt = Now.AddMinutes(1),
             CreatedAt = Now, UpdatedAt = Now,
         });
-        Race(harness.TenantLedger, 2);
+        // M5: only the reservation's commit is gated. Its own promotion pass found nothing matured; while it holds
+        // the float it read, the credit matures and the standalone promotion commits first.
+        var promoted = -1;
+        harness.TenantLedger.BeforeCommitOf = async transition =>
+        {
+            if (transition.Entry is not TenantPayoutEntryChange.CreateDebit || promoted >= 0)
+                return;
+            harness.Clock.Now = Now.AddMinutes(2);
+            promoted = await harness.Funding.PromoteMaturedAsync();
+        };
 
-        await Task.WhenAll(harness.Funding.PromoteMaturedAsync(), harness.Funding.ReserveAsync(FundedRow("bbbb0000000000000000000000000001")));
+        var reserved = await harness.Funding.ReserveAsync(FundedRow("bbbb0000000000000000000000000001"));
 
+        reserved.Should().Be(TenantFundingReservation.Reserved);
+        promoted.Should().Be(1);
+        harness.TenantLedger.LostCommits.Should().Be(1, "the reservation's CAS lost to the promotion and re-checked");
+        harness.TenantLedger.Debits.Should().ContainSingle();
         var view = await FloatOf(harness);
         view.CreditedMinorUnits.Should().Be(1470, "the top-up is promoted once, net of fees");
         view.ReservedMinorUnits.Should().Be(500);
@@ -134,18 +147,26 @@ public partial class OffRampTests
     }
 
     [Fact]
-    public async Task A_crash_between_reserve_and_send_resumes_with_exactly_one_transfer()
+    public async Task A_crash_after_the_transfer_and_before_its_claim_completed_replays_to_exactly_one_transfer()
     {
+        // M5: a real crash — Stripe created the transfer, the pay claim never completed, the row never recorded it.
         var harness = Funded(500);
         await harness.RequestAsync(amountMinorUnits: 500, tenantId: PricingTenant);
         var payoutId = harness.Payouts.Rows.Single().Id;
         await harness.Service.CollectUnitsAsync(payoutId);
+        harness.CrashAfterTransferCreated = true;
+        var crash = async () => await harness.Service.SendMoneyAsync(payoutId);
+        await crash.Should().ThrowAsync<InvalidOperationException>();
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.UnitsCollected);
 
-        // The process stops here; a restarted saga runs the send leg, twice for good measure.
+        // Inside the stale-claim window the resumed saga does nothing; past it, it replays the same Stripe key.
         await harness.Service.SendMoneyAsync(payoutId);
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.UnitsCollected);
+        harness.Clock.Now = DateTimeOffset.UtcNow + OffRampService.StalePayClaimAge + TimeSpan.FromMinutes(1);
         await harness.Service.SendMoneyAsync(payoutId);
 
-        harness.SentTransfers.Should().ContainSingle();
+        harness.CreatedTransfers.Should().ContainSingle("the replay reuses the stable Stripe key");
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.Paid);
         harness.TenantLedger.Debits.Single().State.Should().Be(TenantPayoutDebitStates.Finalized);
         (await FloatOf(harness)).Consistent.Should().BeTrue();
     }
@@ -283,6 +304,170 @@ public partial class OffRampTests
         row.Status.Should().Be(FiatPayoutStatuses.Paid);
         harness.TenantLedger.Debits.Should().BeEmpty();
         harness.Reattributions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_transfer_reversed_while_bank_pending_finalizes_the_debit_and_returns_the_float()
+    {
+        // M4: the failed-bank path ends Reversed, which must be terminal for the debit too.
+        var harness = Funded(500);
+        harness.BankPayoutStatus = "pending";
+        await harness.RequestAsync(amountMinorUnits: 500, tenantId: PricingTenant);
+        var payoutId = harness.Payouts.Rows.Single().Id;
+        await harness.Service.CollectUnitsAsync(payoutId);
+        await harness.Service.SendMoneyAsync(payoutId);
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.BankPending);
+
+        harness.ReversedMinorUnits = 500;
+        harness.TransferReversedMinorUnits = 500;
+        await harness.BuildReversalHandler().ApplyAsync(harness.ReversalContext(payoutId));
+
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.Reversed);
+        var debit = harness.TenantLedger.Debits.Single();
+        debit.State.Should().Be(TenantPayoutDebitStates.Finalized);
+        debit.ReversedMinorUnits.Should().Be(500);
+        var view = await FloatOf(harness);
+        view.ReservedMinorUnits.Should().Be(0);
+        view.AvailableMinorUnits.Should().Be(500);
+        view.Consistent.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task One_tenants_float_never_funds_or_drains_another_tenants_cash_out()
+    {
+        var harness = Funded(0);
+        var other = Guid.NewGuid();
+        harness.TenantLedger.SeedAvailable(other, 5000);
+
+        var result = await harness.RequestAsync(amountMinorUnits: 500, tenantId: PricingTenant);
+        var row = FundedRow("cccc0000000000000000000000000001");
+        var otherFloat = (await harness.Funding.DescribeAsync(other)).Single();
+
+        result.Code.Should().Be(OffRampService.TenantPayoutBalanceInsufficientCode);
+        (await harness.Funding.HoldsReservedDebitAsync(row, other)).Should().BeFalse();
+        otherFloat.AvailableMinorUnits.Should().Be(5000);
+        otherFloat.ReservedMinorUnits.Should().Be(0);
+        harness.TenantLedger.Debits.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_sweep_reaches_a_crashed_cash_out_behind_more_than_a_page_of_long_lived_debits()
+    {
+        // M4: 150 bank-pending debits older than the crash; the old oldest-100 read never reached it.
+        var harness = Funded(151 * 500);
+        for (var i = 0; i < 150; i++)
+        {
+            var parked = FundedRow($"dddd{i:D28}");
+            parked.Status = FiatPayoutStatuses.BankPending;
+            harness.Payouts.Seed(parked);
+            harness.Clock.Now = Now.AddSeconds(i);
+            (await harness.Funding.ReserveAsync(parked)).Should().Be(TenantFundingReservation.Reserved);
+        }
+        var crashed = FundedRow(FiatPayout.RecordIdFor(SubjectUserId, "crashed-late"));
+        harness.Payouts.Seed(crashed);
+        harness.Clock.Now = Now.AddMinutes(10);
+        (await harness.Funding.ReserveAsync(crashed)).Should().Be(TenantFundingReservation.Reserved);
+
+        harness.Clock.Now = Now + TenantPayoutSweep.AbandonRequestedAfter + TimeSpan.FromMinutes(20);
+        await harness.BuildSweep().RunOnceAsync(CancellationToken.None);
+
+        harness.Payouts.Rows.Single(r => r.Id == crashed.Id).Status.Should().Be(FiatPayoutStatuses.Refused);
+        harness.TenantLedger.Debits.Single(d => d.Id == crashed.Id).State.Should().Be(TenantPayoutDebitStates.Released);
+    }
+
+    [Fact]
+    public async Task A_debit_reserved_past_the_threshold_makes_the_float_report_stranded_not_consistent()
+    {
+        var harness = Funded(500);
+        var row = FundedRow("eeee0000000000000000000000000001");
+        row.Status = FiatPayoutStatuses.NeedsOperator;
+        harness.Payouts.Seed(row);
+        await harness.Funding.ReserveAsync(row);
+
+        (await FloatOf(harness)).Consistent.Should().BeTrue();
+        harness.Clock.Now = Now + TenantPayoutFunding.StrandedReservedAfter + TimeSpan.FromHours(1);
+        var view = await FloatOf(harness);
+
+        view.Consistent.Should().BeFalse("counters agree, but 500 has been held reserved past the threshold");
+        view.StrandedReservedCount.Should().Be(1);
+        view.OldestReservedAt.Should().Be(Now);
+    }
+
+    [Fact]
+    public async Task A_collect_replayed_after_a_crash_still_returns_the_units_to_the_funding_tenant()
+    {
+        // L1: the collect claim completed and the process died before the partition draw and the row write.
+        var harness = Funded(500);
+        await harness.RequestAsync(amountMinorUnits: 500, tenantId: PricingTenant);
+        var payoutId = harness.Payouts.Rows.Single().Id;
+        harness.Idempotency.Seed(OffRampService.MoveIdempotencyKey(payoutId, "collect"), OffRampService.PayoutOperationType,
+            AZOA.WebAPI.Models.Idempotency.IdempotencyState.Completed, resultPayload: "MOVETX");
+
+        await harness.Service.CollectUnitsAsync(payoutId);
+
+        harness.Transfers.Should().BeEmpty("the replay moves nothing");
+        harness.Reattributions.Should().ContainSingle().Which.To.Should().Be(OffRampService.TenantPartitionFor(PricingTenant));
+        var row = harness.Payouts.Rows.Single();
+        row.Status.Should().Be(FiatPayoutStatuses.UnitsCollected);
+        row.CollectPartition.Should().Be(OffRampService.TenantPartitionFor(PricingTenant));
+    }
+
+    [Fact]
+    public async Task Units_with_no_lot_cannot_leave_node_funded_above_the_cheapest_cross_scope_sale()
+    {
+        // H2: U bought cheap at a tenant's price, moved the units on chain to this account, which has no lot.
+        var harness = new Harness { Holding = "50000", NodeRate = 50 };
+        var sold = Lot("lot-someone-else", "50000", windowEnds: Now.AddDays(-1));
+        sold.SubjectUserId = Guid.NewGuid().ToString("N");
+        sold.PricingScopeKey = PricingTenant.ToString("N");
+        sold.UnitsPerMinorUnit = "100";
+        harness.Lots.Seed(sold);
+
+        var result = await harness.RequestAsync(amountMinorUnits: 500);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Be(OffRampService.SoldPriceCapRefusal);
+        harness.Payouts.Rows.Single().Status.Should().Be(FiatPayoutStatuses.Refused);
+    }
+
+    [Fact]
+    public async Task A_legacy_lot_of_unknown_scope_is_capped_at_the_cross_scope_floor_not_skipped()
+    {
+        var harness = new Harness { Holding = "50000", NodeRate = 50 };
+        var legacy = Lot("lot-legacy", "25000", windowEnds: Now.AddDays(-1));
+        legacy.PricingScopeKey = null;
+        legacy.UnitsPerMinorUnit = "100";
+        harness.Lots.Seed(legacy);
+
+        var result = await harness.RequestAsync(amountMinorUnits: 500);
+
+        result.Message.Should().Be(OffRampService.SoldPriceCapRefusal);
+    }
+
+    [Fact]
+    public async Task An_unreadable_sold_price_record_refuses_lot_less_units_rather_than_guessing()
+    {
+        var harness = new Harness { Holding = "50000" };
+        harness.Lots.FailSoldRead = true;
+
+        var result = await harness.RequestAsync(amountMinorUnits: 500);
+
+        result.Message.Should().Be(OffRampService.SoldPriceUnknownRefusal);
+    }
+
+    [Fact]
+    public async Task Lot_less_units_at_or_below_the_cross_scope_floor_cash_out_node_funded()
+    {
+        var harness = new Harness { Holding = "50000", NodeRate = 100 };
+        var sold = Lot("lot-someone-else", "50000", windowEnds: Now.AddDays(-1));
+        sold.SubjectUserId = Guid.NewGuid().ToString("N");
+        sold.PricingScopeKey = PricingTenant.ToString("N");
+        sold.UnitsPerMinorUnit = "100";
+        harness.Lots.Seed(sold);
+
+        var result = await harness.RequestAsync(amountMinorUnits: 500);
+
+        result.IsError.Should().BeFalse(result.Message);
     }
 
     [Theory]

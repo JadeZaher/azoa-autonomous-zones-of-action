@@ -1136,6 +1136,9 @@ public class ReversalTests
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
                 _rows.Values.Where(r => r.Status == OnRampLotStatuses.Issued).ToList()));
 
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(Array.Empty<OnRampLot>()));
+
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
             int limit, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
