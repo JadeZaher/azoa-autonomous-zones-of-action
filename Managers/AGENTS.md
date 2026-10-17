@@ -429,7 +429,7 @@ Two callers:
 
 ## §ecosystem-tree — ActionGraphBundleManager ecosystem tree + tree-walking codegen (D2)
 
-**final-hardening-cutover Phase D / D2** (absorbs `star-odk-ecosystem-tree`). A
+**final-hardening-cutover Phase D / D2** (absorbs `action-graph-bundle-ecosystem-tree`). A
 ActionGraphBundle owns an **Ecosystem**: a TREE of `EcosystemNode`s, each attaching a
 `DappSeries` (or a nested ActionGraphBundle) as a composable dApp. Storage POCOs:
 `Persistence/SurrealDb/Models/{Ecosystem,EcosystemNode}.cs`; store

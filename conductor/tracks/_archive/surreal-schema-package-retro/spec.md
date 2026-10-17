@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Surreal Schema Package Retro — Specification"
+tags: [surreal-schema-package-retro, archived]
+---
+
 # Surreal Schema Package Retro — Specification
 
 ## Goal
@@ -79,7 +85,7 @@ Three sealed attribute classes decorate POCOs:
 `HnswActionEmbedding`, `Holon`, `IdempotencyKeyStore`, `NftOwnership`,
 `OperationLog`, `ActionDefinition`, `ActionDependency`, `ActionEdge`, `ActionNode`,
 `ActionNodeExecution`, `ActionNodeTemplate`, `ActionRun`, `ActionTemplate`,
-`SagaSteps`, `StarOdk`, `SwapState`, `Wallet`.
+`SagaSteps`, `ActionGraphBundle`, `SwapState`, `Wallet`.
 
 ### Generator
 

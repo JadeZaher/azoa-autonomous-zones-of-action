@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "SurrealDB Major Upgrade — Specification"
+tags: [surrealdb-major-upgrade, archived]
+---
+
 # SurrealDB Major Upgrade — Specification
 
 ## Status
@@ -139,7 +145,7 @@ makes the version decision deliberate instead of letting the pin rot.
   [open-decisions-2026-06-12.md](../../../C:/Users/atooz/.claude/projects/c--Users-atooz-Programming-Projects-azoa/memory/open-decisions-2026-06-12.md)
   there is still an open per-test namespace isolation gap. Confirm
   whether the new major changes the namespace-create cost enough to
-  unblock the STARODK IDOR tests.
+  unblock the ActionGraphBundle IDOR tests.
 
 ## Acceptance criteria
 - [ ] `DECISION.md` lands target major + patch with rationale.

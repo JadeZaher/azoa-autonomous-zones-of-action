@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Architecture Decoupling & Observability — Plan"
+tags: [architecture-decoupling, archived]
+---
+
 # Architecture Decoupling & Observability — Plan
 
 > **Status: COMPLETE (2026-05-18).** Independent review verdict
@@ -13,7 +19,7 @@
 ## Tasks
 
 ### Persistence seam
-1. [x] Design per-aggregate interfaces: `IUserStore`, `IWalletStore`, `IHolonStore`, `IBlockchainOperationStore`, `ISTARStore`, `IActionStore`, `INftStore`, `IBridgeStore` (+ `BridgeStatusMutation`) — graph-aware, intention-revealing, NOT a generic `IRepository<T>` (`Interfaces/Stores/*`, `Interfaces/Actions/*`)
+1. [x] Design per-aggregate interfaces: `IUserStore`, `IWalletStore`, `IHolonStore`, `IBlockchainOperationStore`, `IActionGraphBundleStore`, `IActionStore`, `INftStore`, `IBridgeStore` (+ `BridgeStatusMutation`) — graph-aware, intention-revealing, NOT a generic `IRepository<T>` (`Interfaces/Stores/*`, `Interfaces/Actions/*`)
 2. [x] Implement EF-backed adapters (`Providers/Stores/Ef*Store.cs`, 8) — verbatim body-lifts from the deleted `EfStorageProvider` (incl. `EfActionStore.UpsertActionAsync` graph child-collection sync); interim, swapped in `surrealdb-migration`
 3. [x] Migrate all managers off `IAZOAStorageProvider` / `ProviderContext.CurrentProvider` onto the new interfaces (8 managers, 62 `Activate()` prologues removed)
 4. [x] Migrate `ActionManager` off the (dead) `IActionRepository`/`ProviderContext` onto `IActionStore`

@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Holon-Transformation Nodes — Specification"
+tags: [economic-primitive-nodes, archived]
+---
+
 # Holon-Transformation Nodes — Specification
 
 > **Directory-name note (legacy):** this track lives at
@@ -389,7 +395,7 @@ is **not** on this track's critical path. **Defer and note** (D9).
       does NOT compute a rate (rate comes from the mocked DEX/manager).
 - [ ] **TransferNode / GrantNode** call `INftManager.Transfer/Mint` with the
       actor `userId` taken from `context.ActionDefinition.UserId` (a test asserts the
-      body-supplied user is ignored — mirrors the STARODK IDOR precedent).
+      body-supplied user is ignored — mirrors the ActionGraphBundle IDOR precedent).
 - [ ] **RefundNode** performs transfer-back via `INftManager`; for a soulbound
       asset it fails closed with a clear "clawback primitive deferred (H2)"
       message (a test asserts this).

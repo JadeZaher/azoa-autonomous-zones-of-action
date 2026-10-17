@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: ".NET Client SDK — Plan"
+tags: [dotnet-client-sdk, archived]
+---
+
 # .NET Client SDK — Plan
 
 Build order: **csproj + result/error + auth handler (transport foundation) →
@@ -68,7 +74,7 @@ calls them today).
    one file per facade group, field-for-field from the TS shapes: user
    (`UserResponse`), wallet, holon (`holon-query.ts:10-35`), nft / usernft +
    bindings, swap (`SwapQuoteParams` / `SwapQuoteResponse` / execute params,
-   `client.ts:863-893`), bridge (bare), search, blockchain-operation, starodk,
+   `client.ts:863-893`), bridge (bare), search, blockchain-operation, actiongraphbundle,
    action CRUD + templates, api-key, and the workflow DTOs
    (`workflow/types.ts:24-209`: `WorkflowRunStatus` enum, `WorkflowRunResult`,
    `WorkflowNodeExecution`, `WorkflowExecutionState`, `AdvanceParams`,
@@ -109,11 +115,11 @@ calls them today).
 12. `[ ]` **NFT + UserNFT + bindings facades** (FR-3): `Nfts.*`
     (`client.ts:664-701`); `UserNfts.*` incl. holon/wallet binding +
     verification (`client.ts:897-985`). `AssertUuid` on every interpolated id.
-13. `[ ]` **Swap + bridge + search + operations + starodk + actions facades**
+13. `[ ]` **Swap + bridge + search + operations + actiongraphbundle + actions facades**
     (FR-4): `Swap.GetQuoteAsync` / `ExecuteAsync(params, idempotencyKey?)`
     (header via the per-call override, `client.ts:879-893`); `Bridge.*` on the
     **bare-object** path (`client.ts:709-740`); `Search.*` / `Operations.*`;
-    `Starodk.*` with the IDOR-safe `UpdateAsync` model (`client.ts:837`);
+    `ActionGraphBundle.*` with the IDOR-safe `UpdateAsync` model (`client.ts:837`);
     `Actions.*` CRUD + execute + node-templates (`client.ts:992-1071`);
     `ApiKeys.*` (`client.ts:1078-1095`).
 14. `[ ]` **Workflow template + run reads/writes facade** (FR-5):
@@ -196,7 +202,7 @@ calls them today).
 Phase 1 (csproj + AzoaResult/AzoaError + Guards + AzoaAuthHandler + transport)
  └─ Phase 2 (DTO records + ApiPaths)
      └─ Phase 3 (facades: auth/session, user/wallet/portfolio, holons,
-        │         nft/usernft, swap/bridge/search/ops/starodk/actions/apikeys,
+        │         nft/usernft, swap/bridge/search/ops/actiongraphbundle/actions/apikeys,
         │         workflow template+run reads/writes)            ── parallelizable per facade
         └─ Phase 4 (WorkflowRunHandle + lazy child credential)   ── needs Phase 3 workflow facade
             └─ Phase 5 (tests: RecordingHttpMessageHandler, ordered-call,
@@ -214,7 +220,7 @@ One commit per logical unit, message form **`[dotnet-client-sdk] <verb>
 - `[dotnet-client-sdk] add hand-mirrored DTO records + ApiPaths constants`
 - `[dotnet-client-sdk] add auth/session + user/wallet/portfolio facades`
 - `[dotnet-client-sdk] add fluent Holons builder + NFT/UserNFT facades`
-- `[dotnet-client-sdk] add swap/bridge/search/starodk/action/apikey facades`
+- `[dotnet-client-sdk] add swap/bridge/search/actiongraphbundle/action/apikey facades`
 - `[dotnet-client-sdk] add Workflow template + durable run reads/writes facade`
 - `[dotnet-client-sdk] add WorkflowRunHandle fluent run driver + lazy forActor credential`
 - `[dotnet-client-sdk] add xUnit suite + RecordingHttpMessageHandler harness`

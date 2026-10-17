@@ -79,7 +79,7 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
         var holonId1 = Guid.NewGuid();
         var holonId2 = Guid.NewGuid();
 
-        var odk = new ActionGraphBundle
+        var bundle = new ActionGraphBundle
         {
             Id               = Guid.NewGuid(),
             Name             = "Test action graph bundle",
@@ -96,23 +96,23 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
             IsActive         = true
         };
 
-        var upsertResult = await _store.UpsertAsync(odk);
+        var upsertResult = await _store.UpsertAsync(bundle);
 
         upsertResult.IsError.Should().BeFalse();
         upsertResult.Message.Should().Be("Saved.");
         upsertResult.Result.Should().NotBeNull();
 
-        var getResult = await _store.GetByIdAsync(odk.Id);
+        var getResult = await _store.GetByIdAsync(bundle.Id);
 
         getResult.IsError.Should().BeFalse();
         getResult.Message.Should().Be("Success");
         getResult.Result.Should().NotBeNull();
-        getResult.Result!.Id.Should().Be(odk.Id);
+        getResult.Result!.Id.Should().Be(bundle.Id);
         getResult.Result.Name.Should().Be("Test action graph bundle");
         getResult.Result.Description.Should().Be("A test action graph bundle");
         getResult.Result.PublicKey.Should().Be("pk_test_abc123");
         getResult.Result.PrivateKeyHash.Should().Be("hash_test_xyz789");
-        getResult.Result.UserId.Should().Be(odk.UserId);
+        getResult.Result.UserId.Should().Be(bundle.UserId);
         getResult.Result.TargetChain.Should().Be("Algorand");
         getResult.Result.GeneratedCode.Should().Be("// generated code placeholder");
         getResult.Result.DeploymentConfig.Should().Be("{\"env\":\"test\"}");
@@ -186,7 +186,7 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var odk = new ActionGraphBundle
+        var bundle = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
             Name        = "To Delete",
@@ -195,15 +195,15 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
             IsActive    = true
         };
 
-        await _store.UpsertAsync(odk);
+        await _store.UpsertAsync(bundle);
 
-        var deleteResult = await _store.DeleteAsync(odk.Id);
+        var deleteResult = await _store.DeleteAsync(bundle.Id);
 
         deleteResult.IsError.Should().BeFalse();
         deleteResult.Result.Should().BeTrue();
         deleteResult.Message.Should().Be("Deleted.");
 
-        var getResult = await _store.GetByIdAsync(odk.Id);
+        var getResult = await _store.GetByIdAsync(bundle.Id);
         getResult.IsError.Should().BeTrue();
         getResult.Message.Should().Be("action graph bundle not found.");
     }
@@ -227,7 +227,7 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
-        var odk1 = new ActionGraphBundle
+        var bundle1 = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
             Name        = "ActionGraphBundle One",
@@ -235,7 +235,7 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
             CreatedDate = DateTime.UtcNow,
             IsActive    = true
         };
-        var odk2 = new ActionGraphBundle
+        var bundle2 = new ActionGraphBundle
         {
             Id          = Guid.NewGuid(),
             Name        = "ActionGraphBundle Two",
@@ -244,8 +244,8 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
             IsActive    = true
         };
 
-        await _store.UpsertAsync(odk1);
-        await _store.UpsertAsync(odk2);
+        await _store.UpsertAsync(bundle1);
+        await _store.UpsertAsync(bundle2);
 
         var result = await _store.GetAllAsync();
 
@@ -254,8 +254,8 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
         result.Result!.Count().Should().BeGreaterThanOrEqualTo(2);
 
         var ids = result.Result!.Select(o => o.Id).ToList();
-        ids.Should().Contain(odk1.Id);
-        ids.Should().Contain(odk2.Id);
+        ids.Should().Contain(bundle1.Id);
+        ids.Should().Contain(bundle2.Id);
     }
 
     /// <summary>
@@ -268,7 +268,7 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         // Record with empty list and all nullables null.
-        var odkNulls = new ActionGraphBundle
+        var bundleNulls = new ActionGraphBundle
         {
             Id               = Guid.NewGuid(),
             Name             = "Null Fields ActionGraphBundle",
@@ -284,9 +284,9 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
             ModifiedDate     = null,
             IsActive         = true
         };
-        await _store.UpsertAsync(odkNulls);
+        await _store.UpsertAsync(bundleNulls);
 
-        var nullsResult = await _store.GetByIdAsync(odkNulls.Id);
+        var nullsResult = await _store.GetByIdAsync(bundleNulls.Id);
         nullsResult.IsError.Should().BeFalse();
         var nullsRt = nullsResult.Result!;
         nullsRt.PublicKey.Should().BeNull();
@@ -299,7 +299,7 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
         var userId = Guid.NewGuid();
         var holonId  = Guid.NewGuid();
 
-        var odkPopulated = new ActionGraphBundle
+        var bundlePopulated = new ActionGraphBundle
         {
             Id               = Guid.NewGuid(),
             Name             = "Populated Fields ActionGraphBundle",
@@ -315,9 +315,9 @@ public sealed class SurrealActionGraphBundleStoreTests : IAsyncLifetime
             ModifiedDate     = DateTime.UtcNow,
             IsActive         = false
         };
-        await _store.UpsertAsync(odkPopulated);
+        await _store.UpsertAsync(bundlePopulated);
 
-        var popResult = await _store.GetByIdAsync(odkPopulated.Id);
+        var popResult = await _store.GetByIdAsync(bundlePopulated.Id);
         popResult.IsError.Should().BeFalse();
         var popRt = popResult.Result!;
         popRt.PublicKey.Should().Be("pub-key");

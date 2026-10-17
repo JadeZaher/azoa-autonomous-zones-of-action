@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Custody Key Management — Specification"
+tags: [custody-key-management, archived]
+---
+
 # Custody Key Management — Specification
 
 ## Goal
@@ -91,7 +97,7 @@ This track formalizes **per-user custody as the default**:
    `ExportWalletAsync` IDOR guard (`Managers/WalletManager.cs:313-314`): a key
    is only released for `walletId` if the wallet's `UserId` equals the
    authenticated `userId`. The caller-supplied user identity, not a body
-   field, is the authority (STARODK IDOR precedent).
+   field, is the authority (ActionGraphBundle IDOR precedent).
 
 5. **The signer never touches storage.** All key access goes through one
    abstraction (`IKeyCustodyService`), so there is a single audited choke point

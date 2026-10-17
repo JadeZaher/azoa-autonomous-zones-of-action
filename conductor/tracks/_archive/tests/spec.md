@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Tests — Specification"
+tags: [tests, archived]
+---
+
 # Tests — Specification
 
 ## Goal
@@ -13,7 +19,7 @@ Validate the lightweight API with integration tests covering the full request/re
 
 ## Integration Tests
 - `UserController` — register, login, CRUD with auth
-- `STARODKController` — CRUD with auth
+- `ActionGraphBundleController` — CRUD with auth
 - Provider switching via header/body
 
 ## Unit Tests

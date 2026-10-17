@@ -117,7 +117,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">Wholes made of wholes.</h2>
             <p>
-              Everything a workflow can hold or move is a holon — a whole that can contain other wholes. A token, a credit, a right, a bundle of all three. Because value is modeled one way, an action built for one economy composes with value from any other. This is what makes a game reward, a material credit, and a payroll line the same kind of thing to the engine.
+              Everything a workflow can hold or move is a holon — a whole that can contain other wholes. A token, a credit, a right, a bundle of all three. Because value is modeled one way, an action built for one economy composes with value from any other. This is what makes a grant disbursement, a material credit, and a payroll line the same kind of thing to the engine.
             </p>
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">From primitive to product.</h2>
             <p>
-              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a game economy — scaffolded from the primitives instead of rebuilt from scratch. New chains, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces.
+              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a community fund — scaffolded from the primitives instead of rebuilt from scratch. New chains, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces.
             </p>
           </div>
         </div>

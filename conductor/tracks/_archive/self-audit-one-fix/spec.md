@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Self Audit One Fix — Specification"
+tags: [self-audit-one-fix, archived]
+---
+
 # Self Audit One Fix — Specification
 
 ## Goal
@@ -157,14 +163,14 @@ returns a list. If yes, add `listNfts(params?: { userId?: string }): Promise<…
 to `AzoaApiClient`. If the endpoint does not exist, document the gap in a
 `// TODO:` with a link to this track's closure.
 
-### 7. `updateSTARODK` missing — no `PUT /api/starodk/:id`
+### 7. `updateActionGraphBundle` missing — no `PUT /api/actiongraphbundle/:id`
 
-The backend has `createSTARODK` and `deleteSTARODK` but no update endpoint.
-`AzoaApiClient` has no `updateSTARODK()` method.
+The backend has `createActionGraphBundle` and `deleteActionGraphBundle` but no update endpoint.
+`AzoaApiClient` has no `updateActionGraphBundle()` method.
 
-Fix (decision required — record in `plan.md`): either add `PUT /api/starodk/:id`
-on the backend and a corresponding `updateSTARODK(id, model)` SDK method, or
-document that STARODK records are immutable after creation and add a code comment
+Fix (decision required — record in `plan.md`): either add `PUT /api/actiongraphbundle/:id`
+on the backend and a corresponding `updateActionGraphBundle(id, model)` SDK method, or
+document that ActionGraphBundle records are immutable after creation and add a code comment
 to that effect in `AzoaApiClient`.
 
 ### 8. `HolonQueryBuilder.getComposite()` path mismatch
@@ -228,7 +234,7 @@ same closable track rather than floating as a note.
 - [ ] Finding 4: `settings/page.tsx` treats `AzoaWallet.chains` as `string[]`; `?? {}` and unnecessary `?.` removed; `getApiUrl()` public accessor introduced on `AzoaClient`; cast through `unknown` removed.
 - [ ] Finding 5: Algorand msgpack implemented and `encoded` is never `undefined` on success, OR native signing helper removed with a clear doc note. Decision recorded in `plan.md`.
 - [ ] Finding 6: `listNfts()` added to `AzoaApiClient` (if backend endpoint exists), OR gap documented with a `// TODO:` comment referencing the track.
-- [ ] Finding 7: `updateSTARODK` added (backend + SDK), OR immutability documented. Decision recorded in `plan.md`.
+- [ ] Finding 7: `updateActionGraphBundle` added (backend + SDK), OR immutability documented. Decision recorded in `plan.md`.
 - [ ] Finding 8: `getComposite()` path reconciled with backend controller route; `API_PATHS` updated if a new route is added.
 - [ ] Finding 9: `azoa-hooks.ts:132` uses `azoa.api.listWallets({ userId })`.
 - [ ] Finding 10: AuthWrapper cluster (8 files) deleted; `auth.test.tsx` deleted if stale.

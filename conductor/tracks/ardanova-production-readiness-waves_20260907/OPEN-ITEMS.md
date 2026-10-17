@@ -80,7 +80,7 @@ account has to act.
 
 - [x] **OI-21** `CRITICAL` `azoa` — **`GuardTenantScope` fails OPEN on the platform unit
   itself.** *Closed 2026-09-08 (L0 remediation).* The first pass implemented "anyone whose
-  acting tenant is absent", which is the same hole one step over: a user-driven quest run
+  acting tenant is absent", which is the same hole one step over: a user-driven action run
   reaches the hold seam with `ActingTenantId = null` (`ActionNodeStepHandler.cs:212`,
   `ActionManager.cs:834,956` → `HoldNodeHandler.cs:100`) carrying an author-supplied asset id and
   partition name. The predicate now needs a POSITIVE operator signal

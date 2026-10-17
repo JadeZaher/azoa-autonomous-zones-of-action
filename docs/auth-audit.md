@@ -376,11 +376,11 @@
 |---|---|---|---|---|---|
 | seed_user | POST | /api/user/register | User.Register | N | 200 |
 | login_seed | POST | /api/user/login | User.Login | N | 200 |
-| create_odk | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| get_odk | GET | /api/actiongraphbundle/{{odk1.odkId}} | ActionGraphBundle.Get | Y | 200 |
-| get_all_odks | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |
-| generate_odk | POST | /api/actiongraphbundle/{{odk1.odkId}}/generate | ActionGraphBundle.Generate | Y | 200 |
-| delete_odk | DELETE | /api/actiongraphbundle/{{odk1.odkId}} | ActionGraphBundle.Delete | Y | 200 |
+| create_bundle | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| get_bundle | GET | /api/actiongraphbundle/{{bundle1.bundleId}} | ActionGraphBundle.Get | Y | 200 |
+| get_all_bundles | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |
+| generate_bundle | POST | /api/actiongraphbundle/{{bundle1.bundleId}}/generate | ActionGraphBundle.Generate | Y | 200 |
+| delete_bundle | DELETE | /api/actiongraphbundle/{{bundle1.bundleId}} | ActionGraphBundle.Delete | Y | 200 |
 | cleanup_user | DELETE | /api/user/{{suser.userId}} | User.Delete | Y | 200 |
 
 ### ActionGraphBundleController_QA.jsonl (26 cases)
@@ -389,25 +389,25 @@
 |---|---|---|---|---|---|
 | seed_user | POST | /api/user/register | User.Register | N | 200 |
 | login_user | POST | /api/user/login | User.Login | N | 200 |
-| create_odk_basic | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| create_odk_advanced | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| create_odk_unicode | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| get_odk_by_id | GET | /api/actiongraphbundle/{{odkBasic.id}} | ActionGraphBundle.Get | Y | 200 |
-| get_nonexistent_odk | GET | /api/actiongraphbundle/00000000-…-000 | ActionGraphBundle.Get | Y | 404 |
-| get_all_odks | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |
-| generate_odk_algorand | POST | /api/actiongraphbundle/{{odkBasic.id}}/generate | ActionGraphBundle.Generate | Y | 200 |
-| generate_odk_solana | POST | /api/actiongraphbundle/{{odkAdvanced.id}}/generate | ActionGraphBundle.Generate | Y | 200 |
-| deploy_odk_basic | POST | /api/actiongraphbundle/{{odkBasic.id}}/deploy | ActionGraphBundle.Deploy | Y | 200 |
-| deploy_odk_advanced | POST | /api/actiongraphbundle/{{odkAdvanced.id}}/deploy | ActionGraphBundle.Deploy | Y | 200 |
-| update_odk_via_upsert | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| get_odk_unauthorized | GET | /api/actiongraphbundle/{{odkBasic.id}} | ActionGraphBundle.Get | N | 401 |
-| create_odk_unauthorized | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | N | 401 |
-| delete_odk_unauthorized | DELETE | /api/actiongraphbundle/{{odkBasic.id}} | ActionGraphBundle.Delete | N | 401 |
-| generate_odk_unauthorized | POST | /api/actiongraphbundle/{{odkBasic.id}}/generate | ActionGraphBundle.Generate | N | 401 |
-| create_fresh_odk | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| deploy_before_generate | POST | /api/actiongraphbundle/{{odkFresh.id}}/deploy | ActionGraphBundle.Deploy | Y | 400 |
-| delete_odk_basic–verify_deleted_odk (×5) | DELETE/GET | /api/actiongraphbundle/{id} | ActionGraphBundle.Delete/Get | Y | 200/404 |
-| cleanup_user | DELETE | /api/user/{{starUser.id}} | User.Delete | Y | 200 |
+| create_bundle_basic | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| create_bundle_advanced | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| create_bundle_unicode | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| get_bundle_by_id | GET | /api/actiongraphbundle/{{bundleBasic.id}} | ActionGraphBundle.Get | Y | 200 |
+| get_nonexistent_bundle | GET | /api/actiongraphbundle/00000000-…-000 | ActionGraphBundle.Get | Y | 404 |
+| get_all_bundles | GET | /api/actiongraphbundle | ActionGraphBundle.GetAll | Y | 200 |
+| generate_bundle_algorand | POST | /api/actiongraphbundle/{{bundleBasic.id}}/generate | ActionGraphBundle.Generate | Y | 200 |
+| generate_bundle_solana | POST | /api/actiongraphbundle/{{bundleAdvanced.id}}/generate | ActionGraphBundle.Generate | Y | 200 |
+| deploy_bundle_basic | POST | /api/actiongraphbundle/{{bundleBasic.id}}/deploy | ActionGraphBundle.Deploy | Y | 200 |
+| deploy_bundle_advanced | POST | /api/actiongraphbundle/{{bundleAdvanced.id}}/deploy | ActionGraphBundle.Deploy | Y | 200 |
+| update_bundle_via_upsert | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| get_bundle_unauthorized | GET | /api/actiongraphbundle/{{bundleBasic.id}} | ActionGraphBundle.Get | N | 401 |
+| create_bundle_unauthorized | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | N | 401 |
+| delete_bundle_unauthorized | DELETE | /api/actiongraphbundle/{{bundleBasic.id}} | ActionGraphBundle.Delete | N | 401 |
+| generate_bundle_unauthorized | POST | /api/actiongraphbundle/{{bundleBasic.id}}/generate | ActionGraphBundle.Generate | N | 401 |
+| create_fresh_bundle | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| deploy_before_generate | POST | /api/actiongraphbundle/{{bundleFresh.id}}/deploy | ActionGraphBundle.Deploy | Y | 400 |
+| delete_bundle_basic–verify_deleted_bundle (×5) | DELETE/GET | /api/actiongraphbundle/{id} | ActionGraphBundle.Delete/Get | Y | 200/404 |
+| cleanup_user | DELETE | /api/user/{{bundleUser.id}} | User.Delete | Y | 200 |
 
 ### ActionGraphBundleController_Malicious.jsonl (38 cases)
 
@@ -415,17 +415,17 @@
 |---|---|---|---|---|---|
 | seed_user | POST | /api/user/register | User.Register | N | 200 |
 | login_user | POST | /api/user/login | User.Login | N | 200 |
-| seed_odk | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
-| sqli_odk_name–sqli_generate_config (×4) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
-| xss_odk_name–xss_generate_config (×3) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
-| get_odk_path_traversal–delete_invalid_odk (×6) | GET/POST/DELETE | /api/actiongraphbundle/{bad-id} | (404) | Y | 404 |
-| oversized_odk_name–oversized_generation_config (×3) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
-| null_odk_name–empty_body (×6) | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 4xx |
+| seed_bundle | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 200 |
+| sqli_bundle_name–sqli_generate_config (×4) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
+| xss_bundle_name–xss_generate_config (×3) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
+| get_bundle_path_traversal–delete_invalid_bundle (×6) | GET/POST/DELETE | /api/actiongraphbundle/{bad-id} | (404) | Y | 404 |
+| oversized_bundle_name–oversized_generation_config (×3) | POST | /api/actiongraphbundle or /generate | ActionGraphBundle.CreateOrUpdate/Generate | Y | 2xx or 200 |
+| null_bundle_name–empty_body (×6) | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 4xx |
 | generate_invalid_chain–deploy_before_generate (×6) | POST | /api/actiongraphbundle/{id}/generate or /deploy | ActionGraphBundle.Generate/Deploy | Y | 200 or 4xx or 400 |
-| get_odk_unauth–delete_odk_unauth (×5) | GET/POST/DELETE | /api/actiongraphbundle/{id} | ActionGraphBundle.* | N | 401 |
-| unicode_odk_name–zwc_odk_name (×3) | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 2xx |
-| cleanup_target_odk | DELETE | /api/actiongraphbundle/{{targetODK.id}} | ActionGraphBundle.Delete | Y | 200 |
-| cleanup_user | DELETE | /api/user/{{starMalUser.id}} | User.Delete | Y | 200 |
+| get_bundle_unauth–delete_bundle_unauth (×5) | GET/POST/DELETE | /api/actiongraphbundle/{id} | ActionGraphBundle.* | N | 401 |
+| unicode_bundle_name–zwc_bundle_name (×3) | POST | /api/actiongraphbundle | ActionGraphBundle.CreateOrUpdate | Y | 2xx |
+| cleanup_target_bundle | DELETE | /api/actiongraphbundle/{{targetBundle.id}} | ActionGraphBundle.Delete | Y | 200 |
+| cleanup_user | DELETE | /api/user/{{bundleMalUser.id}} | User.Delete | Y | 200 |
 
 ### E2E-Flows.jsonl (96 cases across Flows 1–10)
 
@@ -640,15 +640,15 @@ These cases exist to verify rejection. E2 MUST NOT add `Authorization` headers t
 | BlockchainOperationController_Malicious.jsonl | `get_op_bearer_only` | GET /api/blockchainoperation/{id} with `Bearer ` only → 401 | Verifies empty token after `Bearer ` rejected |
 | BlockchainOperationController_Malicious.jsonl | `get_op_tampered_token` | GET /api/blockchainoperation/user/{id} with tampered JWT → 401 | Verifies signature validation rejects forged JWT |
 | BlockchainOperationController_Malicious.jsonl | `header_injection_op` | GET /api/blockchainoperation/user/{id} with CRLF-injected auth → 401 | Verifies CRLF injection in auth header rejected |
-| ActionGraphBundleController_QA.jsonl | `get_odk_unauthorized` | GET /api/actiongraphbundle/{id} with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Get |
-| ActionGraphBundleController_QA.jsonl | `create_odk_unauthorized` | POST /api/actiongraphbundle with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.CreateOrUpdate |
-| ActionGraphBundleController_QA.jsonl | `delete_odk_unauthorized` | DELETE /api/actiongraphbundle/{id} with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Delete |
-| ActionGraphBundleController_QA.jsonl | `generate_odk_unauthorized` | POST /api/actiongraphbundle/{id}/generate with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Generate |
-| ActionGraphBundleController_Malicious.jsonl | `get_odk_unauth` | GET /api/actiongraphbundle/{id} with no auth → 401 | Auth bypass probe — attack surface verification |
-| ActionGraphBundleController_Malicious.jsonl | `create_odk_unauth` | POST /api/actiongraphbundle with no auth → 401 | Auth bypass probe |
-| ActionGraphBundleController_Malicious.jsonl | `generate_odk_unauth` | POST /api/actiongraphbundle/{id}/generate with no auth → 401 | Auth bypass probe |
-| ActionGraphBundleController_Malicious.jsonl | `deploy_odk_unauth` | POST /api/actiongraphbundle/{id}/deploy with no auth → 401 | Auth bypass probe |
-| ActionGraphBundleController_Malicious.jsonl | `delete_odk_unauth` | DELETE /api/actiongraphbundle/{id} with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_QA.jsonl | `get_bundle_unauthorized` | GET /api/actiongraphbundle/{id} with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Get |
+| ActionGraphBundleController_QA.jsonl | `create_bundle_unauthorized` | POST /api/actiongraphbundle with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.CreateOrUpdate |
+| ActionGraphBundleController_QA.jsonl | `delete_bundle_unauthorized` | DELETE /api/actiongraphbundle/{id} with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Delete |
+| ActionGraphBundleController_QA.jsonl | `generate_bundle_unauthorized` | POST /api/actiongraphbundle/{id}/generate with no auth → 401 | Verifies [Authorize] on ActionGraphBundle.Generate |
+| ActionGraphBundleController_Malicious.jsonl | `get_bundle_unauth` | GET /api/actiongraphbundle/{id} with no auth → 401 | Auth bypass probe — attack surface verification |
+| ActionGraphBundleController_Malicious.jsonl | `create_bundle_unauth` | POST /api/actiongraphbundle with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_Malicious.jsonl | `generate_bundle_unauth` | POST /api/actiongraphbundle/{id}/generate with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_Malicious.jsonl | `deploy_bundle_unauth` | POST /api/actiongraphbundle/{id}/deploy with no auth → 401 | Auth bypass probe |
+| ActionGraphBundleController_Malicious.jsonl | `delete_bundle_unauth` | DELETE /api/actiongraphbundle/{id} with no auth → 401 | Auth bypass probe |
 | MaliciousPayloads.jsonl | `mal_auth_no_bearer` | GET /api/user/{id} with `Authorization: {{malAuth.token}}` (no Bearer prefix) → 401 | Verifies scheme prefix is required |
 | MaliciousPayloads.jsonl | `mal_auth_expired_format` | GET /api/user/{id} with valid-shaped-but-unsigned JWT → 401 | Verifies forged-signature rejection |
 | MaliciousPayloads.jsonl | `mal_auth_empty_token` | GET /api/user/{id} with `Bearer ` → 401 | Verifies empty token rejected |

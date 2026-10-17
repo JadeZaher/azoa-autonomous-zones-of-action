@@ -200,7 +200,7 @@ public sealed record HoldOpenRequest(
     /// On whose authority the reserve partition behind this hold is drawn. Defaults to the
     /// acting tenant, so a seam that says nothing gets the NARROW answer: the node's own
     /// unit stays out of reach, and a caller with no resolvable tenant — the shape a
-    /// user-driven quest run arrives in — is refused outright (OI-21). Only a node-internal
+    /// user-driven action run arrives in — is refused outright (OI-21). Only a node-internal
     /// rail may pass <see cref="ReserveDrawAuthority.NodeOperator"/>.
     /// </summary>
     internal ReserveDrawAuthority ResolvedDrawAuthority =>

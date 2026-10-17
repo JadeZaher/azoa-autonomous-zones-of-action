@@ -26,15 +26,15 @@ public class ActionGraphBundleManagerTests
     }
 
     [Fact]
-    public async Task GetAsync_Existing_ReturnsODK()
+    public async Task GetAsync_Existing_ReturnsBundle()
     {
         var owner = Guid.NewGuid();
-        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
-        _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
+        var bundle = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
+        _store.Setup(p => p.GetByIdAsync(bundle.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = bundle });
 
         // Owner-or-public read scope: owner reads their own action graph bundle.
-        var result = await _manager.GetAsync(odk.Id, owner);
+        var result = await _manager.GetAsync(bundle.Id, owner);
 
         result.Result.Should().NotBeNull();
         result.Result!.Name.Should().Be("Test");
@@ -205,14 +205,14 @@ public class ActionGraphBundleManagerTests
     public async Task GenerateAsync_ShouldSetGeneratedCode()
     {
         var owner = Guid.NewGuid();
-        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
-        _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
+        var bundle = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
+        _store.Setup(p => p.GetByIdAsync(bundle.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = bundle });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
         var request = new ActionGraphBundleDappGenerationRequest { TargetChain = "Solana", BoundHolonIds = new List<Guid> { Guid.NewGuid() } };
-        var result = await _manager.GenerateAsync(odk.Id, request, owner);
+        var result = await _manager.GenerateAsync(bundle.Id, request, owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.GeneratedCode.Should().NotBeNullOrEmpty();
@@ -234,13 +234,13 @@ public class ActionGraphBundleManagerTests
     public async Task DeployAsync_ShouldSetDeploymentConfig()
     {
         var owner = Guid.NewGuid();
-        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", GeneratedCode = "code", TargetChain = "Algorand", UserId = owner };
-        _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
+        var bundle = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", GeneratedCode = "code", TargetChain = "Algorand", UserId = owner };
+        _store.Setup(p => p.GetByIdAsync(bundle.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = bundle });
         _store.Setup(p => p.UpsertAsync(It.IsAny<IActionGraphBundle>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IActionGraphBundle s, CancellationToken _) => new AZOAResult<IActionGraphBundle> { Result = s });
 
-        var result = await _manager.DeployAsync(odk.Id, owner);
+        var result = await _manager.DeployAsync(bundle.Id, owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.DeploymentConfig.Should().NotBeNullOrEmpty();
@@ -250,11 +250,11 @@ public class ActionGraphBundleManagerTests
     public async Task DeployAsync_WithoutGeneration_ShouldReturnError()
     {
         var owner = Guid.NewGuid();
-        var odk = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
-        _store.Setup(p => p.GetByIdAsync(odk.Id, It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = odk });
+        var bundle = new ActionGraphBundle { Id = Guid.NewGuid(), Name = "Test", UserId = owner };
+        _store.Setup(p => p.GetByIdAsync(bundle.Id, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IActionGraphBundle> { Result = bundle });
 
-        var result = await _manager.DeployAsync(odk.Id, owner);
+        var result = await _manager.DeployAsync(bundle.Id, owner);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("must be generated");

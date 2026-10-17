@@ -1240,6 +1240,11 @@ confirmed true by D24 research and now implemented.
 - **Podman/WSL gotchas** (recurring, see `dev-stack-live-run-gotchas`): the WSL
   socket dies → `wsl --shutdown`; a Flask process squats port 5000; you **must**
   rebuild the image after schema/backend changes or the API crash-loops.
+- **Generated-schema bytes are checksum-ledgered** (2026-10-16). Any change to a
+  generated `.surql` makes a volume that applied the old bytes stop on drift.
+  That includes a comment emitted from a POCO `Aggregate`/`SurrealNote` string.
+  `chore/retired-vocabulary-sweep` changed two (`ecosystem*.surql`), so run
+  `.\dev-up.ps1 -Reset` once after it lands.
 - ✅ **Frontend gates are REQUIRED, not forbidden.** `npx tsc --noEmit`,
   `npm run build`, eslint and `npm test` all pass and must be run. *(The old
   "no-frontend-typecheck" rule is dead — see §2.)*

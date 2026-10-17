@@ -1,3 +1,9 @@
+---
+type: Retro
+title: "Hand-off — ardanova-provider-port initiative"
+tags: [retro]
+---
+
 # Hand-off — ardanova-provider-port initiative
 
 > **Purpose.** Pick up this initiative in a fresh session with zero context loss.
@@ -140,7 +146,7 @@ stays gated (B6) until B1–B5 are all done.
   `Persistence/SurrealDb/Models/` (pattern: `Holon.cs`). Frontend typecheck: SKIP
   (pre-existing noise) — run SDK `tsc` + `dotnet build` only.
 - IDOR pattern: owned-resource lookups scoped by route id + authenticated UserId;
-  caller-supplied body UserId ignored (STARODK precedent).
+  caller-supplied body UserId ignored (ActionGraphBundle precedent).
 
 ---
 

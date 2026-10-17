@@ -18,7 +18,7 @@ namespace AZOA.WebAPI.Services.Reserve;
 /// answering the question — the compiler refuses the call otherwise.
 /// <para>
 /// There is no "unknown" authority and no default. The absence of an acting tenant is NOT
-/// an operator signal: a user-driven quest run carries a null acting tenant
+/// an operator signal: a user-driven action run carries a null acting tenant
 /// (<c>ActionNodeStepHandler</c>), and reading that as "the operator" would hand every
 /// holder of a value-signing key the whole of this node's own supply.
 /// </para>
@@ -129,7 +129,7 @@ internal static class ReservePartitionScope
         // An untenanted row is NOT ownerless. It is the platform's own unit —
         // PlatformTokenGenesis mints it with no acting tenant — so who may draw it is the
         // operator's decision, and NEVER inferred from the absence of a tenant on the
-        // request. That inference is the hole OI-21 names: a user-driven quest run reaches
+        // request. That inference is the hole OI-21 names: a user-driven action run reaches
         // the hold seam with exactly that missing tenant.
         if (owner == Guid.Empty)
             return RefusePlatformUnitDraw(authority, assetId, options ?? DefaultOptions);
@@ -155,7 +155,7 @@ internal static class ReservePartitionScope
     /// mints it with no acting tenant, so "no tenant on the row" means "the operator's",
     /// never "anybody's". Who else may draw it is an operator setting, and a caller with no
     /// resolvable tenant at all is refused under every setting — that is the shape a
-    /// user-driven quest run arrives in (ActionNodeStepHandler builds its node context with
+    /// user-driven action run arrives in (ActionNodeStepHandler builds its node context with
     /// ActingTenantId = null, HoldNodeHandler forwards it), with the asset id and the
     /// partition both taken from author-supplied action config.
     /// </summary>

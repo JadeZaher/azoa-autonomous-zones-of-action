@@ -1,0 +1,193 @@
+{"id": "R0337", "verdict": "keep"}
+{"id": "R0338", "verdict": "keep"}
+{"id": "R0339", "verdict": "keep"}
+{"id": "R0340", "verdict": "keep"}
+{"id": "R0341", "verdict": "keep"}
+{"id": "R0342", "verdict": "keep"}
+{"id": "R0343", "verdict": "keep"}
+{"id": "R0344", "verdict": "keep"}
+{"id": "R0345", "verdict": "keep"}
+{"id": "R0346", "verdict": "keep"}
+{"id": "R0347", "verdict": "keep"}
+{"id": "R0348", "verdict": "keep"}
+{"id": "R0349", "verdict": "keep"}
+{"id": "R0350", "verdict": "keep"}
+{"id": "R0351", "verdict": "keep"}
+{"id": "R0352", "verdict": "keep"}
+{"id": "R0353", "verdict": "keep"}
+{"id": "R0354", "verdict": "keep"}
+{"id": "R0355", "verdict": "keep"}
+{"id": "R0356", "verdict": "keep"}
+{"id": "R0357", "verdict": "keep"}
+{"id": "R0358", "verdict": "keep"}
+{"id": "R0359", "verdict": "keep"}
+{"id": "R0360", "verdict": "keep"}
+{"id": "R0361", "verdict": "keep"}
+{"id": "R0362", "verdict": "keep"}
+{"id": "R0363", "verdict": "keep"}
+{"id": "R0364", "verdict": "keep"}
+{"id": "R0365", "verdict": "keep"}
+{"id": "R0366", "verdict": "keep"}
+{"id": "R0367", "verdict": "keep"}
+{"id": "R0368", "verdict": "keep"}
+{"id": "R0369", "verdict": "keep"}
+{"id": "R0370", "verdict": "keep"}
+{"id": "R0371", "verdict": "keep"}
+{"id": "R0372", "verdict": "keep"}
+{"id": "R0373", "verdict": "keep"}
+{"id": "R0374", "verdict": "keep"}
+{"id": "R0375", "verdict": "keep"}
+{"id": "R0376", "verdict": "keep"}
+{"id": "R0377", "verdict": "keep"}
+{"id": "R0378", "verdict": "keep"}
+{"id": "R0379", "verdict": "keep"}
+{"id": "R0380", "verdict": "keep"}
+{"id": "R0381", "verdict": "keep"}
+{"id": "R0382", "verdict": "keep"}
+{"id": "R0383", "verdict": "keep", "note": "description correctly swept to \"List all bundles\"; the id \"get_all_odks\" itself was not touched by any rule (plural \"odks\" is outside the S13 lookahead) — fixed separately, see M-tests-1."}
+{"id": "R0384", "verdict": "keep"}
+{"id": "R0385", "verdict": "keep"}
+{"id": "R0386", "verdict": "keep"}
+{"id": "R0387", "verdict": "keep"}
+{"id": "R0388", "verdict": "keep"}
+{"id": "R0389", "verdict": "keep"}
+{"id": "R0390", "verdict": "keep"}
+{"id": "R0391", "verdict": "keep"}
+{"id": "R0392", "verdict": "keep"}
+{"id": "R0393", "verdict": "keep"}
+{"id": "R0394", "verdict": "keep"}
+{"id": "R0395", "verdict": "keep"}
+{"id": "R0396", "verdict": "keep"}
+{"id": "R0397", "verdict": "keep"}
+{"id": "R0398", "verdict": "keep"}
+{"id": "R0399", "verdict": "keep"}
+{"id": "R0400", "verdict": "keep"}
+{"id": "R0401", "verdict": "keep"}
+{"id": "R0402", "verdict": "keep"}
+{"id": "R0403", "verdict": "keep"}
+{"id": "R0404", "verdict": "keep"}
+{"id": "R0405", "verdict": "keep"}
+{"id": "R0406", "verdict": "keep"}
+{"id": "R0407", "verdict": "keep"}
+{"id": "R0408", "verdict": "keep"}
+{"id": "R0409", "verdict": "keep"}
+{"id": "R0410", "verdict": "keep"}
+{"id": "R0411", "verdict": "keep"}
+{"id": "R0412", "verdict": "keep"}
+{"id": "R0413", "verdict": "keep"}
+{"id": "R0414", "verdict": "keep"}
+{"id": "R0415", "verdict": "keep"}
+{"id": "R0416", "verdict": "keep"}
+{"id": "R0417", "verdict": "keep"}
+{"id": "R0418", "verdict": "keep"}
+{"id": "R0419", "verdict": "keep"}
+{"id": "R0420", "verdict": "keep"}
+{"id": "R0421", "verdict": "keep"}
+{"id": "R0422", "verdict": "keep"}
+{"id": "R0423", "verdict": "keep"}
+{"id": "R0424", "verdict": "keep"}
+{"id": "R0425", "verdict": "keep"}
+{"id": "R0426", "verdict": "keep"}
+{"id": "R0427", "verdict": "keep"}
+{"id": "R0428", "verdict": "keep"}
+{"id": "R0429", "verdict": "keep", "note": "same get_all_odks id gap as R0383 — fixed separately, see M-tests-2."}
+{"id": "R0430", "verdict": "keep"}
+{"id": "R0431", "verdict": "keep"}
+{"id": "R0432", "verdict": "keep"}
+{"id": "R0433", "verdict": "keep"}
+{"id": "R0434", "verdict": "keep"}
+{"id": "R0435", "verdict": "keep"}
+{"id": "R0436", "verdict": "keep"}
+{"id": "R0437", "verdict": "keep"}
+{"id": "R0438", "verdict": "keep"}
+{"id": "R0439", "verdict": "keep"}
+{"id": "R0440", "verdict": "keep"}
+{"id": "R0441", "verdict": "keep"}
+{"id": "R0442", "verdict": "keep"}
+{"id": "R0443", "verdict": "keep"}
+{"id": "R0444", "verdict": "keep"}
+{"id": "R0445", "verdict": "keep"}
+{"id": "R0446", "verdict": "amend", "note": "description correctly swept; additionally fixed the untouched \"_odkdev\" username/email literal on this line (and the matching login line, which has no manifest record) to \"_bundledev\" for consistency with the renamed firstName \"Bundle\" — see M-tests-4."}
+{"id": "R0447", "verdict": "amend", "note": "saveAs \"e2e2bundle\" was lowercased by the generic ODK-prose rule (digit before ODK breaks the PascalCase rules); amended to \"e2e2Bundle\" to match sibling vars (e2e2User, e2e2Auth, e2e2HolonA/B)."}
+{"id": "R0448", "verdict": "amend", "note": "template ref {{e2e2ODK.id}} -> amended to {{e2e2Bundle.id}} (casing fix, see R0447)."}
+{"id": "R0449", "verdict": "amend", "note": "template ref amended to {{e2e2Bundle.id}} (casing fix, see R0447)."}
+{"id": "R0450", "verdict": "amend", "note": "template ref amended to {{e2e2Bundle.id}} (casing fix, see R0447)."}
+{"id": "R0451", "verdict": "amend", "note": "template ref amended to {{e2e2Bundle.id}} (casing fix, see R0447)."}
+{"id": "R0452", "verdict": "keep", "note": "same get_all_odks id gap as R0383 — fixed separately, see M-tests-5."}
+{"id": "R0453", "verdict": "amend", "note": "template ref amended to {{e2e2Bundle.id}} (casing fix, see R0447)."}
+{"id": "R0454", "verdict": "keep"}
+{"id": "R0455", "verdict": "keep"}
+{"id": "R0456", "verdict": "keep"}
+{"id": "R0457", "verdict": "amend", "note": "line combined a correct saveAs/extract rename with a mis-cased body.name literal (\"E2E2ODK\" -> \"E2E2bundle\", same digit-before-ODK rule gap as R0447); amended the literal to \"E2E2Bundle\"."}
+{"id": "R0458", "verdict": "keep"}
+{"id": "R0459", "verdict": "keep", "note": "same get_all_odks id gap as R0383 — fixed separately, see M-tests-6."}
+{"id": "R0460", "verdict": "keep"}
+{"id": "R0461", "verdict": "keep"}
+{"id": "R0462", "verdict": "keep"}
+{"id": "R0463", "verdict": "keep"}
+{"id": "R0464", "verdict": "keep"}
+{"id": "R0465", "verdict": "keep"}
+{"id": "R0466", "verdict": "keep"}
+{"id": "R0467", "verdict": "keep"}
+{"id": "R0468", "verdict": "keep"}
+{"id": "R0469", "verdict": "keep"}
+{"id": "R0470", "verdict": "keep"}
+{"id": "R0471", "verdict": "keep"}
+{"id": "R0472", "verdict": "keep"}
+{"id": "R0473", "verdict": "keep"}
+{"id": "R0474", "verdict": "keep"}
+{"id": "R0475", "verdict": "keep"}
+{"id": "R0476", "verdict": "keep"}
+{"id": "R0477", "verdict": "keep"}
+{"id": "R0478", "verdict": "keep"}
+{"id": "R0479", "verdict": "keep"}
+{"id": "R0480", "verdict": "keep"}
+{"id": "R0481", "verdict": "keep"}
+{"id": "R0482", "verdict": "keep"}
+{"id": "R0483", "verdict": "keep"}
+{"id": "R0484", "verdict": "keep"}
+{"id": "R0485", "verdict": "keep"}
+{"id": "R0486", "verdict": "keep"}
+{"id": "R0487", "verdict": "keep"}
+{"id": "R0488", "verdict": "keep"}
+{"id": "R0489", "verdict": "keep"}
+{"id": "R0490", "verdict": "keep"}
+{"id": "R0491", "verdict": "keep"}
+{"id": "R0492", "verdict": "keep"}
+{"id": "R0493", "verdict": "keep"}
+{"id": "R0494", "verdict": "keep"}
+{"id": "R0495", "verdict": "keep"}
+{"id": "R0496", "verdict": "keep"}
+{"id": "R0497", "verdict": "keep"}
+{"id": "R0498", "verdict": "keep"}
+{"id": "R0499", "verdict": "keep"}
+{"id": "R0500", "verdict": "keep"}
+{"id": "R0501", "verdict": "keep"}
+{"id": "R0502", "verdict": "keep"}
+{"id": "R0503", "verdict": "keep"}
+{"id": "R0504", "verdict": "keep"}
+{"id": "R0505", "verdict": "keep"}
+{"id": "R0506", "verdict": "keep"}
+{"id": "R0507", "verdict": "keep"}
+{"id": "R0508", "verdict": "keep"}
+{"id": "R0509", "verdict": "keep"}
+{"id": "R0510", "verdict": "keep"}
+{"id": "R0511", "verdict": "keep"}
+{"id": "R0512", "verdict": "keep"}
+{"id": "R0513", "verdict": "keep"}
+{"id": "R0514", "verdict": "keep"}
+{"id": "R0515", "verdict": "keep"}
+{"id": "R0516", "verdict": "keep"}
+{"id": "R0517", "verdict": "keep"}
+{"id": "R0518", "verdict": "keep"}
+{"id": "R0519", "verdict": "keep"}
+{"id": "R0520", "verdict": "keep"}
+{"id": "R0521", "verdict": "keep"}
+{"id": "M-tests-1", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/ActionGraphBundleController.jsonl", "line": 10, "before": "get_all_odks", "after": "get_all_bundles", "note": "id residue: plural \"odks\" falls outside the S13 rule's lookahead guard (odk followed by lowercase s is excluded), so it survived while sibling ids (create/get/generate/delete_bundle) in the same file were renamed."}
+{"id": "M-tests-2", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/ActionGraphBundleController_QA.jsonl", "line": 19, "before": "get_all_odks", "after": "get_all_bundles", "note": "same get_all_odks plural-guard gap as M-tests-1."}
+{"id": "M-tests-3", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/CrossController_E2E.jsonl", "line": 24, "before": "\"body\":{\"title\":\"Master Trader\",\"karma\":100}", "after": "\"body\":{\"title\":\"Master Trader\"}", "note": "karma has no sweep rule at all and no longer exists on UserUpdateModel (Models/UserUpdateModel.cs: Username/Email/Title/FirstName/LastName/IsActive only); the stray field was silently ignored by the deserializer but is dead retired-vocabulary residue, so it was dropped."}
+{"id": "M-tests-4", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/CrossController_E2E.jsonl", "line": 33, "before": "_odkdev / _odkdev@flow.azoa (register line 33 + login line 34)", "after": "_bundledev / _bundledev@flow.azoa", "note": "username/email literal kept \"odkdev\" because the sweep's odk rules require a non-letter immediately after \"odk\" (here followed by \"dev\"); fixed both the register and login line (the literal must match exactly for login to succeed) and renamed for consistency with the already-renamed firstName \"Bundle\"."}
+{"id": "M-tests-5", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/CrossController_E2E.jsonl", "line": 42, "before": "e2e2_get_all_odks", "after": "e2e2_get_all_bundles", "note": "same get_all_odks plural-guard gap as M-tests-1."}
+{"id": "M-tests-6", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/E2E-Flows.jsonl", "line": 41, "before": "e2e2_get_all_odks", "after": "e2e2_get_all_bundles", "note": "same get_all_odks plural-guard gap as M-tests-1."}
+{"id": "M-tests-7", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/E2E-Flows.jsonl", "line": 127, "before": "e2e7_get_all_odks", "after": "e2e7_get_all_bundles", "note": "same get_all_odks plural-guard gap as M-tests-1; this line had zero manifest record because the description text already read \"action graph bundle list\" pre-sweep, so only the id carried residue."}
+{"id": "M-tests-8", "verdict": "miss-fixed", "file": "tests/AZOA.WebAPI.LiveTests/live-tests/MaliciousPayloads.jsonl", "line": 103, "before": "\"name\":\"XSSODK\"", "after": "\"name\":\"XSSBundle\"", "note": "\"XSSODK\" has no boundary before ODK (immediately preceded by letter \"S\"), which every STAR_RULES pattern requires, so it never matched; fixed for consistency with the sibling XSSKey naming in the same suite."}

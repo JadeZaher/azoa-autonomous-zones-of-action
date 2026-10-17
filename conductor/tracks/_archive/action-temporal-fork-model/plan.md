@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Action Temporal / Forkable DAG Model — Plan"
+tags: [action-temporal-fork-model, archived]
+---
+
 # Action Temporal / Forkable DAG Model — Plan
 
 ## Tasks
@@ -18,8 +24,8 @@
 9. [ ] Register in DI (`Program.cs`)
 
 ### ActionManager rewrite (data plane only)
-10. [ ] `IActionManager.ExecuteAsync` now creates a `ActionRun`, returns its `Id`; existing call sites pass through unchanged
-11. [ ] `ActionManager` reads/writes `ActionNodeExecution` keyed by `(runId, nodeId)`. Per-node handlers (`IActionNodeHandler`) take a `ActionNodeExecutionContext` (carries `runId`, `nodeId`, `action`, `inputs`). No mutation of `ActionNode`
+10. [ ] `IActionManager.ExecuteAsync` now creates an `ActionRun`, returns its `Id`; existing call sites pass through unchanged
+11. [ ] `ActionManager` reads/writes `ActionNodeExecution` keyed by `(runId, nodeId)`. Per-node handlers (`IActionNodeHandler`) take an `ActionNodeExecutionContext` (carries `runId`, `nodeId`, `action`, `inputs`). No mutation of `ActionNode`
 12. [ ] Add `IActionManager.ForkAsync(runId, atNodeId, reason)` — validates parent is `Running`, validates `atNodeId` belongs to the same action definition, creates new `ActionRun` with lineage fields set, copies node-execution refs for `ExecutionOrder < forkPoint`, transitions parent `Running → Forked`, cancels parent's in-flight executions
 13. [ ] Add `IActionManager.MarkRunFailedAsync(runId, reason)` — supervisor-driven fail path (distinct from internal error path via `FailReason` audit field)
 

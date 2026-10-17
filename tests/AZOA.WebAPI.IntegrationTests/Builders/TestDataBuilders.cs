@@ -183,8 +183,8 @@ public class HolonBuilder
 public class ActionGraphBundleBuilder
 {
     private Guid _id = Guid.NewGuid();
-    private string _name = "TestODK";
-    private string _description = "A test ODK";
+    private string _name = "TestBundle";
+    private string _description = "A test bundle";
     private string? _publicKey;
     private Guid? _userId;
     private List<Guid> _boundHolonIds = new();

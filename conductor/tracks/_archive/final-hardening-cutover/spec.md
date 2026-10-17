@@ -16,7 +16,7 @@ supersedes:
   - action-value-engine-expressiveness
   - bridge-safety-hardening
   - project-asset-fractionalization
-  - star-odk-ecosystem-tree
+  - action-graph-bundle-ecosystem-tree
   - durable-saga-orchestration
   - data-backfill-migrations
   - surreal-linq-adoption-sweep
@@ -157,7 +157,7 @@ the "anyone can define their own economic value engine" goal.
 
 ### Phase D — Flagship economic flow (fractionalization + ecosystem tree)
 
-Absorbs `project-asset-fractionalization` + `star-odk-ecosystem-tree`. Depends on
+Absorbs `project-asset-fractionalization` + `action-graph-bundle-ecosystem-tree`. Depends on
 Phase B (real value) + Phase C (F-features). This is the ArdaNova deliverable the
 whole ardanova-rails initiative exists for; all its composable rails are shipped,
 so it is assembly.
@@ -165,7 +165,7 @@ so it is assembly.
 - **D1. `Bridge` + `Back` Tier-2 action nodes** + 4 builder presets + one canonical
   parameterized fractionalization action template (peg math stays tenant-side, via
   `Emit`).
-- **D2. STAR-ODK ecosystem tree.** `Ecosystem`/`EcosystemNode` on STARODK,
+- **D2. Action Graph Bundle ecosystem tree.** `Ecosystem`/`EcosystemNode` on ActionGraphBundle,
   `AddDappSeriesAsync`/`GetEcosystemAsync`, tree-walking multi-dApp codegen, and
   the React Flow tree UI (reuse the action-visual-builder canvas).
 
@@ -262,7 +262,7 @@ decision). Remaining, small:
 ## Restructuring performed when this track was created (2026-07-05)
 
 - Absorbed (archived, work moved into this spec): action-value-engine-expressiveness,
-  bridge-safety-hardening, project-asset-fractionalization, star-odk-ecosystem-tree,
+  bridge-safety-hardening, project-asset-fractionalization, action-graph-bundle-ecosystem-tree,
   durable-saga-orchestration, data-backfill-migrations, surreal-linq-adoption-sweep,
   surrealdb-major-upgrade, blockchain-recovery-and-portable-wallets.
 - Archived as already-shipped (bookkeeping): user-sovereign-identity,
@@ -343,7 +343,7 @@ god-object splits) — those remain honest post-alpha follow-ups (see §H-follow
   `dotnet build` (0 errors) + unit tests + SDK `vitest`, on push/PR. Not a
   release/deploy pipeline — just the green-bar guard so regressions surface.
 - **H7. Bucket-D value-path triage (M).** The un-root-caused value-path
-  integration failures (`Holon.Interact` / `Mint` / `Exchange`, `STARODK.Deploy`)
+  integration failures (`Holon.Interact` / `Mint` / `Exchange`, `ActionGraphBundle.Deploy`)
   in the documented 37-failure integration tail: **investigate, then fix-or-accept
   with written evidence** per finding. No silent acceptance — each stays failing
   only with a root-caused reason recorded (test-design vs product bug).

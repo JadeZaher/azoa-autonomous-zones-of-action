@@ -1,3 +1,9 @@
+---
+type: Retro
+title: "Session Hand-off — 2026-06-16"
+tags: [retro]
+---
+
 # Session Hand-off — 2026-06-16
 
 > **Purpose.** Resume this work in a fresh session with zero context loss. Read top
@@ -90,7 +96,7 @@ suspend-on-signal. Read `conductor/tracks/durable-workflow-engine/spec.md` + `pl
   free `mime_type` string + an allow-list config (lean: free string + config allow-list,
   mirroring the KYC MIME allow-list already in `ManualKycProviderService`).
 - Manager + User-scoped controller (IDOR pattern: owner = authenticated user, body
-  owner ignored — STARODK precedent), `AZOAResult<T>`, IKycGate optional.
+  owner ignored — ActionGraphBundle precedent), `AZOAResult<T>`, IKycGate optional.
 - **Bucket-later stub:** record `AZOA_ASSET_STORAGE_BACKEND` + a future S3 bucket as a
   `DEPLOY-STEPS-TODO.md` entry; the `storage_url` is null/db-backed until then.
 - Tie-in: this is the natural home for the **Holon↔asset metadata** and could back the
@@ -157,7 +163,7 @@ See `conductor/DEPLOY-STEPS-TODO.md` status board for the authoritative open/clo
 - Keep authoring and review separate — do NOT self-approve crypto/value-path; use a
   `code-reviewer` lane. (This session's review caught a real Critical defect — worth it.)
 - IDOR pattern: owned-resource lookups scoped by route id + authenticated user; body
-  owner ids ignored (STARODK precedent).
+  owner ids ignored (ActionGraphBundle precedent).
 - Avoid casts where possible (user's explicit bar — it surfaced the C-1 idempotency bug).
 - Skip `frontend/` typecheck (`no-frontend-typecheck`); SDK `tsc` + vitest only.
 - No brand leak: nothing ArdaNova-branded in AZOA code/config.

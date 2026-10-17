@@ -1,3 +1,9 @@
+---
+type: Track Artifact
+title: "SurrealDB Migration — Close-Out Runbook"
+tags: [surrealdb-migration, archived]
+---
+
 > **Stream E COMPLETE 2026-05-22 -- track CLOSED; this runbook is archive material.** All 5 pre-cutover gates (G1, G2, G3, G5, G7) passed via the 5 gate tests under tests/AZOA.WebAPI.IntegrationTests/Gates/; SIGN-OFF.md committed; plan.md tasks 19-23 + 25-27 ticked. See [SIGN-OFF.md](SIGN-OFF.md).
 
 # SurrealDB Migration — Close-Out Runbook
@@ -69,7 +75,7 @@ seam only, services still on DbContext), 8b, A7 (test-skip pattern).
 
 | # | Bucket | Tasks |
 |---|---|---|
-| Wave-2 finish | task 5 completion + task 8 full | User/Holon/STAR adapters; refactor `ReconciliationService` + `CrossChainBridgeService` onto `IBridgeStore` |
+| Wave-2 finish | task 5 completion + task 8 full | User/Holon/Action Graph Bundle adapters; refactor `ReconciliationService` + `CrossChainBridgeService` onto `IBridgeStore` |
 | Ops guardrails | 12, 13, 15, A1 | durability self-check (B1), backup/restore drill, OTEL on `ISurrealExecutor`, perf budgets |
 | Action graph (gated) | 9, 10, 11 | action DAG via `RELATE`, holon polyhierarchy edges, single `ExecutionOrder` — blocked on `action-temporal-fork-model` |
 | Wave-3 EF removal | 16, 17, 18 | delete `AZOADbContext`/`Migrations/`/`Ef*Store.cs`/Npgsql packages |
@@ -132,7 +138,7 @@ Open three Claude Code instances in the repo and paste one prompt per
 window. They touch disjoint file sets; you can launch all three within
 ~30 seconds.
 
-### Stream A — finish [`plan.md`](plan.md) task 5 (User / Holon / STAR adapters)
+### Stream A — finish [`plan.md`](plan.md) task 5 (User / Holon / Action Graph Bundle adapters)
 
 **Scope.** Author the three missing `.mermaid`/`.surql` schemas, build
 their adapters mirroring the wave-2 pattern, and flip DI. Action portion
@@ -144,7 +150,7 @@ stays gated on `action-temporal-fork-model` — skip it.
 /ultrapilot
 
 Goal: close wave-2 task 5 (conductor/tracks/surrealdb-migration/plan.md)
-for the User, Holon, STAR aggregates. Action stays gated on
+for the User, Holon, Action Graph Bundle aggregates. Action stays gated on
 action-temporal-fork-model — SKIP it.
 
 Pattern to mirror exactly: the just-landed wave-2 stores at
@@ -179,16 +185,16 @@ Decomposition (use haiku for explore, sonnet for the 3 workers):
   W3 (sonnet, isolated):
     - Persistence/SurrealDb/Schemas/source/110_star.mermaid
     - Persistence/SurrealDb/Schemas/110_star.surql
-    - Providers/Stores/Surreal/SurrealStarStore.cs
-    - tests/.../SurrealStarStoreTests.cs
-    Field shape from Models/STARODK.cs.
+    - Providers/Stores/Surreal/SurrealActionGraphBundleStore.cs
+    - tests/.../SurrealActionGraphBundleStoreTests.cs
+    Field shape from Models/ActionGraphBundle.cs.
 
 All tests use [SkippableFact] + Skip.IfNot(await SkipIfSurrealDbUnavailableAsync(),
 "...") — match the pattern in SurrealWalletStoreTests / SurrealNftStoreTests
 (NOT the early-return pattern).
 
 Sequential coordinator pass (you, sonnet):
-  - Flip the 3 Program.cs:247-254 EF lines for User/Holon/STAR to the
+  - Flip the 3 Program.cs:247-254 EF lines for User/Holon/Action Graph Bundle to the
     new Surreal counterparts (keep Action on EF — gated on
     action-temporal-fork-model).
   - dotnet build AZOA.WebAPI.csproj — assert 0 errors, ≤17 warnings.
@@ -200,7 +206,7 @@ Closing pass (opus, ONE invocation):
   silent DateTime-Kind drift.
   If findings, spawn ONE executor-high to fix them; re-build.
 
-Done = build green + plan.md task 5 boxes ticked for User/Holon/STAR.
+Done = build green + plan.md task 5 boxes ticked for User/Holon/Action Graph Bundle.
 ```
 
 ### Stream B — ops guardrails ([`plan.md`](plan.md) tasks 12, 13, 15, A1)
@@ -651,7 +657,7 @@ Decomposition (sonnet, 3 isolated workers):
     - rm Providers/Stores/EfWalletStore.cs
     - rm Providers/Stores/EfHolonStore.cs
     - rm Providers/Stores/EfBlockchainOperationStore.cs
-    - rm Providers/Stores/EfStarStore.cs
+    - rm Providers/Stores/EfActionGraphBundleStore.cs
     - rm Providers/Stores/EfActionStore.cs
     - rm Providers/Stores/EfNftStore.cs
     - rm Providers/Stores/EfBridgeStore.cs

@@ -68,7 +68,7 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         // The caller-supplied model.UserId is intentionally ignored — the
         // authenticated user id from the controller is the only source of truth.
 
-        ActionGraphBundle odk;
+        ActionGraphBundle bundle;
         if (routeId.HasValue)
         {
             var loaded = await _bundleStore.GetByIdAsync(routeId.Value, default);
@@ -78,21 +78,21 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
             if (!IsOwnedBy(loaded.Result, userId))
                 return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
 
-            odk = (ActionGraphBundle)loaded.Result;
+            bundle = (ActionGraphBundle)loaded.Result;
         }
         else
         {
             var match = await _bundleStore.GetByNameAndUserAsync(model.Name, userId, default);
-            odk = (match.Result as ActionGraphBundle) ?? new ActionGraphBundle { UserId = userId };
+            bundle = (match.Result as ActionGraphBundle) ?? new ActionGraphBundle { UserId = userId };
         }
 
-        odk.Name         = model.Name;
-        odk.Description  = model.Description;
-        odk.PublicKey    = model.PublicKey;
-        odk.UserId     = userId; // authoritative — never trust model.UserId
-        odk.ModifiedDate = DateTime.UtcNow;
+        bundle.Name         = model.Name;
+        bundle.Description  = model.Description;
+        bundle.PublicKey    = model.PublicKey;
+        bundle.UserId     = userId; // authoritative — never trust model.UserId
+        bundle.ModifiedDate = DateTime.UtcNow;
 
-        return await _bundleStore.UpsertAsync(odk, default);
+        return await _bundleStore.UpsertAsync(bundle, default);
     }
 
     private static bool IsOwnedBy(IActionGraphBundle record, Guid userId) =>
@@ -123,13 +123,13 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
             return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
 
-        var odk = (ActionGraphBundle)existing.Result;
-        odk.TargetChain = request.TargetChain;
-        odk.BoundHolonIds = request.BoundHolonIds;
-        odk.GeneratedCode = GenerateDappCode(odk, request);
-        odk.ModifiedDate = DateTime.UtcNow;
+        var bundle = (ActionGraphBundle)existing.Result;
+        bundle.TargetChain = request.TargetChain;
+        bundle.BoundHolonIds = request.BoundHolonIds;
+        bundle.GeneratedCode = GenerateDappCode(bundle, request);
+        bundle.ModifiedDate = DateTime.UtcNow;
 
-        return await _bundleStore.UpsertAsync(odk, default);
+        return await _bundleStore.UpsertAsync(bundle, default);
     }
 
     public async Task<AZOAResult<IActionGraphBundle>> DeployAsync(Guid id, Guid? userId = null, AZOARequest? providerRequest = null)
@@ -140,28 +140,28 @@ public class ActionGraphBundleManager : IActionGraphBundleManager
         if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
             return Fail(ActionGraphBundleAuthorizationError.Forbidden + "action graph bundle is owned by a different user.");
 
-        var odk = (ActionGraphBundle)existing.Result;
-        if (string.IsNullOrEmpty(odk.GeneratedCode))
+        var bundle = (ActionGraphBundle)existing.Result;
+        if (string.IsNullOrEmpty(bundle.GeneratedCode))
             return new AZOAResult<IActionGraphBundle> { IsError = true, Message = "Dapp must be generated before deployment." };
 
-        odk.DeploymentConfig = JsonSerializer.Serialize(new
+        bundle.DeploymentConfig = JsonSerializer.Serialize(new
         {
             DeployedAt = DateTime.UtcNow,
-            Chain = odk.TargetChain,
-            Holons = odk.BoundHolonIds,
+            Chain = bundle.TargetChain,
+            Holons = bundle.BoundHolonIds,
             TxHash = $"0x{Guid.NewGuid():N}"
         });
-        odk.ModifiedDate = DateTime.UtcNow;
+        bundle.ModifiedDate = DateTime.UtcNow;
 
-        return await _bundleStore.UpsertAsync(odk, default);
+        return await _bundleStore.UpsertAsync(bundle, default);
     }
 
-    private static string GenerateDappCode(IActionGraphBundle odk, ActionGraphBundleDappGenerationRequest request)
+    private static string GenerateDappCode(IActionGraphBundle bundle, ActionGraphBundleDappGenerationRequest request)
     {
         var config = new
         {
-            Name = odk.Name,
-            Description = odk.Description,
+            Name = bundle.Name,
+            Description = bundle.Description,
             TargetChain = request.TargetChain,
             BoundHolons = request.BoundHolonIds,
             UserConfig = request.Config,

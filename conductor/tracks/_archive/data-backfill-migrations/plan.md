@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Data Backfill Migrations — Plan"
+tags: [data-backfill-migrations, archived]
+---
+
 # Data Backfill Migrations — Plan
 
 Build order: **infrastructure shell first, F6 (first real consumer)
@@ -53,7 +59,7 @@ Pre-req: RUNBOOK §4.3 Phase C ships (generator emits FK columns as
     parent_holon_id; peer_holon_ids array elements stay strings (the
     array is conceptually a tag bag, not strict FK).
 11. [ ] `Backfills/004_dapp_composition_fk_to_record.cs` —
-    dapp_series.user_id + star_odk_id; dapp_series_action cross-slice
+    dapp_series.user_id + action_graph_bundle_id; dapp_series_action cross-slice
     FKs (dapp_series_id + action_id).
 12. [ ] Concurrency test: spawn 5 parallel CLI invocations of the same
     backfill; exactly one wins, others see "already-applied."

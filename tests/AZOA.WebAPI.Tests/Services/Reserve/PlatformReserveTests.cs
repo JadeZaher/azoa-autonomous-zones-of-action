@@ -351,7 +351,7 @@ public class PlatformReserveTests
     //
     // The first pass asked the ownership question at two of the SEVEN doors that reach
     // these counters, and answered it with "no acting tenant means the operator" — which
-    // is exactly the shape a user-driven quest run arrives in (ActionNodeStepHandler
+    // is exactly the shape a user-driven action run arrives in (ActionNodeStepHandler
     // builds its context with ActingTenantId = null). The question is now asked HERE,
     // where the counter actually moves, so no door can skip it.
 

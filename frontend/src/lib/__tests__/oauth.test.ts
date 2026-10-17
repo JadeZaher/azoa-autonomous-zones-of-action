@@ -227,7 +227,7 @@ describe('beginProviderLink', () => {
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer live-jwt')
 
-    // The redirect carries the ticket, never an user id.
+    // The redirect carries the ticket, never a user id.
     expect(assign).toHaveBeenCalledOnce()
     const redirect = new URL(assign.mock.calls[0][0] as string)
     expect(redirect.searchParams.get('ticket')).toBe('one-time-ticket')

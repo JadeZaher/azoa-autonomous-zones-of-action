@@ -187,7 +187,7 @@ public class ReversedPurchaseProvenanceTests
         var harness = new Harness();
         harness.SeedLot("lot-1", quantity: "100000");
         harness.SeedPurchase(correlation: null, spent: "100000", received: "50000");
-        harness.SeedHold("worker-stake-7", amount: "50000", partition: "quest-rewards");
+        harness.SeedHold("worker-stake-7", amount: "50000", partition: "action-rewards");
 
         var claims = await harness.ListAsync("lot-1");
 

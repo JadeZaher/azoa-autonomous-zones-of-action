@@ -109,7 +109,7 @@ These were found because a silent test-harness bug had been *masking* them.
    `[Column(Flexible=true)]` (golden `operation_log.surql` regenerated).
    **⚠ Verify** there aren't OTHER stores with the same SET-omits-null latent bug on
    `option<>` collection columns — this was found in Holon; the same pattern could
-   exist in Wallet/Action/STAR stores. **This is the single most valuable thing you
+   exist in Wallet/Action/Action Graph Bundle stores. **This is the single most valuable thing you
    can do in this review.**
 
 ### 2c. The harness root-cause (test infra, but load-bearing)
@@ -134,7 +134,7 @@ legitimate result payload.
 | `dotnet build` 0 err, no new warnings | **Verified** this session (full build after each change). |
 | Unit suite 1235 pass / 0 fail / 1 skip | **Verified** (ran clean). |
 | SDK 163 vitest pass | **Verified**. |
-| Each previously-red integration class green (UserNFT 10/10, MCP 8/8, G5 1/1, Holon/STARODK 41/41) | **Verified in isolation** (ran each class/scoped group). |
+| Each previously-red integration class green (UserNFT 10/10, MCP 8/8, G5 1/1, Holon/ActionGraphBundle 41/41) | **Verified in isolation** (ran each class/scoped group). |
 | Full integration suite still shows 37 failures | **Verified count**; the *attribution* ("pre-existing shared-SurrealDB-container parallel contention, not regressions") is **partially assumed** — supported by: the exact same classes pass when run scoped, and it matches the documented `integration-test-namespace-isolation` history in project memory. **NOT** independently re-audited failure-by-failure. **⚠ This is the biggest soft spot. If you do one deep thing, pick apart a handful of those 37 and confirm they are genuinely contention, not a real regression hiding in the crowd.** |
 | The 3 product bugs are real & fixed | **Verified** (reproduced against live SurrealDB 3.1.4, fix confirmed green). |
 | MCP tools were broken in prod (not just tests) | **Verified** by the fixing worker against the real `DefaultSurrealExecutor` (bare-hex → 0 rows, link form → 1 row). Re-confirm the production call path actually uses the fixed binding. |
@@ -174,7 +174,7 @@ critical/major). What was **already fixed** this session:
 1. **SET-omits-null across OTHER stores.** The Holon empty-collection data-loss bug
    (§2b.3) is a *pattern*. Grep every `Surreal*Store.cs` `ToPoco`/upsert for
    `option<>` collection columns (`array<...>`, `option<object>`) that are only
-   serialized when non-empty. If Wallet/Action/STAR/NFT stores share it, emptying a
+   serialized when non-empty. If Wallet/Action/Action Graph Bundle/NFT stores share it, emptying a
    collection silently fails there too. **Highest expected value.**
 2. **The 37-failure integration tail.** Independently reproduce a sample; confirm
    contention (namespace/scheme collisions, shared-container races) vs a masked

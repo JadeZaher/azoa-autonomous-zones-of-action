@@ -42,8 +42,8 @@ const DOMAINS = [
     ),
   },
   {
-    title: 'Actions in games',
-    body: 'Player journeys with real stakes — earn, trade, unlock. The same engine that moves money moves play, without a separate stack.',
+    title: 'Grants and bounties',
+    body: 'Applications, milestones, payouts — funding that releases only when the work is verified, and refunds when it is not.',
     icon: (
       <svg viewBox="0 0 48 48" width="48" height="48">
         <path d="M24 6 L42 24 L24 42 L6 24 Z" fill="none" stroke="#16120D" strokeWidth="2" />
@@ -82,7 +82,7 @@ export default function Home() {
           <h1 className="az-h1">One engine.<br />Every kind of&nbsp;economy.</h1>
           <div className="az-hero-row">
             <p className="az-hero-lede">
-              AZOA models financial workflows, circular economies, operational processes — even actions in games — as living graphs of action. Built from the same primitives. Interoperable by default.
+              AZOA models financial workflows, circular economies, operational processes and grant programs as living graphs of action. Built from the same primitives. Interoperable by default.
             </p>
             <div className="az-hero-cta">
               <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--md">VIEW ON GITHUB ↗</a>
@@ -97,7 +97,7 @@ export default function Home() {
       </header>
 
       <div className="az-ticker">
-        <span>FINANCE</span><span>/</span><span>CIRCULARITY</span><span>/</span><span>OPERATIONS</span><span>/</span><span>GOVERNANCE</span><span>/</span><span>PLAY</span>
+        <span>FINANCE</span><span>/</span><span>CIRCULARITY</span><span>/</span><span>OPERATIONS</span><span>/</span><span>GRANTS</span>
       </div>
 
       <section id="domains">
@@ -116,7 +116,7 @@ export default function Home() {
         </div>
         <div className="az-domains-note">
           <p>
-            Each of these is a graph of steps over the same primitives. Which means <span className="az-accent">a game action can pay a supplier</span>. A circular credit can settle a payroll. Anything can talk to anything.
+            Each of these is a graph of steps over the same primitives. Which means <span className="az-accent">a verified milestone can pay a supplier</span>. A circular credit can settle a payroll. Anything can talk to anything.
           </p>
         </div>
       </section>

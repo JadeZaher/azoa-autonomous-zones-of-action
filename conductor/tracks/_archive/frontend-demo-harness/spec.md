@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Track: frontend-demo-harness"
+tags: [frontend-demo-harness, archived]
+---
+
 # Track: frontend-demo-harness
 
 ## Overview
@@ -41,7 +47,7 @@ frontend/src/
       swap/page.tsx         -- DEX swap interface (Tinyman + Jupiter)
       bridge/page.tsx       -- Cross-chain bridge (initiate, VAA, redeem, history)
       search/page.tsx       -- Unified search with facets
-      star-odk/page.tsx     -- STAR dApp generator (create, generate, deploy)
+      action-graph-bundle/page.tsx     -- Action Graph Bundle dApp generator (create, generate, deploy)
       settings/page.tsx     -- Provider selection, network config, session info
       workflow/page.tsx     -- Action template authoring + durable run driver (start/step/signal/status, live run state)
   components/
@@ -96,12 +102,12 @@ frontend/src/
 - [ ] 3.4: **Bridge page** — initiate bridge form (source/target chain, token, recipient), bridge status tracker with step visualization (Initiated -> Locked -> AwaitingVAA -> Completed), Wormhole VAA fetch + redeem flow, bridge history table, reverse bridge. Tests: all 8 bridge endpoints
 - [ ] 3.5: **Direct blockchain panel** — raw balance check, address validation, transaction status lookup, token metadata viewer. Tests wallet.getBalance, wallet.validateAddress, wallet.getTransactionStatus, wallet.getTokenMetadata, wallet.getChainInfo for both chains
 
-### Phase 4: Search, STAR, and Advanced Features
+### Phase 4: Search, Action Graph Bundle, and Advanced Features
 
 **Goal:** Complete feature coverage.
 
 - [ ] 4.1: **Search page** — search input with entity type filters (checkboxes for Users, Holons, Wallets, etc.), faceted results, pagination. Tests: POST /api/search with all SearchRequest fields
-- [ ] 4.2: **STAR ODK page** — list ODKs, create form, generate dApp (shows generated code), deploy stub. Tests: all 6 STARODK endpoints
+- [ ] 4.2: **Action Graph Bundle page** — list bundles, create form, generate dApp (shows generated code), deploy stub. Tests: all 6 ActionGraphBundle endpoints
 - [ ] 4.3: **Settings page** — current session info (JWT claims, expiry), provider selection (AZOARequest.providerName), network config display, SDK version info
 - [ ] 4.4: **Workflow page** — end-to-end exercise of the durable workflow engine via `azoa.workflow` (`WorkflowClient` + `action()` factory). Covers:
   - **Template authoring panel**: create an action template (small DAG of generic nodes using `nodeConfig` builders — `gateCheck`, `emit`; optionally `swap`/`grant`/`transfer`/`refund`), list templates, get a template, instantiate with `{{param}}` values. SDK: `azoa.workflow.createTemplate()`, `.listTemplates()`, `.getTemplate(templateId)`, `.instantiate(templateId, params)`.
@@ -127,7 +133,7 @@ frontend/src/
   - DEX (get quote for Algorand/Tinyman, get quote for Solana/Jupiter)
   - Bridge (get routes, initiate trusted bridge, get status, complete, reverse)
   - Search (search with filters, get facets)
-  - STAR ODK (create, generate, deploy, delete)
+  - Action Graph Bundle (create, generate, deploy, delete)
 - [ ] 5.3: **Test result persistence** — save results to localStorage, show history
 - [ ] 5.4: **Regression indicators** — compare current run with previous, highlight regressions
 
@@ -183,8 +189,8 @@ Every row must pass for the harness to be "green":
 | Bridge History | GET /api/bridge/history | api.getBridgeHistory() | /bridge | [ ] |
 | Search | POST /api/search | api.search() | /search | [ ] |
 | Search Facets | GET /api/search/facets | api.getSearchFacets() | /search | [ ] |
-| Create STARODK | POST /api/starodk | api.request() | /star-odk | [ ] |
-| Generate dApp | POST /api/starodk/{id}/generate | api.request() | /star-odk | [ ] |
+| Create ActionGraphBundle | POST /api/actiongraphbundle | api.request() | /action-graph-bundle | [ ] |
+| Generate dApp | POST /api/actiongraphbundle/{id}/generate | api.request() | /action-graph-bundle | [ ] |
 | Create Template | POST /api/action/templates | azoa.workflow.createTemplate() | /workflow | [ ] |
 | List Templates | GET /api/action/templates | azoa.workflow.listTemplates() | /workflow | [ ] |
 | Get Template | GET /api/action/templates/{id} | azoa.workflow.getTemplate(id) | /workflow | [ ] |

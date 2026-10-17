@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Track: project-asset-fractionalization"
+tags: [project-asset-fractionalization, archived]
+---
+
 # Track: project-asset-fractionalization
 
 ## Overview
@@ -37,7 +43,7 @@ with the economic-primitive-nodes philosophy — [[economic-primitive-nodes-ship
   replay + atomicity are proven. (Decision 2026-06-21.) Until then, the bridge
   node is authorable but the flow is run only on testnet / with the bridge in a
   no-real-value mode.
-- Soft: [[star-odk-ecosystem-tree]] (the flow is one dApp in a larger ecosystem).
+- Soft: [[action-graph-bundle-ecosystem-tree]] (the flow is one dApp in a larger ecosystem).
 
 ## Deliverables
 

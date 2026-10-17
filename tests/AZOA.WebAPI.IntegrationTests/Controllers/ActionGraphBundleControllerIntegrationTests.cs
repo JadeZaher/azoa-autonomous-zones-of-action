@@ -18,7 +18,7 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task CreateOrUpdate_ShouldCreateNewODK()
+    public async Task CreateOrUpdate_ShouldCreateNewBundle()
     {
         var model = new ActionGraphBundleBuilder().WithName("Genesis").BuildCreateModel();
 
@@ -44,15 +44,15 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Get_Existing_ShouldReturnODK()
+    public async Task Get_Existing_ShouldReturnBundle()
     {
-        var odk = await SeedActionGraphBundleAsync();
+        var bundle = await SeedActionGraphBundleAsync();
 
-        var response = await Client.GetAsync($"api/actiongraphbundle/{odk.Id}");
+        var response = await Client.GetAsync($"api/actiongraphbundle/{bundle.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<ActionGraphBundle>(response);
-        result!.Result!.Id.Should().Be(odk.Id);
+        result!.Result!.Id.Should().Be(bundle.Id);
     }
 
     [Fact]
@@ -77,11 +77,11 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Delete_ShouldRemoveODK()
+    public async Task Delete_ShouldRemoveBundle()
     {
-        var odk = await SeedActionGraphBundleAsync();
+        var bundle = await SeedActionGraphBundleAsync();
 
-        var response = await Client.DeleteAsync($"api/actiongraphbundle/{odk.Id}");
+        var response = await Client.DeleteAsync($"api/actiongraphbundle/{bundle.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -101,10 +101,10 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Generate_ShouldSetGeneratedCode()
     {
-        var odk = await SeedActionGraphBundleAsync();
+        var bundle = await SeedActionGraphBundleAsync();
         var request = new ActionGraphBundleBuilder().Targeting("Solana").BuildGenerationRequest();
 
-        var response = await Client.PostAsJsonAsync($"api/actiongraphbundle/{odk.Id}/generate", request);
+        var response = await Client.PostAsJsonAsync($"api/actiongraphbundle/{bundle.Id}/generate", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<ActionGraphBundle>(response);
@@ -133,12 +133,12 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
         // Name/Description/PublicKey/UserId) — the seed builder's WithGeneratedCode
         // is dropped on POST. GeneratedCode is set ONLY by the generate endpoint, so
         // deploy must be preceded by a real generate (the production flow).
-        var odk = await SeedActionGraphBundleAsync();
+        var bundle = await SeedActionGraphBundleAsync();
         var generateRequest = new ActionGraphBundleBuilder().Targeting("Algorand").BuildGenerationRequest();
-        var generateResponse = await Client.PostAsJsonAsync($"api/actiongraphbundle/{odk.Id}/generate", generateRequest);
+        var generateResponse = await Client.PostAsJsonAsync($"api/actiongraphbundle/{bundle.Id}/generate", generateRequest);
         generateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var response = await Client.PostAsync($"api/actiongraphbundle/{odk.Id}/deploy", null);
+        var response = await Client.PostAsync($"api/actiongraphbundle/{bundle.Id}/deploy", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<ActionGraphBundle>(response);
@@ -148,9 +148,9 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Deploy_WithoutGeneration_ShouldReturnBadRequest()
     {
-        var odk = await SeedActionGraphBundleAsync();
+        var bundle = await SeedActionGraphBundleAsync();
 
-        var response = await Client.PostAsync($"api/actiongraphbundle/{odk.Id}/deploy", null);
+        var response = await Client.PostAsync($"api/actiongraphbundle/{bundle.Id}/deploy", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -174,10 +174,10 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Update_ValidId_ReturnsOk()
     {
-        var odk = await SeedActionGraphBundleAsync(o => o.WithName("BeforeUpdate"));
+        var bundle = await SeedActionGraphBundleAsync(o => o.WithName("BeforeUpdate"));
         var model = new ActionGraphBundleBuilder().WithName("AfterUpdate").BuildCreateModel();
 
-        var response = await Client.PutAsJsonAsync($"api/actiongraphbundle/{odk.Id}", model);
+        var response = await Client.PutAsJsonAsync($"api/actiongraphbundle/{bundle.Id}", model);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<ActionGraphBundle>(response);
@@ -238,10 +238,10 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     public async Task Update_OwnRecord_Returns200()
     {
         // Same authenticated user can update its own record by route id.
-        var odk = await SeedActionGraphBundleAsync(o => o.WithName("Mine").WithDescription("v1"));
+        var bundle = await SeedActionGraphBundleAsync(o => o.WithName("Mine").WithDescription("v1"));
         var update = new ActionGraphBundleBuilder().WithName("Mine").WithDescription("v2").BuildCreateModel();
 
-        var response = await Client.PutAsJsonAsync($"api/actiongraphbundle/{odk.Id}", update);
+        var response = await Client.PutAsJsonAsync($"api/actiongraphbundle/{bundle.Id}", update);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<ActionGraphBundle>(response);

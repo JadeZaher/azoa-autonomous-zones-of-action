@@ -1,3 +1,9 @@
+---
+type: Implementation Plan
+title: "Core API — Plan"
+tags: [core-api, archived]
+---
+
 # Core API — Plan
 
 ## Tasks
@@ -6,7 +12,7 @@
 2. [ ] Create `Models/Responses/AZOAResult.cs` and `AZOAResponse.cs`
 3. [ ] Create `Interfaces/IAZOAStorageProvider.cs`
 4. [ ] Create `Interfaces/IUser.cs`
-5. [ ] Create `Interfaces/ISTARODK.cs`
+5. [ ] Create `Interfaces/IActionGraphBundle.cs`
 6. [ ] Create `Core/ProviderContext.cs` with activation / failover / replication logic
 7. [ ] Create `Core/ProviderType.cs` enum
 8. [ ] Create `Core/AutoFailOverMode.cs`, `AutoReplicationMode.cs`, `AutoLoadBalanceMode.cs` enums

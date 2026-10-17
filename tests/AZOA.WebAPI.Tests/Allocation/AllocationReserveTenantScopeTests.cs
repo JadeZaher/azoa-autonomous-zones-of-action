@@ -101,7 +101,7 @@ public class AllocationReserveTenantScopeTests
     public async Task IssueUnits_refuses_a_caller_that_has_neither_an_operator_signal_nor_a_tenant()
     {
         // OI-21, re-opened. The old predicate read "no acting tenant" as "the operator", and
-        // a user-driven quest run reaches the draw seams with exactly that: ActionManager
+        // a user-driven action run reaches the draw seams with exactly that: ActionManager
         // and ActionNodeStepHandler both build the node context from run.ActingTenantId,
         // which is null for a run nobody's tenant drove.
         var harness = new AllocationTestHarness();

@@ -240,7 +240,7 @@ Generalize the consent-webhook bridge (V6 — it exists; NOT descoped).
   (empty = open beyond required), `description`, timestamps.
 - New `HolonTypeRegistryManager` + `HolonTypeController` (role-first layout):
   register / update / delete (mutation IDOR-scoped to the registering owner —
-  STARODK precedent) + list / get-by-asset-type (public read: any
+  ActionGraphBundle precedent) + list / get-by-asset-type (public read: any
   authenticated user).
 - **ENFORCEMENT IS OPT-IN:** `HolonManager` Create/Update validates the
   resulting `Metadata` ONLY when the holon's `AssetType` matches a registered

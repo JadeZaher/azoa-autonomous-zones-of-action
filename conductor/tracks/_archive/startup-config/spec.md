@@ -1,3 +1,9 @@
+---
+type: Track Spec
+title: "Startup Config — Specification"
+tags: [startup-config, archived]
+---
+
 # Startup Config — Specification
 
 ## Goal
@@ -36,6 +42,6 @@ Wire the application with a modern `Program.cs` (minimal-hosting style) or clean
 
 ## Acceptance Criteria
 - [ ] `dotnet run` launches without errors
-- [ ] Swagger UI shows User and STAR controllers only
+- [ ] Swagger UI shows User and Action Graph Bundle controllers only
 - [ ] JWT-protected endpoints reject anonymous requests
 - [ ] ProviderContext resolves correctly per request

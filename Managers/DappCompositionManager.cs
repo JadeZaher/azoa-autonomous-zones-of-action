@@ -308,7 +308,7 @@ public sealed class DappCompositionManager : IDappCompositionManager
 
         // ActionGraphBundleCreateModel does not yet carry TargetChain/BoundHolonIds; those
         // flow to IActionGraphBundleManager via ActionGraphBundleDappGenerationRequest on the Generate
-        // call. spec.md §STAR Integration Flow has those fields on the create
+        // call. spec.md §Action Graph Bundle Integration Flow has those fields on the create
         // model which does not match the runtime IActionGraphBundleManager surface -- this
         // is the authoritative shape.
         var bundleCreate = new ActionGraphBundleCreateModel

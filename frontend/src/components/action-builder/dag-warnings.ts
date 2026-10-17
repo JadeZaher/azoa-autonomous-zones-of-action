@@ -28,7 +28,7 @@ export interface DagWarningInput {
  * Mirrors the backend ActionDagValidator rules so the user sees structural
  * problems (missing entry/terminal, orphans, cycles) BEFORE submitting and
  * eating a 400. Not authoritative — the server re-validates — but it stops
- * the common "why won't my action save" guessing game.
+ * the common "why won't my action save" guesswork.
  */
 export function computeDagWarnings({
   nodes,

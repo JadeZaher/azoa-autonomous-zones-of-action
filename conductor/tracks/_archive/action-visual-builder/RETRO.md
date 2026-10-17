@@ -1,3 +1,9 @@
+---
+type: Track Artifact
+title: "Retro: action-visual-builder"
+tags: [action-visual-builder, archived]
+---
+
 # Retro: action-visual-builder
 
 **Shipped 2026-06-20. Author: Claude (Opus). One session, ~7 new files, one new dependency.**
@@ -55,17 +61,17 @@ template creation, with **zero backend changes**.
   would make the builder genuinely no-code.
 - **Server-side node positions** — layout is recomputed on every load; persisting
   canvas coordinates would preserve hand-arranged graphs.
-- **Streamline page layout** — DONE same session (2026-06-21): actions + star-odk
+- **Streamline page layout** — DONE same session (2026-06-21): actions + action-graph-bundle
   pages converted to full-width stacked layout (tab bar + action-button row on top,
   full-width divided list beneath with inline-expanding detail rows via a
   `ChevronRight` disclosure). Replaced the cramped 3-col split (actions) and the
-  Table + separate detail Card (star-odk). `tsc` clean.
+  Table + separate detail Card (action-graph-bundle). `tsc` clean.
 
 ## Relationship to the fractionalization question
 
 The user asked whether an asset can be represented holonically, notarized with a
 mint, then fractionalized via a token launch backed to that asset's state — the
-rails ArdaNova would consume through a STAR-ODK. This builder is the *authoring
+rails ArdaNova would consume through an Action Graph Bundle. This builder is the *authoring
 front door* for exactly that kind of multi-step flow (Holon → Mint → Swap/Grant),
 but the **fractionalization primitive itself is a backend gap** (no fractional/
 fungible-share mint or asset-backed token node exists yet). See the separate

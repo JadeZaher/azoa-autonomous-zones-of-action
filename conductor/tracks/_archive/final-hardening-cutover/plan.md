@@ -86,8 +86,8 @@ Owns (all non-overlapping with lanes 1–4):
 
 ### Lane 6 (serialized after 1–5, or a dedicated worker) — H7 Bucket-D triage  ·  size M  ·  REAL WORK
 Owns: investigation across `Controllers/HolonController.cs`, `Managers/HolonManager.cs`,
-`Controllers/STARODKController.cs`, `Managers/STARManager.cs`, and the failing
-integration tests (`Holon.Interact`/`Mint`/`Exchange`, `STARODK.Deploy`). May edit
+`Controllers/ActionGraphBundleController.cs`, `Managers/ActionGraphBundleManager.cs`, and the failing
+integration tests (`Holon.Interact`/`Mint`/`Exchange`, `ActionGraphBundle.Deploy`). May edit
 product code IF a real bug is found; otherwise records accepted-with-reason.
 - Root-cause each failure. Fix genuine product bugs; for test-design/env issues,
   record written evidence and leave failing with a documented reason. No silent
@@ -113,4 +113,4 @@ product code IF a real bug is found; otherwise records accepted-with-reason.
 - `next.config.js` / Dockerfile: **Lane 3 only.**
 - `docs/NODE-HOST.md`: **Lane 2 owns §8.9**; Lane 5 (H8) touches every OTHER doc but
   not NODE-HOST §8.9.
-- Product managers (Holon/STAR): **Lane 6 only.**
+- Product managers (Holon/Action Graph Bundle): **Lane 6 only.**

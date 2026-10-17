@@ -937,7 +937,7 @@ builder.Services.AddScoped<IBlockchainOperationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealBlockchainOperationStore>();
 builder.Services.AddScoped<IActionGraphBundleStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionGraphBundleStore>();
-// star-odk-ecosystem-tree (D2): tree of DappSeries/ActionGraphBundle nodes owned by an ActionGraphBundle.
+// action-graph-bundle-ecosystem-tree (D2): tree of DappSeries/ActionGraphBundle nodes owned by an ActionGraphBundle.
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IEcosystemStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealEcosystemStore>();
 // kyc-module: KYC submission/document persistence (SurrealDB).
