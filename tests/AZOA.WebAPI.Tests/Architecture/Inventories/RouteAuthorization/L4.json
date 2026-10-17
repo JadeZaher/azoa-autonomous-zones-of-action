@@ -357,7 +357,7 @@
     "action": "Rotate",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; owner from claims; only an active, unexpired, explicitly-scoped key whose scopes the caller may still self-issue; old key revoked first by an active-key CAS"
   },
   {
     "route": "POST /api/bridge/{id}/fetch-vaa",
@@ -373,7 +373,7 @@
     "action": "InitiateBridge",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "owner from claims; per-endpoint signing scope owed by L4-lead M8 (CrossChainBridgeService.cs:140-193)"
+    "enforcement": "owner from claims; refuses act_as_tenant principals; HasSigningScope(transfer:sign) (audit-2 M8, BridgeController.SigningRefusal); KYC gate on real-value routes"
   },
   {
     "route": "POST /api/bridge/{id}/redeem",
@@ -381,7 +381,7 @@
     "action": "RedeemWithVAA",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "owner-scoped bridge tx; per-endpoint signing scope owed by L4-lead M8"
+    "enforcement": "owner-scoped bridge tx; refuses act_as_tenant principals; HasSigningScope(transfer:sign) (audit-2 M8)"
   },
   {
     "route": "POST /api/bridge/{id}/reverse",
@@ -389,7 +389,7 @@
     "action": "ReverseBridge",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "owner-scoped bridge tx; per-endpoint signing scope owed by L4-lead M8"
+    "enforcement": "owner-scoped bridge tx; refuses act_as_tenant principals; HasSigningScope(transfer:sign); release only to the owner's Platform wallet or ownership-proven External wallet on the source chain (audit-2 M8)"
   },
   {
     "route": "POST /api/user/consent",
@@ -784,7 +784,7 @@
     "action": "Rotate",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "Operator policy + RecentNodeOperatorSession step-up; returns counts only"
   },
   {
     "route": "POST /api/admin/sagas/{id}/cancel",
@@ -872,7 +872,7 @@
     "action": "AssignDappRole",
     "class": "non-value",
     "scope": null,
-    "enforcement": "DappRoleAssignment policy; actor from claims"
+    "enforcement": "DappRoleAssignment policy: recent node-operator session, or CanAssignDappRoles (current manager AND first-party login or explicit dapp:manage key); a manager cannot change a current manager (audit-2 H2); target id from route"
   },
   {
     "route": "DELETE /api/user/{id}",
@@ -1025,5 +1025,21 @@
     "class": "non-value",
     "scope": null,
     "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+  },
+  {
+    "route": "POST /api/wallet/{id}/ownership-challenge",
+    "controller": "WalletController",
+    "action": "CreateOwnershipChallenge",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; caller's own External wallet only (else 404); issues a wallet-auth challenge; rate-limited"
+  },
+  {
+    "route": "POST /api/wallet/{id}/ownership-proof",
+    "controller": "WalletController",
+    "action": "ProveOwnership",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; caller's own External wallet only (else 404); consumes + verifies the challenge signature before recording wallet_ownership_proof; rate-limited"
   }
 ]

@@ -191,23 +191,8 @@
   },
   {
     "store": "IConsentGrantStore",
-    "method": "ListByTenantAndParticipationRefAsync",
-    "tenantCheck": "query-scoped: filters by tenantId"
-  },
-  {
-    "store": "IConsentGrantStore",
     "method": "ListByTenantAsync",
     "tenantCheck": "query-scoped: filters by tenantId"
-  },
-  {
-    "store": "IConsentGrantStore",
-    "method": "RevokeAllByGrantorAsync",
-    "tenantCheck": "query-scoped: filters by grantorUserId"
-  },
-  {
-    "store": "IConsentGrantStore",
-    "method": "UpsertAsync",
-    "tenantCheck": "write: owner/tenant columns come from the authenticated principal in the calling manager/service"
   },
   {
     "store": "IDappSeriesStore",
@@ -433,6 +418,16 @@
     "store": "IWalletAuthClaimTokenStore",
     "method": "GetByTokenAsync",
     "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IWalletOwnershipProofStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: consumers compare proof.UserId to the authenticated actor (WalletManager, CrossChainBridgeService, WTT recipient)"
+  },
+  {
+    "store": "IWalletOwnershipProofStore",
+    "method": "RecordAsync",
+    "tenantCheck": "write: user id is the authenticated caller, recorded only after WalletManager verified the caller owns the wallet and the challenge signature"
   },
   {
     "store": "IWalletStore",
