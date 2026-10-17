@@ -52,7 +52,9 @@ and the endpoint's own rate limit bound.
 `APPROVED` and `REJECTED` map to a terminal outcome. Every other value — including
 vendor states that do not exist yet — is non-terminal, which is the fail-closed
 direction: a non-terminal session never reaches the ledger write that opens a value
-gate.
+gate. `MANUAL_CHECK` alone sets `HostedSessionOutcome.IsManualReview` (the KYC review-extension
+trigger, `Services/Kyc/AGENTS.md` §Manual review); a missing `result` (the docs define no
+undecided shape) and `ADDITIONAL_INFORMATION_REQUESTED` do not.
 
 **The provider session id never leaves the node.** `KycManager.ToSessionStart`
 projects `KycSubmission.ProviderSessionId` into the tenant-facing response, so the

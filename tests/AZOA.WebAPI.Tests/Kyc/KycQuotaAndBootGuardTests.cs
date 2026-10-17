@@ -93,6 +93,20 @@ public sealed class KycQuotaAndBootGuardTests
     }
 
     [Fact]
+    public void RateBudget_CapsResultRefetchesSoBeginAndScreeningKeepHeadroom()
+    {
+        var budget = NewBudget(perMinute: 10);
+
+        var results = 0;
+        while (budget.TryAcquire(results % 2 == 0 ? "result" : "kyb-result") && results < 20)
+            results++;
+
+        results.Should().Be(5, "result re-fetches (poll, refresh, callbacks) may use only the default 50% share (RV-L2 L2-3)");
+        budget.TryAcquire("begin").Should().BeTrue("a refresh storm must not lock every tenant out of starting verification");
+        budget.TryAcquire("screening-search").Should().BeTrue("approval-time AML screening shares the same window");
+    }
+
+    [Fact]
     public void RateBudget_OpensACircuitAfterAnObservedBan()
     {
         var budget = NewBudget(perMinute: 100);

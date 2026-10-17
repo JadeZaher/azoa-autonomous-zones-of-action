@@ -149,7 +149,9 @@ public sealed partial class SurrealHostedSessionStore : IHostedSessionStore, ICu
         DateTimeOffset before, int limit, CancellationToken ct = default)
     {
         var query = SurrealQuery<HostedSession>.From()
-            .Where(row => row.State == HostedSessionStates.Claimed && row.ProviderSessionId == null && (row.CreationClaimedAt <= before || (row.CreationClaimedAt == null && row.CreatedDate <= before)))
+            // Identity flows only: fiat creation claims have their own lifecycle and operator resolve (RV-L1-03).
+            .Where(row => (row.FlowKind == HostedSessionFlowKinds.Kyc || row.FlowKind == HostedSessionFlowKinds.Kyb)
+                && row.State == HostedSessionStates.Claimed && row.ProviderSessionId == null && (row.CreationClaimedAt <= before || (row.CreationClaimedAt == null && row.CreatedDate <= before)))
             .OrderBy(row => row.CreatedDate).Limit(Math.Clamp(limit, 1, 100));
         var rows = await _executor.QueryAsync<HostedSession>(query, ct);
         return rows.Select(FromStorage).ToArray();

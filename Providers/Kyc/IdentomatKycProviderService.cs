@@ -436,6 +436,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             Outcome = raw.Length == 0 ? "UNKNOWN" : raw,
             SessionExists = terminal || raw == ManualCheckOutcome,
             IsTerminal = terminal,
+            IsManualReview = raw == ManualCheckOutcome,
             IsApproved = approved,
             Detail = approved ? null : Truncate(response.RejectReason?.Value, 256),
             Subject = terminal && approved && response.Person is not null

@@ -13,9 +13,9 @@ using Microsoft.Extensions.Options;
 namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
-/// The node's single KYC value gate: current policy-bound identity approval AND a clear AML
-/// verdict for the same attempt lineage. Serves both <see cref="IKycGateService"/> and
-/// <see cref="IRealValueKycGate"/>; see <c>Services/Kyc/AGENTS.md</c> §value gate.
+/// The KYC decision: current policy-bound identity approval AND a clear AML verdict for the same
+/// attempt lineage. Value paths reach it only through the risk-hold-wrapped <see cref="IRealValueKycGate"/>
+/// (directly or via <see cref="IValueAccessService"/>); see <c>Services/Kyc/AGENTS.md</c> §value gate.
 /// </summary>
 public sealed class KycGateService : IKycGateService, IRealValueKycGate
 {

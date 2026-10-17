@@ -30,3 +30,6 @@ DEFINE FIELD IF NOT EXISTS business_evidence_json ON TABLE kyb_verification TYPE
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE kyb_verification TYPE datetime;
 DEFINE FIELD IF NOT EXISTS expires_at ON TABLE kyb_verification TYPE datetime;
 DEFINE FIELD IF NOT EXISTS reviewed_at ON TABLE kyb_verification TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS effective_approval_expires_at ON TABLE kyb_verification TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS effective_approval_evidence_json ON TABLE kyb_verification TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS effective_approval_authority_revision ON TABLE kyb_verification TYPE option<string>;

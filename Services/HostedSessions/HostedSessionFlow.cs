@@ -24,6 +24,13 @@ public interface IHostedSessionFlow
     Task<AZOAResult<HostedCallbackResult>> RefreshAsync(
         IHostedSessionProvider provider, Guid sessionId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Caller-initiated (user/tenant) refresh: at most one vendor re-fetch per session per
+    /// <paramref name="cooldown"/>; inside it the stored state answers. See AGENTS.md §recovery (budget fairness).
+    /// </summary>
+    Task<AZOAResult<HostedCallbackResult>> RefreshOnDemandAsync(
+        IHostedSessionProvider provider, Guid sessionId, TimeSpan cooldown, CancellationToken ct = default);
+
     /// <summary>Authenticates a callback and applies authoritative outcomes under a renewable lease.</summary>
     Task<AZOAResult<HostedCallbackResult>> HandleCallbackAsync(
         IHostedSessionProvider provider,
@@ -264,6 +271,32 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         return await ProcessSessionAsync(provider, located.Result, ct);
     }
 
+    /// <inheritdoc/>
+    public async Task<AZOAResult<HostedCallbackResult>> RefreshOnDemandAsync(
+        IHostedSessionProvider provider, Guid sessionId, TimeSpan cooldown, CancellationToken ct = default)
+    {
+        var located = await _store.GetByIdAsync(sessionId, ct);
+        if (located.IsError || located.Result is null
+            || located.Result.FlowKind != provider.FlowKind
+            || located.Result.ProviderKey != provider.ProviderKey)
+            return OpaqueFailure();
+        var session = located.Result;
+        if (!HostedSessionStates.IsTerminal(session.State) && _store is IHostedSessionRecoveryStore recovery)
+        {
+            var now = _clock.GetUtcNow();
+            if ((session.LastRefreshAt is { } last && last > now - cooldown)
+                || !await recovery.TryClaimRefreshAsync(session, now, ct))
+                return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
+                {
+                    SessionId = sessionId,
+                    State = session.State,
+                    Outcome = session.AuthoritativeOutcome,
+                    RefreshThrottled = true,
+                });
+        }
+        return await ProcessSessionAsync(provider, session, ct);
+    }
+
     private async Task<AZOAResult<HostedCallbackResult>> ProcessSessionAsync(
         IHostedSessionProvider provider, HostedSession session, CancellationToken ct)
     {
@@ -308,7 +341,8 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 return AZOAResult<HostedCallbackResult>.FailureWithCode(parked.Message, parked.Code ?? AzoaErrorCodes.DependencyUnavailable);
             if (parked.Result is null)
                 return await ReadObservedAsync(sessionId, ct);
-            if (outcome.Result.SessionExists && _outcomeHandler is IHostedSessionProgressHandler progress)
+            // Only a genuine vendor manual review is progress; "pending"/"not yet submitted" changes nothing (RV-L2 L2-1).
+            if (outcome.Result.IsManualReview && _outcomeHandler is IHostedSessionProgressHandler progress)
                 await progress.ObserveProgressAsync(parked.Result, outcome.Result, ct);
             return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
             {

@@ -50,9 +50,15 @@ public sealed class KybGate(IKybVerificationStore store, IdentomatKybProvider pr
             return Denied();
         // Approval already requires at least one beneficiary (KybHostedSessionOutcomeHandler), so the row is the proof.
         var current = await store.GetAsync(tenantId, ct);
+        var now = clock.GetUtcNow();
         if (current is { Status: "APPROVED", BusinessEvidenceJson: not null }
-            && current.ExpiresAt > clock.GetUtcNow()
+            && current.ExpiresAt > now
             && string.Equals(current.AuthorityRevision, provider.AuthorityRevision, StringComparison.Ordinal))
+            return AZOAResult<bool>.Success(true);
+        // An early renewal in flight keeps the prior approval effective until it is decided (RV-L2 L2-7).
+        if (current is { Status: "PENDING", EffectiveApprovalEvidenceJson: not null, EffectiveApprovalExpiresAt: { } until }
+            && until > now
+            && string.Equals(current.EffectiveApprovalAuthorityRevision, provider.AuthorityRevision, StringComparison.Ordinal))
             return AZOAResult<bool>.Success(true);
 
         logger.LogInformation("KYB gate denied {Capability} for tenant {TenantId}.", capability, tenantId);

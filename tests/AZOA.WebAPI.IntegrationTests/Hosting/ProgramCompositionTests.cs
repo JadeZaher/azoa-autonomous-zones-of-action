@@ -1,9 +1,11 @@
+using System.Reflection;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Services.Fiat.Reversal;
 using AZOA.WebAPI.Services.Fungible;
+using AZOA.WebAPI.Services.Kyc;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +38,19 @@ public sealed class ProgramCompositionTests : IClassFixture<ProgramCompositionTe
 
         gate.Should().BeOfType<RiskHoldValueGate>("a KYC gate registered after AddReversalRiskValueGate would bypass the reversal risk hold");
         inner.Should().NotBeOfType<RiskHoldValueGate>();
+    }
+
+    [Fact]
+    public void Value_access_checks_go_through_the_reversal_risk_hold()
+    {
+        using var scope = _factory.Services.CreateScope();
+
+        var access = scope.ServiceProvider.GetRequiredService<IValueAccessService>();
+        var gate = access.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+            .Single(field => field.FieldType == typeof(IRealValueKycGate)).GetValue(access);
+
+        access.Should().BeOfType<ValueAccessService>();
+        gate.Should().BeOfType<RiskHoldValueGate>("hold, exchange, fungible, NFT and deployment paths all ask IValueAccessService (RV-X X-2)");
     }
 
     [Fact]

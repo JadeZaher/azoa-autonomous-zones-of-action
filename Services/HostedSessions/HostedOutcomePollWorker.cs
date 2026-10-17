@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using AZOA.WebAPI.Interfaces.HostedSessions;
-using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Options;
@@ -42,7 +41,7 @@ public sealed class HostedOutcomePollWorker(IServiceScopeFactory scopes, IOption
         }
     }
 
-    /// <summary>One sweep; returns how many sessions were re-fetched.</summary>
+    /// <summary>One sweep; returns how many sessions were re-fetched. See AGENTS.md §recovery (poll liveness).</summary>
     internal async Task<int> SweepAsync(IServiceProvider services, CancellationToken ct)
     {
         var budget = services.GetRequiredService<IIdentomatRateBudget>();
@@ -50,9 +49,9 @@ public sealed class HostedOutcomePollWorker(IServiceScopeFactory scopes, IOption
             return 0;
 
         var recovery = services.GetRequiredService<IHostedSessionRecoveryStore>();
-        var sessions = services.GetRequiredService<IHostedSessionStore>();
         var flow = services.GetRequiredService<IHostedSessionFlow>();
         var resolver = services.GetRequiredService<HostedIdentityProviderResolver>();
+        var probe = services.GetService<IHostedSessionOutcomeHandler>() as IHostedSessionRelevanceProbe;
         var now = clock.GetUtcNow();
         var maxAge = TimeSpan.FromHours(Math.Clamp(_settings.MaxAgeHours, 1, 2160));
         var polled = 0;
@@ -60,16 +59,25 @@ public sealed class HostedOutcomePollWorker(IServiceScopeFactory scopes, IOption
         foreach (var session in await recovery.ListPollDueAsync(now, Math.Clamp(_settings.BatchSize, 1, 100), ct))
         {
             var id = Guid.ParseExact(session.Id, "N");
-            if (session.CreatedDate <= now - maxAge)
+            var attempt = (session.PollAttemptCount ?? 0) + 1;
+            var relevance = probe is null ? HostedOutcomeRelevance.Unknown : await probe.ProbeAsync(session, now, ct);
+            var closeAs = relevance switch
             {
-                // Undecided past the attempt lifetime: stop spending budget and close the session.
-                await sessions.TryTransitionAsync(id, session.StateVersion, HostedSessionStates.Abandoned,
-                    session.AuthoritativeOutcome, HostedSessionRecoveryOutcomes.PollExpired, null, ct);
+                // The bound attempt can no longer take a verdict: stop spending vendor budget on it.
+                HostedOutcomeRelevance.Dead => HostedSessionRecoveryOutcomes.AttemptClosed,
+                // A live attempt (incl. an extended IN_REVIEW) is polled until it expires, never cut at max age.
+                HostedOutcomeRelevance.Unknown when session.CreatedDate <= now - maxAge => HostedSessionRecoveryOutcomes.PollExpired,
+                _ => null,
+            };
+            if (closeAs is not null)
+            {
+                // A lost close (row moved) still advances next_poll_at so the row cannot pin the batch head.
+                if (!await recovery.TryAbandonPolledAsync(session, closeAs, now, ct))
+                    await recovery.TryClaimPollAsync(session, now + Backoff(attempt), ct);
                 continue;
             }
 
             var provider = await resolver.ResolveAsync(session, ct);
-            var attempt = (session.PollAttemptCount ?? 0) + 1;
             if (!await recovery.TryClaimPollAsync(session, now + Backoff(attempt), ct))
                 continue;
             if (provider is null or IPreparedHostedSessionProvider)
@@ -77,7 +85,9 @@ public sealed class HostedOutcomePollWorker(IServiceScopeFactory scopes, IOption
 
             var refreshed = await flow.RefreshAsync(provider, id, ct);
             polled++;
-            if (refreshed.IsError && refreshed.Code is HostedSessionFlow.RequestNotSentCode or HostedSessionFlow.ProviderRefusedCode)
+            // Only a node-wide refusal (local budget, open circuit after a 529) stops the sweep; a per-session
+            // vendor 4xx is that row's problem and it already carries its backoff (RV-L2 L2-5).
+            if (refreshed.IsError && (refreshed.Code == HostedSessionFlow.RequestNotSentCode || budget.IsCircuitOpen))
             {
                 logger.LogWarning("Hosted outcome poll paused: the Identomat request budget is exhausted or the node is blocked.");
                 break;

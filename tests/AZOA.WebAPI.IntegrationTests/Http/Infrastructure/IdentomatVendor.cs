@@ -8,7 +8,11 @@ namespace AZOA.WebAPI.IntegrationTests.Http.Infrastructure;
 /// <summary>The verdict the fake vendor reports from its authoritative result endpoints.</summary>
 public enum IdentomatVerdict
 {
+    /// <summary>Not decided (e.g. not yet submitted): no documented verdict value, so no <c>result</c> is reported.</summary>
     Pending,
+
+    /// <summary>Submitted and held for a human decision: the documented <c>MANUAL_CHECK</c>.</summary>
+    ManualCheck,
     Approved,
     Rejected,
 }
@@ -210,10 +214,16 @@ public sealed class IdentomatVendor
             new JsonObject { ["result"] = new JsonObject { ["stepsResults"] = steps } }.ToJsonString());
     }
 
+    /// <summary>Legacy <c>/external-api/result/</c> calls received so far (budget assertions).</summary>
+    public int IdentityResultRequests => Volatile.Read(ref _identityResultRequests);
+
+    private int _identityResultRequests;
+
     private HttpResponseMessage RespondFromWidgetHost(VendorRequest request)
     {
         if (request.Method != HttpMethod.Post || request.Path != "/external-api/result/")
             return new HttpResponseMessage(HttpStatusCode.NotFound);
+        Interlocked.Increment(ref _identityResultRequests);
         using var document = JsonDocument.Parse(request.Body);
         var root = document.RootElement;
         if (!root.TryGetProperty("company_key", out var key) || key.GetString() != CompanyKey)
@@ -241,7 +251,9 @@ public sealed class IdentomatVendor
                 },
             }.ToJsonString(),
             IdentomatVerdict.Rejected => """{"result":"rejected","reject_reason":{"value":"DOCUMENT_EXPIRED","description":"Document expired"}}""",
-            _ => """{"result":"MANUAL_CHECK"}""",
+            IdentomatVerdict.ManualCheck => """{"result":"MANUAL_CHECK"}""",
+            // The docs define no undecided shape; the fake reports no verdict (see Http/AGENTS.md §identomat-fake).
+            _ => """{"result":null}""",
         });
     }
 }

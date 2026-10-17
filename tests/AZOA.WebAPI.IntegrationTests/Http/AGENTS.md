@@ -63,6 +63,14 @@ examples") and `Providers/Kyb/IdentomatKybResultParser.cs`. `IdentomatSessionMod
 KYB `/result` and callbacks are keyed by the session `id` (docs: "Use this to … receive
 callbacks"). Tests flip `IdentomatSession.Verdict` to play the vendor's review and post callbacks
 with `IdentomatVendor.CallbackBody`.
+
+Undecided vs manual review (round-4 fix batch, RV-L2 test gap): the documented `result` values are
+`APPROVED | REJECTED | MANUAL_CHECK | ADDITIONAL_INFORMATION_REQUESTED`
+(`identomat-callback-contract-2026-10-15.md`); the docs give no shape for a session nobody has
+submitted yet. `Pending` therefore answers `{"result":null}` (no verdict, which the adapter maps to a
+non-terminal `UNKNOWN` without manual review), and `ManualCheck` answers the documented
+`MANUAL_CHECK`. The fake previously answered `MANUAL_CHECK` for every undecided session, which hid
+L2-1/L2-2. `IdentityResultRequests` counts `/external-api/result/` calls for budget assertions.
 ## §stripe-fake — `Infrastructure/StripeVendor.cs`
 
 `POST /v1/checkout/sessions` (form-encoded) and `GET` by id, Bearer secret key checked.

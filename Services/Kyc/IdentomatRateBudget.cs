@@ -36,9 +36,11 @@ public sealed class IdentomatRateBudget : IIdentomatRateBudget
     private const int MaximumCooldownMinutes = 24 * 60;
 
     private readonly int _ceilingPerMinute;
+    private readonly int _resultCeilingPerMinute;
     private readonly TimeSpan _cooldown;
     private readonly TimeProvider _clock;
     private readonly ConcurrentDictionary<long, int> _window = new();
+    private readonly ConcurrentDictionary<long, int> _resultWindow = new();
     private readonly object _gate = new();
 
     private long _bannedUntilTicks;
@@ -59,6 +61,8 @@ public sealed class IdentomatRateBudget : IIdentomatRateBudget
             Math.Clamp(settings.SharedRequestsPerMinute, MinimumCeiling, MaximumCeiling) / replicas,
             MinimumCeiling,
             MaximumCeiling);
+        _resultCeilingPerMinute = Math.Max(MinimumCeiling,
+            _ceilingPerMinute * Math.Clamp(settings.ResultRequestSharePercent, 10, 100) / 100);
         _cooldown = TimeSpan.FromMinutes(Math.Clamp(
             settings.RateLimitBanCooldownMinutes,
             MinimumCooldownMinutes,
@@ -80,25 +84,35 @@ public sealed class IdentomatRateBudget : IIdentomatRateBudget
         }
     }
 
+    /// <summary>Result re-fetches (KYC and KYB); capped to a share of the window so begin/AML keep headroom.</summary>
+    public static bool IsResultOperation(string operation) => operation is "result" or "kyb-result";
+
     public bool TryAcquire(string operation)
     {
-        _ = operation;
         if (IsCircuitOpen)
             return false;
 
         var now = _clock.GetUtcNow();
         var bucket = now.ToUnixTimeSeconds() / 60;
+        var isResult = IsResultOperation(operation);
         lock (_gate)
         {
             var used = _window.GetValueOrDefault(bucket);
             if (used >= _ceilingPerMinute)
                 return false;
+            var resultUsed = _resultWindow.GetValueOrDefault(bucket);
+            if (isResult && resultUsed >= _resultCeilingPerMinute)
+                return false;
             _window[bucket] = used + 1;
+            if (isResult)
+                _resultWindow[bucket] = resultUsed + 1;
 
             // Drop buckets older than the current minute; the window is one minute
             // wide, so anything earlier can never be consulted again.
             foreach (var stale in _window.Keys.Where(key => key < bucket).ToList())
                 _window.TryRemove(stale, out _);
+            foreach (var stale in _resultWindow.Keys.Where(key => key < bucket).ToList())
+                _resultWindow.TryRemove(stale, out _);
         }
 
         return true;

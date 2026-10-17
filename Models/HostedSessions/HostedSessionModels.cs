@@ -141,6 +141,12 @@ public sealed class HostedSessionOutcome
     /// </summary>
     public bool IsTerminal { get; init; }
 
+    /// <summary>
+    /// The vendor holds a SUBMITTED attempt for a human decision (Identomat <c>MANUAL_CHECK</c> only).
+    /// The sole trigger for the KYC manual-review expiry extension; "pending"/"not submitted" never sets it.
+    /// </summary>
+    public bool IsManualReview { get; init; }
+
     /// <summary>Whether a terminal outcome is a success.</summary>
     public bool IsApproved { get; init; }
 
@@ -208,4 +214,7 @@ public sealed class HostedCallbackResult
     /// was still non-terminal when this delivery lost the claim.
     /// </summary>
     public bool ResumeClaimLost { get; init; }
+
+    /// <summary>True when an on-demand refresh inside the per-session cooldown answered from stored state.</summary>
+    public bool RefreshThrottled { get; init; }
 }

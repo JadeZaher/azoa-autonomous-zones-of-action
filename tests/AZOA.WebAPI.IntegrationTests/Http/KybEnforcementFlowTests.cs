@@ -3,6 +3,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Http.Infrastructure;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Kyb;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Kyb;
@@ -87,6 +88,35 @@ public sealed class KybEnforcementFlowTests(HttpFlowWebApplicationFactory factor
 
         decision.IsError.Should().Be(!allowed);
         if (!allowed) decision.Code.Should().Be(KybGate.RequiredCode);
+    }
+
+    [Fact]
+    public async Task An_early_renewal_keeps_the_current_approval_until_the_renewal_is_decided()
+    {
+        using var tenant = await OnboardTenantAsync();
+        await TestDataBuilders.KybApprovedTenant(tenant.TenantId).SeedAsync(Factory.Services);
+
+        var renewal = new HttpRequestMessage(HttpMethod.Post, "api/tenant/business-verification/session");
+        renewal.Headers.Add("Idempotency-Key", "renewal-" + Guid.NewGuid().ToString("N"));
+        using var started = await tenant.Client.SendAsync(renewal);
+        (await ReadOkAsync<KybSessionResponse>(started)).Verification.Status.Should().Be("PENDING");
+        (await PayoutGateAsync(tenant.TenantId)).IsError.Should().BeFalse(
+            "custody decrypts and tenant payouts must not stop while an early renewal is under review (RV-L2 L2-7)");
+
+        var session = Flow.Identomat.LatestBusinessSession!;
+        session.Verdict = IdentomatVerdict.Rejected;
+        await PostCallbackAsync("api/kyc/callback/identomat", IdentomatVendor.CallbackBody(Flow.CallbackApiKey, session.Id, "approved"));
+
+        var denied = await PayoutGateAsync(tenant.TenantId);
+        denied.IsError.Should().BeTrue("the renewal's own rejection supersedes the carried approval");
+        denied.Code.Should().Be(KybGate.RequiredCode);
+    }
+
+    private async Task<AZOAResult<bool>> PayoutGateAsync(Guid tenantId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IKybGate>()
+            .RequireVerifiedTenantAsync(tenantId, KybCapability.PayoutPriceSchedule);
     }
 
     private static Task<HttpResponseMessage> EnrolAsync(FlowTenant tenant, string subject)

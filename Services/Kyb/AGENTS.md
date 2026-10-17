@@ -56,6 +56,21 @@ when the tenant starts a new verification, and the custody/consent fences that f
 linearize the operation itself. Test fixtures seed an approved row with
 `TestDataBuilders.KybApprovedTenant(tenantId).SeedAsync(services)`.
 
+## §renewal — early renewals keep the current approval (fix batch, RV-L2 L2-7)
+
+`kyb_verification` is one row per tenant. An APPROVED tenant that begins again with a new
+Idempotency-Key (renewing early) used to overwrite the row with PENDING, and the gate denied all
+three D-6 capabilities at once — every consent-gated custody decrypt and tenant payout stopped
+until the new review finished. `KybService.CarryEffectiveApproval` now copies a still-effective
+approval (unexpired, current authority revision, with evidence) into
+`effective_approval_{expires_at,evidence_json,authority_revision}` on the replacement attempt
+(also across an orphan supersede of that renewal). `KybGate` allows a PENDING row whose carried
+approval is unexpired and on the current authority revision. The renewal's own decision clears
+the carried fields in the same CAS (`TryDecideAsync`): an approval replaces it, a rejection ends
+it. A renewal that is abandoned leaves the carried approval effective until its original expiry.
+The single-row design was kept on purpose: a second attempt table would duplicate the admission,
+supersede and decide CAS paths for a capability that only needs "previous approval still counts".
+
 ## Operator setup
 
 1. In Identomat Manage, create separate saved KYC and KYB configurations. KYB must collect

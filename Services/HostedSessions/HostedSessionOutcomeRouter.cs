@@ -8,7 +8,7 @@ namespace AZOA.WebAPI.Services.HostedSessions;
 
 /// <inheritdoc/>
 public sealed class HostedSessionOutcomeRouter(KycHostedSessionOutcomeHandler kyc,
-    KybHostedSessionOutcomeHandler kyb) : IHostedSessionOutcomeHandler, IHostedSessionProgressHandler
+    KybHostedSessionOutcomeHandler kyb) : IHostedSessionOutcomeHandler, IHostedSessionProgressHandler, IHostedSessionRelevanceProbe
 {
     /// <inheritdoc/>
     public Task<AZOAResult<string?>> ResumeAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default)
@@ -22,4 +22,13 @@ public sealed class HostedSessionOutcomeRouter(KycHostedSessionOutcomeHandler ky
     /// <inheritdoc/>
     public Task ObserveProgressAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default)
         => session.FlowKind == HostedSessionFlowKinds.Kyc ? kyc.ObserveProgressAsync(session, outcome, ct) : Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public Task<HostedOutcomeRelevance> ProbeAsync(HostedSession session, DateTimeOffset now, CancellationToken ct = default)
+        => session.FlowKind switch
+        {
+            HostedSessionFlowKinds.Kyc => kyc.ProbeAsync(session, now, ct),
+            HostedSessionFlowKinds.Kyb => kyb.ProbeAsync(session, now, ct),
+            _ => Task.FromResult(HostedOutcomeRelevance.Unknown),
+        };
 }

@@ -78,6 +78,14 @@ while SurrealForge 1.3.0 typed reads bind the camelCase form, so a typed filter 
 writer-written rows (found for `NodeFeeSettlement`/`NodeFeeAtomicGroup`, round 4 W0). Storage
 mappers convert enums by name (`Enum.Parse(x.ToString())`), never by ordinal cast.
 
+## value-gate-coverage
+
+`ValueGateCoverageTests` fails when any production type takes `IKycGateService` as a constructor
+dependency. That interface is the bare KYC decision; value paths use `IValueAccessService` or
+`IRealValueKycGate`, which the host wraps in the reversal risk hold (`Services/Kyc/AGENTS.md`
+§Value-access decision). Before the round-4 fix batch every `IValueAccessService` path skipped the
+hold this way.
+
 ## Gate inventories
 
 `RouteAuthorizationGateTests` and `CrossTenantGateTests` load every lane's
