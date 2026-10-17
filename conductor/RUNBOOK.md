@@ -160,6 +160,19 @@ Full evidence for every row, with file:line, is in the [join ledger](tracks/plat
   `feat/platform-stub-closeout` (ordered merges; rebase + compile clean before merging; `--no-ff`;
   never push or force). Then **one comprehensive independent review** (correctness + transaction scope,
   security, test quality) → one fix batch → the integrated sweep. Replaces per-lane reviewers.
+- **Delegated child credentials:** build the missing pieces; enable in test configs; turn production on
+  only after the route-authorization gate and tenant-branch flows pass the sweep.
+- **KYB gates:** custodial accounts, tenant-on-behalf value scopes (at `ITenantConsentGate`), and
+  payout price schedules.
+- **Exchange/DEX activation:** declare the modules now; production on per chain only after that chain's
+  local protocol fixture passes; anything still off at the end → `deferred.md` entry.
+- **Tenant-priced payouts are tenant-funded** (owner chose this over the min-price default): a tenant
+  price schedule is allowed, but a payout at a tenant price is funded from the tenant's own balance, not
+  the node's. Needs a tenant-funded payout source and a balance-coverage check before any send.
+- Defaults taken (not asked): Identomat recovery closed via retry + `/delete/`; Veriff → `deferred.md`
+  unless test credentials arrive; Eth/Sol custody parity stays design-only (accepted-with-changes
+  amendment) with an owner line in `deferred.md`; minimal first-party UI (verify identity, add funds,
+  cash out); the live Identomat drill needs the owner to create the two configs (raised when L2 reaches it).
 
 **Standing decisions from the prior runbook that still bind** (full text: `git show 0522fdf:conductor/RUNBOOK.md`):
 - **D8** — Identomat callback is an untrusted trigger; `/result/` is the only authority.
