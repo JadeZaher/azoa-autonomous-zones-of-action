@@ -55,14 +55,21 @@ internal static class AlgorandGroupReceipt
         if (expected is PaymentTransaction payment)
             return Text(actual, "tx-type", "pay") && OnlyBody(actual, "payment-transaction")
                 && Object(actual, "payment-transaction", out var body) && Text(body, "receiver", payment.Receiver.ToString())
-                && Number(body, "amount", out var amount) && amount == (payment.Amount ?? 0UL)
+                && ((payment.Amount ?? 0UL) == 0 ? ZeroOrAbsent(body, "amount") : Number(body, "amount", out var amount) && amount == payment.Amount)
                 && Absent(body, "close-remainder-to") && ZeroOrAbsent(body, "close-amount")
                 && ZeroOrAbsent(actual, "closing-amount") && EmptyArray(actual, "inner-txns");
         if (expected is AssetTransferTransaction transfer)
             return Text(actual, "tx-type", "axfer") && OnlyBody(actual, "asset-transfer-transaction")
                 && Object(actual, "asset-transfer-transaction", out var body) && Text(body, "receiver", transfer.AssetReceiver.ToString())
-                && Number(body, "amount", out var amount) && amount == transfer.AssetAmount
+                && (transfer.AssetAmount == 0 ? ZeroOrAbsent(body, "amount") : Number(body, "amount", out var amount) && amount == transfer.AssetAmount)
                 && Number(body, "asset-id", out var asset) && asset == transfer.XferAsset
+                && Absent(body, "close-to", "sender") && ZeroOrAbsent(body, "close-amount") && EmptyArray(actual, "inner-txns");
+        // The SDK decodes every zero-amount axfer as an opt-in (and drops aclose), so a zero-amount group member arrives here as
+        // AssetAcceptTransaction; its receipt must show no amount, no close-to and the saved receiver.
+        if (expected is AssetAcceptTransaction accept)
+            return Text(actual, "tx-type", "axfer") && OnlyBody(actual, "asset-transfer-transaction")
+                && Object(actual, "asset-transfer-transaction", out var body) && Text(body, "receiver", accept.AssetReceiver.ToString())
+                && ZeroOrAbsent(body, "amount") && Number(body, "asset-id", out var asset) && asset == accept.XferAsset
                 && Absent(body, "close-to", "sender") && ZeroOrAbsent(body, "close-amount") && EmptyArray(actual, "inner-txns");
         if (expected is not ApplicationCallTransaction app) return false;
         if (!Text(actual, "tx-type", "appl") || !OnlyBody(actual, "application-transaction")

@@ -27,7 +27,8 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
 public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule,
-    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule, INftTransactionModule
+    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule, INftTransactionModule,
+    IDexTransactionModule, IExchangeTransactionModule
 {
     // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a

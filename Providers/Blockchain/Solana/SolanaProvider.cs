@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 /// Solana blockchain provider using direct JSON-RPC calls, with a real SPL
 /// build?sign?submit?confirm pipeline. See Providers/Blockchain/Solana/AGENTS.md.
 /// </summary>
-public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISolanaSPLModule, INftTransactionModule, INftProtocolCostModule, IValueTransferTransactionModule
+public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISolanaSPLModule, INftTransactionModule, INftProtocolCostModule, IValueTransferTransactionModule, IDexTransactionModule
 {
     /// <summary>Raw Solana secret length (32-byte Ed25519 seed ++ 32-byte public key).</summary>
     private const int SolanaSecretKeyLength = 64;

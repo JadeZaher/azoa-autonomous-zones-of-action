@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 /// Ethereum provider over direct JSON-RPC with a real EIP-1559 build→sign→submit→confirm
 /// pipeline. See <c>Providers/Blockchain/Ethereum/AGENTS.md</c>.
 /// </summary>
-public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
+public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule, AZOA.WebAPI.Interfaces.IDexTransactionModule
 {
     /// <summary>Config path of the Ethereum platform signing key (0x-prefixed 32-byte secp256k1 scalar).</summary>
     public const string PlatformPrivateKeyConfigPath = "AZOA:Ethereum:PlatformPrivateKey";
