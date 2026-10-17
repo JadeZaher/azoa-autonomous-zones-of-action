@@ -59,6 +59,22 @@ jobs:
       - name: Unit tests
         run: dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj --configuration Release --no-build
 
+      # The Ethereum protocol fixtures (Fixtures/Ethereum/*.mjs) spawn a loopback
+      # Hardhat chain from contracts/ethereum and deploy its compiled artifacts;
+      # without these steps EthereumProtocolTests/EthereumDexProtocolTests fail
+      # at chain setup. The contract unit tests run on the same pinned chain.
+      - name: Setup Node (Ethereum contracts)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.x"
+
+      - name: Ethereum contracts — install, build, unit tests
+        working-directory: contracts/ethereum
+        run: |
+          npm ci
+          npm run build
+          npm test
+
       - name: Start SurrealDB
         run: |
           docker run --detach \
