@@ -462,8 +462,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=low
+      # Split gate: everything that ships (`--omit=dev`) fails on any advisory; the
+      # full tree fails only on critical. Reason: GHSA-vfj7 (`braces`, every version
+      # affected, no fix) reaches the tree only through dev tooling (tailwindcss@3,
+      # eslint-config-next's fast-glob). Removal trigger: the Tailwind 4 migration --
+      # then restore a single `npm audit --audit-level=low`.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Audit the full dependency tree (critical only)
+        run: npm audit --audit-level=critical
 
       - name: Lint
         run: npm run lint
