@@ -104,7 +104,8 @@ internal sealed class InMemoryNftLifecycleStore : INftLifecycleStore
         AZOA.WebAPI.Models.Signing.SigningConsentWitness consent, CancellationToken ct = default)
     {
         var command = JsonSerializer.Deserialize<AZOA.WebAPI.Models.Blockchain.NftLifecycleCommand>(expected.RequestJson)!;
-        if (consent.Credential.ActorUserId != command.Actor || (consent.Credential.TenantId ?? Guid.Empty) != command.ActingTenantId
+        var expectedTenant = NftActorContinuationIdentity.TakenOver(expected, command) ? Guid.Empty : command.ActingTenantId;
+        if (consent.Credential.ActorUserId != command.Actor || (consent.Credential.TenantId ?? Guid.Empty) != expectedTenant
             || consent.Credential.ExpiresAt is { } expires && expires <= Now()) return Task.FromResult(false);
         lock (_sync)
         {

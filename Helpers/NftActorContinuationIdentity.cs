@@ -23,13 +23,32 @@ public static class NftActorContinuationIdentity
     public static bool Continuable(NftLifecycle row) => row.State is "Preparing" or "Prepared" or "AwaitingRecipientAcceptance"
         or "AwaitingCreatorDestruction" or "AwaitingRefundAuthorization" or "AwaitingRefundDestinationAcceptance";
 
+    /// <summary>
+    /// F-H12 owner takeover: the owner's own direct credential (no tenant) reclaiming a tenant-acting or workflow-admitted
+    /// lifecycle whose original authority can no longer continue it. See Services/Users/AGENTS.md §NFT owner takeover.
+    /// </summary>
+    public static bool IsOwnerTakeover(NftLifecycleCommand command, NftActorContinuation continuation)
+        => (continuation.Authority.Credential.TenantId ?? Guid.Empty) == Guid.Empty
+            && (command.ActingTenantId != Guid.Empty || command.ActionAuthority is not null);
+
+    /// <summary>True once a matching owner takeover is recorded; the original tenant or workflow authority is then locked out.</summary>
+    public static bool TakenOver(NftLifecycle row, NftLifecycleCommand command)
+        => Read(row).Any(continuation => IsOwnerTakeover(command, continuation) && Matches(row, command, continuation));
+
     public static bool Matches(NftLifecycle row, NftLifecycleCommand command, NftActorContinuation continuation)
     {
         var authority = continuation.Authority;
-        return command.ActorAuthority?.Kind is "DirectJwt" or "DirectApiKey" && command.ActionAuthority is null
+        var history = Read(row);
+        var position = history.ToList().FindIndex(item => item.Request?.RequestId == continuation.Request?.RequestId);
+        if (position < 0) position = history.Count;
+        var takeover = IsOwnerTakeover(command, continuation);
+        var sameRequester = !history.Take(position).Any(prior => IsOwnerTakeover(command, prior))
+            && command.ActorAuthority?.Kind is "DirectJwt" or "DirectApiKey" && command.ActionAuthority is null
+            && (authority.Credential.TenantId ?? Guid.Empty) == command.ActingTenantId;
+        return (takeover || sameRequester)
             && continuation.Request?.RequestId is { } requestId && requestId != Guid.Empty
             && authority.Kind is "DirectJwt" or "DirectApiKey" && authority.Action is null && authority.WorkflowAuthorizationId is null
-            && authority.Credential.ActorUserId == command.Actor && (authority.Credential.TenantId ?? Guid.Empty) == command.ActingTenantId
+            && authority.Credential.ActorUserId == command.Actor
             && authority.Wallet.Id == command.ActorWalletId && authority.Wallet.OwnerUserId == command.Actor
             && authority.Wallet.Address == command.ActorAddress && authority.Wallet.ChainType == row.ChainType
             && authority.RequiredScopes.Count == 1 && authority.RequiredScopes[0] == NftSigningScope.ForOperation(row.Operation);

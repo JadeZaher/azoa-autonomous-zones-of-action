@@ -552,6 +552,7 @@ public sealed partial class NftLifecycleService(INftLifecycleStore store, IWalle
         if (row.State == "Cancelled") return AZOAResult<NftLifecycleView>.Success(View(row));
         if (credential is null || credential.ActorUserId != actor || (credential.TenantId ?? Guid.Empty) != actingTenantId)
             return Refused("Cancelling an admitted NFT operation requires the requester's current authority.");
+        // RequesterOwns already pinned the caller: the admitted tenant, or the owner alone after a takeover.
         var consent = await signingAuthorities.BindConsentAsync(credential, [AZOA.WebAPI.Helpers.NftSigningScope.ForOperation(row.Operation)], ct);
         if (consent.IsError || consent.Result is null) return Refused(consent.Message);
         var authority = await store.GetAuthorityAsync(row.NftId, ct);
