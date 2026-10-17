@@ -7,9 +7,10 @@
 // See Services/Reserve/AGENTS.md §buy-back.
 
 using System.Numerics;
+using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
-using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
@@ -129,12 +130,11 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
     /// stand, and the place still fills the moment the project's own funds cover it, which is the
     /// path that gives the set-aside back. What a refused movement needs is an operator, not a
     /// retry loop.
-    /// <para>Three outcomes, not two. A rail ERROR never broadcast, so the set-aside is untouched
-    /// and may still be handed back. A CONFIRMED movement converts the hold and credits the
-    /// project. A movement that was broadcast and never confirmed is neither: it is recorded as
-    /// unestablished under <see cref="AmbiguousMoveReason"/>, nothing else moves, and the
-    /// set-aside is frozen until a person resolves it — see
-    /// <see cref="ReleaseReservationAsync"/>.</para>
+    /// <para>Exact saved wire: the transfer is prepared and saved once, then only observed or
+    /// rebroadcast on every later call for the same request. A preparation refusal or an
+    /// authoritative no-effect fails the claim and leaves the set-aside releasable; a CONFIRMED
+    /// transfer converts the hold and credits the project; anything else keeps the claim in
+    /// progress and the set-aside frozen (<see cref="ReleaseReservationAsync"/>).</para>
     /// </remarks>
     public async Task<AZOAResult<BuyBackTopUp>> TopUpAsync(
         BuyBackTopUpRequest request, CancellationToken ct = default)
@@ -171,59 +171,69 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
         // held unit and an issued unit reduce the partition's availability identically, so
         // moving first opens no oversubscription window at all - while converting first would
         // leave a failed move holding a promise the row still claims to be carrying.
+        if (_idempotency is not IValueMoveReceiptStore receipts
+            || !provider.TryGetModule<IValueTransferTransactionModule>(out var module) || module is null)
+            return Unavailable("This rail has no durable prepared transfer, so the reserve cannot back this request.");
         var moveKey = PhaseKey(request, MovePhase);
         var claim = await _idempotency.TryClaimAsync(moveKey, OperationType, ct);
         if (!claim.Won)
         {
-            // Only a COMPLETED claim proves the units reached the treasury. Anything else may
-            // still be in flight, and sending over an unknown outcome is how one budget pays
-            // twice - so an unfinished claim is reported as "not moved" and the seller keeps a
-            // place the reserve is still holding units for.
-            return claim.Record.State == IdempotencyState.Completed
-                ? AZOAResult<BuyBackTopUp>.Success(
+            // Only a COMPLETED claim proves the units reached the treasury. An in-progress claim
+            // resumes its own saved bytes below; a failed one stays failed (one move per request).
+            if (claim.Record.State == IdempotencyState.Completed)
+                return AZOAResult<BuyBackTopUp>.Success(
                     new BuyBackTopUp(request.ShortfallBaseUnits),
-                    "The reserve had already backed this request.")
-                : Unavailable("A backstop movement for this request is already under way.");
+                    "The reserve had already backed this request.");
+            if (claim.Record.State != IdempotencyState.InProgress || claim.Record.OperationType != OperationType)
+                return Unavailable("A backstop movement for this request did not complete and needs an operator.");
         }
 
-        var moved = await provider.TransferAsync(
-            request.PlatformAssetId,
-            reserveAccount.Result.Address,
-            treasuryAccount.Result.Address,
-            RailAmount.OfChainAsset(request.ShortfallBaseUnits, request.PlatformAssetId),
-            SigningContext.PlatformFor(chain),
-            ct);
-
-        if (moved.IsError)
+        // Durable exact-wire transfer (Services/Reserve/AGENTS.md §buy-back durable top-up): prepare
+        // and save signed bytes once, then only observe or rebroadcast those bytes.
+        var quantity = request.ShortfallBaseUnits.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var encoded = await receipts.GetPreparedAsync(moveKey, ct);
+        if (encoded is null)
         {
-            // An error out of the provider means the movement was never broadcast: the build,
-            // the signature or the submit itself refused. Nothing was converted, so the set-aside
-            // is exactly as it was — still held, still backing the seller's place, and still what
-            // the queue row says it is, which is why this claim is merely Failed and carries no
-            // ambiguity marker.
-            await _idempotency.FailAsync(moveKey, moved.Message, ct);
-            return Unavailable(moved.Message);
+            var generation = await receipts.GetPreparationGenerationAsync(moveKey, ct);
+            var prepared = await module.PrepareValueTransferAsync(new ValueTransferIntent(chain, _providers.DefaultNetwork,
+                request.PlatformAssetId, reserveAccount.Result.Address, treasuryAccount.Result.Address, quantity,
+                SigningContext.PlatformFor(chain), $"value:{moveKey}:{generation}"), ct);
+            if (prepared.IsError || prepared.Result is null)
+            {
+                // Never signed, never saved: the set-aside is untouched and may still be handed back.
+                await _idempotency.FailAsync(moveKey, prepared.Message, ct);
+                return Unavailable(prepared.Message);
+            }
+            await receipts.TryPrepareAsync(moveKey, JsonSerializer.Serialize(prepared.Result), ct, generation);
+            encoded = await receipts.GetPreparedAsync(moveKey, ct);
         }
+        var durable = encoded is null ? null : JsonSerializer.Deserialize<PreparedValueTransfer>(encoded);
+        if (durable is null || durable.Intent.ChainType != chain || durable.Intent.Network != _providers.DefaultNetwork
+            || durable.Intent.AssetId != request.PlatformAssetId || durable.Intent.Sender != reserveAccount.Result.Address
+            || durable.Intent.Recipient != treasuryAccount.Result.Address || durable.Intent.QuantityBaseUnits != quantity)
+            return Unavailable("The saved backstop movement does not match this request.");
 
-        // BROADCAST BUT UNCONFIRMED IS NOT LANDED. Every provider returns a SUCCESS result whose
-        // Message carries OperationStatus.PendingConfirmationMarker when the transaction went to
-        // the rail and the confirm poll ran out (AlgorandProvider.BuildSignSubmitAsync). Reading
-        // only IsError here would convert the hold to Issued, credit the project and complete the
-        // replay anchor for units that may never have left — permanently, because a completed
-        // anchor is never re-attempted. So the outcome is recorded as UNKNOWN and nothing else
-        // moves: the hold stays a hold, the project's ledger stays where it was, and the claim
-        // carries a marker that ReleaseReservationAsync refuses to hand back over.
-        if (IsPendingConfirmation(moved.Message))
+        var observed = await module.ObserveValueTransferAsync(durable, ct);
+        if (!observed.IsError && observed.Result == ChainConfirmation.Unknown)
         {
-            await _idempotency.FailAsync(moveKey, AmbiguousMoveReason, ct);
-
-            _logger?.LogError(
-                "MANUAL INTERVENTION REQUIRED — a buy-back backstop movement for {OperationKey} "
-                + "(rail reference {Reference}) was submitted and did not confirm. The set-aside on "
-                + "partition {Partition} is still HELD and will not be released until an operator "
-                + "establishes whether the units left the reserve.",
-                request.OperationKey, moved.Result ?? "<none>", request.Partition);
-
+            try { await module.SubmitValueTransferAsync(durable, ct); }
+            catch (HttpRequestException exception) { _logger?.LogWarning(exception, "Backstop rebroadcast for {OperationKey} did not reach the rail.", request.OperationKey); }
+            observed = await module.ObserveValueTransferAsync(durable, ct);
+        }
+        if (!observed.IsError && observed.Result == ChainConfirmation.FailedOnChain)
+        {
+            // Authoritative no-effect: the units never left, so the claim fails plainly and the set-aside may be handed back.
+            await _idempotency.FailAsync(moveKey, "The saved backstop movement is authoritatively unable to take effect.", ct);
+            return Unavailable("The saved backstop movement is authoritatively unable to take effect.");
+        }
+        if (observed.IsError || observed.Result != ChainConfirmation.Confirmed)
+        {
+            // BROADCAST BUT UNCONFIRMED IS NOT LANDED. The claim stays in progress with its saved
+            // bytes, the hold stays a hold, and ReleaseReservationAsync refuses to hand it back.
+            _logger?.LogWarning(
+                "A buy-back backstop movement for {OperationKey} (rail reference {Reference}) is saved and not yet "
+                + "confirmed; the set-aside on partition {Partition} stays HELD until it settles.",
+                request.OperationKey, durable.TransactionId, request.Partition);
             return Unavailable(AmbiguousMoveReason);
         }
 
@@ -269,7 +279,7 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
                 request.OperationKey, credited.Message);
         }
 
-        await _idempotency.CompleteAsync(moveKey, moved.Result ?? string.Empty, ct);
+        await _idempotency.CompleteAsync(moveKey, durable.TransactionId, ct);
 
         return AZOAResult<BuyBackTopUp>.Success(
             new BuyBackTopUp(request.ShortfallBaseUnits), "The reserve backed this request.");
@@ -290,6 +300,12 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
         // seller while they sit in a project's treasury. Refusing here is the safe answer, and
         // the queue treats a refused give-back exactly as it treats any other: the place keeps
         // its promise until a person resolves it.
+        // A saved in-flight transfer is resumed first: if it has landed, the set-aside is spent, not owed back.
+        var moveClaim = await _idempotency.GetAsync(PhaseKey(request, MovePhase), ct);
+        if (moveClaim is { State: IdempotencyState.InProgress, OperationType: OperationType }
+            && await TopUpAsync(request, ct) is { IsError: false })
+            return AZOAResult<bool>.Success(false, "The set-aside was already spent into the project's account; nothing was handed back.");
+
         if (await IsMoveAmbiguousAsync(request, ct))
         {
             _logger?.LogError(
@@ -330,10 +346,6 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
     private static string PhaseKey(BuyBackTopUpRequest request, string phase) =>
         $"{request.OperationKey}:{phase}";
 
-    /// <summary>True when the provider took the movement but never told us whether it landed.</summary>
-    private static bool IsPendingConfirmation(string? message) =>
-        message?.Contains(OperationStatus.PendingConfirmationMarker, StringComparison.Ordinal) == true;
-
     /// <summary>
     /// True when this request's movement claim records an unestablished outcome. An unreadable
     /// ledger answers TRUE: not being able to prove the movement is settled is the same reason to
@@ -347,6 +359,9 @@ public sealed class ReserveToTreasuryBuyBackBackstop : IBuyBackBackstop
             if (record is null)
                 return false;
 
+            // An unfinished claim may hold saved bytes that still land; a legacy ambiguous failure may already have.
+            if (record.State == IdempotencyState.InProgress)
+                return true;
             return record.State == IdempotencyState.Failed
                 && (record.Error ?? string.Empty).Contains(AmbiguousMoveReason, StringComparison.Ordinal);
         }
