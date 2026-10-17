@@ -286,12 +286,16 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
         if (credential.TenantId is not null) return Forbidden<WttOperationView>("Owner takeover requires the owner's direct credential.");
         var operation = await ReadOwnedAsync(operationId, credential, true, ct);
         if (operation is null) return NotFound<WttOperationView>();
-        if (operation.TenantId.Length == 0 || operation.ActionRunId is not null || operation.OwnerIntentJson is not null)
-            return Conflict<WttOperationView>("Only a tenant-started operation that the owner has not already taken over can be taken over.");
+        var owner = WttOwnerIntent.From(JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!);
+        // A replayed takeover returns the recorded owner journal instead of a conflict.
+        if (operation.OwnerIntentJson is { } recorded)
+            return recorded == Canonical(owner) ? AZOAResult<WttOperationView>.Success(await ProjectAsync(operation, ct))
+                : Conflict<WttOperationView>("The recorded owner intent differs from this operation's admitted intent.");
+        if (operation.TenantId.Length == 0 || operation.ActionRunId is not null)
+            return Conflict<WttOperationView>("Only a tenant-started, non-workflow operation can be taken over by its owner.");
         if (operation.Version != command.ExpectedVersion) return Changed<WttOperationView>();
         if (operation.Phase != "Target" || operation.State != "Ready")
             return Conflict<WttOperationView>("Owner takeover applies once the verified proof awaits target authorization and before any target send.");
-        var owner = WttOwnerIntent.From(JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!);
         var signing = await authorities.BindDirectAsync(credential, owner.TargetAuthority.Context.WalletId, owner.Target.ChainType,
             owner.TargetAuthority.Address, [AzoaScopes.WttTargetSign], ct);
         if (signing.IsError || signing.Result is null) return Forbidden<WttOperationView>(signing.Message);

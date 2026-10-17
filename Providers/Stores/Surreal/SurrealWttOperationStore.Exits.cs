@@ -23,6 +23,7 @@ public sealed partial class SurrealWttOperationStore
         if ((await ReadStagesAsync(operationId, ct)).Any(stage => stage.Phase is "Target" or "NativeOutput"
                 && (stage.AuthorizedAt is not null || stage.ExposedAt is not null)))
             return null;
+        // lock: the operation version CAS below pins the stage set read above; every claim or authorization bumps it.
         var guards = WttSigningAuthorityFence.Stage(owner, "Target", null, authority, "wtt_fence_takeover");
         if (guards is null) return null;
         var now = Now;
