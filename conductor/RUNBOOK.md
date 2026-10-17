@@ -63,15 +63,23 @@ static-review verdict, not runtime proof.
   [round3-join-ledger.md](tracks/platform-stub-closeout_20261015/round3-join-ledger.md) §Post-join state.
   Test projects never compiled.
 - **SurrealForge (owner's library, `C:\Users\atooz\Programming\Projects\surrealforge`):** release
-  **1.3.0** on branch `fix/1.2.1-reserved-tables-and-declared-variables`, last known commit `a0edfa4`
+  **1.3.0** on branch `fix/1.2.1-reserved-tables-and-declared-variables`, last known commit **`2067ae4`**
   (reviewed through `3aacd25`, verdict PUBLISH; `318f2ad`/`a0edfa4` add the public, tightened
-  `IsUniqueViolation`, verified identical on SurrealDB 3.1.4 and 3.2.4). **In flight at handoff:** an
-  `EnsureAllOk` culprit-selection fix (see §4 top line). **Not published.**
+  `IsUniqueViolation`, verified identical on SurrealDB 3.1.4 and 3.2.4; `2067ae4` makes
+  `SurrealResponse.EnsureAllOk` blame the culprit slot — see below). Pre-publish re-review of
+  `3aacd25..2067ae4` was running at handoff. **Not published.**
+- **CONFIRMED + FIXED (in SurrealForge, 2026-10-17): raw-transaction error attribution.** Measured on
+  3.1.4 and 3.2.4: an aborted `BEGIN; …; COMMIT;` fails every slot ([1] "not executed due to a failed
+  transaction", [2] culprit, [3] "…cancelled transaction", [4] "Cannot COMMIT: …"; a write conflict's
+  "can be retried" appears only in [4]). `EnsureAllOk` used to throw slot [1], so **every AZOA conflict
+  catch on a raw transaction (THROW markers, `IsUniqueViolation`) and every `RetryOnConflictAsync` was
+  dead.** 1.3.0 throws the first non-collateral slot (`SurrealResponse.cs:107`, `FindBlamedSlot` `:125`).
+  AZOA needs no edits — only the 1.3.0 bump.
 - **Round 4, in flight at handoff** (background agents of the previous session; they may not
   survive the session ending):
   - adversarial assessment → `tracks/platform-stub-closeout_20261015/round4-assessment-adversarial.md`
   - optimism-challenge assessment → `.../round4-assessment-optimism.md`
-  - SurrealForge `EnsureAllOk` measurement + fix → a new commit after `a0edfa4` on the SurrealForge branch
+  - SurrealForge pre-publish re-review of `3aacd25..2067ae4` (opus reviewer; verdict pending)
 
 ### Review ledger
 
@@ -127,22 +135,15 @@ Full evidence for every row, with file:line, is in the [join ledger](tracks/plat
 
 Highest reversal cost first. The top line is the likeliest to be wrong.
 
-1. **Raw-transaction error attribution is a real platform-wide defect** · default taken: AZOA's raw
-   `BEGIN; …; COMMIT;` batches + `SurrealResponse.EnsureAllOk()` (throws on the first non-OK slot)
-   hide the culprit behind "was not executed due to a failed transaction", so THROW-marker /
-   `IsUniqueViolation` catch filters and `RetryOnConflictAsync` never fire → expected races become
-   500s. Being measured on 3.1.4 + 3.2.4 and fixed in SurrealForge 1.3.0 · to reverse: if measurement
-   shows the culprit already surfaces first, drop the change. If it's real and the fix doesn't land,
-   every Codex-era conflict path is broken at runtime.
-2. **Static-review approvals hold at runtime** · default: treated as unverified until the sweep · to
+1. **Static-review approvals hold at runtime** · default: treated as unverified until the sweep · to
    reverse: the sweep will show it; budget several fix waves (four fail-closed classes were found by
    reading alone, and the sweep will surface layered errors).
-3. **Identomat standard mode has no child session; the parent id is the session token** (D4
+2. **Identomat standard mode has no child session; the parent id is the session token** (D4
    downgraded; fakes default to standard mode) · to reverse: if the owner's real workflows enable
    additional-information mode, adapt the adapter + fakes; confirm when workflows exist.
-4. **The WTT "custodial only" reading of "user's own wallets"** · to reverse: add a persisted
+3. **The WTT "custodial only" reading of "user's own wallets"** · to reverse: add a persisted
    signature-proof flag for External wallets and accept those (a planned follow-up anyway).
-5. **SurrealForge 1.3.0 behavior changes are acceptable for other consumers** (`IsUniqueViolation`
+4. **SurrealForge 1.3.0 behavior changes are acceptable for other consumers** (`IsUniqueViolation`
    tightened; strict check one-way) · to reverse: a 1.3.1 patch.
 
 ---
@@ -199,17 +200,15 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 
 ### ▶ RESUME HERE (2026-10-17 — round 3 closed, round 4 starting)
 
-1. **Verify state.** `git status` (expect clean) and `git log -3` (expect this runbook commit on top
+1. **Verify state.** `git status` (expect clean) and `git log -3` (expect the runbook commits on top
    of `0522fdf`). In the SurrealForge repo, `git log --oneline -3` on
-   `fix/1.2.1-reserved-tables-and-declared-variables`: is there an `EnsureAllOk` commit after
-   `a0edfa4`? Then check whether `round4-assessment-adversarial.md` and
-   `round4-assessment-optimism.md` exist in the track directory.
-2. **Finish SurrealForge 1.3.0.** If the `EnsureAllOk` fix is missing, re-dispatch it (brief: ledger
-   §Post-join state and §4 top line here). Measure raw-script slot behavior for a THROW, a unique
-   violation, a duplicate record and a real concurrent write conflict on throwaway 3.1.4 + 3.2.4
-   containers, then make `SurrealResponse.EnsureAllOk` blame the first non-collateral slot (reuse
-   `IsCollateralTransactionError`). Then run an independent pre-publish re-review of
-   `3aacd25..HEAD`. Hand the owner the publish commands (merge → `git tag v1.3.0` →
+   `fix/1.2.1-reserved-tables-and-declared-variables` (expect `2067ae4` or later). Check the runbook
+   §2 ledger / §8 entry for the 1.3.0 re-review verdict, and whether
+   `round4-assessment-adversarial.md` and `round4-assessment-optimism.md` exist in the track directory.
+2. **Finish SurrealForge 1.3.0.** The code is done at `2067ae4`. If the pre-publish re-review of
+   `3aacd25..2067ae4` has no recorded verdict, re-run it (an opus reviewer, read-only, prompted to
+   refute: the public and tightened `IsUniqueViolation`, and `EnsureAllOk` culprit selection). Apply
+   any fixes, then hand the owner the publish commands (merge → `git tag v1.3.0` →
    `git push origin v1.3.0` → `gh release create v1.3.0`). After the publish, bump AZOA to 1.3.0 at
    `AZOA.WebAPI.csproj:109,110,113`, `tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj:30`
    and `tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj:45`.
@@ -280,7 +279,10 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
   with the vocabulary sweep → `0522fdf`; SurrealForge 1.2.1 → 1.3.0 prepared and reviewed; runbook
   rewritten.
 - Reviewed: every lane plus SurrealForge — see §2 ledger.
-- In flight: round-4 assessments (×2); SurrealForge `EnsureAllOk` culprit-selection fix.
+- In flight: round-4 assessments (×2, plus their controller-audit sub-agents); SurrealForge 1.3.0
+  pre-publish re-review of `3aacd25..2067ae4`.
+- Confirmed 2026-10-17: the raw-transaction error-attribution class was real (every AZOA raw-transaction
+  conflict catch and transient retry was dead); fixed in SurrealForge `2067ae4`.
 - Blocked: SurrealForge publish (owner); real Identomat workflows (owner — `deferred.md`
   IDENTOMAT-WORKFLOWS).
 - Retro:
