@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Hold;
@@ -11,8 +12,38 @@ namespace AZOA.WebAPI.Controllers;
 
 /// <summary>Authenticated hold quote, participant consent and exact-operation recovery.</summary>
 [ApiController, Authorize, Route("api/hold-commands")]
-public sealed class HoldCommandsController(HoldCommandService commands, SigningAdmissionAuthorityFactory authority) : ControllerBase
+public sealed class HoldCommandsController(HoldCommandService commands, SigningAdmissionAuthorityFactory authority,
+    HoldLiabilityReadService liabilities) : ControllerBase
 {
+    /// <summary>Lists liabilities the caller owns, receives, or holds in custody as a tenant.</summary>
+    [HttpGet("liabilities")]
+    public async Task<IActionResult> ListLiabilities([FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default)
+    {
+        if (Actor() is not { } actor) return Unauthorized();
+        var result = await liabilities.ListAsync(actor, User.GetActingTenantId(), offset, limit, ct);
+        return result.IsError ? BadRequest(result) : Ok(result);
+    }
+
+    /// <summary>Reads one visible liability; an invisible one is indistinguishable from a missing one.</summary>
+    [HttpGet("liabilities/{holdRecordId}")]
+    public async Task<IActionResult> GetLiability(string holdRecordId, CancellationToken ct)
+    {
+        if (Actor() is not { } actor) return Unauthorized();
+        var result = await liabilities.GetAsync(holdRecordId, actor, User.GetActingTenantId(), ct);
+        return result.IsError ? NotFound(result) : Ok(result);
+    }
+
+    /// <summary>Lists reserve assets and partitions an <c>Open</c> by this caller could draw.</summary>
+    [HttpGet("reserve-assets")]
+    public async Task<IActionResult> ListReserveAssets(CancellationToken ct)
+    {
+        if (Actor() is not { } actor) return Unauthorized();
+        var tenant = User.GetActingTenantId();
+        var isNodeOperator = AzoaClaims.IsNodeOperator(User) && User.HasScope(AzoaScopes.Operator) && tenant is null;
+        var result = await liabilities.ListReserveAssetsAsync(actor, tenant, isNodeOperator, ct);
+        return result.IsError ? BadRequest(result) : Ok(result);
+    }
+
     [HttpPost, EnableRateLimiting("financial")]
     public async Task<IActionResult> Start([FromBody] HoldStartRequest request, CancellationToken ct)
     {

@@ -11,6 +11,9 @@ public sealed class FiatEventRecovery(
     ISurrealExecutor executor, FiatOptions options, IStripeWebhookInbox inbox,
     IEnumerable<IFiatEventHandler> handlers, OnRampRecovery recovery, ILogger<FiatEventRecovery> logger)
 {
+    /// <summary>Automatic replays per event before it is left to the operator board; see Services/Fiat/AGENTS.md §recovery-cap.</summary>
+    public const long MaxAutomaticAttempts = 60;
+
     public async Task<AZOAResult<FiatEvent>> ReplayAsync(string id, CancellationToken ct)
     {
         if (!options.Enabled) return AZOAResult<FiatEvent>.Failure("The payment rail is disabled.");
@@ -24,7 +27,7 @@ public sealed class FiatEventRecovery(
         if (!options.Enabled) return;
         var environment = options.ActiveEnvironment.Name;
         var rows = await executor.QueryAsync<FiatEvent>(SurrealQuery<FiatEvent>.From()
-            .Where(row => row.Environment == environment
+            .Where(row => row.Environment == environment && row.AttemptCount < MaxAutomaticAttempts
                 && (row.Status == FiatEventStatuses.Received || row.Status == FiatEventStatuses.Failed))
             .OrderBy(row => row.AttemptCount).Limit(50), ct);
         foreach (var row in rows)

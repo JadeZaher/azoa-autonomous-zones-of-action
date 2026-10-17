@@ -10,6 +10,7 @@ using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
+using AZOA.WebAPI.Services.Kyb;
 using AZOA.WebAPI.Services.Kyc;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
@@ -25,6 +26,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     private static readonly TimeSpan LiveClaimReadInterval = TimeSpan.FromMilliseconds(25);
     private readonly ITenantManager _tenants;
     private readonly ITenantCustodialAccess _access;
+    private readonly IKybGate _kyb;
     private readonly IWalletManager _wallets;
     private readonly IKycManager _kyc;
     private readonly IBlockchainProviderFactory _providers;
@@ -43,11 +45,13 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         IConfiguration configuration,
         IHostEnvironment environment,
         ITenantCustodialAccess access,
+        IKybGate kyb,
         IKycScreeningStore? screening = null,
         ILogger<TenantCustodialAccountManager>? logger = null)
     {
         _tenants = tenants;
         _access = access;
+        _kyb = kyb;
         _wallets = wallets;
         _kyc = kyc;
         _providers = providers;
@@ -56,6 +60,15 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         _environment = environment;
         _screening = screening;
         _logger = logger ?? NullLogger<TenantCustodialAccountManager>.Instance;
+    }
+
+    /// <summary>D-6: custodial accounts and custodial KYC require the tenant's current business verification (403).</summary>
+    private async Task<AZOAResult<T>?> KybRefusalAsync<T>(Guid tenantId, CancellationToken ct)
+    {
+        var kyb = await _kyb.RequireVerifiedTenantAsync(tenantId, KybCapability.CustodialAccess, ct);
+        return kyb.IsError
+            ? new AZOAResult<T> { IsError = true, Code = KybGate.RequiredCode, Message = TenantAuthorizationError.Forbidden + KybGate.RequiredMessage }
+            : null;
     }
 
     /// <inheritdoc/>
@@ -135,6 +148,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         var validation = ValidateResourceIdentity(tenantId, externalSubject, idempotencyKey);
         if (validation is not null)
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(validation);
+        if (await KybRefusalAsync<TenantCustodialAccountStatusResponse>(tenantId, ct) is { } refused)
+            return refused;
 
         externalSubject = externalSubject.Trim();
         var capabilities = (await GetCapabilitiesAsync(tenantId, ct)).Result!;
@@ -247,6 +262,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         var validation = ValidateResourceIdentity(tenantId, externalSubject, idempotencyKey);
         if (validation is not null)
             return AZOAResult<TenantKycSessionResponse>.Failure(validation);
+        if (await KybRefusalAsync<TenantKycSessionResponse>(tenantId, ct) is { } refused)
+            return refused;
 
         externalSubject = externalSubject.Trim();
         var child = await ResolveCorrelatedChildAsync(tenantId, externalSubject, ct);
@@ -361,6 +378,8 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         SigningConsentWitness authority,
         CancellationToken ct = default)
     {
+        if (await KybRefusalAsync<TenantKycSubmissionResponse>(tenantId, ct) is { } refused)
+            return refused;
         var child = await ResolveCorrelatedChildAsync(tenantId, externalSubject, ct);
         if (child.IsError || child.Result is null)
             return AZOAResult<TenantKycSubmissionResponse>.Failure(SafeIdentityMessage(child.Message));

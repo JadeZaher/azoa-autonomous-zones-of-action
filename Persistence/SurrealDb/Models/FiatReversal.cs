@@ -226,6 +226,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("ALWAYS \"0\"")]
         public string PurchaseRecoveredBaseUnits { get; set; } = "0";
 
+        /// <summary>Claim key of the recovery move whose outcome parked this reversal; cleared by the operator resolution.</summary>
+        [Column(Order = 43)]
+        public string? PendingMoveKey { get; set; }
+
         /// <summary>Scope word for a refund reversal; part of the record id.</summary>
         public const string RefundScope = "refund";
 

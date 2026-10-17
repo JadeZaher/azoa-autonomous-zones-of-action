@@ -5,6 +5,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat;
 
@@ -141,8 +142,8 @@ public sealed class FiatEventView
                 FiatEventStatuses.ProviderWasToldToStopRetrying(row.Status, row.AttemptCount),
             AttemptCount = row.AttemptCount,
             LastError = row.LastError,
-            IntentId = row.IntentId,
-            SubjectUserId = row.SubjectUserId,
+            IntentId = SurrealLink.FromLink(row.IntentId),
+            SubjectUserId = SurrealLink.FromLink(row.SubjectUserId),
             CheckoutSessionId = row.CheckoutSessionId,
             PaymentIntentId = row.PaymentIntentId,
             ChargeId = row.ChargeId,

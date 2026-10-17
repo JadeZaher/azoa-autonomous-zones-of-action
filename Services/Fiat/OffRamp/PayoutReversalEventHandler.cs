@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Fiat.Reversal;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;
 
@@ -159,7 +160,7 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
         reversedMinorUnits = recorded.Result.AmountMinorUnits;
         owed = OffRampAging.ParseBaseUnits(recorded.Result.ReinstatementOwedBaseUnits);
         if (row.ReversedMinorUnits >= reversedMinorUnits
-            && string.Equals(row.ReversalId, recorded.Result.Id, StringComparison.Ordinal))
+            && string.Equals(SurrealLink.FromLink(row.ReversalId), recorded.Result.Id, StringComparison.Ordinal))
             return FiatEventOutcome.Applied;
 
         owed = System.Numerics.BigInteger.Max(System.Numerics.BigInteger.Zero, owed - OffRampAging.ParseBaseUnits(row.RestoredQuantityBaseUnits));
@@ -171,7 +172,7 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
             MaxReasonLength);
         row.ReversedMinorUnits = reversedMinorUnits;
         row.ReversedAt ??= _clock.GetUtcNow();
-        row.ReversalId = recorded.Result.Id;
+        row.ReversalId = SurrealLink.ToLink(FiatReversal.SchemaNameConst, recorded.Result.Id);
         row.UnitsOwedBaseUnits = OffRampAging.Format(owed);
         row.UpdatedAt = _clock.GetUtcNow();
 

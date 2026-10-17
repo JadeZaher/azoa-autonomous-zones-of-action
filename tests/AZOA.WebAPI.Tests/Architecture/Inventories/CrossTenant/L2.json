@@ -1,0 +1,10 @@
+[
+  { "store": "SurrealKycStore", "method": "GetLatestSubmissionAsync / GetActiveSubmissionAsync", "tenantCheck": "(user, tenant) predicate; tenant NONE for first-party" },
+  { "store": "SurrealKycStore", "method": "TryMarkHostedInReviewAsync", "tenantCheck": "CAS on the attempt bound to the hosted session id; evidence fence scoped to (user, tenant)" },
+  { "store": "SurrealKycStore", "method": "CreateCustodialSubmissionAsync / RetireCustodialAttemptAsync / AttachCustodialDocumentsAsync", "tenantCheck": "TenantCustodialAuthorityFence guards: child owned by tenant, live membership and grant" },
+  { "store": "SurrealHostedSessionStore", "method": "GetByIdAsync (refresh callers)", "tenantCheck": "KycManager.RefreshAsync refreshes only the caller's own first-party attempt; operator routes are node-operator only" },
+  { "store": "SurrealHostedSessionStore", "method": "TryBeginCustodialCreationAsync", "tenantCheck": "subject and tenant must equal the custody witness" },
+  { "store": "SurrealHostedSessionStore", "method": "CountSupersededSinceAsync", "tenantCheck": "keyed by subject user and flow; the supersede budget is per subject" },
+  { "store": "SurrealKybVerificationStore", "method": "GetAsync / TryStartAsync", "tenantCheck": "record id is the tenant id from the authenticated claim" },
+  { "store": "SurrealKycScreeningStore", "method": "GetLatestResultAsync / monitor reads", "tenantCheck": "tenant_scope column; already-exists never returns another tenant's row" }
+]

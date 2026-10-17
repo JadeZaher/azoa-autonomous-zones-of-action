@@ -15,7 +15,7 @@ public sealed class HostedSessionReconciliationTests
     [Fact]
     public void ReconciliationRequiresOperatorPolicy()
         => typeof(HostedSessionReconciliationController).GetCustomAttributes(typeof(AuthorizeAttribute), true)
-            .Cast<AuthorizeAttribute>().Should().Contain(attribute => attribute.Policy == "Operator");
+            .Cast<AuthorizeAttribute>().Should().Contain(attribute => attribute.Policy == "RecentNodeOperatorSession");
 
     [Fact]
     public async Task ConfirmedAbsence_PreservesOperatorAuditAndReleasesAdmissionKey()

@@ -95,6 +95,9 @@ apply_schema() {
     # through the `dotnet` host. Before 1.2.0 the CLI payload shipped inside the
     # SurrealForge.Schema library package and had to be copied out of the NuGet
     # cache; that package is now a plain library.
+    # --no-reconcile: phase 3 would diff the live DB against this composed
+    # directory and revert migration-added constraints on baselined tables;
+    # see Persistence/SurrealDb/AGENTS.md §deploy-path (never destructive).
     /app/schema-cli/surrealforge up \
         --connection "$SURREAL_URL" \
         --user "$SURREAL_USER" \
@@ -103,6 +106,7 @@ apply_schema() {
         --database "$SURREAL_DB" \
         --schemas-dir "$RUNTIME_SCHEMA_DIR" \
         --migrations-dir /app/persistence/SurrealDb/Migrations \
+        --no-reconcile \
         --applied-by "azoa-local/docker-entrypoint"
 }
 

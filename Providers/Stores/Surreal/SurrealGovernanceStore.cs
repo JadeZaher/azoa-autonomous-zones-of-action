@@ -51,6 +51,7 @@ public sealed partial class SurrealGovernanceStore(ISurrealExecutor executor)
         List<SurrealQuery> queries = [SurrealQuery.Of("BEGIN"), ..Admin(proposal.TenantId),
             SurrealQuery.Of("IF $_closes <= time::now() { THROW 'GOVERNANCE_CONCURRENT_OR_UNAUTHORIZED' }")
                 .WithParam("_closes", proposal.ClosesAt),
+            // lock: the electorate is a snapshot; a membership change racing creation serializes after it (votes re-check live membership).
             SurrealQuery.Of("""
                 LET $_members = array::sort(array::distinct(array::concat(
                 [$_tenant],

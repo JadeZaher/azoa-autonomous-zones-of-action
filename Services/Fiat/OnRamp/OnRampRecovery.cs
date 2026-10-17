@@ -130,7 +130,24 @@ public sealed class OnRampRecovery(IOnRampLotLedger lots, IIdempotencyStore idem
             return AZOAResult<OnRampLot>.Failure("The original payment does not match this lot.");
         if (row.ProviderRefundId is null && providerRefundId is null && row.RefundStartedAt is { } started
             && clock.GetUtcNow() - started >= TimeSpan.FromHours(23))
-            return AZOAResult<OnRampLot>.Failure("The refund outcome is unknown beyond its safe retry window; reconcile its provider reference.");
+        {
+            // Past the key's replay window the create cannot be replayed blindly. The payment's own
+            // refund list decides instead: adopt our refund if it exists, open a new attempt only if
+            // the complete list proves none landed. See OnRamp/AGENTS.md §refund-window.
+            var listed = await refunds.ListRefundsForPaymentAsync(credentials, session.PaymentIntentId!, ct);
+            if (listed.IsError || listed.Result is not { HasMore: false } page)
+                return AZOAResult<OnRampLot>.Failure("The refund outcome is unknown beyond its safe retry window; reconcile its provider reference.");
+            var ours = page.Refunds.Where(refund => refund.IntentId == intent).ToList();
+            if (ours.Count > 1)
+                return AZOAResult<OnRampLot>.Failure("More than one refund names this payment; operator reconciliation is required.");
+            if (ours.Count == 1)
+                providerRefundId = ours[0].Id;
+            else
+            {
+                row.RefundAttempt++;
+                row.RefundStartedAt = null;
+            }
+        }
         if (row.RefundStartedAt is null)
         {
             row.RefundStartedAt = clock.GetUtcNow();
