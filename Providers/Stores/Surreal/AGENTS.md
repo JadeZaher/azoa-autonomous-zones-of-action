@@ -1032,3 +1032,35 @@ immutable receipt rather than failing.
 - **Local commands** close an Active mandate atomically, and the transition `WHERE` pins both
   `EconomicSourceId == null` and the mandate pointer that was read (see `Services/Hold/AGENTS.md`
   §purchased-liabilities and §mandates).
+
+## consent-grant-store
+
+`SurrealConsentGrantStore` is read-only (round 4). Every `consent_grant` write goes through
+`SurrealConsentLifecycleStore` (command-id single winner, version CAS, audit + webhook
+outbox in one transaction). The former `UpsertAsync` (fresh `Guid.NewGuid()` outside the
+lifecycle transaction), `ListByTenantAndParticipationRefAsync` and `RevokeAllByGrantorAsync`
+(a raw multi-row UPDATE with no version bump, audit or notification) had no production
+caller and were deleted. Reads are typed (`SurrealQuery<ConsentGrant>`); store failures
+propagate to the HTTP boundary instead of being swallowed into an error result.
+
+## wallet-ownership-proof
+
+`SurrealWalletOwnershipProofStore` keeps one row per canonical `(chain, address)`
+(`WalletAuthIdentity.TryCreate`), record id = sha256(`chain:address`) — the deterministic id
+is the lock (transaction-scope rule 3), so concurrent proofs for one address serialize on
+the key and the last verified proof wins. The row is written only after
+`WalletAuthManager.VerifyAddressControlAsync` atomically consumed a live challenge and the
+signature verified; `wallet` rows are never touched, so a full-POCO wallet upsert cannot
+forge or clobber a proof. `GetAsync` re-checks the stored chain/address against the key.
+
+## RETURN slots and explicit NULL (round 4 SQL-01/02/12)
+
+Probed on SurrealDB 3.1.4 (HTTP `/sql` and `/rpc`): `BEGIN; LET; IF; RETURN $x; COMMIT;`
+returns five slots — `COMMIT` keeps its slot, statements *between* a top-level `RETURN` and
+`COMMIT` are skipped and dropped. End-relative reads (`Statements.Count - 2`) therefore
+happened to be right only while `RETURN` stays directly before `COMMIT`; the claim
+(`SurrealUserStore`) and tenant-bootstrap (`SurrealWalletStore.TenantBootstrap`) batches now
+capture `statements.Count` before adding `RETURN`, like the WTT stores. Raw `SET col = $x`
+with a possibly-null C# value: a SCHEMAFULL `option<T>` column rejects `NULL`
+("Expected `none | string` but found `NULL`"), so `SurrealSagaStore` writes
+`$x ?? NONE` (probed: NULL → field absent, a value → stored).

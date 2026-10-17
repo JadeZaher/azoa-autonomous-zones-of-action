@@ -119,14 +119,15 @@ public static class ClaimsPrincipalExtensions
     /// <summary>
     /// Financial-endpoint signing-scope gate (mirrors the shipped <c>DappDevelop</c>
     /// authorization policy exactly). Returns true — i.e. the caller MAY perform the
-    /// value-moving action — unless the principal is a SCOPED API key that lacks
-    /// <paramref name="scope"/>. JWT owners and empty-CSV legacy full-access keys are
-    /// never blocked; only a key that carries SOME scopes but not the required signing
-    /// one is denied. Centralized here so the three financial controllers can't drift.
+    /// value-moving action — unless the principal is a SCOPED API key or a delegated child
+    /// token that lacks <paramref name="scope"/>. First-party JWT owners and empty-CSV legacy
+    /// full-access keys are never blocked. Centralized here so the three financial controllers can't drift.
     /// See Controllers/AGENTS.md.
     /// </summary>
     public static bool HasSigningScope(this ClaimsPrincipal principal, string scope)
     {
+        if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal) || principal.GetActingTenantId() is not null)
+            return principal.HasScope(scope);                             // delegated child token → scoped like a key.
         var isApiKey = string.Equals(principal.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
         if (!isApiKey) return true;                                        // JWT owner → unaffected.
         if (string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))

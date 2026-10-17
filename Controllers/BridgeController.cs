@@ -51,6 +51,7 @@ public class BridgeController : ControllerBase
     {
         if (!TryGetUserId(out var userId))
             return Unauthorized();
+        if (SigningRefusal() is { } refused) return refused;
 
         // Amount is a precision-safe string on the wire and is parsed once into
         // the provider-safe unsigned base-unit range.
@@ -111,6 +112,7 @@ public class BridgeController : ControllerBase
     {
         if (!TryGetUserId(out var userId))
             return Unauthorized();
+        if (SigningRefusal() is { } refused) return refused;
         var idempotencyKey = ReadIdempotencyKey();
         var result = await _bridgeService.RedeemWithVAAAsync(id, ct, idempotencyKey, userId);
         if (result.IsError)
@@ -136,6 +138,7 @@ public class BridgeController : ControllerBase
     {
         if (!TryGetUserId(out var userId))
             return Unauthorized();
+        if (SigningRefusal() is { } refused) return refused;
         var idempotencyKey = ReadIdempotencyKey();
         var result = await _bridgeService.ReverseBridgeAsync(id, request.SourceRecipientAddress, ct, idempotencyKey, userId);
         if (result.IsError)
@@ -191,6 +194,15 @@ public class BridgeController : ControllerBase
                 return key.Trim();
         }
         return null;
+    }
+
+    /// <summary>Audit-2 M8: value-moving bridge routes need the transfer signing scope and never run under a tenant-delegated credential.</summary>
+    private IActionResult? SigningRefusal()
+    {
+        if (User.GetActingTenantId() is not null)
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = "Tenant-delegated credentials cannot drive the legacy bridge." });
+        return User.HasSigningScope(AzoaScopes.TransferSign) ? null
+            : StatusCode(StatusCodes.Status403Forbidden, new { error = $"The '{AzoaScopes.TransferSign}' signing scope is required." });
     }
 
     private bool TryGetUserId(out Guid userId)

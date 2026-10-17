@@ -322,39 +322,14 @@ public sealed class SurrealBridgeStore : IBridgeStore
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("Bridge id must not be empty.", nameof(id));
 
-        // AC1 fix: guard the multi-field UPDATE with WHERE status = $_expected
-        // (AwaitingVAA) so a concurrent/replayed write cannot overwrite payload +
-        // status when the row has already advanced. Uses BuildConditionalUpdateSql
-        // so the WHERE predicate is part of the same single statement — same
-        // atomicity contract as TryTransitionBridgeStatusAsync. Returns affected
-        // count VERBATIM: true = won, false = predicate missed (row already moved).
-        var setParts = new List<string>
-        {
-            "vaa_bytes = $_vaa",
-            "vaa_signature_count = $_sigs",
-            "proof_data = $_proof",
-            "status = $_status",
-        };
-
-        var paramBag = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["_t"]        = BridgeTable,
-            ["_id"]       = id,
-            ["_expected"] = BridgeStatus.AwaitingVAA.ToString(),
-            ["_vaa"]      = vaaBytes,
-            ["_sigs"]     = (long)sigCount,
-            ["_proof"]    = proofData,
-            ["_status"]   = statusVAAReady.ToString(),
-        };
-
-        var sql = BuildConditionalUpdateSql(setParts);
-        var q = SurrealQuery.Of(sql).WithParams(paramBag);
-
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0) return false;
-        var stmt = response[0];
-        if (!stmt.IsOk) return false;
-        return stmt.AffectedCount() > 0;
+        // AC1: one conditional UPDATE guarded on AwaitingVAA; false = the row already moved.
+        var update = SurrealWriter.UpdateOnly<BridgeTx>(id)
+            .Where(row => row.Status == BridgeTx.StatusKind.AwaitingVAA)
+            .Set(row => row.VaaBytes, vaaBytes)
+            .Set(row => row.VaaSignatureCount, (long)sigCount)
+            .Set(row => row.ProofData, proofData)
+            .Set(row => row.Status, ParseBridgeStatus(statusVAAReady));
+        return await AffectedAsync(update.Build(), ct) > 0;
     }
 
     public async Task<int> TryTransitionBridgeStatusAsync(
@@ -367,111 +342,29 @@ public sealed class SurrealBridgeStore : IBridgeStore
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("Bridge id must not be empty.", nameof(id));
 
-        // Compose the SET clause dynamically from non-null mutation fields.
-        // Field names come ONLY from this method (allowlisted), parameter VALUES
-        // are bound — never interpolated. The shape is:
-        //   UPDATE type::record($_t, $_id)
-        //     WHERE status = $_expected
-        //     SET status = $_next, <field> = $_<field>, ...
-        //     RETURN AFTER
-        var setParts = new List<string> { "status = $_next" };
-        var paramBag = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["_t"]        = BridgeTable,
-            ["_id"]       = id,
-            ["_expected"] = expected.ToString(),
-            ["_next"]     = next.ToString(),
-        };
-
+        var expectedKind = ParseBridgeStatus(expected);
+        var update = SurrealWriter.UpdateOnly<BridgeTx>(id)
+            .Where(row => row.Status == expectedKind)
+            .Set(row => row.Status, ParseBridgeStatus(next));
         if (alsoSet is not null)
         {
-            // String columns are type::string()-wrapped: a `table:id`-shaped value
-            // (e.g. TargetTokenId "ASA:777") is otherwise coerced into a record id
-            // by SurrealDB 3.x and rejected by the option<string> column, faulting
-            // the whole UPDATE (so it returned affected=0). Numeric/datetime fields
-            // below are bound bare. This mirrors SurrealWriter's wrapping rule.
-            if (alsoSet.IdempotencyKey is not null)
-            {
-                setParts.Add("idempotency_key = type::string($_idem)");
-                paramBag["_idem"] = alsoSet.IdempotencyKey;
-            }
-            if (alsoSet.ErrorMessage is not null)
-            {
-                setParts.Add("error_message = type::string($_err)");
-                paramBag["_err"] = alsoSet.ErrorMessage;
-            }
-            if (alsoSet.LockTxHash is not null)
-            {
-                setParts.Add("lock_tx_hash = type::string($_lock)");
-                paramBag["_lock"] = alsoSet.LockTxHash;
-            }
-            if (alsoSet.SourceAddress is not null)
-            {
-                setParts.Add("source_address = type::string($_src_addr)");
-                paramBag["_src_addr"] = alsoSet.SourceAddress;
-            }
-            if (alsoSet.RedemptionTxHash is not null)
-            {
-                setParts.Add("redemption_tx_hash = type::string($_redeem)");
-                paramBag["_redeem"] = alsoSet.RedemptionTxHash;
-            }
-            if (alsoSet.MintTxHash is not null)
-            {
-                setParts.Add("mint_tx_hash = type::string($_mint)");
-                paramBag["_mint"] = alsoSet.MintTxHash;
-            }
-            if (alsoSet.TargetTokenId is not null)
-            {
-                setParts.Add("target_token_id = type::string($_target_token)");
-                paramBag["_target_token"] = alsoSet.TargetTokenId;
-            }
-            if (alsoSet.ProofData is not null)
-            {
-                setParts.Add("proof_data = type::string($_proof_data)");
-                paramBag["_proof_data"] = alsoSet.ProofData;
-            }
+            if (alsoSet.IdempotencyKey is not null) update = update.Set(row => row.IdempotencyKey, alsoSet.IdempotencyKey);
+            if (alsoSet.ErrorMessage is not null) update = update.Set(row => row.ErrorMessage, alsoSet.ErrorMessage);
+            if (alsoSet.LockTxHash is not null) update = update.Set(row => row.LockTxHash, alsoSet.LockTxHash);
+            if (alsoSet.SourceAddress is not null) update = update.Set(row => row.SourceAddress, alsoSet.SourceAddress);
+            if (alsoSet.RedemptionTxHash is not null) update = update.Set(row => row.RedemptionTxHash, alsoSet.RedemptionTxHash);
+            if (alsoSet.MintTxHash is not null) update = update.Set(row => row.MintTxHash, alsoSet.MintTxHash);
+            if (alsoSet.TargetTokenId is not null) update = update.Set(row => row.TargetTokenId, alsoSet.TargetTokenId);
+            if (alsoSet.ProofData is not null) update = update.Set(row => row.ProofData, alsoSet.ProofData);
             if (alsoSet.WormholeEmitterChainId is not null)
-            {
-                setParts.Add("wormhole_emitter_chain_id = $_emit_chain");
-                paramBag["_emit_chain"] = (long)alsoSet.WormholeEmitterChainId.Value;
-            }
-            if (alsoSet.WormholeEmitterAddress is not null)
-            {
-                setParts.Add("wormhole_emitter_address = type::string($_emit_addr)");
-                paramBag["_emit_addr"] = alsoSet.WormholeEmitterAddress;
-            }
-            if (alsoSet.WormholeSequence is not null)
-            {
-                setParts.Add("wormhole_sequence = $_seq");
-                paramBag["_seq"] = alsoSet.WormholeSequence.Value;
-            }
-
-            // CompletedAt semantics: SetCompletedAtUtcNow wins over
-            // ClearCompletedAt when both are set (matches the prior EF
-            // expression's evaluation order — SetCompletedAtUtcNow first).
-            if (alsoSet.SetCompletedAtUtcNow)
-            {
-                setParts.Add("completed_at = $_completed");
-                paramBag["_completed"] = DateTimeOffset.UtcNow;
-            }
-            else if (alsoSet.ClearCompletedAt)
-            {
-                // SurrealDB clears an option<datetime> column when it is set to
-                // NONE; we emit a literal NONE token here because there is no
-                // single typed binding for "the absence of a value".
-                setParts.Add("completed_at = NONE");
-            }
+                update = update.Set(row => row.WormholeEmitterChainId, (long)alsoSet.WormholeEmitterChainId.Value);
+            if (alsoSet.WormholeEmitterAddress is not null) update = update.Set(row => row.WormholeEmitterAddress, alsoSet.WormholeEmitterAddress);
+            if (alsoSet.WormholeSequence is not null) update = update.Set(row => row.WormholeSequence, (long)alsoSet.WormholeSequence.Value);
+            // SetCompletedAtUtcNow wins over ClearCompletedAt (the prior EF evaluation order).
+            if (alsoSet.SetCompletedAtUtcNow) update = update.Set(row => row.CompletedAt, DateTimeOffset.UtcNow);
+            else if (alsoSet.ClearCompletedAt) update = update.Unset(row => row.CompletedAt);
         }
-
-        var sql = BuildConditionalUpdateSql(setParts);
-
-        var q = SurrealQuery.Of(sql).WithParams(paramBag);
-
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0) return 0;
-        var stmt = response[0];
-        if (!stmt.IsOk) return 0;
-        return stmt.AffectedCount();
+        return await AffectedAsync(update.Build(), ct);
     }
 
     public async Task<int> TryTransitionOperationStatusAsync(
@@ -481,65 +374,22 @@ public sealed class SurrealBridgeStore : IBridgeStore
         DateTime? completedDate,
         CancellationToken ct = default)
     {
-        var surrealId = GuidToSurrealId(id);
-
-        // operation_log.status is an enum-backed string column, so the
-        // expected/next string literals MUST match StatusKind member names.
-        // Caller passes OperationStatus.* constants which already mirror those
-        // names — we forward verbatim, the schema ASSERT enforces validity.
-        var setParts = new List<string> { "status = $_next" };
-        var paramBag = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["_t"]        = OperationTable,
-            ["_id"]       = surrealId,
-            ["_expected"] = expected,
-            ["_next"]     = next,
-        };
-
-        if (completedDate is not null)
-        {
-            setParts.Add("completed_date = $_completed");
-            paramBag["_completed"] = ToUtcOffset(completedDate.Value);
-        }
-
-        var sql = BuildConditionalUpdateSql(setParts);
-
-        var q = SurrealQuery.Of(sql).WithParams(paramBag);
-
-        var response = await _executor.ExecuteAsync(q, ct);
-        if (response.Count == 0) return 0;
-        var stmt = response[0];
-        if (!stmt.IsOk) return 0;
-        return stmt.AffectedCount();
+        // Callers pass OperationStatus.* constants that mirror StatusKind names; an unknown name matches nothing.
+        if (!Enum.TryParse<OperationLog.StatusKind>(expected, out var expectedKind) || !Enum.IsDefined(expectedKind)
+            || !Enum.TryParse<OperationLog.StatusKind>(next, out var nextKind) || !Enum.IsDefined(nextKind))
+            return 0;
+        var update = SurrealWriter.UpdateOnly<OperationLog>(GuidToSurrealId(id))
+            .Where(row => row.Status == expectedKind)
+            .Set(row => row.Status, nextKind);
+        if (completedDate is not null) update = update.Set(row => row.CompletedDate, ToUtcOffset(completedDate.Value));
+        return await AffectedAsync(update.Build(), ct);
     }
 
-    /// <summary>
-    /// Composes a conditional <c>UPDATE type::record(...) WHERE status = ... SET ... RETURN AFTER</c>
-    /// statement body from a pre-validated list of <c>field = $_param</c>
-    /// fragments. The fragments themselves are author-controlled (never user
-    /// input) — every value reference is a parameter token bound elsewhere.
-    ///
-    /// <para>
-    /// Indirection rationale: the SRDB0001 analyzer rejects
-    /// <c>SurrealQuery.Of("..." + variable)</c> at the call site via one-hop
-    /// data flow. Hiding the composition behind a non-string-builder helper
-    /// method keeps the safety contract intact (no value smuggling possible —
-    /// values are always parameters) while letting the conditional-update
-    /// primitive write a variable set of columns in one statement.
-    /// </para>
-    /// </summary>
-    private static string BuildConditionalUpdateSql(IReadOnlyList<string> setParts)
+    /// <summary>Executes one conditional mutation; a failed statement (constraint) or a missed predicate is 0 affected.</summary>
+    private async Task<int> AffectedAsync(SurrealQuery mutation, CancellationToken ct)
     {
-        // SurrealDB 3.x requires SET before WHERE (UPDATE ... SET ... WHERE ...).
-        var sb = new System.Text.StringBuilder();
-        sb.Append("UPDATE type::record($_t, $_id) SET ");
-        for (int i = 0; i < setParts.Count; i++)
-        {
-            if (i > 0) sb.Append(", ");
-            sb.Append(setParts[i]);
-        }
-        sb.Append(" WHERE status = $_expected RETURN AFTER");
-        return sb.ToString();
+        var response = await _executor.ExecuteAsync(mutation, ct);
+        return response.Count == 0 || !response[0].IsOk ? 0 : response[0].AffectedCount();
     }
 
     // ── Mapping: BridgeTransactionResult ↔ BridgeTx ───────────────────────────
