@@ -30,7 +30,11 @@ internal sealed class CSharpSource
     public static IReadOnlyList<CSharpSource> Production()
     {
         var root = RepositoryRoot();
-        return Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
+        return Directory.EnumerateFiles(root, "*.cs", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.EnumerateDirectories(root)
+                .Where(directory => !ExcludedDirectories.Contains(Path.GetFileName(directory), StringComparer.OrdinalIgnoreCase))
+                .SelectMany(directory => Directory.EnumerateFiles(directory, "*.cs", options)))
             .Where(path => !Path.GetRelativePath(root, path).Split(Path.DirectorySeparatorChar)
                 .Any(part => ExcludedDirectories.Contains(part, StringComparer.OrdinalIgnoreCase)))
             .Select(path => Parse(Path.GetRelativePath(root, path), File.ReadAllText(path)))
