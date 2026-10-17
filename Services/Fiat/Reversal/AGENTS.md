@@ -271,3 +271,32 @@ verb that gives an account its ability to move value back. The frontend is
 The controller lives in this directory rather than under `Controllers/` because that directory
 belongs to other items in this wave. MVC discovers controllers by type, so the route is identical
 either way and moving the file later changes nothing.
+
+## §attempt-keys — clawback MUST-FIXes and the parked-move exit (round 4, A-2)
+
+Three lane-B must-fixes, closed in `ReversalCompensationService`:
+
+1. **Rung 0 no longer ignores unfinished clawback reservations.** A reserved clawback step whose move
+   has not completed is not counted as recovered, but its credited units are subtracted from what
+   rung 1 (balance) may take, so the balance rung cannot take the same units while rung 2 finishes
+   the reservation.
+2. **The pending finish is capped.** Rung 2 finishes an earlier pass's reservation only while
+   `recovered + credited ≤ attributable`; a reservation that does not fit also blocks new
+   reservations for that claim, so the two can never stack past this payment's share.
+3. **A definitive failure no longer wedges the rung.** SurrealForge's ledger never re-claims a
+   `Failed` key, so each move's claim key is attempt-suffixed (`MoveAttemptKey`: attempt 0 is the
+   original key, then `…:attempt:N`, at most 5). `ResolveMoveSlotAsync` walks the attempts: absent →
+   claim it; `Failed` without the ambiguity marker (the provider refused before broadcasting) → next
+   attempt; anything else → that record decides (completed replays, in-progress waits, ambiguous
+   parks). All attempts refused → `Unconfirmed` and the reversal parks. Chosen over a ledger re-claim
+   API (assumption A-2): that would change semantics for every SurrealForge consumer.
+
+**Parked-move exit.** An ambiguous move records `chain=…, amount=…, tx=…` with the marker, and parking
+stores the move's claim key in `fiat_reversal.pending_move_key`.
+`POST /api/admin/fiat-reversals/{id}/resolve` (`ResolveParkedAsync`, reason required, operator
+principal recorded in the status reason) re-reads that transaction on chain: confirmed → resolution
+key `{moveKey}:resolution` completed with the recovery payload (a balance move also gets its reserve
+partition draw, anchored on the move key); failed on chain → resolution `absent`, so the next attempt
+key may be claimed; pending/unknown → refused. The reversal returns to `Recovering` and the unwind is
+re-queued; the ladder then replays the resolved move exactly once. A move parked with no recorded
+transaction (InProgress after a crash) has no evidence to resolve and stays a by-hand reconciliation.

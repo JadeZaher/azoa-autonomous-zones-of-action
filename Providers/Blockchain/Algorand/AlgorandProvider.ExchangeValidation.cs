@@ -11,15 +11,15 @@ public partial class AlgorandProvider
     private Transaction[] ValidateExchangePrepared(PreparedExchangeWire prepared, ExchangeUnsignedPlan? saved = null)
     {
         if (!ValidExchangeIntent(prepared.Intent) || prepared.PreparationId != ExchangePreparationId(prepared.Intent)
-            || prepared.SignedTransactionsBase64.Count != prepared.Intent.Legs.Count + 1
+            || prepared.SignedTransactionsBase64.Count != ExchangeMembers(prepared.Intent).Count
             || prepared.TransactionIds.Count != prepared.SignedTransactionsBase64.Count)
             throw new InvalidOperationException("Prepared exchange identity is incomplete.");
+        var members = ExchangeMembers(prepared.Intent);
         var envelopes = prepared.SignedTransactionsBase64.Select(AlgorandSignedEnvelope.DecodeCanonical).ToArray();
         var transactions = envelopes.Select(envelope => envelope.Tx).ToArray();
         for (var index = 0; index < envelopes.Length; index++)
         {
-            var sender = index == prepared.Intent.Legs.Count ? prepared.Intent.FeePayerAddress : prepared.Intent.Legs[index].Sender;
-            AlgorandSignedEnvelope.RequireSingleSender(envelopes[index], sender);
+            AlgorandSignedEnvelope.RequireSingleSender(envelopes[index], members[index].Sender);
             if (transactions[index].TxID() != prepared.TransactionIds[index]
                 || transactions[index].Group is null || Convert.ToBase64String(transactions[index].Group.Bytes) != prepared.GroupId)
                 throw new InvalidOperationException("Prepared exchange member identity changed.");
@@ -30,7 +30,8 @@ public partial class AlgorandProvider
 
     private void ValidateExchangeUnsigned(ExchangeWireIntent intent, Transaction[] transactions, ExchangeUnsignedPlan? saved)
     {
-        if (!ValidExchangeIntent(intent) || transactions.Length != intent.Legs.Count + 1
+        var members = ValidExchangeIntent(intent) ? ExchangeMembers(intent) : null;
+        if (members is null || transactions.Length != members.Count
             || saved is not null && saved.TransactionsBase64.Count != transactions.Length)
             throw new InvalidOperationException("Exchange group shape is invalid.");
         var first = transactions[0];
@@ -45,20 +46,14 @@ public partial class AlgorandProvider
         for (var index = 0; index < transactions.Length; index++)
         {
             var actual = transactions[index];
-            Transaction expected;
-            if (index < intent.Legs.Count)
-            {
-                var leg = intent.Legs[index];
-                expected = new AssetTransferTransaction { Sender = new Address(leg.Sender), AssetReceiver = new Address(leg.Recipient),
-                    XferAsset = UInt64Text.Parse(leg.AssetId), AssetAmount = UInt64Text.Parse(leg.QuantityBaseUnits), Fee = 0 };
-            }
-            else
+            var expected = members[index].Template;
+            if (index == members.Count - 1)
             {
                 if (actual.Fee is null || actual.Fee == 0 || actual.Fee > UInt64Text.Parse(intent.MaximumNetworkFeeBaseUnits))
                     throw new InvalidOperationException("Exchange pooled fee exceeds its accepted bound.");
-                expected = new PaymentTransaction { Sender = new Address(intent.FeePayerAddress), Receiver = new Address(intent.FeePayerAddress),
-                    Amount = 0, Fee = actual.Fee };
+                expected.Fee = actual.Fee;
             }
+            else expected.Fee = 0;
             expected.FirstValid = first.FirstValid;
             expected.LastValid = first.LastValid;
             expected.GenesisHash = first.GenesisHash;

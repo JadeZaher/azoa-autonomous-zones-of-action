@@ -35,7 +35,13 @@ public static class ExchangeHoldWirePlan
                 new(asset.AssetId, source.Units.QuantityBaseUnits, wallet, asset.HoldingAddress, "Participant", participant)];
         }
         else return null;
+        ExchangeWireReadiness? readiness = null;
+        if (source.Units?.RecipientFundingBaseUnits is { } funding)
+        {
+            if (!UnsignedIntegerText.TryParse(funding, out _)) return null;
+            readiness = new(source.Units.Kind == "Issue" ? asset.AssetId : source.PlatformAssetId, wallet, funding, participant);
+        }
         return new(1, sourceId, generation, asset.ChainType, asset.Network, asset.ProtocolIdentity, legs,
-            asset.HoldingAddress, platform, source.MaximumNetworkFeeBaseUnits, treasury);
+            asset.HoldingAddress, platform, source.MaximumNetworkFeeBaseUnits, treasury, readiness);
     }
 }

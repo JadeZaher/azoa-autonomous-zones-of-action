@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Kyc;
@@ -28,6 +29,34 @@ public sealed class KycController : ControllerBase
     public KycController(IKycManager manager)
     {
         _manager = manager;
+    }
+
+    /// <summary>Begins or resumes the caller's own (first-party) hosted verification.</summary>
+    [HttpPost("session")]
+    [Authorize(Policy = "FirstPartyLogin")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<KycSessionStartModel>>> BeginSession(CancellationToken ct)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
+        if (User.GetActingTenantId() is not null) return Forbid();
+
+        var result = await _manager.BeginAsync(userId.Value, ct);
+        return TranslateResult(result);
+    }
+
+    /// <summary>Re-fetches the provider's authoritative result for the caller's open attempt, then returns status.</summary>
+    [HttpPost("refresh")]
+    [Authorize(Policy = "FirstPartyLogin")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<KycSubmissionModel>>> Refresh(CancellationToken ct)
+    {
+        var userId = GetUserIdFromClaims();
+        if (userId == null) return Unauthorized();
+        if (User.GetActingTenantId() is not null) return Forbid();
+
+        var result = await _manager.RefreshAsync(userId.Value, ct);
+        return TranslateResult(result);
     }
 
     [HttpPost("submit")]
@@ -70,7 +99,11 @@ public sealed class KycController : ControllerBase
                     $"Caller lacks the '{AzoaScopes.KycRead}' scope.",
                     AzoaErrorCodes.Forbidden));
 
-        var result = await _manager.GetStatusAsync(userId.Value, ct);
+        // A delegated (acting-tenant) caller reads the tenant-scoped attempt, never the user's first-party one.
+        var actingTenant = User.GetActingTenantId();
+        var result = actingTenant is { } tenantId
+            ? await _manager.GetStatusAsync(userId.Value, tenantId, ct)
+            : await _manager.GetStatusAsync(userId.Value, ct);
         if (result.IsError)
         {
             if (result.Message?.StartsWith(KycAuthorizationError.NotFound, StringComparison.Ordinal) == true)
@@ -132,6 +165,19 @@ public sealed class KycController : ControllerBase
 
         if (result.Message?.StartsWith(KycAuthorizationError.NotFound, StringComparison.Ordinal) == true)
             return NotFound(result);
+
+        if (result.Code == AzoaErrorCodes.Conflict)
+            return Conflict(result);
+
+        if (result.Code == AzoaErrorCodes.OperationNotAllowed)
+        {
+            if (result.RetryAfterSeconds is > 0)
+                Response.Headers.RetryAfter = result.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return StatusCode(StatusCodes.Status429TooManyRequests, result);
+        }
+
+        if (result.Code == AzoaErrorCodes.DependencyUnavailable)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, result);
 
         return BadRequest(result);
     }

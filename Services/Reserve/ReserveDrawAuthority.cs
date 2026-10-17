@@ -148,6 +148,28 @@ internal static class ReservePartitionScope
               "partitions are not this caller's to draw from. Nothing was drawn.";
     }
 
+    /// <summary>
+    /// Null when this authority may declare or read an asset's partitions; the refusal otherwise.
+    /// Stricter than <see cref="Refuse"/>: the node's own unit is budgeted by the operator under
+    /// every draw policy (see Services/Reserve/AGENTS.md §declaration-authority).
+    /// </summary>
+    internal static string? RefuseDeclaration(
+        PlatformReserveLedger? reserveRow,
+        ReserveDrawAuthority? authority,
+        string assetId,
+        ReserveOptions? options = null)
+    {
+        if (authority is null || authority.IsSettlingGuardedCommitment)
+            return $"Declaring partitions on asset '{assetId}' needs the operator or the registering tenant. " +
+                   "Nothing was declared.";
+
+        if (ReserveRowTenant(reserveRow) == Guid.Empty && !authority.IsNodeOperator)
+            return $"Asset '{assetId}' is this node's own unit, so only the operator declares or reads its " +
+                   "partitions; a draw policy that admits tenants lets them draw, not budget. Nothing was declared.";
+
+        return Refuse(reserveRow, authority, assetId, options);
+    }
+
     private static readonly ReserveOptions DefaultOptions = new();
 
     /// <summary>

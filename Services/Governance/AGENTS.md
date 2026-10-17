@@ -151,3 +151,35 @@ Finalization reads only person_operation_claim cast-time evidence and checks the
 The active closeout track records remaining source review and runtime verification. These notes describe the intended implemented contract, not proof that unrun database race tests have passed. Shared KYC/AML evidence mutation serialization is being completed before source acceptance.
 
 Deterministically invalid frozen commands also receive an atomic failed receipt. Recovery cannot convert invalid input into endless ambiguity, nor can a stale successful plan commit after rejection has won the command identity. A previously committed success wins replay. Authority/transaction conflicts remain recoverable rather than being mislabeled as proof of no effect.
+
+## §governance-gate
+
+`GovernanceProposalCreate`, `GovernanceVote` and `GovernanceTally` are implemented **and gated**
+(`Services/Actions/NotEnabledActionNodeTypes.cs`). Round 3 checkpoint `3d08ace` lifted them on the
+source verdict alone; round 4 re-blocked them (plan §0.2: lift only on a verdict recorded after
+green race fixtures). The gate now stands on two lines:
+
+- `SOURCE_VERDICT: ACCEPTED` in `round2-governance-source-review.md` (source review, done);
+- `RUNTIME_VERDICT: PENDING|ACCEPTED|REJECTED` in `round4-governance-runtime-verdict.md`.
+
+`tests/AZOA.WebAPI.Tests/Actions/NotEnabledActionNodeTypesTests.cs` fails unless the three types
+are blocked exactly while either verdict is not `ACCEPTED`, so a code-only lift and a doc-only lift
+both go red. The lift procedure (sweep evidence → independent refuting reviewer with a mutation
+check → verdict line → remove the three members in the same change) and the fixture inventory live
+in the verdict file. Race fixtures: `SurrealGovernanceTests.Races.cs` (cancellation vs vote,
+cancellation vs creation, participation revocation vs vote, vote vs finalization across the cutoff,
+membership change vs creation snapshot) beside the existing duplicate-creation, concurrent-finalizer
+and AML-append races. Each asserts the outcome of every serial order, never which order won.
+
+## node-fee-recovery — hosted settlement recovery (round 4, L3)
+
+`NodeFeeSettlementRecoveryWorker` is a hosted `BackgroundService` (registered beside the settlement
+store in `Program.cs`). Every minute it builds one bounded request (50 rows, 2 min lease, 5 min retry)
+and runs, in order: `INodeFeeSettlementAtomicGroupReconciler.ReconcileDueAsync` (claims settlements
+with an accepted atomic-group receipt, observes the group on chain, settles exact confirmations,
+records non-terminal observations), then `INodeFeeSettlementManager.RecoverDueAsync` (defers the
+remaining due rows without any chain submission). Reconciliation runs first because a deferral pushes
+a row's next attempt past the tick. Both are lease-claimed, so concurrent nodes contend safely; a
+failed tick is logged and the next tick re-reads durable state. Recovery still submits nothing: a
+`Prepared` fee with no accepted group stays uncollected (no user funds held) until a submitting path
+exists.

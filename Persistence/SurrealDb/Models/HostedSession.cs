@@ -23,6 +23,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Fields = new[] { "flow_kind", "provider_key", "provider_session_id" },
         Unique = true)]
     [Index("hosted_session_subject", Fields = new[] { "subject_user_id" })]
+    [Index("hosted_session_poll", Fields = new[] { "state", "next_poll_at" })]
     public partial class HostedSession : ISurrealRecord
     {
         public const string SchemaNameConst = "hosted_session";
@@ -112,6 +113,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         /// <summary>Domain record resumed on completion, e.g. a kyc_submission id.</summary>
         public string? ResumeTargetId { get; set; }
+
+        /// <summary>When the outcome poll may next re-fetch this attached session; NONE means due now.</summary>
+        [FieldGroup("Outcome poll (lost-callback recovery)")]
+        public DateTimeOffset? NextPollAt { get; set; }
+
+        /// <summary>Outcome polls claimed so far; drives the backoff.</summary>
+        public long? PollAttemptCount { get; set; }
 
         [FieldGroup("Timestamps")]
         [ReadOnly]

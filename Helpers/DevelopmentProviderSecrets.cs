@@ -18,7 +18,7 @@ public static class DevelopmentProviderSecrets
             && stripeKey.StartsWith("sk_test_", StringComparison.Ordinal))
             defaults["Fiat:Test:SecretKey"] = stripeKey;
         foreach (var alias in new[] { "Kyc__Identomat__ConfigId", "Kyc__Identomat__CallbackApiKey",
-            "Kyc__Identomat__ReturnUrl", "Kyb__ConfigId", "Kyb__ReturnUrl", "Fiat__Test__WebhookSecret" })
+            "Kyc__Identomat__ReturnUrl", "Kyb__ConfigId", "Kyb__ReturnUrl", "Fiat__Test__WebhookSecret", "Fiat__Test__ConnectWebhookSecret" })
         {
             var setting = alias.Replace("__", ":", StringComparison.Ordinal);
             if (string.IsNullOrWhiteSpace(configuration[setting]) && aliases.TryGetValue(alias, out var value))
@@ -39,7 +39,8 @@ public static class DevelopmentProviderSecrets
             var name = trimmed[..separator].Trim();
             if (name is not ("IDENTOMAT_API_KEY" or "STRIPE_SECRET_API_KEY_DEV"
                 or "Kyc__Identomat__ConfigId" or "Kyc__Identomat__CallbackApiKey" or "Kyc__Identomat__ReturnUrl"
-                or "Kyb__ConfigId" or "Kyb__ReturnUrl" or "Fiat__Test__WebhookSecret")) continue;
+                or "Kyb__ConfigId" or "Kyb__ReturnUrl" or "Fiat__Test__WebhookSecret"
+                or "Fiat__Test__ConnectWebhookSecret")) continue;
             var value = trimmed[(separator + 1)..].Trim();
             if (value.Length >= 2 && (value[0] == '"' && value[^1] == '"' || value[0] == '\'' && value[^1] == '\''))
                 value = value[1..^1];

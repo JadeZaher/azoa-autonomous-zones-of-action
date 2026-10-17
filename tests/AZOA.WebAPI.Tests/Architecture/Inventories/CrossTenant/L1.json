@@ -1,0 +1,62 @@
+[
+  {
+    "store": "SurrealActionWebhookDeliveryStore",
+    "method": "ListAsync",
+    "tenantCheck": "typed Where tenant_id = caller tenant link"
+  },
+  {
+    "store": "SurrealActionWebhookDeliveryStore",
+    "method": "GetAsync",
+    "tenantCheck": "keyed read, row tenant must equal caller tenant else null"
+  },
+  {
+    "store": "SurrealActionWebhookDeliveryStore",
+    "method": "RetryAsync",
+    "tenantCheck": "row tenant must equal caller tenant; registration tenant = event tenant pinned in CAS; non-operator actor must be the tenant"
+  },
+  {
+    "store": "SurrealConsentWebhookDeliveryStore",
+    "method": "ListAsync",
+    "tenantCheck": "typed Where tenant_id = caller tenant link"
+  },
+  {
+    "store": "SurrealConsentWebhookDeliveryStore",
+    "method": "GetAsync",
+    "tenantCheck": "keyed read, row tenant must equal caller tenant else null"
+  },
+  {
+    "store": "SurrealConsentWebhookDeliveryStore",
+    "method": "RetryAsync",
+    "tenantCheck": "row tenant must equal caller tenant; event tenant pinned in CAS; non-operator actor must be the tenant"
+  },
+  {
+    "store": "SurrealWebhookRegistrationStore",
+    "method": "GetByTenantAsync",
+    "tenantCheck": "keyed by tenant id"
+  },
+  {
+    "store": "SurrealWebhookRegistrationStore",
+    "method": "MutateAsync",
+    "tenantCheck": "registration row keyed and CAS-pinned to the bound tenant"
+  },
+  {
+    "store": "SurrealWebhookRegistrationStore",
+    "method": "WithdrawAsync",
+    "tenantCheck": "command identity keyed by actor + tenant"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "CreateAsync",
+    "tenantCheck": "tenant admin + active tenant-provision key locked in transaction; electorate recomputed from the tenant's members"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "VoteAsync",
+    "tenantCheck": "proposal tenant; voter live membership (owner tenant or participation grant) and tenant-scoped KYC/AML checked in transaction"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "FinalizeAsync",
+    "tenantCheck": "tenant admin locked in transaction; ledger read scoped to proposal/definition/uniqueness scope"
+  }
+]

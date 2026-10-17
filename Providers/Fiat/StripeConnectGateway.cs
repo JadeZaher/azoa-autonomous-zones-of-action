@@ -113,6 +113,9 @@ public sealed class StripeTransfer
     public bool Livemode { get; init; }
 }
 
+/// <summary>One page of transfers; <c>HasMore</c> means the page is not complete evidence.</summary>
+public sealed record StripeTransferList(IReadOnlyList<StripeTransfer> Transfers, bool HasMore);
+
 /// <summary>A connected account's bank payout, fetched in that account's scope.</summary>
 public sealed class StripeBankPayout
 {
@@ -152,6 +155,10 @@ public interface IStripeConnectGateway
     /// <summary>Re-reads one transfer server-side. Never trust a webhook body for these facts.</summary>
     Task<AZOAResult<StripeTransfer>> GetTransferAsync(
         StripeCredentials credentials, string transferId, CancellationToken ct = default);
+
+    /// <summary>Lists one page (100) of the platform's transfers in a transfer group; the operator's no-money evidence.</summary>
+    Task<AZOAResult<StripeTransferList>> ListTransfersByGroupAsync(
+        StripeCredentials credentials, string transferGroup, CancellationToken ct = default);
 
     /// <summary>Sets the platform-controlled account's payout schedule to manual.</summary>
     Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
@@ -339,6 +346,24 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
     }
 
     /// <inheritdoc />
+    public Task<AZOAResult<StripeTransferList>> ListTransfersByGroupAsync(
+        StripeCredentials credentials, string transferGroup, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(transferGroup))
+            return Task.FromResult(FiatPayoutErrors.RailUnavailable<StripeTransferList>());
+
+        return SendAsync(
+            credentials,
+            HttpMethod.Get,
+            "/v1/transfers?limit=100&transfer_group=" + Uri.EscapeDataString(transferGroup.Trim()),
+            form: null,
+            idempotencyKey: null,
+            "list cash-out transfers",
+            ParseTransferList,
+            ct);
+    }
+
+    /// <inheritdoc />
     public Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
         StripeCredentials credentials, string accountId, CancellationToken ct = default)
         => SendAsync(credentials, HttpMethod.Post, "/v1/accounts/" + Uri.EscapeDataString(accountId),
@@ -494,6 +519,27 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
                 Url = url!,
                 ExpiresAt = ReadUnixSeconds(root.Value, "expires_at"),
             };
+        }
+    }
+
+    /// <summary>Reads one page of transfers; null unless both <c>data</c> and <c>has_more</c> are present.</summary>
+    public static StripeTransferList? ParseTransferList(string json)
+    {
+        var root = TryReadObject(json, out var document);
+        if (root is null)
+            return null;
+
+        using (document)
+        {
+            if (!root.Value.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array
+                || !root.Value.TryGetProperty("has_more", out var hasMore)
+                || hasMore.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                return null;
+            var transfers = data.EnumerateArray()
+                .Select(item => ParseTransfer(item.GetRawText()))
+                .OfType<StripeTransfer>()
+                .ToList();
+            return new StripeTransferList(transfers, hasMore.GetBoolean());
         }
     }
 

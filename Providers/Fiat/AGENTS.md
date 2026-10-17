@@ -44,6 +44,29 @@ a quarantined row, the verdict is `NeedsOperator`: the operator reconciliation p
 (`ReconcileAdmissionAsync`) attaches the verified object. Connected accounts carry
 `metadata[azoa_payout_claim]=<rowId>` so the operator can find the one Stripe opened.
 
-**Known adjacent gap (L3, D8).** Checkout recomputes `expires_at` on every attempt, so a replay
-after a lost response gets Stripe's `idempotency_error` and reports busy (fail-closed: no second
-page). Pinning `expires_at` at the first claim is L3's D8 fix.
+## §expiry-pin — checkout `expires_at` is fixed per claim (D8, round 4)
+
+Stripe answers `idempotency_error` when a key is replayed with different parameters, so a replay
+after a lost create response must send the exact bytes of the first attempt. `expires_at` is
+therefore `creation_started_at + clamp(SessionExpiryMinutes, 35, 1440)`
+(`FiatRailProvider.PinnedCheckoutExpiry`): `creation_started_at` is written once by the creation
+fence, so every replay of one claim computes the same instant. The 35-minute floor is Stripe's
+30-minute minimum plus a replay margin. Once the pinned expiry is closer than 31 minutes, the
+claim can no longer be (re)sent validly — if the first create never reached Stripe, Stripe would
+reject the short lifetime — so the node answers "This payment page has expired. Start a new
+payment." (Conflict) instead of looping on a create Stripe refuses. A new request key opens a new
+claim; a Stripe session the lost response did create simply expires unpaid (nobody holds its URL).
+
+## §webhook-secrets — platform and Connect endpoints (F-M2, round 4)
+
+Stripe signs connected-account events (`payout.*`, `account.*` with an `account` field) on a
+**Connect** webhook endpoint whose signing secret differs from the platform endpoint's. Configure
+`Fiat:<Env>:WebhookSecret` (platform endpoint, required) and `Fiat:<Env>:ConnectWebhookSecret`
+(Connect endpoint, optional). `StripeWebhookController` verifies with the platform secret first,
+then the Connect secret. With a **distinct** Connect secret configured, each secret is accepted
+only for its own endpoint's events — a Connect-signed event must carry `account`, a
+platform-signed one must not — so a leaked secret of one endpoint cannot forge the other's events.
+With no Connect secret (or the same value, as `stripe listen --forward-connect-to` uses in dev) the
+single platform secret verifies both. Register both endpoints in the Stripe dashboard: the platform
+endpoint for `checkout.session.*`, `charge.*`, `transfer.*`; the Connect endpoint for `payout.*` and
+`account.updated`. Both URLs are `POST /api/fiat/webhook/stripe`.

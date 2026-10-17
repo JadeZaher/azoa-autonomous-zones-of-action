@@ -60,7 +60,7 @@ public class OnRampSagaTests
         (await harness.ApplyAsync()).Should().Be(FiatEventOutcome.AcceptedPending);
         var pending = harness.Lots.Single();
         pending.Status.Should().NotBe(OnRampLotStatuses.Issued);
-        pending.OperationId.Should().Be(harness.IssuanceId.ToString("N"));
+        pending.OperationId.Should().Be($"operation_log:{harness.IssuanceId:N}");
         pending.IssuedAt.Should().BeNull();
         pending.ReversalWindowEnds.Should().BeNull();
         var allocationKey = harness.CapturedIdempotencyKey;
@@ -196,8 +196,9 @@ public class OnRampSagaTests
 
         var lot = harness.Lots.Single();
         lot.Status.Should().Be(OnRampLotStatuses.Issued);
-        lot.SubjectUserId.Should().Be(SubjectUserId.ToString("N"));
-        lot.IntentId.Should().Be(IntentId.ToString("N"));
+        // Record-link columns carry table:id links, exactly as SurrealDB reads them back.
+        lot.SubjectUserId.Should().Be($"user:{SubjectUserId:N}");
+        lot.IntentId.Should().Be($"hosted_session:{IntentId:N}");
         lot.FiatMinorUnits.Should().Be(1000L);
         lot.CurrencyCode.Should().Be("USD");
         lot.GrossQuantityBaseUnits.Should().Be("100000");

@@ -164,7 +164,8 @@ public sealed partial class SurrealHoldCommandStore
                 || string.IsNullOrWhiteSpace(units.Asset.HoldingAddress) || units.Asset.AssetId == intent.PlatformAssetId
                 || !UnsignedIntegerText.TryParse(units.QuantityBaseUnits, out var unitQuantity) || unitQuantity == 0
                 || string.IsNullOrEmpty(units.ReservePartition)
-                || units.ReservePartition != ReservePartitionCodec.Normalize(units.ReservePartition)) return false;
+                || units.ReservePartition != ReservePartitionCodec.Normalize(units.ReservePartition)
+                || units.RecipientFundingBaseUnits is { } funding && !UnsignedIntegerText.TryParse(funding, out _)) return false;
             asset = units.Asset;
         }
         if (authority.Wallet.ChainType != asset.ChainType) return false;
