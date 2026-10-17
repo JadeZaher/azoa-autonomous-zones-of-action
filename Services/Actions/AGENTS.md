@@ -471,10 +471,12 @@ around what the in-process path enforces.**
 
 **Why each member is here, and what removes it:**
 
-- **Governance cannot be trusted to count.** The tally reads raw child holons, so a
-  ballot created outside the handler is counted without ever taking a uniqueness claim
-  (§governance): one verified user can post N vote holons and all N count. Tracked by
-  `conductor/tracks/governance-vote-of-record_20260906`.
+- **Governance waits for an independent runtime verdict.** The vote of record now lives in
+  `governance_proposal` / `governance_command_receipt` (single-winner receipts, no raw child-holon
+  tally; see `Services/Governance/AGENTS.md` §governance-gate). Round 4 (L1) re-blocks
+  GovernanceProposalCreate/Vote/Tally until real-DB race fixtures are green and
+  `round4-governance-runtime-verdict.md` records `RUNTIME_VERDICT: ACCEPTED`
+  (`NotEnabledActionNodeTypes.cs` is L1's file).
 - **The credential rail cannot authorize.** The only mint path stamps
   `issuer_user_id` = the holder, which makes the "issuer, never the holder" rule in
   §credential-revoke vacuous — the party the credential would be taken from is the

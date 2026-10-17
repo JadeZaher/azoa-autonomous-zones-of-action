@@ -375,9 +375,10 @@ public sealed class SurrealBridgeStore : IBridgeStore
         CancellationToken ct = default)
     {
         // Callers pass OperationStatus.* constants that mirror StatusKind names; an unknown name matches nothing.
-        if (!Enum.TryParse<OperationLog.StatusKind>(expected, out var expectedKind) || !Enum.IsDefined(expectedKind)
-            || !Enum.TryParse<OperationLog.StatusKind>(next, out var nextKind) || !Enum.IsDefined(nextKind))
+        if (!Enum.IsDefined(typeof(OperationLog.StatusKind), expected) || !Enum.IsDefined(typeof(OperationLog.StatusKind), next))
             return 0;
+        var expectedKind = Enum.Parse<OperationLog.StatusKind>(expected);
+        var nextKind = Enum.Parse<OperationLog.StatusKind>(next);
         var update = SurrealWriter.UpdateOnly<OperationLog>(GuidToSurrealId(id))
             .Where(row => row.Status == expectedKind)
             .Set(row => row.Status, nextKind);

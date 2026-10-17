@@ -7,6 +7,7 @@ using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
 using SurrealForge.Client.Schema;
 using AZOA.WebAPI.Core.Surreal;
+using DependencyRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionDependency;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -36,15 +37,8 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 /// </para>
 ///
 /// <para>
-/// <b>Dependencies persistence gap</b>: <see cref="ActionDefinition.Dependencies"/> is NOT
-/// persisted by this store — the matching <c>action_dependency</c> .surql
-/// schema file is outside this round's owned-files set (its mermaid stub at
-/// <c>source/180_action_dependency.mermaid</c> exists but the runtime .surql
-/// is owned by a follow-up round). Round-trips deliberately drop the
-/// Dependencies list to an empty collection. Pre-launch this is acceptable
-/// (no live data, dapp-composition flows are not yet active); when the
-/// dependency .surql lands, extend this store to fan-out to a fourth child
-/// table.
+/// <b>Dependencies</b> fan out to the <c>action_dependency</c> table exactly like nodes and edges
+/// (cleared and re-written on upsert, read back with the children, deleted with the head).
 /// </para>
 ///
 /// <para>
@@ -179,9 +173,12 @@ public sealed class SurrealActionStore : IActionStore
             var deleteEdgesQ = SurrealQuery
                 .Of("DELETE action_edge WHERE action_id = $_qid")
                 .WithParam("_qid", actionLink);
+            var deleteDependenciesQ = SurrealQuery
+                .Of("DELETE action_dependency WHERE action_id = $_qid")
+                .WithParam("_qid", actionLink);
 
             var deleteResp = await _executor.ExecuteAsync(
-                SurrealQuery.Combine(deleteNodesQ, deleteEdgesQ), ct);
+                SurrealQuery.Combine(deleteNodesQ, deleteEdgesQ, deleteDependenciesQ), ct);
             deleteResp.EnsureAllOk();
 
             var headQ = SurrealQuery
@@ -230,9 +227,14 @@ public sealed class SurrealActionStore : IActionStore
                 edgeResp.EnsureAllOk();
             }
 
-            // Dependencies are intentionally NOT persisted — see the class XML
-            // doc "Dependencies persistence gap" section. Round-trip them as
-            // empty.
+            // Step 5: insert dependencies.
+            foreach (var dependency in action.Dependencies)
+            {
+                if (dependency.Id == Guid.Empty) dependency.Id = Guid.NewGuid();
+                dependency.ActionId = action.Id;
+                var dependencyResp = await _executor.ExecuteAsync(SurrealWriter.Upsert(FromDomain(dependency)), ct);
+                dependencyResp.EnsureAllOk();
+            }
 
             return new AZOAResult<ActionDefinition> { Result = action, Message = "Upserted." };
         }
@@ -281,9 +283,12 @@ public sealed class SurrealActionStore : IActionStore
             var deleteEdgesQ = SurrealQuery
                 .Of("DELETE action_edge WHERE action_id = $_qid")
                 .WithParam("_qid", actionLink);
+            var deleteDependenciesQ = SurrealQuery
+                .Of("DELETE action_dependency WHERE action_id = $_qid")
+                .WithParam("_qid", actionLink);
 
             var resp = await _executor.ExecuteAsync(
-                SurrealQuery.Combine(deleteHeadQ, deleteNodesQ, deleteEdgesQ), ct);
+                SurrealQuery.Combine(deleteHeadQ, deleteNodesQ, deleteEdgesQ, deleteDependenciesQ), ct);
             resp.EnsureAllOk();
 
             // Verify the head row is gone (returns empty set on missing row).
@@ -546,17 +551,21 @@ public sealed class SurrealActionStore : IActionStore
             .Of("SELECT * FROM action_edge WHERE action_id = $_qid")
             .WithParam("_qid", actionLink);
 
-        var combined = SurrealQuery.Combine(nodesQ, edgesQ);
+        var dependenciesQ = SurrealQuery
+            .Of("SELECT * FROM action_dependency WHERE action_id = $_qid")
+            .WithParam("_qid", actionLink);
+
+        var combined = SurrealQuery.Combine(nodesQ, edgesQ, dependenciesQ);
         var resp = await _executor.ExecuteAsync(combined, ct);
         resp.EnsureAllOk();
 
         var nodeRows = resp.GetValues<ActionNodePoco>(0);
         var edgeRows = resp.GetValues<ActionEdgePoco>(1);
+        var dependencyRows = resp.GetValues<DependencyRow>(2);
 
         action.Nodes = nodeRows.Select(ToDomain).ToList();
         action.Edges = edgeRows.Select(ToDomain).ToList();
-        // Dependencies are intentionally dropped — see class XML doc.
-        action.Dependencies = new List<ActionDependency>();
+        action.Dependencies = dependencyRows.Select(ToDomain).ToList();
     }
 
     private async Task<AZOAResult<IEnumerable<ActionDefinition>>> HydrateManyAsync(
@@ -571,6 +580,26 @@ public sealed class SurrealActionStore : IActionStore
         }
         return new AZOAResult<IEnumerable<ActionDefinition>> { Result = result, Message = "Success" };
     }
+
+    // ── Mapping: ActionDependency ↔ action_dependency ────────────────────────────────────
+
+    private static DependencyRow FromDomain(ActionDependency dependency) => new()
+    {
+        Id = SurrealId.ToSurrealId(dependency.Id),
+        ActionId = SurrealLink.ToLink("action", SurrealId.ToSurrealId(dependency.ActionId))!,
+        DependsOnActionId = SurrealLink.ToLink("action", SurrealId.ToSurrealId(dependency.DependsOnActionId))!,
+        DependsOnNodeId = dependency.DependsOnNodeId is { } node ? SurrealLink.ToLink("action_node", SurrealId.ToSurrealId(node)) : null,
+        DependencyType = Enum.Parse<DependencyRow.ActionDependencyTypeKind>(dependency.DependencyType.ToString()),
+    };
+
+    private static ActionDependency ToDomain(DependencyRow row) => new()
+    {
+        Id = SurrealRecordGuid.Parse(row.Id),
+        ActionId = SurrealRecordGuid.Parse(row.ActionId),
+        DependsOnActionId = SurrealRecordGuid.Parse(row.DependsOnActionId),
+        DependsOnNodeId = SurrealRecordGuid.ParseOptional(row.DependsOnNodeId),
+        DependencyType = Enum.Parse<ActionDependencyType>(row.DependencyType.ToString()),
+    };
 
     // ── Mapping: ActionDefinition ↔ ActionPoco ────────────────────────────────────────────
 

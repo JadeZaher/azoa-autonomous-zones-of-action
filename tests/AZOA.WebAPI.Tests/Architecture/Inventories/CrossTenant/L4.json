@@ -17,12 +17,12 @@
   {
     "store": "IActionGraphBundleStore",
     "method": "GetAllAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: filtered by ActionGraphBundleManager.CanRead(caller)"
   },
   {
     "store": "IActionGraphBundleStore",
     "method": "GetByIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: ActionGraphBundleManager.CanRead / IsOwnedBy (owner-or-public read, owner-only write)"
   },
   {
     "store": "IActionGraphBundleStore",
@@ -52,17 +52,17 @@
   {
     "store": "IActionRunStore",
     "method": "GetByActionIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: ActionManager loads the owned/startable action first; quota counts the caller's runs only"
   },
   {
     "store": "IActionRunStore",
     "method": "GetByIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: ActionManager.LoadOwnedRunAsync compares run.UserId and ActingTenantId to the caller"
   },
   {
     "store": "IActionRunStore",
     "method": "GetByStatusAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "unscoped by design: operator/background parked-run sweep (Operator policy); never re-broadcasts"
   },
   {
     "store": "IActionRunStore",
@@ -72,22 +72,22 @@
   {
     "store": "IActionRunStore",
     "method": "GetLineageAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: lineage is read only after LoadOwnedRunAsync on the child run"
   },
   {
     "store": "IActionRunStore",
     "method": "UpdateAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "write: run row already loaded owner-scoped; version CAS"
   },
   {
     "store": "IActionStore",
     "method": "GetActionAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: ActionManager.LoadOwnedActionAsync / LoadStartableActionAsync (owner, or public+Active with RunAccess/invite gate)"
   },
   {
     "store": "IActionStore",
     "method": "GetActionsByDappSeriesAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: DappCompositionManager loads the owned series first"
   },
   {
     "store": "IActionStore",
@@ -97,7 +97,7 @@
   {
     "store": "IActionStore",
     "method": "GetPublicActionsAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "query-scoped: IsPublic && Active only"
   },
   {
     "store": "IActionStore",
@@ -122,7 +122,7 @@
   {
     "store": "IApiKeyStore",
     "method": "GetByHashAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "internal: authentication handler resolves the presented key hash"
   },
   {
     "store": "IApiKeyStore",
@@ -147,12 +147,12 @@
   {
     "store": "IBridgeStore",
     "method": "GetBridgeAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: CrossChainBridgeService.CallerOwns(tx, caller); foreign = not found"
   },
   {
     "store": "IBridgeStore",
     "method": "GetBridgeByIdempotencyKeyAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "key-scoped: client keys are user-namespaced (BuildClientBridgeKey)"
   },
   {
     "store": "IBridgeStore",
@@ -162,12 +162,12 @@
   {
     "store": "IBridgeStore",
     "method": "GetOperationAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: operation owner compared by the calling service"
   },
   {
     "store": "IConsentAuditStore",
     "method": "AppendAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "write: actor from the authenticated principal"
   },
   {
     "store": "IConsentAuditStore",
@@ -182,7 +182,7 @@
   {
     "store": "IConsentGrantStore",
     "method": "GetByIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: ConsentManager compares grantor/tenant to the caller; foreign = not found"
   },
   {
     "store": "IConsentGrantStore",
@@ -197,7 +197,7 @@
   {
     "store": "IDappSeriesStore",
     "method": "GetSeriesAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: DappCompositionManager.GetAsync compares series owner to the caller"
   },
   {
     "store": "IDappSeriesStore",
@@ -302,12 +302,12 @@
   {
     "store": "IHolonStore",
     "method": "GetByIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: HolonManager.CanRead (owner-or-public) for reads, owner-only for writes and parents"
   },
   {
     "store": "IHolonStore",
     "method": "QueryAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: results filtered by HolonManager.CanRead(caller)"
   },
   {
     "store": "IHolonStore",
@@ -322,7 +322,7 @@
   {
     "store": "IOAuthExchangeCodeStore",
     "method": "TryConsumeAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "token-scoped: single-use exchange code"
   },
   {
     "store": "IUserExternalLoginStore",
@@ -337,7 +337,7 @@
   {
     "store": "IUserExternalLoginStore",
     "method": "GetBySubjectAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "query-scoped: (tenant scope, provider, subject)"
   },
   {
     "store": "IUserExternalLoginStore",
@@ -357,17 +357,17 @@
   {
     "store": "IUserStore",
     "method": "GetAllAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "internal: login/email uniqueness checks only; never projected to another caller"
   },
   {
     "store": "IUserStore",
     "method": "GetByAuthWalletAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "internal: wallet-auth login resolves the bound user after a verified signature"
   },
   {
     "store": "IUserStore",
     "method": "GetByIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: managers compare the subject to the authenticated user or OwnerTenantId to the acting tenant"
   },
   {
     "store": "IUserStore",
@@ -382,7 +382,7 @@
   {
     "store": "IUserStore",
     "method": "ListTenantPrincipalsPageAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "query-scoped: owner tenant = acting tenant"
   },
   {
     "store": "IUserStore",
@@ -392,7 +392,7 @@
   {
     "store": "IUserStore",
     "method": "TryClaimAuthenticationAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "write: invite token + expected tenant/watermark CAS in one transaction"
   },
   {
     "store": "IUserStore",
@@ -402,7 +402,7 @@
   {
     "store": "IUserStore",
     "method": "TryUpdateAuthenticationAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "write: caller's own row, expected-value CAS on auth fields"
   },
   {
     "store": "IUserStore",
@@ -417,7 +417,7 @@
   {
     "store": "IWalletAuthClaimTokenStore",
     "method": "GetByTokenAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "token-scoped: single-use bearer token; target user and tenant re-checked in the claim transaction"
   },
   {
     "store": "IWalletOwnershipProofStore",
@@ -432,7 +432,7 @@
   {
     "store": "IWalletStore",
     "method": "BootstrapTenantAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "write: in-transaction child ownership + membership + consent grant guards (SigningAuthorityFence)"
   },
   {
     "store": "IWalletStore",
@@ -442,12 +442,12 @@
   {
     "store": "IWalletStore",
     "method": "GetAllAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "internal: legacy scans (default unset, key rotation, NFT recipient lookup); never projected to another caller"
   },
   {
     "store": "IWalletStore",
     "method": "GetByIdAsync",
-    "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+    "tenantCheck": "caller-checked: WalletManager/signing factory compare wallet.UserId to the actor (foreign = not found)"
   },
   {
     "store": "IWalletStore",

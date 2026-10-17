@@ -1064,3 +1064,12 @@ capture `statements.Count` before adding `RETURN`, like the WTT stores. Raw `SET
 with a possibly-null C# value: a SCHEMAFULL `option<T>` column rejects `NULL`
 ("Expected `none | string` but found `NULL`"), so `SurrealSagaStore` writes
 `$x ?? NONE` (probed: NULL → field absent, a value → stored).
+
+## action-dependencies
+
+`SurrealActionStore` persists `ActionDefinition.Dependencies` in `action_dependency` (round 4):
+cleared and re-written with the nodes/edges on upsert, read back in the same combined child
+SELECT, deleted with the head. Before this, dependencies round-tripped as empty, so run-start
+dependency enforcement (`ActionManager.EnforceDependenciesAsync`) only bit in-memory. The store
+is still a non-transactional multi-request fan-out (pre-existing shape; a partial write is
+visible on failure) — moving the whole aggregate into one `BEGIN…COMMIT` is a follow-up.

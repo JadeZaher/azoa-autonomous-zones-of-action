@@ -5,7 +5,7 @@
     "action": "AddDependency",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; target owner-or-public; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{actionid}/edges",
@@ -13,7 +13,7 @@
     "action": "AddEdge",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{actionid}/nodes",
@@ -21,7 +21,7 @@
     "action": "AddNode",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/runs/{runid}/advance",
@@ -77,7 +77,7 @@
     "action": "DeleteNode",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{id}/execute",
@@ -101,7 +101,7 @@
     "action": "Fork",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; run owner-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/templates/{id}/instantiate",
@@ -109,7 +109,7 @@
     "action": "InstantiateTemplate",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; template owner-or-public; node templates as author; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{id}/invite",
@@ -125,7 +125,7 @@
     "action": "MarkRunCompleted",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; run owner-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/runs/{runid}/mark-failed",
@@ -133,7 +133,7 @@
     "action": "MarkRunFailed",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; run owner-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{id}/publish",
@@ -141,7 +141,7 @@
     "action": "Publish",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only, version CAS; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/runs/{runid}/reconcile",
@@ -149,7 +149,7 @@
     "action": "Reconcile",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; run owner-only; never re-broadcasts; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/runs/reconcile-sweep",
@@ -157,7 +157,7 @@
     "action": "ReconcileSweep",
     "class": "non-value",
     "scope": null,
-    "enforcement": "Operator policy (JWT operator:admin); actor from claims"
+    "enforcement": "Operator policy; cross-user by design; never re-broadcasts; actor/acting tenant from claims"
   },
   {
     "route": "DELETE /api/action/{actionid}/dependencies/{depid}",
@@ -165,7 +165,7 @@
     "action": "RemoveDependency",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims"
   },
   {
     "route": "DELETE /api/action/{actionid}/edges/{edgeid}",
@@ -173,7 +173,7 @@
     "action": "RemoveEdge",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{id}/access-requests",
@@ -181,7 +181,7 @@
     "action": "RequestAccess",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; requester = caller; actor/acting tenant from claims"
   },
   {
     "route": "DELETE /api/action/{id}/invite/{userid}",
@@ -221,7 +221,7 @@
     "action": "Unpublish",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims"
   },
   {
     "route": "PUT /api/action/{id}",
@@ -237,7 +237,7 @@
     "action": "UpdateNode",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/{id}/validate",
@@ -245,7 +245,7 @@
     "action": "Validate",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/action/access-requests/{requestid}/withdraw",
@@ -253,7 +253,7 @@
     "action": "WithdrawAccessRequest",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; requester-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/actiongraphbundle/{id}/ecosystem/dapp-series",
@@ -261,7 +261,7 @@
     "action": "AddDappSeries",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; bundle + reference owner-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/actiongraphbundle",
@@ -269,7 +269,7 @@
     "action": "CreateOrUpdate",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner = caller; by (name, user); actor/acting tenant from claims"
   },
   {
     "route": "DELETE /api/actiongraphbundle/{id}",
@@ -277,7 +277,7 @@
     "action": "Delete",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/actiongraphbundle/{id}/deploy",
@@ -301,7 +301,7 @@
     "action": "Update",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "DappDevelop policy; owner-only; 404 unreadable / 403 public; actor/acting tenant from claims"
   },
   {
     "route": "POST /api/operator/action-recovery/{id}/retry",
@@ -309,7 +309,7 @@
     "action": "Retry",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "RecentNodeOperatorSession policy; operator re-drives a parked action recovery; never re-broadcasts without durable correlation"
   },
   {
     "route": "POST /api/action/executions/{executionid}/signing-authorization",
@@ -325,7 +325,7 @@
     "action": "Create",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "FirstPartyLogin policy; owner = caller; explicit scopes only, each self-issuable by the caller's current role (CanSelfIssueApiKeyScope)"
   },
   {
     "route": "POST /api/apikey/tenant",
@@ -341,7 +341,7 @@
     "action": "Delete",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "FirstPartyLogin policy; DELETE scoped WHERE user_id = caller (cross-user id = 404)"
   },
   {
     "route": "POST /api/apikey/{id}/revoke",
@@ -349,7 +349,7 @@
     "action": "Revoke",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "FirstPartyLogin policy; active-key CAS scoped to user_id = caller; idempotent for an already-revoked own key"
   },
   {
     "route": "POST /api/apikey/{id}/rotate",
@@ -365,7 +365,7 @@
     "action": "FetchVAA",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; bridge tx owner-scoped (CallerOwns, foreign = not found); observation only, no chain effect"
   },
   {
     "route": "POST /api/bridge/initiate",
@@ -397,7 +397,7 @@
     "action": "Grant",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "FirstPartyLogin policy; grantor = caller; written only through the consent lifecycle store (command-id single winner)"
   },
   {
     "route": "DELETE /api/user/consent/{id}",
@@ -405,7 +405,7 @@
     "action": "Revoke",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "FirstPartyLogin policy; grantor-scoped revoke through the lifecycle store (foreign grant = not found)"
   },
   {
     "route": "POST /api/user/consent/withdraw",
@@ -413,7 +413,7 @@
     "action": "Withdraw",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "FirstPartyLogin policy; grantor = caller; lifecycle-store withdrawal"
   },
   {
     "route": "POST /api/credential/issue/{recipientuserid}",
@@ -429,7 +429,7 @@
     "action": "QuoteIssueCosts",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; issuer = caller; quote only, no signing"
   },
   {
     "route": "POST /api/credential/{assetid}/revoke",
@@ -633,7 +633,7 @@
     "action": "QueryContract",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; read-only contract query, no signing or state change"
   },
   {
     "route": "POST /api/deployments/quote",
@@ -792,7 +792,7 @@
     "action": "Cancel",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "Operator policy (JWT operator:admin, never an API key); dead-letter console"
   },
   {
     "route": "POST /api/admin/sagas/{id}/requeue",
@@ -800,7 +800,7 @@
     "action": "Requeue",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "Operator policy (JWT operator:admin, never an API key); dead-letter console"
   },
   {
     "route": "POST /api/search",
@@ -808,7 +808,7 @@
     "action": "Search",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "[Authorize]; owner-or-public read scope applied in SearchManager (callerUserId); no writes"
   },
   {
     "route": "DELETE /api/tenant/consent/participation/{participationref}",
@@ -816,7 +816,7 @@
     "action": "RevokeByParticipation",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy; tenant = caller; offboard through the lifecycle store, tenant's own participation only"
   },
   {
     "route": "DELETE /api/tenant/consent/provisioned",
@@ -824,7 +824,7 @@
     "action": "RevokeProvisioned",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy; tenant = caller; revokes only grants this tenant was given"
   },
   {
     "route": "POST /api/tenant/custodial-accounts/{externalsubject}/kyc/session",
@@ -832,7 +832,7 @@
     "action": "BeginCustodialKyc",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy; kyc:submit scope; captured credential bound to live consent (tenant:provision + kyc:submit)"
   },
   {
     "route": "PUT /api/tenant/custodial-accounts/{externalsubject}",
@@ -840,7 +840,7 @@
     "action": "EnsureCustodialAccount",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy; wallet:manage + kyc:read scopes; captured credential bound to live consent; Idempotency-Key"
   },
   {
     "route": "POST /api/tenant/users/{id}/credential",
@@ -856,7 +856,7 @@
     "action": "ProvisionChild",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy; tenant = caller; deterministic child id per (tenant, external user); tenant email never stored (synthetic)"
   },
   {
     "route": "POST /api/tenant/custodial-accounts/{externalsubject}/kyc/submissions",
@@ -864,7 +864,7 @@
     "action": "SubmitCustodialKyc",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "TenantScope policy; kyc:submit scope; captured credential bound to live consent; HTTPS document refs validated"
   },
   {
     "route": "PUT /api/user/{id}/dapp-role",
@@ -1024,7 +1024,7 @@
     "action": "Clear",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; owner/acting tenant from claims, ownership checked in the manager/service"
+    "enforcement": "RecentNodeOperatorSession policy; operator resolves a wallet-auth identity conflict"
   },
   {
     "route": "POST /api/wallet/{id}/ownership-challenge",
