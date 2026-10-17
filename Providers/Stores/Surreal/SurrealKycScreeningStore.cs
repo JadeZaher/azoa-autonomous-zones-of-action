@@ -324,10 +324,10 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         var bound = Math.Clamp(limit, 1, 1000);
         var results = await _executor.QueryAsync<KycScreeningResult>(SurrealQuery<KycScreeningResult>.From()
             .Where(row => row.ErasedAt == null && row.RetentionExpiresAt != null && row.RetentionExpiresAt <= asOfUtc)
-            .OrderBy(row => row.RetentionExpiresAt).Limit(bound), ct);
+            .OrderBy(row => row.RetentionExpiresAt!).Limit(bound), ct);
         var monitors = await _executor.QueryAsync<KycScreeningMonitor>(SurrealQuery<KycScreeningMonitor>.From()
             .Where(row => row.ErasedAt == null && row.RetentionExpiresAt != null && row.RetentionExpiresAt <= asOfUtc)
-            .OrderBy(row => row.RetentionExpiresAt).Limit(bound), ct);
+            .OrderBy(row => row.RetentionExpiresAt!).Limit(bound), ct);
         if (results.Count == 0 && monitors.Count == 0) return AZOAResult<int>.Success(0);
         // raw: subject evidence fences and both bounded erasure batches commit atomically; see AGENTS.md.
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"), KycEvidenceFence.CreateScopes(

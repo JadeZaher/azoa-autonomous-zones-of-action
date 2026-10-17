@@ -224,6 +224,7 @@ builder.Services.AddAuthentication(options =>
                 var operatorPolicies = context.HttpContext.GetEndpoint()?.Metadata
                     .GetOrderedMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
                     .Select(metadata => metadata.Policy)
+                    .OfType<string>()
                     .Where(policy => !string.IsNullOrWhiteSpace(policy))
                     .ToHashSet(StringComparer.Ordinal)
                     ?? new HashSet<string>(StringComparer.Ordinal);
@@ -244,7 +245,8 @@ builder.Services.AddAuthentication(options =>
                     || operatorUserId != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
                     || principal!.GetActingTenantId() is not null
                     || !long.TryParse(
-                        principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
+                        principal!.FindFirst(AZOA.WebAPI.Core.AzoaClaims.OperatorRevision)?.Value,
+
                         System.Globalization.NumberStyles.None,
                         System.Globalization.CultureInfo.InvariantCulture,
                         out var tokenRevision)

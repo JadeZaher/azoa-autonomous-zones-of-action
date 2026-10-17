@@ -327,7 +327,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         AssuranceLevel = profile.AssuranceLevel,
         Version = profile.Version,
         TrustRevision = profile.TrustRevision,
-        UpdatedByUserId = SurrealLink.ToLink("user", profile.UpdatedByUserId),
+        UpdatedByUserId = SurrealLink.ToLink("user", profile.UpdatedByUserId)!,
         CreatedAt = profile.CreatedAt,
         UpdatedAt = profile.UpdatedAt,
     };
@@ -335,10 +335,10 @@ public sealed class SurrealKycControlStore : IKycControlStore
     private static TenantKycProviderSelection ToStorage(TenantKycProviderSelection selection) => new()
     {
         Id = selection.Id,
-        TenantId = SurrealLink.ToLink("user", selection.TenantId),
+        TenantId = SurrealLink.ToLink("user", selection.TenantId)!,
         ProviderKey = selection.ProviderKey,
         SelectionVersion = selection.SelectionVersion,
-        UpdatedByUserId = SurrealLink.ToLink("user", selection.UpdatedByUserId),
+        UpdatedByUserId = SurrealLink.ToLink("user", selection.UpdatedByUserId)!,
         CreatedAt = selection.CreatedAt,
         UpdatedAt = selection.UpdatedAt,
     };
@@ -346,10 +346,10 @@ public sealed class SurrealKycControlStore : IKycControlStore
     private static TenantKycProviderSelection FromStorage(TenantKycProviderSelection selection) => new()
     {
         Id = selection.Id,
-        TenantId = SurrealLink.FromLink(selection.TenantId),
+        TenantId = SurrealLink.FromLink(selection.TenantId)!,
         ProviderKey = selection.ProviderKey,
         SelectionVersion = selection.SelectionVersion,
-        UpdatedByUserId = SurrealLink.FromLink(selection.UpdatedByUserId),
+        UpdatedByUserId = SurrealLink.FromLink(selection.UpdatedByUserId)!,
         CreatedAt = selection.CreatedAt,
         UpdatedAt = selection.UpdatedAt,
     };
@@ -376,7 +376,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         AssuranceLevel = audit.AssuranceLevel,
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
-        ActorUserId = SurrealLink.ToLink("user", audit.ActorUserId),
+        ActorUserId = SurrealLink.ToLink("user", audit.ActorUserId)!,
         OccurredAt = audit.OccurredAt,
     };
 
@@ -402,7 +402,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         AssuranceLevel = audit.AssuranceLevel,
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
-        ActorUserId = SurrealLink.FromLink(audit.ActorUserId),
+        ActorUserId = SurrealLink.FromLink(audit.ActorUserId)!,
         OccurredAt = audit.OccurredAt,
     };
 }

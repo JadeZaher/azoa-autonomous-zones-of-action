@@ -111,7 +111,7 @@ public sealed class SeedAdminHostedService : IHostedService
         if (_operator.CredentialRevision == state.CredentialRevision)
         {
             if (!string.Equals(user.Username, username, StringComparison.Ordinal)
-                || !NodeOperatorIdentity.VerifyPassword(_operator.Password, user.PasswordHash))
+                || !NodeOperatorIdentity.VerifyPassword(_operator.Password!, user.PasswordHash))
             {
                 FailSeed("NodeOperator credentials differ without a revision increase.");
             }
@@ -162,7 +162,7 @@ public sealed class SeedAdminHostedService : IHostedService
             || created.Result.Id != NodeOperatorIdentity.UserId
             || !string.Equals(created.Result.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(created.Result.Username, username, StringComparison.Ordinal)
-            || !NodeOperatorIdentity.VerifyPassword(_operator.Password, created.Result.PasswordHash))
+            || !NodeOperatorIdentity.VerifyPassword(_operator.Password!, created.Result.PasswordHash))
         {
             throw new InvalidOperationException("Reserved node operator identity could not be seeded safely.");
         }
@@ -171,7 +171,7 @@ public sealed class SeedAdminHostedService : IHostedService
         var binding = await stateStore.BindOnceAsync(new AdminBootstrapState
         {
             Id = AdminBootstrapState.LocalId,
-            UserId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId)),
+            UserId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId))!,
             CredentialRevision = _operator.CredentialRevision,
             SessionRevision = 1,
             CredentialUpdatedAt = now,
@@ -226,5 +226,5 @@ public sealed class SeedAdminHostedService : IHostedService
 file static class NodeOperatorUserExtensions
 {
     public static string UserLink(this AZOA.WebAPI.Interfaces.IUser user)
-        => SurrealLink.ToLink("user", SurrealId.ToSurrealId(user.Id));
+        => SurrealLink.ToLink("user", SurrealId.ToSurrealId(user.Id))!;
 }

@@ -171,7 +171,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         string tenantScope, string userId, CancellationToken ct = default)
     {
         var row = await _executor.QuerySingleAsync<KycIdentity>(SurrealQuery<KycIdentity>.From()
-            .Where(item => item.TenantScope == tenantScope && item.UserIds.Contains(userId)).Limit(1), ct);
+            .Where(item => item.TenantScope == tenantScope && item.UserIds!.Contains(userId)).Limit(1), ct);
         return AZOAResult<KycIdentity?>.Success(row is null ? null : FromStorage(row));
     }
 
@@ -190,7 +190,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
     {
         var rows = await _executor.QueryAsync<KycIdentity>(SurrealQuery<KycIdentity>.From()
             .Where(item => item.ErasedAt == null && item.RetentionExpiresAt != null && item.RetentionExpiresAt <= asOf)
-            .OrderBy(item => item.RetentionExpiresAt).Limit(Math.Clamp(limit, 1, 1000)), ct);
+            .OrderBy(item => item.RetentionExpiresAt!).Limit(Math.Clamp(limit, 1, 1000)), ct);
         return AZOAResult<IReadOnlyList<KycIdentity>>.Success(rows.Select(FromStorage).ToList());
     }
 

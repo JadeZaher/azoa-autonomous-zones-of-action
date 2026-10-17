@@ -44,7 +44,7 @@ public sealed partial class HoldReleaseMandateService(IHoldReleaseMandateStore m
         var provider = providers.GetProvider(request.Terms.Asset.ChainType, request.Terms.Asset.Network);
         if (!provider.TryGetModule<IValueCustodyModule>(out var custody))
             return AZOAResult<HoldReleaseMandateOfferView>.Failure("Current complete custody costs are unavailable for this network.");
-        var quote = await custody.QuoteValueCustodyAsync(new(hold.Chain, request.Terms.Asset.Network, hold.AssetId,
+        var quote = await custody!.QuoteValueCustodyAsync(new(hold.Chain, request.Terms.Asset.Network, hold.AssetId,
             hold.HoldingAddress, request.Terms.Recipient.Address, hold.Amount, hold.HoldingAddress), ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<HoldReleaseMandateOfferView>.Failure(quote.Message);
         var saved = await mandates.OfferAsync(new(request.RequestId, request.HoldVersion, request.Terms, quote.Result), authority.Result, ct);

@@ -58,8 +58,8 @@ public sealed partial class SurrealHoldCommandStore
         var opening = intent.Opening!;
         var hold = await GetHoldAsync(source.HoldRecordId!, ct);
         if (hold is null || hold.EconomicSourceId != source.Id || hold.State != "AwaitingSourceSettlement"
-            || hold.OpeningCommandId != source.HoldCommandId || hold.DefinitionHash != CanonicalJson.Hash(opening.Definition)
-            || hold.Amount != opening.Definition!.QuantityBaseUnits || hold.ReservePartition != opening.Definition.ReservePartition
+            || hold.OpeningCommandId != source.HoldCommandId || opening.Definition is null || hold.DefinitionHash != CanonicalJson.Hash(opening.Definition)
+            || hold.Amount != opening.Definition.QuantityBaseUnits || hold.ReservePartition != opening.Definition.ReservePartition
             || hold.Version == long.MaxValue) return null;
         var reserve = await ExchangeReserveAsync(opening.Asset, ct);
         if (reserve is null) return null;

@@ -46,7 +46,7 @@ public sealed class OnRampRecovery(IOnRampLotLedger lots, IIdempotencyStore idem
         }
         var outcome = await settlement.ApplyAsync(new FiatEventContext(new FiatEvent(),
             "checkout.session.completed", row.SourceCheckoutSessionId, row.SourcePaymentIntentId,
-            row.SourceChargeId, intentId, Guid.Parse(SurrealLink.FromLink(row.SubjectUserId)), options.ActiveEnvironment), ct);
+            row.SourceChargeId, intentId, Guid.Parse(SurrealLink.FromLink(row.SubjectUserId)!), options.ActiveEnvironment), ct);
         var current = await lots.GetByIntentAsync(key, ct);
         return current.Result is null ? AZOAResult<OnRampLot>.Failure("The recovery outcome could not be read.")
             : AZOAResult<OnRampLot>.Success(current.Result, outcome.ToString());
@@ -113,7 +113,7 @@ public sealed class OnRampRecovery(IOnRampLotLedger lots, IIdempotencyStore idem
     {
         if (!options.Enabled || row.Status != OnRampLotStatuses.RefundPending || row.Environment != options.ActiveEnvironment.Name)
             return AZOAResult<OnRampLot>.Failure("This refund is not pending.");
-        var intent = SurrealLink.FromLink(row.IntentId);
+        var intent = SurrealLink.FromLink(row.IntentId)!;
         var reservation = await idempotency.GetAsync(IssuanceLedgerKey(intent), ct);
         if (reservation?.OperationType != RefundReservationType)
             return AZOAResult<OnRampLot>.Failure("The refund has no issuance exclusion reservation.");

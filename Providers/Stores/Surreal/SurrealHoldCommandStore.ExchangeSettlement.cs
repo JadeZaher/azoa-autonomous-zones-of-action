@@ -25,7 +25,7 @@ public sealed partial class SurrealHoldCommandStore
         var hold = await GetHoldAsync(source.HoldRecordId!, ct);
         var treasury = await ExchangeTreasuryAsync(intent, opening.Asset, ct);
         if (hold is null || treasury is null || hold.EconomicSourceId != source.Id || hold.State != "AwaitingSourceSettlement"
-            || hold.OpeningCommandId != source.HoldCommandId || hold.DefinitionHash != CanonicalJson.Hash(opening.Definition)
+            || hold.OpeningCommandId != source.HoldCommandId || opening.Definition is null || hold.DefinitionHash != CanonicalJson.Hash(opening.Definition)
             || hold.Version == long.MaxValue) return null;
         var now = DateTimeOffset.UtcNow;
         var credit = TreasuryMovement(treasury, intent.PlatformAssetId, ProjectTreasuryMovementKind.Credit,

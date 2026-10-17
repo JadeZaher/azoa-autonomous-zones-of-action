@@ -70,7 +70,9 @@ public sealed class ActionableAuthorizationResultHandler : IAuthorizationMiddlew
         var policies = context.GetEndpoint()?.Metadata
             .GetOrderedMetadata<IAuthorizeData>()
             .Select(data => data.Policy)
+            .OfType<string>()
             .Where(value => !string.IsNullOrWhiteSpace(value))
+
             .ToHashSet(StringComparer.Ordinal)
             ?? new HashSet<string>(StringComparer.Ordinal);
         if ((policies.Contains("RecentNodeOperatorSession")

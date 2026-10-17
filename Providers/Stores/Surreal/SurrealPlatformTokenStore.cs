@@ -64,7 +64,7 @@ public sealed class SurrealPlatformTokenStore(ISurrealExecutor executor) : IPlat
         var authority = credential is null ? null : PlatformGenesisFence.Operator(credential);
         if (authority is null || SurrealRecordGuid.ParseOptional(row.GenesisUserId) != credential!.ActorUserId)
             return AZOAResult<PlatformTokenClaim>.Failure("A current recent node-operator credential must authorize the frozen definition.");
-        row.GenesisUserId = SurrealLink.ToLink("user", SurrealRecordGuid.Parse(row.GenesisUserId).ToString("N"));
+        row.GenesisUserId = SurrealLink.ToLink("user", SurrealRecordGuid.Parse(row.GenesisUserId).ToString("N"))!;
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN TRANSACTION") };
         statements.AddRange(authority);
         var createdIndex = statements.Count;

@@ -77,7 +77,7 @@ public sealed partial class HoldCommandService
         if (!provider.TryGetModule<IValueCustodyModule>(out var custody)
             || !provider.TryGetModule<IValueTransferTransactionModule>(out _))
             return AZOAResult<HoldCommandView>.Failure("The selected network does not expose the complete custody lifecycle.");
-        var quote = await custody.QuoteValueCustodyAsync(new(intent.Asset.ChainType, intent.Asset.Network, intent.Asset.AssetId,
+        var quote = await custody!.QuoteValueCustodyAsync(new(intent.Asset.ChainType, intent.Asset.Network, intent.Asset.AssetId,
             sender?.Address ?? intent.Asset.HoldingAddress, recipient?.Address ?? intent.Asset.HoldingAddress,
             quantity, intent.Asset.HoldingAddress), ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<HoldCommandView>.Failure(quote.Message);

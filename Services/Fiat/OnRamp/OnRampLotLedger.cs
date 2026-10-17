@@ -169,7 +169,7 @@ public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampL
         var subject = SurrealLink.ToLink(User.SchemaNameConst, userId.ToString("N"));
         var rows = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From()
             .Where(row => row.SubjectUserId == subject && row.Status == OnRampLotStatuses.Issued)
-            .OrderBy(row => row.IssuedAt), ct);
+            .OrderBy(row => row.IssuedAt!), ct);
         return AZOAResult<IReadOnlyList<OnRampLot>>.Success(rows.ToList());
     }
 

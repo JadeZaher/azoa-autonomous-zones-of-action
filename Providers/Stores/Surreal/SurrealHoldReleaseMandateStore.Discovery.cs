@@ -22,7 +22,7 @@ public sealed partial class SurrealHoldReleaseMandateStore
         => await executor.QueryAsync<HoldReleaseMandate>(SurrealQuery<HoldReleaseMandate>.From()
             .Where(row => row.Status == "Active" && row.NotBefore <= now && row.ExpiresAt > now)
             .Where(row => row.NextAttemptAt == null || row.NextAttemptAt <= now)
-            .OrderBy(row => row.NextAttemptAt).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
+            .OrderBy(row => row.NextAttemptAt!).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
 
     /// <inheritdoc/>
     public async Task<bool> ScheduleAsync(HoldReleaseMandate expected, DateTimeOffset next, CancellationToken ct = default)

@@ -43,7 +43,7 @@ public sealed partial class HoldCommandService
         var provider = providers.GetProvider(original.Quote.Request.ChainType, original.Quote.Request.Network);
         if (!provider.TryGetModule<IValueCustodyModule>(out var module))
             return AZOAResult<HoldCommandView>.Failure("The original custody provider cannot quote replacement costs.");
-        var quote = await module.QuoteValueCustodyAsync(original.Quote.Request, ct);
+        var quote = await module!.QuoteValueCustodyAsync(original.Quote.Request, ct);
         if (quote.IsError || quote.Result is null) return AZOAResult<HoldCommandView>.Failure(quote.Message);
         var replacement = original with { Generation = row.Generation + 1, Quote = quote.Result };
         var saved = await store.ReplaceRailAsync(row, replacement, new(1, Direct: consent.Result, Sender: sender), request, ct);

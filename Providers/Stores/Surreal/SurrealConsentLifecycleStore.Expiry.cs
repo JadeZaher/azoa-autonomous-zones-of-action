@@ -16,7 +16,7 @@ public sealed partial class SurrealConsentLifecycleStore
         var now = DateTimeOffset.UtcNow;
         return executor.QueryAsync<Grant>(SurrealQuery<Grant>.From()
             .Where(row => row.RevokedAt == null && row.ExpiryNotifiedAt == null && row.ExpiresAt != null && row.ExpiresAt <= now)
-            .OrderBy(row => row.ExpiresAt).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
+            .OrderBy(row => row.ExpiresAt!).ThenBy(row => row.Id).Limit(Math.Clamp(limit, 1, 100)), ct);
     }
 
     public async Task<bool> RecordExpiryAsync(Guid grantId, CancellationToken ct = default)
