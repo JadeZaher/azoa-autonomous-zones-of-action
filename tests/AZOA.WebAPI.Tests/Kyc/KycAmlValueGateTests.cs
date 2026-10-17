@@ -271,7 +271,8 @@ public sealed class KycAmlValueGateTests
         kycStore.Setup(item => item.TryCompleteHostedAsync(
                 It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(), It.IsAny<KycStatus>(), It.IsAny<DateTimeOffset>(),
                 It.IsAny<DateTimeOffset?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+            .ReturnsAsync((KycSubmission expected, HostedSession _, KycStatus _, DateTimeOffset _, DateTimeOffset? _, string? _, CancellationToken _)
+                => AZOAResult<KycSubmission>.Success(expected));
         var order = new CallOrder();
         var screening = new RecordingScreeningService(KycScreeningDecision.NO_HIT, order);
         var binding = new RecordingBindingService(order);

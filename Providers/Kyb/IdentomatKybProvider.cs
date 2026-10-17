@@ -111,8 +111,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
 
     /// <inheritdoc/>
     public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
-        => GetHostedCapabilities().Available && Uri.TryCreate(_credentials.ResultBaseUrl, UriKind.Absolute, out var widget)
-            && widget.Scheme == Uri.UriSchemeHttps
+        => GetHostedCapabilities().Available && ValidPublicUrl(_credentials.ResultBaseUrl, true)
             ? IdentomatSessionDeletion.DeleteAsync(transport, _credentials.ResultBaseUrl!, _credentials.CompanyKey!,
                 providerSessionId, "kyb-delete", ct)
             : Task.FromResult(AZOAResult<bool>.Failure("Business verification is unavailable."));

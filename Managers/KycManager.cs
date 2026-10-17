@@ -321,6 +321,9 @@ public sealed class KycManager : IKycManager
         if (provider is not IPreparedHostedSessionProvider && _hostedSessions is not null && _recovery is not null)
         {
             var admission = await _hostedSessions.GetByIdAsync(sessionId, ct);
+            if (!admission.IsError && admission.Result is { State: HostedSessionStates.Abandoned } closed
+                && closed.OutcomeDetail == HostedSessionRecoveryOutcomes.SupersededOrphan)
+                return await RetireAndRestartAsync(attempt, userId, tenantId, ct, custody);
             if (!admission.IsError && admission.Result is { } existing && IsOrphan(existing, _clock.GetUtcNow()))
                 return await SupersedeOrphanAsync(attempt, existing, userId, tenantId, ct, custody);
         }
@@ -368,7 +371,17 @@ public sealed class KycManager : IKycManager
         var superseded = await _recovery.TrySupersedeOrphanAsync(orphan, now, ct);
         if (superseded.IsError || superseded.Result is null)
             return Error<KycSessionStartModel>("The verification changed; retry.", code: AzoaErrorCodes.Conflict);
-        var retired = await RetireAttemptAsync(attempt, now, custody, ct);
+        return await RetireAndRestartAsync(attempt, userId, tenantId, ct, custody);
+    }
+
+    /// <summary>
+    /// Second half of a supersede, also reached when a crash interrupted it: the attempt whose admission
+    /// was superseded is retired and a fresh attempt begins (its session id is the attempt id, so it cannot be reused).
+    /// </summary>
+    private async Task<AZOAResult<KycSessionStartModel>> RetireAndRestartAsync(KycSubmission attempt,
+        Guid userId, Guid? tenantId, CancellationToken ct, TenantCustodialWitness? custody)
+    {
+        var retired = await RetireAttemptAsync(attempt, _clock.GetUtcNow(), custody, ct);
         if (retired.IsError || retired.Result is null)
             return Error<KycSessionStartModel>("The verification changed; retry.", retired.Exception, retired.Code ?? AzoaErrorCodes.Conflict);
         return await BeginCoreAsync(userId, tenantId, ct, custody);

@@ -179,8 +179,9 @@ public sealed class KycHostedSessionOutcomeHandlerTests
 
         var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());
 
-        result.IsError.Should().BeFalse();
-        result.Result.Should().BeNull();
+        // Lost CAS is retryable: the flow releases the lease and the next resume converges.
+        result.IsError.Should().BeTrue("a lost completion must never close the session without the decision");
+        result.Code.Should().Be(AzoaErrorCodes.Conflict);
         submission.Status.Should().Be(KycStatus.PENDING);
         submission.ExpiresAt.Should().Be(originalExpiry);
         _kycStore.Verify(store => store.UpsertSubmissionAsync(

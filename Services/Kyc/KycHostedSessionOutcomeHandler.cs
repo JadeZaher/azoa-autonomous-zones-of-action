@@ -194,7 +194,12 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
                 AzoaErrorCodes.DependencyUnavailable);
         }
 
-        return AZOAResult<string?>.Success(saved.Result?.Id);
+        // A lost completion CAS (e.g. a concurrent manual-review mark) must retry, never close the session
+        // without the decision: the next resume re-reads and converges (decided, expired, or this verdict).
+        if (saved.Result is null)
+            return AZOAResult<string?>.FailureWithCode("The KYC attempt changed during completion; retry.", AzoaErrorCodes.Conflict);
+
+        return AZOAResult<string?>.Success(saved.Result.Id);
     }
 
     /// <summary>
