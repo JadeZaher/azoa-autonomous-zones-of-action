@@ -146,8 +146,15 @@ only. `DEFAULT ALWAYS` fills NONE on every write and leaves set values alone. Tr
   `kyc_screening_monitor_query` widened; `platform_token_network`, `kyc_submission_tenant_id`
   added) are rebuilt by phase-3 reconcile; widening cannot collide on old rows (NONE in the new
   columns); `platform_token_network` would fail only if two chains shared a network row.
-- No backfill migration was needed. Rule for new POCO fields on existing tables: `option<>` or
-  `[Default("ALWAYS …")]`; plain `[Default]` only on tables created in the same change.
+- `DEFAULT ALWAYS` keeps an old row writable, but a CAS predicate (`version = $expected`) still
+  compares the stored NONE, so `Migrations/20261017_122000` materializes the 32 defaults once
+  (no-op on a fresh database). Sandbox evidence on v3.1.4: a legacy `webhook_registration` row
+  (`secret` only) seeded under the `f968955` schema, then this tree applied with `--force`
+  (sandbox only): row reads `version 0, encrypted_secret ""`, and `UPDATE … WHERE version = 0`
+  succeeds.
+- Rule for new POCO fields on existing tables: `option<>` or `[Default("ALWAYS …")]` plus a
+  backfill line when a CAS reads the field; plain `[Default]` only on tables created in the same
+  change.
 
 ## §inside-audit
 
@@ -166,6 +173,7 @@ submitted group) — a write of either fails the ASSERT, closed.
 - `20261017_120000__remove_stale_ethereum_preparation_nonce_index`: defensive
   `REMOVE INDEX IF EXISTS`; a no-op on an absent table or index (probed).
 - `20261017_121000__converge_kyc_submission_identomat_and_aml_lineage`: §compatibility-baselines.
+- `20261017_122000__backfill_old_row_counters`: §old-row-rule.
 
 ## §ownership
 
