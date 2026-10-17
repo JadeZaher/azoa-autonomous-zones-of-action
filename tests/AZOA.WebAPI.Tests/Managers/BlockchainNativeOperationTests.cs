@@ -28,7 +28,8 @@ public class BlockchainNativeOperationTests
         var id = DeploymentIdentity.Operation(actor, tenant, "request-one");
         var target = new DeploymentTarget("NativeContract", "Solana", "Devnet");
         var intent = new NativeOperationIntent(1, id, kind, "Solana", "Devnet", "local-genesis", "artifact-hash",
-            JsonSerializer.SerializeToElement(new { }), [new NativeAuthority("caller-key", SigningContext.ForUser(actor, wallet))],
+            JsonSerializer.SerializeToElement(new { }), [new NativeAuthority("caller-key", SigningContext.ForUser(actor, wallet)
+                .ActingAs(tenant, kind == "Deploy" ? AzoaScopes.ContractDeploySign : AzoaScopes.ContractCallSign, actor))],
             new NativeBudget("10000", "1000000", "0", "quote-id"));
         var start = new DeploymentStartRequest("artifact", "artifact-hash", target, intent);
         var receipt = new DeploymentReceipt(id, "artifact", "artifact-hash", target, "Submitted", "Deploy", null, null, ["actual-wire-id"], null, 1);

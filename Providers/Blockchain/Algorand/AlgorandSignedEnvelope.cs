@@ -19,6 +19,24 @@ internal static class AlgorandSignedEnvelope
         return signed;
     }
 
+    /// <summary>
+    /// Accepts exactly the canonical envelope of <paramref name="expected"/> signed by <paramref name="sender"/>. The body is
+    /// compared by re-encoding the expected transaction, never by trusting the SDK's decode of the wire body (it decodes a
+    /// zero-amount axfer as an opt-in and drops its close-to field).
+    /// </summary>
+    public static SignedTransaction MatchExact(string base64, Transaction expected, string sender)
+    {
+        var wire = Convert.FromBase64String(base64);
+        var decoded = Encoder.DecodeFromMsgPack<SignedTransaction>(wire);
+        if (decoded.AuthAddr is not null || decoded.MSig is not null || decoded.LSig is not null || decoded.Sig?.Bytes is not { Length: 64 })
+            throw new InvalidOperationException("The saved sender's single-key signature is required.");
+        var signed = new SignedTransaction(expected, decoded.Sig);
+        if (!wire.AsSpan().SequenceEqual(Encoder.EncodeToMsgPackOrdered(signed)))
+            throw new InvalidOperationException("Signed Algorand envelope differs from the saved unsigned transaction or carries trailing bytes.");
+        RequireSingleSender(signed, sender);
+        return signed;
+    }
+
     public static void RequireSingleSender(SignedTransaction signed, string sender)
     {
         if (signed.AuthAddr is not null || signed.MSig is not null || signed.LSig is not null

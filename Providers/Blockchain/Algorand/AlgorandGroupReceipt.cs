@@ -36,9 +36,9 @@ internal static class AlgorandGroupReceipt
             if (!Text(actual, "id", ids[index]) || !Text(actual, "sender", original.Sender.ToString())
                 || !Number(actual, "confirmed-round", out var confirmed) || confirmed != round
                 || !Number(actual, "intra-round-offset", out var offset) || index > 0 && offset <= priorOffset
-                || !Number(actual, "fee", out var fee) || fee != original.Fee
-                || !Number(actual, "first-valid", out var from) || from != original.FirstValid
-                || !Number(actual, "last-valid", out var until) || until != original.LastValid
+                || !Number(actual, "fee", out var fee) || fee != (original.Fee ?? 0UL) // msgpack omits a zero (pooled) fee
+                || !Number(actual, "first-valid", out var from) || from != (original.FirstValid ?? 0UL)
+                || !Number(actual, "last-valid", out var until) || until != (original.LastValid ?? 0UL)
                 || !Text(actual, "note", Convert.ToBase64String(original.Note)) || !Text(actual, "group", group)
                 || !OptionalText(actual, "genesis-hash", Convert.ToBase64String(original.GenesisHash.Bytes))
                 || !OptionalText(actual, "genesis-id", original.GenesisId)
@@ -55,7 +55,7 @@ internal static class AlgorandGroupReceipt
         if (expected is PaymentTransaction payment)
             return Text(actual, "tx-type", "pay") && OnlyBody(actual, "payment-transaction")
                 && Object(actual, "payment-transaction", out var body) && Text(body, "receiver", payment.Receiver.ToString())
-                && Number(body, "amount", out var amount) && amount == payment.Amount
+                && Number(body, "amount", out var amount) && amount == (payment.Amount ?? 0UL)
                 && Absent(body, "close-remainder-to") && ZeroOrAbsent(body, "close-amount")
                 && ZeroOrAbsent(actual, "closing-amount") && EmptyArray(actual, "inner-txns");
         if (expected is AssetTransferTransaction transfer)
