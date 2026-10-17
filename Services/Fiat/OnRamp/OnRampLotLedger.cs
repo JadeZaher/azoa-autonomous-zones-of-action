@@ -72,6 +72,12 @@ public interface IOnRampLotLedger
         Guid userId, CancellationToken ct = default);
 
     /// <summary>
+    /// Every lot created at or after <paramref name="since"/> that was ever issued, across all people: the sold prices
+    /// the off-ramp's cross-scope floor reads (Services/Fiat/OffRamp/AGENTS.md §arbitrage-cap).
+    /// </summary>
+    Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default);
+
+    /// <summary>
     /// Lots that need a person, newest first: refused, stuck, or still pending after the
     /// provider's own retry budget has run out. The operator surface for "somebody was charged
     /// and not credited".
@@ -171,6 +177,14 @@ public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampL
         var rows = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From()
             .Where(row => row.SubjectUserId == subject && row.Status == OnRampLotStatuses.Issued)
             .OrderBy(row => row.IssuedAt!), ct);
+        return AZOAResult<IReadOnlyList<OnRampLot>>.Success(rows.ToList());
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+    {
+        var rows = await executor.QueryAsync<OnRampLot>(SurrealQuery<OnRampLot>.From()
+            .Where(row => row.CreatedAt >= since && row.IssuedAt != null), ct);
         return AZOAResult<IReadOnlyList<OnRampLot>>.Success(rows.ToList());
     }
 
