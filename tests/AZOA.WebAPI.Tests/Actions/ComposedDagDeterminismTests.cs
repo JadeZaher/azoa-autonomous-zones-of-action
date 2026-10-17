@@ -82,12 +82,24 @@ public class ComposedDagDeterminismTests
         return (new GrantNodeHandler(nft.Object, new Mock<IHolonManager>().Object), nft);
     }
 
-    private static (RefundNodeHandler Handler, Mock<INftLifecycleService> Nft) NewRefund(Guid nftId)
+    // Settled-refund double: NFT Refund effects run only through ActionNftOperationService (its durable lifecycle is
+    // covered by the NFT lifecycle flows); the DAG only needs a succeeded, once-executed compensation node.
+    private static (SettledRefund Handler, SettledRefund Calls) NewRefund(Guid nftId)
     {
-        var nft = new Mock<INftLifecycleService>();
-        nft.Setup(service => service.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()))
-            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, "Completed", "Transfer", "asset", "confirmed-return", null, "Refund")));
-        return (new RefundNodeHandler(nft.Object), nft);
+        var refund = new SettledRefund(nftId);
+        return (refund, refund);
+    }
+
+    private sealed class SettledRefund(Guid nftId) : IActionNodeHandler
+    {
+        public int Calls;
+        public ActionNodeType NodeType => ActionNodeType.Refund;
+        public bool RequiresChainCapability => true;
+        public Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref Calls);
+            return Task.FromResult(ActionNodeResults.Ok(JsonSerializer.Serialize(new { NftId = nftId, State = "Completed" }), txHash: "confirmed-return"));
+        }
     }
 
     // A succeeded upstream Transfer of nftId is now REQUIRED before a Refund may
@@ -299,8 +311,7 @@ public class ComposedDagDeterminismTests
 
         grantNft.Verify(m => m.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
             Times.Never, "the success-path mint never broadcasts on gate Fail");
-        refundNft.Verify(m => m.RefundAsync(UserId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>(), It.IsAny<ActionEffectAuthority?>(), It.IsAny<AZOA.WebAPI.Models.Signing.SigningCredentialWitness?>()),
-            Times.Once, "the on-fail refund executes the reverse transfer exactly once");
+        refundNft.Calls.Should().Be(1, "the on-fail refund executes the reverse transfer exactly once");
     }
 
     [Fact]
