@@ -26,6 +26,8 @@ const OPERATOR_LINKS = [
     // OI-27 / OI-65. Without this link the two money boards are reachable only with a JWT and a
     // curl, which is the same "nobody reads it" the durable rows were written to end.
     { href: "/operator/money", label: "Money", icon: Wallet },
+    { href: "/operator/genesis", label: "Platform genesis", icon: Wallet },
+    { href: "/operator/actions", label: "Action recovery", icon: RefreshCw },
     { href: "/operator/audit", label: "Audit", icon: History },
 ];
 

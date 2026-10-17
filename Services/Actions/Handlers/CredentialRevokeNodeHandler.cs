@@ -30,6 +30,9 @@ namespace AZOA.WebAPI.Models.Actions
 
         /// <summary>Optional reason recorded on the operation row. Never interpreted.</summary>
         public string? Reason { get; set; }
+        public string? Network { get; set; }
+        public string? ContractAddress { get; set; }
+        public AZOA.WebAPI.Models.Blockchain.NftFeeAuthorization? FeeAuthorization { get; set; }
     }
 }
 

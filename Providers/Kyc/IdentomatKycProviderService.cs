@@ -19,14 +19,14 @@ namespace AZOA.WebAPI.Providers.Kyc;
 /// <summary>
 /// Identomat hosted identity verification. Implements both the KYC provider seam
 /// and the reusable <see cref="IHostedSessionProvider"/> lifecycle. See
-/// <c>Providers/Kyc/AGENTS.md</c> §identomat for the contract this satisfies.
+/// <c>Providers/Kyc/AGENTS.md</c> Â§identomat for the contract this satisfies.
 /// </summary>
 public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSessionProvider
 {
     /// <summary>Stable registry key.</summary>
     public const string ProviderKeyValue = "identomat";
 
-    /// <summary>Vendor status meaning "a human is still looking at it" — NON-TERMINAL.</summary>
+    /// <summary>Vendor status meaning "a human is still looking at it" â€” NON-TERMINAL.</summary>
     public const string ManualCheckOutcome = "MANUAL_CHECK";
 
     public const string ApprovedOutcome = "APPROVED";
@@ -86,7 +86,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     public string ProviderKey => ProviderKeyValue;
     public string FlowKind => HostedSessionFlowKinds.Kyc;
 
-    // ── Capabilities ────────────────────────────────────────────────────────
+    // â”€â”€ Capabilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// <summary>
     /// Available only when every key is configured over HTTPS. Unavailability
@@ -151,7 +151,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         => !string.IsNullOrWhiteSpace(value)
             && value.Trim().Length >= KycPersonKeyDeriver.MinimumSecretLength;
 
-    // ── IKycProviderService ─────────────────────────────────────────────────
+    // â”€â”€ IKycProviderService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// <summary>
     /// Begins verification through <see cref="IHostedSessionFlow"/>, so durable
@@ -173,17 +173,6 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         var capabilities = GetCapabilities();
         if (!capabilities.Available)
             return AZOAResult<KycSessionStartModel>.Failure(capabilities.UnavailableReason!);
-
-        if (!_quota.TryConsume(tenantId, KycQuotaOperation.BeginSession))
-        {
-            return new AZOAResult<KycSessionStartModel>
-            {
-                IsError = true,
-                Message = "This tenant's KYC begin-session quota is exhausted.",
-                Code = AzoaErrorCodes.OperationNotAllowed,
-                RetryAfterSeconds = _quota.RetryAfterSeconds,
-            };
-        }
 
         var started = await _flow.BeginAsync(
             this,
@@ -277,7 +266,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         });
     }
 
-    // ── IHostedSessionProvider ──────────────────────────────────────────────
+    // â”€â”€ IHostedSessionProvider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public async Task<AZOAResult<HostedSessionCreation>> CreateHostedSessionAsync(
         HostedSessionRequest request,
@@ -288,6 +277,9 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         if (!capabilities.Available)
             return AZOAResult<HostedSessionCreation>.Failure(capabilities.UnavailableReason!);
 
+        if (!_quota.TryConsume(request.TenantId, KycQuotaOperation.BeginSession))
+            return AZOAResult<HostedSessionCreation>.FailureWithCode(
+                "This tenant's KYC begin-session quota is exhausted.", HostedSessionFlow.RequestNotSentCode);
         var body = new IdentomatBeginRequestWithSessionOverrides
         {
             CompanyKey = _settings.CompanyKey!.Trim(),
@@ -413,8 +405,8 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
 
     /// <summary>
     /// Maps a raw vendor result onto the outcome contract. Anything that is not an
-    /// explicit approval or rejection — including <c>MANUAL_CHECK</c> and any future
-    /// value the vendor adds — is non-terminal, which is the fail-closed direction.
+    /// explicit approval or rejection â€” including <c>MANUAL_CHECK</c> and any future
+    /// value the vendor adds â€” is non-terminal, which is the fail-closed direction.
     /// </summary>
     public static HostedSessionOutcome MapOutcome(IdentomatResultResponse response)
     {
@@ -426,6 +418,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         return new HostedSessionOutcome
         {
             Outcome = raw.Length == 0 ? "UNKNOWN" : raw,
+            SessionExists = terminal || raw == ManualCheckOutcome,
             IsTerminal = terminal,
             IsApproved = approved,
             Detail = approved ? null : Truncate(response.RejectReason?.Value, 256),
@@ -469,7 +462,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         return CryptographicOperations.FixedTimeEquals(candidateHash, expectedHash);
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private static AZOAResult<HostedCallbackTrigger> CallbackRejected()
         => AZOAResult<HostedCallbackTrigger>.FailureWithCode(
@@ -520,7 +513,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
 
     /// <summary>
     /// The redirect legitimately carries a query (the session token), so the origin
-    /// rules are relaxed for the query only — credentials, loopback, and internal
+    /// rules are relaxed for the query only â€” credentials, loopback, and internal
     /// address space stay banned.
     /// </summary>
     private static bool ValidHttpsRedirect(string? value)
@@ -533,7 +526,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     /// <summary>
     /// Refuses private, link-local, and unique-local literals. A vendor origin is
     /// operator configuration rather than attacker input, so this is hardening rather
-    /// than a boundary — but <c>169.254.169.254</c> is a cloud metadata endpoint, and
+    /// than a boundary â€” but <c>169.254.169.254</c> is a cloud metadata endpoint, and
     /// an adapter that will POST a company key at whatever origin it is handed should
     /// not be willing to POST it there.
     /// </summary>

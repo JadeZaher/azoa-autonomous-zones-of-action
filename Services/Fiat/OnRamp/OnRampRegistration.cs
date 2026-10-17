@@ -64,6 +64,7 @@ public static class OnRampRegistration
         // for one implementation would build two instances per request; the second resolves the
         // first, so there is exactly one handler per delivery.
         services.AddScoped<OnRampSettlementHandler>();
+        services.AddScoped<OnRampRecovery>();
         services.AddScoped<IFiatSettlementHandler>(provider =>
             provider.GetRequiredService<OnRampSettlementHandler>());
         services.AddScoped<IFiatEventHandler>(provider =>

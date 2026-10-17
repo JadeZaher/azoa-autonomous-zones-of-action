@@ -2,6 +2,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 
 namespace AZOA.WebAPI.Interfaces.Managers;
 
@@ -60,7 +61,9 @@ public interface IDappCompositionManager
     /// Idempotency-friendly: re-running on a series that already has a
     /// <c>action_graph_bundle_id</c> updates the existing record rather than orphaning it.
     /// </summary>
-    Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default);
+    Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid seriesId, Guid userId, CancellationToken ct = default,
+        DeploymentGenerateRequest? request = null, Guid? actingTenantId = null);
 
-    Task<AZOAResult<IActionGraphBundle>> DeployAsync(Guid seriesId, Guid userId, string? targetOverride = null, CancellationToken ct = default);
+    Task<AZOAResult<DeploymentReceipt>> DeployAsync(Guid seriesId, Guid userId, DeploymentStartRequest request,
+        string requestKey, Guid? actingTenantId = null, CancellationToken ct = default);
 }

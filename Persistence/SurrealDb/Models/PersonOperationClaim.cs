@@ -79,6 +79,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         /// <summary>Instant the decision window shuts. Pinned on the first decision and never moved after.</summary>
         public DateTimeOffset? DecisionClosesAt { get; set; }
 
+        public string? GovernanceProposalId { get; set; }
+        public string? GovernanceDefinitionHash { get; set; }
+        public string? GovernanceDecisionHash { get; set; }
+        public string? GovernanceEligibilityJson { get; set; }
+
         /// <summary>
         /// The close stored for an operation that never closes. A definite "end of
         /// time" rather than an absent value, because a JSON null reaches SurrealDB as
@@ -103,6 +108,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public DateTimeOffset CreatedDate { get; set; }
 
         public DateTimeOffset? ModifiedDate { get; set; }
+
+        /// <summary>Generic claim CAS revision; absent only for pre-version rows.</summary>
+        public long? Version { get; set; }
 
         /// <summary>
         /// Deterministic record id for a claim triple, so an upsert converges on one

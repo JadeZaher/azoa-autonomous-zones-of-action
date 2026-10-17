@@ -25,7 +25,8 @@ public interface IIdentomatScreeningService
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? lineageKey = null);
 
     /// <summary>
     /// Registers ongoing monitoring. The provider keys the monitor on the QUERY
@@ -37,7 +38,8 @@ public interface IIdentomatScreeningService
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? lineageKey = null);
 
     /// <summary>
     /// Unregisters one tenant's monitoring. The upstream registration is removed only
@@ -114,12 +116,14 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         _clock = clock ?? TimeProvider.System;
     }
 
+    /// <inheritdoc />
     public async Task<AZOAResult<KycScreeningResult>> ScreenAsync(
         Guid subjectUserId,
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? lineageKey = null)
     {
         if (!IsConfigured)
             return AZOAResult<KycScreeningResult>.Failure(UnconfiguredMessage);
@@ -149,6 +153,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         var record = new KycScreeningResult
         {
             Id = Guid.NewGuid().ToString("N"),
+            LineageKey = lineageKey,
             SubjectUserId = subjectUserId == Guid.Empty ? null : subjectUserId.ToString("N"),
             TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
             QueryFullName = fullName.Trim(),
@@ -172,12 +177,14 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         return await _store.SaveResultAsync(record, ct);
     }
 
+    /// <inheritdoc />
     public async Task<AZOAResult<KycScreeningMonitor>> RegisterMonitorAsync(
         Guid subjectUserId,
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? lineageKey = null)
     {
         if (!IsConfigured)
             return AZOAResult<KycScreeningMonitor>.Failure(UnconfiguredMessage);
@@ -241,7 +248,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
             // Benign idempotent success. THIS TENANT's row is the only one that may
             // be returned: the vendor dedups the query shape across the whole company
             // key, so another tenant's row for the same person is not ours to hand back.
-            var existing = await _store.GetMonitorByQueryAsync(scope, canonicalName, canonicalBirthday, ct);
+            var existing = await _store.GetMonitorByQueryAsync(scope, canonicalName, canonicalBirthday, ct, lineageKey);
             if (existing.IsError)
             {
                 return AZOAResult<KycScreeningMonitor>.FailureWithCode(
@@ -296,6 +303,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
                 Id = Guid.NewGuid().ToString("N"),
                 ProviderMonitorId = providerMonitorId,
                 TenantScope = scope,
+                LineageKey = lineageKey,
                 SubjectUserId = subjectUserId == Guid.Empty ? null : subjectUserId.ToString("N"),
                 TenantId = tenantId is null || tenantId == Guid.Empty ? null : tenantId.Value.ToString("N"),
                 QueryFullName = canonicalName,
@@ -311,6 +319,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
             ct);
     }
 
+    /// <inheritdoc />
     public async Task<AZOAResult<bool>> RemoveMonitorAsync(
         Guid? tenantId,
         string providerMonitorId,
@@ -378,6 +387,7 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         return AZOAResult<bool>.Success(response.Result.Result);
     }
 
+    /// <inheritdoc />
     public async Task<AZOAResult<KycMonitorPollReport>> PollMonitoringAsync(CancellationToken ct = default)
     {
         if (!IsConfigured)
@@ -506,7 +516,15 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
 
                 followUps++;
                 foreach (var row in advanced)
-                    await PersistFollowUpAsync(row, followUp.Result, record.LastUpdatedDate, now, ct);
+                {
+                    var saved = await PersistFollowUpAsync(row, followUp.Result, record.LastUpdatedDate, now, ct);
+                    if (saved.IsError || !saved.Result)
+                    {
+                        abortedOnStoreError = true;
+                        break;
+                    }
+                }
+                if (abortedOnStoreError) break;
             }
 
             if (stoppedOnBudget || abortedOnStoreError)
@@ -642,17 +660,18 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         return AZOAResult<KycScreeningAssessment>.Success(_policy.Assess(hits, truncated));
     }
 
-    private async Task PersistFollowUpAsync(
+    private async Task<AZOAResult<bool>> PersistFollowUpAsync(
         KycScreeningMonitor monitor,
         KycScreeningAssessment assessment,
         string? observedUpdateDate,
         DateTimeOffset now,
         CancellationToken ct)
     {
-        await _store.SaveResultAsync(
+        var saved = await _store.SaveResultAsync(
             new KycScreeningResult
             {
                 Id = Guid.NewGuid().ToString("N"),
+                LineageKey = monitor.LineageKey,
                 SubjectUserId = monitor.SubjectUserId,
                 TenantId = monitor.TenantId,
                 QueryFullName = monitor.QueryFullName,
@@ -677,7 +696,9 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
             },
             ct);
 
-        await _store.RecordMonitorFollowUpAsync(monitor.Id, observedUpdateDate, now, ct);
+        if (saved.IsError || saved.Result is null)
+            return AZOAResult<bool>.Failure(saved.Message);
+        return await _store.RecordMonitorFollowUpAsync(monitor.Id, observedUpdateDate, now, ct);
     }
 
     private static string? Later(string? current, string? candidate)

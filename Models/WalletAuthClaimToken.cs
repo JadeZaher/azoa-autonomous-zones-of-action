@@ -1,16 +1,6 @@
 namespace AZOA.WebAPI.Models;
 
-/// <summary>
-/// A tenant-minted, single-use, short-TTL claim-invite token (user-sovereign-identity
-/// §2, AC4). A tenant generates it for a child user it owns; the user later redeems
-/// it together with a USER-SIDE credential (a fresh wallet challenge OR a user-chosen
-/// password) to take ownership.
-///
-/// <para><b>The token alone never sets a credential (M1).</b> It authorizes the
-/// credential-setting step but does not derive from any tenant-held child JWT, so a
-/// tenant cannot complete the claim on the user's behalf. Redemption is single-use and
-/// atomic (same no-TOCTOU rule as the auth nonce).</para>
-/// </summary>
+/// <summary>One-time invitation consumed atomically with ownership transfer; see Managers/AGENTS.md.</summary>
 public class WalletAuthClaimToken
 {
     /// <summary>Stable record id (Guid; persisted as the SurrealDB record id).</summary>

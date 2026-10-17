@@ -2,6 +2,7 @@
 
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 
 namespace AZOA.WebAPI.Interfaces.Managers;
 
@@ -35,6 +36,11 @@ public static class KycAuthorizationError
 /// </summary>
 public interface IKycManager
 {
+    /// <summary>Begins KYC using actual tenant custody authority at attempt and provider-send admission.</summary>
+    Task<AZOAResult<KycSessionStartModel>> BeginCustodialAsync(TenantCustodialWitness witness, CancellationToken ct = default);
+
+    /// <summary>Submits references with current custody authority in the document transaction.</summary>
+    Task<AZOAResult<KycSubmissionModel>> SubmitCustodialAsync(SubmitKycModel model, TenantCustodialWitness witness, CancellationToken ct = default);
     /// <summary>Reports the active provider without exposing its credentials.</summary>
     KycProviderCapabilitiesModel GetCapabilities();
 
@@ -46,11 +52,6 @@ public interface IKycManager
     /// <summary>Begins or resumes a current-policy verification flow.</summary>
     Task<AZOAResult<KycSessionStartModel>> BeginAsync(Guid userId, CancellationToken ct = default);
 
-    Task<AZOAResult<KycSessionStartModel>> BeginAsync(
-        Guid userId,
-        Guid tenantId,
-        CancellationToken ct = default);
-
     /// <summary>
     /// Submits a KYC request for <paramref name="userId"/>. Rejects when an
     /// active (PENDING/IN_REVIEW) submission already exists; validates documents
@@ -59,12 +60,6 @@ public interface IKycManager
     /// mismatch requires a fresh Begin call and never reuses the stale attempt.
     /// </summary>
     Task<AZOAResult<KycSubmissionModel>> SubmitAsync(SubmitKycModel model, Guid userId, CancellationToken ct = default);
-
-    Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
-        SubmitKycModel model,
-        Guid userId,
-        Guid tenantId,
-        CancellationToken ct = default);
 
     /// <summary>The most-recent submission for the user (status read).</summary>
     Task<AZOAResult<KycSubmissionModel>> GetStatusAsync(Guid userId, CancellationToken ct = default);

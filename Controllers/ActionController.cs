@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions;
+using AZOA.WebAPI.Services.Signing;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -15,10 +16,12 @@ namespace AZOA.WebAPI.Controllers;
 public class ActionController : ControllerBase
 {
     private readonly IActionManager _actionManager;
+    private readonly SigningAdmissionAuthorityFactory? _signingAuthority;
 
-    public ActionController(IActionManager actionManager)
+    public ActionController(IActionManager actionManager, SigningAdmissionAuthorityFactory? signingAuthority = null)
     {
         _actionManager = actionManager;
+        _signingAuthority = signingAuthority;
     }
 
     // ─── Action CRUD ───
@@ -145,6 +148,8 @@ public class ActionController : ControllerBase
     [HttpPost("{id:guid}/execute")]
     public async Task<ActionResult<AZOAResult<ActionRun>>> Execute(Guid id, [FromQuery] AZOARequest? request, [FromQuery] bool acknowledgeEconomicEffects = false)
     {
+        request ??= new AZOARequest();
+        request.IdempotencyKey = Request.Headers["Idempotency-Key"].ToString();
         // Returns the produced ActionRun (one execution attempt). Runtime state
         // — per-node State/Output/Error — lives on the per-(run, node)
         // ActionNodeExecution rows (queryable separately via the run id).
@@ -158,6 +163,10 @@ public class ActionController : ControllerBase
         // fires. A plain user principal yields null → no behavioural change.
         // acknowledgeEconomicEffects: runner consent to the disclosed value-moving
         // manifest on a non-owner marketplace run (see /preview) — see Managers/AGENTS.md §economic-consent.
+        var authority = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (authority.IsError || authority.Result is null) return BadRequest(AZOAResult<ActionRun>.Failure(authority.Message));
+        request.AuthenticationWitness = authority.Result;
         var result = await _actionManager.ExecuteAsync(id, userId.Value, request, User.GetActingTenantId(), acknowledgeEconomicEffects);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
@@ -232,6 +241,8 @@ public class ActionController : ControllerBase
     [HttpPost("{id:guid}/start-workflow")]
     public async Task<ActionResult<AZOAResult<ActionRun>>> StartWorkflow(Guid id, [FromQuery] AZOARequest? request, [FromQuery] bool acknowledgeEconomicEffects = false)
     {
+        request ??= new AZOARequest();
+        request.IdempotencyKey = Request.Headers["Idempotency-Key"].ToString();
         var userId = GetUserIdFromClaims();
         if (userId == null)
             return Unauthorized(new AZOAResult<ActionRun> { IsError = true, Message = "Invalid token." });
@@ -241,6 +252,10 @@ public class ActionController : ControllerBase
         // to the Tier-2 node handlers. Null for a plain user → no behaviour change.
         // acknowledgeEconomicEffects: runner consent to the disclosed manifest on a
         // non-owner marketplace run (see /preview) — see Managers/AGENTS.md §economic-consent.
+        var authority = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (authority.IsError || authority.Result is null) return BadRequest(AZOAResult<ActionRun>.Failure(authority.Message));
+        request.AuthenticationWitness = authority.Result;
         var result = await _actionManager.StartWorkflowRunAsync(id, userId.Value, request, User.GetActingTenantId(), acknowledgeEconomicEffects);
         if (result.IsError) return BadRequest(result);
         return Ok(result);

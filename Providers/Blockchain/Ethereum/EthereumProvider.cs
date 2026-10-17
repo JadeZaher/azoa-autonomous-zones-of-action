@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Numerics;
@@ -25,7 +24,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 /// Ethereum provider over direct JSON-RPC with a real EIP-1559 build→sign→submit→confirm
 /// pipeline. See <c>Providers/Blockchain/Ethereum/AGENTS.md</c>.
 /// </summary>
-public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
+public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
 {
     /// <summary>Config path of the Ethereum platform signing key (0x-prefixed 32-byte secp256k1 scalar).</summary>
     public const string PlatformPrivateKeyConfigPath = "AZOA:Ethereum:PlatformPrivateKey";
@@ -44,7 +43,6 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
     private const string MaxFeePerGasWeiCapConfigPath = "AZOA:Ethereum:MaxFeePerGasWeiCap";
 
     /// <summary>Metadata key that pins the expected EIP-155 chain id for a configured network.</summary>
-    private const string ChainIdMetadataKey = "ChainId";
 
     private static readonly Sha3Keccack Keccak = new();
 
@@ -63,12 +61,6 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
     // (this provider is cached per network by the factory).
     private readonly IKeyCustodyService? _custodyService;
     private readonly IServiceScopeFactory? _custodyScopeFactory;
-
-    // Nonce serialization. See AGENTS.md §nonce: one gate per sending account so a
-    // fetch→sign→broadcast window cannot interleave with another op on the same
-    // account, plus a high-water mark for nodes whose pending count lags.
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _nonceGates = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, BigInteger> _lastBroadcastNonce = new(StringComparer.Ordinal);
 
     private readonly SemaphoreSlim _chainIdGate = new(1, 1);
     private BigInteger? _chainId;
@@ -132,14 +124,18 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
         ITransactionSignerFactory? signerFactory,
         IKeyCustodyService? custodyService,
         IServiceScopeFactory? custodyScopeFactory,
-        HttpMessageHandler? httpMessageHandler)
+        HttpMessageHandler? httpMessageHandler,
+        AZOA.WebAPI.Interfaces.Stores.IEthereumPreparationStore? preparationStore = null,
+        AZOA.WebAPI.Services.Wormhole.WttProofVerifier? wttProofVerifier = null)
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
         _signerFactory = signerFactory;
         _custodyService = custodyService;
         _custodyScopeFactory = custodyScopeFactory;
+        _wttProofVerifier = wttProofVerifier;
         _httpMessageHandler = httpMessageHandler;
+        _preparationStore = preparationStore;
 
         _confirmationPollAttempts = config.GetValue<int?>(ConfirmationPollAttemptsConfigPath) ?? 20;
         _confirmationPollDelayMs = config.GetValue<int?>(ConfirmationPollDelayMsConfigPath) ?? 1500;
@@ -252,14 +248,17 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
     /// </summary>
     private async Task<AZOAResult<BigInteger>> GetChainIdAsync(CancellationToken ct)
     {
+        var expected = ConfiguredChainId();
+        if (expected is null)
+            return Error<BigInteger>("An explicit positive per-network Ethereum ChainId is required; legacy metadata is not an identity pin.");
         if (_chainId is { } cached)
-            return Ok(cached);
+            return cached == expected ? Ok(cached) : Error<BigInteger>("Ethereum network identity changed after provider initialization.");
 
         await _chainIdGate.WaitAsync(ct);
         try
         {
             if (_chainId is { } raced)
-                return Ok(raced);
+                return raced == expected ? Ok(raced) : Error<BigInteger>("Ethereum network identity changed after provider initialization.");
 
             var read = await ReadQuantityAsync("eth_chainId", Array.Empty<object?>(), "the node's chain id", ct);
             if (read.IsError)
@@ -268,7 +267,6 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
             if (read.Result.IsZero)
                 return Error<BigInteger>("The node reported chain id 0, which is not a valid EIP-155 chain.");
 
-            var expected = ConfiguredChainId();
             if (expected is { } pinned && pinned != read.Result)
                 return Error<BigInteger>(
                     $"Chain id mismatch: the configured {ActiveNetwork} network pins chain id {pinned} but the node at "
@@ -289,11 +287,15 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
         var chain = _configManager.GetAvailableChains()
             .FirstOrDefault(c => c.ChainType.Equals(ChainType, StringComparison.OrdinalIgnoreCase));
 
-        if (chain is null || !chain.Metadata.TryGetValue(ChainIdMetadataKey, out var raw) || string.IsNullOrWhiteSpace(raw))
-            return null;
-
-        return BigInteger.TryParse(raw.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
+        var raw = ActiveNetwork switch
+        {
+            ChainNetwork.Devnet => chain?.Devnet.ChainId,
+            ChainNetwork.Testnet => chain?.Testnet.ChainId,
+            ChainNetwork.Mainnet => chain?.Mainnet.ChainId,
+            _ => null,
+        };
+        return BigInteger.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            && parsed > 0 && parsed <= EthereumHex.MaxUInt256 ? parsed
             : null;
     }
 
@@ -623,6 +625,7 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
                 Message = probe.Result?.Detail ?? probe.Message,
             };
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             return new AZOAResult<ChainConfirmation> { Result = ChainConfirmation.Unknown, Message = ex.Message };
@@ -656,10 +659,24 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
                     // THE VACUOUS-NULL TRAP: `status` absent (pre-Byzantium node or a
                     // trimmed proxy response) means we CANNOT tell success from revert.
                     // Reporting success here would settle a reverted transfer.
-                    if (!TryReadQuantityProperty(receipt, "status", out var statusFlag))
+                    if (!TryReadQuantityProperty(receipt, "status", out var statusFlag) || (statusFlag != 0 && statusFlag != 1))
                         return Error<EthereumTxObservation>(
                             $"The receipt for {normalized} carries no readable `status` field, so success cannot be "
                             + "distinguished from revert. Refusing to guess.");
+
+                    if (!TryReadStringProperty(receipt, "transactionHash", out var receiptHash)
+                        || !string.Equals(receiptHash, normalized, StringComparison.OrdinalIgnoreCase)
+                        || !TryReadStringProperty(receipt, "blockHash", out var receiptBlockHash))
+                        return Error<EthereumTxObservation>("Receipt transaction or block identity is unavailable.");
+                    var canonical = await RpcReadAsync("eth_getBlockByNumber", new object?[] { EthereumHex.Quantity(blockNumber), false }, ct);
+                    var finalized = await RpcReadAsync("eth_getBlockByNumber", new object?[] { "finalized", false }, ct);
+                    if (canonical.IsError || finalized.IsError || canonical.IsNullResult || finalized.IsNullResult
+                        || !TryReadStringProperty(canonical.Value, "hash", out var canonicalHash)
+                        || !string.Equals(canonicalHash, receiptBlockHash, StringComparison.OrdinalIgnoreCase)
+                        || !TryReadQuantityProperty(canonical.Value, "number", out var canonicalNumber) || canonicalNumber != blockNumber
+                        || !TryReadQuantityProperty(finalized.Value, "number", out var finalNumber) || finalNumber < blockNumber)
+                        return Ok(new EthereumTxObservation(normalized, ChainConfirmation.Pending, blockNumber, BigInteger.Zero, null,
+                            "awaiting canonical finalized receipt evidence"));
 
                     TryReadQuantityProperty(receipt, "gasUsed", out var gasUsed);
                     var contractAddress = TryReadStringProperty(receipt, "contractAddress", out var deployed)
@@ -693,136 +710,27 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
                 $"Transaction {normalized} is not observable on {ActiveNetwork}: the node has no receipt and no "
                 + "mempool record for it (never broadcast, dropped, or outside this RPC's visibility).");
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             return Error<EthereumTxObservation>($"The status probe for {txHash} failed: {ex.Message}", ex);
         }
     }
 
-    // ─── Smart contract ───
-
-    /// <summary>
-    /// Deploys <paramref name="contractCode"/> as a type-2 creation transaction and
-    /// returns the deployed contract address from the receipt.
-    /// <para>Constructor arguments are encoded only when the caller declares their types:
-    /// <c>args["constructorSignature"] = "constructor(address,uint256)"</c> plus
-    /// <c>args["constructorArgs"]</c>. An untyped argument bag is REFUSED — guessing an
-    /// ABI type would deploy a contract whose constructor ran on the wrong values, which
-    /// is unrecoverable.</para>
-    /// </summary>
-    public override async Task<AZOAResult<string>> DeployContractAsync(
-        byte[] contractCode, string walletAddress,
-        Dictionary<string, object>? args = null, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<object>> QueryContractAsync(
+        AZOA.WebAPI.Models.Deployments.EvmReadCall request, CancellationToken ct = default)
     {
-        if (contractCode is null || contractCode.Length == 0)
-            return Error<string>("Contract bytecode is required to deploy");
-        if (!EthereumAddress.TryParse(walletAddress, out var deployer))
-            return Error<string>("A valid Ethereum deployer address is required");
-
-        var payload = new List<byte>(contractCode);
-
-        if (args is { Count: > 0 })
-        {
-            if (!args.TryGetValue("constructorSignature", out var signatureValue)
-                || signatureValue is not string signatureText)
-                return Error<string>(
-                    "Constructor arguments were supplied without a declared type list. Add "
-                    + "args[\"constructorSignature\"] (e.g. \"constructor(address,uint256)\") and "
-                    + "args[\"constructorArgs\"]. Refusing to guess ABI types for a constructor that runs once and "
-                    + "cannot be corrected.");
-
-            var signature = EthereumAbi.ParseSignature(
-                signatureText.Trim().StartsWith("constructor", StringComparison.Ordinal)
-                    ? signatureText.Trim()
-                    : $"constructor{signatureText.Trim()}");
-
-            if (signature is null)
-                return Error<string>($"Could not parse the constructor signature '{signatureText}'.");
-
-            var values = ReadArgumentList(args, "constructorArgs");
-            if (values.Count != signature.Parameters.Length)
-                return Error<string>(
-                    $"'{signature.Canonical}' takes {signature.Parameters.Length} argument(s) but "
-                    + $"{values.Count} were supplied.");
-
-            var encoded = new List<object>();
-            for (var i = 0; i < values.Count; i++)
-            {
-                if (!EthereumAbi.TryCoerceArgument(signature.Parameters[i].Type, values[i], out var coerced, out var error))
-                    return Error<string>($"Constructor argument {i}: {error}");
-                encoded.Add(coerced);
-            }
-
-            try
-            {
-                // The selector is stripped: constructor arguments are appended raw, with
-                // no 4-byte prefix. EncodeCall gives "0x" + 8 selector chars + args.
-                var callData = EthereumAbi.EncodeCall(signature, encoded.ToArray());
-                if (!EthereumHex.TryParseData("0x" + callData[10..], out var argumentBytes))
-                    return Error<string>("Failed to ABI-encode the constructor arguments.");
-                payload.AddRange(argumentBytes);
-            }
-            catch (Exception ex)
-            {
-                return Error<string>($"Failed to ABI-encode the constructor arguments: {ex.Message}", ex);
-            }
-        }
-
-        var opLabel = $"deploy a {contractCode.Length}-byte contract from {deployer}";
-        var submitted = await BuildSignSubmitCoreAsync(
-            deployer, toAddress: null, BigInteger.Zero, payload.ToArray(), opLabel, SigningContext.Platform, ct);
-
-        if (submitted.IsError || submitted.Result is null)
-            return Error<string>(submitted.Message, submitted.Exception);
-
-        if (submitted.Result.PendingConfirmation)
-            return Ok(submitted.Result.TxHash,
-                $"{OperationStatus.PendingConfirmationMarker}: Ethereum {opLabel} (tx {submitted.Result.TxHash}) "
-                + "submitted but not yet mined; the contract address resolves once the receipt lands.");
-
-        if (string.IsNullOrWhiteSpace(submitted.Result.ContractAddress))
-            return Error<string>(
-                $"The deployment transaction {submitted.Result.TxHash} was mined but its receipt carries no "
-                + "contractAddress. Refusing to report an address that was not returned by the chain.");
-
-        return Ok(submitted.Result.ContractAddress,
-            $"Ethereum {opLabel} confirmed in block {submitted.Result.BlockNumber} "
-            + $"(tx {submitted.Result.TxHash}); contract at {submitted.Result.ContractAddress}");
-    }
-
-    /// <summary>
-    /// Performs a READ-ONLY contract call (<c>eth_call</c>) and returns the decoded
-    /// outputs when the caller declares them, else the raw return data.
-    /// <para><paramref name="method"/> must be a full signature, e.g.
-    /// <c>"balanceOf(address)"</c>; values come from <c>args["args"]</c>. Declare output
-    /// types with <c>args["outputs"] = "uint256"</c> to get decoded values.</para>
-    /// <para>A STATE-CHANGING call is refused: this interface method carries no
-    /// <see cref="SigningContext"/>, so a write here could only run under ambient
-    /// platform authority with no caller attribution.</para>
-    /// </summary>
-    public override async Task<AZOAResult<object>> CallContractAsync(
-        string contractAddress, string method, Dictionary<string, object> args,
-        string walletAddress, CancellationToken ct = default)
-    {
-        if (!EthereumAddress.TryParse(contractAddress, out var contract))
+        if (!EthereumAddress.TryParse(request.ContractAddress, out var contract))
             return Error<object>("A valid Ethereum contract address is required");
 
-        var signature = EthereumAbi.ParseSignature(method);
+        var signature = EthereumAbi.ParseSignature(request.Method);
         if (signature is null)
             return Error<object>(
-                $"'{method}' is not an encodable function signature. Pass the full signature, e.g. "
+                $"'{request.Method}' is not an encodable function signature. Pass the full signature, e.g. "
                 + "\"balanceOf(address)\". Tuple/struct parameters are not supported from an untyped argument bag.");
 
-        args ??= new Dictionary<string, object>();
-
-        if (!IsDeclaredReadOnly(args))
-            return Error<object>(
-                $"Refusing to submit a state-changing call to {signature.Canonical}: CallContractAsync carries no "
-                + "SigningContext, so the transaction could only be signed under ambient platform authority with no "
-                + "caller attribution. Mark the call read-only (args[\"readOnly\"] = true) for an eth_call, or use "
-                + "TransferAsync / IEthereumValueModule for a value-moving write.");
-
-        var values = ReadArgumentList(args, "args");
+        var values = request.Arguments;
         if (values.Count != signature.Parameters.Length)
             return Error<object>(
                 $"'{signature.Canonical}' takes {signature.Parameters.Length} argument(s) but {values.Count} were supplied.");
@@ -840,12 +748,12 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
         {
             callData = EthereumAbi.EncodeCall(signature, encodedArguments.ToArray());
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException)
         {
             return Error<object>($"Failed to ABI-encode the call to {signature.Canonical}: {ex.Message}", ex);
         }
 
-        var caller = EthereumAddress.TryParse(walletAddress, out var parsedCaller) ? parsedCaller : null;
+        var caller = EthereumAddress.TryParse(request.FromAddress, out var parsedCaller) ? parsedCaller : null;
         var call = await CallReadAsync(contract, callData, caller, ct);
         if (call.IsError)
             return Error<object>(call.Message, call.Exception);
@@ -858,7 +766,7 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
             ["returnData"] = call.Result ?? "0x",
         };
 
-        var outputTypes = ReadOutputTypes(args);
+        var outputTypes = request.OutputTypes;
         if (outputTypes.Count > 0)
         {
             var outputs = outputTypes
@@ -880,58 +788,6 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
         }
 
         return Ok<object>(result, $"Read {signature.Canonical} on {contract}");
-    }
-
-    private static bool IsDeclaredReadOnly(Dictionary<string, object> args)
-    {
-        foreach (var key in new[] { "readOnly", "isReadOnly", "view" })
-        {
-            if (args.TryGetValue(key, out var value) && LooksTrue(value))
-                return true;
-        }
-
-        return args.TryGetValue("stateMutability", out var mutability)
-            && mutability is string text
-            && (text.Equals("view", StringComparison.OrdinalIgnoreCase) || text.Equals("pure", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool LooksTrue(object? value) => value switch
-    {
-        bool flag => flag,
-        string text => bool.TryParse(text, out var parsed) && parsed,
-        JsonElement element => element.ValueKind == JsonValueKind.True,
-        _ => false,
-    };
-
-    private static List<object?> ReadArgumentList(Dictionary<string, object> args, string key)
-    {
-        if (!args.TryGetValue(key, out var raw) || raw is null)
-            return new List<object?>();
-
-        return raw switch
-        {
-            string single => new List<object?> { single },
-            JsonElement element when element.ValueKind == JsonValueKind.Array =>
-                element.EnumerateArray().Select(item => (object?)item).ToList(),
-            System.Collections.IEnumerable sequence => sequence.Cast<object?>().ToList(),
-            _ => new List<object?> { raw },
-        };
-    }
-
-    private static List<string> ReadOutputTypes(Dictionary<string, object> args)
-    {
-        if (!args.TryGetValue("outputs", out var raw) || raw is null)
-            return new List<string>();
-
-        return raw switch
-        {
-            string single => single.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
-            JsonElement element when element.ValueKind == JsonValueKind.Array =>
-                element.EnumerateArray().Select(item => item.GetString() ?? string.Empty).Where(t => t.Length > 0).ToList(),
-            System.Collections.IEnumerable sequence => sequence.Cast<object?>()
-                .Select(item => item?.ToString() ?? string.Empty).Where(t => t.Length > 0).ToList(),
-            _ => new List<string>(),
-        };
     }
 
     // ─── Chain info ───
@@ -1313,12 +1169,7 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
 
     // ─── Build → sign → submit → confirm orchestration ───
 
-    /// <summary>
-    /// Canonical transact pipeline for a value-moving Ethereum op that reports its real
-    /// transaction hash: resolve chain id, fees and gas from chain truth, take the
-    /// per-sender nonce gate, build the type-2 payload, sign through the custody choke
-    /// point, broadcast exactly once, and poll to a receipt.
-    /// </summary>
+    /// <summary>Admits a durable nonce, persists signed wire and reports authoritative finality.</summary>
     private async Task<AZOAResult<string>> BuildSignSubmitAsync(
         string fromAddress, string? toAddress, BigInteger value, byte[] data,
         string opLabel, SigningContext signingContext, CancellationToken ct)
@@ -1327,13 +1178,10 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
         if (submitted.IsError || submitted.Result is null)
             return Error<string>(submitted.Message, submitted.Exception);
 
-        // A confirm-timeout returns a SUCCESS result carrying the real hash with the
-        // pending marker: the tx WAS broadcast, so recording it Failed (without a
-        // TxHash) would strand a valid transfer and invite a re-broadcast.
         if (submitted.Result.PendingConfirmation)
             return Ok(submitted.Result.TxHash,
                 $"{OperationStatus.PendingConfirmationMarker}: Ethereum {opLabel} (tx {submitted.Result.TxHash}) "
-                + "submitted but not yet mined; reconcile against chain truth.");
+                + "durably prepared and awaiting authoritative confirmation.");
 
         return Ok(submitted.Result.TxHash,
             $"Ethereum {opLabel} confirmed in block {submitted.Result.BlockNumber} (tx {submitted.Result.TxHash})");
@@ -1343,142 +1191,22 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
         string fromAddress, string? toAddress, BigInteger value, byte[] data,
         string opLabel, SigningContext signingContext, CancellationToken ct)
     {
-        if (_signerFactory is null)
-            return Error<SubmittedEthereumTxn>($"Cannot {opLabel}: no transaction signer is configured for Ethereum.");
-
-        // 1. Chain id — signed INSIDE the payload, so a mismatch is a cross-chain replay.
-        var chainId = await GetChainIdAsync(ct);
-        if (chainId.IsError)
-            return Error<SubmittedEthereumTxn>($"Cannot {opLabel}: {chainId.Message}", chainId.Exception);
-
-        // 2. Fees and gas from chain truth (idempotent reads, done before the nonce gate
-        //    so the serialized window stays as short as possible).
-        var fees = await GetFeeDataAsync(ct);
-        if (fees.IsError || fees.Result is null)
-            return Error<SubmittedEthereumTxn>($"Cannot {opLabel}: {fees.Message}", fees.Exception);
-
-        var gasLimit = await EstimateGasAsync(fromAddress, toAddress, value, data, opLabel, ct);
-        if (gasLimit.IsError)
-            return Error<SubmittedEthereumTxn>(gasLimit.Message, gasLimit.Exception);
-
-        // 3. Serialize the fetch→sign→broadcast window per sending account. Two
-        //    concurrent ops from one account must not read the same pending nonce:
-        //    identical nonces are a REPLACEMENT, not two transfers. See AGENTS.md §nonce.
-        var gateKey = NonceKey(chainId.Result, fromAddress);
-        var gate = _nonceGates.GetOrAdd(gateKey, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        var gateReleased = false;
-        try
+        var prepared = await PrepareCallAsync("legacy:" + Guid.NewGuid().ToString("N"), fromAddress,
+            toAddress, value, data, opLabel, signingContext, ct);
+        if (prepared.IsError || prepared.Result is null)
+            return Error<SubmittedEthereumTxn>(prepared.Message);
+        try { await SubmitPreparationAsync(prepared.Result, ct); }
+        catch (HttpRequestException)
         {
-            var nonce = await NextNonceAsync(chainId.Result, fromAddress, opLabel, ct);
-            if (nonce.IsError)
-                return Error<SubmittedEthereumTxn>(nonce.Message, nonce.Exception);
-
-            // 4. Build the canonical EIP-1559 signing payload:
-            //    0x02 ‖ rlp([chainId, nonce, tip, maxFee, gas, to, value, data, accessList]).
-            byte[] canonicalPayload;
-            try
-            {
-                var transaction = new Transaction1559(
-                    chainId.Result,
-                    nonce.Result,
-                    fees.Result.MaxPriorityFeePerGas,
-                    fees.Result.MaxFeePerGas,
-                    gasLimit.Result,
-                    toAddress,
-                    value,
-                    EthereumHex.Data(data),
-                    accessList: null);
-
-                canonicalPayload = transaction.GetRLPEncodedRaw();
-            }
-            catch (Exception ex)
-            {
-                return Error<SubmittedEthereumTxn>($"Failed to build the transaction to {opLabel}: {ex.Message}", ex);
-            }
-
-            // 5. Sign via the custody choke point. Key bytes are resolved and zeroed
-            //    inside the resolver; only the signed envelope leaves.
-            AZOAResult<byte[]> signResult;
-            try
-            {
-                signResult = await SignViaCustodyAsync(canonicalPayload, opLabel, fromAddress, signingContext);
-            }
-            catch (Exception ex)
-            {
-                return Error<SubmittedEthereumTxn>($"Failed to sign the transaction to {opLabel}: {ex.Message}", ex);
-            }
-
-            if (signResult.IsError || signResult.Result is null || signResult.Result.Length == 0)
-                return Error<SubmittedEthereumTxn>($"Signing failed to {opLabel}: {signResult.Message}", signResult.Exception);
-
-            // The signer returns the framed wire transaction. Re-encoding it here would
-            // invalidate the signature, so these bytes are submitted UNMODIFIED.
-            var signedEnvelope = signResult.Result;
-
-            // 6. The transaction hash is DERIVED from the signed bytes — never generated.
-            //    Doing it before broadcast means a broadcast failure still names the real
-            //    hash to reconcile against.
-            var txHash = EthereumHex.Data(Keccak.CalculateHash(signedEnvelope));
-
-            // 7. Broadcast. RetrySafety.Broadcast retries ONLY provably pre-broadcast
-            //    transport failures; every ambiguous post-send error surfaces for
-            //    reconciliation instead of being re-sent. On Ethereum a resubmit at the
-            //    same nonce is a replacement and at a new nonce a double spend.
-            EthRpcResult submitResponse;
-            try
-            {
-                submitResponse = await ExecuteWithRetryAsync(
-                    () => RpcCallAsync("eth_sendRawTransaction", new object?[] { EthereumHex.Data(signedEnvelope) }, ct),
-                    maxRetries: _rpcRetryMaxAttempts,
-                    initialDelayMs: _rpcRetryInitialDelayMs,
-                    ct: ct,
-                    safety: RetrySafety.Broadcast);
-            }
-            catch (Exception ex)
-            {
-                // Ambiguous post-send failure: the node may already hold the transaction,
-                // so this nonce is burned either way. Advance the high-water mark so a
-                // concurrent op cannot reuse it and silently replace this transfer.
-                RecordBroadcastNonce(gateKey, nonce.Result);
-                return Error<SubmittedEthereumTxn>(
-                    $"Broadcast failed to {opLabel} (tx {txHash}); reconcile against chain truth before re-sending: {ex.Message}", ex);
-            }
-
-            if (submitResponse.IsError)
-            {
-                // A JSON-RPC error is a definitive node-side rejection: the node either
-                // never accepted the transaction (nonce still free) or already knows it
-                // (its own pending count already reflects that). Either way the node
-                // remains the authority, so the local high-water mark is not advanced.
-                return Error<SubmittedEthereumTxn>(
-                    $"The node rejected the transaction to {opLabel} (tx {txHash}): {submitResponse.ErrorMessage}");
-            }
-
-            RecordBroadcastNonce(gateKey, nonce.Result);
-
-            // A hash the node echoes back that differs from the one over our signed bytes
-            // means we do not know what was broadcast. Never record either id.
-            if (submitResponse.TryGetString(out var echoed)
-                && !string.IsNullOrWhiteSpace(echoed)
-                && !string.Equals(echoed.Trim().ToLowerInvariant(), txHash, StringComparison.Ordinal))
-                return Error<SubmittedEthereumTxn>(
-                    $"The node returned hash {echoed} while trying to {opLabel}, but the signed transaction hashes to "
-                    + $"{txHash}. Refusing to record a mismatched id — reconcile both against chain truth.");
-
-            // 8. The nonce is committed, so the gate is released BEFORE the confirmation
-            //    poll: holding it across a multi-block wait would serialize an account
-            //    for minutes, and every remaining step is an idempotent read.
-            gate.Release();
-            gateReleased = true;
-
-            return await WaitForReceiptAsync(txHash, opLabel, ct);
+            return Ok(new SubmittedEthereumTxn(prepared.Result.TransactionId!, BigInteger.Zero, null, PendingConfirmation: true),
+                "Ethereum submission remains durably pending; reconcile the original transaction.");
         }
-        finally
-        {
-            if (!gateReleased)
-                gate.Release();
-        }
+        var observation = await ObservePreparationAsync(prepared.Result, ct);
+        if (!observation.IsError && observation.Result == ChainConfirmation.Confirmed)
+            return await WaitForReceiptAsync(prepared.Result.TransactionId!, opLabel, ct);
+        if (!observation.IsError && observation.Result == ChainConfirmation.FailedOnChain)
+            return Error<SubmittedEthereumTxn>("The prepared Ethereum call reverted in a finalized block: " + prepared.Result.TransactionId);
+        return Ok(new SubmittedEthereumTxn(prepared.Result.TransactionId!, BigInteger.Zero, null, PendingConfirmation: true));
     }
 
     private async Task<AZOAResult<SubmittedEthereumTxn>> WaitForReceiptAsync(
@@ -1521,37 +1249,6 @@ public class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
     }
 
     // ─── Nonce ───
-
-    private static string NonceKey(BigInteger chainId, string address) =>
-        $"{chainId}:{address.ToLowerInvariant()}";
-
-    /// <summary>
-    /// The next nonce for a sending account: the node's PENDING transaction count, never
-    /// below one past the last nonce this process broadcast for that account. The
-    /// high-water mark covers the window where a node has accepted a transaction but has
-    /// not yet reflected it in <c>eth_getTransactionCount(..,"pending")</c>.
-    /// </summary>
-    private async Task<AZOAResult<BigInteger>> NextNonceAsync(
-        BigInteger chainId, string address, string opLabel, CancellationToken ct)
-    {
-        var pending = await ReadQuantityAsync(
-            "eth_getTransactionCount", new object?[] { address, "pending" },
-            $"the pending nonce of {address}", ct);
-
-        if (pending.IsError)
-            return Error<BigInteger>($"Cannot {opLabel}: {pending.Message}", pending.Exception);
-
-        var nonce = pending.Result;
-        if (_lastBroadcastNonce.TryGetValue(NonceKey(chainId, address), out var highWater) && nonce <= highWater)
-            nonce = highWater + BigInteger.One;
-
-        return Ok(nonce);
-    }
-
-    private void RecordBroadcastNonce(string gateKey, BigInteger nonce) =>
-        _lastBroadcastNonce.AddOrUpdate(gateKey, nonce, (_, existing) => nonce > existing ? nonce : existing);
-
-    // ─── Custody / signing seam ───
 
     /// <summary>
     /// Resolves the signing key through the audited custody choke point and returns the

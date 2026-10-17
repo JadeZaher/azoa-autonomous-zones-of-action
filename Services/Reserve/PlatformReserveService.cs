@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using System.Numerics;
@@ -8,113 +8,42 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
-using SurrealForge.Client;
-using SurrealForge.Client.Idempotency;
-using SurrealForge.Client.Query;
 using AlgorandAccount = Algorand.Algod.Model.Account;
 using SolanaPublicKey = Solnet.Wallet.PublicKey;
 
 namespace AZOA.WebAPI.Services.Reserve;
 
-/// <summary>
-/// Operator configuration for the platform reserve. Bound from the <c>Reserve</c>
-/// section; see <c>docs/NODE-HOST.md</c> §8.11.
-/// </summary>
+/// <summary>Operator configuration for platform reserve custody and ledger policy.</summary>
 public sealed class ReserveOptions
 {
     /// <summary>Configuration section this binds from.</summary>
     public const string SectionName = "Reserve";
 
-    /// <summary>
-    /// Chains the reserve is expected to operate on. A reserve operation on a chain
-    /// absent from this list is refused before any key is touched, so a node cannot
-    /// quietly start holding value on a chain its operator never approved.
-    ///
-    /// <para>OI-74: an EMPTY list used to mean "no restriction", which is the shape a
-    /// deployment produces most easily -- a container with no appsettings, or a
-    /// <c>Reserve</c> section that omits the key, binds to <c>new()</c> and every chain
-    /// string on earth was then approved. Empty now falls back to
-    /// <see cref="ShippedChains"/>, the one chain this node actually ships a reserve for,
-    /// and never to "everything". Read it through <see cref="PermitsChain"/>, never
-    /// directly, so the fallback cannot be forgotten at a new call site.</para>
-    /// </summary>
+    /// <summary>Configured reserve chains; an empty list uses ShippedChains.</summary>
     public List<string> Chains { get; set; } = new();
 
-    /// <summary>
-    /// The chains a node that declared none is nonetheless permitted to operate the
-    /// reserve on. This is the fail-closed fallback for an empty <see cref="Chains"/>: the
-    /// narrowest set that keeps an unconfigured node working, never "no restriction".
-    /// Adding a chain here is a deliberate act with the same weight as declaring one.
-    /// </summary>
+    /// <summary>Explicit fallback chains for an unconfigured reserve.</summary>
     public static readonly IReadOnlyList<string> ShippedChains = new[] { "Algorand" };
 
-    /// <summary>
-    /// OI-74: the operator's deliberate opt-out of the per-chain address assertion. Leave
-    /// it false. While it is false, a chain the operator DECLARED in <see cref="Chains"/>
-    /// must also carry an <see cref="ExpectedAddresses"/> entry or every reserve operation
-    /// on that chain is refused -- the guard is a refusal instead of an inert setting. It
-    /// is a bool rather than an environment probe on purpose: a blank env var will not bind
-    /// to one, so there is no value a deployment can produce by accident that widens this.
-    /// </summary>
+    /// <summary>Whether explicitly configured chains may omit expected reserve addresses.</summary>
     public bool AllowUndeclaredReserveAddress { get; set; }
 
-    /// <summary>
-    /// Where a fungible token this node creates is minted. <c>PlatformReserve</c> (the
-    /// default) makes the reserve the creator AND the manager/reserve/freeze/clawback
-    /// authority. <c>CallerWallet</c> is the legacy shape and is broken on chain: the
-    /// creator would be the caller's custodial wallet while the ASA-create is signed by
-    /// the platform key, so the sender and the signature disagree.
-    /// </summary>
+    /// <summary>Default fungible creation custody target.</summary>
     public string FungibleMintTarget { get; set; } = ReserveMintTargets.PlatformReserve;
 
-    /// <summary>
-    /// Per-chain operator assertion of the reserve address. The address DERIVED from that
-    /// chain's platform key must equal the entry exactly or every reserve operation on
-    /// that chain fails closed. This is how a swapped or mistyped mnemonic is caught at
-    /// first use rather than after value has moved to an account nobody expected.
-    ///
-    /// <para>OI-74: it is REQUIRED, not optional, for every chain named in
-    /// <see cref="Chains"/> -- a missing entry there is a refusal
-    /// (<see cref="RefuseUndeclaredReserveAddress"/>), not an inert guard. Only a node that
-    /// declared no chain at all, or one whose operator deliberately set
-    /// <see cref="AllowUndeclaredReserveAddress"/>, may run without it.</para>
-    /// </summary>
+    /// <summary>Expected public reserve addresses for each configured chain.</summary>
     public Dictionary<string, string> ExpectedAddresses { get; set; } = new();
 
-    /// <summary>
-    /// Reserved for a future dedicated fee-payer account. It must stay <c>false</c>: no
-    /// separate fee-payer key exists, so the reserve itself pays fees.
-    /// </summary>
+    /// <summary>Whether a separate fee payer is configured; currently unsupported.</summary>
     public bool SeparateFeePayerAccount { get; set; }
 
-    /// <summary>
-    /// Who — besides the node's own rails — may draw a declared partition of the node's OWN
-    /// unit, whose ledger row carries no tenant because the node minted it. One of
-    /// <see cref="ReservePlatformUnitDrawPolicies"/>; an unrecognised value fails closed, and
-    /// so do the DEFAULT and a BLANK value — a node that says nothing keeps its own supply to
-    /// its own rails. That matters because this is bound with .Get&lt;T&gt;(), so a Railway
-    /// variable set to "" REPLACES the initializer below rather than leaving it in place.
-    /// Under EVERY value a caller with no resolvable tenant is refused (OI-21).
-    /// </summary>
+    /// <summary>Policy governing tenant draws from the platform unit.</summary>
     public string PlatformUnitDrawPolicy { get; set; } = ReservePlatformUnitDrawPolicies.OperatorOnly;
 
-    /// <summary>
-    /// The tenants admitted to draw the node's own unit when
-    /// <see cref="PlatformUnitDrawPolicy"/> is <c>DeclaredTenants</c>. Ignored otherwise.
-    /// </summary>
+    /// <summary>Tenants allowed by the DeclaredTenants draw policy.</summary>
     public List<string> PlatformUnitDrawTenants { get; set; } = new();
 
-    /// <summary>
-    /// True iff the reserve may operate on <paramref name="chain"/> (OI-74). The single
-    /// reader of <see cref="Chains"/>: a declared list is authoritative, and an empty one
-    /// falls back to <see cref="ShippedChains"/> rather than to every chain.
-    /// </summary>
-    /// <summary>
-    /// The chains the reserve actually permits, deduplicated and trimmed: the operator's
-    /// declared list when there is one, otherwise <see cref="ShippedChains"/>. Doors that
-    /// need to ENUMERATE the permitted rails (rather than test one) read this, so a door
-    /// and the counter can never disagree about what "one chain" means (OI-74).
-    /// </summary>
+    /// <summary>Effective deduplicated reserve chain list.</summary>
     public IReadOnlyList<string> EffectiveChains
     {
         get
@@ -128,6 +57,7 @@ public sealed class ReserveOptions
         }
     }
 
+    /// <summary>Tests whether a chain is permitted by reserve configuration.</summary>
     public bool PermitsChain(string? chain)
     {
         var candidate = chain?.Trim();
@@ -139,10 +69,7 @@ public sealed class ReserveOptions
             string.Equals(entry?.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// The operator's declared reserve address for <paramref name="chain"/>, or empty when
-    /// none was declared. Trimmed; a whitespace-only entry counts as none.
-    /// </summary>
+    /// <summary>Returns the configured public reserve address for a chain.</summary>
     public string DeclaredAddressFor(string? chain)
     {
         var candidate = chain?.Trim();
@@ -156,22 +83,7 @@ public sealed class ReserveOptions
         return string.IsNullOrWhiteSpace(declared) ? string.Empty : declared.Trim();
     }
 
-    /// <summary>
-    /// Null when the operator's address declaration for <paramref name="chain"/> is
-    /// complete; the refusal otherwise (OI-74).
-    ///
-    /// <para>Declaring a chain in <see cref="Chains"/> is a positive statement that this
-    /// node holds value there, and a positive statement has to be complete: without an
-    /// <see cref="ExpectedAddresses"/> entry the mismatch guard is inert, so a swapped or
-    /// mistyped mnemonic is caught only after value has moved to an account nobody
-    /// expected. A node that declared no chain at all is running on
-    /// <see cref="ShippedChains"/> and is not making that statement, so it is not held to
-    /// it -- and OI-74 already narrowed that path from every chain to one.</para>
-    ///
-    /// <para><paramref name="derivedAddress"/>, when the caller has one, is echoed into the
-    /// refusal so the operator can paste the value straight into the setting instead of
-    /// deriving it themselves. Nothing about the refusal depends on it.</para>
-    /// </summary>
+    /// <summary>Returns a refusal when a required reserve address declaration is absent.</summary>
     public string? RefuseUndeclaredReserveAddress(string? chain, string? derivedAddress = null)
     {
         if (AllowUndeclaredReserveAddress)
@@ -201,34 +113,14 @@ public static class ReserveMintTargets
     /// <summary>Mint into the platform reserve; the reserve holds all four ASA authorities.</summary>
     public const string PlatformReserve = "PlatformReserve";
 
-    /// <summary>Legacy: mint with the caller's custodial wallet as creator. Broken on chain.</summary>
+    /// <summary>Create with the caller's owned wallet and its explicit signing authority.</summary>
     public const string CallerWallet = "CallerWallet";
 }
 
-/// <summary>
-/// The platform reserve: address resolution, sign-as-reserve, balance reads, and the
-/// named-partition ledger. See <c>Services/Reserve/IPlatformReserve.cs</c> for what the
-/// reserve is and why the partition check lives on the node.
-/// </summary>
+/// <inheritdoc/>
 public sealed class PlatformReserveService : IPlatformReserve
 {
-    /// <summary>
-    /// How many applied draw keys the replay window keeps, oldest evicted first.
-    ///
-    /// <para>OI-75 -- the exact guarantee, because a looser one was being repeated as if it
-    /// were unconditional. The window is ONE bounded FIFO per asset ledger row, shared by
-    /// every partition and every draw kind on that asset. A retried draw whose key is still
-    /// in the window replays and moves nothing. A retried draw whose key has been pushed
-    /// out by <see cref="DrawReplayWindowSize"/> newer draws on the same asset is APPLIED A
-    /// SECOND TIME. So this is a cheap guard against a fast retry, not an idempotency
-    /// ledger, and every caller must carry a durable anchor of its own.</para>
-    ///
-    /// <para>The two live callers do. A hold draws exactly once per stage because its row's
-    /// state is the anchor -- see <c>PlatformHoldService.DrawsFrom</c>, which is why a hold
-    /// parked in <c>Releasing</c> never re-draws its release. Allocation issuance draws
-    /// under the request's outer idempotency key. A new draw seam that has neither must
-    /// bring one; this window will not supply it.</para>
-    /// </summary>
+    /// <summary>Bounded per-asset draw replay window; durable caller receipts remain required.</summary>
     public const int DrawReplayWindowSize = 128;
 
     /// <summary>Attempts a partition move makes before giving up on a compare-and-swap race.</summary>
@@ -266,10 +158,6 @@ public sealed class PlatformReserveService : IPlatformReserve
                 $"Chain '{chain}' is not listed under {ReserveOptions.SectionName}:Chains, so this node holds no " +
                 "platform reserve there. Add it deliberately before any value moves on that chain.");
 
-        // Derivation runs INSIDE the custody door: the address is a by-product of proving
-        // the node can actually sign as the reserve. A chain whose platform key is missing
-        // or malformed therefore yields no address at all, rather than one that looks
-        // fundable and can never spend.
         var derived = await _custody.WithPlatformSigningKeyAsync(
             chain,
             isPlatformContext: true,
@@ -286,10 +174,6 @@ public sealed class PlatformReserveService : IPlatformReserve
                 $"No reserve address could be derived for chain '{chain}'. " +
                 PlatformReserveAddressDerivation.SupportedChainsMessage);
 
-        // OI-74. The mismatch guard below only fires when an address WAS declared, so a
-        // blank ExpectedAddresses left it inert on exactly the chains the operator meant to
-        // be deliberate about. Refuse instead, and name the derived address so declaring it
-        // is one paste rather than a derivation the operator has to reproduce.
         var undeclared = _options.RefuseUndeclaredReserveAddress(chain, address);
         if (undeclared is not null)
             return AZOAResult<ReserveAccount>.Failure(undeclared);
@@ -336,16 +220,10 @@ public sealed class PlatformReserveService : IPlatformReserve
             return AZOAResult<T>.Failure(
                 $"Chain '{chain}' is not listed under {ReserveOptions.SectionName}:Chains; refusing to sign as the reserve there.");
 
-        // OI-74, at the counter rather than at the door: a signature is the act that moves
-        // value, so it is refused on a declared chain whose reserve address was never
-        // declared. This runs BEFORE custody, so no key is decrypted to produce the refusal.
         var undeclaredAddress = _options.RefuseUndeclaredReserveAddress(chain);
         if (undeclaredAddress is not null)
             return AZOAResult<T>.Failure(undeclaredAddress);
 
-        // The reserve is a platform-authority account. A caller-supplied context may still
-        // carry an acting tenant + scope so the custody seam runs the live consent check
-        // before decrypt; what it may NOT do is downgrade this to a per-user signature.
         var context = signingContext.ForChain(chain);
         if (!context.IsPlatform)
             return AZOAResult<T>.Failure(
@@ -373,29 +251,17 @@ public sealed class PlatformReserveService : IPlatformReserve
 
         var network = _providerFactory.DefaultNetwork.ToString();
         var now = DateTimeOffset.UtcNow;
-        var row = new PlatformReserveLedger
+        var row = ReserveAssetRegistrationPlan.Create(registration with
         {
-            Id = PlatformReserveLedger.RecordIdFor(account.Result.ChainType, network, registration.AssetId),
-            AssetId = registration.AssetId.Trim(),
-            Chain = account.Result.ChainType,
-            Network = network,
-            ReserveAddress = account.Result.Address,
-            TenantId = registration.TenantId is { } tenant && tenant != Guid.Empty
-                ? tenant.ToString("N")
-                : null,
-            UnitName = registration.UnitName ?? string.Empty,
-            Decimals = registration.Decimals,
-            TotalSupply = registration.TotalSupply.ToString(CultureInfo.InvariantCulture),
-            Partitions = ReservePartitionCodec.Encode(new Dictionary<string, ReservePartitionCounters>()),
-            RecentDrawKeys = Array.Empty<string>(),
-            Version = 0,
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
+            ChainType = account.Result.ChainType, AssetId = registration.AssetId.Trim(),
+            TenantId = registration.TenantId == Guid.Empty ? null : registration.TenantId,
+        }, account.Result, network, null, now);
 
         var claim = await _ledgerStore.CreateIfAbsentAsync(row, ct);
         if (claim.IsError || claim.Result is null)
             return AZOAResult<PlatformReserveLedger>.Failure(claim.Message);
+        if (!ReserveAssetRegistrationPlan.SameIdentity(claim.Result.Row, row))
+            return AZOAResult<PlatformReserveLedger>.Failure("Reserve registration conflicts with the existing asset identity.");
 
         return AZOAResult<PlatformReserveLedger>.Success(
             claim.Result.Row,
@@ -435,20 +301,12 @@ public sealed class PlatformReserveService : IPlatformReserve
         if (declaredByPartition is null || declaredByPartition.Count == 0)
             return AZOAResult<PlatformReserveLedger>.Failure("At least one partition declaration is required.");
 
-        // OI-22. Declaring is the act that CARVES the shared supply, so the ownership
-        // question is asked here — the one place a partition's declared budget moves — and
-        // never only at the REST door. It is deliberately the SAME predicate the draw side
-        // asks (ReservePartitionScope.Refuse), so "who may declare" and "who may draw" can
-        // never drift apart.
         if (authority is null)
             return AZOAResult<PlatformReserveLedger>.FailureWithCode(
                 $"A partition declaration on asset '{assetId}' arrived with no stated authority. " +
                 "Nothing was declared.",
                 AzoaErrorCodes.Forbidden);
 
-        // A settlement authority is valid only where the asset and partition come off an
-        // already-guarded row. A declaration NAMES a partition, so there is nothing guarded
-        // about it and the settlement lane must not reach here.
         if (authority.IsSettlingGuardedCommitment)
             return AZOAResult<PlatformReserveLedger>.FailureWithCode(
                 $"Settling a commitment cannot declare a partition on asset '{assetId}'. " +
@@ -485,8 +343,6 @@ public sealed class PlatformReserveService : IPlatformReserve
 
                 if (partitions.TryGetValue(name, out var existing))
                 {
-                    // Shrinking below what the partition has already promised would make the
-                    // ledger claim availability that is already spoken for.
                     if (declared < existing.Committed)
                         return AZOAResult<PlatformReserveLedger>.Failure(
                             $"Partition '{name}' has already committed {existing.Committed} base units; " +
@@ -499,9 +355,6 @@ public sealed class PlatformReserveService : IPlatformReserve
                 }
             }
 
-            // Re-declaring SETS a budget rather than adding to it (above), so a redelivered
-            // declaration is already idempotent on the numbers. Short-circuiting it here also
-            // stops a retry loop from burning CAS versions on a row nothing is changing.
             if (SamePartitions(before, partitions))
                 return AZOAResult<PlatformReserveLedger>.Success(
                     row, "Partitions already stand at these amounts; nothing was changed.");
@@ -553,11 +406,6 @@ public sealed class PlatformReserveService : IPlatformReserve
 
             var row = current.Result;
 
-            // OI-20 / OI-21 — the ownership question, asked HERE because this is the one
-            // place a partition counter moves. Seven seams reach this method; asking it at
-            // each door instead left the exchange seam uncovered after two were fixed. The
-            // row is the authority on who registered the asset, so the answer is read from
-            // the ledger and never trusted off the request.
             var scopeRefusal = ReservePartitionScope.Refuse(row, request.Authority, row.AssetId, _options);
             if (scopeRefusal is not null)
                 return AZOAResult<ReserveDrawOutcome>.Failure(scopeRefusal);
@@ -568,10 +416,6 @@ public sealed class PlatformReserveService : IPlatformReserve
 
             var window = row.RecentDrawKeys?.ToList() ?? new List<string>();
 
-            // Replay guard: a retried draw inside the window returns the counters as they
-            // already stand and moves nothing. Outside the window the key is unknown and
-            // the draw IS applied a second time, which is why every caller keeps a durable
-            // anchor of its own -- see DrawReplayWindowSize for the exact boundary.
             if (window.Contains(operationKey, StringComparer.Ordinal))
             {
                 var replayed = partitions.TryGetValue(partitionName, out var known)
@@ -583,9 +427,6 @@ public sealed class PlatformReserveService : IPlatformReserve
                     "Duplicate reserve draw: the original result is returned and nothing moved.");
             }
 
-            // An undeclared partition fails CLOSED. Auto-creating one on first draw would
-            // let a caller invent unlimited availability by naming a partition nobody
-            // declared, which is exactly the oversubscription this ledger exists to refuse.
             if (!partitions.TryGetValue(partitionName, out var counters))
                 return AZOAResult<ReserveDrawOutcome>.Failure(
                     $"Partition '{partitionName}' is not declared on asset '{row.AssetId}'. " +
@@ -628,13 +469,8 @@ public sealed class PlatformReserveService : IPlatformReserve
     {
         mismatch = string.Empty;
 
-        // One reader of ExpectedAddresses (ReserveOptions.DeclaredAddressFor), shared with
-        // the undeclared-address refusal, so "was an address declared?" cannot be answered
-        // two different ways by two call sites.
         var expected = _options.DeclaredAddressFor(chain);
 
-        // Blank reaches here only on a node that declared no chain at all; a declared chain
-        // with no declared address was already refused (OI-74).
         if (string.IsNullOrEmpty(expected))
             return true;
 
@@ -671,12 +507,7 @@ public sealed class PlatformReserveService : IPlatformReserve
             : BigInteger.Zero;
 }
 
-/// <summary>
-/// Turns a chain's raw platform key bytes into that chain's address. It runs inside the
-/// custody door, so it never reads a secret from configuration itself. A chain with no
-/// rule here returns null and the caller fails closed naming the chain — the same
-/// discipline <c>PlatformKeyDerivationRegistry</c> applies to the key itself.
-/// </summary>
+/// <summary>Derives a public reserve address from custody-supplied key bytes.</summary>
 public static class PlatformReserveAddressDerivation
 {
     /// <summary>Length of the Solana public key that trails the 64-byte secret.</summary>
@@ -709,21 +540,14 @@ public static class PlatformReserveAddressDerivation
 
             return null;
         }
-        catch (Exception)
+        catch (Exception exception) when (exception is ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
         {
-            // Swallowed deliberately: chain SDKs echo key material in exception messages,
-            // and nothing derived from the platform secret may escape this method.
             return null;
         }
     }
 }
 
-/// <summary>
-/// Encodes and decodes the ledger's <c>partitions</c> object. Amounts round-trip as exact
-/// decimal strings so a supply wider than i64 is never truncated, and partition names are
-/// normalised in ONE place so a draw naming "Contributor" cannot open a second budget
-/// beside "contributor".
-/// </summary>
+/// <summary>Encodes exact partition counters using canonical partition names.</summary>
 public static class ReservePartitionCodec
 {
     private const string DeclaredKey = "declared";
@@ -752,11 +576,7 @@ public static class ReservePartitionCodec
         return JsonSerializer.SerializeToElement(wire);
     }
 
-    /// <summary>
-    /// Reads the persisted partition map. A malformed blob returns null with an error
-    /// rather than an empty map: treating unreadable partitions as "no commitments" would
-    /// hand a caller the entire supply.
-    /// </summary>
+    /// <summary>Decodes partition counters or refuses malformed persisted accounting.</summary>
     public static Dictionary<string, ReservePartitionCounters>? Decode(
         JsonElement? partitions, out string error)
     {
@@ -813,118 +633,5 @@ public static class ReservePartitionCodec
 
         return raw is not null &&
                BigInteger.TryParse(raw, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out amount);
-    }
-}
-
-/// <summary>
-/// SurrealDB-backed reserve ledger. Colocated with the service because
-/// <c>Providers/Stores/Surreal/</c> is outside this change's file boundary; the seam is
-/// <see cref="IPlatformReserveLedgerStore"/>, so moving it later is a file move.
-/// </summary>
-public sealed class SurrealPlatformReserveLedgerStore : IPlatformReserveLedgerStore
-{
-    private const string Table = PlatformReserveLedger.SchemaNameConst;
-
-    private readonly ISurrealExecutor _executor;
-
-    public SurrealPlatformReserveLedgerStore(ISurrealExecutor executor)
-    {
-        _executor = executor ?? throw new ArgumentNullException(nameof(executor));
-    }
-
-    /// <inheritdoc />
-    public async Task<AZOAResult<PlatformReserveLedger?>> GetAsync(
-        string recordId, CancellationToken ct = default)
-    {
-        try
-        {
-            var query = SurrealQuery<PlatformReserveLedger>.Key(recordId);
-            var row = await _executor.QuerySingleAsync<PlatformReserveLedger>(query, ct);
-            return new AZOAResult<PlatformReserveLedger?>
-            {
-                Result = row,
-                Message = row is null ? "Not found." : "Success",
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<PlatformReserveLedger?>()
-                .CaptureException(ex, $"Reserve ledger read failed: {ex.Message}");
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<AZOAResult<PlatformReserveLedgerClaim>> CreateIfAbsentAsync(
-        PlatformReserveLedger row, CancellationToken ct = default)
-    {
-        try
-        {
-            var create = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", row.Id)
-                .WithParam("_body", row);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(create, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            var created = response.GetValues<PlatformReserveLedger>(0).SingleOrDefault() ?? row;
-            return AZOAResult<PlatformReserveLedgerClaim>.Success(
-                new PlatformReserveLedgerClaim(created, Created: true), "Created.");
-        }
-        catch (Exception ex)
-        {
-            // A CREATE that lost to an existing row is the idempotent case, not a fault —
-            // but only when the row really is there now. Re-read before concluding that,
-            // so a transport failure is never reported as "already registered".
-            var existing = await GetAsync(row.Id, ct);
-            if (!existing.IsError && existing.Result is not null)
-                return AZOAResult<PlatformReserveLedgerClaim>.Success(
-                    new PlatformReserveLedgerClaim(existing.Result, Created: false), "Already registered.");
-
-            return new AZOAResult<PlatformReserveLedgerClaim>()
-                .CaptureException(ex, $"Reserve ledger create failed: {ex.Message}");
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task<AZOAResult<PlatformReserveLedger>> UpdateIfVersionAsync(
-        PlatformReserveLedger row, long expectedVersion, CancellationToken ct = default)
-    {
-        try
-        {
-            // Single-winner conditional update (the ActionRun precedent): the write lands
-            // only while the persisted version is still the one this caller reasoned over,
-            // so two concurrent draws can never both spend the same availability.
-            var update = SurrealQuery
-                .Of("UPDATE type::record($_t, $_id) CONTENT $_body WHERE version = $_expected RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", row.Id)
-                .WithParam("_body", row)
-                .WithParam("_expected", expectedVersion);
-
-            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-            {
-                var executed = await _executor.ExecuteAsync(update, ct);
-                executed.EnsureAllOk();
-                return executed;
-            }, ct);
-
-            if (response.Count == 0 || !response[0].IsOk || response[0].AffectedCount() != 1)
-                return AZOAResult<PlatformReserveLedger>.Failure(
-                    $"Reserve ledger row '{row.Id}' changed underneath this update (expected version {expectedVersion}).");
-
-            var persisted = response.GetValues<PlatformReserveLedger>(0).SingleOrDefault() ?? row;
-            return AZOAResult<PlatformReserveLedger>.Success(persisted, "Saved.");
-        }
-        catch (Exception ex)
-        {
-            return new AZOAResult<PlatformReserveLedger>()
-                .CaptureException(ex, $"Reserve ledger update failed: {ex.Message}");
-        }
     }
 }

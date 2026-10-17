@@ -1,6 +1,6 @@
 using FluentAssertions;
 using AZOA.WebAPI.Interfaces.ActionExecution;
-using AZOA.WebAPI.Managers;
+using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Providers.Stores;
 using AZOA.WebAPI.Services;
@@ -22,11 +22,11 @@ public class ActionManagerOnFailureTests
 
     // ── Harness ──────────────────────────────────────────────────────────────
 
-    private static (ActionManager Manager, InMemoryActionNodeExecutionStore ExecStore)
+    private static (DurableActionExecutionHarness Manager, InMemoryActionNodeExecutionStore ExecStore)
         MakeHarness(InMemoryActionStore actionStore, params IActionNodeHandler[] handlers)
     {
         var execStore = new InMemoryActionNodeExecutionStore();
-        var manager = new ActionManager(
+        var manager = new DurableActionExecutionHarness(
             actionStore,
             new InMemoryActionRunStore(),
             execStore,
@@ -153,7 +153,7 @@ public class ActionManagerOnFailureTests
     // ── AC-2c: unhandled failure (no OnFailure edge) marks run Failed ─────────
 
     [Fact]
-    public async Task NoOnFailureEdge_SourceFails_RunFailed()
+    public async Task NoOnFailureEdge_SourceFails_WaitsForSagaCompensation()
     {
         var actionId = Guid.NewGuid();
         var nodeId  = Guid.NewGuid();
@@ -183,8 +183,8 @@ public class ActionManagerOnFailureTests
         var result = await manager.ExecuteAsync(action.Id, UserId);
 
         result.IsError.Should().BeFalse();
-        result.Result!.Status.Should().Be(ActionRunStatus.Failed,
-            because: "no OnFailure edge → failure is unhandled (V3)");
+        result.Result!.Status.Should().Be(ActionRunStatus.AwaitingReconciliation,
+            because: "an unhandled durable failure must pass through saga compensation before terminal failure");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

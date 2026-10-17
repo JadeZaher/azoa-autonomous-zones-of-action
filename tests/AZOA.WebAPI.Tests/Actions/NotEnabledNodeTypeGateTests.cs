@@ -33,9 +33,6 @@ public sealed class NotEnabledNodeTypeGateTests
     }
 
     [Theory]
-    [InlineData(ActionNodeType.GovernanceProposalCreate)]
-    [InlineData(ActionNodeType.GovernanceVote)]
-    [InlineData(ActionNodeType.GovernanceTally)]
     [InlineData(ActionNodeType.CredentialRevoke)]
     public void KnownBrokenPrimitives_AreBlocked(ActionNodeType nodeType) =>
         NotEnabledActionNodeTypes.IsBlocked(nodeType).Should().BeTrue(
@@ -85,13 +82,12 @@ public sealed class NotEnabledNodeTypeGateTests
     [Fact]
     public void EveryBlockedType_IsANamedTrackedException()
     {
-        NotEnabledActionNodeTypes.All.Should().HaveCount(4,
+        NotEnabledActionNodeTypes.All.Should().HaveCount(1,
             "each blocked type is tracked by a design track; adding one without a track "
             + "turns a temporary gate into silent dead surface");
 
         var source = SourceOf("Services", "Actions", "NotEnabledActionNodeTypes.cs");
-        source.Should().Contain("governance-vote-of-record_20260906")
-            .And.Contain("credential-third-party-issuance_20260906",
-                "the gate must name the tracks that remove it, or nobody knows when it lifts");
+        source.Should().Contain("round2-governance-source-review.md",
+            "source activation must name its independently recorded review");
     }
 }

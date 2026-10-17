@@ -21,6 +21,21 @@ public interface IHostedSessionStore
         HostedSession candidate,
         CancellationToken ct = default);
 
+    /// <summary>Releases an owned admission after its creator confirms no request was sent, preserving its audit record.</summary>
+    Task<bool> ReleaseUnsentAdmissionAsync(Guid id, string creationToken, CancellationToken ct = default);
+
+    /// <summary>Fences the sole creator before any provider request can be sent.</summary>
+    Task<AZOAResult<HostedSession>> TryBeginCreationAsync(Guid id, string creationToken, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>Lists aged unattached admissions for operator reconciliation without exposing provider credentials.</summary>
+    Task<IReadOnlyList<HostedSession>> ListReconciliationAsync(DateTimeOffset before, int limit, CancellationToken ct = default);
+
+    /// <summary>Audits verified attachment or absence; only provably unsent admissions release, uncertain sends quarantine; stale versions return no row.</summary>
+    Task<AZOAResult<HostedSession>> ReconcileAdmissionAsync(
+        HostedSession expected, Guid actorId, string reason,
+        AZOA.WebAPI.Models.HostedSessions.HostedSessionCreation? providerSession,
+        DateTimeOffset now, CancellationToken ct = default);
+
     /// <summary>Looks a session up by its provider-side session id.</summary>
     Task<AZOAResult<HostedSession>> GetByProviderSessionAsync(
         string flowKind,
@@ -28,11 +43,13 @@ public interface IHostedSessionStore
         string providerSessionId,
         CancellationToken ct = default);
 
+    Task<AZOAResult<HostedSession>> GetByAdmissionAsync(string flowKind, string providerKey, string admissionKey, CancellationToken ct = default);
+
     Task<AZOAResult<HostedSession>> GetByIdAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
     /// Attaches the provider session created after admission. Conditional on the
-    /// session still being in <c>CLAIMED</c> at the expected version.
+    /// session still being in <c>CLAIMED</c> with the original creator token; a late response can resolve quarantine.
     /// </summary>
     Task<AZOAResult<HostedSession>> TryAttachProviderSessionAsync(
         Guid id,
@@ -41,6 +58,7 @@ public interface IHostedSessionStore
         string? providerCorrelationId,
         string redirectUrl,
         DateTimeOffset? expiresAt,
+        string creationToken,
         CancellationToken ct = default);
 
     /// <summary>
@@ -56,6 +74,22 @@ public interface IHostedSessionStore
         string? outcomeDetail,
         string? resumeTargetId,
         CancellationToken ct = default);
+
+    /// <summary>Claims resumption at the observed version when no live lease exists; contention returns no row.</summary>
+    Task<AZOAResult<HostedSession>> TryClaimResumeAsync(
+        Guid id, long expectedStateVersion, string token, DateTimeOffset now,
+        DateTimeOffset leaseExpiresAt, CancellationToken ct = default);
+
+    /// <summary>Extends an unexpired lease owned by this token; a lost lease returns false.</summary>
+    Task<bool> RenewResumeLeaseAsync(
+        Guid id, string token, DateTimeOffset now, DateTimeOffset leaseExpiresAt,
+        CancellationToken ct = default);
+
+    /// <summary>Transitions and releases an unexpired owned lease; stale ownership returns no row.</summary>
+    Task<AZOAResult<HostedSession>> TryFinishResumeAsync(
+        Guid id, long expectedStateVersion, string token, DateTimeOffset now,
+        string newState, string? authoritativeOutcome, string? outcomeDetail,
+        string? resumeTargetId, CancellationToken ct = default);
 
     /// <summary>Records an accepted callback delivery without deciding anything.</summary>
     Task<AZOAResult<bool>> RecordCallbackAsync(Guid id, CancellationToken ct = default);

@@ -1,5 +1,28 @@
 # Persistence/SurrealDb/Models — decorated POCO notes
 
+`ethereum_dex_allowance` retains exclusive ERC20 allowance ownership until a
+finalized swap or separately authorized zero-allowance cleanup. Its versioned
+resource identity includes physical network, owner, token and executor; there is
+no time-based lease. Emit its schema during the final integrated generation.
+
+## DEX immutable quotes
+
+`dex_quote` stores immutable canonical public protocol terms and their hash, scoped
+to actor/tenant. Its nullable consumption link is changed only by atomic swap
+admission, not quote replay. No custody context, key or signed wire belongs in the
+quote. New schema emission is held for the final integrated sweep.
+
+`swap_operation` stores the actor/tenant-scoped original request and immutable
+quote/intent hashes, plus versioned orchestration state. A cancelled record can
+exist before quote consumption to fence delayed first admission. Private intent
+and action correlation fields never replace transport authorization. Stage
+preparation and first-send authorization remain separate required transactions;
+the admission row alone grants neither signing nor broadcast.
+
+## WTT protected stage keys
+
+`wtt_stage_key` stores authenticated ciphertext and the immutable public key/binding, never a seed or custody secret. Its content-hash record identity is unique per operation/role/generation and authority scope. Encryption-version changes are exact-envelope CAS updates. The table has no generic user read or delete surface; retention requires the old decrypt version until rewrapped. Generate its schema with the integrated schema sweep before enabling WTT.
+
 Design rationale / cross-cutting invariants for the hand-authored SurrealDB
 POCOs in this directory. Code carries terse one-line doc-comments; the WHY
 lives here. Goldens under `Generated/Schemas/*.surql` are GENERATED — never
@@ -277,3 +300,12 @@ Swap and Exchange move two different assets and Deploy/Call move none, so they c
 single amount to price and stay unstamped rather than stamped with half a truth.
 Statuses that mean nothing was broadcast (`Failed`, `AwaitingSignature`, `Unknown`,
 `Pending`) are never stamped. A stamp is written once and never recomputed on read.
+
+## KYB current authority
+
+`kyb_verification` uses the tenant owner's Guid as its record key. It is excluded from generic
+search/MCP tables; access is through the claims-bound business-verification service. Business
+registration identifiers and beneficiary provider session links are server-only. Public DTOs
+carry status, timestamps and participant count. Historical hosted-session outcomes remain in
+`hosted_session`; the current business projection uses attempt/version/policy CAS. See
+`Services/Kyb/AGENTS.md` for the documented retention and verification boundary.

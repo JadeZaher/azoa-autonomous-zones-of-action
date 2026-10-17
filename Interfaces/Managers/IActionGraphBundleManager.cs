@@ -2,6 +2,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Ecosystem;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 
 namespace AZOA.WebAPI.Interfaces.Managers;
 
@@ -48,8 +49,10 @@ public interface IActionGraphBundleManager
     // internal path (action node handlers) which has no user context and runs
     // unscoped — never pass null from a controller.
     Task<AZOAResult<bool>> DeleteAsync(Guid id, Guid? userId = null, AZOARequest? request = null);
-    Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid id, ActionGraphBundleDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null);
-    Task<AZOAResult<IActionGraphBundle>> DeployAsync(Guid id, Guid? userId = null, AZOARequest? providerRequest = null);
+    Task<AZOAResult<IActionGraphBundle>> GenerateAsync(Guid id, ActionGraphBundleDappGenerationRequest request, Guid? userId = null, AZOARequest? providerRequest = null, Guid? actingTenantId = null);
+    /// <summary>Admits an exact artifact and returns its authoritative pending or confirmed deployment receipt.</summary>
+    Task<AZOAResult<DeploymentReceipt>> DeployAsync(Guid id, DeploymentStartRequest request, string requestKey,
+        Guid userId, Guid? actingTenantId = null, CancellationToken ct = default);
 
     // ── Ecosystem tree (D2) ─────────────────────────────────────────────────
     //

@@ -143,3 +143,47 @@ Three separate mechanisms are needed, because SurrealForge promotes a
 workaround: CBOR text is unambiguously text, so SurrealDB can no longer
 reinterpret a colon-bearing string as a record id. It is retained because it is
 harmless, but it no longer protects against anything.
+
+## generated-statement-scope
+
+SurrealForge 1.2 typed writers reuse parameter names and Combine merges them with
+last-write-wins semantics. Scope each generated single statement before composing
+multiple writers in one transaction. SurrealGeneratedStatementScope renames only
+bound parameter tokens outside quoted strings/identifiers; it rejects batches,
+comments, and unbound variables. It accepts trusted generated SQL only, never user
+SQL. This preserves the typed writer's record-link marshalling. The single raw
+factory reconstructs identical generated SQL with disjoint binding names.
+
+## Policy-sensitive local commits
+
+NodeGovernancePolicyFence reads the singleton version before manager validation. Its
+transaction guard takes the same dedicated policy lock as policy updates, then checks
+that version or the expected absence. The separate lock preserves option-backed policy
+semantics when no database row exists and serializes the first policy insertion with
+local effects. Do not create an unrestricted policy row merely to acquire a lock.
+ActionExecutionFence joins the same transaction to serialize effects with run/node
+cancellation. Receipt replay reads committed evidence without executing again.
+
+DeploymentAuthorityFence locks root and nested bundle access plus complete bound
+Holon content in the workflow admission transaction. Holon writes share the entity
+lock; row no-op writes serialize mutations that target the same record. Optional
+values use explicit NONE predicates, never a null parameter as an absence test.
+The root's already deployed immutable version survives newer artifact generation;
+nested references additionally require their exact selected descriptor. Existing
+invocation receipt replay precedes these live gates and cannot create another run.
+# Signing authority transaction fences
+
+`SigningAuthorityFence` composes credential, exact selected grant and wallet checks into the owning admission or first-egress transaction. The raw statements are multi-record locking invariants, not ordinary CRUD. Parameter prefixes isolate the generated snippets; operator credentials also pin bootstrap credential/session revisions. Workflow callers compare the saved run credential at node admission and the exact node witness at first egress. Explicit legacy participant consent has its own immutable receipt; it never rewrites the original run credential.
+## Fungible genesis and captured mutations
+
+`PlatformGenesisFence` composes current validated operator/bootstrap evidence with the original pending platform definition and exact lifecycle identity. Its definition-only branch is used only in finalized accounting, which cannot require a renewed signing session. Activation and reserve/issuance projection commit together. `FungibleCreationAuthorityFence` selects mutually exclusive ordinary signing or genesis purpose; it never treats a node-operator credential as an unrestricted user.
+
+`SurrealGeneratedStatementScope.Assign` captures one trusted typed-generated mutation result within a larger atomic transaction. It preserves the existing quote-aware parameter scoping and rejects invalid variable names, batches and unbound parameters. This allows dependent transaction checks and conditional projection without replacing ordinary typed CRUD with handwritten SQL.
+
+Indexed generated-statement parameter scopes permit lowercase letters, digits and underscores. Numeric suffixes keep repeated typed mutations distinct in one transaction; SQL tokens, comments and unbound variables remain forbidden. Captured transaction-variable names retain their separate restricted validation.
+
+`ExchangeAuthorityFence` preserves the real tenant API-key principal while locking
+an independently consenting participant's current watermark, owned wallet and exact
+UserExplicit swap grant. Its typed updates supply row locks; the raw assertions
+join that credential/participant boundary inside source commitment and egress.
+No synthetic participant credential or inferred tenant ownership is created.

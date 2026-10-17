@@ -872,12 +872,6 @@ public class ReconciliationServiceTests
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             Legs.Source.Verify(leg => leg.LockAsync(It.IsAny<BridgeLockRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.DeployContractAsync(
-                It.IsAny<byte[]>(), It.IsAny<string>(),
-                It.IsAny<Dictionary<string, object>?>(), It.IsAny<CancellationToken>()), Times.Never);
-            ProviderMock.Verify(p => p.CallContractAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(),
-                It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         public void Dispose() { /* no resources to release — all in-memory */ }

@@ -19,7 +19,7 @@ public sealed class HolonCloneNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<HolonCloneNodeConfig>(context.Node.Config, nameof(ActionNodeType.HolonClone), out var cfg, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         var r = await _holonManager.CloneAsync(cfg.HolonId, cfg.Request, context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);

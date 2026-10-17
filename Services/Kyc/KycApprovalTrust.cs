@@ -16,6 +16,9 @@ public static class KycApprovalTrust
 {
     public const string EnvelopeSchema = "azoa.kyc.approval-provenance/v1";
 
+    public static string? ReadPolicyVersion(string? envelope)
+        => TryReadEnvelope(envelope, out var provenance) ? provenance.PolicyVersion : null;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

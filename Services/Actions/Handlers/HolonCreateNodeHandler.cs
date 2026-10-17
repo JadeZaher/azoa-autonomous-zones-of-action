@@ -20,7 +20,7 @@ public sealed class HolonCreateNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<HolonCreateModel>(context.Node.Config, nameof(ActionNodeType.HolonCreate), out var model, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         var r = await _holonManager.CreateAsync(model, context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);

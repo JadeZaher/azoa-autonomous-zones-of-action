@@ -13,9 +13,9 @@ namespace AZOA.WebAPI.Tests.Kyc;
 public sealed class KycProviderConfigurationTests
 {
     [Fact]
-    public async Task GenericHosted_WithCompleteConfiguration_RemainsFailClosedScaffold()
+    public async Task GenericHosted_WithoutVersionedTrustContract_RemainsUnavailable()
     {
-        var provider = new GenericHostedKycProviderService(Options.Create(new KycSettings
+        var provider = AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Generic(Options.Create(new KycSettings
         {
             Provider = "hosted",
             Hosted = new HostedKycSettings
@@ -23,9 +23,7 @@ public sealed class KycProviderConfigurationTests
                 ProviderName = "example-verify",
                 BaseUrl = "https://verify.example",
                 ApiKey = "secret",
-                WebhookSecret = "webhook-secret",
-                SessionPath = "/sessions",
-                StatusPath = "/sessions/{sessionId}"
+                WebhookSecret = "webhook-secret"
             }
         }));
 
@@ -35,7 +33,7 @@ public sealed class KycProviderConfigurationTests
         capabilities.ProviderKey.Should().Be("example-verify");
         capabilities.Available.Should().BeFalse();
         capabilities.HostedVerification.Should().BeTrue();
-        capabilities.UnavailableReason.Should().Contain("not production-ready");
+        capabilities.UnavailableReason.Should().Contain("not fully configured");
         begin.IsError.Should().BeTrue();
     }
 

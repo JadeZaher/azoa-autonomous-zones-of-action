@@ -1,10 +1,12 @@
-﻿// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: UNLICENSED
 
 using System.Globalization;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Requests;
@@ -72,6 +74,7 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
     private readonly IValueRailProviderFactory _rails;
     private readonly ILogger<OnRampSettlementHandler> _logger;
     private readonly TimeProvider _clock;
+    private readonly IBlockchainOperationStore? _operations;
 
     public OnRampSettlementHandler(
         FiatOptions fiat,
@@ -85,7 +88,8 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         IRealValueKycGate kycGate,
         IValueRailProviderFactory rails,
         ILogger<OnRampSettlementHandler> logger,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IBlockchainOperationStore? operations = null)
     {
         _fiat = fiat ?? throw new ArgumentNullException(nameof(fiat));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -99,6 +103,7 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         _rails = rails ?? throw new ArgumentNullException(nameof(rails));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _clock = clock ?? TimeProvider.System;
+        _operations = operations;
     }
 
     /// <inheritdoc />
@@ -133,14 +138,17 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
 
         if (priorRead.Result is { } prior)
         {
+            if (prior.Environment != context.Environment.Name || prior.Environment != _fiat.ActiveEnvironment.Name)
+                return FiatEventOutcome.Failed;
             if (string.Equals(prior.Status, OnRampLotStatuses.Issued, StringComparison.Ordinal)
-                || string.Equals(prior.Status, OnRampLotStatuses.Reversed, StringComparison.Ordinal))
+                || string.Equals(prior.Status, OnRampLotStatuses.Reversed, StringComparison.Ordinal)
+                || prior.Status == OnRampLotStatuses.Refunded)
             {
                 // Credited once. A redelivery must never credit a second time.
                 return FiatEventOutcome.Applied;
             }
 
-            if (OnRampLotStatuses.NeedsOperator(prior.Status))
+            if (OnRampLotStatuses.NeedsOperator(prior.Status) || prior.Status == OnRampLotStatuses.RefundPending)
             {
                 // The provider is told to stop retrying, and the charge stays visible as a lot
                 // that says exactly why nothing was credited. Retrying instead would burn the
@@ -267,6 +275,8 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         }
 
         var definition = tokenState.Result.Definition;
+        if (priorRead.Result is { } previous && previous.ChainNetwork != definition.Network)
+            return FiatEventOutcome.Failed;
 
         // ── Claim the lot BEFORE anything else can fail ──
         // From here on every outcome is durable and visible: the row is the node's own record
@@ -424,6 +434,17 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         // operation_log record ids are the compact Guid form (SurrealBlockchainOperationStore
         // writes SurrealId.ToSurrealId); a dashed id would reference a row that does not exist.
         lot.OperationId = result.OperationId == Guid.Empty ? null : result.OperationId.ToString("N");
+        var operation = _operations is null || result.OperationId == Guid.Empty
+            ? null : await _operations.GetByIdAsync(result.OperationId, ct);
+        if (operation is null || operation.IsError || operation.Result is not { } confirmed
+            || confirmed.Status is not (OperationStatus.Completed or OperationStatus.Transferred)
+            || string.IsNullOrWhiteSpace(confirmed.Parameters.GetValueOrDefault("TxHash")))
+        {
+            lot.StatusReason = "The issuance awaits authoritative chain confirmation.";
+            lot.UpdatedAt = issuedAt;
+            await SaveAsync(lot, ct);
+            return FiatEventOutcome.AcceptedPending;
+        }
         lot.Status = OnRampLotStatuses.Issued;
         lot.StatusReason = null;
         lot.IssuedAt = issuedAt;
@@ -532,6 +553,8 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
             SourcePaymentIntentId = session.PaymentIntentId ?? context.PaymentIntentId,
             SourceChargeId = context.ChargeId,
             Status = OnRampLotStatuses.Pending,
+            Environment = context.Environment.Name,
+            ChainNetwork = definition.Network,
             AttemptCount = 1,
             Version = 0,
             CreatedAt = now,
@@ -548,6 +571,8 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         // A redelivery of a lot still Pending. Count the attempt and carry forward any provider
         // correlation the first delivery did not carry (a charge id arrives with later events).
         var existing = claimed.Result.Row;
+        if (existing.Status != OnRampLotStatuses.Pending)
+            return AZOAResult<OnRampLot>.Failure("The lot is no longer open for issuance.");
         existing.AttemptCount += 1;
         existing.SourceChargeId ??= context.ChargeId;
         existing.SourcePaymentIntentId ??= session.PaymentIntentId ?? context.PaymentIntentId;
@@ -555,9 +580,7 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
 
         var refreshed = await SaveAsync(existing, ct);
         return refreshed.IsError
-            // The attempt could not be counted. Treat the row as it stands rather than losing the
-            // whole delivery: the CAS loser is another live delivery of the same payment.
-            ? AZOAResult<OnRampLot>.Success(existing, "Claimed.")
+            ? AZOAResult<OnRampLot>.Failure(refreshed.Message)
             : AZOAResult<OnRampLot>.Success(refreshed.Result!, "Claimed.");
     }
 

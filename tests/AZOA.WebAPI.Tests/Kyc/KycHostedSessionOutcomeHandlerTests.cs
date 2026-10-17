@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Tests.Kyc;
 
 /// <summary>
 /// Identity and sanctions are separate facts. An adverse AML verdict must not rewrite
-/// the identity verdict, must not be disclosed, and must leave a review open — the
+/// the identity verdict, must not be disclosed, and must leave a review open â€” the
 /// recourse a false-positive name match depends on.
 /// </summary>
 public sealed class KycHostedSessionOutcomeHandlerTests
@@ -51,12 +51,13 @@ public sealed class KycHostedSessionOutcomeHandlerTests
         resumed.IsError.Should().BeFalse();
         _saved!.Status.Should().Be(KycStatus.APPROVED);
         _saved.RejectionReason.Should().BeNull("an AML finding is never disclosed on the ledger row");
-        _binding.Verify(binding => binding.BindAsync(
+        _binding.Verify(binding => binding.BindHostedAsync(
                 SubjectUserId,
                 TenantId,
                 KycProvider.IDENTOMAT,
                 ProviderKey,
                 It.IsAny<HostedSessionSubjectAttributes>(),
+                It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -104,7 +105,7 @@ public sealed class KycHostedSessionOutcomeHandlerTests
                 It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<CancellationToken>(), It.IsAny<string?>()))
             .ReturnsAsync(AZOAResult<KycScreeningResult>.Failure("screening provider unavailable"));
 
         var resumed = await NewHandler().ResumeAsync(session, ApprovedOutcome());
@@ -114,7 +115,76 @@ public sealed class KycHostedSessionOutcomeHandlerTests
         _saved.Should().BeNull();
     }
 
-    // ── Fixtures ───────────────────────────────────────────────────────────
+    // â”€â”€ Fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    [Theory]
+    [InlineData("session")]
+    [InlineData("provider")]
+    [InlineData("user")]
+    [InlineData("tenant")]
+    [InlineData("expired")]
+    [InlineData("terminal")]
+    public async Task StaleOrMismatchedAttempt_PerformsNoIdentityEffects(string mismatch)
+    {
+        var session = NewSession();
+        var submission = SeedActiveSubmission(session);
+        switch (mismatch)
+        {
+            case "session": submission.ProviderSessionId = Guid.NewGuid().ToString("N"); break;
+            case "provider": submission.ProviderKey = "other"; break;
+            case "user": submission.UserId = Guid.NewGuid().ToString("N"); break;
+            case "tenant": submission.TenantId = null; break;
+            case "expired": submission.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1); break;
+            case "terminal": submission.Status = KycStatus.REJECTED; break;
+        }
+
+        var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());
+
+        result.IsError.Should().Be(mismatch != "expired");
+        result.Result.Should().BeNull();
+        _binding.VerifyNoOtherCalls();
+        _screening.VerifyNoOtherCalls();
+        _saved.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task MissingAttempt_PerformsNoIdentityEffects()
+    {
+        _kycStore.Setup(store => store.GetActiveSubmissionAsync(
+                SubjectUserId, TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+
+        _kycStore.Setup(store => store.GetLatestSubmissionAsync(SubjectUserId, TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+        var result = await NewHandler().ResumeAsync(NewSession(), ApprovedOutcome());
+
+        result.IsError.Should().BeTrue();
+        _binding.VerifyNoOtherCalls();
+        _screening.VerifyNoOtherCalls();
+        _saved.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LostCompletionRace_DoesNotMutateTheObservedSubmission()
+    {
+        var session = NewSession();
+        var submission = SeedActiveSubmission(session);
+        var originalExpiry = submission.ExpiresAt;
+        SeedScreening(KycScreeningDecision.NO_HIT, false);
+        _kycStore.Setup(store => store.TryCompleteHostedAsync(
+                It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(), It.IsAny<KycStatus>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+
+        var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());
+
+        result.IsError.Should().BeFalse();
+        result.Result.Should().BeNull();
+        submission.Status.Should().Be(KycStatus.PENDING);
+        submission.ExpiresAt.Should().Be(originalExpiry);
+        _kycStore.Verify(store => store.UpsertSubmissionAsync(
+            It.IsAny<KycSubmission>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 
     private static HostedSession NewSession() => new()
     {
@@ -139,7 +209,7 @@ public sealed class KycHostedSessionOutcomeHandlerTests
         }
     };
 
-    private void SeedActiveSubmission(HostedSession session)
+    private KycSubmission SeedActiveSubmission(HostedSession session)
     {
         var submission = new KycSubmission
         {
@@ -150,18 +220,25 @@ public sealed class KycHostedSessionOutcomeHandlerTests
             ProviderKey = ProviderKey,
             ProviderSessionId = session.Id,
             Status = KycStatus.PENDING,
-            SubmittedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+            SubmittedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(25)
         };
         _kycStore.Setup(store => store.GetActiveSubmissionAsync(
                 SubjectUserId, TenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycSubmission>.Success(submission));
-        _kycStore.Setup(store => store.UpsertSubmissionAsync(
-                It.IsAny<KycSubmission>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((KycSubmission row, CancellationToken _) =>
+        _kycStore.Setup(store => store.TryCompleteHostedAsync(
+                It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(), It.IsAny<KycStatus>(), It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((KycSubmission row, HostedSession lease, KycStatus status, DateTimeOffset reviewed, DateTimeOffset? expiry, string? reason, CancellationToken _) =>
             {
+                row.Status = status;
+                row.ReviewedAt = reviewed;
+                row.ExpiresAt = expiry;
+                row.RejectionReason = reason;
                 _saved = row;
                 return AZOAResult<KycSubmission>.Success(row);
             });
+        return submission;
     }
 
     private void SeedScreening(KycScreeningDecision decision, bool resultsTruncated)
@@ -171,9 +248,10 @@ public sealed class KycHostedSessionOutcomeHandlerTests
                 It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<KycScreeningResult>.Success(new KycScreeningResult
+                It.IsAny<CancellationToken>(), It.IsAny<string?>()))
+            .ReturnsAsync((Guid user, Guid? tenant, string name, string? birthday, CancellationToken ct, string? lineageKey) => AZOAResult<KycScreeningResult>.Success(new KycScreeningResult
             {
+                LineageKey = lineageKey,
                 Id = Guid.NewGuid().ToString("N"),
                 SubjectUserId = SubjectUserId.ToString("N"),
                 TenantId = TenantId.ToString("N"),
@@ -187,23 +265,60 @@ public sealed class KycHostedSessionOutcomeHandlerTests
                 It.IsAny<Guid?>(),
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<KycScreeningMonitor>.Success(new KycScreeningMonitor
+                It.IsAny<CancellationToken>(), It.IsAny<string?>()))
+            .ReturnsAsync((Guid user, Guid? tenant, string name, string? birthday, CancellationToken ct, string? lineageKey) => AZOAResult<KycScreeningMonitor>.Success(new KycScreeningMonitor
             {
                 Id = Guid.NewGuid().ToString("N"),
-                ProviderMonitorId = "monitor-1"
+                ProviderMonitorId = "monitor-1", LineageKey = lineageKey
             }));
-        _binding.Setup(binding => binding.BindAsync(
+        _binding.Setup(binding => binding.BindHostedAsync(
                 It.IsAny<Guid>(),
                 It.IsAny<Guid?>(),
                 It.IsAny<KycProvider>(),
                 It.IsAny<string>(),
                 It.IsAny<HostedSessionSubjectAttributes>(),
+                It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<KycIdentity>.Success(new KycIdentity
             {
                 Id = Guid.NewGuid().ToString("N")
             }));
+    }
+
+    [Fact]
+    public async Task CallbackBeforeSubmission_IsRetryableAndLaterApprovalRetainsMonitoringLineage()
+    {
+        var session = NewSession();
+        _kycStore.Setup(store => store.GetActiveSubmissionAsync(SubjectUserId, TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+        _kycStore.Setup(store => store.GetLatestSubmissionAsync(SubjectUserId, TenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(null!));
+        (await NewHandler().ResumeAsync(session, ApprovedOutcome())).IsError.Should().BeTrue();
+        _saved.Should().BeNull();
+        SeedActiveSubmission(session);
+        SeedScreening(KycScreeningDecision.NO_HIT, false);
+        (await NewHandler().ResumeAsync(session, ApprovedOutcome())).IsError.Should().BeFalse();
+        _saved!.AmlLineageKey.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task MonitorRegistrationFailureLeavesApprovalRetryable()
+    {
+        var session = NewSession();
+        SeedActiveSubmission(session);
+        SeedScreening(KycScreeningDecision.NO_HIT, false);
+        _screening.Setup(service => service.RegisterMonitorAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<string>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>(), It.IsAny<string?>()))
+            .ReturnsAsync(AZOAResult<KycScreeningMonitor>.Failure("Temporarily unavailable"));
+
+        var result = await NewHandler().ResumeAsync(session, ApprovedOutcome());
+
+        result.IsError.Should().BeTrue();
+        _saved.Should().BeNull();
+        _kycStore.Verify(store => store.TryCompleteHostedAsync(It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(),
+            It.IsAny<KycStatus>(), It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset?>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private KycHostedSessionOutcomeHandler NewHandler() => new(

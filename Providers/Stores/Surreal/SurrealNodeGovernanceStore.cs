@@ -11,7 +11,6 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
 {
     private const string ParametersTable = NodeGovernanceParameters.SchemaNameConst;
-    private const string AuditTable = NodeGovernanceAudit.SchemaNameConst;
 
     private readonly ISurrealExecutor _executor;
 
@@ -37,6 +36,8 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
         long? expectedVersion,
         CancellationToken ct = default)
     {
+        if (parameters.Id != NodeGovernanceParameters.LocalId)
+            return AZOAResult<NodeGovernanceParameters>.Failure("Node governance policy must use the local singleton identity.");
         // raw: governance CAS and immutable audit append share one transaction.
         var readVersion = SurrealQuery
             .Of("LET $_versions = SELECT VALUE version FROM type::record($_pt, $_pid)")
@@ -48,31 +49,22 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
             .WithParam("_expect_existing", expectedVersion.HasValue)
             .WithParam("_expected", expectedVersion ?? 0L);
 
-        var upsertParameters = SurrealQuery
-            .Of("UPSERT type::record($_pt, $_pid) SET allowed_chains = (IF $_has_allowed_chains THEN $_allowed_chains ELSE NONE END), allowed_asset_types = (IF $_has_allowed_asset_types THEN $_allowed_asset_types ELSE NONE END), version = $_version, updated_by_user_id = $_actor, updated_at = $_updated_at RETURN AFTER")
-            .WithParam("_pt", ParametersTable)
-            .WithParam("_pid", NodeGovernanceParameters.LocalId)
-            .WithParam("_has_allowed_chains", parameters.AllowedChains is not null)
-            .WithParam("_allowed_chains", parameters.AllowedChains ?? Array.Empty<string>())
-            .WithParam("_has_allowed_asset_types", parameters.AllowedAssetTypes is not null)
-            .WithParam("_allowed_asset_types", parameters.AllowedAssetTypes ?? Array.Empty<string>())
-            .WithParam("_version", parameters.Version)
-            .WithParam("_actor", SurrealRecordParam.OfLink(parameters.UpdatedByUserId))
-            .WithParam("_updated_at", parameters.UpdatedAt);
-
-        var appendAudit = SurrealQuery
-            .Of("CREATE type::record($_at, $_aid) CONTENT $_audit RETURN AFTER")
-            .WithParam("_at", AuditTable)
-            .WithParam("_aid", audit.Id)
-            .WithParam("_audit", audit);
-
-        var atomic = SurrealQuery.Combine(
-            SurrealQuery.Of("BEGIN"),
-            readVersion,
-            enforceVersion,
-            upsertParameters,
-            appendAudit,
-            SurrealQuery.Of("COMMIT"));
+        var statements = new List<SurrealQuery>
+        {
+            SurrealQuery.Of("BEGIN"), NodeGovernancePolicyFence.Lock(), readVersion, enforceVersion,
+            SurrealGeneratedStatementScope.Apply(SurrealWriter.Upsert(parameters), "policy_write")
+        };
+        if (parameters.AllowedChains is null)
+            statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NodeGovernanceParameters>(NodeGovernanceParameters.LocalId)
+                .Unset(row => row.AllowedChains).Build(), "policy_chains"));
+        if (parameters.AllowedAssetTypes is null)
+            statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NodeGovernanceParameters>(NodeGovernanceParameters.LocalId)
+                .Unset(row => row.AllowedAssetTypes).Build(), "policy_assets"));
+        statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "policy_audit"));
+        var resultIndex = statements.Count;
+        statements.Add(SurrealQuery<NodeGovernanceParameters>.Key(NodeGovernanceParameters.LocalId));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        var atomic = SurrealQuery.Combine(statements.ToArray());
 
         try
         {
@@ -92,7 +84,7 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
                 return executed;
             }, ct);
 
-            var persisted = response.GetValues<NodeGovernanceParameters>(3).SingleOrDefault()
+            var persisted = response.GetValues<NodeGovernanceParameters>(resultIndex).SingleOrDefault()
                 ?? throw new InvalidOperationException("Governance parameters write returned no row.");
             return AZOAResult<NodeGovernanceParameters>.Success(persisted, "Saved.");
         }

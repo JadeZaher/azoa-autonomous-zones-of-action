@@ -9,7 +9,6 @@ using AZOA.WebAPI.Interfaces.Signing;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Base;
-using AZOA.WebAPI.Services.Custody;
 using Solnet.Programs;
 using Solnet.Rpc.Builders;
 using Solnet.Rpc.Models;
@@ -22,9 +21,9 @@ namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
 /// <summary>
 /// Solana blockchain provider using direct JSON-RPC calls, with a real SPL
-/// build→sign→submit→confirm pipeline. See Providers/Blockchain/Solana/AGENTS.md.
+/// build?sign?submit?confirm pipeline. See Providers/Blockchain/Solana/AGENTS.md.
 /// </summary>
-public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISolanaSPLModule
+public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISolanaSPLModule, INftTransactionModule, INftProtocolCostModule, IValueTransferTransactionModule
 {
     /// <summary>Raw Solana secret length (32-byte Ed25519 seed ++ 32-byte public key).</summary>
     private const int SolanaSecretKeyLength = 64;
@@ -116,7 +115,10 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         ITransactionSignerFactory? signerFactory,
         IKeyCustodyService? custodyService,
         IServiceScopeFactory? custodyScopeFactory,
-        HttpMessageHandler? httpMessageHandler)
+        HttpMessageHandler? httpMessageHandler,
+        AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore? wttPreparationStore = null,
+        AZOA.WebAPI.Services.Wormhole.WttStageKeyVault? wttStageKeyVault = null,
+        AZOA.WebAPI.Services.Wormhole.WttProofVerifier? wttProofVerifier = null)
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
@@ -124,6 +126,9 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         _custodyService = custodyService;
         _custodyScopeFactory = custodyScopeFactory;
         _httpMessageHandler = httpMessageHandler;
+        _wttPreparationStore = wttPreparationStore;
+        _wttStageKeyVault = wttStageKeyVault;
+        _wttProofVerifier = wttProofVerifier;
 
         _confirmationPollAttempts = config.GetValue<int?>(ConfirmationPollAttemptsConfigPath) ?? 10;
         _confirmationPollDelayMs = config.GetValue<int?>(ConfirmationPollDelayMsConfigPath) ?? 1000;
@@ -161,15 +166,9 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         return client;
     }
 
-    // ─── Faucet (dev / test networks only) ───
+    // --- Faucet (dev / test networks only) ---
 
-    /// <summary>
-    /// Solana top-up is performed CLIENT-side via the RPC airdrop
-    /// (<c>requestAirdrop</c>) — the frontend handles it. The provider only
-    /// acknowledges: no server-side broadcast, so the tx hash is null and
-    /// <see cref="FaucetDispenseResult.IsClientSide"/> is true. The caller still
-    /// enforces the mainnet guard upstream.
-    /// </summary>
+    /// <inheritdoc/>
     public override Task<AZOAResult<FaucetDispenseResult>> DispenseFromFaucetAsync(
         string toAddress, decimal amount, string? idempotencyKey = null, CancellationToken ct = default)
     {
@@ -204,13 +203,9 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             safety: RetrySafety.Idempotent);
     }
 
-    // ─── Account / Wallet ───
+    // --- Account / Wallet ---
 
-    /// <summary>
-    /// Native SOL balance (decimal SOL) or, when <paramref name="tokenId"/> is an SPL
-    /// mint address, the owner's total holding of that mint in BASE UNITS (the same
-    /// unit <see cref="TransferAsync"/> / <see cref="BurnAsync"/> take).
-    /// </summary>
+    /// <inheritdoc/>
     public override async Task<AZOAResult<string>> GetBalanceAsync(
         string address, string? tokenId = null, CancellationToken ct = default)
     {
@@ -255,7 +250,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(total.ToString(), $"Retrieved {total} base units of SPL token {tokenId} for {address}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<string>($"Balance fetch failed: {ex.Message}", ex);
         }
@@ -278,21 +273,15 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(true, "Valid Solana address — confirmed on network");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return new AZOAResult<bool> { IsError = true, Result = false, Message = $"Validation failed: {ex.Message}" };
         }
     }
 
-    // ─── Token / Asset Lifecycle ───
+    // --- Token / Asset Lifecycle ---
 
-    /// <summary>
-    /// Creates a new SPL mint owned by <paramref name="walletAddress"/> and mints
-    /// <paramref name="amount"/> base units into that address' associated token
-    /// account, in one atomic transaction. Returns the real mint address once
-    /// confirmed. <paramref name="tokenUri"/> is NOT written on chain (SPL has no
-    /// metadata field; Metaplex metadata is a separate, unimplemented step).
-    /// </summary>
+    /// <inheritdoc/>
     public override async Task<AZOAResult<string>> MintAsync(
         string tokenUri, RailAmount amount, string assetType, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
@@ -366,11 +355,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             $"{baseUnits} base units credited to {destination.Key}.{uriNote}");
     }
 
-    /// <summary>
-    /// Burns <paramref name="amount"/> base units of SPL mint <paramref name="tokenId"/>
-    /// from <paramref name="walletAddress"/>' associated token account. The holder is
-    /// the burn authority and the fee payer, so the signer's key must be that holder.
-    /// </summary>
+    /// <inheritdoc/>
     public override async Task<AZOAResult<string>> BurnAsync(
         string tokenId, RailAmount amount, string walletAddress,
         SigningContext? signingContext = null, CancellationToken ct = default)
@@ -406,12 +391,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             ct);
     }
 
-    /// <summary>
-    /// Transfers <paramref name="amount"/> base units of SPL mint
-    /// <paramref name="tokenId"/> between the associated token accounts of two OWNER
-    /// addresses, creating the recipient's ATA in the same transaction when it does
-    /// not exist yet. <paramref name="fromAddress"/> is the authority and fee payer.
-    /// </summary>
+    /// <inheritdoc/>
     public override async Task<AZOAResult<string>> TransferAsync(
         string tokenId, string fromAddress, string toAddress, RailAmount amount,
         SigningContext? signingContext = null, CancellationToken ct = default)
@@ -480,40 +460,48 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             "Swap on Solana requires DEX integration (Jupiter/Raydium AMM). Not yet implemented."));
     }
 
-    // ─── Query / Metadata ───
+    // --- Query / Metadata ---
 
+    /// <inheritdoc/>
     public override async Task<AZOAResult<Dictionary<string, object>>> GetTokenMetadataAsync(
         string tokenId, CancellationToken ct = default)
     {
-        try
+        PublicKey mint;
+        try { mint = new PublicKey(tokenId); }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        { return Error<Dictionary<string, object>>("A valid Solana mint address is required."); }
+        var response = await RpcReadAsync<SolanaTokenSupplyResult>("getTokenSupply", [mint.Key, new { commitment = "finalized" }], ct);
+        if (response.Error is not null)
+            return Error<Dictionary<string, object>>($"Token supply is unavailable: {response.Error.Message}");
+        var supply = response.Result?.Value;
+        if (supply is null || !AZOA.WebAPI.Helpers.UInt64Text.TryParse(supply.Amount, out _)
+            || supply.Decimals is not { } decimals || decimals is < 0 or > 255)
+            return Error<Dictionary<string, object>>("Token supply is missing or malformed.");
+        var result = new Dictionary<string, object>
         {
-            if (string.IsNullOrWhiteSpace(tokenId))
-                return Error<Dictionary<string, object>>("Token ID (mint address) is required");
-
-            var supplyResp = await RpcReadAsync<SolanaTokenSupplyResult>("getTokenSupply", new object[] { tokenId }, ct);
-            if (supplyResp.Error != null)
-                return Error<Dictionary<string, object>>($"Token not found: {supplyResp.Error.Message}");
-
-            var supply = supplyResp.Result?.Value;
-            var meta = new Dictionary<string, object>
-            {
-                ["chain"] = "Solana",
-                ["mintAddress"] = tokenId,
-                ["totalSupply"] = supply?.Amount ?? "0",
-                ["decimals"] = supply?.Decimals ?? 0,
-                ["uiAmount"] = supply?.UiAmountString ?? "0",
-                ["tokenType"] = "SPL Token",
-                ["fetchedAt"] = DateTime.UtcNow
-            };
-
-            return Ok(meta, "Token metadata retrieved");
-        }
-        catch (Exception ex)
-        {
-            return Error<Dictionary<string, object>>($"Metadata fetch failed: {ex.Message}", ex);
-        }
+            ["chain"] = "Solana", ["mintAddress"] = mint.Key, ["totalSupply"] = supply.Amount!,
+            ["decimals"] = decimals, ["tokenType"] = "SPL Token", ["fetchedAt"] = DateTimeOffset.UtcNow,
+        };
+        if (supply.UiAmountString is not null) result["uiAmount"] = supply.UiAmountString;
+        var metadataAddress = SolanaNftMetadata.Metadata(mint);
+        var account = await ReadNativeAccountAsync(metadataAddress.Key, ct);
+        result["metadataPresent"] = account is not null;
+        if (account is null) return Ok(result, "Mint supply retrieved; no Metaplex metadata account exists.");
+        if (account.Owner != SolanaNftMetadata.Program.Key || account.Executable)
+            return Error<Dictionary<string, object>>("Metadata account has the wrong program owner or role.");
+        SolanaNativeMetadata.Value metadata;
+        try { metadata = SolanaNativeMetadata.Read(account.Data); }
+        catch (Exception exception) when (exception is InvalidDataException or EndOfStreamException or FormatException or ArgumentException)
+        { return Error<Dictionary<string, object>>("Metaplex metadata account is malformed."); }
+        if (metadata.Mint != mint.Key)
+            return Error<Dictionary<string, object>>("Metadata account describes another mint.");
+        result["metadataAddress"] = metadataAddress.Key;
+        result["name"] = metadata.Name; result["symbol"] = metadata.Symbol; result["uri"] = metadata.Uri;
+        result["updateAuthority"] = metadata.Authority; result["isMutable"] = metadata.Mutable;
+        result["sellerFeeBasisPoints"] = metadata.Royalty; result["primarySaleHappened"] = metadata.PrimarySale;
+        if (metadata.Creators is not null) result["creators"] = metadata.Creators;
+        return Ok(result, "Mint supply and on-chain Metaplex metadata retrieved.");
     }
-
     public override async Task<AZOAResult<List<Dictionary<string, object>>>> GetTokensByOwnerAsync(
         string ownerAddress, CancellationToken ct = default)
     {
@@ -548,19 +536,13 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(tokens, $"Retrieved {tokens.Count} SPL tokens for {ownerAddress}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<List<Dictionary<string, object>>>($"Token fetch failed: {ex.Message}", ex);
         }
     }
 
-    /// <summary>
-    /// Confirmed-transaction lookup. A transaction the cluster has not (yet) recorded
-    /// is an ERROR result, never a success payload: <c>ChainTxClassifier</c> maps an
-    /// errored probe to <c>Unknown</c> ("park, do not act"), whereas a success payload
-    /// with no <c>meta.err</c> would read as CONFIRMED and could settle a tx that
-    /// never landed.
-    /// </summary>
+    /// <inheritdoc/>
     public override async Task<AZOAResult<Dictionary<string, object>>> GetTransactionStatusAsync(
         string txHash, CancellationToken ct = default)
     {
@@ -593,27 +575,13 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(status, "Transaction status retrieved");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<Dictionary<string, object>>($"Status fetch failed: {ex.Message}", ex);
         }
     }
 
-    public override Task<AZOAResult<string>> DeployContractAsync(
-        byte[] contractCode, string walletAddress,
-        Dictionary<string, object>? args = null, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>(
-            "Solana program deployment requires BPF compilation and client-side signing. Not yet implemented."));
-    }
 
-    public override Task<AZOAResult<object>> CallContractAsync(
-        string contractAddress, string method, Dictionary<string, object> args,
-        string walletAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<object>(
-            "Solana program calls require client-side signing. Not yet implemented."));
-    }
 
     public override async Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
         CancellationToken ct = default)
@@ -636,13 +604,13 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(info, "Chain info retrieved");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<Dictionary<string, object>>($"Chain info failed: {ex.Message}", ex);
         }
     }
 
-    // ─── Cross-Chain Bridge ───
+    // --- Cross-Chain Bridge ---
     // Solana implements NEITHER IBridgeSourceLeg NOR IBridgeTargetLeg, and that absence
     // is the whole refusal: no reviewed Solana bridge lifecycle exists — no proof that a
     // configured vault is controlled by the signing key, and no wrapped-asset
@@ -651,75 +619,11 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     // refusal body here that could ever regress into a fabricated success.
     //
     // This is NOT a signer problem. SolanaTransactionSigner is genuinely complete; what
-    // is missing is the provider-side SPL build→submit pipeline and the reviewed bridge
+    // is missing is the provider-side SPL build?submit pipeline and the reviewed bridge
     // lifecycle on top of it. The plain SPL transfer/mint/burn surface is real and
     // unaffected. See Providers/Blockchain/AGENTS.md §bridge.
 
-    // ─── ISolanaMetaplexModule ───
-
-    /// <summary>FAIL-CLOSED: Metaplex Token Metadata instruction building is not implemented.</summary>
-    public Task<AZOAResult<string>> CreateMetadataAccountAsync(
-        string mint, string name, string symbol, string uri,
-        int sellerFeeBasisPoints, string walletAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>(
-            $"Metaplex metadata account creation is not implemented for mint {mint}: the provider "
-            + "builds no Token Metadata program instruction. Refusing to return a synthetic id for "
-            + "an account that was never created."));
-    }
-
-    /// <summary>FAIL-CLOSED: Metaplex Token Metadata instruction building is not implemented.</summary>
-    public Task<AZOAResult<bool>> UpdateMetadataAsync(
-        string mint, string? newUri, string? newName, string walletAddress, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<bool>(
-            $"Metaplex metadata update is not implemented for mint {mint}: the provider builds no "
-            + "Token Metadata program instruction. Refusing to report an update that never happened."));
-    }
-
-    // ─── ISolanaSPLModule ───
-
-    /// <summary>
-    /// Returns the owner's associated token account for the mint when it already
-    /// exists. Creation is refused here (this seam carries no signing context);
-    /// <see cref="TransferAsync"/> creates the recipient ATA as part of the transfer.
-    /// </summary>
-    public async Task<AZOAResult<string>> CreateTokenAccountAsync(
-        string mint, string owner, CancellationToken ct = default)
-    {
-        if (!TryParsePublicKey(mint, out var mintKey))
-            return Error<string>("A valid SPL mint address (base58) is required");
-        if (!TryParsePublicKey(owner, out var ownerKey))
-            return Error<string>("A valid Solana owner address (base58) is required");
-
-        var ata = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(ownerKey, mintKey);
-        if (ata is null)
-            return Error<string>($"Failed to derive the associated token account of {ownerKey.Key} for mint {mintKey.Key}");
-
-        var exists = await AccountExistsAsync(ata, ct);
-        if (exists.IsError)
-            return Error<string>(exists.Message, exists.Exception);
-
-        if (exists.Result)
-            return Ok(ata.Key, $"Associated token account {ata.Key} already exists for owner {ownerKey.Key}, mint {mintKey.Key}.");
-
-        return Error<string>(
-            $"Associated token account {ata.Key} does not exist for owner {ownerKey.Key}, mint {mintKey.Key}, and "
-            + "cannot be created here: this capability carries no signing context or fee payer. "
-            + "TransferAsync creates a missing recipient account as part of the transfer.");
-    }
-
-    /// <summary>FAIL-CLOSED: closing a token account needs a signing context this seam does not carry.</summary>
-    public Task<AZOAResult<string>> CloseTokenAccountAsync(
-        string tokenAccount, string owner, CancellationToken ct = default)
-    {
-        return Task.FromResult(Error<string>(
-            $"SPL token account closure is not implemented for {tokenAccount}: this capability carries "
-            + "no signing context or rent destination, so the provider cannot build, sign, or submit the "
-            + "close instruction. Refusing to return a synthetic id for an account that is still open."));
-    }
-
-    // ─── Build → sign → submit → confirm orchestration ───
+    // --- Build ? sign ? submit ? confirm orchestration ---
 
     /// <summary>
     /// Canonical transact pipeline for a value-moving SPL op that reports its real
@@ -777,7 +681,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             if (string.IsNullOrWhiteSpace(blockhash))
                 return Error<ConfirmedSolanaTxn>($"Failed to fetch a recent blockhash to {opLabel}: the cluster returned none.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<ConfirmedSolanaTxn>($"Failed to fetch a recent blockhash to {opLabel}: {ex.Message}", ex);
         }
@@ -796,7 +700,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             canonicalMessage = builder.CompileMessage();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<ConfirmedSolanaTxn>($"Failed to build the transaction to {opLabel}: {ex.Message}", ex);
         }
@@ -808,7 +712,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         {
             signResult = await SignViaCustodyAsync(canonicalMessage, opLabel, signingContext);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<ConfirmedSolanaTxn>($"Failed to sign the transaction to {opLabel}: {ex.Message}", ex);
         }
@@ -845,7 +749,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
                 ct: ct,
                 safety: RetrySafety.Broadcast);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<ConfirmedSolanaTxn>(
                 $"Broadcast failed to {opLabel} (tx {txSignature}); reconcile against chain truth before re-sending: {ex.Message}", ex);
@@ -933,13 +837,13 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(Encoders.Base58.EncodeData(signature));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<string>($"the signed Solana transaction could not be decoded to read its signature: {ex.Message}", ex);
         }
     }
 
-    // ─── Custody / signing seam ───
+    // --- Custody / signing seam ---
 
     /// <summary>
     /// Resolves the signing key through the audited custody choke point and returns
@@ -953,7 +857,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         {
             // Fail closed on a wrong-shaped key rather than handing it to the signer:
             // the message names the ACTUAL cause, which for a platform op today is that
-            // the shared custody platform door is Algorand-shaped.
+            // custody returned an incompatible key representation.
             if (keyBytes is null || keyBytes.Length != SolanaSecretKeyLength)
                 return Task.FromResult(Error<byte[]>(WrongShapedKeyMessage(opLabel, ctx, keyBytes?.Length ?? 0)));
 
@@ -1022,7 +926,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             // secret. Cloned into a buffer this method owns so it can be zeroed.
             key = (byte[])new SolanaWallet(mnemonic.Trim(), WordList.English).Account.PrivateKey.KeyBytes.Clone();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             // Never echo the mnemonic or key bytes.
             return Error<byte[]>($"Cannot {opLabel}: the configured Solana platform mnemonic could not be imported.", ex);
@@ -1041,11 +945,8 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
     private string WrongShapedKeyMessage(string opLabel, SigningContext ctx, int actualLength)
     {
         var cause = ctx.IsPlatform
-            ? $"the shared custody platform door resolves an Algorand-format key from "
-              + $"'{KeyCustodyService.PlatformMnemonicConfigPath}'; a Solana platform op needs a "
-              + $"chain-aware platform key (see '{PlatformMnemonicConfigPath}')"
-            : "the resolved wallet does not hold a Solana secret — check that the wallet's chain matches this provider";
-
+            ? "the configured platform custody key has the wrong Solana representation"
+            : "the selected wallet key has the wrong Solana representation";
         return $"Cannot {opLabel}: the resolved signing key is {actualLength} bytes, not the "
             + $"{SolanaSecretKeyLength}-byte Solana secret — {cause}. Refusing to sign with a mismatched key.";
     }
@@ -1066,7 +967,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         return outer.Result;
     }
 
-    // ─── Chain reads used by the pipeline ───
+    // --- Chain reads used by the pipeline ---
 
     /// <summary>True when an account exists on the cluster; an unreadable probe is an error, never "missing".</summary>
     private async Task<AZOAResult<bool>> AccountExistsAsync(PublicKey account, CancellationToken ct)
@@ -1083,7 +984,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(response.Result?.Value is not null);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<bool>($"Could not read account {account.Key}: {ex.Message}", ex);
         }
@@ -1097,12 +998,12 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             if (response.Error != null)
                 return Error<int>($"Could not read the decimals of mint {mint.Key}: {response.Error.Message}");
 
-            if (response.Result?.Value is null)
+            if (response.Result?.Value?.Decimals is not { } decimals || decimals is < 0 or > 255)
                 return Error<int>($"Could not read the decimals of mint {mint.Key}: the cluster returned no supply record.");
 
-            return Ok(response.Result.Value.Decimals);
+            return Ok(decimals);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<int>($"Could not read the decimals of mint {mint.Key}: {ex.Message}", ex);
         }
@@ -1122,13 +1023,13 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
             return Ok(response.Result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or ArgumentException or FormatException or InvalidDataException or OverflowException)
         {
             return Error<ulong>($"Could not read the rent-exempt minimum for a {dataSize}-byte account: {ex.Message}", ex);
         }
     }
 
-    // ─── Address helpers ───
+    // --- Address helpers ---
 
     /// <summary>Parses a base58 Solana address, failing closed on anything that is not a 32-byte key.</summary>
     private static bool TryParsePublicKey(string? address, out PublicKey publicKey)
@@ -1148,7 +1049,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
             publicKey = new PublicKey(decoded);
             return true;
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
         {
             return false;
         }
@@ -1159,7 +1060,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
 
     private sealed record ConfirmedSolanaTxn(string Signature, long Slot, bool PendingConfirmation);
 
-    // ─── Solana JSON-RPC DTOs ───
+    // --- Solana JSON-RPC DTOs ---
 
     private class SolanaRpcRequest
     {
@@ -1257,7 +1158,7 @@ public class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexModule, ISo
         [System.Text.Json.Serialization.JsonPropertyName("amount")]
         public string? Amount { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("decimals")]
-        public int Decimals { get; set; }
+        public int? Decimals { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("uiAmount")]
         public decimal? UiAmount { get; set; }
         [System.Text.Json.Serialization.JsonPropertyName("uiAmountString")]

@@ -44,6 +44,11 @@ internal static class SurrealTestSchema
     /// </summary>
     public static async Task BootstrapWithExtraAsync(string testNamespace, string? extraDdl, params string[] tableGoldenNames)
     {
+        var tables = tableGoldenNames.ToHashSet(StringComparer.Ordinal);
+        if (tables.Contains("holon") || tables.Contains("wallet")) tables.Add("local_entity_mutation_lock");
+        if (tables.Contains("node_governance_parameters")) tables.Add("node_governance_policy_lock");
+        if (tables.Overlaps(["kyc_submission", "kyc_identity", "kyc_screening_result", "kyc_screening_monitor",
+                "hosted_provider_attempt", "hosted_provider_callback"])) tables.Add("kyc_authority_guard");
         var credentials = Convert.ToBase64String(
             System.Text.Encoding.UTF8.GetBytes($"{SurrealTestDefaults.User}:{SurrealTestDefaults.Password}"));
 
@@ -63,7 +68,7 @@ internal static class SurrealTestSchema
         var batch = new StringBuilder();
         batch.AppendLine("DEFINE DATABASE IF NOT EXISTS test;");
         batch.AppendLine("USE DB test;");
-        foreach (var table in tableGoldenNames)
+        foreach (var table in tables)
         {
             var path = Path.Combine(schemaDir, table + ".surql");
             if (!File.Exists(path))

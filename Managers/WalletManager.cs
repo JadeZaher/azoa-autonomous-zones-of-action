@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Signing;
@@ -23,6 +24,7 @@ public class WalletManager : IWalletManager
     private readonly IConfiguration _config;
     private readonly IHostEnvironment? _environment;
     private readonly BlockchainConfigurationManager _blockchainConfig;
+    private readonly Func<Guid> _entityId;
 
     /// <param name="environment">
     /// Host environment the custody predicate reads. Optional so the manager can be
@@ -35,7 +37,8 @@ public class WalletManager : IWalletManager
         IBlockchainProviderFactory chainFactory,
         WalletKeyService keyService,
         IConfiguration config,
-        IHostEnvironment? environment = null)
+        IHostEnvironment? environment = null,
+        Func<Guid>? entityId = null)
     {
         _walletStore = walletStore;
         _holonStore = holonStore;
@@ -44,6 +47,7 @@ public class WalletManager : IWalletManager
         _config = config;
         _environment = environment;
         _blockchainConfig = new BlockchainConfigurationManager(config);
+        _entityId = entityId ?? Guid.NewGuid;
     }
 
     public async Task<AZOAResult<IWallet>> GetAsync(Guid id, Guid userId, AZOARequest? request = null)
@@ -77,8 +81,9 @@ public class WalletManager : IWalletManager
     {
         // Address uniqueness per chain
         var all = await _walletStore.GetAllAsync(default);
+        if (all.IsError || all.Result is null) return AZOAResult<IWallet>.Failure(all.Message);
         var existing = all.Result?.FirstOrDefault(w =>
-            w.Address.Equals(model.Address, StringComparison.OrdinalIgnoreCase) &&
+            ChainAddressIdentity.Equivalent(model.ChainType, w.Address, model.Address) &&
             w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase));
 
         if (existing != null)
@@ -86,6 +91,7 @@ public class WalletManager : IWalletManager
 
         var wallet = new Wallet
         {
+            Id = _entityId(),
             UserId = userId,
             ChainType = model.ChainType,
             Address = model.Address,
@@ -453,20 +459,7 @@ public class WalletManager : IWalletManager
 
         try
         {
-            var (publicKey, privateKeyHex, address) = _keyService.GenerateCustodialKeypair(chainType);
-            var candidate = new Wallet
-            {
-                Id = walletId,
-                UserId = userId,
-                ChainType = chainType,
-                Address = address,
-                PublicKey = publicKey,
-                Label = string.IsNullOrWhiteSpace(model.Label) ? $"{chainType} custodial wallet" : model.Label,
-                IsDefault = model.IsDefault,
-                WalletType = WalletType.Platform,
-                EncryptedPrivateKey = _keyService.EncryptPrivateKey(privateKeyHex),
-                EncryptedSeedPhrase = null
-            };
+            var candidate = CreateBootstrapCandidate(model, userId, chainType, walletId);
 
             var created = await _walletStore.CreateIfAbsentAsync(candidate, default);
             if (created.IsError || created.Result is null)
@@ -481,6 +474,38 @@ public class WalletManager : IWalletManager
         {
             return AZOAResult<IWallet>.Failure(ex.Message);
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IWallet>> BootstrapTenantWalletAsync(WalletGenerateRequest model, Guid userId,
+        string externalUserId, SigningConsentWitness authority, CancellationToken ct = default)
+    {
+        var custody = CustodyModeResolver.Resolve(_config, _environment);
+        if (!custody.Available) return AZOAResult<IWallet>.Failure($"{WalletCustodyUnavailable}{custody.UnavailableReason}");
+        var chain = WalletBootstrapIdentity.CanonicalChain(model.ChainType);
+        if (userId == Guid.Empty || chain is null) return AZOAResult<IWallet>.Failure("A valid child and chain are required.");
+        var id = WalletBootstrapIdentity.For(userId, chain);
+        var existing = await _walletStore.GetByIdAsync(id, ct);
+        if (existing.IsError && existing.Message != "Wallet not found.") return existing;
+        try
+        {
+            var candidate = existing.Result ?? CreateBootstrapCandidate(model, userId, chain, id);
+            var saved = await _walletStore.BootstrapTenantAsync(candidate, externalUserId, authority, ct);
+            return saved.IsError || saved.Result is null ? saved : ValidateBootstrapWallet(saved.Result, userId, chain);
+        }
+        catch (NotSupportedException exception) { return AZOAResult<IWallet>.Failure(exception.Message); }
+    }
+
+    private Wallet CreateBootstrapCandidate(WalletGenerateRequest model, Guid userId, string chainType, Guid walletId)
+    {
+        var (publicKey, privateKeyHex, address) = _keyService.GenerateCustodialKeypair(chainType);
+        return new Wallet
+        {
+            Id = walletId, UserId = userId, ChainType = chainType, Address = address, PublicKey = publicKey,
+            Label = string.IsNullOrWhiteSpace(model.Label) ? $"{chainType} custodial wallet" : model.Label,
+            IsDefault = model.IsDefault, WalletType = WalletType.Platform,
+            EncryptedPrivateKey = _keyService.EncryptPrivateKey(privateKeyHex), EncryptedSeedPhrase = null,
+        };
     }
 
     private static AZOAResult<IWallet> ValidateBootstrapWallet(IWallet wallet, Guid userId, string chainType)

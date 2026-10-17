@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -85,6 +86,9 @@ public sealed class RiskHoldDispatchSeamTests
         public IFiatReversalLedger? Ledger { get; init; }
 
         /// <summary>The legacy seam. The ledger is supplied by NAME, never by position.</summary>
+        private InMemoryActionWorkflowAdmissionStore? _admission;
+        private InMemoryActionWorkflowAdmissionStore Admission => _admission ??= new(RunStore, ExecutionStore, SagaStore);
+
         public ActionManager NewManager() => new(
             ActionStore, RunStore, ExecutionStore,
             new ActionDagValidator(), new ActionDagExecutabilityValidator(),
@@ -92,7 +96,7 @@ public sealed class RiskHoldDispatchSeamTests
             SagaStore, WalletManager,
             BlockchainProviderFactoryFakes.Returning(),
             BindingResolverFakes.PassThrough(),
-            accountPauseLedger: Ledger);
+            accountPauseLedger: Ledger, workflowAdmission: Admission);
 
         /// <summary>
         /// The durable seam. The ledger is REGISTERED IN THE CONTAINER rather than handed to the
@@ -107,6 +111,7 @@ public sealed class RiskHoldDispatchSeamTests
             services.AddSingleton<IActionStore>(ActionStore);
             services.AddSingleton<IActionRunStore>(RunStore);
             services.AddSingleton<IActionNodeExecutionStore>(ExecutionStore);
+            services.AddSingleton<IActionWorkflowAdmissionStore>(Admission);
             services.AddSingleton<IActionNodeHandlerRegistry>(
                 new ActionNodeHandlerRegistry(new[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
@@ -241,8 +246,11 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = handler, Ledger = ledger.Object };
         var action = BuildLinearAction(h, ActionNodeType.Transfer, "Transfer");
 
-        var run = await h.NewManager().ExecuteAsync(action.Id, PayerId);
+        var run = await h.NewManager().ExecuteAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         run.IsError.Should().BeFalse(run.Message);
+        var (legacyProcessor, legacyScope) = h.NewProcessor();
+        await h.PumpAsync(legacyProcessor);
+        legacyScope.Dispose();
 
         var exec = h.ExecutionFor(run.Result!.Id, action.Nodes[0].Id);
         exec.State.Should().Be(ActionNodeState.Failed);
@@ -259,8 +267,11 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = handler, Ledger = ClearLedger().Object };
         var action = BuildLinearAction(h, ActionNodeType.Transfer, "Transfer");
 
-        var run = await h.NewManager().ExecuteAsync(action.Id, PayerId);
+        var run = await h.NewManager().ExecuteAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         run.IsError.Should().BeFalse(run.Message);
+        var (legacyProcessor, legacyScope) = h.NewProcessor();
+        await h.PumpAsync(legacyProcessor);
+        legacyScope.Dispose();
 
         h.ExecutionFor(run.Result!.Id, action.Nodes[0].Id)
             .State.Should().Be(ActionNodeState.Succeeded);
@@ -274,8 +285,11 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = handler, Ledger = UnreadableLedger().Object };
         var action = BuildLinearAction(h, ActionNodeType.Transfer, "Transfer");
 
-        var run = await h.NewManager().ExecuteAsync(action.Id, PayerId);
+        var run = await h.NewManager().ExecuteAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         run.IsError.Should().BeFalse(run.Message);
+        var (legacyProcessor, legacyScope) = h.NewProcessor();
+        await h.PumpAsync(legacyProcessor);
+        legacyScope.Dispose();
 
         var exec = h.ExecutionFor(run.Result!.Id, action.Nodes[0].Id);
         exec.State.Should().Be(ActionNodeState.Failed);
@@ -296,7 +310,7 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = handler, Ledger = FlaggedLedger().Object };
         var action = BuildLinearAction(h, ActionNodeType.Transfer, "Transfer");
 
-        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId);
+        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
 
         var (processor, scope) = h.NewProcessor();
@@ -318,7 +332,7 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = handler, Ledger = ClearLedger().Object };
         var action = BuildLinearAction(h, ActionNodeType.Transfer, "Transfer");
 
-        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId);
+        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
 
         var (processor, scope) = h.NewProcessor();
@@ -337,7 +351,7 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = handler, Ledger = UnreadableLedger().Object };
         var action = BuildLinearAction(h, ActionNodeType.Transfer, "Transfer");
 
-        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId);
+        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
 
         var (processor, scope) = h.NewProcessor();
@@ -364,7 +378,7 @@ public sealed class RiskHoldDispatchSeamTests
         var h = new Harness { NodeHandler = node, Ledger = ledger.Object };
         var action = BuildLinearAction(h, ActionNodeType.Condition, "A", "B", "C");
 
-        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId);
+        var start = await h.NewManager().StartWorkflowRunAsync(action.Id, PayerId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
 
         var (processor, scope) = h.NewProcessor();

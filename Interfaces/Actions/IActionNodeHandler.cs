@@ -20,6 +20,9 @@ public interface IActionNodeHandler
     /// <summary>The single node type this handler dispatches.</summary>
     ActionNodeType NodeType { get; }
 
+    /// <summary>Returns required signing scopes from resolved input, empty for no signing, or null for unsupported intent.</summary>
+    IReadOnlyList<string>? ResolveSigningScopes(ActionNode node) => AZOA.WebAPI.Helpers.ActionSigningScopes.Required(NodeType, node.Config);
+
     /// <summary>
     /// True if this node moves value and therefore needs a settlement capability on
     /// the rail it lands on. The engine refuses to run such a node pre-execution when

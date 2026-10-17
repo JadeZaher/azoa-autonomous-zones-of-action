@@ -1,47 +1,48 @@
 ---
 type: Directory Notes
 title: Services/Users
-description: Why the user-NFT mint seam is two-party, and what a soulbound row does and does not mean.
-tags: [services, credential-third-party-issuance_20260906]
+description: Durable NFT lifecycle, issuer provenance, fee consent, and participant recovery.
+tags: [nft, credential, platform-stub-closeout]
 ---
 
-# Services/Users
+# NFT lifecycle
 
-## `UserNFTService` — the mint seam (D41)
+`NftLifecycleService` is the single mutation path used by both NFT controllers, legacy managers, credential issuance/revocation, and action adapters. Request identity includes authenticated tenant, actor, operation and key. The immutable request records issuer, participants, wallets, policy, and quote before any signing. Imported token identifiers cannot create issuance authority. Completed chain evidence commits the unique network-aware asset authority and application ownership together; arbitrary legacy ownership rows confer neither issuer nor access authority.
 
-There are **two** mint entry points and the difference between them is the whole
-credential rail:
+Preparation persists exact signed bytes, transaction identity, protocol identity and provider recovery metadata before the Submitted CAS allows transport. Competing preparations cannot authorize egress from a losing CAS. Recovery can rebroadcast identical bytes under provider replay guarantees. Only an exact transaction/protocol/contract no-effect verdict (`ExpiredAbsent` or finalized `FailedOnChain`) permits a new preparation generation. Every attempt keeps its bytes, verdict and observation time. Confirmed-stage count prevents cancellation after earlier create, opt-in or return effects; proven-no-effect attempts do not prevent cancellation.
 
-| Seam | Holder | Issuer stamped | Is it a credential? |
-| --- | --- | --- | --- |
-| `MintUserNFTAsync(userId, model)` | the caller | none | **No** — a self-held badge |
-| `MintUserNFTAsync(issuerUserId, recipientUserId, model)` | the recipient | the caller | **Yes** |
+Asset reservation atomically checks the live lifecycle and authority version before preparing a movement. It serializes different transfer, burn and revoke keys for one asset. Recipient opt-in and original-creator destruction require that participant's own signing scope and current consent. A transferred Algorand burn first returns the asset, then awaits the original creator's destruction authorization. A refund pins the original completed transfer and its exact current authority version; only its current holder can sign the return. If the original sender closed their holding, that sender must authorize opt-in before the holder resumes the refund.
 
-**Soulbound ≠ credential; *issued* ⇒ credential.** A soulbound row minted through the
-self-mint seam is a badge somebody minted for themselves. It carries no
-`issuer_user_id`, so `CredentialManager` fails closed on it ("no recorded issuer")
-rather than authorizing its own holder to claw it back from themselves. That is the
-vacuous case D19 forbids and D41 exists to end, and it is refused in three
-independent places: the service (issuer == recipient), the store (before the row is
-written), and the revoke path (issuer == holder).
+# Native NFT fees
 
-**The issuer is never a request field.** `UserNFTMintModel` has no issuer property.
-The issuer is the single input the D19 revoke decision reads, so a body-supplied one
-would let any caller nominate itself the revocation authority over a credential it
-did not issue. It is passed as an argument by the controller, from the authenticated
-caller, and made write-once *in the database* by
-`SurrealNftStore.SetIssuerUserIdAsync` (`WHERE issuer_user_id IS NONE`) rather than
-by caller convention.
+NFT fees have a separate explicit `NftFees:Policies` schedule: native atomic units per chain/network and operation, revision, treasury. Mint, gift transfer, burn, revoke and refund have no sale consideration, so no percentage fee is implied. Missing policy is unavailable, explicit zero is free, and fungible split-fee schedules are unchanged. Quote identity hashes every term, including payer, network and treasury. Nonzero fees require the caller's exact quote identifier, revision and maximum. Asset/refund quote routes derive the bound historical network. Replays retain the admitted quote after configuration changes.
 
-**Why issuance proves the holder's address first.** `current_owner` is the account a
-revocation claws the credential back **from**. A credential written without it is
-permanently unrevocable — a row that reads as valid and that no party on earth can
-take back — which is strictly worse than refusing the mint. So the two-party seam
-resolves the recipient's wallet on the credential's own chain from `IWalletStore` and
-refuses the mint when it cannot. The self-mint seam is not held to this, because a
-self-minted row is not a credential and never needed to be revocable.
+The original requester pays the platform fee once at the final logical effect, atomically with that effect. Acceptance/return stages do not charge it. Other participants sign only their own required chain stages and bear their network transaction costs. Provider authorization carries original actor/issuer contexts independently of the current stage signer. Zero-fee final effects still carry an explicit immutable quote.
 
-**Who may call the issuance seam** is decided one layer up, at
-`CredentialController.Issue` — role-gated on `dapp:manager`. The reasoning for that
-choice (versus open issuance or a recipient consent grant) is written out there and in
-`conductor/tracks/credential-third-party-issuance_20260906/plan.md` §Phase 0.
+# Recovery and reads
+
+Participant discovery pages over an immutable creation-time snapshot and filters terminal rows after paging; an empty page can have a next cursor. The server filters participants before pagination. Lookup by request key is authoritative for an existing admission; absence cannot disprove an in-flight request. Cancel-by-key atomically competes with admission and writes a permanent cancellation tombstone when it wins. A delayed original request sees Cancelled and cannot sign. Existing submitted operations retain their original state and cannot be cancelled as unsent.
+
+NFT composite/binding reads and access checks require the authenticated current on-chain owner, with active projection. Binding maps use explicit boolean values, including deny precedence over `full`. Named `read`, `write`, and `admin` levels grant only that exact permission; `read-only` grants read. Admin does not implicitly broaden privileges. Bound names and wallet addresses are hydrated from their real stores. Original mint time comes from the issuance journal.
+
+# Remaining implementation wave
+
+The core exposes explicit refresh and restricted submitted-operation convergence. Action-engine parking/reconciliation remains tracked implementation work, not an external deferral. Workers never create new preparation or impersonate participant acceptance merely because a lifecycle is pending. Ethereum and Solana module parity has separate source reviews. All new tests are authored but execution is reserved for the final integrated sweep.
+
+## Submitted NFT convergence
+
+NftLifecycleRecoveryWorker calls the separate INftLifecycleReconciler capability. Only Submitted, NeedsOperator and Confirmed records enter it. A typed CAS rotates UpdatedAt before provider reads so an outage cannot pin the oldest batch. Preparation and Prepared-to-Submitted authorization are forbidden in this path. Confirmed intermediary stages and final no-effect evidence may update the journal, but return before any next-stage or replacement signature. Worker exceptions are isolated per record and cancellation propagates.
+
+### NFT protocol cost selection
+
+Fresh Solana mint loads an explicitly accepted server receipt for the authenticated actor/tenant. Admission persists that selected quote and delegates exact command binding plus database expiry to the lifecycle store. Replay resolves the original lifecycle before reading mutable prices or quote availability. Old unprepared Solana Create and replacement generations without explicit accepted cost consent refuse new preparation; prepared transaction recovery retains its original bytes. Provider policy/cost enforcement and explicit replacement authorization must remain separate from historical quote identity checks.
+
+### Public NFT cost offers
+
+QuoteMintCostsAsync records a five-minute immutable offer for the exact actor, tenant, payer, request key and metadata draft after value access, governance and platform-fee consent checks. Existing admission returns only its original matching receipt; it never silently re-quotes a replacement. Quote and preparation share NftLifecycleIntentFactory, including issuer-funded credential stages. Quotation does not claim a lifecycle, reserve assets or invoke custody. Admission remains the database-time expiry boundary.
+
+Platform-signed credential stages retain PlatformAuthorityAddress in the immutable command. Cost quotation includes that identity through the exact initial intent. Preparation refuses a changed or missing current key address rather than resolving a replacement signer from configuration. Revocation inherits the signer from the exact completed issuance lifecycle and confirms its asset/protocol/contract/creation transaction provenance. Historical rows without that signer evidence require explicit recovery; neither current configuration nor a new issuer declaration supplies it.
+
+### NFT participant acceptance
+
+RefreshAsync accepts participant signatures only with an explicit version/state/stage/generation request and actual captured credential. The immutable stage consent retains a separate participant wallet and tenant without replacing the command actor authority. A lost-response replay resolves the saved request first and can resume only that exact stage/generation. Intent construction takes the participant tenant from saved consent. The browser archives the exact acceptance before HTTP, so retries cannot silently target a newer lifecycle stage. Replacement cost authorization remains independently required.

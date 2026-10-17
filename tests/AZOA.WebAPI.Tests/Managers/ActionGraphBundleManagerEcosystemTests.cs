@@ -25,7 +25,7 @@ public class ActionGraphBundleManagerEcosystemTests
 
     public ActionGraphBundleManagerEcosystemTests()
     {
-        _manager = new ActionGraphBundleManager(_store.Object, _ecosystemStore.Object, _dappSeriesStore.Object);
+        _manager = new ActionGraphBundleManager(_store.Object, _ecosystemStore.Object, _dappSeriesStore.Object, Mock.Of<IDeploymentService>());
     }
 
     private void OwnActionGraphBundle(ActionGraphBundle bundle) =>
@@ -73,7 +73,7 @@ public class ActionGraphBundleManagerEcosystemTests
         result.Result.Roots[0].Node.RefId.Should().Be(seriesId);
         ecos.Should().HaveCount(1); // lazily created
         // Tree-walking codegen ran onto the ActionGraphBundle.
-        _store.Verify(p => p.UpsertAsync(It.Is<IActionGraphBundle>(s => !string.IsNullOrEmpty(s.GeneratedCode)), It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(p => p.UpsertAsync(It.Is<IActionGraphBundle>(s => s.GeneratedCode == null && s.DeploymentConfig == null), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

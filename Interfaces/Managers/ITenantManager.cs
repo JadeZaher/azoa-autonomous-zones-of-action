@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
@@ -46,7 +47,7 @@ public interface ITenantManager
     /// user without updating it. The binding grants no signing authority: a
     /// tenant acts for the user solely through a live <c>ConsentGrant</c>.
     /// </summary>
-    Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default);
+    Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, SigningConsentWitness authority, CancellationToken ct = default);
 
     /// <summary>
     /// Lists the tenant's child users, optionally filtered to a single

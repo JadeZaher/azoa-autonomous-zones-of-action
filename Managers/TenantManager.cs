@@ -1,8 +1,10 @@
+using AZOA.WebAPI.Models.Signing;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -13,80 +15,31 @@ using AZOA.WebAPI.Services.Consent;
 
 namespace AZOA.WebAPI.Managers;
 
-/// <summary>
-/// Tenant provisioning manager — REARCHITECTED by user-self-sovereignty (2026-06-22).
-///
-/// <para><b>Custodial onboarding correlation.</b> <see cref="ProvisionChildAsync"/>
-/// binds an unclaimed user to the provisioning tenant so the tenant/external-user
-/// pair is unique and retry-safe. Claiming clears <c>OwnerTenantId</c>, while the
-/// deterministic id remains a create-only correlation so a retry cannot reclaim
-/// or reset the account. It never grants signing authority, which still requires
-/// a live consent grant.</para>
-///
-/// <para><b>Consent-gated issuance (tenant-consent-delegation AC2/M2).</b>
-/// <see cref="IssueChildCredentialAsync"/> ALWAYS requires a LIVE
-/// <see cref="Models.ConsentGrant"/> (grantor = the user, tenant = the caller,
-/// scope ⊇ requested). The legacy <c>OwnerTenantId == tenantId</c> ownership-only
-/// path is REMOVED — there is no credential issued on ownership alone. A target
-/// with no covering live grant returns <see cref="TenantAuthorizationError.NotFound"/>
-/// (404, never 403 — the isolation crux).</para>
-///
-/// <para><b>Implied consent at provisioning (W3.6).</b> A custodially onboarded
-/// person cannot log into AZOA to click "allow", so <see cref="ProvisionChildAsync"/>
-/// issues an implied, revocable <see cref="GrantOrigin.Participation"/> grant scoped
-/// to the provisioning tenant (see <see cref="TenantProvisionedGrant"/>). It is a
-/// REAL grant — audited, listed on the person's own consent surface, revocable by
-/// them at any time, and structurally incapable of carrying an outbound
-/// value-signing scope. It is issued ONLY on first create, so re-provisioning never
-/// resurrects a grant the person revoked.</para>
-///
-/// <para>The issued child JWT carries the USER's user id as subject PLUS an
-/// <c>act_as_tenant</c> claim (the tenant id) so a tenant-driven action is
-/// DISTINGUISHABLE from a user-driven one at the signing seam (C1); and its
-/// <c>nbf</c> respects the user's <c>AuthNotBefore</c> watermark so a token minted
-/// before a claim cannot act after it (AC3b).</para>
-/// </summary>
+/// <summary>Tenant identity provisioning and scoped account access; see Managers/AGENTS.md.</summary>
 public class TenantManager : ITenantManager
 {
     /// <summary>Short-lived child credential TTL (D2: shorten vs. the 24h login token).</summary>
     private static readonly TimeSpan ChildTokenLifetime = TimeSpan.FromMinutes(15);
 
-    /// <summary>Message suffix stated on the response when no implied grant could be issued.</summary>
-    public const string NoImpliedGrantNotice =
-        " NO implied consent grant was issued, so this tenant holds no authority over the user.";
-
     private readonly IUserStore _userStore;
     private readonly IConfiguration _config;
     private readonly IConsentGrantStore _consentGrants;
-    private readonly ITenantProvisionedGrantIssuer? _provisionedGrants;
+    private readonly ITenantProvisionedGrantIssuer _provisionedGrants;
 
-    /// <param name="provisionedGrants">Issues the implied provisioning grant. Optional so
-    /// the manager still constructs without a container; register it explicitly with
-    /// <c>services.AddTenantProvisionedConsentGrants()</c>.</param>
-    /// <param name="consentManager">Fallback source of the issuer. The consent authority is
-    /// already in the container, so an unregistered issuer is BUILT from it here rather than
-    /// left null — the implied grant must not depend on one extra line of wiring landing.
-    /// Only when neither is available does the manager have no issuer, and that absence can
-    /// only fail to grant authority, never confer any; the provisioning response then says
-    /// so explicitly (<see cref="NoImpliedGrantNotice"/>) instead of reading as a clean success.</param>
-    public TenantManager(
-        IUserStore userStore,
-        IConfiguration config,
-        IConsentGrantStore consentGrants,
-        ITenantProvisionedGrantIssuer? provisionedGrants = null,
-        IConsentManager? consentManager = null)
+    public TenantManager(IUserStore userStore, IConfiguration config, IConsentGrantStore consentGrants,
+        ITenantProvisionedGrantIssuer provisionedGrants)
     {
         _userStore = userStore;
         _config = config;
         _consentGrants = consentGrants;
-        _provisionedGrants = provisionedGrants
-            ?? (consentManager is null
-                ? null
-                : new TenantProvisionedGrantIssuer(consentManager, consentGrants));
+        _provisionedGrants = provisionedGrants;
     }
 
-    public async Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, CancellationToken ct = default)
+    public async Task<AZOAResult<ChildUserResponse>> ProvisionChildAsync(Guid tenantId, ProvisionChildModel model, SigningConsentWitness authority, CancellationToken ct = default)
     {
+        if (authority.Credential.ActorUserId != tenantId || authority.Credential.TenantId is not null
+            || SigningAuthorityFence.ForConsent(authority, [AzoaScopes.TenantProvision], "provision_admission") is null)
+            return AZOAResult<ChildUserResponse>.Failure("Current tenant provisioning authority is required.");
         var result = new AZOAResult<ChildUserResponse>();
 
         if (string.IsNullOrWhiteSpace(model.ExternalUserId)
@@ -111,7 +64,7 @@ public class TenantManager : ITenantManager
         if (existing.Result is not null)
             return await WithImpliedGrantAsync(
                 existing.Result, tenantId, externalUserId,
-                "User already provisioned for this tenant user.", ct);
+                "User already provisioned for this tenant user.", authority, ct);
 
         // Claim severs OwnerTenantId by design. Resolve the immutable deterministic
         // id before create so a post-claim retry returns the original user account
@@ -124,7 +77,7 @@ public class TenantManager : ITenantManager
 
             return await WithImpliedGrantAsync(
                 deterministicExisting.Result, tenantId, externalUserId,
-                "User already provisioned for this tenant user.", ct);
+                "User already provisioned for this tenant user.", authority, ct);
         }
         if (deterministicExisting.IsError
             && IsPersistenceUnavailable(deterministicExisting.Message))
@@ -181,31 +134,16 @@ public class TenantManager : ITenantManager
 
         return await WithImpliedGrantAsync(
             saved.Result, tenantId, externalUserId,
-            "Tenant-bound user provisioned (claimable by the user).", ct);
+            "Tenant-bound user provisioned (claimable by the user).", authority, ct);
     }
 
-    /// <summary>
-    /// Attaches the implied, revocable provisioning grant (W3.6) to a just-provisioned or
-    /// already-provisioned user, then returns the provisioning result.
-    ///
-    /// <para>Three rules, each a deliberate refusal to hand out authority:</para>
-    /// <list type="number">
-    /// <item>A user whose <c>OwnerTenantId</c> is no longer this tenant has CLAIMED their
-    /// account. Claiming revokes every grant they made; issuing a fresh one here would
-    /// silently re-attach tenant authority to a self-sovereign person, so nothing is
-    /// issued and the response says so.</item>
-    /// <item>With no issuer wired, no grant exists and the tenant can do nothing with the
-    /// user. That is fail-closed, but it is NOT a clean success — the message states it.</item>
-    /// <item>A failed issue is an ERROR, not a quiet partial success: provisioning is
-    /// idempotent, so the caller retries and the issuer (which never re-issues over a prior
-    /// record) heals the gap exactly once.</item>
-    /// </list>
-    /// </summary>
+    /// <summary>Joins the current provisioning result to its original atomic consent receipt.</summary>
     private async Task<AZOAResult<ChildUserResponse>> WithImpliedGrantAsync(
         IUser user,
         Guid tenantId,
         string externalUserId,
         string message,
+        SigningConsentWitness authority,
         CancellationToken ct)
     {
         var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user), Message = message };
@@ -216,13 +154,7 @@ public class TenantManager : ITenantManager
             return result;
         }
 
-        if (_provisionedGrants is null)
-        {
-            result.Message = message + NoImpliedGrantNotice;
-            return result;
-        }
-
-        var granted = await _provisionedGrants.IssueOnProvisionAsync(tenantId, user.Id, externalUserId, ct);
+        var granted = await _provisionedGrants.IssueOnProvisionAsync(user.Id, externalUserId, authority, ct);
         if (granted.IsError)
         {
             result.IsError = true;
@@ -486,6 +418,7 @@ public class TenantManager : ITenantManager
             // token-type segregation (security-review S5): explicitly classes this as a
             // scoped tenant child credential, not a full-authority user login.
             new(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
+            new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(DateTime.SpecifyKind(notBefore, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
 

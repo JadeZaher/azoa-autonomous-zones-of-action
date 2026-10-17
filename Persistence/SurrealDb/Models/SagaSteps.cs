@@ -68,6 +68,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [FieldGroup("Opaque payload (serialized typed step input)")]
         public string Payload { get; set; } = string.Empty;
 
+        [ReadOnly]
+        public string? AdmissionPayloadHash { get; set; }
+
         [FieldGroup("Lifecycle state (StepStatus enum) -- drives the G2 conditional claim")]
         [Inside("Pending", "InProgress", "Completed", "Compensating", "DeadLettered", "Parked", "Cancelled")]
         [Default("\"Pending\"")]

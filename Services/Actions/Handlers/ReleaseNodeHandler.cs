@@ -79,6 +79,9 @@ public sealed class ReleaseNodeHandler : IActionNodeHandler
 /// <summary>Config for <see cref="ActionNodeType.Release"/>.</summary>
 public sealed class ReleaseNodeConfig
 {
+    public AZOA.WebAPI.Core.ChainNetwork? Network { get; set; }
+    public Guid? RecipientWalletId { get; set; }
+    public string? HoldRecordId { get; set; }
     /// <summary>Rail the hold settles on (e.g. <c>Algorand</c>).</summary>
     public string? ChainType { get; set; }
 
@@ -172,6 +175,10 @@ public sealed class ReleaseIntoHoldNodeHandler : IActionNodeHandler
 /// <summary>Config for <see cref="ActionNodeType.ReleaseIntoHold"/>.</summary>
 public sealed class ReleaseIntoHoldNodeConfig
 {
+    public AZOA.WebAPI.Core.ChainNetwork? Network { get; set; }
+    public Guid? RecipientWalletId { get; set; }
+    public string? HoldRecordId { get; set; }
+    public AZOA.WebAPI.Models.Blockchain.HoldWorkflowMandateSelection? Mandate { get; set; }
     /// <summary>Rail the hold settles on (e.g. <c>Algorand</c>).</summary>
     public string? ChainType { get; set; }
 

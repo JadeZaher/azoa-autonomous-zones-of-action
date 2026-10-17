@@ -1,6 +1,7 @@
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
@@ -209,8 +210,8 @@ public sealed class ValueRailGateRoutingTests
     [Fact]
     public void A_fungible_token_create_node_declares_its_configured_chain()
     {
-        var handler = new FungibleTokenCreateNodeHandler(
-            Mock.Of<IFungibleTokenManager>(), Mock.Of<IHolonManager>());
+        var handler = new FungibleTokenCreateNodeHandler(new AZOA.WebAPI.Services.Actions.ActionFungibleCreationService(
+            Mock.Of<IFungibleTokenManager>(), Mock.Of<IFungibleCreationService>(), Mock.Of<IActionNodeExecutionStore>()));
         var node = new ActionNode
         {
             NodeType = ActionNodeType.FungibleTokenCreate,

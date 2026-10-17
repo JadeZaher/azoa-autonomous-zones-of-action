@@ -382,17 +382,6 @@ public class G7_ReconciliationDrillTest : IntegrationTestBase
             string ownerAddress, CancellationToken ct = default) =>
             MutationNotExpected<List<Dictionary<string, object>>>(nameof(GetTokensByOwnerAsync));
 
-        public Task<AZOAResult<string>> DeployContractAsync(
-            byte[] contractCode, string walletAddress,
-            Dictionary<string, object>? args = null, CancellationToken ct = default) =>
-            MutationNotExpected<string>(nameof(DeployContractAsync));
-
-        public Task<AZOAResult<object>> CallContractAsync(
-            string contractAddress, string method,
-            Dictionary<string, object> args, string walletAddress,
-            CancellationToken ct = default) =>
-            MutationNotExpected<object>(nameof(CallContractAsync));
-
         public Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(
             CancellationToken ct = default) =>
             MutationNotExpected<Dictionary<string, object>>(nameof(GetChainInfoAsync));

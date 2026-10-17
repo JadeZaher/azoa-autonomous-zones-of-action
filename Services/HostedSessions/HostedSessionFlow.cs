@@ -14,21 +14,17 @@ namespace AZOA.WebAPI.Services.HostedSessions;
 /// </summary>
 public interface IHostedSessionFlow
 {
-    /// <summary>
-    /// Claims durable admission, then creates the provider session, then returns the
-    /// redirect. The claim happens FIRST so a crash cannot orphan a provider session.
-    /// </summary>
+    /// <summary>Claims admission before sending an external create request.</summary>
     Task<AZOAResult<HostedSessionStartResult>> BeginAsync(
         IHostedSessionProvider provider,
         HostedSessionRequest request,
         CancellationToken ct = default);
 
-    /// <summary>
-    /// Processes an untrusted inbound callback: constant-time secret verification,
-    /// an AUTHORITATIVE server-side re-fetch, a CAS resume CLAIM, the domain
-    /// resumption on the winning branch only, then exactly one CAS terminal write.
-    /// The callback body's own claimed outcome is discarded.
-    /// </summary>
+    /// <summary>Refreshes a caller-authorized hosted session using the provider authority and the shared resumption lease.</summary>
+    Task<AZOAResult<HostedCallbackResult>> RefreshAsync(
+        IHostedSessionProvider provider, Guid sessionId, CancellationToken ct = default);
+
+    /// <summary>Authenticates a callback and applies authoritative outcomes under a renewable lease.</summary>
     Task<AZOAResult<HostedCallbackResult>> HandleCallbackAsync(
         IHostedSessionProvider provider,
         string rawBody,
@@ -38,12 +34,11 @@ public interface IHostedSessionFlow
 /// <inheritdoc />
 public sealed class HostedSessionFlow : IHostedSessionFlow
 {
-    /// <summary>
-    /// Single opaque failure surfaced to an unauthenticated caller. A callback
-    /// endpoint must not distinguish "bad secret" from "unknown session": either
-    /// discrimination turns the endpoint into an oracle.
-    /// </summary>
+    /// <summary>Opaque unauthenticated callback failure.</summary>
     public const string OpaqueCallbackFailure = "The callback could not be processed.";
+
+    /// <summary>Provider guarantees that no external create request was sent.</summary>
+    public const string RequestNotSentCode = "PROVIDER_REQUEST_NOT_SENT";
 
     private const int MaxCallbackBodyBytes = 65536;
 
@@ -64,6 +59,7 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         _clock = clock ?? TimeProvider.System;
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<HostedSessionStartResult>> BeginAsync(
         IHostedSessionProvider provider,
         HostedSessionRequest request,
@@ -88,10 +84,12 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         var now = _clock.GetUtcNow();
         var candidate = new HostedSession
         {
-            Id = Guid.NewGuid().ToString("N"),
+            Id = (request.SessionId ?? Guid.NewGuid()).ToString("N"),
             FlowKind = request.FlowKind,
             ProviderKey = provider.ProviderKey,
             AdmissionKey = request.AdmissionKey,
+            CreationToken = Guid.NewGuid().ToString("N"),
+            CreationClaimedAt = now,
             SubjectUserId = request.SubjectUserId.ToString("N"),
             TenantId = request.TenantId?.ToString("N"),
             State = HostedSessionStates.Claimed,
@@ -100,8 +98,22 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
             ModifiedDate = now,
         };
 
-        // Durable admission BEFORE any external side effect. Losing the race returns
-        // the winner's row, so two concurrent begins never create two provider sessions.
+        request = new HostedSessionRequest
+        {
+            FlowKind = request.FlowKind, SubjectUserId = request.SubjectUserId, TenantId = request.TenantId,
+            AdmissionKey = request.AdmissionKey, SessionId = Guid.ParseExact(candidate.Id, "N"),
+            ProviderKey = provider.ProviderKey, PolicyRevision = request.PolicyRevision,
+            CustodialAuthority = request.CustodialAuthority,
+        };
+        if (provider is IPreparedHostedSessionProvider prepared)
+        {
+            var preparation = await prepared.PrepareCreationAsync(request, ct);
+            if (preparation.IsError)
+                return AZOAResult<HostedSessionStartResult>.FailureWithCode(preparation.Message,
+                    preparation.Code ?? AzoaErrorCodes.DependencyUnavailable);
+        }
+
+        // Only the candidate owner may issue the external create.
         var claimed = await _store.ClaimAdmissionAsync(candidate, ct);
         if (claimed.IsError || claimed.Result is null)
         {
@@ -125,22 +137,40 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
             return AZOAResult<HostedSessionStartResult>.Success(Project(session, resumed: true));
         }
 
+        if (!string.Equals(session.Id, candidate.Id, StringComparison.Ordinal)
+            || !string.Equals(session.CreationToken, candidate.CreationToken, StringComparison.Ordinal))
+        {
+            return AZOAResult<HostedSessionStartResult>.FailureWithCode(
+                session.CreationQuarantinedAt is not null || (session.CreationClaimedAt ?? session.CreatedDate) <= now.AddMinutes(-5)
+                    ? "NeedsOperator: this verification requires operator reconciliation before it can continue."
+                    : "Verification creation is in progress; retry shortly.",
+                AzoaErrorCodes.Conflict);
+        }
+
+        var send = request.CustodialAuthority is null
+            ? await _store.TryBeginCreationAsync(ParseId(session.Id), candidate.CreationToken!, _clock.GetUtcNow(), ct)
+            : _store is ICustodialHostedSessionStore custodialStore
+                ? await custodialStore.TryBeginCustodialCreationAsync(ParseId(session.Id), candidate.CreationToken!,
+                    _clock.GetUtcNow(), request.CustodialAuthority, ct)
+                : AZOAResult<HostedSession>.Failure("Custodial provider admission is unavailable.");
+        if (send.IsError || send.Result is null)
+            return AZOAResult<HostedSessionStartResult>.FailureWithCode("This session creation no longer owns admission.", AzoaErrorCodes.Conflict);
+        session = send.Result;
         var created = await provider.CreateHostedSessionAsync(request, ct);
         if (created.IsError || created.Result is null)
         {
-            // The claim stays NON-TERMINAL on purpose. Marking it failed here would
-            // brick this subject permanently: the same admission key would resume a
-            // terminal row forever, so one transient provider outage would deny that
-            // subject KYC for good. Leaving the claim open lets the next attempt
-            // resume it and retry the create, and it still cannot produce two
-            // provider sessions because there is only ever one claim.
-            _logger.LogWarning(
-                "Provider session creation failed for {FlowKind}/{ProviderKey}; the admission claim stays open for retry.",
+            if (created.Code == RequestNotSentCode)
+                await _store.ReleaseUnsentAdmissionAsync(ParseId(session.Id), candidate.CreationToken!, ct);
+            else
+                _logger.LogWarning(
+                "Provider session creation failed for {FlowKind}/{ProviderKey}; the admission claim requires reconciliation.",
                 request.FlowKind,
                 provider.ProviderKey);
             return AZOAResult<HostedSessionStartResult>.FailureWithCode(
-                created.Message,
-                created.Code ?? AzoaErrorCodes.DependencyUnavailable);
+                created.Code == RequestNotSentCode
+                    ? created.Message
+                    : "NeedsOperator: the provider request outcome is uncertain and requires reconciliation.",
+                created.Code == RequestNotSentCode ? AzoaErrorCodes.DependencyUnavailable : AzoaErrorCodes.Conflict);
         }
 
         var attached = await _store.TryAttachProviderSessionAsync(
@@ -150,9 +180,16 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
             created.Result.ProviderCorrelationId,
             created.Result.RedirectUrl,
             created.Result.ExpiresAt,
+            candidate.CreationToken!,
             ct);
         if (attached.IsError || attached.Result is null)
         {
+            var current = await _store.GetByIdAsync(ParseId(session.Id), ct);
+            if (!current.IsError && current.Result is { } recovered
+                && recovered.ProviderSessionId == created.Result.ProviderSessionId
+                && !string.IsNullOrWhiteSpace(recovered.RedirectUrl)
+                && !HostedSessionStates.IsTerminal(recovered.State))
+                return AZOAResult<HostedSessionStartResult>.Success(Project(recovered, resumed: true));
             return AZOAResult<HostedSessionStartResult>.FailureWithCode(
                 attached.IsError
                     ? attached.Message
@@ -163,6 +200,7 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         return AZOAResult<HostedSessionStartResult>.Success(Project(attached.Result, resumed: false));
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<HostedCallbackResult>> HandleCallbackAsync(
         IHostedSessionProvider provider,
         string rawBody,
@@ -196,9 +234,26 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
             return OpaqueFailure();
         }
 
-        var session = located.Result;
+        await _store.RecordCallbackAsync(ParseId(located.Result.Id), ct);
+        return await ProcessSessionAsync(provider, located.Result, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<HostedCallbackResult>> RefreshAsync(
+        IHostedSessionProvider provider, Guid sessionId, CancellationToken ct = default)
+    {
+        var located = await _store.GetByIdAsync(sessionId, ct);
+        if (located.IsError || located.Result is null
+            || located.Result.FlowKind != provider.FlowKind
+            || located.Result.ProviderKey != provider.ProviderKey)
+            return OpaqueFailure();
+        return await ProcessSessionAsync(provider, located.Result, ct);
+    }
+
+    private async Task<AZOAResult<HostedCallbackResult>> ProcessSessionAsync(
+        IHostedSessionProvider provider, HostedSession session, CancellationToken ct)
+    {
         var sessionId = ParseId(session.Id);
-        await _store.RecordCallbackAsync(sessionId, ct);
 
         if (HostedSessionStates.IsTerminal(session.State))
         {
@@ -215,7 +270,7 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
 
         // Step 2: the authoritative re-fetch. The callback body's `result` is discarded.
         var outcome = await provider.FetchAuthoritativeOutcomeAsync(
-            session.ProviderSessionId ?? verified.Result.ProviderSessionId,
+            session.ProviderSessionId ?? string.Empty,
             ct);
         if (outcome.IsError || outcome.Result is null)
         {
@@ -224,8 +279,7 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 outcome.Code ?? AzoaErrorCodes.DependencyUnavailable);
         }
 
-        // Step 3: a non-terminal verdict parks the session. It must never be written
-        // as a terminal state, because a terminal state is what opens a value gate.
+        // Nonterminal outcomes never resume the domain handler.
         if (!outcome.Result.IsTerminal)
         {
             var parked = await _store.TryTransitionAsync(
@@ -236,30 +290,25 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 outcome.Result.Detail,
                 resumeTargetId: null,
                 ct);
+            if (parked.IsError)
+                return AZOAResult<HostedCallbackResult>.FailureWithCode(parked.Message, parked.Code ?? AzoaErrorCodes.DependencyUnavailable);
+            if (parked.Result is null)
+                return await ReadObservedAsync(sessionId, ct);
             return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
             {
                 SessionId = sessionId,
-                State = parked.Result?.State ?? HostedSessionStates.AwaitingOutcome,
+                State = parked.Result.State,
                 Outcome = outcome.Result.Outcome,
                 TerminalWriteApplied = false,
                 AlreadyTerminal = false,
             });
         }
 
-        // Step 4: CLAIM the resume BEFORE running it. The terminal check at the top
-        // of this method read a snapshot, so two concurrent deliveries can both pass
-        // it; if resumption ran before the CAS they would BOTH resume and the loser's
-        // divergent outcome would be discarded silently AFTER its ledger write had
-        // landed — a session recorded FAILED while the submission says APPROVED, with
-        // the value gate reading only the submission.
-        var claimed = await _store.TryTransitionAsync(
-            sessionId,
-            session.StateVersion,
-            HostedSessionStates.Resuming,
-            outcome.Result.Outcome,
-            outcome.Result.Detail,
-            resumeTargetId: null,
-            ct);
+        var leaseToken = Guid.NewGuid().ToString("N");
+        var leaseNow = _clock.GetUtcNow();
+        var claimed = await _store.TryClaimResumeAsync(
+            sessionId, session.StateVersion, leaseToken, leaseNow,
+            leaseNow.AddMinutes(2), ct);
         if (claimed.IsError)
         {
             return AZOAResult<HostedCallbackResult>.FailureWithCode(
@@ -268,33 +317,34 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         }
 
         if (claimed.Result is null)
-        {
-            // Another delivery holds the claim. Doing nothing is the correct answer:
-            // the holder owns both the domain write and the terminal transition.
-            var current = await _store.GetByIdAsync(sessionId, ct);
-            var observed = current.Result;
-            return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
-            {
-                SessionId = sessionId,
-                State = observed?.State ?? HostedSessionStates.Resuming,
-                Outcome = observed?.AuthoritativeOutcome ?? outcome.Result.Outcome,
-                TerminalWriteApplied = false,
-                AlreadyTerminal = HostedSessionStates.IsTerminal(observed?.State),
-                ResumeClaimLost = true,
-            });
-        }
+            return await ReadObservedAsync(sessionId, ct);
 
-        // Step 5: exactly one delivery reaches here, so the domain side effect runs once.
+        // Only the current lease owner resumes; crash recovery requires idempotent domain writes.
         var claim = claimed.Result;
-        var resume = await _outcomeHandler.ResumeAsync(session, outcome.Result, ct);
+        AZOAResult<string?> resume;
+        using (var work = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        using (var stopRenewal = new CancellationTokenSource())
+        {
+            var renewal = RenewLeaseAsync(sessionId, leaseToken, work, stopRenewal.Token);
+            try
+            {
+                resume = await _outcomeHandler.ResumeAsync(claim, outcome.Result, work.Token);
+                work.Token.ThrowIfCancellationRequested();
+            }
+            finally
+            {
+                await stopRenewal.CancelAsync();
+                await renewal;
+            }
+        }
         if (resume.IsError)
         {
-            // Compensate: release the claim back to a NON-TERMINAL state so the next
-            // delivery retries. Terminalising a session whose domain write failed
-            // would strand an approval that no ledger row backs.
-            var released = await _store.TryTransitionAsync(
+            // Failed domain work remains retryable.
+            var released = await _store.TryFinishResumeAsync(
                 sessionId,
                 claim.StateVersion,
+                leaseToken,
+                _clock.GetUtcNow(),
                 HostedSessionStates.AwaitingOutcome,
                 outcome.Result.Outcome,
                 resume.Message,
@@ -316,9 +366,11 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         var terminalState = outcome.Result.IsApproved
             ? HostedSessionStates.Completed
             : HostedSessionStates.Failed;
-        var transitioned = await _store.TryTransitionAsync(
+        var transitioned = await _store.TryFinishResumeAsync(
             sessionId,
             claim.StateVersion,
+            leaseToken,
+            _clock.GetUtcNow(),
             terminalState,
             outcome.Result.Outcome,
             outcome.Result.Detail,
@@ -331,14 +383,58 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 transitioned.Code ?? AzoaErrorCodes.DependencyUnavailable);
         }
 
+        if (transitioned.Result is null)
+            return await ReadObservedAsync(sessionId, ct);
         return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
         {
             SessionId = sessionId,
-            State = transitioned.Result?.State ?? terminalState,
+            State = transitioned.Result.State,
             Outcome = outcome.Result.Outcome,
             TerminalWriteApplied = transitioned.Result is not null,
             AlreadyTerminal = transitioned.Result is null,
         });
+    }
+
+    private async Task<AZOAResult<HostedCallbackResult>> ReadObservedAsync(Guid sessionId, CancellationToken ct)
+    {
+        var current = await _store.GetByIdAsync(sessionId, ct);
+        if (current.IsError || current.Result is null)
+            return AZOAResult<HostedCallbackResult>.FailureWithCode("Hosted session could not be read.",
+                current.Code ?? AzoaErrorCodes.DependencyUnavailable);
+        return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
+        {
+            SessionId = sessionId,
+            State = current.Result.State,
+            Outcome = current.Result.AuthoritativeOutcome,
+            AlreadyTerminal = HostedSessionStates.IsTerminal(current.Result.State),
+            ResumeClaimLost = true,
+        });
+    }
+
+    private async Task RenewLeaseAsync(
+        Guid sessionId, string token, CancellationTokenSource work, CancellationToken stop)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), _clock, stop);
+                var now = _clock.GetUtcNow();
+                if (!await _store.RenewResumeLeaseAsync(sessionId, token, now, now.AddMinutes(2), work.Token))
+                {
+                    await work.CancelAsync();
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            await work.CancelAsync();
+            throw;
+        }
     }
 
     private static HostedSessionStartResult Project(HostedSession session, bool resumed)

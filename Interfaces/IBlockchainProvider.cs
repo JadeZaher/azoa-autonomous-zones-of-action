@@ -122,18 +122,7 @@ public interface IBlockchainProvider : IValueRailProvider
     // override to sharpen Pending vs Unknown.
 
     // ─── Smart Contract / Program ───
-    Task<AZOAResult<string>> DeployContractAsync(
-        byte[] contractCode,
-        string walletAddress,
-        Dictionary<string, object>? args = null,
-        CancellationToken ct = default);
-
-    Task<AZOAResult<object>> CallContractAsync(
-        string contractAddress,
-        string method,
-        Dictionary<string, object> args,
-        string walletAddress,
-        CancellationToken ct = default);
+    // Native mutations use INativeOperationModule; reads use IReadOnlyContractModule.
 
     // ─── Chain Info ───
     Task<AZOAResult<Dictionary<string, object>>> GetChainInfoAsync(CancellationToken ct = default);

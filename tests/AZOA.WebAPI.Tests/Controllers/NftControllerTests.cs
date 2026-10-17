@@ -16,15 +16,13 @@ public class NftControllerTests
 {
     private readonly Mock<INftManager> _nftManager;
     private readonly Mock<IFungibleTokenManager> _fungibleTokenManager;
-    private readonly Mock<IHolonManager> _holonManager;
     private readonly NftController _controller;
 
     public NftControllerTests()
     {
         _nftManager = new Mock<INftManager>();
         _fungibleTokenManager = new Mock<IFungibleTokenManager>();
-        _holonManager = new Mock<IHolonManager>();
-        _controller = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);
+        _controller = new NftController(_nftManager.Object, _fungibleTokenManager.Object);
         _controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext
@@ -81,7 +79,7 @@ public class NftControllerTests
     public async Task Mint_Success_ReturnsOk()
     {
         var req = new NftMintRequest { Name = "NFT", Description = "D", ChainId = "sol", WalletId = Guid.NewGuid() };
-        _nftManager.Setup(m => m.MintAsync(req, It.IsAny<Guid>(), null, It.IsAny<Guid?>()))
+        _nftManager.Setup(m => m.MintAsync(req, It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
         var result = await _controller.Mint(req, null);
@@ -104,7 +102,7 @@ public class NftControllerTests
                 ["IdempotencyResultPayload"] = "{\"internal\":true}",
             },
         };
-        _nftManager.Setup(m => m.MintAsync(request, It.IsAny<Guid>(), null, It.IsAny<Guid?>()))
+        _nftManager.Setup(m => m.MintAsync(request, It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(AZOAResult<IBlockchainOperation>.Success(operation));
 
         var action = await _controller.Mint(request, null);
@@ -119,7 +117,7 @@ public class NftControllerTests
     [Fact]
     public async Task Mint_NoAuth_ReturnsUnauthorized()
     {
-        var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);
+        var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object);
         noAuth.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
@@ -134,7 +132,7 @@ public class NftControllerTests
     public async Task Transfer_Success_ReturnsOk()
     {
         var req = new NftTransferRequest { TargetUserId = Guid.NewGuid(), WalletId = Guid.NewGuid() };
-        _nftManager.Setup(m => m.TransferAsync(It.IsAny<Guid>(), req, It.IsAny<Guid>(), null, It.IsAny<Guid?>()))
+        _nftManager.Setup(m => m.TransferAsync(It.IsAny<Guid>(), req, It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
         var result = await _controller.Transfer(Guid.NewGuid(), req, null);
@@ -146,7 +144,7 @@ public class NftControllerTests
     public async Task Burn_Success_ReturnsOk()
     {
         var req = new NftBurnRequest { WalletId = Guid.NewGuid() };
-        _nftManager.Setup(m => m.BurnAsync(It.IsAny<Guid>(), req.WalletId, It.IsAny<Guid>(), null))
+        _nftManager.Setup(m => m.BurnAsync(It.IsAny<Guid>(), req.WalletId, It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
             .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
 
         var result = await _controller.Burn(Guid.NewGuid(), req, null);
@@ -155,12 +153,12 @@ public class NftControllerTests
     }
 
     [Fact]
-    public async Task GetMetadata_AllowedAnonymously()
+    public async Task GetMetadata_AnonymousCallerCannotBypassManagerAuthority()
     {
-        _nftManager.Setup(m => m.GetMetadataAsync(It.IsAny<Guid>(), null))
-            .ReturnsAsync(new AZOAResult<NftMetadata> { Result = new NftMetadata() });
+        _nftManager.Setup(m => m.GetMetadataAsync(It.IsAny<Guid>(), null, null))
+            .ReturnsAsync(AZOAResult<NftMetadata>.Failure("Owner authority required"));
 
-        var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object, _holonManager.Object);
+        var noAuth = new NftController(_nftManager.Object, _fungibleTokenManager.Object);
         noAuth.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) }
@@ -168,6 +166,6 @@ public class NftControllerTests
 
         var result = await noAuth.GetMetadata(Guid.NewGuid(), null);
 
-        result.Result.Should().BeOfType<OkObjectResult>();
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
     }
 }

@@ -12,6 +12,7 @@ using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores;
@@ -76,13 +77,11 @@ public class ComposedDagDeterminismTests
         return (new GrantNodeHandler(nft.Object, new Mock<IHolonManager>().Object), nft);
     }
 
-    private static (RefundNodeHandler Handler, Mock<INftManager> Nft) NewRefund(Guid nftId)
+    private static (RefundNodeHandler Handler, Mock<INftLifecycleService> Nft) NewRefund(Guid nftId)
     {
-        var nft = new Mock<INftManager>();
-        nft.Setup(m => m.GetAsync(nftId, It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
-           .ReturnsAsync(new AZOAResult<INft> { Result = new Holon { Id = nftId, AssetType = "NFT" } });
-        nft.Setup(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()))
-           .ReturnsAsync(new AZOAResult<IBlockchainOperation> { Result = new BlockchainOperation() });
+        var nft = new Mock<INftLifecycleService>();
+        nft.Setup(service => service.RefundAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>()))
+            .ReturnsAsync(AZOAResult<NftLifecycleView>.Success(new(Guid.NewGuid().ToString("N"), nftId, "Completed", "Transfer", "asset", "confirmed-return", null, "Refund")));
         return (new RefundNodeHandler(nft.Object), nft);
     }
 
@@ -296,7 +295,7 @@ public class ComposedDagDeterminismTests
 
         grantNft.Verify(m => m.MintAsync(It.IsAny<NftMintRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
             Times.Never, "the success-path mint never broadcasts on gate Fail");
-        refundNft.Verify(m => m.TransferAsync(nftId, It.IsAny<NftTransferRequest>(), UserId, It.IsAny<AZOARequest?>(), It.IsAny<Guid?>()),
+        refundNft.Verify(m => m.RefundAsync(UserId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<Guid>(), It.IsAny<NftFeeAuthorization?>()),
             Times.Once, "the on-fail refund executes the reverse transfer exactly once");
     }
 

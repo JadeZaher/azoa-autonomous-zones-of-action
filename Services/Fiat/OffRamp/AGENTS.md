@@ -198,3 +198,85 @@ node that may take payments is not automatically a node that may send them.
 The onboarding URLs are checked against `Fiat:Checkout:AllowedReturnOrigins` — the same allowlist,
 because the open-redirect risk on a page where somebody types their bank details is the checkout
 return page's risk aimed at a worse target.
+
+## Cumulative transfer reversals
+
+Stripe's `amount_reversed` is cumulative; `reversed` becomes true only for a full
+reversal ([transfer object](https://docs.stripe.com/api/transfers/object)). A payout
+already marked `Reversed` must still reconcile later partial reversals. The handler
+updates the reversal ledger first with a version check, then advances the payout
+from that ledger. Neither a stale provider read nor a duplicate delivery decreases
+the recorded amount. A failed write returns a retryable outcome, allowing a later
+delivery to repair the gap between ledger and payout. This path records owed units
+only; it never starts the collection compensation saga or flags the recipient.
+
+## Bank payout lifecycle
+
+A Connect transfer funds the recipient's Stripe balance; it does not prove a bank
+payout occurred. New Express accounts use manual payout schedules. Before funding
+an account, the service configures and verifies its manual schedule; before a bank
+payout it verifies the schedule again. This prevents combining automatic payouts
+with this service's explicit payout requests.
+
+`BankPending` begins after the funding transfer is durably recorded. A separate
+`POST /v1/payouts`, scoped with `Stripe-Account`, creates the bank payout. Its
+metadata carries the cash-out id. Only the server-fetched `paid` status sets
+`Paid` and `PaidAt`; pending and in-transit statuses remain `BankPending`.
+Connected-account callbacks must match the recorded account, payout reference,
+metadata, currency, amount and environment. Failed or canceled payouts require
+reconciliation of funds in the connected account before any units are returned.
+
+The one-minute reconciliation worker handles lost callbacks and funds that are
+not available yet. Creation attempts persist their start time before the request.
+Ambiguous attempts reuse their key for at most 23 hours, then require provider
+reconciliation before another create. A definitive insufficient-funds response
+advances the attempt key without treating the payout as sent. A timeout or error
+with an unknown outcome never authorizes a new key or unit compensation.
+
+`fiat_event` retains connected-account and object correlation, without retaining
+the event body. The inbox and payout ledger use typed reads, creates and
+conditional updates; optimistic conflicts return retryable outcomes. An applied
+inbox outcome cannot be overwritten by a racing nonterminal outcome.
+
+Configure the endpoint for connected-account `payout.created`, `payout.updated`,
+`payout.paid`, `payout.failed` and `payout.canceled` events as well as the existing
+platform events. The configured endpoint secret must match that endpoint.
+
+Stripe's [Account object](https://docs.stripe.com/api/accounts/object) does not
+expose `livemode`. Account lookups use only the active environment's credentials
+and must return the requested account id. Transfer and bank payout objects do
+expose `livemode`, which is checked before their facts affect the cash-out.
+
+## Failed bank payout restitution
+
+`FailedBankPayoutRecovery` requires server-fetched failed/canceled bank payout and
+matching original Connect transfer, environment, account, amount and metadata.
+The operator reason and principal are persisted before recovery. A stable transfer
+reversal request can be replayed for 23 hours; beyond that, authoritative transfer
+reads may establish returned funds but no new reversal is sent blindly.
+
+Returned units are capped by the proportional cumulative recovered amount. A
+versioned reservation persists the target and value-move key before transfer;
+reordered bank events cannot mark a recovery paid. The return claim prevents a
+second transfer after a crash. Pending return transactions retain their hash and
+claim key; only an authoritative confirmed chain verdict completes them. A reserve
+draw accounting failure preserves the reservation, and replay repairs the draw.
+
+Payout claims include payment environment and chain network. Legacy missing mode
+fields become `unbound`, never the current configured mode. Such rows prevent
+cash-out availability until classified; workers and provider effects require the
+original mode. No live key is loaded through development aliases.
+
+
+### Prepared restitution supersedes post-send receipts
+
+The authoritative return identity is now the signed transaction persisted on the
+`fiat-off-ramp-prepared` idempotency claim before submission. Racing preparations
+reload the winning bytes; a lost response or payout CAS conflict replays that
+same transaction. Pending transaction fields on the payout are diagnostics only.
+The provider module checks exact transfer intent and network before submission
+and observation. Algorand confirmation uses indexed transaction semantics and a
+matching genesis block. Only finalized absence after the validity window or a
+positive on-chain failure may clear the expected preparation for a replacement.
+Ethereum/Solana module parity remains an active implementation subwave; unsupported
+modules refuse before any value movement, and this is not a completed parity claim.

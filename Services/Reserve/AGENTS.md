@@ -179,3 +179,31 @@ enforces the package's own precondition rather than a friendlier one.
 Nothing in this directory's consumer-facing text may name a chain, a token, a wallet or a gas
 fee. A person selling their stake reads about *units*, *funds*, a *project's treasury* and a
 *place in the queue*. The rail words stay in the provider layer and in operator logs.
+
+## Fungible issuance projection
+
+`ReserveAssetRegistrationPlan` is the shared pure registration builder. The durable fungible lifecycle composes that plan with original issuance authority and optional Holon attachment in one datastore transaction. The reserve store lives under Providers/Stores/Surreal and changes only partition counters/replay keys through its version CAS. Re-registering an identity with different supply, authority address, tenant or protocol is a conflict, not a successful replay.
+
+## Platform genesis authority
+
+Genesis claims a single immutable definition per network before admitting the fungible lifecycle. Its purpose witness is distinct from ordinary signing authority: actual recent node-operator credential, bootstrap revisions, frozen definition/key, reserve and protocol identity. It grants no user-wallet access and fabricates no KYC evidence. Quote consent precedes new signatures. A fresh operator session renews only that exact operation's authority; original command and signed bytes remain immutable.
+
+Platform activation joins finalized authority, reserve registration and creation completion in one transaction. The generic platform store may update pending diagnostics, not activate or rewrite the definition. Confirmed accounting and already-authorized exact-wire recovery survive operator session expiry. Operator polling never requests faucet funds; funding is an explicit prerequisite. Genesis has no ordinary cancellation endpoint: withholding continuation pauses new effects, while already-authorized bytes may still settle. Proven no-effect replacement retains the original definition and archives the prior wire and evidence before requesting a new quote.
+
+Initial definition claims join the same actual recent operator/bootstrap authorization fence as later genesis admission; actor IDs alone cannot freeze definitions. Active reads require a completed exact creation operation plus immutable authority, projection and reserve identity. An old active row with only asset text returns `PLATFORM_TOKEN_EVIDENCE_REQUIRED`; neither replay nor status may issue a replacement asset. Repository seeds contain no legacy platform-token issuance. Old mocked tests are not chain provenance and must migrate to explicit durable receipts.
+
+## Reserve service invariants
+
+Configured chain restrictions and public expected-address checks run before custody. An empty chain list uses the explicit shipped fallback; it does not allow every provider. Platform reserve signing requires a platform signing context. CallerWallet fungible creation now uses the separate durable lifecycle with the caller's actual wallet authority, rather than a platform signature over a user sender.
+
+Partition declaration and draw apply the same ledger-owned tenant policy. Declaration is a set operation, cannot shrink below existing promises, and never accepts settlement authority to name new partitions. A draw requires a declared partition. The 128-entry per-asset FIFO replay window is bounded: evicted keys can execute again, so every economic caller requires its own durable command/receipt anchor. Malformed partition accounting is a refusal, not zero availability.
+
+Public-address derivation catches only expected argument/format/cryptographic validation failures and returns a value-free refusal. Unexpected exceptions bubble to the centralized boundary. Secret inputs are never included in authored diagnostics. Reserve models and service comments carry terse contracts; rationale is maintained here.
+# Exchange participant authority
+
+ExchangeAuthorityFactory captures actual tenant credentials separately from the
+target participant. The participant's exact wallet, watermark and UserExplicit
+swap:sign grant are immutable witnesses; current transaction checks remain required
+at commitment, preparation and first egress. This new source is under integration;
+the preexisting post-submit-only exchange operation is not accepted evidence of
+durable admission. See the active track's round3-hold-economic-cutover.md.

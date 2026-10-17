@@ -20,7 +20,7 @@ public sealed class NftGetMetadataNodeHandler : IActionNodeHandler
     {
         if (!ActionNodeConfig.TryDeserialize<IdConfig>(context.Node.Config, nameof(ActionNodeType.NftGetMetadata), out var cfg, out var cfgError))
             return ActionNodeResults.Fail(cfgError);
-        var r = await _nftManager.GetMetadataAsync(cfg.Id);
+        var r = await _nftManager.GetMetadataAsync(cfg.Id, callerUserId: context.ActingUserId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);
         return ActionNodeResults.Ok(outputJson);

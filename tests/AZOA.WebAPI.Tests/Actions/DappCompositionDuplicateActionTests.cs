@@ -33,7 +33,7 @@ public class DappCompositionDuplicateActionTests
     public DappCompositionDuplicateActionTests()
     {
         _manager = new DappCompositionManager(
-            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _bundleManager.Object);
+            _seriesStore, _actionStore.Object, _runStore.Object, _holonStore.Object, _bundleManager.Object, Mock.Of<IDeploymentStore>());
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using SurrealForge.Client.Idempotency;
 using AZOA.WebAPI.Models.Sagas;
+using AZOA.WebAPI.Helpers;
 
 namespace AZOA.WebAPI.Sagas;
 
@@ -54,18 +55,6 @@ public sealed class SurrealSagaStore : ISagaStore
         "Saga completion lease conflict";
     private const string CompensationLeaseConflict =
         "Saga compensation lease conflict";
-
-    // SurrealForge.Client type-infers string literals: a GUID-shaped value
-    // becomes a `uuid` literal (u'...') and a `table:id`-shaped value becomes a
-    // record-link literal — either of which a SCHEMAFULL `TYPE string` field
-    // rejects ("Expected string but found u'...'" / "...saga:..."). The saga
-    // outbox's opaque tokens hit both: correlation_key/step_name are GUIDs on
-    // the action-workflow path and step_idempotency_key is `saga:{corr}:{step}`.
-    // We tag every such token with this sentinel on the way to SurrealDB so it
-    // stays a plain string, and strip it on the way back — transparent to every
-    // caller (the tokens are store-internal and always round-trip through here).
-    // See Services/Sagas/AGENTS.md §opaque-key-encoding.
-    private const string OpaqueKeyTag = "s_";
 
     private readonly ISurrealExecutor _executor;
 
@@ -170,7 +159,7 @@ public sealed class SurrealSagaStore : ISagaStore
                 .WithParam("_t", TableName)
                 .WithParam("_id", surrealId)
                 .WithParam("_parked", StatusParked)
-                .WithParam("_gate", EncodeOpaqueKey(gateId))
+                .WithParam("_gate", SagaOpaqueKey.Encode(gateId))
                 .WithParam("_in_progress", StatusInProgress)
                 .WithParam("_claimed_at", claimedAtUtc)
                 .WithParam("_now", nowUtc);
@@ -204,8 +193,8 @@ public sealed class SurrealSagaStore : ISagaStore
                 .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, payload = $_payload, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
                 .WithParam("_pending", StatusPending)
                 .WithParam("_parked", StatusParked)
-                .WithParam("_corr", EncodeOpaqueKey(correlationKey))
-                .WithParam("_gate", EncodeOpaqueKey(gateId))
+                .WithParam("_corr", SagaOpaqueKey.Encode(correlationKey))
+                .WithParam("_gate", SagaOpaqueKey.Encode(gateId))
                 .WithParam("_payload", newPayloadJson)
                 .WithParam("_now", nowUtc);
         }
@@ -215,8 +204,8 @@ public sealed class SurrealSagaStore : ISagaStore
                 .Of("UPDATE saga_steps SET status = $_pending, next_run_at = $_now, gate_id = NONE, updated_at = $_now WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate RETURN AFTER")
                 .WithParam("_pending", StatusPending)
                 .WithParam("_parked", StatusParked)
-                .WithParam("_corr", EncodeOpaqueKey(correlationKey))
-                .WithParam("_gate", EncodeOpaqueKey(gateId))
+                .WithParam("_corr", SagaOpaqueKey.Encode(correlationKey))
+                .WithParam("_gate", SagaOpaqueKey.Encode(gateId))
                 .WithParam("_now", nowUtc);
         }
 
@@ -556,8 +545,8 @@ public sealed class SurrealSagaStore : ISagaStore
         var q = SurrealQuery
             .Of("SELECT * FROM saga_steps WHERE status = $_parked AND correlation_key = $_corr AND gate_id = $_gate LIMIT 1")
             .WithParam("_parked", StatusParked)
-            .WithParam("_corr", EncodeOpaqueKey(correlationKey))
-            .WithParam("_gate", EncodeOpaqueKey(gateId));
+            .WithParam("_corr", SagaOpaqueKey.Encode(correlationKey))
+            .WithParam("_gate", SagaOpaqueKey.Encode(gateId));
 
         var rows = await _executor.QueryAsync<SagaStepPoco>(q, ct);
         return rows.Count == 0 ? null : ToDomain(rows[0]);
@@ -570,8 +559,8 @@ public sealed class SurrealSagaStore : ISagaStore
     {
         var q = SurrealQuery
             .Of("SELECT id FROM saga_steps WHERE correlation_key = $_corr AND step_name = $_name LIMIT 1")
-            .WithParam("_corr", EncodeOpaqueKey(correlationKey))
-            .WithParam("_name", EncodeOpaqueKey(stepName));
+            .WithParam("_corr", SagaOpaqueKey.Encode(correlationKey))
+            .WithParam("_name", SagaOpaqueKey.Encode(stepName));
 
         var rows = await _executor.QueryAsync<SagaStepIdProjection>(q, ct);
         return rows.Count > 0;
@@ -743,10 +732,10 @@ public sealed class SurrealSagaStore : ISagaStore
     private static SagaStepPoco FromDomain(SagaStepRecord r) => new()
     {
         Id = SurrealId.ToSurrealId(r.Id),
-        CorrelationKey = EncodeOpaqueKey(r.CorrelationKey),
+        CorrelationKey = SagaOpaqueKey.Encode(r.CorrelationKey),
         SagaName = r.SagaName,
-        StepName = EncodeOpaqueKey(r.StepName),
-        StepIdempotencyKey = EncodeOpaqueKey(r.StepIdempotencyKey),
+        StepName = SagaOpaqueKey.Encode(r.StepName),
+        StepIdempotencyKey = SagaOpaqueKey.Encode(r.StepIdempotencyKey),
         Payload = r.Payload ?? string.Empty,
         Status = StatusToString(r.Status),
         IsCompensation = r.IsCompensation,
@@ -760,16 +749,16 @@ public sealed class SurrealSagaStore : ISagaStore
         DeadLettered = r.DeadLettered,
         CreatedAt = new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt, DateTimeKind.Utc)),
         UpdatedAt = new DateTimeOffset(DateTime.SpecifyKind(r.UpdatedAt, DateTimeKind.Utc)),
-        GateId = r.GateId is null ? null : EncodeOpaqueKey(r.GateId),
+        GateId = r.GateId is null ? null : SagaOpaqueKey.Encode(r.GateId),
     };
 
     private static SagaStepRecord ToDomain(SagaStepPoco p) => new()
     {
         Id = SurrealId.FromSurrealId(StripIdPrefix(p.Id)),
-        CorrelationKey = DecodeOpaqueKey(p.CorrelationKey ?? string.Empty),
+        CorrelationKey = SagaOpaqueKey.Decode(p.CorrelationKey ?? string.Empty),
         SagaName = p.SagaName ?? string.Empty,
-        StepName = DecodeOpaqueKey(p.StepName ?? string.Empty),
-        StepIdempotencyKey = DecodeOpaqueKey(p.StepIdempotencyKey ?? string.Empty),
+        StepName = SagaOpaqueKey.Decode(p.StepName ?? string.Empty),
+        StepIdempotencyKey = SagaOpaqueKey.Decode(p.StepIdempotencyKey ?? string.Empty),
         Payload = p.Payload ?? string.Empty,
         Status = StatusFromString(p.Status),
         IsCompensation = p.IsCompensation,
@@ -781,7 +770,7 @@ public sealed class SurrealSagaStore : ISagaStore
         DeadLettered = p.DeadLettered,
         CreatedAt = p.CreatedAt.UtcDateTime,
         UpdatedAt = p.UpdatedAt.UtcDateTime,
-        GateId = p.GateId is null ? null : DecodeOpaqueKey(p.GateId),
+        GateId = p.GateId is null ? null : SagaOpaqueKey.Decode(p.GateId),
     };
 
     /// <summary>
@@ -825,45 +814,7 @@ public sealed class SurrealSagaStore : ISagaStore
     private static string? Truncate(string? s, int max) =>
         s is null || s.Length <= max ? s : s[..max];
 
-    // The colon is what SurrealForge reads as a record-link separator
-    // (`table:id`), so an idempotency key like `saga:{corr}:{step}` gets inferred
-    // as a record link (verified against the live engine). We map it to a token
-    // that cannot occur in any real key (our keys are GUIDs [hyphen-delimited],
-    // node ids, and the literal `saga` prefix -- none contain `_C_`), so the
-    // encoding is unambiguous and reversible.
-    private const string ColonEscapeToken = "_C_";
-
-    /// <summary>Tag an opaque key so SurrealForge stores it as a plain string
-    /// instead of type-inferring it into a `uuid` (GUID-shaped) or record-link
-    /// (`table:id`-shaped) literal — either of which a SCHEMAFULL `TYPE string`
-    /// field rejects. The prefix defeats uuid inference; colon-escaping defeats
-    /// record-link inference. Empty stays empty (the schema ASSERT NotEmpty owns
-    /// that case).</summary>
-    private static string EncodeOpaqueKey(string value) =>
-        string.IsNullOrEmpty(value)
-            ? value
-            : OpaqueKeyTag + value.Replace(":", ColonEscapeToken);
-
-    /// <summary>Inverse of <see cref="EncodeOpaqueKey"/>: strip the sentinel and
-    /// un-escape colons so callers see the original key. An untagged value is
-    /// returned as-is (defensive against any legacy/un-encoded row).</summary>
-    private static string DecodeOpaqueKey(string value)
-    {
-        if (!value.StartsWith(OpaqueKeyTag, StringComparison.Ordinal))
-            return value;
-        var body = value[OpaqueKeyTag.Length..];
-        // Restore colons; a doubled token was a literal token in the source.
-        return body.Replace(ColonEscapeToken, ":");
-    }
-
-    // ── POCO (private) ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// SurrealDB row shape for the <c>saga_steps</c> table. Private to this
-    /// store because no generated POCO exists yet — when the source generator
-    /// catches up to table 080 this can be deleted and the generated type
-    /// substituted with no contract change.
-    /// </summary>
+    /// <summary>Saga storage response shape.</summary>
     private sealed class SagaStepPoco
     {
         [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;

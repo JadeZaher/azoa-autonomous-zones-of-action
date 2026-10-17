@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.Models.Sagas;
 using AZOA.WebAPI.Sagas;
+using AZOA.WebAPI.Services.Actions.Workflow;
 using AZOA.WebAPI.Tests.Fakes;
 using Xunit;
 
@@ -110,5 +111,27 @@ public sealed class SagaOperatorControllerTests
     {
         var result = await _sut.Cancel(Guid.NewGuid(), null, Ct);
         result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Action_workflow_cannot_bypass_audited_recovery_through_generic_controls(bool deadLettered)
+    {
+        var step = await _store.EnqueueAsync(ActionWorkflowSaga.Name, "node", $"run:{Guid.NewGuid():N}",
+            $"node:{Guid.NewGuid():N}", "{\"original\":true}", false, Ct);
+        var claimed = await _store.TryClaimDueStepAsync(step.Id, DateTime.UtcNow.AddSeconds(5), Ct);
+        claimed.Should().NotBeNull();
+        if (deadLettered)
+            await _store.DeadLetterStepAsync(step.Id, claimed!.ClaimedAt!.Value, "original failure", Ct);
+        else
+            await _store.ParkStepAsync(step.Id, claimed!.ClaimedAt!.Value, "operator:original", null, Ct);
+        var before = await _store.GetAsync(step.Id, Ct);
+
+        (await _sut.Requeue(step.Id, Ct)).Should().BeOfType<ConflictObjectResult>();
+        (await _sut.Cancel(step.Id, new SagaStepCancelRequest { Reason = "unsafe reset" }, Ct))
+            .Should().BeOfType<ConflictObjectResult>();
+
+        (await _store.GetAsync(step.Id, Ct)).Should().BeEquivalentTo(before);
     }
 }

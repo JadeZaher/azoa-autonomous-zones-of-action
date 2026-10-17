@@ -1,4 +1,9 @@
+export type * from "./api/webhooks.js";
+export type * from "./api/hold-commands.js";
+export type * from "./api/dex.js";
+export type * from "./api/consent.js";
 // Core
+export type * from "./api/deployments.js";
 export { AzoaWallet } from "./wallet.js";
 export {
   ok,
@@ -64,10 +69,42 @@ export type { JupiterConfig } from "./dex/jupiter.js";
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./api/index.js";
 export type {
   AzoaApiConfig,
+  NftLifecycleView,
+  NftStageAcceptance,
+  NftReplacementCostAcceptance,
+  NftReplacementCostReconciliation,
+  NftLifecyclePage,
+  NftFeeQuote,
+  NftFeeAuthorization,
+  NftProtocolCostLimits,
+  NftProtocolCostAuthorization,
+  NftProtocolCostQuote,
+  NftProtocolCostOffer,
+  NftWorkflowCostDisclosure,
+  NftWorkflowCostAcceptance,
+  NftWorkflowCostResolution,
+  NftOperation,
+  UserNFTMintParams,
+  UserNFTResult,
   // user-dapp-rbac: assignable DApp role allowlist + user DTO
   UserResponse,
   DappRole,
   TenantKycStatus,
+  BusinessVerificationCapabilities,
+  BusinessVerificationStatus,
+  BusinessVerificationSession,
+  FiatPayoutView,
+  EthereumPreparationView,
+  EthereumRecoveryRequest,
+  OnRampLotView,
+  FiatEventView,
+  HostedSessionRecoveryView,
+  HostedSessionRecoveryRequest,
+  WalletAuthenticationChain,
+  WalletAuthenticationChallenge,
+  WalletAuthenticationProof,
+  WalletAuthenticationToken,
+  WalletOwnershipClaim,
   TenantCustodialAccountStatus,
   TenantCustodialCapabilities,
   TenantKycSession,
@@ -80,6 +117,13 @@ export type {
   // Fungible mint + render-model portfolio (fungible-mint-and-render-model)
   FungibleMintParams,
   FungibleTokenResult,
+  FungibleCreationView,
+  FungibleCreationQuote,
+  FungibleContinuationRequest,
+  FungibleAttachmentRequest,
+  FungibleAttachmentView,
+  PlatformGenesisRequest,
+  PlatformGenesisResponse,
   PortfolioResult,
   PortfolioAsset,
   PortfolioAssetKind,
@@ -224,6 +268,8 @@ export type {
   AdvanceParams,
   SignalParams,
   StartRunParams,
+  StartWorkflowOptions,
+  ActionEconomicManifest,
   AdvanceOptions,
   ChildCredentialResult,
   GateCheckConfig,

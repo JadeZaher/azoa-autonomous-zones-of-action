@@ -225,14 +225,6 @@ public sealed class PayoutAccountService : IPayoutAccountService
                 return AZOAResult<PayoutAccountStatus>.FailureWithCode(
                     created.Message, created.Code ?? FiatPayoutErrors.PayoutBusyCode);
 
-            if (created.Result.Livemode != IsLiveEnvironment())
-            {
-                _logger.LogError(
-                    "Stripe opened a payout account whose livemode does not match the bound rail environment {Environment}.",
-                    _fiat.ActiveEnvironment);
-                return FiatPayoutErrors.RailUnavailable<PayoutAccountStatus>();
-            }
-
             accountId = created.Result.AccountId;
 
             if (!Guid.TryParseExact(session.Id, "N", out var sessionId))
@@ -359,7 +351,7 @@ public sealed class PayoutAccountService : IPayoutAccountService
             : AZOAResult<string?>.Success(found.Result.ProviderSessionId, "Success");
     }
 
-    /// <summary>Re-reads the account and refuses one belonging to the other provider mode.</summary>
+    /// <summary>Re-reads the account with the active environment's credentials and verifies its identity.</summary>
     private async Task<AZOAResult<StripeConnectedAccount>> ReadAccountAsync(
         string accountId, CancellationToken ct)
     {
@@ -369,11 +361,10 @@ public sealed class PayoutAccountService : IPayoutAccountService
         if (account.IsError || account.Result is null)
             return account;
 
-        if (account.Result.Livemode != IsLiveEnvironment())
+        if (!string.Equals(account.Result.AccountId, accountId, StringComparison.Ordinal))
         {
             _logger.LogError(
-                "Payout account {AccountId} reports livemode={Livemode} on a rail bound to {Environment}.",
-                accountId, account.Result.Livemode, _fiat.ActiveEnvironment);
+                "Payout account {AccountId} returned a different account identifier.", accountId);
             return FiatPayoutErrors.RailUnavailable<StripeConnectedAccount>();
         }
 
@@ -403,8 +394,6 @@ public sealed class PayoutAccountService : IPayoutAccountService
     private static PayoutAccountStatus Unavailable() => new(
         Available: false, AccountOpened: false, ReadyToReceive: false, DetailsSubmitted: false,
         OutstandingRequirementCount: 0, SetupUrl: null, SetupUrlExpiresAt: null, UnavailableMessage);
-
-    private bool IsLiveEnvironment() => _fiat.ActiveEnvironment.Kind == RailEnvironmentKind.Live;
 
     /// <summary>True only when BOTH the rail and the cash-out path are configured and switched on.</summary>
     private bool IsAvailable() =>

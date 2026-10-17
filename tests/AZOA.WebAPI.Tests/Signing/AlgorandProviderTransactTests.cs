@@ -6,7 +6,15 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core.Signing;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Tests.TestSupport;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using AZOA.WebAPI.Services.Signing;
 using AZOA.WebAPI.Providers.Blockchain.Algorand;
 using Xunit;
@@ -20,12 +28,30 @@ namespace AZOA.WebAPI.Tests.Signing;
 /// extraction on mint and that a post-broadcast failure is NOT auto-retried
 /// (RetrySafety.Broadcast — double-spend guard).
 /// </summary>
-public class AlgorandProviderTransactTests
+public class AlgorandProviderTransactTests : IDisposable
 {
     private readonly AlgoAccount _platform = new();
+    private readonly ServiceProvider _preparations = new ServiceCollection()
+        .AddSingleton<INativePreparationStore, InMemoryNativePreparationStore>().BuildServiceProvider();
+    public void Dispose() => _preparations.Dispose();
 
     // Recorded server-side state for assertions.
     private int _submitCount;
+    private int _signatureCount;
+    private bool _pauseFirstSignature;
+    private readonly TaskCompletionSource _signatureEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _releaseSignature = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private ulong _indexedRound = 2000;
+    private object? _indexedRoundOverride;
+    private string? _indexContinuation;
+    private long _nodeRound = 100;
+    private object[] _indexedTransactions = [];
+    private string? _indexedGenesis;
+    private Dictionary<string, object?>? _custodyAsset;
+    private readonly Dictionary<string, Dictionary<string, object?>> _custodyAccounts = new();
+    private SigningContext? _recipientSigningContext;
+    private AlgoAccount? _recipientSigningAccount;
+
     private string? _lastGenesisHashB64 = "SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=";
     // Captures the raw msgpack body POSTed to /v2/transactions for wire-byte assertions.
     private volatile byte[]? _lastSubmittedBody;
@@ -41,21 +67,256 @@ public class AlgorandProviderTransactTests
                 ["Blockchain:Chains:0:ChainType"] = "Algorand",
                 ["Blockchain:Chains:0:Devnet:IsEnabled"] = "true",
                 ["Blockchain:Chains:0:Devnet:NodeUrl"] = "http://algod.test/",
+                ["Blockchain:Chains:0:Devnet:IndexerUrl"] = "http://indexer.test/",
                 ["Blockchain:Chains:0:Devnet:TimeoutMs"] = "1000",
             })
             .Build();
 
         var keyService = new AZOA.WebAPI.Services.Signing.WalletKeyService(config);
         var signerFactory = new TransactionSignerFactory(new[] { new AlgorandTransactionSigner() });
+        var custody = new Mock<IKeyCustodyService>(MockBehavior.Strict);
+        custody.Setup(service => service.WithPlatformSigningKeyAsync(true, It.IsAny<SigningContext>(),
+                It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()))
+            .Returns(async (bool _, SigningContext _, Func<byte[], Task<AZOAResult<byte[]>>> sign) =>
+            {
+                if (Interlocked.Increment(ref _signatureCount) == 1 && _pauseFirstSignature)
+                {
+                    _signatureEntered.TrySetResult();
+                    await _releaseSignature.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                }
+                return AZOAResult<AZOAResult<byte[]>>.Success(await sign(_platform.KeyPair.ClearTextPrivateKey));
+            });
+        custody.Setup(service => service.WithSigningKeyAsync(
+                It.Is<SigningContext>(context => _recipientSigningContext.HasValue && context == _recipientSigningContext.Value),
+                It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()))
+            .Returns(async (SigningContext _, Func<byte[], Task<AZOAResult<byte[]>>> sign) =>
+            {
+                Interlocked.Increment(ref _signatureCount);
+                return AZOAResult<AZOAResult<byte[]>>.Success(await sign(_recipientSigningAccount!.KeyPair.ClearTextPrivateKey));
+            });
         return new AlgorandProvider(
             config,
             NullLogger<AlgorandProvider>.Instance,
             signerFactory,
             keyService,
-            custodyService: null,
-            custodyScopeFactory: null,
+            custodyService: custody.Object,
+            custodyScopeFactory: _preparations.GetRequiredService<IServiceScopeFactory>(),
             faucet: null,
             httpMessageHandler: handler);
+    }
+
+    [Theory]
+    [InlineData("ready")]
+    [InlineData("acceptance")]
+    [InlineData("foreign-authority")]
+    [InlineData("rekeyed")]
+    [InlineData("malformed-balance")]
+    public async Task CustodyQuoteUsesCurrentMechanicsAndSeparatesRecipientCostsWithoutSigning(string state)
+    {
+        var sender = _platform.Address.EncodeAsString();
+        var recipient = new AlgoAccount().Address.EncodeAsString();
+        _custodyAsset = new() { ["creator"] = sender, ["total"] = 1000UL, ["decimals"] = 0,
+            ["manager"] = state == "foreign-authority" ? recipient : sender, ["default-frozen"] = false };
+        _custodyAccounts[sender] = new() { ["address"] = sender, ["amount"] = 1_000_000UL,
+            ["min-balance"] = 200_000UL, ["assets"] = new[] { new Dictionary<string, object?>
+                { ["asset-id"] = 123UL, ["amount"] = 500UL, ["is-frozen"] = false } } };
+        _custodyAccounts[recipient] = new() { ["address"] = recipient, ["amount"] = 1_000_000UL,
+            ["min-balance"] = 100_000UL, ["assets"] = state == "acceptance" ? Array.Empty<object>()
+                : new object[] { new Dictionary<string, object?> { ["asset-id"] = 123UL, ["amount"] = 0UL, ["is-frozen"] = false } } };
+        if (state == "rekeyed") _custodyAccounts[sender]["auth-addr"] = recipient;
+        if (state == "malformed-balance") _custodyAccounts[sender]["amount"] = "1000000";
+        using var stub = RunStub(0, null, null);
+        var result = await NewProvider(stub).QuoteValueCustodyAsync(new("Algorand", ChainNetwork.Devnet,
+            "123", sender, recipient, "5", sender), default);
+        if (state is "ready" or "acceptance")
+        {
+            result.IsError.Should().BeFalse(result.Message);
+            result.Result!.RecipientReady.Should().Be(state == "ready");
+            result.Result.TransferNetworkFeeBaseUnits.Should().Be("1000");
+            result.Result.AcceptanceNetworkFeeBaseUnits.Should().Be(state == "ready" ? "0" : "1000");
+            result.Result.AcceptanceMinimumBalanceBaseUnits.Should().Be(state == "ready" ? "0" : "100000");
+        }
+        else result.IsError.Should().BeTrue();
+        _signatureCount.Should().Be(0);
+        _submitCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RecipientAcceptanceUsesActualRecipientAndRecoversOneExactWire()
+    {
+        var sender = _platform.Address.EncodeAsString();
+        _recipientSigningAccount = new AlgoAccount();
+        var recipient = _recipientSigningAccount.Address.EncodeAsString();
+        _recipientSigningContext = new SigningContext(Guid.NewGuid(), Guid.NewGuid(), false, Scope: AzoaScopes.TransferSign);
+        _custodyAsset = new() { ["creator"] = sender, ["total"] = 1000UL, ["decimals"] = 0, ["manager"] = sender };
+        _custodyAccounts[sender] = new() { ["address"] = sender, ["amount"] = 1_000_000UL, ["min-balance"] = 200_000UL,
+            ["assets"] = new[] { new Dictionary<string, object?> { ["asset-id"] = 123UL, ["amount"] = 500UL, ["is-frozen"] = false } } };
+        _custodyAccounts[recipient] = new() { ["address"] = recipient, ["amount"] = 1_000_000UL,
+            ["min-balance"] = 100_000UL, ["assets"] = Array.Empty<object>() };
+        using var stub = RunStub(0, null, null);
+        var provider = NewProvider(stub);
+        var quote = (await provider.QuoteValueCustodyAsync(new("Algorand", ChainNetwork.Devnet, "123",
+            sender, recipient, "5", sender), default)).Result!;
+        var intent = new ValueAcceptanceIntent("Algorand", ChainNetwork.Devnet, "123", recipient, "hold:accept:0",
+            _recipientSigningContext.Value, new(1, "hold-command", "accept", 0, quote, recipient, "1000"));
+        (await provider.PrepareValueAcceptanceAsync(intent with { SigningContext = SigningContext.PlatformFor("Algorand") }, default))
+            .IsError.Should().BeTrue();
+        _signatureCount.Should().Be(0);
+        var first = (await provider.PrepareValueAcceptanceAsync(intent, default)).Result!;
+        var second = (await provider.PrepareValueAcceptanceAsync(intent, default)).Result!;
+        first.Should().BeEquivalentTo(second);
+        _signatureCount.Should().Be(1);
+        _submitCount.Should().Be(0);
+        var signed = AlgorandSignedEnvelope.DecodeCanonical(first.SignedTransactionBase64);
+        signed.Tx.Should().BeOfType<AssetAcceptTransaction>();
+        signed.Tx.Sender.EncodeAsString().Should().Be(recipient);
+        var tx = signed.Tx;
+        _indexedTransactions = [new Dictionary<string, object?> {
+            ["id"] = first.TransactionId, ["sender"] = recipient, ["tx-type"] = "axfer", ["confirmed-round"] = tx.FirstValid,
+            ["fee"] = tx.Fee, ["first-valid"] = tx.FirstValid, ["last-valid"] = tx.LastValid,
+            ["note"] = Convert.ToBase64String(tx.Note),
+            ["asset-transfer-transaction"] = new Dictionary<string, object?> { ["asset-id"] = 123UL, ["receiver"] = recipient, ["amount"] = 0UL } }];
+        await provider.SubmitValueAcceptanceAsync(first, default);
+        _submitCount.Should().Be(1);
+        (await provider.ObserveValueAcceptanceAsync(first, default)).Result.Should().Be(ChainConfirmation.Confirmed);
+        var wire = Convert.FromBase64String(first.SignedTransactionBase64);
+        var corrupt = first with { SignedTransactionBase64 = Convert.ToBase64String(wire.Concat(wire).ToArray()) };
+        await FluentActions.Awaiting(() => provider.SubmitValueAcceptanceAsync(corrupt, default)).Should().ThrowAsync<InvalidOperationException>();
+        _submitCount.Should().Be(1);
+        _signatureCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task OverlappingPreparationWinsOneUnsignedPlanAndNeverSubmits()
+    {
+        using var stub = RunStub(0, null, null);
+        var provider = NewProvider(stub);
+        _pauseFirstSignature = true;
+        var intent = new ValueTransferIntent("Algorand", ChainNetwork.Devnet, "123",
+            _platform.Address.EncodeAsString(), new AlgoAccount().Address.EncodeAsString(), "500",
+            SigningContext.PlatformFor("Algorand"), "value:overlap:0");
+        var first = provider.PrepareValueTransferAsync(intent, default);
+        try
+        {
+            await _signatureEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var second = await NewProvider(stub).PrepareValueTransferAsync(intent, default);
+            second.IsError.Should().BeFalse(second.Message);
+            _releaseSignature.TrySetResult();
+            var completed = await first.WaitAsync(TimeSpan.FromSeconds(10));
+            completed.Result.Should().Be(second.Result);
+            var signatures = _signatureCount;
+            (await NewProvider(stub).PrepareValueTransferAsync(intent, default)).Result.Should().Be(second.Result);
+            _signatureCount.Should().Be(signatures);
+            (await provider.PrepareValueTransferAsync(intent with { QuantityBaseUnits = "501" }, default)).IsError.Should().BeTrue();
+            _submitCount.Should().Be(0);
+        }
+        finally { _releaseSignature.TrySetResult(); }
+    }
+
+    [Fact]
+    public async Task MissingPreparationKeyCannotSign()
+    {
+        using var stub = RunStub(0, null, null);
+        var result = await NewProvider(stub).PrepareValueTransferAsync(new("Algorand", ChainNetwork.Devnet, "123",
+            _platform.Address.EncodeAsString(), new AlgoAccount().Address.EncodeAsString(), "500", SigningContext.PlatformFor("Algorand")), default);
+        result.IsError.Should().BeTrue();
+        _signatureCount.Should().Be(0);
+        _submitCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PreparedValueTransferRoundTripsSignedWireAndReplaysOnlyOriginalIdentity()
+    {
+        using var stub = RunStub(0, null, null);
+        var provider = NewProvider(stub);
+        var recipient = new AlgoAccount().Address.EncodeAsString();
+        var result = await provider.PrepareValueTransferAsync(new("Algorand", ChainNetwork.Devnet, "123",
+            _platform.Address.EncodeAsString(), recipient, "500", SigningContext.PlatformFor("Algorand"), "value:roundtrip:0"), default);
+        result.IsError.Should().BeFalse(result.Message);
+        _submitCount.Should().Be(0);
+        var prepared = JsonSerializer.Deserialize<PreparedValueTransfer>(JsonSerializer.Serialize(result.Result))!;
+        var decoded = Algorand.Utils.Encoder.DecodeFromMsgPack<SignedTransaction>(Convert.FromBase64String(prepared.SignedTransactionBase64));
+        var transfer = decoded.Tx.Should().BeOfType<AssetTransferTransaction>().Subject;
+        transfer.AssetReceiver.EncodeAsString().Should().Be(recipient);
+        transfer.AssetAmount.Should().Be(500UL);
+        decoded.Tx.TxID().Should().Be(prepared.TransactionId);
+        await provider.SubmitValueTransferAsync(prepared, default);
+        var first = _lastSubmittedBody!.ToArray();
+        await provider.SubmitValueTransferAsync(prepared, default);
+        _lastSubmittedBody.Should().Equal(first);
+        _submitCount.Should().Be(2);
+        var tampered = prepared with { Intent = prepared.Intent with { QuantityBaseUnits = "501" } };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.SubmitValueTransferAsync(tampered, default));
+        var original = Convert.FromBase64String(prepared.SignedTransactionBase64);
+        var appended = prepared with { SignedTransactionBase64 = Convert.ToBase64String(original.Concat(original).ToArray()) };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.SubmitValueTransferAsync(appended, default));
+        var trailing = prepared with { SignedTransactionBase64 = Convert.ToBase64String(original.Concat(new byte[] { 0 }).ToArray()) };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.SubmitValueTransferAsync(trailing, default));
+        decoded.Sig.Bytes[0] ^= 1;
+        var badSignature = prepared with { SignedTransactionBase64 = Convert.ToBase64String(Algorand.Utils.Encoder.EncodeToMsgPackOrdered(decoded)) };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => provider.SubmitValueTransferAsync(badSignature, default));
+        _submitCount.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task PreparedValueConfirmationRequiresExactIndexedSemanticsAndGenesis(bool wrongAmount, bool wrongGenesis)
+    {
+        using var stub = RunStub(0, null, null);
+        var provider = NewProvider(stub);
+        var recipient = new AlgoAccount().Address.EncodeAsString();
+        var prepared = (await provider.PrepareValueTransferAsync(new("Algorand", ChainNetwork.Devnet, "123",
+            _platform.Address.EncodeAsString(), recipient, "500", SigningContext.PlatformFor("Algorand"), "value:confirmation:0"), default)).Result!;
+        var transaction = Algorand.Utils.Encoder.DecodeFromMsgPack<SignedTransaction>(Convert.FromBase64String(prepared.SignedTransactionBase64)).Tx;
+        _indexedTransactions = [new Dictionary<string, object> {
+            ["id"] = prepared.TransactionId, ["sender"] = prepared.Intent.Sender, ["confirmed-round"] = 105,
+            ["tx-type"] = "axfer", ["fee"] = transaction.Fee!.Value, ["first-valid"] = transaction.FirstValid!.Value, ["last-valid"] = transaction.LastValid!.Value,
+            ["note"] = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(AZOA.WebAPI.Helpers.CanonicalJson.Hash(prepared.Intent))),
+            ["asset-transfer-transaction"] = new Dictionary<string, object> {
+                ["asset-id"] = 123, ["amount"] = wrongAmount ? 501 : 500, ["receiver"] = recipient } }];
+        if (wrongGenesis) _indexedGenesis = Convert.ToBase64String(new byte[32]);
+        var observed = await provider.ObserveValueTransferAsync(prepared, default);
+        if (wrongAmount || wrongGenesis) observed.IsError.Should().BeTrue();
+        else observed.Result.Should().Be(ChainConfirmation.Confirmed);
+        _submitCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PartialOrMalformedIndexerEvidenceNeverProvesNoEffect(bool continuation)
+    {
+        using var stub = RunStub(0, null, null);
+        var provider = NewProvider(stub);
+        var prepared = (await provider.PrepareValueTransferAsync(new("Algorand", ChainNetwork.Devnet, "123",
+            _platform.Address.EncodeAsString(), new AlgoAccount().Address.EncodeAsString(), "500",
+            SigningContext.PlatformFor("Algorand"), "value:incomplete:0"), default)).Result!;
+        _nodeRound = 2000;
+        if (continuation) _indexContinuation = "another-page";
+        else _indexedRoundOverride = "invalid-round";
+        var observed = await provider.ObserveValueTransferAsync(prepared, default);
+        observed.IsError.Should().BeFalse();
+        observed.Result.Should().Be(ChainConfirmation.Unknown);
+        _submitCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(2000UL, 2000L, true)]
+    [InlineData(100UL, 2000L, false)]
+    [InlineData(2000UL, 100L, false)]
+    public async Task PreparedValueExpiryRequiresCaughtUpIndexerAndExpiredNode(ulong indexedRound, long nodeRound, bool finalAbsence)
+    {
+        using var stub = RunStub(0, null, null);
+        var provider = NewProvider(stub);
+        var prepared = (await provider.PrepareValueTransferAsync(new("Algorand", ChainNetwork.Devnet, "123",
+            _platform.Address.EncodeAsString(), new AlgoAccount().Address.EncodeAsString(), "500", SigningContext.PlatformFor("Algorand"), "value:expiry:0"), default)).Result!;
+        _indexedRound = indexedRound;
+        _nodeRound = nodeRound;
+        var observed = await provider.ObserveValueTransferAsync(prepared, default);
+        observed.Result.Should().Be(finalAbsence ? ChainConfirmation.FailedOnChain : ChainConfirmation.Unknown);
+        _submitCount.Should().Be(0);
     }
 
     [Fact]
@@ -241,6 +502,11 @@ public class AlgorandProviderTransactTests
             CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
+            if (path == "/v2/assets/123" && _owner._custodyAsset is not null)
+                return JsonResponse(new { index = 123UL, @params = _owner._custodyAsset });
+            if (path.StartsWith("/v2/accounts/", StringComparison.Ordinal)
+                && _owner._custodyAccounts.TryGetValue(path["/v2/accounts/".Length..], out var account))
+                return JsonResponse(new { }, account);
             if (path.EndsWith("/v2/transactions/params", StringComparison.Ordinal))
             {
                 return JsonResponse(new { fee = 0, @class = "" }, extra: new Dictionary<string, object?>
@@ -252,6 +518,17 @@ public class AlgorandProviderTransactTests
                 });
             }
 
+            if (request.RequestUri.Host == "indexer.test" && path == "/v2/transactions")
+                return JsonResponse(new { }, extra: new Dictionary<string, object?> {
+                    ["current-round"] = _owner._indexedRoundOverride ?? _owner._indexedRound,
+                    ["next-token"] = _owner._indexContinuation, ["transactions"] = _owner._indexedTransactions });
+            if (request.RequestUri.Host == "indexer.test" && path.StartsWith("/v2/blocks/", StringComparison.Ordinal))
+                return JsonResponse(new { }, extra: new Dictionary<string, object?> {
+                    ["genesis-hash"] = _owner._indexedGenesis ?? _owner._lastGenesisHashB64 });
+
+            if (path == "/v2/status")
+                return JsonResponse(new { }, extra: new Dictionary<string, object?> { ["last-round"] = _owner._nodeRound });
+
             if (path == "/v2/transactions")
             {
                 _owner._lastSubmittedBody = request.Content is null
@@ -261,7 +538,7 @@ public class AlgorandProviderTransactTests
                 Interlocked.Increment(ref _owner._submitCount);
                 return _failSubmitWith.HasValue
                     ? new HttpResponseMessage((HttpStatusCode)_failSubmitWith.Value)
-                    : JsonResponse(new { txId = "STUBTXID" });
+                    : JsonResponse(new { txId = Algorand.Utils.Encoder.DecodeFromMsgPack<SignedTransaction>(_owner._lastSubmittedBody).Tx.TxID() });
             }
 
             if (path.Contains("/v2/transactions/pending/", StringComparison.Ordinal))

@@ -1,3 +1,5 @@
+import type { NftFeeAuthorization, NftProtocolCostAuthorization } from "../api/client.js";
+
 /**
  * Typed `nodeConfig` builders — pure helpers that serialize the **generic
  * mechanism** params of the `economic-primitive-nodes` node types into the
@@ -64,7 +66,9 @@ export interface NftMintRequestParams {
   name: string;
   description?: string;
   chainId: string;
-  tokenId?: string;
+  metadataUri: string;
+  feeAuthorization?: NftFeeAuthorization;
+  protocolCostAuthorization?: NftProtocolCostAuthorization;
   imageUri?: string;
   externalUri?: string;
   metadata?: Record<string, string>;
@@ -113,7 +117,9 @@ function buildNftMintRequest(p: NftMintRequestParams): Record<string, unknown> {
     name: p.name,
     description: p.description ?? "",
     chainId: p.chainId,
-    ...(p.tokenId !== undefined ? { tokenId: p.tokenId } : {}),
+    metadataUri: p.metadataUri,
+    ...(p.feeAuthorization !== undefined ? { feeAuthorization: p.feeAuthorization } : {}),
+    ...(p.protocolCostAuthorization !== undefined ? { protocolCostAuthorization: p.protocolCostAuthorization } : {}),
     ...(p.imageUri !== undefined ? { imageUri: p.imageUri } : {}),
     ...(p.externalUri !== undefined ? { externalUri: p.externalUri } : {}),
     metadata: p.metadata ?? {},

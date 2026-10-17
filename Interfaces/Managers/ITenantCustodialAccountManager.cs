@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
@@ -23,22 +24,26 @@ public interface ITenantCustodialAccountManager
         Guid tenantId,
         string externalSubject,
         string idempotencyKey,
+        SigningConsentWitness authority,
         CancellationToken ct = default);
 
     Task<AZOAResult<TenantCustodialAccountStatusResponse>> GetStatusAsync(
         Guid tenantId,
         string externalSubject,
+        SigningConsentWitness authority,
         CancellationToken ct = default);
 
     Task<AZOAResult<TenantKycSessionResponse>> BeginKycAsync(
         Guid tenantId,
         string externalSubject,
         string idempotencyKey,
+        SigningConsentWitness authority,
         CancellationToken ct = default);
 
     Task<AZOAResult<TenantKycSubmissionResponse>> SubmitKycAsync(
         Guid tenantId,
         string externalSubject,
         TenantKycSubmissionRequest request,
+        SigningConsentWitness authority,
         CancellationToken ct = default);
 }

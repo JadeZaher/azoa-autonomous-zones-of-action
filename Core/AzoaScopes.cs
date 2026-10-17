@@ -91,6 +91,20 @@ public static class AzoaScopes
 
     /// <summary>Tenant may drive a fungible-token (ASA) create that signs.</summary>
     public const string TokenCreateSign = "token:create:sign";
+    /// <summary>Authorize native contract deployment with the caller's wallet.</summary>
+    public const string ContractDeploySign = "contract:deploy:sign";
+    /// <summary>Authorize state-changing native program calls.</summary>
+    public const string ContractCallSign = "contract:call:sign";
+    /// <summary>Authorize Solana metadata and token-account management.</summary>
+    public const string SolanaAccountSign = "solana:account:sign";
+    /// <summary>Authorize source WTT publication and its bounded prerequisites.</summary>
+    public const string WttSourceSign = "wtt:source:sign";
+    /// <summary>Authorize target WTT redemption and its bounded prerequisites.</summary>
+    public const string WttTargetSign = "wtt:target:sign";
+    /// <summary>Authorize an exact recipient account prerequisite for WTT.</summary>
+    public const string WttParticipantSign = "wtt:participant:sign";
+    /// <summary>Authorize an original owner's bounded WTT residual-fund return.</summary>
+    public const string WttCleanupSign = "wtt:cleanup:sign";
 
     /// <summary>
     /// D19: may revoke a soulbound credential — an on-chain ASA clawback signed by the
@@ -126,7 +140,8 @@ public static class AzoaScopes
     public static readonly System.Collections.Generic.IReadOnlySet<string> ValueSigningScopes =
         new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
         {
-            SwapSign, TransferSign, GrantSign, TokenCreateSign,
+            SwapSign, TransferSign, GrantSign, TokenCreateSign, ContractDeploySign, ContractCallSign, SolanaAccountSign,
+            WttSourceSign, WttTargetSign, WttParticipantSign, WttCleanupSign,
             // A revoke moves a real asset off a user's account with the platform's
             // clawback key. Like TokenCreateSign it is platform-SIGNED but may be
             // tenant-DRIVEN, so it must never arrive through a no-UX Participation grant.
@@ -203,6 +218,13 @@ public static class AzoaScopes
             ["Swap"]                  = Set(SwapSign),
             ["Exchange"]              = Set(SwapSign),
             ["fungible_token_create"] = Set(TokenCreateSign),
+            ["native-deployment"] = Set(ContractDeploySign),
+            ["native-call"] = Set(ContractCallSign),
+            ["solana-account"] = Set(SolanaAccountSign),
+            ["wtt-source"] = Set(WttSourceSign),
+            ["wtt-target"] = Set(WttTargetSign),
+            ["wtt-participant"] = Set(WttParticipantSign),
+            ["wtt-cleanup"] = Set(WttCleanupSign),
             // D19 soulbound revocation. Deliberately its OWN scope rather than reusing
             // TransferSign: a clawback moves an asset the signer does not hold, so a
             // user who consented to "sign my transfers" must not thereby consent to
@@ -281,6 +303,13 @@ public static class AzoaScopes
             TransferSign,
             GrantSign,
             TokenCreateSign,
+            ContractDeploySign,
+            ContractCallSign,
+            SolanaAccountSign,
+            WttSourceSign,
+            WttTargetSign,
+            WttParticipantSign,
+            WttCleanupSign,
             CredentialRevokeSign,
         };
 
@@ -317,6 +346,13 @@ public static class AzoaScopes
             [TransferSign]    = "Sign a value transfer with the user's key.",
             [GrantSign]       = "Sign a grant/mint-to-actor.",
             [TokenCreateSign] = "Sign a fungible-token (ASA) create.",
+            [ContractDeploySign] = "Deploy a native contract with your wallet and explicit fee limits.",
+            [ContractCallSign] = "Execute a state-changing native program call.",
+            [SolanaAccountSign] = "Manage Solana metadata and token accounts, including rent destinations.",
+            [WttSourceSign] = "Send tokens through Wormhole with explicit source costs.",
+            [WttTargetSign] = "Complete a Wormhole transfer with explicit destination costs.",
+            [WttParticipantSign] = "Authorize the exact receiving-account prerequisite for a Wormhole transfer.",
+            [WttCleanupSign] = "Return remaining Wormhole stage funds to your original wallet with explicit costs.",
             [CredentialRevokeSign] = "Revoke a soulbound credential you issued (on-chain clawback).",
         };
 

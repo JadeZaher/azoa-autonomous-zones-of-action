@@ -24,7 +24,7 @@ public class WalletAuthManagerTests
     private readonly Mock<IConsentGrantStore> _consentGrants = new();
     private readonly WalletAuthManager _mgr;
 
-    private const string Addr = "ALGOADDRESSXYZ";
+    private static readonly string Addr = new Algorand.Address(new byte[32]).ToString();
     private const string Chain = "algorand";
 
     public WalletAuthManagerTests()
@@ -39,20 +39,21 @@ public class WalletAuthManagerTests
         // assert the call happens / fails gracefully.
         _consentGrants.Setup(c => c.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<int> { Result = 0 });
-        _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, _consentGrants.Object, config);
+        _mgr = new WalletAuthManager(_challenges.Object, _claimTokens.Object, _users.Object, _verifier.Object, config);
     }
 
     private void GivenLiveChallengeAndValidSignature()
     {
         var nonce = "nonce-123";
-        var msg = $"AZOA-AUTH-v1\nissuer:test\naudience:test\nchain:{Chain}\naddress:{Addr}\nnonce:{nonce}\nexpiry:2099-01-01T00:00:00Z\n";
+        var expires = DateTime.UtcNow.AddMinutes(4);
+        var msg = $"AZOA-AUTH-v1\nissuer:test\naudience:test\nchain:{Chain}\naddress:{Addr}\nnonce:{nonce}\nexpires:{expires:O}";
         _challenges.Setup(c => c.GetLatestLiveByAddressAsync(Addr, Chain, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthChallenge>
             {
                 Result = new WalletAuthChallenge
                 {
                     Address = Addr, ChainType = Chain, Nonce = nonce, DomainMessage = msg,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(4),
+                    ExpiresAt = expires,
                 }
             });
         _challenges.Setup(c => c.TryConsumeAsync(nonce, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
@@ -67,7 +68,7 @@ public class WalletAuthManagerTests
         // Wallet not bound to any user yet.
         _users.Setup(a => a.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IUser> { Result = null });
-        _users.Setup(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+        _users.Setup(a => a.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
 
         var r = await _mgr.VerifyAsync(Addr, Chain, "c2ln", null);
@@ -75,7 +76,7 @@ public class WalletAuthManagerTests
         r.IsError.Should().BeFalse();
         r.Result!.Token.Should().NotBeNullOrEmpty();
         // The minted user is SELF-OWNED with the wallet binding set.
-        _users.Verify(a => a.UpsertAsync(
+        _users.Verify(a => a.CreateIfAbsentAsync(
             It.Is<IUser>(x => x.OwnerTenantId == null
                 && x.AuthWalletAddress == Addr && x.AuthWalletChainType == Chain),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -94,7 +95,7 @@ public class WalletAuthManagerTests
         r.IsError.Should().BeFalse();
         r.Result!.UserId.Should().Be(existing.Id);
         // No new user minted for a known wallet.
-        _users.Verify(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
+        _users.Verify(a => a.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -109,18 +110,19 @@ public class WalletAuthManagerTests
 
         r.IsError.Should().BeTrue();
         // Never minted a user on a bad signature.
-        _users.Verify(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
+        _users.Verify(a => a.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Verify_NonceAlreadyConsumed_Fails_AC1()
     {
         var nonce = "nonce-123";
-        var msg = $"AZOA-AUTH-v1\nissuer:test\naudience:test\nchain:{Chain}\naddress:{Addr}\nnonce:{nonce}\nexpiry:2099-01-01T00:00:00Z\n";
+        var expires = DateTime.UtcNow.AddMinutes(4);
+        var msg = $"AZOA-AUTH-v1\nissuer:test\naudience:test\nchain:{Chain}\naddress:{Addr}\nnonce:{nonce}\nexpires:{expires:O}";
         _challenges.Setup(c => c.GetLatestLiveByAddressAsync(Addr, Chain, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthChallenge>
             {
-                Result = new WalletAuthChallenge { Address = Addr, ChainType = Chain, Nonce = nonce, DomainMessage = msg, ExpiresAt = DateTime.UtcNow.AddMinutes(4) }
+                Result = new WalletAuthChallenge { Address = Addr, ChainType = Chain, Nonce = nonce, DomainMessage = msg, ExpiresAt = expires }
             });
         // Atomic consume LOSES (another concurrent verify already won).
         _challenges.Setup(c => c.TryConsumeAsync(nonce, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
@@ -170,66 +172,82 @@ public class WalletAuthManagerTests
     {
         var token = "claim-token-abc";
         var targetId = Guid.NewGuid();
+        var tenant = Guid.NewGuid();
         _claimTokens.Setup(t => t.GetByTokenAsync(token, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthClaimToken>
             {
-                Result = new WalletAuthClaimToken { Token = token, TargetUserId = targetId }
+                Result = new WalletAuthClaimToken { Token = token, TargetUserId = targetId, TenantId = tenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }
             });
-        // Atomic single-use redeem wins.
-        _claimTokens.Setup(t => t.TryConsumeAsync(token, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<bool> { Result = true });
         // The tenant-provisioned user still has a tenant owner pre-claim.
         _users.Setup(a => a.GetByIdAsync(targetId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IUser>
             {
-                Result = new User { Id = targetId, OwnerTenantId = Guid.NewGuid() }
+                Result = new User { Id = targetId, OwnerTenantId = tenant }
             });
-        _users.Setup(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
+        _users.Setup(a => a.TryClaimAuthenticationAsync(It.IsAny<IUser>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Guid>(), It.IsAny<DateTime?>(), It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IUser a, string? _, string? _, Guid _, DateTime? _, WalletAuthClaimToken _, CancellationToken _) => new AZOAResult<IUser> { Result = a });
         return targetId;
     }
 
     [Fact]
-    public async Task Claim_RevokesAllOutstandingGrants_AC3b()
+    public async Task Claim_atomic_authentication_failure_does_not_issue_a_login_token()
     {
-        var targetId = GivenClaimTokenHappyPath();
-
-        // Claim with a password user-side credential (no wallet fields).
-        var r = await _mgr.ClaimAsync(
-            authedUserId: null,
-            claimToken: "claim-token-abc",
-            newPassword: "a-strong-new-password",
-            address: null, chainType: null, signature: null, message: null);
-
-        r.IsError.Should().BeFalse();
-        // THE attack closed: a tenant's still-live consent grant is revoked the moment
-        // the user claims, so a residual child JWT can no longer drive the signing seam.
-        // Revocation is keyed by the CLAIMED user id (the grantor), exactly once.
-        _consentGrants.Verify(c => c.RevokeAllByGrantorAsync(
-            targetId, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
+        var id = GivenClaimTokenHappyPath();
+        _users.Setup(store => store.TryClaimAuthenticationAsync(It.IsAny<IUser>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<Guid>(), It.IsAny<DateTime?>(), It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Failure("Consent changed concurrently."));
+        var result = await _mgr.ClaimAsync(id, "claim-token-abc", "a-strong-new-password", null, null, null, null);
+        result.IsError.Should().BeTrue(); result.Result.Should().BeNull();
+        _consentGrants.Verify(store => store.RevokeAllByGrantorAsync(It.IsAny<Guid>(), It.IsAny<DateTime>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
-    public async Task Claim_GrantRevokeFails_StillSucceeds_ButWarns_AC3b()
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("identity")]
+    [InlineData("credentials")]
+    [InlineData("consumed")]
+    public async Task Invalid_claim_never_enters_ownership_transaction(string condition)
     {
-        GivenClaimTokenHappyPath();
-        // The grant-revoke backstop FAILS (store error). The watermark (AuthNotBefore)
-        // already cut the residual-token window, so the claim itself must NOT fail.
-        _consentGrants.Setup(c => c.RevokeAllByGrantorAsync(
-                It.IsAny<Guid>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AZOAResult<int> { IsError = true, Message = "store unavailable" });
+        var id = GivenClaimTokenHappyPath();
+        if (condition == "consumed")
+            _claimTokens.Setup(store => store.GetByTokenAsync("claim-token-abc", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<WalletAuthClaimToken>.Success(new WalletAuthClaimToken {
+                    TargetUserId = id, Token = "claim-token-abc", TenantId = Guid.NewGuid(),
+                    ConsumedAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }));
+        var result = await _mgr.ClaimAsync(condition == "identity" ? Guid.NewGuid() : id,
+            condition == "missing" ? null : "claim-token-abc", condition == "credentials" ? null : "new-password", null, null, null, null);
+        result.IsError.Should().BeTrue(); result.Result.Should().BeNull();
+        _users.Verify(store => store.TryClaimAuthenticationAsync(It.IsAny<IUser>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<Guid>(), It.IsAny<DateTime?>(), It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 
-        var r = await _mgr.ClaimAsync(
-            authedUserId: null,
-            claimToken: "claim-token-abc",
-            newPassword: "a-strong-new-password",
-            address: null, chainType: null, signature: null, message: null);
-
-        // Claim still succeeds — the watermark is the primary cut; revoke is belt-and-
-        // suspenders. But the failure IS surfaced in the message.
-        r.IsError.Should().BeFalse();
-        r.Result!.Token.Should().NotBeNullOrEmpty();
-        (r.Message ?? string.Empty).ToLowerInvariant()
-            .Should().Match(m => m.Contains("revoke") || m.Contains("watermark"));
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Claim_revokes_both_tenant_known_credentials_in_the_authority_CAS(bool walletClaim)
+    {
+        var id = GivenClaimTokenHappyPath();
+        var oldTenant = Guid.NewGuid();
+        var oldWallet = new Algorand.Address(Enumerable.Repeat((byte)1, 32).ToArray()).ToString();
+        var oldPassword = BCrypt.Net.BCrypt.HashPassword("tenant-known-password");
+        var child = new User { Id = id, OwnerTenantId = oldTenant, PasswordHash = oldPassword, AuthWalletAddress = oldWallet, AuthWalletChainType = Chain };
+        _users.Setup(store => store.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IUser>.Success(child));
+        _claimTokens.Setup(store => store.GetByTokenAsync("claim-token-abc", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<WalletAuthClaimToken>.Success(new WalletAuthClaimToken { Token = "claim-token-abc", TargetUserId = id, TenantId = oldTenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }));
+        if (walletClaim)
+        {
+            GivenLiveChallengeAndValidSignature();
+            _users.Setup(store => store.GetByAuthWalletAsync(Addr, Chain, It.IsAny<CancellationToken>())).ReturnsAsync(new AZOAResult<IUser>());
+        }
+        var result = await _mgr.ClaimAsync(id, "claim-token-abc", walletClaim ? null : "new-user-password",
+            walletClaim ? Addr : null, walletClaim ? Chain : null, walletClaim ? "c2ln" : null, null);
+        result.IsError.Should().BeFalse();
+        child.OwnerTenantId.Should().BeNull();
+        child.AuthNotBefore.Should().NotBeNull();
+        BCrypt.Net.BCrypt.Verify("tenant-known-password", child.PasswordHash).Should().BeFalse();
+        child.AuthWalletAddress.Should().Be(walletClaim ? Addr : null);
+        child.AuthWalletChainType.Should().Be(walletClaim ? Chain : null);
+        _users.Verify(store => store.TryClaimAuthenticationAsync(child, oldWallet, Chain, oldTenant, null, It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

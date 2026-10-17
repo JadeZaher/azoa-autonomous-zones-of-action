@@ -37,7 +37,7 @@ public class TokenUseClaimTests
     [Fact]
     public async Task LoginToken_CarriesTokenUseLogin_AndNoActAsTenant()
     {
-        const string addr = "ALGOADDRESSXYZ";
+        var addr = new Algorand.Address(new byte[32]).ToString();
         const string chain = "algorand";
 
         var challenges = new Mock<IWalletAuthChallengeStore>();
@@ -48,14 +48,15 @@ public class TokenUseClaimTests
 
         // Live challenge + winning consume + valid signature (mirror Verify_UnknownWallet).
         var nonce = "nonce-123";
-        var msg = $"AZOA-AUTH-v1\nissuer:test\naudience:test\nchain:{chain}\naddress:{addr}\nnonce:{nonce}\nexpiry:2099-01-01T00:00:00Z\n";
+        var expires = DateTime.UtcNow.AddMinutes(4);
+        var msg = $"AZOA-AUTH-v1\nissuer:test\naudience:test\nchain:{chain}\naddress:{addr}\nnonce:{nonce}\nexpires:{expires:O}";
         challenges.Setup(c => c.GetLatestLiveByAddressAsync(addr, chain, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthChallenge>
             {
                 Result = new WalletAuthChallenge
                 {
                     Address = addr, ChainType = chain, Nonce = nonce, DomainMessage = msg,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(4),
+                    ExpiresAt = expires,
                 }
             });
         challenges.Setup(c => c.TryConsumeAsync(nonce, It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
@@ -65,12 +66,12 @@ public class TokenUseClaimTests
         // Unknown wallet → mint a self-owned user and return a LOGIN token.
         users.Setup(a => a.GetByAuthWalletAsync(addr, chain, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IUser> { Result = null });
-        users.Setup(a => a.UpsertAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
+        users.Setup(a => a.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
 
         var mgr = new WalletAuthManager(
             challenges.Object, claimTokens.Object, users.Object, verifier.Object,
-            consentGrants.Object, TestConfig());
+            TestConfig());
 
         var r = await mgr.VerifyAsync(addr, chain, "c2ln", null);
 
@@ -115,7 +116,7 @@ public class TokenUseClaimTests
                 }
             });
 
-        var manager = new TenantManager(store.Object, TestConfig(), grants.Object);
+        var manager = new TenantManager(store.Object, TestConfig(), grants.Object, ConsentFixture.Issuer());
 
         var result = await manager.IssueChildCredentialAsync(
             tenantId, userId,

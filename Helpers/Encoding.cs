@@ -40,6 +40,13 @@ public static class Encoding
     public static bool TryDecodeSignature(string signature, out byte[] bytes)
     {
         var s = signature.Trim();
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) || (s.Length is 128 or 130 && IsHex(s)))
+        {
+            var hex = s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? s[2..] : s;
+            if (!IsHex(hex)) { bytes = []; return false; }
+            bytes = Convert.FromHexString(hex);
+            return true;
+        }
         try
         {
             bytes = Convert.FromBase64String(s);

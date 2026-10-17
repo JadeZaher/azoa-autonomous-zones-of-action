@@ -1,0 +1,3 @@
+# Consent management
+
+Grant commands are persisted per owner before submission. A successful response must match the saved request, tenant, owner, origin, scopes and expiry before its receipt is archived. The receipt is historical; current grant status comes from a separate authenticated read. Response loss retries the same command. Withdrawal must return either a permanent server tombstone or the original admitted receipt before local pending state is cleared. An admitted grant remains until explicitly revoked. Mount and read generations suppress stale asynchronous results; exact stored-command comparison prevents an old completion from deleting newer pending work.

@@ -39,13 +39,13 @@ public sealed class NotEnabledActionNodeTypesTests
 
     private static readonly string[] VerdictRelativePath =
     {
-        "conductor", "tracks", "ardanova-production-readiness-waves_20260907", "REVIEW-GOVERNANCE-VERDICT.md",
+        "conductor", "tracks", "platform-stub-closeout_20261015", "round2-governance-source-review.md",
     };
 
     // Line-anchored, and tolerant of this tree's mixed CRLF/LF: Multiline '^' matches
     // after either ending. The file is written so exactly ONE line starts with VERDICT:.
     private static readonly Regex VerdictMarker =
-        new(@"^VERDICT:[ \t]*(PASS|FAIL)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        new(@"^SOURCE_VERDICT:[ \t]*(ACCEPTED|REJECTED)\b", RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
     [Fact]
     public void TheIndependentVerdict_IsRecordedExactlyOnce()
@@ -55,14 +55,14 @@ public sealed class NotEnabledActionNodeTypesTests
         matches.Count.Should().Be(
             1,
             "a review whose verdict cannot be read off unambiguously has not recorded one; "
-            + "write exactly one line starting 'VERDICT: PASS' or 'VERDICT: FAIL'");
+            + "write exactly one line starting 'SOURCE_VERDICT: ACCEPTED' or 'SOURCE_VERDICT: REJECTED'");
     }
 
     [Theory]
     [MemberData(nameof(GovernanceNodeTypes))]
     public void GovernanceTypes_AreBlocked_ExactlyWhileTheIndependentVerdictIsFail(ActionNodeType nodeType)
     {
-        var verdictIsPass = RecordedVerdict() == "PASS";
+        var verdictIsPass = RecordedVerdict() == "ACCEPTED";
 
         NotEnabledActionNodeTypes.IsBlocked(nodeType).Should().Be(
             !verdictIsPass,
@@ -79,7 +79,7 @@ public sealed class NotEnabledActionNodeTypesTests
         var gateSource = SourceOf("Services", "Actions", "NotEnabledActionNodeTypes.cs");
 
         gateSource.Should().Contain(
-            "REVIEW-GOVERNANCE-VERDICT.md",
+            "round2-governance-source-review.md",
             "a gate that stops naming its verdict is a gate whose reason has gone folkloric — "
             + "the previous reason (a tally that read raw holons) was already stale when L4.1 read it");
     }
@@ -90,7 +90,7 @@ public sealed class NotEnabledActionNodeTypesTests
         return match.Success
             ? match.Groups[1].Value
             : throw new InvalidOperationException(
-                "REVIEW-GOVERNANCE-VERDICT.md records no 'VERDICT: PASS|FAIL' line.");
+                "round2-governance-source-review.md records no 'SOURCE_VERDICT: ACCEPTED|REJECTED' line.");
     }
 
     private static string VerdictText() => SourceOf(VerdictRelativePath);

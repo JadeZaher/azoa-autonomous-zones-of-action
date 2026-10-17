@@ -16,23 +16,22 @@ public class NftController : ControllerBase
 {
     private readonly INftManager _nftManager;
     private readonly IFungibleTokenManager _fungibleTokenManager;
-    private readonly IHolonManager _holonManager;
+    private readonly AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? _signingAuthority;
 
     public NftController(
         INftManager nftManager,
         IFungibleTokenManager fungibleTokenManager,
-        IHolonManager holonManager)
+        AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null)
     {
         _nftManager = nftManager;
         _fungibleTokenManager = fungibleTokenManager;
-        _holonManager = holonManager;
+        _signingAuthority = signingAuthority;
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<AZOAResult<NftResult>>> Get(Guid id, [FromQuery] AZOARequest? request)
     {
-        // Owner-or-public read scope: a non-owner cannot read another tenant's private
-        // NFT by id (manager returns "not found" rather than confirming it).
+        // Reads require proven current ownership.
         var result = await _nftManager.GetAsync(id, GetUserIdFromClaims(), request);
         if (result.IsError || result.Result == null) return NotFound(result);
 
@@ -50,6 +49,20 @@ public class NftController : ControllerBase
         return Ok(new AZOAResult<IEnumerable<NftResult>> { Result = mapped, Message = "Success" });
     }
 
+    [HttpPost("mint-cost-quote")]
+    public async Task<IActionResult> QuoteMintCosts([FromBody] NftMintRequest request,
+        [FromServices] INftLifecycleService lifecycle, [FromQuery] AZOARequest? providerRequest)
+    {
+        var actor = GetUserIdFromClaims();
+        if (actor is null) return Unauthorized();
+        if (!User.HasSigningScope(AzoaScopes.NftMint)) return Forbid();
+        var model = NftLifecycleOperationProjection.MintModel(request, providerRequest?.NftFeeAuthorization);
+        var result = await lifecycle.QuoteMintCostsAsync(actor.Value, actor.Value, model, ReadIdempotencyKey() ?? string.Empty,
+            HttpContext.RequestAborted, User.GetActingTenantId() ?? Guid.Empty);
+        return result.IsError || result.Result is null ? BadRequest(result)
+            : Ok(AZOAResult<NftProtocolCostOffer>.Success(NftProtocolCostOffer.From(result.Result)));
+    }
+
     [HttpPost("mint")]
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Mint([FromBody] NftMintRequest request, [FromQuery] AZOARequest? providerRequest)
     {
@@ -64,116 +77,39 @@ public class NftController : ControllerBase
                 Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to mint an NFT."
             });
 
-        var result = await _nftManager.MintAsync(request, userId.Value, providerRequest);
+        providerRequest ??= new AZOARequest();
+        providerRequest.IdempotencyKey = ReadIdempotencyKey();
+        var captured = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (captured.IsError || captured.Result is null) return BadRequest(captured);
+        providerRequest.AuthenticationWitness = captured.Result;
+        var result = await _nftManager.MintAsync(request, userId.Value, providerRequest, User.GetActingTenantId());
         var response = BlockchainOperationResponse.Project(result);
+        if (result.Code == "NFT_PENDING") return Accepted(response);
         if (!response.IsError) return Ok(response);
 
-        // value-path-wiring H3: the KYC gate now lives in NftManager.MintAsync. A
-        // fail-closed KYC rejection carries the KYC_FORBIDDEN: prefix → 403,
-        // consistent with the kyc-module convention (AllocationController.cs:80,
-        // KycController.cs:124). Any other error stays 400.
         if (result.Message?.StartsWith(KycAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
             return StatusCode(StatusCodes.Status403Forbidden, response);
 
         return BadRequest(response);
     }
 
-    /// <summary>
-    /// One-shot fungible token mint (fungible-mint-and-render-model, §11.3): launch
-    /// a fungible ASA with a real supply + decimals into the caller's provisioned
-    /// custodial wallet, WITHOUT authoring an action DAG. The direct parallel to the
-    /// <c>FungibleTokenCreate</c> action node — it shares the SAME manager path
-    /// (<see cref="IFungibleTokenManager.CreateAsync"/>), the SAME fail-closed KYC
-    /// gate, and the SAME idempotency discipline.
-    ///
-    /// Idempotency: the optional <c>Idempotency-Key</c> header wins; absent ⇒ the
-    /// manager derives a deterministic content key over the token descriptor (never
-    /// random). The dedup namespace is partitioned by the API-key id when the caller
-    /// is an API-key principal, else by the authenticated user id (a stable
-    /// per-identity partition, mirroring the action node's run-id sentinel) so two
-    /// users reusing the same human-friendly key never collide.
-    ///
-    /// IDOR: the target is ALWAYS the authenticated user; the body carries no
-    /// owner id. KYC gate (§11.4): the value-bearing launch is gated in the manager
-    /// choke point — a fail-closed rejection carries the <c>KYC_FORBIDDEN:</c> prefix
-    /// → 403 (consistent with <c>AllocationController</c> / the <c>Mint</c> route).
-    /// </summary>
+    /// <summary>Admits a fungible creation for explicit quote acceptance and durable recovery.</summary>
     [HttpPost("fungible-mint")]
-    public async Task<ActionResult<AZOAResult<FungibleTokenResult>>> FungibleMint(
-        [FromBody] FungibleMintRequest request)
+    public async Task<ActionResult<AZOAResult<FungibleTokenResult>>> FungibleMint([FromBody] FungibleMintRequest request)
     {
         var userId = GetUserIdFromClaims();
-        if (userId == null)
-            return Unauthorized(new AZOAResult<FungibleTokenResult> { IsError = true, Message = "Invalid token." });
-
-        if (!User.HasSigningScope(AzoaScopes.NftMint))
-            return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<FungibleTokenResult>
-            {
-                IsError = true,
-                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to launch a fungible token."
-            });
-
-        // The manager partitions the idempotency namespace by this id. An API-key
-        // principal carries an ApiKeyId claim; a JWT self-run (the frontend test
-        // harness) does not — fall back to the user id so the partition is still
-        // stable and per-identity (FungibleTokenCreateNodeHandler run-id precedent).
-        var partitionId = GetApiKeyId() ?? userId.Value.ToString();
-
-        // Client Idempotency-Key wins; blank ⇒ null ⇒ the manager derives its
-        // deterministic content key (never a random per-request key).
-        var idempotencyKey = ReadIdempotencyKey();
-
-        // tenant-consent-delegation AC4b: forward the acting tenant (null for a plain
-        // self-run) so the platform-signed ASA create runs the live consent gate.
-        var actingTenantId = User.GetActingTenantId();
-
-        var create = new FungibleTokenCreateRequest
-        {
-            ChainType = request.ChainType,
-            Name = request.Name,
-            UnitName = request.UnitName,
-            Total = request.Total,
-            Decimals = request.Decimals
-        };
-
-        var result = await _fungibleTokenManager.CreateAsync(
-            userId.Value, create, userId.Value, idempotencyKey, partitionId, actingTenantId);
-
-        if (result.IsError || result.Result == null)
-        {
-            // Fail-closed KYC surfaces a KYC_FORBIDDEN: prefix → 403.
-            if (result.Message?.StartsWith(KycAuthorizationError.Forbidden, StringComparison.Ordinal) == true)
-                return StatusCode(StatusCodes.Status403Forbidden, result);
-
-            return BadRequest(result);
-        }
-
-        // D10 Holon↔asset link (opt-in, mirrors FungibleTokenCreateNodeHandler): copy
-        // the created asset id + chain id onto the caller-named holon. A replayed
-        // (idempotent) result re-applies the same link harmlessly.
-        if (request.HolonId is { } holonId && !result.Result.Replayed)
-        {
-            var tokenId = string.IsNullOrWhiteSpace(result.Result.AssetId) ? null : result.Result.AssetId;
-            var chainId = string.IsNullOrWhiteSpace(request.ChainType) ? null : request.ChainType;
-
-            if (tokenId is not null || chainId is not null)
-            {
-                var update = new HolonUpdateModel { TokenId = tokenId, ChainId = chainId };
-                // Scope the link to the authenticated user (IDOR-safe — a holon the
-                // caller does not own is not updated).
-                var link = await _holonManager.UpdateAsync(holonId, update, userId.Value);
-                if (link.IsError)
-                    return BadRequest(new AZOAResult<FungibleTokenResult>
-                    {
-                        IsError = true,
-                        Message = $"Token launched ({result.Result.AssetId}) but linking holon {holonId} failed: {link.Message}"
-                    });
-            }
-        }
-
-        return Ok(result);
+        if (userId is null) return Unauthorized();
+        if (!User.HasSigningScope(AzoaScopes.TokenCreateSign)) return Forbid();
+        var authority = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (authority.IsError || authority.Result is null) return BadRequest(AZOAResult<FungibleTokenResult>.Failure(authority.Message));
+        request.AuthenticationWitness = authority.Result;
+        var result = await _fungibleTokenManager.CreateAsync(userId.Value, request, userId.Value,
+            ReadIdempotencyKey(), GetApiKeyId() ?? userId.Value.ToString("N"), User.GetActingTenantId());
+        if (result.IsError || result.Result is null) return BadRequest(result);
+        return result.Result.Operation?.State == "Completed" ? Ok(result) : Accepted(result);
     }
-
     [HttpPost("{id:guid}/transfer")]
     public async Task<ActionResult<AZOAResult<BlockchainOperationResponse>>> Transfer(Guid id, [FromBody] NftTransferRequest request, [FromQuery] AZOARequest? providerRequest)
     {
@@ -188,8 +124,15 @@ public class NftController : ControllerBase
                 Message = $"Caller lacks the '{AzoaScopes.TransferSign}' scope required to transfer an NFT."
             });
 
-        var result = await _nftManager.TransferAsync(id, request, userId.Value, providerRequest);
+        providerRequest ??= new AZOARequest();
+        providerRequest.IdempotencyKey = ReadIdempotencyKey();
+        var captured = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (captured.IsError || captured.Result is null) return BadRequest(captured);
+        providerRequest.AuthenticationWitness = captured.Result;
+        var result = await _nftManager.TransferAsync(id, request, userId.Value, providerRequest, User.GetActingTenantId());
         var response = BlockchainOperationResponse.Project(result);
+        if (result.Code == "NFT_PENDING") return Accepted(response);
         if (response.IsError) return BadRequest(response);
         return Ok(response);
     }
@@ -201,25 +144,32 @@ public class NftController : ControllerBase
         if (userId == null)
             return Unauthorized(new AZOAResult<BlockchainOperationResponse> { IsError = true, Message = "Invalid token." });
 
-        // Burn maps to nft:mint per AzoaScopes.OperationScopeMap.
-        if (!User.HasSigningScope(AzoaScopes.NftMint))
+        // Destruction requires its own signing scope.
+        if (!User.HasSigningScope(AzoaScopes.NftBurn))
             return StatusCode(StatusCodes.Status403Forbidden, new AZOAResult<BlockchainOperationResponse>
             {
                 IsError = true,
-                Message = $"Caller lacks the '{AzoaScopes.NftMint}' scope required to burn an NFT."
+                Message = $"Caller lacks the '{AzoaScopes.NftBurn}' scope required to burn an NFT."
             });
 
-        var result = await _nftManager.BurnAsync(id, request.WalletId, userId.Value, providerRequest);
+        providerRequest ??= new AZOARequest();
+        providerRequest.IdempotencyKey = ReadIdempotencyKey();
+        providerRequest.NftFeeAuthorization = request.FeeAuthorization ?? providerRequest.NftFeeAuthorization;
+        var captured = await (_signingAuthority ?? throw new InvalidOperationException("Signing authority capture is not registered."))
+            .CaptureCredentialAsync(User, HttpContext.RequestAborted);
+        if (captured.IsError || captured.Result is null) return BadRequest(captured);
+        providerRequest.AuthenticationWitness = captured.Result;
+        var result = await _nftManager.BurnAsync(id, request.WalletId, userId.Value, providerRequest, User.GetActingTenantId());
         var response = BlockchainOperationResponse.Project(result);
+        if (result.Code == "NFT_PENDING") return Accepted(response);
         if (response.IsError) return BadRequest(response);
         return Ok(response);
     }
 
     [HttpGet("{id:guid}/metadata")]
-    [AllowAnonymous]
     public async Task<ActionResult<AZOAResult<NftMetadata>>> GetMetadata(Guid id, [FromQuery] AZOARequest? request)
     {
-        var result = await _nftManager.GetMetadataAsync(id, request);
+        var result = await _nftManager.GetMetadataAsync(id, request, GetUserIdFromClaims());
         if (result.IsError || result.Result == null) return NotFound(result);
         return Ok(result);
     }
@@ -261,11 +211,7 @@ public class NftController : ControllerBase
         return Guid.TryParse(sub, out var id) ? id : null;
     }
 
-    /// <summary>
-    /// Reads the optional client <c>Idempotency-Key</c> header (mirrors
-    /// <c>AllocationController.ReadIdempotencyKey</c>). Returns null when
-    /// absent/blank so the manager falls back to its deterministic content key.
-    /// </summary>
+    /// <summary>Reads the caller-provided durable request key.</summary>
     private string? ReadIdempotencyKey()
     {
         if (Request.Headers.TryGetValue("Idempotency-Key", out var values))

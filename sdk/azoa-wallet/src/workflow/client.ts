@@ -21,6 +21,7 @@ import type { Result } from "../core/result.js";
 import type { SdkError } from "../core/errors.js";
 import { assertUuid, assertNonEmptyString } from "./guards.js";
 import { createActionFactory } from "./run.js";
+import { workflowStartQuery } from "./start-options.js";
 import type { ActionFactory } from "./run.js";
 import type {
   WorkflowRunResult,
@@ -28,6 +29,8 @@ import type {
   WorkflowReconciliationResult,
   AdvanceOptions,
   ChildCredentialResult,
+  StartWorkflowOptions,
+  ActionEconomicManifest,
 } from "./types.js";
 
 export class WorkflowClient {
@@ -86,11 +89,11 @@ export class WorkflowClient {
    * as {@link WorkflowRunResult} (its `status` is a {@link
    * import("./types.js").WorkflowRunStatus}). `assertUuid`-guarded.
    */
-  getRunStatus(runId: string): Promise<Result<WorkflowRunResult, SdkError>> {
+  getRunStatus(runId: string, options?: { authToken?: string }): Promise<Result<WorkflowRunResult, SdkError>> {
     assertUuid(runId, "runId");
     return this.api.request<WorkflowRunResult>(
       "GET",
-      API_PATHS.ACTION_RUN_STATUS(runId)
+      API_PATHS.ACTION_RUN_STATUS(runId), undefined, false, buildExtraHeaders(options)
     );
   }
 
@@ -121,13 +124,7 @@ export class WorkflowClient {
     );
   }
 
-  /**
-   * Re-probe a run parked in `AwaitingReconciliation`
-   * (`POST /api/action/runs/{runId}/reconcile`, reconcile-before-retry §7). Re-checks
-   * chain truth: a Confirmed tx reconciles to success (NO re-mint) and resumes the
-   * DAG, a FailedOnChain node is released to retry/compensation, an indeterminate
-   * node stays parked. NEVER re-broadcasts. User-scoped; `assertUuid`-guarded.
-   */
+  /** Resume observation of the original durable operations; see workflow/AGENTS.md. */
   reconcileRun(
     runId: string
   ): Promise<Result<WorkflowReconciliationResult, SdkError>> {
@@ -140,6 +137,12 @@ export class WorkflowClient {
 
   // ─── Durable run writes — the wire calls the run handle composes ───
 
+  /** Read economic disclosure before persisting consent and the original start key. */
+  previewRun(actionId: string): Promise<Result<ActionEconomicManifest, SdkError>> {
+    assertUuid(actionId, "actionId");
+    return this.api.request("GET", `/api/action/${actionId}/preview`);
+  }
+
   /**
    * Start a durable, suspendable run on an existing action
    * (`POST /api/action/{actionId}/start-workflow`). Returns the created
@@ -148,11 +151,12 @@ export class WorkflowClient {
    * unpublished/modified concurrently, racing this call's version-confirm
    * (final-hardening F6) — see `isActionConflict` in `api/client.js`.
    */
-  startWorkflow(actionId: string): Promise<Result<WorkflowRunResult, SdkError>> {
+  startWorkflow(actionId: string, options: StartWorkflowOptions): Promise<Result<WorkflowRunResult, SdkError>> {
     assertUuid(actionId, "actionId");
     return this.api.request<WorkflowRunResult>(
       "POST",
-      API_PATHS.ACTION_START_WORKFLOW(actionId)
+      API_PATHS.ACTION_START_WORKFLOW(actionId) + workflowStartQuery(options),
+      undefined, false, buildExtraHeaders(options)
     );
   }
 

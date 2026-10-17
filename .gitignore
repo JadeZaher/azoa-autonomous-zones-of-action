@@ -182,6 +182,9 @@ Thumbs.db
 package-lock.json
 !frontend/package-lock.json
 !sdk/azoa-wallet/package-lock.json
+!contracts/ethereum/package-lock.json
+!contracts/ethereum/test/*.test.mjs
+appsettings.EthereumLocal.json
 yarn.lock
 pnpm-lock.yaml
 

@@ -15,6 +15,52 @@ namespace AZOA.WebAPI.Tests.Kyc;
 
 public sealed class IdentomatScreeningTests
 {
+    [Fact]
+    public async Task Screening_persists_the_authoritative_attempt_lineage()
+    {
+        var store = new InMemoryKycScreeningStore();
+        var transport = new FakeTransport();
+        transport.OnSearch(new IdentomatScreeningSearchResponse { Result = [] });
+        var result = await NewService(transport, store).ScreenAsync(
+            Guid.NewGuid(), null, "John Doe", null, lineageKey: "attempt-current");
+        result.Result!.LineageKey.Should().Be("attempt-current");
+        store.SavedResults.Should().ContainSingle().Which.LineageKey.Should().Be("attempt-current");
+    }
+
+    [Fact]
+    public async Task Same_subject_new_attempt_gets_its_own_local_monitor_lineage()
+    {
+        var store = new InMemoryKycScreeningStore();
+        var user = Guid.NewGuid();
+        store.SeedMonitor("John Doe", "", "monitor-shared", subjectUserId: user, lineageKey: "attempt-old");
+        var transport = new FakeTransport();
+        transport.OnMonitorRegister(new IdentomatMonitorRegisterResponse
+        {
+            ArgumentError = IdentomatScreeningService.AlreadyExistsArgumentError,
+        });
+        var result = await NewService(transport, store).RegisterMonitorAsync(
+            user, null, "John Doe", null, lineageKey: "attempt-current");
+        result.IsError.Should().BeFalse();
+        result.Result!.ProviderMonitorId.Should().Be("monitor-shared");
+        result.Result.LineageKey.Should().Be("attempt-current");
+        store.SavedMonitors.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Poll_preserves_each_attempt_lineage_when_fanning_out_shared_monitor()
+    {
+        var store = new InMemoryKycScreeningStore();
+        var user = Guid.NewGuid();
+        store.SeedMonitor("John Doe", "", "m1", subjectUserId: user, lineageKey: "old");
+        store.SeedMonitor("John Doe", "", "m1", subjectUserId: user, lineageKey: "current");
+        var transport = new FakeTransport();
+        transport.OnMonitorList(Page(total: 1, ("m1", "2026-08-20T12:00:00Z")));
+        transport.OnSearch(new IdentomatScreeningSearchResponse { Result = [] });
+        var result = await NewService(transport, store).PollMonitoringAsync();
+        result.IsError.Should().BeFalse();
+        store.SavedResults.Select(row => row.LineageKey).Should().BeEquivalentTo("old", "current");
+    }
+
     // ── Monitor registration: already-exists is benign ──────────────────────
 
     [Fact]

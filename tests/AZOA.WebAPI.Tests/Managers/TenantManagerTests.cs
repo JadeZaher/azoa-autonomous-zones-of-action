@@ -51,7 +51,7 @@ public class TenantManagerTests
         _store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IUser> { IsError = true, Message = "User not found." });
 
-        _manager = new TenantManager(_store.Object, config, _grants.Object);
+        _manager = new TenantManager(_store.Object, config, _grants.Object, ConsentFixture.Issuer());
     }
 
     private void GivenLiveGrant(Guid userId, Guid tenantId, params string[] scopes)
@@ -84,7 +84,7 @@ public class TenantManagerTests
         _store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IUser>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IUser a, CancellationToken _) => new AZOAResult<IUser> { Result = a });
 
-        var result = await _manager.ProvisionChildAsync(tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
+        var result = await _manager.ProvisionFixtureAsync(tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
 
         result.IsError.Should().BeFalse();
         _store.Verify(s => s.CreateIfAbsentAsync(
@@ -108,7 +108,7 @@ public class TenantManagerTests
         _store.Setup(s => s.GetByTenantAndExternalUserAsync(tenantId, "user-42", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IUser> { Result = existing });
 
-        var result = await _manager.ProvisionChildAsync(
+        var result = await _manager.ProvisionFixtureAsync(
             tenantId, new ProvisionChildModel { ExternalUserId = "user-42" });
 
         result.IsError.Should().BeFalse();
@@ -136,7 +136,7 @@ public class TenantManagerTests
         _store.Setup(s => s.GetByIdAsync(deterministicId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IUser> { Result = claimed });
 
-        var result = await _manager.ProvisionChildAsync(
+        var result = await _manager.ProvisionFixtureAsync(
             tenantId,
             new ProvisionChildModel { ExternalUserId = "user-42" });
 
@@ -167,7 +167,7 @@ public class TenantManagerTests
                 }
             });
 
-        var result = await _manager.ProvisionChildAsync(
+        var result = await _manager.ProvisionFixtureAsync(
             tenantId,
             new ProvisionChildModel { ExternalUserId = "user-42" });
 
@@ -180,7 +180,7 @@ public class TenantManagerTests
     [Fact]
     public async Task ProvisionChild_MissingExternalUserId_ReturnsError()
     {
-        var result = await _manager.ProvisionChildAsync(Guid.NewGuid(), new ProvisionChildModel { ExternalUserId = "" });
+        var result = await _manager.ProvisionFixtureAsync(Guid.NewGuid(), new ProvisionChildModel { ExternalUserId = "" });
         result.IsError.Should().BeTrue();
     }
 

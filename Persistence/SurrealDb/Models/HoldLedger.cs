@@ -12,17 +12,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("hold_ledger",
         Aggregate = "PlatformHold (Services/Hold/PlatformHoldService.cs)",
-        Guardrail = "G6 SCHEMAFULL; one row per (chain, network, hold id) and it is the idempotency anchor")]
-    [SurrealNote("One row is ONE hold: units committed in the platform-custodial holding account for a named beneficiary until release_not_before elapses. The row -- not a caller-supplied header -- is the idempotency anchor, so a retried open, release or refund reads the state it already reached instead of moving value twice.")]
-    [SurrealNote("holding_address is the operator-owned custodial account the units sit in, frozen at open. It is the platform reserve account: the reserve is the manager/reserve authority on every asset this node creates, so it can already hold them and no separate holding account has to be funded and made able to accept each asset. A hold is REFUSED for an asset the reserve has no ledger row for.")]
-    [SurrealNote("state is a strict machine: Pending -> Held -> Releasing -> Released, Pending|Held -> Refunded, and Held -> ReleasedIntoHold. Releasing exists because the reserve partition draw commits BEFORE the outbound move; a row parked there is one whose units are already counted as issued, so a refund from it is refused rather than double-counted.")]
-    [SurrealNote("release_not_before is the hold window (Q5). A plain release before it is refused; a release INTO a second hold is allowed early because no value leaves the holding account -- but the child window may never be earlier than the parent's, or chaining would be a way out of the funder's window.")]
-    [SurrealNote("inherits_reserve_commitment marks a hold that took NO partition draw of its own because its parent already did. Exactly one row in a parent/child chain performs the release-hold or cancel-hold draw, which is what keeps the reserve counters from double-counting a single commitment.")]
-    [SurrealNote("settlement_transaction_id is written as soon as the rail returns it. A retried release reads it first and reconciles against chain truth before re-sending, so a broadcast-then-timeout cannot become a second payment.")]
-    [SurrealNote("version is the compare-and-swap anchor. Every transition reads the row, decides in process, and writes back only while version is unchanged, so two concurrent releases cannot both settle one hold.")]
+        Guardrail = "G6 SCHEMAFULL; protocol, network, owner and tenant qualified custody liability")]
+    [SurrealNote("Immutable definition and opening command bind liability; atomic command receipts preserve replay independently of later state. See Services/Hold/AGENTS.md.")]
     [Slice("identity")]
     [Index("hold_ledger_hold",
-        Fields = new[] { "chain", "network", "hold_id" },
+        Fields = new[] { "chain", "network", "protocol_identity", "owner_user_id", "tenant_id", "hold_id" },
         Unique = true)]
     [Index("hold_ledger_due", Fields = new[] { "chain", "network", "state", "release_not_before" })]
     [Index("hold_ledger_beneficiary", Fields = new[] { "beneficiary_user_id" })]
@@ -33,11 +27,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string SchemaName => SchemaNameConst;
 
         [Id, Column(Order = 1)]
-        [FieldGroup("Core identity (record id is the SHA-256 of chain|network|hold id)")]
+        [FieldGroup("Core custody identity")]
         [Required(NotEmpty = true)]
         public string Id { get; set; } = string.Empty;
 
-        /// <summary>Caller-supplied hold id; unique per chain/network and the replay anchor.</summary>
+        /// <summary>Original owner-scoped reference within the physical custody identity.</summary>
         [Column(Order = 2)]
         [Required(NotEmpty = true)]
         public string HoldId { get; set; } = string.Empty;
@@ -49,6 +43,16 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 4)]
         [Inside("Devnet", "Testnet", "Mainnet")]
         public string Network { get; set; } = string.Empty;
+
+        /// <summary>Original physical protocol identity; absent historical rows require provenance recovery.</summary>
+        public string? ProtocolIdentity { get; set; }
+        public string? OwnerUserId { get; set; }
+        public string? DefinitionHash { get; set; }
+        public string? DefinitionJson { get; set; }
+        public string? OpeningCommandId { get; set; }
+        public string? ActiveCommandId { get; set; }
+        public string? ActiveReleaseMandateId { get; set; }
+        public string? EconomicSourceId { get; set; }
 
         /// <summary>Custodial account the units sit in; frozen so a later key change is visible.</summary>
         [Column(Order = 5)]
@@ -95,7 +99,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 14)]
         [FieldGroup("Lifecycle")]
-        [Inside("Pending", "Held", "Releasing", "Released", "Refunded", "ReleasedIntoHold")]
+        [Inside("Pending", "AwaitingSourceSettlement", "Held", "Releasing", "Released", "Refunded", "ReleasedIntoHold", "Cancelled")]
         public string State { get; set; } = string.Empty;
 
         /// <summary>The hold window: a plain release before this instant is refused.</summary>
@@ -145,7 +149,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 25)]
         public DateTimeOffset UpdatedAt { get; set; }
 
-        /// <summary>Deterministic record id for one hold on one chain/network.</summary>
+        /// <summary>Legacy lookup identity; new admission uses HoldCommandIdentity.</summary>
         public static string RecordIdFor(string chain, string network, string holdId)
         {
             var canonical =

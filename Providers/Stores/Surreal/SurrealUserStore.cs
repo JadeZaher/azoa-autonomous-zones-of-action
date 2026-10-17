@@ -1,89 +1,65 @@
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
-using System.Diagnostics;
-using System.Security.Cryptography;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Admin;
-using Microsoft.Extensions.Logging.Abstractions;
 using GeneratedUser = AZOA.WebAPI.Persistence.SurrealDb.Models.User;
-using AZOA.WebAPI.Core.Surreal;
+using AZOA.WebAPI.Helpers;
+using AZOA.WebAPI.Services.Auth;
+using SurrealForge.Client.Idempotency;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
-/// <summary>
-/// SurrealDB-backed <see cref="IUserStore"/>. Maps between the legacy
-/// <see cref="User"/> domain model and an inline POCO (no source-gen this round)
-/// via private ToPoco / FromPoco helpers.
-///
-/// ID encoding: <c>Guid.ToString("N").ToLowerInvariant()</c> (32-char hex,
-/// no dashes). Dates are stored as DateTimeOffset with UTC kind applied.
-/// </summary>
+/// <inheritdoc/>
 public sealed class SurrealUserStore : IUserStore
 {
     private const string UserTable = "user";
-    private const string PublicStoreError =
-        "USER_STORE_UNAVAILABLE: Identity persistence is temporarily unavailable.";
 
     private readonly ISurrealExecutor _executor;
-    private readonly ILogger<SurrealUserStore> _logger;
 
     public SurrealUserStore(
         ISurrealExecutor executor,
         ILogger<SurrealUserStore>? logger = null)
     {
         _executor = executor;
-        _logger = logger ?? NullLogger<SurrealUserStore>.Instance;
     }
 
-    // ── IUserStore ──────────────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUser>> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        try
+        var q = SurrealQuery<GeneratedUser>.Key(SurrealId.ToSurrealId(id));
+        var row = await _executor.QuerySingleAsync<GeneratedUser>(q, ct);
+        return new AZOAResult<IUser>
         {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::record($_t, $_id)")
-                .WithParam("_t",  UserTable)
-                .WithParam("_id", SurrealId.ToSurrealId(id));
-            var row = await _executor.QuerySingleAsync<GeneratedUser>(q, ct);
-            return new AZOAResult<IUser>
-            {
-                IsError = row == null,
-                Code = row == null ? AzoaErrorCodes.NotFound : null,
-                Message = row == null
-                    ? $"User not found (id: {id}). The user may have been deleted; if your session token references it, sign out and re-authenticate."
-                    : "Success",
-                Result  = row == null ? null : FromPoco(row)
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IUser>(ex, nameof(GetByIdAsync), id);
-        }
+            IsError = row == null,
+            Code = row == null ? AzoaErrorCodes.NotFound : null,
+            Message = row == null
+                ? $"User not found (id: {id}). The user may have been deleted; if your session token references it, sign out and re-authenticate."
+                : "Success",
+            Result  = row == null ? null : FromPoco(row)
+        };
+
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<IUser>>> GetAllAsync(CancellationToken ct = default)
     {
-        try
+        var q = SurrealQuery<GeneratedUser>.From();
+        var rows = await _executor.QueryAsync<GeneratedUser>(q, ct);
+        return new AZOAResult<IEnumerable<IUser>>
         {
-            var q = SurrealQuery.SelectAll(UserTable);
-            var rows = await _executor.QueryAsync<GeneratedUser>(q, ct);
-            return new AZOAResult<IEnumerable<IUser>>
-            {
-                Result  = rows.Select(FromPoco).ToList(),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IEnumerable<IUser>>(ex, nameof(GetAllAsync), "all");
-        }
+            Result  = rows.Select(FromPoco).ToList(),
+            Message = "Success"
+        };
+
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUser>> UpsertAsync(IUser user, CancellationToken ct = default)
     {
         if (user.Id == NodeOperatorIdentity.UserId)
@@ -91,28 +67,34 @@ public sealed class SurrealUserStore : IUserStore
         if (string.Equals(user.Email, NodeOperatorIdentity.ReservedEmail, StringComparison.OrdinalIgnoreCase))
             return AZOAResult<IUser>.Failure("The reserved node operator email cannot be assigned to a user.");
 
-        try
-        {
-            if (user.Id == Guid.Empty)
-                user.Id = Guid.NewGuid();
+        if (user.Id == Guid.Empty)
+            user.Id = Guid.NewGuid();
+        var existing = await _executor.QuerySingleAsync<GeneratedUser>(SurrealQuery<GeneratedUser>.Key(SurrealId.ToSurrealId(user.Id)), ct);
+        if (existing is null) return await CreateIfAbsentAsync(user, ct);
+        if ((user.AuthWalletAddress is not null || user.AuthWalletChainType is not null
+             || existing.AuthWalletAddress is not null || existing.AuthWalletChainType is not null)
+            && !await WalletAuthIdentityGate.IsReadyAsync(_executor, ct)) return NotReady<IUser>();
+        var poco = ToPoco(user);
+        if (poco.AuthWalletAddress != existing.AuthWalletAddress || poco.AuthWalletChainType != existing.AuthWalletChainType
+            || poco.OwnerTenantId != existing.OwnerTenantId || poco.AuthNotBefore != existing.AuthNotBefore)
+            return AZOAResult<IUser>.FailureWithCode("Authentication and ownership changes require the dedicated identity flow.", AzoaErrorCodes.Conflict);
+        var update = WalletUserAuthenticationCas.Match(existing)
+            .Set(row => row.Username, poco.Username).Set(row => row.Email, poco.Email);
+        update = poco.Title is null ? update.Unset(row => row.Title) : update.Set(row => row.Title, poco.Title);
+        update = poco.FirstName is null ? update.Unset(row => row.FirstName) : update.Set(row => row.FirstName, poco.FirstName);
+        update = poco.LastName is null ? update.Unset(row => row.LastName) : update.Set(row => row.LastName, poco.LastName);
+        update = poco.LastBeamedInDate is null ? update.Unset(row => row.LastBeamedInDate) : update.Set(row => row.LastBeamedInDate, poco.LastBeamedInDate);
+        update = poco.ExternalUserId is null ? update.Unset(row => row.ExternalUserId) : update.Set(row => row.ExternalUserId, poco.ExternalUserId);
+        update = poco.ExternalRef is null ? update.Unset(row => row.ExternalRef) : update.Set(row => row.ExternalRef, poco.ExternalRef);
+        var resp = await _executor.ExecuteAsync(update, ct);
+        resp.EnsureAllOk();
+        var saved = resp.GetValues<GeneratedUser>(0).FirstOrDefault();
+        return saved is null ? AZOAResult<IUser>.FailureWithCode("Account authority changed concurrently.", AzoaErrorCodes.Conflict)
+            : AZOAResult<IUser>.Success(FromPoco(saved));
 
-            var poco = ToPoco(user);
-
-            var q    = SurrealWriter.Upsert(poco);
-            var resp = await _executor.ExecuteAsync(q, ct);
-            resp.EnsureAllOk();
-
-            var saved = resp.GetValues<GeneratedUser>(0).FirstOrDefault();
-            var result = saved is not null ? FromPoco(saved) : user;
-
-            return new AZOAResult<IUser> { Result = result, Message = "Saved." };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IUser>(ex, nameof(UpsertAsync), user.Id);
-        }
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUser>> CreateIfAbsentAsync(IUser user, CancellationToken ct = default)
     {
         if (user.Id == Guid.Empty)
@@ -132,6 +114,8 @@ public sealed class SurrealUserStore : IUserStore
 
         try
         {
+            if ((user.AuthWalletAddress is not null || user.AuthWalletChainType is not null)
+                && !await WalletAuthIdentityGate.IsReadyAsync(_executor, ct)) return NotReady<IUser>();
             var response = await _executor.ExecuteAsync(SurrealWriter.Create(ToPoco(user)), ct);
             response.EnsureAllOk();
             var saved = response.GetValues<GeneratedUser>(0).FirstOrDefault();
@@ -141,7 +125,7 @@ public sealed class SurrealUserStore : IUserStore
                 Message = "Created."
             };
         }
-        catch (Exception ex)
+        catch (SurrealStatementException ex) when (SurrealIdempotencyLedger.IsUniqueViolation(ex.Message))
         {
             // CREATE is the write boundary: a deterministic-id collision can only
             // be replayed by reading the existing row; it is never updated here.
@@ -153,168 +137,224 @@ public sealed class SurrealUserStore : IUserStore
                     Message = "Already exists."
                 };
 
-            return StoreFailure<IUser>(ex, nameof(CreateIfAbsentAsync), user.Id);
+            return AZOAResult<IUser>.FailureWithCode("The user or wallet identity already exists.", AzoaErrorCodes.Conflict);
         }
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         if (id == NodeOperatorIdentity.UserId)
             return AZOAResult<bool>.Failure("The reserved node operator identity cannot be deleted.");
 
-        try
-        {
-            // Check existence first (matches the prior EF read-before-update contract).
-            var checkQ = SurrealQuery
-                .Of("SELECT * FROM type::record($_t, $_id)")
-                .WithParam("_t",  UserTable)
-                .WithParam("_id", SurrealId.ToSurrealId(id));
-            var existing = await _executor.QuerySingleAsync<GeneratedUser>(checkQ, ct);
-            if (existing == null)
-                return new AZOAResult<bool> { IsError = true, Message = "User not found.", Result = false };
-
-            var q = SurrealQuery
-                .Of("DELETE type::record($_t, $_id)")
-                .WithParam("_t",  UserTable)
-                .WithParam("_id", SurrealId.ToSurrealId(id));
-            await _executor.ExecuteAsync(q, ct);
-
-            return new AZOAResult<bool> { Result = true, Message = "Deleted." };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<bool>(ex, nameof(DeleteAsync), id);
-        }
+        var existing = await _executor.QuerySingleAsync<GeneratedUser>(SurrealQuery<GeneratedUser>.Key(SurrealId.ToSurrealId(id)), ct);
+        if (existing is null) return AZOAResult<bool>.Success(false);
+        if (!await WalletAuthIdentityGate.IsReadyAsync(_executor, ct)) return NotReady<bool>();
+        var response = await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<GeneratedUser>(SurrealId.ToSurrealId(id))
+            .Where(row => row.PasswordHash == existing.PasswordHash), ct);
+        response.EnsureAllOk();
+        return AZOAResult<bool>.Success(response.GetValues<GeneratedUser>(0).Any());
     }
 
+
+    /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<IUser>>> ListByOwnerTenantAsync(Guid tenantId, CancellationToken ct = default)
     {
-        try
+        var tenantLink = SurrealLink.ToLink(UserTable, SurrealId.ToSurrealId(tenantId));
+        var q = SurrealQuery<GeneratedUser>.From().Where(row => row.OwnerTenantId == tenantLink)
+            .OrderByDescending(row => row.CreatedDate);
+        var rows = await _executor.QueryAsync<GeneratedUser>(q, ct);
+        return new AZOAResult<IEnumerable<IUser>>
         {
-            // Owner-scoped: only rows whose owner_tenant_id links to this tenant.
-            // owner_tenant_id is a record<user> link, matched the same way
-            // SurrealApiKeyStore.ListByUserAsync matches user_id.
-            var q = SurrealQuery
-                .Of("SELECT * FROM user WHERE owner_tenant_id = $_tenant ORDER BY created_date DESC")
-                .WithParam("_tenant", SurrealRecordParam.Of(UserTable, SurrealId.ToSurrealId(tenantId)));
-            var rows = await _executor.QueryAsync<GeneratedUser>(q, ct);
-            return new AZOAResult<IEnumerable<IUser>>
-            {
-                Result  = rows.Select(FromPoco).ToList(),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IEnumerable<IUser>>(ex, nameof(ListByOwnerTenantAsync), tenantId);
-        }
+            Result  = rows.Select(FromPoco).ToList(),
+            Message = "Success"
+        };
+
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUser>> GetByTenantAndExternalUserAsync(Guid tenantId, string externalUserId, CancellationToken ct = default)
     {
+        var tenantLink = SurrealLink.ToLink(UserTable, SurrealId.ToSurrealId(tenantId));
+        var q = SurrealQuery<GeneratedUser>.From().Where(row => row.OwnerTenantId == tenantLink && row.ExternalUserId == externalUserId).Limit(1);
+        var row = await _executor.QuerySingleAsync<GeneratedUser>(q, ct);
+        return new AZOAResult<IUser>
+        {
+            Result  = row == null ? null : FromPoco(row),
+            Message = "Success"
+        };
+
+    }
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<IUser>> TryUpdateAuthenticationAsync(IUser user, string? expectedAddress, string? expectedChain,
+        Guid? expectedTenant, DateTime? expectedAuthNotBefore, CancellationToken ct = default)
+        => UpdateAuthenticationAsync(user, expectedAddress, expectedChain, expectedTenant, expectedAuthNotBefore, null, ct);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<IUser>> TryClaimAuthenticationAsync(IUser user, string? expectedAddress, string? expectedChain,
+        Guid expectedTenant, DateTime? expectedAuthNotBefore, AZOA.WebAPI.Models.WalletAuthClaimToken invite,
+        CancellationToken ct = default)
+    {
+        if (invite is null || invite.Id == Guid.Empty || string.IsNullOrWhiteSpace(invite.Token)
+            || invite.TargetUserId != user.Id || invite.TenantId != expectedTenant || !invite.IsLiveAt(DateTime.UtcNow))
+            return Task.FromResult(AZOAResult<IUser>.FailureWithCode("Invalid or expired claim token.", AzoaErrorCodes.Conflict));
+        return UpdateAuthenticationAsync(user, expectedAddress, expectedChain, expectedTenant, expectedAuthNotBefore, invite, ct);
+    }
+
+    private async Task<AZOAResult<IUser>> UpdateAuthenticationAsync(IUser user, string? expectedAddress, string? expectedChain,
+        Guid? expectedTenant, DateTime? expectedAuthNotBefore, AZOA.WebAPI.Models.WalletAuthClaimToken? invite, CancellationToken ct)
+    {
+        var claimOwnership = invite is not null;
+        if (user.Id == NodeOperatorIdentity.UserId) return AZOAResult<IUser>.Failure("Reserved identity.");
+        if (!await WalletAuthIdentityGate.IsReadyAsync(_executor, ct)) return NotReady<IUser>();
+        var candidate = ToPoco(user);
+        var tenantLink = expectedTenant.HasValue ? SurrealLink.ToLink(UserTable, SurrealId.ToSurrealId(expectedTenant.Value)) : null;
+        DateTimeOffset? watermark = expectedAuthNotBefore.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(expectedAuthNotBefore.Value, DateTimeKind.Utc)) : null;
+        var update = SurrealWriter.UpdateOnly<GeneratedUser>(candidate.Id).Where(row => row.IsActive);
+        update = expectedAddress is null ? update.Where(row => row.AuthWalletAddress == null) : update.Where(row => row.AuthWalletAddress == expectedAddress);
+        update = expectedChain is null ? update.Where(row => row.AuthWalletChainType == null) : update.Where(row => row.AuthWalletChainType == expectedChain);
+        update = tenantLink is null ? update.Where(row => row.OwnerTenantId == null) : update.Where(row => row.OwnerTenantId == tenantLink);
+        update = watermark is null ? update.Where(row => row.AuthNotBefore == null) : update.Where(row => row.AuthNotBefore == watermark);
+        update = candidate.AuthWalletAddress is null ? update.Unset(row => row.AuthWalletAddress) : update.Set(row => row.AuthWalletAddress, candidate.AuthWalletAddress);
+        update = candidate.AuthWalletChainType is null ? update.Unset(row => row.AuthWalletChainType) : update.Set(row => row.AuthWalletChainType, candidate.AuthWalletChainType);
+        if (claimOwnership)
+        {
+            if (!expectedTenant.HasValue || candidate.AuthNotBefore is null || (watermark.HasValue && candidate.AuthNotBefore < watermark))
+                return AZOAResult<IUser>.FailureWithCode("The user is no longer claimable.", AzoaErrorCodes.Conflict);
+            update = update.Unset(row => row.OwnerTenantId).Set(row => row.PasswordHash, candidate.PasswordHash)
+                .Set(row => row.AuthNotBefore, candidate.AuthNotBefore.Value);
+        }
         try
         {
-            // Owner-scoped resolve. A miss returns Result == null with NO error so
-            // the manager treats it as "create new" (idempotency), mirroring
-            // IActionGraphBundleStore.GetByNameAndUserAsync.
-            var q = SurrealQuery
-                .Of("SELECT * FROM user WHERE owner_tenant_id = $_tenant AND external_user_id = $_ext LIMIT 1")
-                .WithParam("_tenant", SurrealRecordParam.Of(UserTable, SurrealId.ToSurrealId(tenantId)))
-                .WithParam("_ext", externalUserId);
-            var row = await _executor.QuerySingleAsync<GeneratedUser>(q, ct);
-            return new AZOAResult<IUser>
+            SurrealQuery query = update.Build();
+            if (claimOwnership)
             {
-                Result  = row == null ? null : FromPoco(row),
-                Message = "Success"
-            };
+                var revocations = await new SurrealConsentLifecycleStore(_executor).ClaimRevocationsAsync(
+                    user.Id, expectedTenant!.Value, candidate.AuthNotBefore!.Value, ct);
+                var inviteExpiry = new DateTimeOffset(DateTime.SpecifyKind(invite!.ExpiresAt, DateTimeKind.Utc));
+                var targetLink = SurrealLink.ToLink(UserTable, SurrealId.ToSurrealId(user.Id));
+                // raw: invite consumption, ownership/authentication CAS and consent revocations commit together.
+                var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN"),
+                    SurrealQuery.Of("IF $_claim_expiry <= time::now() { THROW 'CONSENT_CLAIM_CHANGED' }")
+                        .WithParam("_claim_expiry", inviteExpiry),
+                    SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.WalletAuthClaimToken>(SurrealId.ToSurrealId(invite.Id))
+                        .Where(row => row.Token == invite.Token && row.TargetUserId == targetLink
+                            && row.TenantId == tenantLink && row.ConsumedAt == null
+                            && row.ExpiresAt == inviteExpiry)
+                        .Set(row => row.ConsumedAt, candidate.AuthNotBefore.Value).Build(), "claim_invite", "_claim_invite"),
+                    SurrealQuery.Of("IF $_claim_invite = NONE OR $_claim_invite = [] { THROW 'CONSENT_CLAIM_CHANGED' }"),
+                    SurrealGeneratedStatementScope.Assign(update.Build(), "claim_user", "_claim_user"),
+                    SurrealQuery.Of("IF $_claim_user = NONE OR $_claim_user = [] { THROW 'CONSENT_CLAIM_CHANGED' }") };
+                statements.AddRange(revocations);
+                statements.Add(SurrealQuery.Of("RETURN $_claim_user"));
+                statements.Add(SurrealQuery.Of("COMMIT"));
+                query = SurrealQuery.Combine(statements.ToArray());
+            }
+            var result = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var response = await _executor.ExecuteAsync(query, ct); response.EnsureAllOk(); return response;
+            }, ct);
+            var saved = result.GetValues<GeneratedUser>(claimOwnership ? result.Statements.Count - 2 : 0).SingleOrDefault();
+            return saved is null ? AZOAResult<IUser>.FailureWithCode("Authentication changed concurrently.", AzoaErrorCodes.Conflict)
+                : AZOAResult<IUser>.Success(FromPoco(saved));
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
-            return StoreFailure<IUser>(
-                ex,
-                nameof(GetByTenantAndExternalUserAsync),
-                TenantSubjectCorrelation(tenantId, externalUserId));
+            return AZOAResult<IUser>.FailureWithCode("This wallet is already linked to another account.", AzoaErrorCodes.Conflict);
+        }
+        catch (SurrealStatementException exception) when (exception.Message.Contains("CONSENT_CLAIM_CHANGED", StringComparison.Ordinal)
+            || exception.Message.Contains("CONSENT_LIFECYCLE_CHANGED", StringComparison.Ordinal))
+        {
+            return AZOAResult<IUser>.FailureWithCode("Authentication or consent changed concurrently.", AzoaErrorCodes.Conflict);
         }
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUser>> GetByAuthWalletAsync(string address, string chainType, CancellationToken ct = default)
     {
-        try
-        {
-            // user-sovereign-identity AC2: resolve the user bound to EXACTLY this
-            // (address, chainType) wallet-auth pair. A miss returns Result == null
-            // with NO error so the manager treats it as "create new self-owned
-            // user". Matching is on the wallet binding ONLY — never email/username.
-            var q = SurrealQuery
-                .Of("SELECT * FROM user WHERE id != type::record($_table, $_reserved) AND auth_wallet_address = $_addr AND auth_wallet_chain_type = $_chain LIMIT 1")
-                .WithParam("_table", UserTable)
-                .WithParam("_reserved", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId))
-                .WithParam("_addr", address)
-                .WithParam("_chain", chainType);
-            var row = await _executor.QuerySingleAsync<GeneratedUser>(q, ct);
-            return new AZOAResult<IUser>
-            {
-                Result  = row == null ? null : FromPoco(row),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IUser>(ex, nameof(GetByAuthWalletAsync), chainType);
-        }
+        if (!await WalletAuthIdentityGate.IsReadyAsync(_executor, ct)) return NotReady<IUser>();
+        if (!WalletAuthIdentity.TryCreate(address, chainType, out var canonicalAddress, out var canonicalChain))
+            return AZOAResult<IUser>.Failure("Invalid wallet identity.");
+        var row = await _executor.QuerySingleAsync<GeneratedUser>(SurrealQuery<GeneratedUser>.From()
+            .Where(row => row.AuthWalletAddress == canonicalAddress && row.AuthWalletChainType == canonicalChain).Limit(1), ct);
+        return new AZOAResult<IUser> { Result = row is null || SurrealId.FromSurrealId(row.Id) == NodeOperatorIdentity.UserId ? null : FromPoco(row) };
     }
 
+    /// <inheritdoc/>
+    public async Task<AZOAResult<bool>> AdvanceAuthenticationWatermarkAsync(Guid userId, DateTime notBefore, CancellationToken ct = default)
+    {
+        if (userId == NodeOperatorIdentity.UserId) return AZOAResult<bool>.Failure("Reserved identity.");
+        var instant = new DateTimeOffset(DateTime.SpecifyKind(notBefore, DateTimeKind.Utc));
+        var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<GeneratedUser>(SurrealId.ToSurrealId(userId))
+            .Where(row => row.AuthNotBefore == null || row.AuthNotBefore < instant).Set(row => row.AuthNotBefore, instant), ct);
+        response.EnsureAllOk();
+        if (response.GetValues<GeneratedUser>(0).Any()) return AZOAResult<bool>.Success(true);
+        var current = await _executor.QuerySingleAsync<GeneratedUser>(SurrealQuery<GeneratedUser>.Key(SurrealId.ToSurrealId(userId)), ct);
+        return current?.AuthNotBefore >= instant ? AZOAResult<bool>.Success(true) : AZOAResult<bool>.Failure("User not found.");
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IUser>> TryAssignDappRoleAsync(Guid userId, string expectedRole, string role, CancellationToken ct = default)
+    {
+        if (userId == NodeOperatorIdentity.UserId || !AzoaDappRoles.IsAssignableRole(role))
+            return AZOAResult<IUser>.Failure("Invalid role assignment.");
+        var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<GeneratedUser>(SurrealId.ToSurrealId(userId))
+            .Where(row => row.DappRole == expectedRole).Set(row => row.DappRole, AzoaDappRoles.Normalize(role)), ct);
+        response.EnsureAllOk();
+        var saved = response.GetValues<GeneratedUser>(0).SingleOrDefault();
+        return saved is null ? AZOAResult<IUser>.FailureWithCode("Role changed concurrently.", AzoaErrorCodes.Conflict)
+            : AZOAResult<IUser>.Success(FromPoco(saved));
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IUser>> TrySetActiveAsync(Guid userId, bool expectedActive, bool active, CancellationToken ct = default)
+    {
+        if (userId == NodeOperatorIdentity.UserId) return AZOAResult<IUser>.Failure("Reserved identity.");
+        var response = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<GeneratedUser>(SurrealId.ToSurrealId(userId))
+            .Where(row => row.IsActive == expectedActive).Set(row => row.IsActive, active), ct);
+        response.EnsureAllOk();
+        var saved = response.GetValues<GeneratedUser>(0).SingleOrDefault();
+        return saved is null ? AZOAResult<IUser>.FailureWithCode("Account activation changed concurrently.", AzoaErrorCodes.Conflict)
+            : AZOAResult<IUser>.Success(FromPoco(saved));
+    }
+
+    /// <inheritdoc/>
     public async Task<AZOAResult<IReadOnlyList<IUser>>> ListTenantPrincipalsPageAsync(
         int offset,
         int limit,
         string? search,
         CancellationToken ct = default)
     {
-        try
-        {
-            var query = SurrealQuery
-                .Of("SELECT * FROM type::table($_user_table) WHERE id != type::record($_user_table, $_reserved) AND is_active = true AND id INSIDE (SELECT VALUE user_id FROM type::table($_key_table) WHERE is_active = true AND revoked_at = NONE AND (expires_at = NONE OR expires_at > time::now()) AND scopes != NONE AND scopes CONTAINS $_scope) AND ($_search = '' OR string::lowercase(username) CONTAINS $_search OR string::lowercase(<string>id) CONTAINS $_search) ORDER BY username ASC, id ASC START $_offset LIMIT $_limit")
-                .WithParam("_user_table", UserTable)
-                .WithParam("_key_table", "api_key")
-                .WithParam("_reserved", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId))
-                .WithParam("_scope", AzoaScopes.TenantProvision)
-                .WithParam("_search", search?.Trim().ToLowerInvariant() ?? string.Empty)
-                .WithParam("_offset", Math.Max(0, offset))
-                .WithParam("_limit", Math.Clamp(limit, 1, 101));
-            var rows = await _executor.QueryAsync<GeneratedUser>(query, ct);
-            return AZOAResult<IReadOnlyList<IUser>>.Success(rows.Select(FromPoco).ToList());
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IReadOnlyList<IUser>>(ex, nameof(ListTenantPrincipalsPageAsync), offset);
-        }
+        // raw: expiring typed correlated-subquery gap; see AGENTS.md §Tenant-principal query waiver.
+        var query = SurrealQuery
+            .Of("SELECT * FROM type::table($_user_table) WHERE id != type::record($_user_table, $_reserved) AND is_active = true AND id INSIDE (SELECT VALUE user_id FROM type::table($_key_table) WHERE is_active = true AND revoked_at = NONE AND (expires_at = NONE OR expires_at > time::now()) AND scopes != NONE AND scopes CONTAINS $_scope) AND ($_search = '' OR string::lowercase(username) CONTAINS $_search OR string::lowercase(<string>id) CONTAINS $_search) ORDER BY username ASC, id ASC START $_offset LIMIT $_limit")
+            .WithParam("_user_table", UserTable)
+            .WithParam("_key_table", "api_key")
+            .WithParam("_reserved", SurrealId.ToSurrealId(NodeOperatorIdentity.UserId))
+            .WithParam("_scope", AzoaScopes.TenantProvision)
+            .WithParam("_search", search?.Trim().ToLowerInvariant() ?? string.Empty)
+            .WithParam("_offset", Math.Max(0, offset))
+            .WithParam("_limit", Math.Clamp(limit, 1, 101));
+        var rows = await _executor.QueryAsync<GeneratedUser>(query, ct);
+        return AZOAResult<IReadOnlyList<IUser>>.Success(rows.Select(FromPoco).ToList());
+
     }
 
-    private AZOAResult<T> StoreFailure<T>(Exception exception, string operation, object entityId)
+    private static AZOAResult<T> NotReady<T>() => AZOAResult<T>.FailureWithCode("Wallet identity migration is not ready.", AzoaErrorCodes.DependencyUnavailable);
+
+    private static GeneratedUser ToPoco(IUser a)
     {
-        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
-        _logger.LogError(
-            exception,
-            "User persistence failure in {Operation}; correlation={CorrelationId}; entity={EntityId}",
-            operation,
-            correlationId,
-            entityId);
-        return AZOAResult<T>.FailureWithCode(
-            PublicStoreError,
-            AzoaErrorCodes.DependencyUnavailable);
-    }
-
-    private static string TenantSubjectCorrelation(Guid tenantId, string externalUserId)
-    {
-        var digest = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(externalUserId));
-        return $"{tenantId:N}:{Convert.ToHexString(digest.AsSpan(0, 12)).ToLowerInvariant()}";
-    }
-
-    // ── Mapping ───────────────────────────────────────────────────────────────
-
-
-
-    private static GeneratedUser ToPoco(IUser a) => new()
+        string? address = null;
+        string? chain = null;
+        if (a.AuthWalletAddress is not null || a.AuthWalletChainType is not null)
+        {
+            if (!WalletAuthIdentity.TryCreate(a.AuthWalletAddress, a.AuthWalletChainType, out var canonicalAddress, out var canonicalChain))
+                throw new ArgumentException("Invalid wallet authentication identity.");
+            address = canonicalAddress;
+            chain = canonicalChain;
+        }
+        return new GeneratedUser()
     {
         Id               = SurrealId.ToSurrealId(a.Id),
         Username         = a.Username,
@@ -339,13 +379,16 @@ public sealed class SurrealUserStore : IUserStore
                                : null,
         ExternalUserId   = a.ExternalUserId,
         ExternalRef      = a.ExternalRef,
-        AuthWalletAddress   = a.AuthWalletAddress,
-        AuthWalletChainType = a.AuthWalletChainType,
+        AuthWalletAddress   = address,
+        AuthWalletChainType = chain,
+        AuthIdentityVersion = 1,
         AuthNotBefore    = a.AuthNotBefore.HasValue
                                ? new DateTimeOffset(
                                      DateTime.SpecifyKind(a.AuthNotBefore.Value, DateTimeKind.Utc))
                                : null
     };
+
+    }
 
     private static User FromPoco(GeneratedUser p) => new()
     {

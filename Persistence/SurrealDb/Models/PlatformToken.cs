@@ -12,23 +12,20 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 {
     [SurrealTable("platform_token",
         Aggregate = "PlatformTokenGenesis (Services/Reserve/PlatformTokenGenesis.cs)",
-        Guardrail = "G6 SCHEMAFULL; exactly one platform unit per (chain, network) -- genesis runs once and cannot be undone")]
-    [SurrealNote("W3.2 (D49): the node-state record that says WHICH on-chain asset is this node's platform unit. appsettings.json cannot hold it because the asset id does not exist until the genesis mint returns, and the node cannot write its own configuration at runtime.")]
-    [SurrealNote("The row is claimed BEFORE the mint (status Pending) and activated after it (status Active). Claim-then-mint is what makes a second genesis refusable: the unique index on (chain, network) means the claim is the single-winner gate, and a crash between claim and activation leaves a Pending row that a retry RESUMES under the same genesis_operation_key rather than a second asset.")]
-    [SurrealNote("There is no Failed status on purpose. A mint that returns an error may still have broadcast, so a terminal Failed row could hide a real asset and invite a second one. A failed attempt stays Pending and records last_failure_reason; the retry replays through the fungible-token idempotency store.")]
-    [SurrealNote("total_supply, decimals, unit_name and name are FROZEN at claim time. Changing any of them after genesis means a different Algorand ASA -- a second platform unit, not an edited one -- so a genesis request whose definition contradicts the claimed row is refused rather than applied.")]
-    [SurrealNote("This row does NOT record circulating supply. Circulating supply is reserve OUTFLOW and is derived from platform_reserve_ledger partitions (issued - returned) at read time, so the two can never disagree.")]
+        Guardrail = "G6 SCHEMAFULL; one immutable platform definition per network")]
+    [SurrealNote("Finalized creation authority, reserve registration and activation commit atomically; see Services/Reserve/AGENTS.md.")]
     [Slice("identity")]
     [Index("platform_token_scope", Fields = new[] { "chain", "network" }, Unique = true)]
+    [Index("platform_token_network", Fields = new[] { "network" }, Unique = true)]
     [Index("platform_token_network_status", Fields = new[] { "network", "status" })]
     public partial class PlatformToken : ISurrealRecord
     {
         public const string SchemaNameConst = "platform_token";
 
-        /// <summary>Claimed but not yet minted; a retry resumes this row.</summary>
+        /// <summary>Claimed definition awaiting finalized issuance and accounting.</summary>
         public const string StatusPending = "Pending";
 
-        /// <summary>Minted and recorded; the asset id is authoritative from here on.</summary>
+        /// <summary>Recorded activation; verified reads also require exact issuance lineage.</summary>
         public const string StatusActive = "Active";
 
         public string SchemaName => SchemaNameConst;
@@ -48,11 +45,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string Network { get; set; } = string.Empty;
 
         [Column(Order = 4)]
-        [FieldGroup("Genesis lifecycle -- Pending is claimed-but-unminted, Active is minted")]
+        [FieldGroup("Genesis lifecycle -- Pending awaits final projection, Active records activation")]
         [Inside("Pending", "Active")]
         public string Status { get; set; } = StatusPending;
 
-        /// <summary>Chain-native asset id of the platform unit; null until the mint returns one.</summary>
+        /// <summary>Finalized chain asset identity; absent until atomic activation.</summary>
         [Column(Order = 5)]
         public string? AssetId { get; set; }
 
@@ -85,6 +82,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Required(NotEmpty = true)]
         public string GenesisOperationKey { get; set; } = string.Empty;
 
+        public string? CreationOperationId { get; set; }
+
         /// <summary>The node operator who ran genesis.</summary>
         [Column(Order = 12)]
         [References(typeof(User))]
@@ -110,7 +109,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 17)]
         public DateTimeOffset UpdatedAt { get; set; }
 
-        /// <summary>True once the mint has returned an asset id and the row records it.</summary>
+        /// <summary>Whether activation is recorded; this alone does not verify issuance lineage.</summary>
         public bool IsActive =>
             string.Equals(Status, StatusActive, StringComparison.Ordinal) &&
             !string.IsNullOrWhiteSpace(AssetId);

@@ -1,334 +1,194 @@
 // SPDX-License-Identifier: UNLICENSED
 
 using SurrealForge.Client;
+using AZOA.WebAPI.Models.Signing;
 using SurrealForge.Client.Query;
-using System.Diagnostics;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using Microsoft.Extensions.Logging.Abstractions;
 using AZOA.WebAPI.Core.Surreal;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
-/// <summary>
-/// SurrealDB-backed <see cref="IKycStore"/>.
-///
-/// ID encoding: <c>Guid.ToString("N").ToLowerInvariant()</c> (32-char hex, no
-/// dashes). The <c>user_id</c> / <c>submission_id</c> foreign keys are
-/// SurrealDB record links written via <see cref="SurrealLink"/>
-/// (<c>table:id</c>) so SurrealDB 3.x's strict <c>record&lt;table&gt;</c>
-/// coercion accepts them; reads strip the prefix back to bare hex.
-///
-/// The store round-trips the source-generated <see cref="KycSubmission"/> /
-/// <see cref="KycDocument"/> POCOs directly: a private <c>ToStorage</c> swaps
-/// the in-memory bare-hex id fields for link form before write, and
-/// <c>FromStorage</c> reverses it after read. Mirrors
-/// <c>SurrealActionGraphBundleStore</c>'s ToPoco/FromPoco pattern.
-/// </summary>
-public sealed class SurrealKycStore : IKycStore
+/// <inheritdoc/>
+public sealed partial class SurrealKycStore : IKycStore, IKycCustodialAdmissionStore
 {
     private const string PublicStoreError =
         "KYC_STORE_UNAVAILABLE: KYC persistence is temporarily unavailable.";
     private readonly ISurrealExecutor _executor;
-    private readonly ILogger<SurrealKycStore> _logger;
 
     public SurrealKycStore(
         ISurrealExecutor executor,
         ILogger<SurrealKycStore>? logger = null)
     {
         _executor = executor;
-        _logger = logger ?? NullLogger<SurrealKycStore>.Instance;
     }
 
-    // ── Submissions ─────────────────────────────────────────────────────────
-
+    /// <inheritdoc/>
     public async Task<AZOAResult<KycSubmission>> GetSubmissionByIdAsync(Guid id, CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery.SelectById(KycSubmission.SchemaNameConst, SurrealId.ToSurrealId(id));
-            var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
-            return new AZOAResult<KycSubmission>
-            {
-                Message = row == null ? "No KYC submission found." : "Success",
-                Result  = row == null ? null : FromStorage(row)
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<KycSubmission>(ex, nameof(GetSubmissionByIdAsync), id);
-        }
+        var row = await _executor.QuerySingleAsync<KycSubmission>(SurrealQuery<KycSubmission>.Key(id.ToString("N")), ct);
+        return AZOAResult<KycSubmission>.Success(row is null ? null! : FromStorage(row));
     }
 
-    public Task<AZOAResult<KycSubmission>> GetLatestSubmissionByUserAsync(
-        Guid userId,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSubmission>> GetLatestSubmissionByUserAsync(Guid userId, CancellationToken ct = default)
         => GetLatestSubmissionAsync(userId, null, ct);
 
-    public async Task<AZOAResult<KycSubmission>> GetLatestSubmissionAsync(
-        Guid userId,
-        Guid? tenantId,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<KycSubmission>> GetLatestSubmissionAsync(Guid userId, Guid? tenantId, CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE user_id = $_user AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) ORDER BY submitted_at DESC LIMIT 1")
-                .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)))
-                .WithParam("_has_tenant", tenantId.HasValue)
-                .WithParam("_tenant", tenantId.HasValue
-                    ? SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId.Value))
-                    : null);
-
-            var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
-            return new AZOAResult<KycSubmission>
-            {
-                Message = row == null ? "No KYC submission found for user." : "Success",
-                Result  = row == null ? null : FromStorage(row)
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<KycSubmission>(ex, nameof(GetLatestSubmissionAsync),
-                $"{userId:N}:{tenantId?.ToString("N") ?? "node"}");
-        }
+        var user = SurrealLink.ToLink("user", userId.ToString("N"));
+        var tenant = tenantId is null ? null : SurrealLink.ToLink("user", tenantId.Value.ToString("N"));
+        var row = await Submissions().Where(item => item.UserId == user && item.TenantId == tenant)
+            .OrderByDescending(item => item.SubmittedAt).FirstOrDefaultAsync(ct);
+        return AZOAResult<KycSubmission>.Success(row is null ? null! : FromStorage(row));
     }
 
-    public Task<AZOAResult<KycSubmission>> GetActiveSubmissionByUserAsync(
-        Guid userId,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSubmission>> GetActiveSubmissionByUserAsync(Guid userId, CancellationToken ct = default)
         => GetActiveSubmissionAsync(userId, null, ct);
 
-    public async Task<AZOAResult<KycSubmission>> GetActiveSubmissionAsync(
-        Guid userId,
-        Guid? tenantId,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<KycSubmission>> GetActiveSubmissionAsync(Guid userId, Guid? tenantId, CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE user_id = $_user AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) AND status INSIDE $_active ORDER BY submitted_at DESC LIMIT 1")
-                .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_user", SurrealRecordParam.Of("user", SurrealId.ToSurrealId(userId)))
-                .WithParam("_has_tenant", tenantId.HasValue)
-                .WithParam("_tenant", tenantId.HasValue
-                    ? SurrealRecordParam.Of("user", SurrealId.ToSurrealId(tenantId.Value))
-                    : null)
-                .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
-
-            var row = await _executor.QuerySingleAsync<KycSubmission>(q, ct);
-            return new AZOAResult<KycSubmission>
-            {
-                Message = row == null ? "No active KYC submission." : "Success",
-                Result  = row == null ? null : FromStorage(row)
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<KycSubmission>(ex, nameof(GetActiveSubmissionAsync),
-                $"{userId:N}:{tenantId?.ToString("N") ?? "node"}");
-        }
+        var user = SurrealLink.ToLink("user", userId.ToString("N"));
+        var tenant = tenantId is null ? null : SurrealLink.ToLink("user", tenantId.Value.ToString("N"));
+        var row = await Submissions().Where(item => item.UserId == user && item.TenantId == tenant
+            && (item.Status == KycStatus.PENDING || item.Status == KycStatus.IN_REVIEW))
+            .OrderByDescending(item => item.SubmittedAt).FirstOrDefaultAsync(ct);
+        return AZOAResult<KycSubmission>.Success(row is null ? null! : FromStorage(row));
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<KycSubmission>>> GetPendingAsync(CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE status INSIDE $_active ORDER BY submitted_at ASC")
-                .WithParam("_t",      KycSubmission.SchemaNameConst)
-                .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
-
-            var rows = await _executor.QueryAsync<KycSubmission>(q, ct);
-            return new AZOAResult<IEnumerable<KycSubmission>>
-            {
-                Result  = rows.Select(FromStorage).ToList(),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IEnumerable<KycSubmission>>(ex, nameof(GetPendingAsync), "operator-list");
-        }
+        var rows = await Submissions().Where(item => item.Status == KycStatus.PENDING || item.Status == KycStatus.IN_REVIEW)
+            .OrderBy(item => item.SubmittedAt).ToListAsync(ct);
+        return AZOAResult<IEnumerable<KycSubmission>>.Success(rows.Select(FromStorage).ToList());
     }
 
-    public async Task<AZOAResult<IReadOnlyList<KycSubmission>>> GetPendingPageAsync(
-        int offset,
-        int limit,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IReadOnlyList<KycSubmission>>> GetPendingPageAsync(int offset, int limit, CancellationToken ct = default)
     {
-        var query = SurrealQuery
-            .Of("SELECT * FROM type::table($_t) WHERE status INSIDE $_active AND expires_at != NONE AND expires_at > time::now() ORDER BY submitted_at ASC, id ASC START $_offset LIMIT $_limit")
-            .WithParam("_t", KycSubmission.SchemaNameConst)
-            .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) })
-            .WithParam("_offset", Math.Max(0, offset))
-            .WithParam("_limit", Math.Clamp(limit, 1, 101));
-        var rows = await _executor.QueryAsync<KycSubmission>(query, ct);
+        var now = DateTimeOffset.UtcNow;
+        var rows = await Submissions().Where(item => (item.Status == KycStatus.PENDING || item.Status == KycStatus.IN_REVIEW)
+            && item.ExpiresAt != null && item.ExpiresAt > now).OrderBy(item => item.SubmittedAt).ThenBy(item => item.Id)
+            .Skip(Math.Max(0, offset)).Take(Math.Clamp(limit, 1, 101)).ToListAsync(ct);
         return AZOAResult<IReadOnlyList<KycSubmission>>.Success(rows.Select(FromStorage).ToList());
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IReadOnlyList<KycSubmission>>> GetOperatorPageAsync(
-        IReadOnlyCollection<KycStatus> statuses,
-        int offset,
-        int limit,
-        CancellationToken ct = default)
+        IReadOnlyCollection<KycStatus> statuses, int offset, int limit, CancellationToken ct = default)
     {
-        if (statuses.Count == 0)
-            return AZOAResult<IReadOnlyList<KycSubmission>>.Success(Array.Empty<KycSubmission>());
-        var query = SurrealQuery
-            .Of("SELECT * FROM type::table($_t) WHERE status INSIDE $_statuses ORDER BY submitted_at DESC, id ASC START $_offset LIMIT $_limit")
-            .WithParam("_t", KycSubmission.SchemaNameConst)
-            .WithParam("_statuses", statuses.Select(status => status.ToString()).ToArray())
-            .WithParam("_offset", Math.Max(0, offset))
-            .WithParam("_limit", Math.Clamp(limit, 1, 101));
-        var rows = await _executor.QueryAsync<KycSubmission>(query, ct);
+        if (statuses.Count == 0) return AZOAResult<IReadOnlyList<KycSubmission>>.Success([]);
+        var rows = await Submissions().Where(item => statuses.Contains(item.Status))
+            .OrderByDescending(item => item.SubmittedAt).ThenBy(item => item.Id)
+            .Skip(Math.Max(0, offset)).Take(Math.Clamp(limit, 1, 101)).ToListAsync(ct);
         return AZOAResult<IReadOnlyList<KycSubmission>>.Success(rows.Select(FromStorage).ToList());
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IReadOnlyList<KycSubmission>>> GetEffectiveOperatorPageAsync(
-        string effectiveStatus,
-        int offset,
-        int limit,
-        CancellationToken ct = default)
+        string effectiveStatus, int offset, int limit, CancellationToken ct = default)
     {
-        var statement = EffectiveStatusStatement(effectiveStatus, count: false);
-        if (statement is null)
-            return AZOAResult<IReadOnlyList<KycSubmission>>.Failure("Unsupported KYC status filter.");
-        // raw: bounded effective-expiry classification; see this directory's AGENTS.md.
-        var query = SurrealQuery
-            .Of(statement)
-            .WithParam("_t", KycSubmission.SchemaNameConst)
-            .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) })
-            .WithParam("_approved", nameof(KycStatus.APPROVED))
-            .WithParam("_terminal_negative", new[] { nameof(KycStatus.REJECTED), nameof(KycStatus.EXPIRED) })
-            .WithParam("_offset", Math.Max(0, offset))
-            .WithParam("_limit", Math.Clamp(limit, 1, 101));
-        try
-        {
-            var rows = await _executor.QueryAsync<KycSubmission>(query, ct);
-            return AZOAResult<IReadOnlyList<KycSubmission>>.Success(rows.Select(FromStorage).ToList());
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IReadOnlyList<KycSubmission>>(
-                ex,
-                nameof(GetEffectiveOperatorPageAsync),
-                effectiveStatus);
-        }
+        var query = EffectiveSubmissions(effectiveStatus);
+        if (query is null) return AZOAResult<IReadOnlyList<KycSubmission>>.Failure("Unsupported KYC status filter.");
+        var rows = await query.OrderByDescending(item => item.SubmittedAt).ThenBy(item => item.Id)
+            .Skip(Math.Max(0, offset)).Take(Math.Clamp(limit, 1, 101)).ToListAsync(ct);
+        return AZOAResult<IReadOnlyList<KycSubmission>>.Success(rows.Select(FromStorage).ToList());
     }
 
-    public async Task<AZOAResult<long>> CountByStatusesAsync(
-        IReadOnlyCollection<KycStatus> statuses,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<long>> CountByStatusesAsync(IReadOnlyCollection<KycStatus> statuses, CancellationToken ct = default)
+        => AZOAResult<long>.Success(statuses.Count == 0 ? 0 : await Submissions().Where(item => statuses.Contains(item.Status)).CountAsync(ct));
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<long>> CountEffectiveStatusAsync(string effectiveStatus, CancellationToken ct = default)
     {
-        if (statuses.Count == 0)
-            return AZOAResult<long>.Success(0);
-        var query = SurrealQuery
-            .Of("SELECT VALUE count() FROM type::table($_t) WHERE status INSIDE $_statuses GROUP ALL")
-            .WithParam("_t", KycSubmission.SchemaNameConst)
-            .WithParam("_statuses", statuses.Select(status => status.ToString()).ToArray());
-        try
-        {
-            var values = await _executor.QueryAsync<long>(query, ct);
-            return AZOAResult<long>.Success(values.SingleOrDefault());
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<long>(
-                ex,
-                nameof(CountByStatusesAsync),
-                string.Join(',', statuses));
-        }
+        var query = EffectiveSubmissions(effectiveStatus);
+        return query is null ? AZOAResult<long>.Failure("Unsupported KYC status filter.")
+            : AZOAResult<long>.Success(await query.CountAsync(ct));
     }
 
-    public async Task<AZOAResult<long>> CountEffectiveStatusAsync(
-        string effectiveStatus,
-        CancellationToken ct = default)
-    {
-        var statement = EffectiveStatusStatement(effectiveStatus, count: true);
-        if (statement is null)
-            return AZOAResult<long>.Failure("Unsupported KYC status filter.");
-        // raw: the count shares the exact effective-expiry predicate used by the page.
-        var query = SurrealQuery
-            .Of(statement)
-            .WithParam("_t", KycSubmission.SchemaNameConst)
-            .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) })
-            .WithParam("_approved", nameof(KycStatus.APPROVED))
-            .WithParam("_terminal_negative", new[] { nameof(KycStatus.REJECTED), nameof(KycStatus.EXPIRED) });
-        try
-        {
-            var values = await _executor.QueryAsync<long>(query, ct);
-            return AZOAResult<long>.Success(values.SingleOrDefault());
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<long>(ex, nameof(CountEffectiveStatusAsync), effectiveStatus);
-        }
-    }
+    private IQueryable<KycSubmission> Submissions() => new SurrealQueryable<KycSubmission>(new SurrealQueryProvider(_executor));
 
-    private static string? EffectiveStatusStatement(string value, bool count)
+    private IQueryable<KycSubmission>? EffectiveSubmissions(string value)
     {
-        var prefix = count ? "SELECT VALUE count()" : "SELECT *";
-        var suffix = count
-            ? " GROUP ALL"
-            : " ORDER BY submitted_at DESC, id ASC START $_offset LIMIT $_limit";
-        var predicate = value?.Trim().ToLowerInvariant() switch
+        var now = DateTimeOffset.UtcNow;
+        return value.Trim().ToLowerInvariant() switch
         {
-            "pending" => "status INSIDE $_active AND expires_at != NONE AND expires_at > time::now()",
-            "approved" => "status = $_approved AND expires_at != NONE AND expires_at > time::now()",
-            "rejected" => "status INSIDE $_terminal_negative OR ((status INSIDE $_active OR status = $_approved) AND (expires_at = NONE OR expires_at <= time::now()))",
+            "pending" => Submissions().Where(item => (item.Status == KycStatus.PENDING || item.Status == KycStatus.IN_REVIEW)
+                && item.ExpiresAt != null && item.ExpiresAt > now),
+            "approved" => Submissions().Where(item => item.Status == KycStatus.APPROVED && item.ExpiresAt != null && item.ExpiresAt > now),
+            "rejected" => Submissions().Where(item => item.Status == KycStatus.REJECTED || item.Status == KycStatus.EXPIRED
+                || ((item.Status == KycStatus.PENDING || item.Status == KycStatus.IN_REVIEW || item.Status == KycStatus.APPROVED)
+                    && (item.ExpiresAt == null || item.ExpiresAt <= now))),
             _ => null,
         };
-        return predicate is null
-            ? null
-            : string.Concat(prefix, " FROM type::table($_t) WHERE ", predicate, suffix);
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<KycSubmission>> UpsertSubmissionAsync(KycSubmission submission, CancellationToken ct = default)
     {
-        try
-        {
-            var body = ToStorage(submission);
-            var q = SurrealQuery
-                .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t",    KycSubmission.SchemaNameConst)
-                .WithParam("_id",   body.Id)
-                .WithParam("_body", body);
-
-            var resp = await _executor.ExecuteAsync(q, ct);
-            resp.EnsureAllOk();
-
-            var saved  = resp.GetValues<KycSubmission>(0).FirstOrDefault();
-            var result = saved is not null ? FromStorage(saved) : submission;
-
-            return new AZOAResult<KycSubmission> { Result = result, Message = "Saved." };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<KycSubmission>(ex, nameof(UpsertSubmissionAsync), submission.Id);
-        }
+        var response = await KycEvidenceFence.ExecuteAsync(_executor, KycEvidenceFence.Mutation(submission.UserId, submission.TenantId,
+            SurrealWriter.Upsert(ToStorage(submission))), ct);
+        response.EnsureAllOk();
+        return AZOAResult<KycSubmission>.Success(FromStorage(response.GetValues<KycSubmission>(2).Single()));
     }
 
-    public async Task<AZOAResult<KycSubmission>> CreateSubmissionAsync(
-        KycSubmission submission,
-        IReadOnlyList<KycDocument> documents,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSubmission>> TryRetireAttemptAsync(KycSubmission expected, DateTimeOffset now, CancellationToken ct = default)
+        => RetireAttemptCoreAsync(expected, now, null, ct);
+
+    private async Task<AZOAResult<KycSubmission>> RetireAttemptCoreAsync(KycSubmission expected, DateTimeOffset now,
+        TenantCustodialWitness? custody, CancellationToken ct)
     {
+        var query = SurrealWriter.UpdateOnly<KycSubmission>(expected.Id)
+            .Where(row => row.Status == expected.Status && row.ModifiedDate == expected.ModifiedDate)
+            .Where(row => row.Status == KycStatus.PENDING || row.Status == KycStatus.IN_REVIEW)
+            .Set(row => row.Status, KycStatus.EXPIRED).Set(row => row.ModifiedDate, (DateTimeOffset?)now).Build();
+        var guards = CustodyGuards(expected, custody);
+        if (guards is null) return CustodyRefusal();
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(guards);
+        statements.Add(KycEvidenceFence.Create(expected.UserId, expected.TenantId));
+        statements.Add(query);
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        var response = await KycEvidenceFence.ExecuteAsync(_executor, SurrealQuery.Combine(statements.ToArray()), ct);
+        var row = response.GetValues<KycSubmission>(statements.Count - 2).SingleOrDefault();
+        return AZOAResult<KycSubmission>.Success(row is null ? null! : FromStorage(row));
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<KycSubmission>> TryAttachHostedRedirectAsync(KycSubmission expected, string redirectUrl, DateTimeOffset? expiresAt, CancellationToken ct = default)
+    {
+        var mutation = SurrealWriter.UpdateOnly<KycSubmission>(expected.Id)
+            .Where(row => row.ProviderSessionId == expected.ProviderSessionId)
+            .Where(row => row.Status == KycStatus.PENDING || row.Status == KycStatus.IN_REVIEW)
+            .Set(row => row.VerificationUrl, redirectUrl)
+            .Set(row => row.ModifiedDate, (DateTimeOffset?)DateTimeOffset.UtcNow);
+        if (expiresAt is not null && expiresAt < expected.ExpiresAt)
+            mutation = mutation.Set(row => row.ExpiresAt, expiresAt);
+        var response = await KycEvidenceFence.ExecuteAsync(_executor, KycEvidenceFence.Mutation(expected.UserId, expected.TenantId, mutation.Build()), ct);
+        response.EnsureAllOk();
+        var row = response.GetValues<KycSubmission>(2).SingleOrDefault();
+        return AZOAResult<KycSubmission>.Success(row is null ? null! : FromStorage(row));
+    }
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSubmission>> CreateSubmissionAsync(
+        KycSubmission submission, IReadOnlyList<KycDocument> documents, CancellationToken ct = default)
+        => CreateSubmissionCoreAsync(submission, documents, null, ct);
+
+    private async Task<AZOAResult<KycSubmission>> CreateSubmissionCoreAsync(KycSubmission submission,
+        IReadOnlyList<KycDocument> documents, TenantCustodialWitness? custody, CancellationToken ct)
+    {
+        var custodyGuards = CustodyGuards(submission, custody);
+        if (custodyGuards is null) return CustodyRefusal();
         try
         {
             var storedSubmission = ToStorage(submission);
@@ -336,7 +196,6 @@ public sealed class SurrealKycStore : IKycStore
             var hasTenant = !string.IsNullOrWhiteSpace(submission.TenantId);
             var tenantId = hasTenant ? submission.TenantId : string.Empty;
             var authorityGuardTable = "kyc_authority_guard";
-            var attemptGuardId = $"attempt-{submission.UserId}-{(hasTenant ? tenantId : "direct")}";
             var loadSelection = SurrealQuery
                 .Of("LET $_selection = (SELECT provider_key, selection_version FROM type::record($_selection_table, $_tenant_id) WHERE $_has_tenant)")
                 .WithParam("_selection_table", TenantKycProviderSelection.SchemaNameConst)
@@ -357,24 +216,20 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_has_tenant", hasTenant)
                 .WithParam("_trust_revision", submission.ProviderTrustRevision);
             var writeTenantGuard = SurrealQuery
-                .Of("IF $_has_tenant { UPSERT type::record($_guard_table, $_guard_id) CONTENT { kind: 'tenant', authority_revision: $_revision, provider_key: $_provider, touched_at: time::now() } RETURN NONE }")
+                .Of("IF $_has_tenant { UPSERT type::record($_guard_table, $_tenant_guard_id) CONTENT { kind: 'tenant', authority_revision: $_tenant_revision, provider_key: $_provider, touched_at: time::now() } RETURN NONE }")
                 .WithParam("_has_tenant", hasTenant)
                 .WithParam("_guard_table", authorityGuardTable)
-                .WithParam("_guard_id", $"tenant-{tenantId}")
-                .WithParam("_revision", submission.ProviderSelectionVersion)
+                .WithParam("_tenant_guard_id", $"tenant-{tenantId}")
+                .WithParam("_tenant_revision", submission.ProviderSelectionVersion)
                 .WithParam("_provider", submission.ProviderKey);
             var writeProviderGuard = SurrealQuery
-                .Of("IF $_has_tenant { UPSERT type::record($_guard_table, $_guard_id) CONTENT { kind: 'provider', authority_revision: $_revision, provider_key: $_provider, touched_at: time::now() } RETURN NONE }")
+                .Of("IF $_has_tenant { UPSERT type::record($_guard_table, $_provider_guard_id) CONTENT { kind: 'provider', authority_revision: $_provider_revision, provider_key: $_provider, touched_at: time::now() } RETURN NONE }")
                 .WithParam("_has_tenant", hasTenant)
                 .WithParam("_guard_table", authorityGuardTable)
-                .WithParam("_guard_id", $"provider-{submission.ProviderKey}")
-                .WithParam("_revision", submission.ProviderTrustRevision)
+                .WithParam("_provider_guard_id", $"provider-{submission.ProviderKey}")
+                .WithParam("_provider_revision", submission.ProviderTrustRevision)
                 .WithParam("_provider", submission.ProviderKey);
-            var writeAttemptGuard = SurrealQuery
-                .Of("UPSERT type::record($_guard_table, $_guard_id) SET kind = 'attempt', authority_revision = math::max([authority_revision ?? 0, 0]) + 1, provider_key = $_provider, touched_at = time::now() RETURN NONE")
-                .WithParam("_guard_table", authorityGuardTable)
-                .WithParam("_guard_id", attemptGuardId)
-                .WithParam("_provider", submission.ProviderKey);
+            var writeAttemptGuard = KycEvidenceFence.Create(submission.UserId, submission.TenantId);
             var findActive = SurrealQuery
                 .Of("LET $_active = (SELECT id FROM type::table($_submission_table) WHERE user_id = $_user AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE)) AND status INSIDE $_active_statuses LIMIT 1)")
                 .WithParam("_submission_table", KycSubmission.SchemaNameConst)
@@ -384,213 +239,196 @@ public sealed class SurrealKycStore : IKycStore
                 .WithParam("_active_statuses", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
             var rejectActive = SurrealQuery.Of(
                 "IF array::len($_active) > 0 { THROW 'An active KYC submission already exists' } ELSE { NONE }");
-            var createSubmission = SurrealQuery
-                .Of("CREATE type::record($_submission_table, $_submission_id) CONTENT $_submission RETURN AFTER")
-                .WithParam("_submission_table", KycSubmission.SchemaNameConst)
-                .WithParam("_submission_id", storedSubmission.Id)
-                .WithParam("_submission", storedSubmission);
-            var createDocuments = SurrealQuery
-                .Of("FOR $_document IN $_documents { CREATE type::record($_document_table, $_document.id) CONTENT $_document RETURN NONE }")
-                .WithParam("_document_table", KycDocument.SchemaNameConst)
-                .WithParam("_documents", storedDocuments);
-            // raw: atomic active-attempt CAS + document batch; see this directory's AGENTS.md.
-            var transaction = SurrealQuery.Combine(
-                SurrealQuery.Of("BEGIN"),
-                loadSelection,
-                assertSelection,
-                loadProfile,
-                assertProfile,
-                writeTenantGuard,
-                writeProviderGuard,
-                writeAttemptGuard,
-                findActive,
-                rejectActive,
-                createSubmission,
-                createDocuments,
-                SurrealQuery.Of("COMMIT"));
+            // raw: active-attempt admission and scoped document creates share one authority transaction.
+            var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+            statements.AddRange(custodyGuards);
+            statements.AddRange([loadSelection, assertSelection, loadProfile, assertProfile, writeTenantGuard,
+                writeProviderGuard, writeAttemptGuard, findActive, rejectActive]);
+            statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(storedSubmission), "kyc_create"));
+            for (var index = 0; index < storedDocuments.Count; index++)
+                statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(storedDocuments[index]), "kyc_doc" + index));
+            statements.Add(SurrealQuery.Of("COMMIT"));
+            var transaction = SurrealQuery.Combine(statements.ToArray());
 
-            var response = await _executor.ExecuteAsync(transaction, ct);
+            var response = await KycEvidenceFence.ExecuteAsync(_executor, transaction, ct);
             response.EnsureAllOk();
             return new AZOAResult<KycSubmission> { Result = submission, Message = "Created." };
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (
+            exception.Message.Contains("An active KYC submission already exists", StringComparison.Ordinal)
+            || exception.Message.Contains("KYC tenant authority changed", StringComparison.Ordinal)
+            || exception.Message.Contains("KYC provider authority changed", StringComparison.Ordinal))
         {
-            return StoreFailure<KycSubmission>(ex, nameof(CreateSubmissionAsync), submission.Id);
+            return AZOAResult<KycSubmission>.FailureWithCode("The KYC attempt or authority changed.", AzoaErrorCodes.Conflict);
         }
     }
 
-    public async Task<AZOAResult<KycSubmission>> TryReviewAsync(
-        KycSubmission decision,
+    /// <inheritdoc/>
+    public async Task<AZOAResult<KycSubmission>> TryCompleteHostedAsync(
+        KycSubmission expected,
+        HostedSession lease,
+        KycStatus status,
+        DateTimeOffset reviewedAt,
+        DateTimeOffset? expiresAt,
+        string? rejectionReason,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(lease.ResumeLeaseToken)
+            || lease.Id != expected.ProviderSessionId
+            || expected.Provider is not (KycProvider.IDENTOMAT or KycProvider.VERIFF or KycProvider.GENERIC_HOSTED)
+            || expected.Status is not (KycStatus.PENDING or KycStatus.IN_REVIEW)
+            || status is not (KycStatus.APPROVED or KycStatus.REJECTED)
+            || string.IsNullOrWhiteSpace(expected.ProviderSessionId)
+            || expected.ExpiresAt is null || expected.ExpiresAt <= reviewedAt)
+            return AZOAResult<KycSubmission>.Success(null!);
+
+        var storedExpected = ToStorage(expected);
+        var query = SurrealWriter.UpdateOnly<KycSubmission>(expected.Id)
+            .Where(row => row.UserId == storedExpected.UserId)
+            .Where(row => row.Provider == expected.Provider && row.ProviderKey == expected.ProviderKey)
+            .Where(row => row.ProviderSessionId == expected.ProviderSessionId)
+            .Where(row => row.ProviderSelectionVersion == expected.ProviderSelectionVersion
+                && row.ProviderTrustRevision == expected.ProviderTrustRevision)
+            .Where(row => row.Status == expected.Status)
+            .Where(row => row.ExpiresAt == expected.ExpiresAt && row.ExpiresAt > reviewedAt)
+            .Set(row => row.Status, status)
+            .Set(row => row.ReviewedAt, (DateTimeOffset?)reviewedAt)
+            .Set(row => row.ModifiedDate, (DateTimeOffset?)reviewedAt);
+        query = storedExpected.TenantId is null ? query.Where(row => row.TenantId == null) : query.Where(row => row.TenantId == storedExpected.TenantId);
+        query = expected.ProviderResult is null ? query.Where(row => row.ProviderResult == null) : query.Where(row => row.ProviderResult == expected.ProviderResult);
+        query = expected.ModifiedDate is null ? query.Where(row => row.ModifiedDate == null) : query.Where(row => row.ModifiedDate == expected.ModifiedDate);
+        query = expiresAt is null ? query.Unset(row => row.ExpiresAt) : query.Set(row => row.ExpiresAt, expiresAt);
+        query = expected.AmlLineageKey is null ? query.Unset(row => row.AmlLineageKey) : query.Set(row => row.AmlLineageKey, expected.AmlLineageKey);
+        query = rejectionReason is null ? query.Unset(row => row.RejectionReason) : query.Set(row => row.RejectionReason, rejectionReason);
+        // raw: atomic hosted-lease fencing and KYC completion; see AGENTS.md.
+        var fence = HostedSessionLeaseFence.CreateGuard(lease);
+        var transaction = SurrealQuery.Combine(
+            SurrealQuery.Of("BEGIN"), KycEvidenceFence.Create(expected.UserId, expected.TenantId), fence,
+            HostedSessionLeaseFence.AssertCurrent(),
+            SurrealQuery.Of("IF $_attempt_expiry <= time::now() { THROW 'HOSTED_LEASE_LOST' }")
+                .WithParam("_attempt_expiry", expected.ExpiresAt),
+            query.Build(), SurrealQuery.Of("COMMIT"));
         try
         {
-            var stored = ToStorage(decision);
-            // raw: single-winner manual-review CAS; see this directory's AGENTS.md.
-            var query = SurrealQuery
-                .Of("UPDATE type::record($_table, $_id) SET status = $_status, reviewer_id = $_reviewer, review_notes = $_notes, rejection_reason = $_reason, reviewed_at = $_reviewed, modified_date = $_modified WHERE provider = $_manual AND provider_key = $_provider_key AND user_id = $_user_id AND tenant_id = $_tenant_id AND provider_selection_version = $_selection_version AND provider_trust_revision = $_trust_revision AND provider_result = $_provider_result AND status INSIDE $_active AND expires_at != NONE AND expires_at > $_reviewed RETURN AFTER")
-                .WithParam("_table", KycSubmission.SchemaNameConst)
-                .WithParam("_id", stored.Id)
-                .WithParam("_status", stored.Status.ToString())
-                .WithParam("_reviewer", stored.ReviewerId)
-                .WithParam("_notes", stored.ReviewNotes)
-                .WithParam("_reason", stored.RejectionReason)
-                .WithParam("_reviewed", stored.ReviewedAt)
-                .WithParam("_modified", stored.ModifiedDate)
-                .WithParam("_manual", nameof(KycProvider.MANUAL))
-                .WithParam("_provider_key", stored.ProviderKey)
-                .WithParam("_user_id", SurrealRecordParam.OfLink(stored.UserId))
-                .WithParam("_tenant_id", SurrealRecordParam.OfLink(stored.TenantId))
-                .WithParam("_selection_version", stored.ProviderSelectionVersion)
-                .WithParam("_trust_revision", stored.ProviderTrustRevision)
-                .WithParam("_provider_result", stored.ProviderResult)
-                .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
-            var response = await _executor.ExecuteAsync(query, ct);
+            var response = await KycEvidenceFence.ExecuteAsync(_executor, transaction, ct);
             response.EnsureAllOk();
-            var saved = response.GetValues<KycSubmission>(0).SingleOrDefault();
-            return new AZOAResult<KycSubmission>
-            {
-                Result = saved is null ? null : FromStorage(saved),
-                Message = saved is null
-                    ? "KYC submission changed before the review decision could be committed."
-                    : "Reviewed."
-            };
+            var saved = response.GetValues<KycSubmission>(5).SingleOrDefault();
+            return AZOAResult<KycSubmission>.Success(saved is null ? null! : FromStorage(saved));
         }
-        catch (Exception ex)
+        catch (SurrealStatementException exception) when (
+            exception.Message.Contains(HostedSessionLeaseFence.FailureMarker, StringComparison.Ordinal))
         {
-            return StoreFailure<KycSubmission>(ex, nameof(TryReviewAsync), decision.Id);
+            return AZOAResult<KycSubmission>.Success(null!);
         }
     }
 
-    public async Task<AZOAResult<KycSubmission>> AttachDocumentsIfAbsentAsync(
-        KycSubmission submission,
-        IReadOnlyList<KycDocument> documents,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<KycSubmission>> TryReviewAsync(KycSubmission decision, CancellationToken ct = default)
     {
-        try
-        {
-            var storedSubmission = ToStorage(submission);
-            var storedDocuments = documents.Select(ToStorage).ToList();
-            var findDocuments = SurrealQuery
-                .Of("LET $_existing_documents = (SELECT id FROM type::table($_document_table) WHERE submission_id = $_submission_link LIMIT 1)")
-                .WithParam("_document_table", KycDocument.SchemaNameConst)
-                .WithParam("_submission_link", SurrealRecordParam.Of(
-                    KycSubmission.SchemaNameConst,
-                    storedSubmission.Id));
-            var attach = SurrealQuery
-                .Of("LET $_attached = (UPDATE type::record($_submission_table, $_submission_id) SET expires_at = $_expires_at, modified_date = $_modified_date WHERE status INSIDE $_active AND array::len($_existing_documents) = 0 RETURN AFTER)")
-                .WithParam("_submission_table", KycSubmission.SchemaNameConst)
-                .WithParam("_submission_id", storedSubmission.Id)
-                .WithParam("_expires_at", storedSubmission.ExpiresAt)
-                .WithParam("_modified_date", storedSubmission.ModifiedDate)
-                .WithParam("_active", new[] { nameof(KycStatus.PENDING), nameof(KycStatus.IN_REVIEW) });
-            var createDocuments = SurrealQuery
-                .Of("IF array::len($_attached) > 0 { FOR $_document IN $_documents { CREATE type::record($_document_table, $_document.id) CONTENT $_document RETURN NONE } } ELSE { NONE }")
-                .WithParam("_document_table", KycDocument.SchemaNameConst)
-                .WithParam("_documents", storedDocuments);
-            // raw: attach-once CAS + document batch; see this directory's AGENTS.md.
-            var transaction = SurrealQuery.Combine(
-                SurrealQuery.Of("BEGIN"),
-                findDocuments,
-                attach,
-                createDocuments,
-                SurrealQuery.Of("COMMIT"));
-
-            var response = await _executor.ExecuteAsync(transaction, ct);
-            response.EnsureAllOk();
-
-            var persistedDocuments = await GetDocumentsBySubmissionAsync(
-                Guid.ParseExact(submission.Id, "N"),
-                ct);
-            if (persistedDocuments.IsError)
-                return AZOAResult<KycSubmission>.Failure(PublicStoreError);
-            if (!(persistedDocuments.Result?.Any() ?? false))
-            {
-                return AZOAResult<KycSubmission>.Failure(
-                    "KYC_DOCUMENT_ATTACH_CONFLICT: The KYC attempt changed before documents could be attached.");
-            }
-
-            var persisted = await GetSubmissionByIdAsync(Guid.ParseExact(submission.Id, "N"), ct);
-            return persisted.IsError || persisted.Result is null
-                ? AZOAResult<KycSubmission>.Failure(PublicStoreError)
-                : persisted;
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<KycSubmission>(
-                ex,
-                nameof(AttachDocumentsIfAbsentAsync),
-                submission.Id);
-        }
+        var stored = ToStorage(decision);
+        var update = SurrealWriter.UpdateOnly<KycSubmission>(stored.Id)
+            .Where(row => row.Provider == KycProvider.MANUAL && row.ProviderKey == stored.ProviderKey
+                && row.UserId == stored.UserId
+                && row.ProviderSelectionVersion == stored.ProviderSelectionVersion
+                && row.ProviderTrustRevision == stored.ProviderTrustRevision && row.ProviderResult == stored.ProviderResult)
+            .Where(row => (row.Status == KycStatus.PENDING || row.Status == KycStatus.IN_REVIEW)
+                && row.ExpiresAt != null && row.ExpiresAt > stored.ReviewedAt)
+            .Set(row => row.Status, stored.Status);
+        update = stored.TenantId is null ? update.Where(row => row.TenantId == null) : update.Where(row => row.TenantId == stored.TenantId);
+        update = stored.ReviewerId is null ? update.Unset(row => row.ReviewerId) : update.Set(row => row.ReviewerId, stored.ReviewerId);
+        update = stored.ReviewNotes is null ? update.Unset(row => row.ReviewNotes) : update.Set(row => row.ReviewNotes, stored.ReviewNotes);
+        update = stored.RejectionReason is null ? update.Unset(row => row.RejectionReason) : update.Set(row => row.RejectionReason, stored.RejectionReason);
+        update = stored.ReviewedAt is null ? update.Unset(row => row.ReviewedAt) : update.Set(row => row.ReviewedAt, stored.ReviewedAt);
+        update = stored.ModifiedDate is null ? update.Unset(row => row.ModifiedDate) : update.Set(row => row.ModifiedDate, stored.ModifiedDate);
+        var response = await KycEvidenceFence.ExecuteAsync(_executor, KycEvidenceFence.Mutation(decision.UserId, decision.TenantId, update.Build()), ct);
+        response.EnsureAllOk();
+        var saved = response.GetValues<KycSubmission>(2).SingleOrDefault();
+        return AZOAResult<KycSubmission>.Success(saved is null ? null! : FromStorage(saved));
     }
 
-    // ── Documents ───────────────────────────────────────────────────────────
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycSubmission>> AttachDocumentsIfAbsentAsync(
+        KycSubmission submission, IReadOnlyList<KycDocument> documents, CancellationToken ct = default)
+        => AttachDocumentsCoreAsync(submission, documents, null, ct);
 
+    private async Task<AZOAResult<KycSubmission>> AttachDocumentsCoreAsync(KycSubmission submission,
+        IReadOnlyList<KycDocument> documents, TenantCustodialWitness? custody, CancellationToken ct)
+    {
+        var custodyGuards = CustodyGuards(submission, custody);
+        if (custodyGuards is null) return CustodyRefusal();
+        var storedSubmission = ToStorage(submission);
+        var storedDocuments = documents.Select(ToStorage).ToList();
+        var link = SurrealLink.ToLink(KycSubmission.SchemaNameConst, storedSubmission.Id);
+        var findDocuments = SurrealGeneratedStatementScope.Assign(SurrealQuery<KycDocument>.From()
+            .Where(row => row.SubmissionId == link).Limit(1), "kyc_attach_read", "_existing_documents");
+        var mutation = SurrealWriter.UpdateOnly<KycSubmission>(storedSubmission.Id)
+            .Where(row => row.Status == KycStatus.PENDING || row.Status == KycStatus.IN_REVIEW);
+        mutation = storedSubmission.ModifiedDate is null ? mutation.Unset(row => row.ModifiedDate)
+            : mutation.Set(row => row.ModifiedDate, storedSubmission.ModifiedDate);
+        mutation = storedSubmission.ExpiresAt is null ? mutation.Unset(row => row.ExpiresAt)
+            : mutation.Set(row => row.ExpiresAt, storedSubmission.ExpiresAt);
+        // raw: current authority, attach-once assertion and scoped typed document creates share one transaction.
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(custodyGuards);
+        statements.Add(KycEvidenceFence.Create(submission.UserId, submission.TenantId));
+        statements.Add(findDocuments);
+        statements.Add(SurrealQuery.Of("IF array::len($_existing_documents) > 0 { THROW 'KYC_DOCUMENTS_ALREADY_ATTACHED' }"));
+        statements.Add(SurrealGeneratedStatementScope.Assign(mutation.Build(), "kyc_attach", "_attached"));
+        statements.Add(SurrealQuery.Of("IF $_attached = NONE OR $_attached = [] { THROW 'KYC_DOCUMENT_ATTACH_CONFLICT' }"));
+        for (var index = 0; index < storedDocuments.Count; index++)
+            statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(storedDocuments[index]), "kyc_attach_doc" + index));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        try
+        {
+            await KycEvidenceFence.ExecuteAsync(_executor, SurrealQuery.Combine(statements.ToArray()), ct);
+        }
+        catch (SurrealStatementException exception) when (exception.Message.Contains("KYC_DOCUMENTS_ALREADY_ATTACHED", StringComparison.Ordinal))
+        { /* Recover the original attachment below. */ }
+        catch (SurrealStatementException exception) when (exception.Message.Contains("KYC_DOCUMENT_ATTACH_CONFLICT", StringComparison.Ordinal))
+        {
+            return AZOAResult<KycSubmission>.FailureWithCode("The KYC attempt changed before attachment.", AzoaErrorCodes.Conflict);
+        }
+
+        var persistedDocuments = await GetDocumentsBySubmissionAsync(
+            Guid.ParseExact(submission.Id, "N"),
+            ct);
+        if (persistedDocuments.IsError)
+            return AZOAResult<KycSubmission>.Failure(PublicStoreError);
+        if (!(persistedDocuments.Result?.Any() ?? false))
+        {
+            return AZOAResult<KycSubmission>.Failure(
+                "KYC_DOCUMENT_ATTACH_CONFLICT: The KYC attempt changed before documents could be attached.");
+        }
+
+        var persisted = await GetSubmissionByIdAsync(Guid.ParseExact(submission.Id, "N"), ct);
+        return persisted.IsError || persisted.Result is null
+            ? AZOAResult<KycSubmission>.Failure(PublicStoreError)
+            : persisted;
+    }
+
+    // â”€â”€ Documents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<KycDocument>>> GetDocumentsBySubmissionAsync(Guid submissionId, CancellationToken ct = default)
     {
-        try
-        {
-            var q = SurrealQuery
-                .Of("SELECT * FROM type::table($_t) WHERE submission_id = $_submission ORDER BY created_date ASC")
-                .WithParam("_t",          KycDocument.SchemaNameConst)
-                .WithParam("_submission", SurrealRecordParam.Of(KycSubmission.SchemaNameConst, SurrealId.ToSurrealId(submissionId)));
-
-            var rows = await _executor.QueryAsync<KycDocument>(q, ct);
-            return new AZOAResult<IEnumerable<KycDocument>>
-            {
-                Result  = rows.Select(FromStorage).ToList(),
-                Message = "Success"
-            };
-        }
-        catch (Exception ex)
-        {
-            return StoreFailure<IEnumerable<KycDocument>>(
-                ex,
-                nameof(GetDocumentsBySubmissionAsync),
-                submissionId);
-        }
+        var link = SurrealLink.ToLink(KycSubmission.SchemaNameConst, submissionId.ToString("N"));
+        var rows = await _executor.QueryAsync<KycDocument>(SurrealQuery<KycDocument>.From()
+            .Where(row => row.SubmissionId == link).OrderBy(row => row.CreatedDate), ct);
+        return AZOAResult<IEnumerable<KycDocument>>.Success(rows.Select(FromStorage).ToList());
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> AddDocumentsAsync(IEnumerable<KycDocument> documents, CancellationToken ct = default)
     {
-        try
+        foreach (var document in documents)
         {
-            foreach (var doc in documents)
-            {
-                var body = ToStorage(doc);
-                var q = SurrealQuery
-                    .Of("UPSERT type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                    .WithParam("_t",    KycDocument.SchemaNameConst)
-                    .WithParam("_id",   body.Id)
-                    .WithParam("_body", body);
-
-                var resp = await _executor.ExecuteAsync(q, ct);
-                resp.EnsureAllOk();
-            }
-
-            return new AZOAResult<bool> { Result = true, Message = "Saved." };
+            var response = await KycEvidenceFence.ExecuteAsync(_executor, SurrealWriter.Upsert(ToStorage(document)), ct);
+            response.EnsureAllOk();
         }
-        catch (Exception ex)
-        {
-            return StoreFailure<bool>(ex, nameof(AddDocumentsAsync), "document-batch");
-        }
+        return AZOAResult<bool>.Success(true);
     }
 
-    private AZOAResult<T> StoreFailure<T>(Exception exception, string operation, object entityId)
-    {
-        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
-        _logger.LogError(
-            exception,
-            "KYC persistence failure in {Operation}; correlation={CorrelationId}; entity={EntityId}",
-            operation,
-            correlationId,
-            entityId);
-        return AZOAResult<T>.FailureWithCode(
-            PublicStoreError,
-            AzoaErrorCodes.DependencyUnavailable);
-    }
-
-    // ── Mapping ───────────────────────────────────────────────────────────────
+    // â”€â”€ Mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
     /// <summary>
@@ -619,6 +457,7 @@ public sealed class SurrealKycStore : IKycStore
         VerificationUrl    = s.VerificationUrl,
         SessionInstructions = s.SessionInstructions,
         ProviderResult    = s.ProviderResult,
+        AmlLineageKey      = s.AmlLineageKey,
         SubmittedAt       = AsUtc(s.SubmittedAt),
         ReviewedAt        = AsUtc(s.ReviewedAt),
         ExpiresAt         = AsUtc(s.ExpiresAt),
@@ -647,6 +486,7 @@ public sealed class SurrealKycStore : IKycStore
         VerificationUrl    = s.VerificationUrl,
         SessionInstructions = s.SessionInstructions,
         ProviderResult    = s.ProviderResult,
+        AmlLineageKey      = s.AmlLineageKey,
         SubmittedAt       = s.SubmittedAt,
         ReviewedAt        = s.ReviewedAt,
         ExpiresAt         = s.ExpiresAt,

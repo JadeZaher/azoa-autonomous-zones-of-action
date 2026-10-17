@@ -94,6 +94,7 @@ const navGroups: NavGroup[] = [
       { href: '/users', label: 'Users', icon: Users },
       { href: '/holons', label: 'Holons', icon: Box },
       { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
+      { href: '/business-verification', label: 'Business verification', icon: BadgeCheck },
     ],
   },
   {
@@ -103,6 +104,7 @@ const navGroups: NavGroup[] = [
       { href: '/wallets', label: 'Wallets', icon: Wallet },
       { href: '/nfts', label: 'NFTs', icon: Image },
       { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
+      { href: '/holds', label: 'Hold recovery', icon: Clock },
       { href: '/user-nfts', label: 'User NFTs', icon: UserCircle },
     ],
   },

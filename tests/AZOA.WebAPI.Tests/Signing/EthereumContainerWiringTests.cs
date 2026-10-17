@@ -138,7 +138,7 @@ public sealed class EthereumContainerWiringTests
                 ["Blockchain:Chains:0:Testnet:IsEnabled"] = "true",
                 ["Blockchain:Chains:0:Testnet:NodeUrl"] = "http://127.0.0.1:2/",
                 ["Blockchain:Chains:0:Testnet:TimeoutMs"] = "2000",
-                ["Blockchain:Chains:0:Metadata:ChainId"] = SepoliaChainId,
+                ["Blockchain:Chains:0:Devnet:ChainId"] = SepoliaChainId,
             })
             .Build();
 }

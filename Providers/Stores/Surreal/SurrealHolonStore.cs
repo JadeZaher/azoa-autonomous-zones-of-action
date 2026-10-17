@@ -10,8 +10,8 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
-using HolonRecord = AZOA.WebAPI.Persistence.SurrealDb.Models.Holon;
 using AZOA.WebAPI.Core.Surreal;
+using HolonRecord = AZOA.WebAPI.Persistence.SurrealDb.Models.Holon;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -137,10 +137,10 @@ public sealed class SurrealHolonStore : IHolonStore
         // ids), type::decimal-wraps decimals, and omits null option<> fields.
         var q = SurrealWriter.Upsert(poco);
 
-        var resp = await _executor.ExecuteAsync(q, ct);
+        var resp = await ExecuteMutationAsync(q, ct);
         resp.EnsureAllOk();
 
-        var saved = resp.GetValues<HolonPoco>(0).FirstOrDefault();
+        var saved = resp.GetValues<HolonPoco>(2).FirstOrDefault();
         var result = saved is not null ? FromPoco(saved) : holon;
 
         return AZOAResult<IHolon>.Success(result, "Saved.");
@@ -154,12 +154,8 @@ public sealed class SurrealHolonStore : IHolonStore
         if (existing == null)
             return AZOAResult<bool>.Failure("Holon not found.", false);
 
-        // raw: typed delete is awaiting SurrealForge.Client 0.4 publication; expires 2026-08-31.
-        var q = SurrealQuery
-            .Of("DELETE type::record($_t, $_id)")
-            .WithParam("_t", HolonPoco.HolonTable)
-            .WithParam("_id", SurrealId.ToSurrealId(id));
-        var response = await _executor.ExecuteAsync(q, ct);
+        var q = SurrealWriter.DeleteOnly<HolonPoco>(SurrealId.ToSurrealId(id)).Build();
+        var response = await ExecuteMutationAsync(q, ct);
         response.EnsureAllOk();
 
         return AZOAResult<bool>.Success(true, "Deleted.");
@@ -183,32 +179,25 @@ public sealed class SurrealHolonStore : IHolonStore
             return AZOAResult<bool>.Failure("Transfer settlement key is required.", false);
 
         var key = settlementKey.Trim();
-        // raw: typed conditional update is awaiting SurrealForge.Client 0.4 publication; expires 2026-08-31.
-        var q = SurrealQuery
-            .Of("UPDATE ONLY type::record($_t, $_id) SET transfer_reservation_key = type::string($_key), transfer_target_user_id = type::record($_user_t, $_target), transfer_reserved_at = (IF transfer_reservation_key != NONE THEN transfer_reserved_at ELSE $_now END) WHERE asset_type = $_nft AND user_id = type::record($_user_t, $_source) AND (last_transfer_settlement_key = NONE OR last_transfer_settlement_key != type::string($_key)) AND (transfer_reservation_key = NONE OR (transfer_reservation_key = type::string($_key) AND transfer_target_user_id = type::record($_user_t, $_target))) RETURN AFTER")
-            .WithParam("_t", HolonPoco.HolonTable)
-            .WithParam("_id", SurrealId.ToSurrealId(holonId))
-            .WithParam("_key", key)
-            .WithParam("_user_t", "user")
-            .WithParam("_target", SurrealId.ToSurrealId(targetUserId))
-            .WithParam("_source", SurrealId.ToSurrealId(sourceUserId))
-            .WithParam("_nft", "NFT")
-            .WithParam("_now", DateTimeOffset.UtcNow);
-        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-        {
-            var attempt = await _executor.ExecuteAsync(q, ct);
-            attempt.EnsureAllOk();
-            return attempt;
-        }, ct);
-        if (response[0].AffectedCount() == 1)
+        var source = UserLink(sourceUserId);
+        var target = UserLink(targetUserId);
+        var q = SurrealWriter.UpdateOnly<HolonRecord>(SurrealId.ToSurrealId(holonId))
+            .Where(row => row.AssetType == "NFT" && row.UserId == source && row.TransferReservationKey == null
+                && (row.LastTransferSettlementKey == null || row.LastTransferSettlementKey != key))
+            .Set(row => row.TransferReservationKey, key).Set(row => row.TransferTargetUserId, target)
+            .Set(row => row.TransferReservedAt, DateTimeOffset.UtcNow).Build();
+        var response = await ExecuteMutationAsync(q, ct);
+        if (response[2].AffectedCount() == 1)
             return AZOAResult<bool>.Success(true, "Transfer reserved.");
 
         var state = await ReadTransferStateAsync(holonId, ct);
         var alreadyFinalized = state is not null
             && string.Equals(state.LastTransferSettlementKey, key, StringComparison.Ordinal)
             && string.Equals(state.UserId, UserLink(targetUserId), StringComparison.Ordinal);
-        return alreadyFinalized
-            ? AZOAResult<bool>.Success(true, "Transfer already finalized.")
+        var sameReservation = state is not null && state.UserId == source
+            && state.AssetType == "NFT" && state.TransferReservationKey == key && state.TransferTargetUserId == target;
+        return alreadyFinalized || sameReservation
+            ? AZOAResult<bool>.Success(true, "Transfer reserved or already finalized.")
             : AZOAResult<bool>.Success(false, "NFT transfer reservation conflict.");
     }
 
@@ -228,24 +217,16 @@ public sealed class SurrealHolonStore : IHolonStore
             return AZOAResult<bool>.Failure("Transfer settlement key is required.", false);
 
         var key = settlementKey.Trim();
-        // raw: typed conditional update is awaiting SurrealForge.Client 0.4 publication; expires 2026-08-31.
-        var q = SurrealQuery
-            .Of("UPDATE ONLY type::record($_t, $_id) SET user_id = type::record($_user_t, $_target), modified_date = $_now, last_transfer_settlement_key = type::string($_key), transfer_reservation_key = NONE, transfer_target_user_id = NONE, transfer_reserved_at = NONE WHERE asset_type = $_nft AND user_id = type::record($_user_t, $_source) AND transfer_reservation_key = type::string($_key) AND transfer_target_user_id = type::record($_user_t, $_target) RETURN AFTER")
-            .WithParam("_t", HolonPoco.HolonTable)
-            .WithParam("_id", SurrealId.ToSurrealId(holonId))
-            .WithParam("_key", key)
-            .WithParam("_user_t", "user")
-            .WithParam("_target", SurrealId.ToSurrealId(targetUserId))
-            .WithParam("_source", SurrealId.ToSurrealId(sourceUserId))
-            .WithParam("_nft", "NFT")
-            .WithParam("_now", DateTimeOffset.UtcNow);
-        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-        {
-            var attempt = await _executor.ExecuteAsync(q, ct);
-            attempt.EnsureAllOk();
-            return attempt;
-        }, ct);
-        if (response[0].AffectedCount() == 1)
+        var source = UserLink(sourceUserId);
+        var target = UserLink(targetUserId);
+        var q = SurrealWriter.UpdateOnly<HolonRecord>(SurrealId.ToSurrealId(holonId))
+            .Where(row => row.AssetType == "NFT" && row.UserId == source && row.TransferReservationKey == key
+                && row.TransferTargetUserId == target)
+            .Set(row => row.UserId, target).Set(row => row.ModifiedDate, DateTimeOffset.UtcNow)
+            .Set(row => row.LastTransferSettlementKey, key).Unset(row => row.TransferReservationKey)
+            .Unset(row => row.TransferTargetUserId).Unset(row => row.TransferReservedAt).Build();
+        var response = await ExecuteMutationAsync(q, ct);
+        if (response[2].AffectedCount() == 1)
             return AZOAResult<bool>.Success(true, "Transfer finalized.");
 
         var state = await ReadTransferStateAsync(holonId, ct);
@@ -271,21 +252,13 @@ public sealed class SurrealHolonStore : IHolonStore
             return AZOAResult<bool>.Failure("Transfer settlement key is required.", false);
 
         var key = settlementKey.Trim();
-        // raw: typed conditional update is awaiting SurrealForge.Client 0.4 publication; expires 2026-08-31.
-        var q = SurrealQuery
-            .Of("UPDATE ONLY type::record($_t, $_id) SET transfer_reservation_key = NONE, transfer_target_user_id = NONE, transfer_reserved_at = NONE WHERE user_id = type::record($_user_t, $_source) AND transfer_reservation_key = type::string($_key) RETURN AFTER")
-            .WithParam("_t", HolonPoco.HolonTable)
-            .WithParam("_id", SurrealId.ToSurrealId(holonId))
-            .WithParam("_key", key)
-            .WithParam("_user_t", "user")
-            .WithParam("_source", SurrealId.ToSurrealId(sourceUserId));
-        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
-        {
-            var attempt = await _executor.ExecuteAsync(q, ct);
-            attempt.EnsureAllOk();
-            return attempt;
-        }, ct);
-        if (response[0].AffectedCount() == 1)
+        var source = UserLink(sourceUserId);
+        var q = SurrealWriter.UpdateOnly<HolonRecord>(SurrealId.ToSurrealId(holonId))
+            .Where(row => row.UserId == source && row.TransferReservationKey == key)
+            .Unset(row => row.TransferReservationKey).Unset(row => row.TransferTargetUserId)
+            .Unset(row => row.TransferReservedAt).Build();
+        var response = await ExecuteMutationAsync(q, ct);
+        if (response[2].AffectedCount() == 1)
             return AZOAResult<bool>.Success(true, "Transfer reservation released.");
 
         var state = await ReadTransferStateAsync(holonId, ct);
@@ -304,6 +277,7 @@ public sealed class SurrealHolonStore : IHolonStore
             .Select(h => new
             {
                 h.UserId,
+                h.AssetType,
                 h.TransferReservationKey,
                 h.TransferTargetUserId,
                 h.LastTransferSettlementKey,
@@ -311,10 +285,23 @@ public sealed class SurrealHolonStore : IHolonStore
         return await _executor.QuerySingleAsync<TransferStateProjection>(q, ct);
     }
 
+    // raw: all holon mutations share the lock used to fence local graph query membership.
+    private async Task<SurrealResponse> ExecuteMutationAsync(SurrealQuery mutation, CancellationToken ct)
+    {
+        var transaction = SurrealQuery.Combine(SurrealQuery.Of("BEGIN"), LocalEntityMutationFence.Holons(),
+            SurrealGeneratedStatementScope.Apply(mutation, "holon_mutation"), SurrealQuery.Of("COMMIT"));
+        return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var response = await _executor.ExecuteAsync(transaction, ct);
+            response.EnsureAllOk();
+            return response;
+        }, ct);
+    }
+
     private static string UserLink(Guid userId)
         => SurrealLink.ToLink("user", SurrealId.ToSurrealId(userId)) ?? string.Empty;
 
-    private static HolonPoco ToPoco(IHolon h)
+    internal static HolonPoco ToPoco(IHolon h)
     {
         // ALWAYS serialize (empty → `{}`) so the SET-based upsert REPLACES the
         // column; see Providers/Stores/Surreal/AGENTS.md §set-omits-null.
@@ -350,42 +337,17 @@ public sealed class SurrealHolonStore : IHolonStore
         };
     }
 
-    private static Holon FromPoco(HolonPoco p)
+    internal static Holon FromPoco(HolonPoco p)
     {
-        // Deserialize Metadata from JsonElement? → Dictionary<string,string>.
-        Dictionary<string, string> metadata = new();
-        if (p.Metadata.HasValue)
-        {
-            try
-            {
-                var d = JsonSerializer.Deserialize<Dictionary<string, string>>(
-                    p.Metadata.Value.GetRawText(), SurrealJsonOptions.Default);
-                if (d != null) metadata = d;
-            }
-            catch (JsonException)
-            {
-                // Optional legacy metadata is best-effort; see the directory guide.
-            }
-        }
-
-        // Deserialize PeerHolonIds from JsonElement? → List<Guid>.
-        List<Guid> peerHolonIds = new();
-        if (p.PeerHolonIds.HasValue)
-        {
-            try
-            {
-                var strs = JsonSerializer.Deserialize<List<string>>(
-                    p.PeerHolonIds.Value.GetRawText(), SurrealJsonOptions.Default);
-                if (strs != null)
-                    // Stored as bare hex ids (array<string>); tolerate a legacy
-                    // `holon:<id>` link form by stripping the prefix if present.
-                    peerHolonIds = strs.Select(s => SurrealId.FromSurrealId(SurrealLink.FromLink(s) ?? s)).ToList();
-            }
-            catch (Exception ex) when (ex is JsonException or FormatException)
-            {
-                // Optional legacy links are best-effort; see the directory guide.
-            }
-        }
+        var metadata = p.Metadata.HasValue
+            ? JsonSerializer.Deserialize<Dictionary<string, string>>(p.Metadata.Value.GetRawText(), SurrealJsonOptions.Default)
+                ?? throw new JsonException("Stored holon metadata must be an object.")
+            : new Dictionary<string, string>();
+        var peerIds = p.PeerHolonIds.HasValue
+            ? JsonSerializer.Deserialize<List<string>>(p.PeerHolonIds.Value.GetRawText(), SurrealJsonOptions.Default)
+                ?? throw new JsonException("Stored holon peer identities must be an array.")
+            : new List<string>();
+        var peerHolonIds = peerIds.Select(id => SurrealId.FromSurrealId(SurrealLink.FromLink(id) ?? id)).ToList();
 
         return new Holon
         {
@@ -415,7 +377,7 @@ public sealed class SurrealHolonStore : IHolonStore
     // SET-based SurrealWriter classifies each field correctly: record<…> columns
     // are bound as-is (NOT type::string-wrapped), plain strings ARE wrapped so a
     // `table:id`-shaped value is not mis-coerced into a record id.
-    private sealed class HolonPoco : ISurrealRecord
+    internal sealed class HolonPoco : ISurrealRecord
     {
         public const string HolonTable = "holon";
 
@@ -496,6 +458,9 @@ public sealed class SurrealHolonStore : IHolonStore
 
     private sealed class TransferStateProjection
     {
+        [JsonPropertyName("asset_type")]
+        public string? AssetType { get; set; }
+
         [JsonPropertyName("user_id")]
         public string? UserId { get; set; }
 

@@ -1024,36 +1024,7 @@ public class ReversalTests
             return Task.FromResult(AZOAResult<OnRampLot>.Success(Clone(row)));
         }
 
-        private static OnRampLot Clone(OnRampLot row) => new()
-        {
-            Id = row.Id,
-            IntentId = row.IntentId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            QuantityBaseUnits = row.QuantityBaseUnits,
-            GrossQuantityBaseUnits = row.GrossQuantityBaseUnits,
-            NodeFeeBaseUnits = row.NodeFeeBaseUnits,
-            ConsumedBaseUnits = row.ConsumedBaseUnits,
-            FiatMinorUnits = row.FiatMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            PriceScheduleId = row.PriceScheduleId,
-            PriceScheduleVersion = row.PriceScheduleVersion,
-            UnitsPerMinorUnit = row.UnitsPerMinorUnit,
-            SourceCheckoutSessionId = row.SourceCheckoutSessionId,
-            SourcePaymentIntentId = row.SourcePaymentIntentId,
-            SourceChargeId = row.SourceChargeId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            OperationId = row.OperationId,
-            AttemptCount = row.AttemptCount,
-            IssuedAt = row.IssuedAt,
-            ReversalWindowEnds = row.ReversalWindowEnds,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        private static OnRampLot Clone(OnRampLot row) => System.Text.Json.JsonSerializer.Deserialize<OnRampLot>(System.Text.Json.JsonSerializer.Serialize(row))!;
 
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListIssuedForUserAsync(
             Guid userId, CancellationToken ct = default)

@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -51,13 +52,16 @@ public sealed class ValueRailCapabilityGateTests
         public required IActionNodeHandler NodeHandler { get; init; }
         public IWalletManager WalletManager { get; init; } = WalletManagerMocks.Empty();
 
+        private InMemoryActionWorkflowAdmissionStore? _admission;
+        private InMemoryActionWorkflowAdmissionStore Admission => _admission ??= new(RunStore, ExecutionStore, SagaStore);
+
         public ActionManager NewManager() => new(
             ActionStore, RunStore, ExecutionStore,
             new ActionDagValidator(), new ActionDagExecutabilityValidator(),
             new ActionNodeHandlerRegistry(new[] { NodeHandler }),
             SagaStore, WalletManager,
             BlockchainProviderFactoryFakes.Returning(),
-            BindingResolverFakes.PassThrough());
+            BindingResolverFakes.PassThrough(), workflowAdmission: Admission);
 
         public (SagaProcessor Processor, ServiceProvider Scope) NewProcessor()
         {
@@ -67,6 +71,7 @@ public sealed class ValueRailCapabilityGateTests
             services.AddSingleton<IActionStore>(ActionStore);
             services.AddSingleton<IActionRunStore>(RunStore);
             services.AddSingleton<IActionNodeExecutionStore>(ExecutionStore);
+            services.AddSingleton<IActionWorkflowAdmissionStore>(Admission);
             services.AddSingleton<IActionNodeHandlerRegistry>(
                 new ActionNodeHandlerRegistry(new[] { NodeHandler }));
             services.AddSingleton<IWalletManager>(WalletManager);
@@ -188,7 +193,7 @@ public sealed class ValueRailCapabilityGateTests
         var transferNode = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -218,8 +223,11 @@ public sealed class ValueRailCapabilityGateTests
         var transferNode = action.Nodes[0];
 
         var manager = h.NewManager();
-        var run = await manager.ExecuteAsync(action.Id, UserId);
+        var run = await manager.ExecuteAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         run.IsError.Should().BeFalse(run.Message);
+        var (legacyProcessor, legacyScope) = h.NewProcessor();
+        await h.PumpAsync(legacyProcessor);
+        legacyScope.Dispose();
 
         var exec = h.ExecutionFor(run.Result!.Id, transferNode.Id);
         exec.State.Should().Be(ActionNodeState.Failed);
@@ -250,7 +258,7 @@ public sealed class ValueRailCapabilityGateTests
         var action = BuildLinearAction(h, ActionNodeType.Condition, "A", "B", "C");
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -283,7 +291,7 @@ public sealed class ValueRailCapabilityGateTests
         var transferNode = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId);
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 

@@ -18,6 +18,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
     {
         public const string SchemaNameConst = "node_fee_schedule";
         public const string LocalId = "local";
+        public const string InputBaseUnitsV1 = "input-base-units-v1";
 
         public string SchemaName => SchemaNameConst;
 
@@ -54,6 +55,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Default("0")]
         [Assert("$value >= 0 AND $value <= 10000")]
         public long SwapBps { get; set; }
+
+        public string? SwapFlatDenomination { get; set; }
 
         [Column(Order = 8)]
         [Default("\"0\"")]

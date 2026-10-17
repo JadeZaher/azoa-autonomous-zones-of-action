@@ -19,7 +19,7 @@ public sealed class WalletSetDefaultNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
     {
         if (!ActionNodeConfig.TryDeserialize<WalletSetDefaultNodeConfig>(context.Node.Config, nameof(ActionNodeType.WalletSetDefault), out var cfg, out var cfgError))
-            return ActionNodeResults.Fail(cfgError);
+            return ActionNodeResults.Invalid(cfgError);
         var r = await _walletManager.SetDefaultAsync(context.ActingUserId, cfg.WalletId);
         var outputJson = JsonSerializer.Serialize(r, ActionNodeJson.Options);
         if (r.IsError) return ActionNodeResults.Fail(r.Message);

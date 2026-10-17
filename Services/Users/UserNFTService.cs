@@ -1,4 +1,3 @@
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -13,163 +12,73 @@ public class UserNFTService : IUserNFTService
     private readonly INftStore _nftStore;
     private readonly IHolonStore _holonStore;
     private readonly IWalletStore _walletStore;
+    private readonly INftLifecycleService _lifecycle;
 
-    public UserNFTService(INftStore nftStore, IHolonStore holonStore, IWalletStore walletStore)
+    public UserNFTService(INftStore nftStore, IHolonStore holonStore, IWalletStore walletStore, INftLifecycleService lifecycle)
     {
         _nftStore = nftStore;
         _holonStore = holonStore;
         _walletStore = walletStore;
+        _lifecycle = lifecycle;
     }
 
-    // ─── User NFT CRUD ───
+    /// <inheritdoc/>
+    public Task<AZOAResult<IUserNFT>> MintUserNFTAsync(Guid userId, UserNFTMintModel model, AZOARequest? request = null, Guid? actingTenantId = null)
+        => MintConfirmedAsync(userId, userId, model, request, actingTenantId);
 
-    /// <summary>Self-mint: the caller mints a row to THEMSELVES. Never issues a credential.</summary>
-    /// <remarks>
-    /// D41: a soulbound row minted here is a self-held badge, not a credential. It is written with
-    /// NO issuer, so <c>CredentialManager</c> fails closed on it ("no recorded issuer") instead of
-    /// authorizing its own holder to claw it back from themselves -- the vacuous case D19 forbids.
-    /// Issuing to another party is <see cref="MintUserNFTAsync(Guid,Guid,UserNFTMintModel,AZOARequest)"/>.
-    /// </remarks>
-    public Task<AZOAResult<IUserNFT>> MintUserNFTAsync(Guid userId, UserNFTMintModel model, AZOARequest? request = null)
-        => WriteMintedRowAsync(holderUserId: userId, issuerUserId: Guid.Empty, model);
+    /// <inheritdoc/>
+    public Task<AZOAResult<IUserNFT>> MintUserNFTAsync(Guid issuerUserId, Guid recipientUserId, UserNFTMintModel model, AZOARequest? request = null, Guid? actingTenantId = null)
+        => issuerUserId == recipientUserId
+            ? Task.FromResult(AZOAResult<IUserNFT>.Failure("Use self-mint for a self-held badge."))
+            : MintConfirmedAsync(issuerUserId, recipientUserId, model, request, actingTenantId);
 
-    /// <inheritdoc />
-    public Task<AZOAResult<IUserNFT>> MintUserNFTAsync(
-        Guid issuerUserId, Guid recipientUserId, UserNFTMintModel model, AZOARequest? request = null)
+    private async Task<AZOAResult<IUserNFT>> MintConfirmedAsync(Guid actor, Guid recipient, UserNFTMintModel model, AZOARequest? request, Guid? actingTenantId)
     {
-        if (issuerUserId == Guid.Empty)
-            return Task.FromResult(RefuseMint("An authenticated issuer is required to issue a credential."));
-        if (recipientUserId == Guid.Empty)
-            return Task.FromResult(RefuseMint("A recipient is required to issue a credential."));
-
-        // AC1's teeth at the mint seam. issuer == holder is the vacuous credential the whole rail
-        // failed on: "only the issuer may revoke" would then authorize the holder to take their own
-        // credential back, which is the exact inversion D19 exists to forbid. Refused here so no
-        // production path can write one, rather than left for the revoke path to notice later.
-        if (issuerUserId == recipientUserId)
-            return Task.FromResult(RefuseMint(
-                "A credential cannot be issued to its own issuer: issuer == holder makes the D19 "
-              + "revocation check decide nothing. Use the self-mint seam for a badge you hold yourself."));
-
-        return WriteMintedRowAsync(holderUserId: recipientUserId, issuerUserId: issuerUserId, model);
+        var result = await _lifecycle.MintAsync(actor, recipient, model, request?.IdempotencyKey ?? string.Empty, actingTenantId: actingTenantId ?? Guid.Empty, credential: request?.AuthenticationWitness);
+        if (result.IsError || result.Result is null) return AZOAResult<IUserNFT>.Failure(result.Message);
+        if (result.Result.State != "Completed")
+            return AZOAResult<IUserNFT>.FailureWithCode($"NFT operation {result.Result.OperationId} is {result.Result.State}.", "NFT_PENDING");
+        return await _nftStore.GetUserNFTByIdAsync(result.Result.NftId);
     }
 
-    /// <summary>Writes one ownership row: <paramref name="holderUserId"/> holds it, <paramref name="issuerUserId"/> issued it.</summary>
-    private async Task<AZOAResult<IUserNFT>> WriteMintedRowAsync(
-        Guid holderUserId, Guid issuerUserId, UserNFTMintModel model)
-    {
-        if (model is null)
-            return RefuseMint("A mint model is required.");
-
-        // current_owner is the address a revocation claws the credential back FROM. An issued
-        // credential written without it is permanently unrevocable -- a row that reads as valid and
-        // that no party on earth can take back -- which is strictly worse than refusing the mint. So
-        // the holder's address on the credential's own chain is PROVEN from the wallet store before
-        // any row is written. A self-mint (no issuer) is not a credential and is not held to this.
-        string? holderAddress = null;
-        if (issuerUserId != Guid.Empty)
-        {
-            var wallets = await _walletStore.GetByUserAsync(holderUserId, default);
-            if (wallets.IsError)
-                return RefuseMint($"Recipient wallet lookup failed: {wallets.Message}");
-
-            holderAddress = wallets.Result?.FirstOrDefault(w =>
-                string.Equals(w.ChainType, model.ChainType, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(w.Address))?.Address;
-
-            if (string.IsNullOrWhiteSpace(holderAddress))
-                return RefuseMint(
-                    $"The recipient has no {model.ChainType} wallet, so the credential would be written "
-                  + "with no current_owner and could never be clawed back. Refusing to issue a credential "
-                  + "nobody can revoke.");
-        }
-
-        var userNFT = new UserNFT
-        {
-            UserId = holderUserId,
-            // Stamped from the authenticated caller the issuance seam was called with, never from
-            // the request model -- UserNFTMintModel deliberately has no issuer field at all.
-            IssuerUserId = issuerUserId,
-            CurrentOwner = holderAddress,
-            ChainType = model.ChainType,
-            // Chain-mint semantics: the id is assigned at mint when the caller
-            // supplies none. Required non-empty by the nft_ownership schema.
-            TokenId = string.IsNullOrWhiteSpace(model.TokenId)
-                ? Guid.NewGuid().ToString("N")
-                : model.TokenId,
-            NFTContractAddress = model.NFTContractAddress,
-            TokenStandard = model.TokenStandard,
-            MetadataURI = model.MetadataURI,
-            ImageURI = model.ImageURI,
-            Name = model.Name,
-            Description = model.Description,
-            Attributes = model.Attributes,
-            RoyaltyPercentage = model.RoyaltyPercentage,
-            RoyaltyRecipient = model.RoyaltyRecipient,
-            IsSoulbound = model.IsSoulbound,
-            IsTransferable = model.IsTransferable,
-            MintedDate = DateTime.UtcNow,
-            IsActive = true
-        };
-
-        return await _nftStore.UpsertUserNFTAsync(userNFT, default);
-    }
-
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUserNFT>> GetUserNFTAsync(Guid id, AZOARequest? request = null)
     {
         return await _nftStore.GetUserNFTByIdAsync(id, default);
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IUserNFT>> GetUserNFTByTokenIdAsync(string chainType, string nftContractAddress, string tokenId, AZOARequest? request = null)
     {
         return await _nftStore.GetUserNFTByTokenIdAsync(chainType, nftContractAddress, tokenId, default);
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IEnumerable<IUserNFT>>> GetUserNFTsByUserAsync(Guid userId, AZOARequest? request = null)
     {
         return await _nftStore.GetUserNFTsByUserAsync(userId, default);
     }
 
-    public async Task<AZOAResult<bool>> TransferUserNFTAsync(Guid id, string recipientAddress, Guid userId, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<bool>> TransferUserNFTAsync(Guid id, string recipientAddress, Guid userId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
-        var loadResult = await _nftStore.GetUserNFTByIdAsync(id, default);
-        if (loadResult.IsError || loadResult.Result == null)
-            return new AZOAResult<bool> { IsError = true, Message = loadResult.Message ?? "User NFT not found." };
-
-        var nft = loadResult.Result;
-        if (nft.UserId != userId)
-            return new AZOAResult<bool> { IsError = true, Message = "User NFT is owned by a different user." };
-
-        if (!nft.IsTransferable)
-            return new AZOAResult<bool> { IsError = true, Message = "This User NFT is not transferable." };
-
-        if (nft.IsSoulbound)
-            return new AZOAResult<bool> { IsError = true, Message = "Soulbound User NFTs cannot be transferred." };
-
-        nft.CurrentOwner = recipientAddress;
-        nft.LastTransferDate = DateTime.UtcNow;
-
-        var saveResult = await _nftStore.UpsertUserNFTAsync(nft, default);
-        if (saveResult.IsError)
-            return new AZOAResult<bool> { IsError = true, Message = saveResult.Message };
-
-        return new AZOAResult<bool> { Result = true, Message = "User NFT transferred." };
+        var result = await _lifecycle.MoveAsync(userId, id, recipientAddress, false, request?.IdempotencyKey ?? string.Empty, actingTenantId: actingTenantId ?? Guid.Empty, feeAuthorization: request?.NftFeeAuthorization);
+        return Completed(result);
     }
 
-    public async Task<AZOAResult<bool>> BurnUserNFTAsync(Guid id, Guid userId, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<bool>> BurnUserNFTAsync(Guid id, Guid userId, AZOARequest? request = null, Guid? actingTenantId = null)
     {
-        var loadResult = await _nftStore.GetUserNFTByIdAsync(id, default);
-        if (loadResult.IsError || loadResult.Result == null)
-            return new AZOAResult<bool> { IsError = true, Message = loadResult.Message ?? "User NFT not found." };
-
-        if (loadResult.Result.UserId != userId)
-            return new AZOAResult<bool> { IsError = true, Message = "User NFT is owned by a different user." };
-
-        return await _nftStore.DeleteUserNFTAsync(id, default);
+        var result = await _lifecycle.MoveAsync(userId, id, null, true, request?.IdempotencyKey ?? string.Empty, actingTenantId: actingTenantId ?? Guid.Empty, feeAuthorization: request?.NftFeeAuthorization);
+        return Completed(result);
     }
 
-    // ─── Holon NFT Binding ───
+    private static AZOAResult<bool> Completed(AZOAResult<NftLifecycleView> result)
+        => result.IsError || result.Result is null ? AZOAResult<bool>.Failure(result.Message)
+            : result.Result.State == "Completed" ? AZOAResult<bool>.Success(true)
+            : AZOAResult<bool>.FailureWithCode($"NFT operation {result.Result.OperationId} is {result.Result.State}.", "NFT_PENDING");
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IHolonNFTBinding>> BindHolonToUserNFTAsync(Guid holonId, Guid userNFTId, HolonNFTBindingModel model, Guid userId, AZOARequest? request = null)
     {
         var ownership = await VerifyNftOwnedByAsync(userNFTId, userId);
@@ -197,11 +106,15 @@ public class UserNFTService : IUserNFTService
         return await _nftStore.UpsertHolonNFTBindingAsync(binding, default);
     }
 
-    public async Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonBindingsAsync(Guid userNFTId, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IEnumerable<IHolonNFTBinding>>> GetHolonBindingsAsync(Guid userNFTId, AZOARequest? request = null, Guid? callerUserId = null)
     {
+        if (callerUserId is null || await VerifyNftOwnedByAsync(userNFTId, callerUserId.Value) is not null)
+            return AZOAResult<IEnumerable<IHolonNFTBinding>>.Failure("Current NFT ownership is required.");
         return await _nftStore.GetHolonNFTBindingsByUserNFTAsync(userNFTId, default);
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> UpdateHolonBindingAsync(Guid id, HolonNFTBindingUpdateModel model, Guid userId, AZOARequest? request = null)
     {
         var loadResult = await _nftStore.GetHolonNFTBindingByIdAsync(id, default);
@@ -226,6 +139,7 @@ public class UserNFTService : IUserNFTService
         return new AZOAResult<bool> { Result = true, Message = "Holon binding updated." };
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> RemoveHolonBindingAsync(Guid id, Guid userId, AZOARequest? request = null)
     {
         var loadResult = await _nftStore.GetHolonNFTBindingByIdAsync(id, default);
@@ -239,8 +153,8 @@ public class UserNFTService : IUserNFTService
         return await _nftStore.DeleteHolonNFTBindingAsync(id, default);
     }
 
-    // ─── Wallet NFT Binding ───
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<IWalletNFTBinding>> BindWalletToUserNFTAsync(Guid walletId, Guid userNFTId, WalletNFTBindingModel model, Guid userId, AZOARequest? request = null)
     {
         var ownership = await VerifyNftOwnedByAsync(userNFTId, userId);
@@ -268,11 +182,15 @@ public class UserNFTService : IUserNFTService
         return await _nftStore.UpsertWalletNFTBindingAsync(binding, default);
     }
 
-    public async Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletBindingsAsync(Guid userNFTId, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IEnumerable<IWalletNFTBinding>>> GetWalletBindingsAsync(Guid userNFTId, AZOARequest? request = null, Guid? callerUserId = null)
     {
+        if (callerUserId is null || await VerifyNftOwnedByAsync(userNFTId, callerUserId.Value) is not null)
+            return AZOAResult<IEnumerable<IWalletNFTBinding>>.Failure("Current NFT ownership is required.");
         return await _nftStore.GetWalletNFTBindingsByUserNFTAsync(userNFTId, default);
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> UpdateWalletBindingAsync(Guid id, WalletNFTBindingUpdateModel model, Guid userId, AZOARequest? request = null)
     {
         var loadResult = await _nftStore.GetWalletNFTBindingByIdAsync(id, default);
@@ -297,6 +215,7 @@ public class UserNFTService : IUserNFTService
         return new AZOAResult<bool> { Result = true, Message = "Wallet binding updated." };
     }
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> RemoveWalletBindingAsync(Guid id, Guid userId, AZOARequest? request = null)
     {
         var loadResult = await _nftStore.GetWalletNFTBindingByIdAsync(id, default);
@@ -310,10 +229,12 @@ public class UserNFTService : IUserNFTService
         return await _nftStore.DeleteWalletNFTBindingAsync(id, default);
     }
 
-    // ─── Composite Operations ───
 
-    public async Task<AZOAResult<UserNFTCompositeResult>> GetUserNFTCompositeAsync(Guid userNFTId, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<UserNFTCompositeResult>> GetUserNFTCompositeAsync(Guid userNFTId, AZOARequest? request = null, Guid? callerUserId = null)
     {
+        if (callerUserId is null || await VerifyNftOwnedByAsync(userNFTId, callerUserId.Value) is not null)
+            return AZOAResult<UserNFTCompositeResult>.Failure("Current NFT ownership is required.");
         var nftResult = await _nftStore.GetUserNFTByIdAsync(userNFTId, default);
         if (nftResult.IsError || nftResult.Result == null)
             return new AZOAResult<UserNFTCompositeResult> { IsError = true, Message = nftResult.Message ?? "User NFT not found." };
@@ -321,7 +242,7 @@ public class UserNFTService : IUserNFTService
         var holonBindingsResult = await _nftStore.GetHolonNFTBindingsByUserNFTAsync(userNFTId, default);
         var walletBindingsResult = await _nftStore.GetWalletNFTBindingsByUserNFTAsync(userNFTId, default);
 
-        var composite = BuildComposite(
+        var composite = await BuildCompositeAsync(
             nftResult.Result,
             holonBindingsResult.Result,
             walletBindingsResult.Result);
@@ -329,8 +250,10 @@ public class UserNFTService : IUserNFTService
         return new AZOAResult<UserNFTCompositeResult> { Result = composite, Message = "Success" };
     }
 
-    public async Task<AZOAResult<IEnumerable<UserNFTCompositeResult>>> GetUserNFTCompositesByUserAsync(Guid userId, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IEnumerable<UserNFTCompositeResult>>> GetUserNFTCompositesByUserAsync(Guid userId, AZOARequest? request = null, Guid? callerUserId = null)
     {
+        if (callerUserId != userId) return AZOAResult<IEnumerable<UserNFTCompositeResult>>.Failure("Caller identity does not match requested user.");
         var nftsResult = await _nftStore.GetUserNFTsByUserAsync(userId, default);
         if (nftsResult.IsError || nftsResult.Result == null)
             return new AZOAResult<IEnumerable<UserNFTCompositeResult>> { IsError = true, Message = nftsResult.Message };
@@ -338,28 +261,32 @@ public class UserNFTService : IUserNFTService
         var composites = new List<UserNFTCompositeResult>();
         foreach (var nft in nftsResult.Result)
         {
-            var holonBindings = await _nftStore.GetHolonNFTBindingsByUserNFTAsync(nft.Id, default);
-            var walletBindings = await _nftStore.GetWalletNFTBindingsByUserNFTAsync(nft.Id, default);
-            composites.Add(BuildComposite(nft, holonBindings.Result, walletBindings.Result));
+            var composite = await GetUserNFTCompositeAsync(nft.Id, request, callerUserId);
+            if (!composite.IsError && composite.Result is not null) composites.Add(composite.Result);
         }
 
         return new AZOAResult<IEnumerable<UserNFTCompositeResult>> { Result = composites, Message = "Success" };
     }
 
-    // ─── Verification ───
 
+    /// <inheritdoc/>
     public async Task<AZOAResult<bool>> VerifyUserNFTOwnershipAsync(Guid userId, string chainType, string nftContractAddress, string tokenId, AZOARequest? request = null)
     {
         var nftResult = await _nftStore.GetUserNFTByTokenIdAsync(chainType, nftContractAddress, tokenId, default);
         if (nftResult.IsError || nftResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = nftResult.Message ?? "User NFT not found." };
 
-        bool isOwner = nftResult.Result.UserId == userId;
+        bool isOwner = nftResult.Result.IsActive && await _lifecycle.IsCurrentOwnerAsync(userId, nftResult.Result.Id);
         return new AZOAResult<bool> { Result = isOwner, Message = isOwner ? "Ownership verified." : "User does not own this NFT." };
     }
 
-    public async Task<AZOAResult<bool>> VerifyHolonAccessAsync(Guid userNFTId, Guid holonId, string requiredPermission, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<bool>> VerifyHolonAccessAsync(Guid userNFTId, Guid holonId, string requiredPermission, AZOARequest? request = null, Guid? callerUserId = null)
     {
+        if (callerUserId is null || string.IsNullOrWhiteSpace(requiredPermission)
+            || await VerifyNftOwnedByAsync(userNFTId, callerUserId.Value) is not null)
+            return AZOAResult<bool>.Success(false);
+
         var bindingsResult = await _nftStore.GetHolonNFTBindingsByUserNFTAsync(userNFTId, default);
         if (bindingsResult.IsError || bindingsResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = bindingsResult.Message ?? "No holon bindings found." };
@@ -368,14 +295,18 @@ public class UserNFTService : IUserNFTService
         if (binding == null)
             return new AZOAResult<bool> { Result = false, Message = "No active binding found for the specified holon." };
 
-        bool hasAccess = string.Equals(binding.PermissionLevel, "full", StringComparison.OrdinalIgnoreCase)
-            || binding.Permissions.ContainsKey(requiredPermission);
+        bool hasAccess = NftBindingPermissions.Grants(binding.PermissionLevel, binding.Permissions, requiredPermission);
 
         return new AZOAResult<bool> { Result = hasAccess, Message = hasAccess ? "Access verified." : "Insufficient permissions." };
     }
 
-    public async Task<AZOAResult<bool>> VerifyWalletAccessAsync(Guid userNFTId, Guid walletId, string requiredAccess, AZOARequest? request = null)
+    /// <inheritdoc/>
+    public async Task<AZOAResult<bool>> VerifyWalletAccessAsync(Guid userNFTId, Guid walletId, string requiredAccess, AZOARequest? request = null, Guid? callerUserId = null)
     {
+        if (callerUserId is null || string.IsNullOrWhiteSpace(requiredAccess)
+            || await VerifyNftOwnedByAsync(userNFTId, callerUserId.Value) is not null)
+            return AZOAResult<bool>.Success(false);
+
         var bindingsResult = await _nftStore.GetWalletNFTBindingsByUserNFTAsync(userNFTId, default);
         if (bindingsResult.IsError || bindingsResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = bindingsResult.Message ?? "No wallet bindings found." };
@@ -384,38 +315,44 @@ public class UserNFTService : IUserNFTService
         if (binding == null)
             return new AZOAResult<bool> { Result = false, Message = "No active binding found for the specified wallet." };
 
-        bool hasAccess = string.Equals(binding.AccessLevel, "full", StringComparison.OrdinalIgnoreCase)
-            || binding.AccessPermissions.ContainsKey(requiredAccess);
+        bool hasAccess = NftBindingPermissions.Grants(binding.AccessLevel, binding.AccessPermissions, requiredAccess);
 
         return new AZOAResult<bool> { Result = hasAccess, Message = hasAccess ? "Access verified." : "Insufficient access." };
     }
 
-    // ─── Helpers ───
 
-    /// <summary>A mint that was refused before any row was written.</summary>
-    private static AZOAResult<IUserNFT> RefuseMint(string message)
-        => new() { IsError = true, Message = message };
-
-    /// <summary>
-    /// Bindings carry no owner of their own — ownership is the parent
-    /// UserNFT's UserId. Returns null when the NFT is owned by
-    /// <paramref name="userId"/>, otherwise an error message to surface.
-    /// </summary>
     private async Task<string?> VerifyNftOwnedByAsync(Guid userNFTId, Guid userId)
     {
         var nftResult = await _nftStore.GetUserNFTByIdAsync(userNFTId, default);
         if (nftResult.IsError || nftResult.Result == null)
             return nftResult.Message ?? "User NFT not found.";
-        if (nftResult.Result.UserId != userId)
-            return "User NFT is owned by a different user.";
+        if (!nftResult.Result.IsActive || !await _lifecycle.IsCurrentOwnerAsync(userId, userNFTId))
+            return "Current NFT ownership could not be proven.";
         return null;
     }
 
-    private static UserNFTCompositeResult BuildComposite(
+    private async Task<UserNFTCompositeResult> BuildCompositeAsync(
         IUserNFT nft,
         IEnumerable<IHolonNFTBinding>? holonBindings,
         IEnumerable<IWalletNFTBinding>? walletBindings)
     {
+        var holons = new List<HolonBindingInfo>();
+        foreach (var binding in holonBindings ?? [])
+        {
+            var target = await _holonStore.GetByIdAsync(binding.HolonId);
+            if (target.IsError || target.Result is null) continue;
+            holons.Add(new HolonBindingInfo { HolonId = binding.HolonId, HolonName = target.Result.Name ?? string.Empty,
+                Role = binding.Role, PermissionLevel = binding.PermissionLevel, Permissions = binding.Permissions, IsActive = binding.IsActive });
+        }
+        var wallets = new List<WalletBindingInfo>();
+        foreach (var binding in walletBindings ?? [])
+        {
+            var target = await _walletStore.GetByIdAsync(binding.WalletId);
+            if (target.IsError || target.Result is null) continue;
+            wallets.Add(new WalletBindingInfo { WalletId = binding.WalletId, WalletAddress = target.Result.Address,
+                ChainType = target.Result.ChainType, BindingType = binding.BindingType, AccessLevel = binding.AccessLevel,
+                AccessPermissions = binding.AccessPermissions, IsActive = binding.IsActive });
+        }
         return new UserNFTCompositeResult
         {
             UserNFTId = nft.Id,
@@ -433,25 +370,9 @@ public class UserNFTService : IUserNFTService
             IsActive = nft.IsActive,
             MintedDate = nft.MintedDate,
             LastTransferDate = nft.LastTransferDate,
-            HolonBindings = holonBindings?.Select(b => new HolonBindingInfo
-            {
-                HolonId = b.HolonId,
-                HolonName = string.Empty, // Would need a holon lookup for the name
-                Role = b.Role,
-                PermissionLevel = b.PermissionLevel,
-                Permissions = b.Permissions,
-                IsActive = b.IsActive
-            }).ToList() ?? new List<HolonBindingInfo>(),
-            WalletBindings = walletBindings?.Select(b => new WalletBindingInfo
-            {
-                WalletId = b.WalletId,
-                WalletAddress = string.Empty, // Would need a wallet lookup for the address
-                ChainType = string.Empty,
-                BindingType = b.BindingType,
-                AccessLevel = b.AccessLevel,
-                AccessPermissions = b.AccessPermissions,
-                IsActive = b.IsActive
-            }).ToList() ?? new List<WalletBindingInfo>()
+            HolonBindings = holons,
+            WalletBindings = wallets,
         };
     }
+
 }

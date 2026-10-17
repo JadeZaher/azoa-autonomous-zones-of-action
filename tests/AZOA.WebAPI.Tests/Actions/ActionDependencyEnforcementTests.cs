@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Managers;
@@ -70,7 +71,7 @@ public class ActionDependencyEnforcementTests
             new InMemorySagaStore(),
             WalletManagerMocks.Empty(),
             BlockchainProviderFactoryFakes.Returning(),
-            BindingResolverFakes.PassThrough());
+            BindingResolverFakes.PassThrough(), workflowAdmission: new InMemoryActionWorkflowAdmissionStore(runStore, execStore, new InMemorySagaStore()));
 
         return (manager, actionStore, runStore, action);
     }
@@ -89,7 +90,7 @@ public class ActionDependencyEnforcementTests
             DependsOnActionId = dependedOnActionId
         }, action.UserId);
 
-        var result = await manager.ExecuteAsync(action.Id, action.UserId);
+        var result = await manager.ExecuteAsync(action.Id, action.UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("cannot start");
@@ -121,7 +122,7 @@ public class ActionDependencyEnforcementTests
             EndedAt = DateTime.UtcNow
         });
 
-        var result = await manager.ExecuteAsync(action.Id, action.UserId);
+        var result = await manager.ExecuteAsync(action.Id, action.UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
 
         // The run is NOT rejected for the dependency reason — the gate let it through
         // (a satisfied dependency never surfaces the "cannot start" rejection).
@@ -142,7 +143,7 @@ public class ActionDependencyEnforcementTests
             DependsOnActionId = dependedOnActionId
         }, action.UserId);
 
-        var result = await manager.StartWorkflowRunAsync(action.Id, action.UserId);
+        var result = await manager.StartWorkflowRunAsync(action.Id, action.UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("cannot start");
@@ -157,7 +158,7 @@ public class ActionDependencyEnforcementTests
         var (manager, _, _, action) = BuildActiveLinearAction();
 
         // No dependencies at all — the gate is a no-op and must not reject the run.
-        var result = await manager.StartWorkflowRunAsync(action.Id, action.UserId);
+        var result = await manager.StartWorkflowRunAsync(action.Id, action.UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
 
         if (result.IsError)
             result.Message.Should().NotContain("cannot start");

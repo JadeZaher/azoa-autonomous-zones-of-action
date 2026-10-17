@@ -86,7 +86,7 @@ namespace AZOA.WebAPI.Services.Actions.Handlers
         {
             if (!ActionNodeConfig.TryDeserialize<LoanOpenNodeConfig>(
                     context.Node.Config, nameof(ActionNodeType.LoanOpen), out var cfg, out var cfgError))
-                return ActionNodeResults.Fail(cfgError);
+                return ActionNodeResults.Invalid(cfgError);
 
             if (!LoanAmountMetadata.TryBuildDimension(cfg.CurrencyKind, cfg.CurrencyCode, out var dimension, out var unitError))
                 return ActionNodeResults.Invalid($"[LoanOpen] {unitError}");

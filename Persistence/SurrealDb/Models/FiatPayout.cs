@@ -18,13 +18,13 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         Guardrail = "G6 SCHEMAFULL; one row per cash-out request and it is the off-ramp's idempotency anchor")]
     [SurrealNote("One row is ONE cash-out: this many units left this person's account and became this much money in their own bank account. It is the mirror of on_ramp_lot and the only durable record of the outbound half of the loop -- the node keeps no balance ledger of its own (D47), so nothing on chain can say which payout a transfer belongs to.")]
     [SurrealNote("The record id is a deterministic Guid derived from subject|request key, so a double-tapped 'cash out' button settles into ONE row. It is a compact Guid rather than the SHA-256 hex on_ramp_lot uses because it is stamped into provider metadata as azoa_intent_id, and the webhook envelope only recovers a correlation that parses as a compact Guid -- that is how transfer.reversed finds its way back to this row without a second lookup table.")]
-    [SurrealNote("status is the saga: Requested (claimed, nothing has moved), UnitsCollected (the units are back in the reserve and the money has NOT been sent -- the one state where the person is out of units and has no money), Paid (the transfer exists at the provider), Reversed (the provider pulled the money back out again), Returned (the cash-out was abandoned and the units were given back), Refused (refused before anything moved), NeedsOperator (only a person can move this on, and the reason is on the row).")]
+    [SurrealNote("status is the saga: Requested (claimed, nothing has moved), UnitsCollected (the units are back in the reserve and the money has NOT been sent -- the one state where the person is out of units and has no money), BankPending (the connected account is funded and the bank payout is pending), Paid (the bank payout is confirmed paid by the provider), Reversed (the provider pulled the money back out again), Returned (the cash-out was abandoned and the units were given back), Refused (refused before anything moved), NeedsOperator (only a person can move this on, and the reason is on the row).")]
     [SurrealNote("quantity_base_units is what the person gives up and amount_minor_units is what they are paid, both derived from the SAME registered price schedule the on-ramp sells at (tenant_price_schedule). Storing units_per_minor_unit and price_schedule_version on the row is what keeps the arithmetic re-derivable after that schedule is retired.")]
     [SurrealNote("consumed_lots is the FIFO receipt: which on_ramp_lot rows this cash-out drew down, and by how much. It exists so an abandoned cash-out can hand the provenance back rather than silently ageing units that were never actually cashed out. Units with NO lot -- units received from selling work or stake -- are unaged and appear here not at all (Q-X2).")]
     [SurrealNote("units_owed_base_units is the honest record of the worst case: the units were collected, the money never left, and giving the units back also failed. The row parks at NeedsOperator carrying the figure instead of the node quietly keeping units it was paid nothing for.")]
     [Slice("identity")]
     [Index("fiat_payout_request",
-        Fields = new[] { "subject_user_id", "request_key" },
+        Fields = new[] { "subject_user_id", "request_key", "environment", "chain_network" },
         Unique = true)]
     [Index("fiat_payout_account", Fields = new[] { "subject_user_id", "status" })]
     [Index("fiat_payout_transfer", Fields = new[] { "provider_transfer_id" })]
@@ -121,7 +121,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         [Column(Order = 19)]
         [FieldGroup("Lifecycle")]
-        [Inside("Requested", "UnitsCollected", "Paid", "Reversed", "Returned", "Refused", "NeedsOperator")]
+        [Inside("Requested", "UnitsCollected", "BankPending", "Paid", "Reversed", "Returned", "Refused", "NeedsOperator")]
         [Default("\"Requested\"")]
         public string Status { get; set; } = "Requested";
 
@@ -174,6 +174,66 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 31)]
         public DateTimeOffset UpdatedAt { get; set; }
 
+        /// <summary>The connected-account bank payout, distinct from the funding transfer.</summary>
+        [Column(Order = 32)]
+        public string? ProviderPayoutId { get; set; }
+
+        /// <summary>Start of the current provider idempotency window.</summary>
+        [Column(Order = 33)]
+        public DateTimeOffset? BankPayoutStartedAt { get; set; }
+
+        /// <summary>Advances only after a definitive insufficient-funds refusal.</summary>
+        [Column(Order = 34)]
+        [Default("0")]
+        public long BankPayoutAttempt { get; set; }
+
+        [Column(Order = 35)]
+        [Default("\"unbound\"")]
+        public string Environment { get; set; } = "unbound";
+
+        [Column(Order = 36)]
+        [Default("\"unbound\"")]
+        public string ChainNetwork { get; set; } = "unbound";
+
+        [Column(Order = 37)]
+        [Default("false")]
+        public bool RecoveryRequested { get; set; }
+
+        [Column(Order = 38)]
+        [Default("0")]
+        public long RecoveryReversalAmount { get; set; }
+
+        [Column(Order = 39)]
+        public DateTimeOffset? RecoveryStartedAt { get; set; }
+
+        [Column(Order = 40)]
+        public string? ProviderTransferReversalId { get; set; }
+
+        [Column(Order = 41)]
+        [Default("\"0\"")]
+        public string RestoredQuantityBaseUnits { get; set; } = "0";
+
+        [Column(Order = 42)]
+        public string? RestitutionKey { get; set; }
+
+        [Column(Order = 43)]
+        [Default("\"0\"")]
+        public string RestitutionTargetBaseUnits { get; set; } = "0";
+
+        [Column(Order = 44)]
+        [Default("\"[]\"")]
+        public string RecoveryAuditJson { get; set; } = "[]";
+
+        [Column(Order = 45)]
+        public string? ReturnPendingTransactionId { get; set; }
+
+        [Column(Order = 46)]
+        public string? ReturnPendingIdempotencyKey { get; set; }
+
+        [Column(Order = 47)]
+        [Default("0")]
+        public long RecoveryReversalAttempt { get; set; }
+
         /// <summary>
         /// Deterministic record id for the one cash-out a request key may settle into: a compact
         /// Guid over the first 16 bytes of SHA-256(subject|key).
@@ -181,11 +241,11 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         /// <remarks>
         /// It has to PARSE as a compact Guid. The provider transfer carries this id in its
         /// metadata, and <c>StripeEventEnvelope</c> only recovers a correlation that parses that
-        /// way — so a hex digest here would leave <c>transfer.reversed</c> with no way home.
+        /// way â€” so a hex digest here would leave <c>transfer.reversed</c> with no way home.
         /// </remarks>
-        public static string RecordIdFor(Guid subjectUserId, string requestKey)
+        public static string RecordIdFor(Guid subjectUserId, string requestKey, string environment = "test", string chainNetwork = "Devnet")
         {
-            var canonical = $"fiat-payout|{subjectUserId:N}|{requestKey.Trim()}";
+            var canonical = $"fiat-payout|{environment}|{chainNetwork}|{subjectUserId:N}|{requestKey.Trim()}";
             var digest = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
             return new Guid(digest.AsSpan(0, 16)).ToString("N");
         }

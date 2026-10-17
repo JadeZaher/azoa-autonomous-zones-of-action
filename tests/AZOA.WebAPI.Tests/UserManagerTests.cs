@@ -17,6 +17,23 @@ public class UserManagerTests
     private readonly Mock<IUserStore> _store;
     private readonly UserManager _manager;
 
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, true, true)]
+    public async Task Stable_identity_login_requires_active_self_owned_password_credentials(bool active, bool tenantOwned, bool rejected)
+    {
+        var user = new User { Id = Guid.NewGuid(), IsActive = active,
+            OwnerTenantId = tenantOwned ? Guid.NewGuid() : null, PasswordHash = BCrypt.Net.BCrypt.HashPassword("claimant-password") };
+        _store.Setup(store => store.GetByIdAsync(user.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Success(user));
+        var result = await _manager.LoginAsync(new UserLoginModel { UserId = user.Id, Password = "claimant-password" });
+        result.IsError.Should().Be(rejected);
+        (await _manager.LoginAsync(new UserLoginModel { UserId = user.Id, Password = "tenant-password" })).IsError.Should().BeTrue();
+        (await _manager.LoginAsync(new UserLoginModel { UserId = user.Id, Email = "other@example.test", Password = "claimant-password" })).IsError.Should().BeTrue();
+        _store.Verify(store => store.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public UserManagerTests()
     {
         _store = new Mock<IUserStore>();
@@ -180,7 +197,7 @@ public class TenantIdentityFoldingTests
         grants.Setup(g => g.ListByGrantorAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<IEnumerable<ConsentGrant>> { Result = Array.Empty<ConsentGrant>() });
 
-        return new TenantManager(store.Object, config, grants.Object);
+        return new TenantManager(store.Object, config, grants.Object, ConsentFixture.Issuer());
     }
 
     [Fact]
@@ -188,7 +205,7 @@ public class TenantIdentityFoldingTests
     {
         var (store, rows) = StoreHolding();
 
-        var result = await NewTenantManager(store).ProvisionChildAsync(
+        var result = await NewTenantManager(store).ProvisionFixtureAsync(
             Guid.NewGuid(),
             new ProvisionChildModel
             {
@@ -213,7 +230,7 @@ public class TenantIdentityFoldingTests
             Email = "alice@example.com"
         });
 
-        var result = await NewTenantManager(store).ProvisionChildAsync(
+        var result = await NewTenantManager(store).ProvisionFixtureAsync(
             Guid.NewGuid(),
             new ProvisionChildModel
             {
@@ -239,7 +256,7 @@ public class TenantIdentityFoldingTests
             PasswordHash = BCrypt.Net.BCrypt.HashPassword("password123")
         });
 
-        await NewTenantManager(store).ProvisionChildAsync(
+        await NewTenantManager(store).ProvisionFixtureAsync(
             Guid.NewGuid(),
             new ProvisionChildModel { ExternalUserId = "alice-1", Email = "ALICE@example.com" });
 

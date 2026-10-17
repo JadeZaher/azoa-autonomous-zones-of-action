@@ -1,0 +1,17 @@
+---
+type: Design
+title: Canonical wallet authentication migration and admission
+status: Accepted design; implementation in progress
+---
+
+Wallet authentication uses validated lower-case Ethereum addresses, canonical Algorand address encoding and case-sensitive canonical Solana base58. Chain names use a fixed lower-case discriminator. Ordinary new user writes normalize bindings before persistence; direct binding changes use a narrow user CAS and the existing unique address/chain index.
+
+Existing bindings require a distributed migration gate. A new typed `wallet_auth_identity_migration` record with fixed version key owns status, lease token/expiry and conflict diagnostics. All wallet challenge/binding/authentication entrypoints check persisted Ready state. User-store writes that can introduce, remove or overwrite a binding also check this gate; unrelated binding-free user operations remain available. A missing record is not Ready, so a second API cannot race startup by assuming migration already completed.
+
+A hosted migration service acquires/renews the durable lease, scans bounded ordered pages of auth-bound users with a missing/non-current per-user AuthIdentityVersion marker and canonicalizes only auth fields. It detects duplicate canonical ownership and invalid stored bindings without choosing an account, merging identities or exposing addresses in public errors. Per-row CAS binds original address, chain, owner tenant and authentication watermark, preserving concurrent unrelated profile updates. Each successful canonicalization also sets the current marker atomically. A partial restart repeats deterministic canonicalization and cannot overwrite changed authority. Lease-fenced completion follows a full verification scan; Ready is monotonic for this version and never automatically cleared under live traffic.
+
+For invalid/duplicate persisted identities, wallet auth readiness reports a safe conflict with an operator diagnostic reference; unrelated API capabilities stay available. A recent authorized operator must resolve the identity conflict explicitly before retrying migration; no automatic account takeover/merge is allowed. The implementation must provide an audited usable repair path or demonstrate the existing identity-management route safely supplies it. No implementation-size deferral substitutes for that path.
+
+Concurrent issuance also needs an atomic per-canonical-wallet admission bound, not just count-before-create. The implementation will retain the five-live-challenge limit with a durable conditional admission mechanism. Challenge consume remains a typed keyed CAS on nonce, unconsumed state and expiry. Issued messages use millisecond UTC precision so exact issuer/audience/address/chain/nonce/expiry reconstruction survives datastore round trips. Old outstanding messages may require reissue after the stricter validation; their lifetime is at most five minutes.
+
+Tests cover two migration owners, lease expiry/restart, partial progress, canonical collision with no account selection, Solana case preservation, concurrent user mutation, binding writes blocked until Ready, canonical lookup after migration, five-way challenge admission under excess concurrent requests, and real nullable-field CAS. Claim tests also prove both previous credential forms are revoked atomically: password claim clears the old wallet; wallet claim replaces the old password with an unguessable credential hash while severing tenant authority and advancing the token watermark.

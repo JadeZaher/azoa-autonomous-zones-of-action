@@ -32,7 +32,8 @@ public sealed record FiatPayoutView(
     DateTimeOffset RequestedAt,
     DateTimeOffset? UnitsCollectedAt,
     DateTimeOffset? PaidAt,
-    DateTimeOffset? ReversedAt)
+    DateTimeOffset? ReversedAt,
+    string? ProviderPayoutId = null)
 {
     /// <summary>Projects one row for the operator board.</summary>
     public static FiatPayoutView From(FiatPayout row)
@@ -61,7 +62,8 @@ public sealed record FiatPayoutView(
             row.RequestedAt,
             row.UnitsCollectedAt,
             row.PaidAt,
-            row.ReversedAt);
+            row.ReversedAt,
+            row.ProviderPayoutId);
     }
 }
 
@@ -166,6 +168,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
         {
             FiatPayoutStatuses.Requested => await _offRamp.CollectUnitsAsync(id, ct),
             FiatPayoutStatuses.UnitsCollected => await _offRamp.SendMoneyAsync(id, ct),
+            FiatPayoutStatuses.BankPending => await _offRamp.SendMoneyAsync(id, ct),
             _ => null,
         };
 
@@ -208,6 +211,17 @@ public sealed class FiatPayoutOperatorController : ControllerBase
             outcome.Result.Definite
                 ? "The units were given back."
                 : outcome.Result.IndeterminateReason ?? "The outcome could not be established."));
+    }
+
+    /// <summary>Returns units only after the failed bank payout's funding is recovered.</summary>
+    [HttpPost("{id}/recover")]
+    [EnableRateLimiting("financial")]
+    public async Task<IActionResult> Recover(string id, [FromBody] FiatPayoutOperatorReason body, CancellationToken ct)
+    {
+        var identity = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        if (!Guid.TryParse(identity, out var actor) || actor == Guid.Empty) return Forbid();
+        var result = await _offRamp.RecoverFailedBankAsync(id, actor, body.Reason ?? string.Empty, ct);
+        return result.IsError ? Conflict(result) : Ok(AZOAResult<FiatPayoutView>.Success(FiatPayoutView.From(result.Result!)));
     }
 
     /// <summary>Parks the cash-out for a person, with the reason recorded on the row.</summary>

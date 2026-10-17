@@ -24,7 +24,11 @@ public sealed class KycSettings
     /// <summary>External provider API base URL — supplied at deploy time.</summary>
     public string? VeriffBaseUrl { get; set; }
 
-    /// <summary>Generic hosted-provider scaffold configuration.</summary>
+    public string? VeriffSharedSecret { get; set; }
+    public string? VeriffReturnUrl { get; set; }
+    public string[] VeriffRedirectOrigins { get; set; } = ["https://magic.veriff.me"];
+
+    /// <summary>Versioned trusted hosted identity protocol configuration.</summary>
     public HostedKycSettings Hosted { get; set; } = new();
 
     /// <summary>Identomat hosted-KYC + AML-screening adapter configuration.</summary>
@@ -59,13 +63,14 @@ public sealed class KycApprovalPolicySettings
     public bool AllowManualInDevelopment { get; set; }
 }
 
-/// <summary>
-/// Operator-owned configuration for the provider-neutral hosted adapter seam.
-/// The current adapter is a fail-closed scaffold; values document the reviewed
-/// implementation contract and must come from deployment configuration.
-/// </summary>
+/// <summary>Operator-owned version-one hosted identity protocol and key-rotation policy.</summary>
 public sealed class HostedKycSettings
 {
+    public string ProtocolVersion { get; set; } = string.Empty;
+    public string? ReturnUrl { get; set; }
+    public string[] RedirectOrigins { get; set; } = [];
+    public string? WebhookKeyId { get; set; }
+    public List<HostedKycRetiredKey> RetiredWebhookKeys { get; set; } = [];
     /// <summary>Public provider label returned in capability/session metadata.</summary>
     public string? ProviderName { get; set; }
 
@@ -78,11 +83,14 @@ public sealed class HostedKycSettings
     /// <summary>Inbound webhook verification secret; secret-store only.</summary>
     public string? WebhookSecret { get; set; }
 
-    /// <summary>Relative session-creation endpoint for a reviewed adapter.</summary>
-    public string SessionPath { get; set; } = "/sessions";
+}
 
-    /// <summary>Relative status endpoint template; <c>{sessionId}</c> is required.</summary>
-    public string StatusPath { get; set; } = "/sessions/{sessionId}";
+public sealed class HostedKycRetiredKey
+{
+    public string KeyId { get; set; } = string.Empty;
+    public string Secret { get; set; } = string.Empty;
+    public DateTimeOffset RetiredAt { get; set; }
+    public DateTimeOffset AcceptUntil { get; set; }
 }
 
 /// <summary>

@@ -24,6 +24,7 @@ import {
 } from '@/components/operator/operator-ui'
 import { isProviderReady, humanizeReadiness } from '@/lib/kyc-provider-state'
 import { operatorRequest, OperatorRequestError } from '@/lib/operator-client'
+import { HostedSessionRecovery } from '@/components/operator/hosted-session-recovery'
 import {
   KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH,
   type KycProviderProfileResponse,
@@ -82,6 +83,7 @@ export default function OperatorProvidersPage() {
         </div>
       )}
 
+      <HostedSessionRecovery />
       {editing && (
         <ProviderEditor
           profile={editing}

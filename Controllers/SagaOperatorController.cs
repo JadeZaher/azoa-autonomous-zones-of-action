@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using AZOA.WebAPI.Sagas;
+using AZOA.WebAPI.Services.Actions.Workflow;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -64,6 +65,8 @@ public sealed class SagaOperatorController : ControllerBase
     [EnableRateLimiting("financial")] // mutating admin op — throttled like the backfill apply.
     public async Task<IActionResult> Requeue(Guid id, CancellationToken ct)
     {
+        if ((await _store.GetAsync(id, ct))?.SagaName == ActionWorkflowSaga.Name)
+            return Conflict(new { message = "Use audited action recovery for this workflow operation.", recoveryPath = "/api/operator/action-recovery" });
         var applied = await _store.RequeueStepAsync(id, ct);
         if (!applied)
             return NotFound(new { message = $"No revivable (Parked/DeadLettered) saga step '{id}' — already running, completed, or cancelled." });
@@ -79,6 +82,8 @@ public sealed class SagaOperatorController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<IActionResult> Cancel(Guid id, [FromBody] SagaStepCancelRequest? body, CancellationToken ct)
     {
+        if ((await _store.GetAsync(id, ct))?.SagaName == ActionWorkflowSaga.Name)
+            return Conflict(new { message = "Cancel the action run through its owner-authorized workflow API; pending effects still require reconciliation." });
         var reason = string.IsNullOrWhiteSpace(body?.Reason)
             ? "Cancelled by operator."
             : body!.Reason!;

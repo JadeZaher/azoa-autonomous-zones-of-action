@@ -76,6 +76,8 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         public string? AuthWalletChainType { get; set; }
 
+        public int? AuthIdentityVersion { get; set; }
+
         // AC3b/H2 post-claim custody-window cut. Tenant-driven tokens (child JWT /
         // claim token) minted before this instant are rejected at the signing seam.
         public DateTimeOffset? AuthNotBefore { get; set; }

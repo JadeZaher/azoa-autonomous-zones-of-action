@@ -2,8 +2,12 @@ namespace AZOA.WebAPI.Models.Requests;
 
 public class UserNFTMintModel
 {
+    public Guid? WalletId { get; set; }
+    public AZOA.WebAPI.Models.Blockchain.NftFeeAuthorization? FeeAuthorization { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public AZOA.WebAPI.Models.Blockchain.NftProtocolCostAuthorization? ProtocolCostAuthorization { get; set; }
     public string ChainType { get; set; } = string.Empty;
-    /// Optional caller-supplied token id; when empty the mint assigns one (chain-mint semantics).
+    /// <summary>Must be absent for creation; imports cannot establish issuance provenance.</summary>
     public string? TokenId { get; set; }
     public string NFTContractAddress { get; set; } = string.Empty;
     public string TokenStandard { get; set; } = "ERC721";

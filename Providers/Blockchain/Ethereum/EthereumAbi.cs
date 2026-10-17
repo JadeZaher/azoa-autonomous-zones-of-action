@@ -78,6 +78,14 @@ public static class EthereumAbi
         }
     }
 
+    /// <summary>Decodes one canonical Ethereum address.</summary>
+    public static bool TryDecodeAddress(string? returnData, out string address)
+    {
+        address = string.Empty;
+        return TryDecodeReturn(returnData, new[] { new Parameter("address", 1) }, out var decoded)
+            && decoded.Count == 1 && decoded[0].Result is string value && EthereumAddress.TryParse(value, out address);
+    }
+
     /// <summary>Decodes a single <c>uint256</c> return value.</summary>
     public static bool TryDecodeUInt256(string? returnData, out BigInteger value)
     {

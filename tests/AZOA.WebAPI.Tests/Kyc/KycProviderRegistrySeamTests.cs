@@ -118,8 +118,8 @@ public sealed class KycProviderRegistrySeamTests
         return new KycProviderRegistry(
             control.Object,
             new ManualKycProviderService(settings),
-            new VeriffKycProviderService(),
-            new GenericHostedKycProviderService(settings),
+            AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Veriff(),
+            AZOA.WebAPI.Tests.TestSupport.HostedIdentityTestFactory.Generic(settings),
             IdentomatTestFactory.Create(settings),
             settings,
             Mock.Of<IHostEnvironment>(item => item.EnvironmentName == Environments.Production),

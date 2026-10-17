@@ -192,6 +192,19 @@ A third thing is now owed alongside the two below before real money moves out:
 the connected-account onboarding flow has to be reachable, which means both
 onboarding URLs must resolve to pages this deployment actually serves.
 
+## Bank payout completion
+
+The Connect funding transfer and the bank payout have separate durable references.
+`BankPending` means funds are transferred to the connected account and bank payout
+processing is pending. `Paid` requires Stripe's server-fetched bank payout status
+to be `paid`; a successful transfer alone cannot set it. Cash-out responses keep
+the same shape and provide the current state through `status` and `statusMessage`.
+
+The operator board can advance `BankPending` to reconcile it immediately. A worker
+also reconciles pending bank payouts every minute. Configure connected-account
+payout events on the signed webhook endpoint. See `Services/Fiat/OffRamp/AGENTS.md`
+for manual schedules, provider idempotency windows and ambiguous-outcome handling.
+
 ## What is NOT yet built (still open after this retirement)
 
 - ~~**D10's reversal-event pipeline**~~ — **BUILT** in this same wave (W4.3).
@@ -219,3 +232,19 @@ onboarding URLs must resolve to pages this deployment actually serves.
 
 See `conductor/RUNBOOK.md` decisions **D9** (superseded), **D43**, **D45**
 for the complete history and rationale behind this retirement.
+
+
+Development enables Stripe **test** checkout and cash-out. The ignored root `.env`
+loads only explicitly allowlisted DEV aliases; Compose forwards those same
+canonical settings without mounting the file or importing live keys. Return URLs
+default to localhost:3000; override canonical Checkout/OffRamp URLs and allowlisted
+origins together when using another frontend port. Configuration availability does
+not establish a funded asset: checkout issuance still requires platform-token
+genesis, reserve inventory, an active current price schedule and current identity
+approval. No successful live vendor workflow or payment is implied by local tests.
+
+Operators can request `/api/admin/fiat-payouts/{id}/recover` with a reason after bank
+failure. It refetches bank and funding facts, reverses recovered funding and restores
+only the backed unit amount. Ambiguous transfer outcomes remain reserved for chain
+reconciliation. Refund retries require `retryFailed: true` and the displayed
+`expectedRefundAttempt`; pending or unknown prior refunds never allow another key.

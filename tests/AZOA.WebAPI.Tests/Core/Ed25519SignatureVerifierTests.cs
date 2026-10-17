@@ -1,7 +1,7 @@
 extern alias BCCrypto2;
 using System.Text;
 using FluentAssertions;
-using AZOA.WebAPI.Core;
+
 using AZOA.WebAPI.Services.Signing;
 using Ed25519PrivateKeyParameters = BCCrypto2::Org.BouncyCastle.Crypto.Parameters.Ed25519PrivateKeyParameters;
 using Ed25519Signer = BCCrypto2::Org.BouncyCastle.Crypto.Signers.Ed25519Signer;
@@ -16,7 +16,7 @@ namespace AZOA.WebAPI.Tests.Core;
 /// </summary>
 public class Ed25519SignatureVerifierTests
 {
-    private readonly Ed25519SignatureVerifier _verifier = new();
+    private readonly WalletSignatureVerifier _verifier = new();
 
     /// <summary>Generate a real Algorand account and sign <paramref name="message"/> with
     /// its ed25519 private key via Bouncy Castle.</summary>
@@ -44,7 +44,7 @@ public class Ed25519SignatureVerifierTests
     public void VerifyAlgorand_CorrectSignature_ReturnsTrue()
     {
         var (address, message, signature) = RealSignedChallenge("AZOA-AUTH-v1 challenge nonce-abc");
-        _verifier.VerifyAlgorand(address, message, signature).Should().BeTrue();
+        _verifier.Verify("algorand", address, message, signature).Should().BeTrue();
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class Ed25519SignatureVerifierTests
     {
         var (address, _, signature) = RealSignedChallenge("AZOA-AUTH-v1 challenge nonce-abc");
         var tampered = System.Text.Encoding.UTF8.GetBytes("AZOA-AUTH-v1 challenge nonce-XYZ");
-        _verifier.VerifyAlgorand(address, tampered, signature).Should().BeFalse();
+        _verifier.Verify("algorand", address, tampered, signature).Should().BeFalse();
     }
 
     [Fact]
@@ -60,24 +60,24 @@ public class Ed25519SignatureVerifierTests
     {
         var (_, message, signature) = RealSignedChallenge("hello");
         var (otherAddress, _, _) = RealSignedChallenge("unrelated");
-        _verifier.VerifyAlgorand(otherAddress, message, signature).Should().BeFalse();
+        _verifier.Verify("algorand", otherAddress, message, signature).Should().BeFalse();
     }
 
     [Fact]
     public void VerifyAlgorand_WrongLengthSignature_FailsClosed()
     {
         var (address, message, _) = RealSignedChallenge("hello");
-        _verifier.VerifyAlgorand(address, message, new byte[10]).Should().BeFalse();
+        _verifier.Verify("algorand", address, message, new byte[10]).Should().BeFalse();
     }
 
     [Fact]
     public void VerifyAlgorand_MalformedAddress_FailsClosed()
-        => _verifier.VerifyAlgorand("NOT-AN-ADDRESS", System.Text.Encoding.UTF8.GetBytes("x"), new byte[64]).Should().BeFalse();
+        => _verifier.Verify("algorand", "NOT-AN-ADDRESS", System.Text.Encoding.UTF8.GetBytes("x"), new byte[64]).Should().BeFalse();
 
     [Fact]
-    public void Verify_UnsupportedChain_Throws()
+    public void Verify_UnsupportedChain_FailsClosed()
     {
-        var act = () => _verifier.Verify("ethereum", "0xabc", new byte[] { 1 }, new byte[64]);
-        act.Should().Throw<NotSupportedException>();
+        _verifier.Verify("unknown", "0xabc", new byte[] { 1 }, new byte[64]).Should().BeFalse();
+
     }
 }

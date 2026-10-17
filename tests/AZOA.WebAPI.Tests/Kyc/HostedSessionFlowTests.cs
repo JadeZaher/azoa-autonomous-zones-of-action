@@ -15,7 +15,7 @@ public sealed class HostedSessionFlowTests
     private const string ProviderKey = "identomat";
     private const string ProviderSessionId = "parent-session-1";
 
-    // ── The callback is a trigger, not an authority ─────────────────────────
+    // â”€â”€ The callback is a trigger, not an authority â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Callback_DiscardsItsOwnResult_AndRefetchesTheAuthority()
@@ -74,7 +74,7 @@ public sealed class HostedSessionFlowTests
         rejected.Code.Should().Be(unknown.Code);
     }
 
-    // ── MANUAL_CHECK never terminalises ─────────────────────────────────────
+    // â”€â”€ MANUAL_CHECK never terminalises â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Callback_WithNonTerminalOutcome_DoesNotTakeATerminalWrite()
@@ -129,7 +129,7 @@ public sealed class HostedSessionFlowTests
         store.TerminalWriteCount.Should().Be(1);
     }
 
-    // ── Redelivery converges on exactly one terminal write ──────────────────
+    // â”€â”€ Redelivery converges on exactly one terminal write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// <summary>
     /// SEQUENTIAL redeliveries. This proves convergence and nothing about
@@ -168,13 +168,13 @@ public sealed class HostedSessionFlowTests
         handler.ResumeCount.Should().Be(1, "the domain side effect must run once");
     }
 
-    // ── Genuinely concurrent deliveries ─────────────────────────────────────
+    // â”€â”€ Genuinely concurrent deliveries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task ConcurrentCallbacks_RunDomainResumptionExactlyOnce()
     {
         // TWO deliveries in flight at once, rendezvoused so both read the SAME
-        // non-terminal snapshot before either writes — the exact interleaving a
+        // non-terminal snapshot before either writes â€” the exact interleaving a
         // sequential loop can never produce, because deliveries 2..n short-circuit on
         // the terminal check.
         //
@@ -218,10 +218,62 @@ public sealed class HostedSessionFlowTests
     }
 
     [Fact]
+    public async Task CallbackArrivingDuringDomainResumption_CannotReclaimTheLiveLease()
+    {
+        var store = new InMemoryHostedSessionStore();
+        store.SeedAwaitingSubject(HostedSessionFlowKinds.Kyc, ProviderKey, ProviderSessionId, Guid.NewGuid());
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new RecordingOutcomeHandler
+        {
+            BeforeResume = async () => { entered.SetResult(); await release.Task; },
+        };
+        var flow = NewFlow(store, handler);
+        var first = flow.HandleCallbackAsync(new FakeHostedProvider(), "body");
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        AZOAResult<HostedCallbackResult> second;
+        try
+        {
+            second = await flow.HandleCallbackAsync(new FakeHostedProvider(), "body");
+        }
+        finally
+        {
+            release.SetResult();
+        }
+        var completed = await first;
+
+        second.Result!.ResumeClaimLost.Should().BeTrue();
+        completed.Result!.TerminalWriteApplied.Should().BeTrue();
+        handler.ResumeCount.Should().Be(1);
+        store.TerminalWriteCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ExpiredResumeLease_CanBeReclaimed_AndOldOwnerCannotCommit()
+    {
+        var store = new InMemoryHostedSessionStore();
+        var session = store.SeedAwaitingSubject(HostedSessionFlowKinds.Kyc, ProviderKey, ProviderSessionId, Guid.NewGuid());
+        var id = ParseId(session.Id);
+        var now = DateTimeOffset.UtcNow;
+        var first = await store.TryClaimResumeAsync(id, session.StateVersion, "first", now, now.AddMinutes(2));
+        var blocked = await store.TryClaimResumeAsync(id, first.Result!.StateVersion, "second", now, now.AddMinutes(2));
+        var recovered = await store.TryClaimResumeAsync(id, first.Result.StateVersion, "second", now.AddMinutes(3), now.AddMinutes(5));
+        var stale = await store.TryFinishResumeAsync(id, first.Result.StateVersion, "first", now.AddMinutes(3),
+            HostedSessionStates.Completed, "APPROVED", null, "old");
+        var completed = await store.TryFinishResumeAsync(id, recovered.Result!.StateVersion, "second", now.AddMinutes(3),
+            HostedSessionStates.Completed, "APPROVED", null, "new");
+
+        blocked.Result.Should().BeNull();
+        stale.Result.Should().BeNull();
+        completed.Result!.ResumeTargetId.Should().Be("new");
+        store.TerminalWriteCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task ConcurrentCallbacks_WhenTheWinnerFailsToResume_ReleaseTheClaimForRetry()
     {
         // A failed resumption must leave the session NON-TERMINAL. With the claim
-        // taken first, that requires an explicit compensating transition — without it
+        // taken first, that requires an explicit compensating transition â€” without it
         // the session would sit in RESUMING forever and no later callback could act.
         var store = new InMemoryHostedSessionStore();
         var seeded = store.SeedAwaitingSubject(
@@ -291,7 +343,7 @@ public sealed class HostedSessionFlowTests
         store.Peek(sessionId)!.AuthoritativeOutcome.Should().Be("REJECTED");
     }
 
-    // ── Begin claims admission before any external call ─────────────────────
+    // â”€â”€ Begin claims admission before any external call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task Begin_ClaimsAdmissionBeforeCreatingTheProviderSession()
@@ -325,11 +377,8 @@ public sealed class HostedSessionFlowTests
     }
 
     [Fact]
-    public async Task Begin_AfterATransientProviderFailure_CanStillSucceedOnRetry()
+    public async Task Begin_AfterAnAmbiguousProviderFailure_DoesNotCreateAgain()
     {
-        // Marking the claim terminal on a create failure would brick this subject
-        // forever: the same admission key would resume a terminal row on every
-        // future attempt, so one provider outage would deny them KYC permanently.
         var store = new InMemoryHostedSessionStore();
         var provider = new FakeHostedProvider { FailCreateOnce = true };
         var flow = NewFlow(store);
@@ -339,10 +388,56 @@ public sealed class HostedSessionFlowTests
         var retried = await flow.BeginAsync(provider, request);
 
         failed.IsError.Should().BeTrue();
-        retried.IsError.Should().BeFalse("the open claim must be resumable after a transient outage");
-        retried.Result!.RedirectUrl.Should().NotBeNullOrEmpty();
-        provider.CreateCallCount.Should().Be(2);
+        retried.IsError.Should().BeTrue();
+        retried.Code.Should().Be(AzoaErrorCodes.Conflict);
+        provider.CreateCallCount.Should().Be(1);
         store.TerminalWriteCount.Should().Be(0, "a transient failure is not a terminal outcome");
+    }
+
+    [Fact]
+    public async Task Begin_WhenProviderProvesNoRequestWasSent_AllowsRetry()
+    {
+        var store = new InMemoryHostedSessionStore();
+        var provider = new FakeHostedProvider { FailCreateOnce = true, RequestNotSent = true };
+        var flow = NewFlow(store);
+        var request = NewRequest();
+
+        (await flow.BeginAsync(provider, request)).IsError.Should().BeTrue();
+        var retry = await flow.BeginAsync(provider, request);
+
+        retry.IsError.Should().BeFalse();
+        provider.CreateCallCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ConcurrentBegins_OnlyTheAdmissionOwnerCreatesAtTheProvider()
+    {
+        var store = new InMemoryHostedSessionStore();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new FakeHostedProvider
+        {
+            BeforeCreate = async () => { started.SetResult(); await release.Task; },
+        };
+        var flow = NewFlow(store);
+        var request = NewRequest();
+        var first = flow.BeginAsync(provider, request);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        AZOAResult<HostedSessionStartResult> second;
+        try
+        {
+            second = await flow.BeginAsync(provider, request);
+        }
+        finally
+        {
+            release.SetResult();
+        }
+        var completed = await first;
+
+        completed.IsError.Should().BeFalse();
+        second.IsError.Should().BeTrue();
+        second.Code.Should().Be(AzoaErrorCodes.Conflict);
+        provider.CreateCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -359,7 +454,7 @@ public sealed class HostedSessionFlowTests
         provider.CreateCallCount.Should().Be(0);
     }
 
-    // ── Resumption failure must not terminalise ─────────────────────────────
+    // â”€â”€ Resumption failure must not terminalise â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task WhenDomainResumptionFails_TheSessionIsNotTerminalised()
@@ -382,7 +477,7 @@ public sealed class HostedSessionFlowTests
             + "approval that no ledger row backs");
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private static HostedSessionFlow NewFlow(
         IHostedSessionStore store,
@@ -422,6 +517,8 @@ public sealed class HostedSessionFlowTests
         public bool Available { get; init; } = true;
         public bool RejectCallback { get; init; }
         public bool FailCreateOnce { get; init; }
+        public bool RequestNotSent { get; init; }
+        public Func<Task>? BeforeCreate { get; init; }
         public string? CallbackClaimedOutcome { get; init; }
         public HostedSessionOutcome AuthoritativeOutcome { get; set; } = new()
         {
@@ -442,25 +539,26 @@ public sealed class HostedSessionFlowTests
             UnavailableReason = Available ? null : "unconfigured",
         };
 
-        public Task<AZOAResult<HostedSessionCreation>> CreateHostedSessionAsync(
+        public async Task<AZOAResult<HostedSessionCreation>> CreateHostedSessionAsync(
             HostedSessionRequest request,
             CancellationToken ct = default)
         {
             CreateCallCount++;
             CreateSequence = Interlocked.Increment(ref _sequence);
+            if (BeforeCreate is not null) await BeforeCreate();
             if (FailCreateOnce && CreateCallCount == 1)
             {
-                return Task.FromResult(AZOAResult<HostedSessionCreation>.FailureWithCode(
+                return AZOAResult<HostedSessionCreation>.FailureWithCode(
                     "transient provider outage",
-                    AzoaErrorCodes.DependencyUnavailable));
+                    RequestNotSent ? HostedSessionFlow.RequestNotSentCode : AzoaErrorCodes.DependencyUnavailable);
             }
 
-            return Task.FromResult(AZOAResult<HostedSessionCreation>.Success(new HostedSessionCreation
+            return AZOAResult<HostedSessionCreation>.Success(new HostedSessionCreation
             {
                 ProviderSessionId = ProviderSessionId,
                 ProviderCorrelationId = "child-session-1",
                 RedirectUrl = "https://widget.identomat.com/?session_token=child-session-1",
-            }));
+            });
         }
 
         public AZOAResult<HostedCallbackTrigger> VerifyCallback(string rawBody)
@@ -500,17 +598,19 @@ public sealed class HostedSessionFlowTests
 
         /// <summary>The verdict the ledger write was actually made with.</summary>
         public string? LastOutcome { get; private set; }
+        public Func<Task>? BeforeResume { get; init; }
 
-        public Task<AZOAResult<string?>> ResumeAsync(
+        public async Task<AZOAResult<string?>> ResumeAsync(
             HostedSession session,
             HostedSessionOutcome outcome,
             CancellationToken ct = default)
         {
             Interlocked.Increment(ref _resumeCount);
             LastOutcome = outcome.Outcome;
-            return Task.FromResult(FailResume
+            if (BeforeResume is not null) await BeforeResume();
+            return FailResume
                 ? AZOAResult<string?>.Failure("domain resumption failed")
-                : AZOAResult<string?>.Success("submission-1"));
+                : AZOAResult<string?>.Success("submission-1");
         }
     }
 
@@ -587,20 +687,49 @@ public sealed class HostedSessionFlowTests
             string flowKind, string providerKey, string providerSessionId, CancellationToken ct = default)
             => _inner.GetByProviderSessionAsync(flowKind, providerKey, providerSessionId, ct);
 
+        public Task<AZOAResult<HostedSession>> GetByAdmissionAsync(string flowKind, string providerKey, string admissionKey, CancellationToken ct = default)
+            => _inner.GetByAdmissionAsync(flowKind, providerKey, admissionKey, ct);
+
         public Task<AZOAResult<HostedSession>> GetByIdAsync(Guid id, CancellationToken ct = default)
             => _inner.GetByIdAsync(id, ct);
 
         public Task<AZOAResult<HostedSession>> TryAttachProviderSessionAsync(
             Guid id, long expectedStateVersion, string providerSessionId, string? providerCorrelationId,
-            string redirectUrl, DateTimeOffset? expiresAt, CancellationToken ct = default)
+            string redirectUrl, DateTimeOffset? expiresAt, string creationToken, CancellationToken ct = default)
             => _inner.TryAttachProviderSessionAsync(
-                id, expectedStateVersion, providerSessionId, providerCorrelationId, redirectUrl, expiresAt, ct);
+                id, expectedStateVersion, providerSessionId, providerCorrelationId, redirectUrl, expiresAt, creationToken, ct);
 
         public Task<AZOAResult<HostedSession>> TryTransitionAsync(
             Guid id, long expectedStateVersion, string newState, string? authoritativeOutcome,
             string? outcomeDetail, string? resumeTargetId, CancellationToken ct = default)
             => _inner.TryTransitionAsync(
                 id, expectedStateVersion, newState, authoritativeOutcome, outcomeDetail, resumeTargetId, ct);
+
+        public Task<AZOAResult<HostedSession>> TryClaimResumeAsync(
+            Guid id, long version, string token, DateTimeOffset now, DateTimeOffset expires, CancellationToken ct = default)
+            => _inner.TryClaimResumeAsync(id, version, token, now, expires, ct);
+
+        public Task<bool> RenewResumeLeaseAsync(
+            Guid id, string token, DateTimeOffset now, DateTimeOffset expires, CancellationToken ct = default)
+            => _inner.RenewResumeLeaseAsync(id, token, now, expires, ct);
+
+        public Task<AZOAResult<HostedSession>> TryFinishResumeAsync(
+            Guid id, long version, string token, DateTimeOffset now, string state,
+            string? outcome, string? detail, string? target, CancellationToken ct = default)
+            => _inner.TryFinishResumeAsync(id, version, token, now, state, outcome, detail, target, ct);
+
+        public Task<IReadOnlyList<HostedSession>> ListReconciliationAsync(DateTimeOffset before, int limit, CancellationToken ct = default)
+            => _inner.ListReconciliationAsync(before, limit, ct);
+
+        public Task<AZOAResult<HostedSession>> ReconcileAdmissionAsync(
+            HostedSession expected, Guid actor, string reason, HostedSessionCreation? provider, DateTimeOffset now, CancellationToken ct = default)
+            => _inner.ReconcileAdmissionAsync(expected, actor, reason, provider, now, ct);
+
+        public Task<AZOAResult<HostedSession>> TryBeginCreationAsync(Guid id, string token, DateTimeOffset now, CancellationToken ct = default)
+            => _inner.TryBeginCreationAsync(id, token, now, ct);
+
+        public Task<bool> ReleaseUnsentAdmissionAsync(Guid id, string creationToken, CancellationToken ct = default)
+            => _inner.ReleaseUnsentAdmissionAsync(id, creationToken, ct);
 
         public Task<AZOAResult<bool>> RecordCallbackAsync(Guid id, CancellationToken ct = default)
             => _inner.RecordCallbackAsync(id, ct);
