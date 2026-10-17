@@ -36,6 +36,10 @@ DEFINE FIELD IF NOT EXISTS body_claim_id ON TABLE wtt_operation TYPE option<stri
 DEFINE FIELD IF NOT EXISTS settlement_json ON TABLE wtt_operation TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS detail ON TABLE wtt_operation TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS return_of_operation_id ON TABLE wtt_operation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS action_run_id ON TABLE wtt_operation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS action_node_id ON TABLE wtt_operation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS action_intent_hash ON TABLE wtt_operation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS owner_intent_json ON TABLE wtt_operation TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS version ON TABLE wtt_operation TYPE int;
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE wtt_operation TYPE datetime;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE wtt_operation TYPE datetime;

@@ -424,9 +424,12 @@ public sealed partial class WttLifecycleService
 
     /// <summary>Refusal when a direct credential reaches a workflow-owned operation, or a workflow reaches another operation.</summary>
     private static string? AuthorityMismatch(WttOperation operation, WttPrincipal principal)
-        => ActionOf(operation) == principal.Action ? null
-            : operation.ActionRunId is null ? "A workflow node can only continue the operation it admitted."
-            : "This operation's signing belongs to the workflow node that admitted it.";
+        => ActionOf(operation) != principal.Action
+            ? operation.ActionRunId is null ? "A workflow node can only continue the operation it admitted."
+                : "This operation's signing belongs to the workflow node that admitted it."
+            : operation.OwnerIntentJson is not null && principal.Credential.TenantId is not null
+                ? "The owner took over this transfer; only the owner's direct credential can continue it."
+                : null;
 
     private static string BareId(string id) => SurrealRecordGuid.BareId(id);
 }

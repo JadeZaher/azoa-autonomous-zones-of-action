@@ -94,7 +94,8 @@ public sealed class WttStageKeyReadinessWorker(IServiceScopeFactory scopes, ILog
             {
                 using var scope = scopes.CreateScope();
                 var report = await scope.ServiceProvider.GetRequiredService<WttStageKeyReadiness>().CheckAsync(stoppingToken);
-                if (!report.Ready) logger.LogCritical("WTT stage-key keyring degraded; new stage-key admissions are refused: {Detail}", report.Detail);
+                if (!report.Configured) logger.LogWarning("WTT stage-key keyring is not configured; stage-key WTT routes stay refused: {Detail}", report.Detail);
+                else if (!report.Ready) logger.LogCritical("WTT stage-key keyring degraded; new stage-key admissions are refused: {Detail}", report.Detail);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
