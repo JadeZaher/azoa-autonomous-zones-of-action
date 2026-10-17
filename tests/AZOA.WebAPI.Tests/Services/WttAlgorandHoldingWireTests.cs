@@ -21,8 +21,8 @@ public sealed class WttAlgorandHoldingWireTests
         call.ApplicationId.Should().Be(9);
         call.Accounts.Should().Equal(payment.Receiver);
         call.ForeignAssets.Should().Equal(ulong.MaxValue);
-        call.ApplicationArgs[0].Should().Equal("optin"u8.ToArray());
-        call.ApplicationArgs[1].Should().Equal(Enumerable.Repeat((byte)255, 8));
+        call.ApplicationArgs.ElementAt(0).Should().Equal("optin"u8.ToArray());
+        call.ApplicationArgs.ElementAt(1).Should().Equal(Enumerable.Repeat((byte)255, 8));
         WttAlgorandHoldingWire.ValidateSigned(input, Sign(transactions, owner)).Should().HaveCount(2);
     }
 
@@ -49,5 +49,5 @@ public sealed class WttAlgorandHoldingWireTests
         owner.Address.ToString(), 9, ulong.MaxValue, 1000, 1000, 2000, 100, 200,
         Convert.ToBase64String(Enumerable.Repeat((byte)3, 32).ToArray()), "localnet-v1");
     private static string[] Sign(IReadOnlyList<Transaction> transactions, AlgoAccount owner)
-        => transactions.Select(transaction => Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(owner.SignTransaction(transaction)))).ToArray();
+        => transactions.Select(transaction => Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(transaction.Sign(owner)))).ToArray();
 }

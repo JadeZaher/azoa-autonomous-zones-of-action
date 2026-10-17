@@ -269,7 +269,7 @@ public sealed class InMemoryHostedSessionStore : IHostedSessionStore
             session.ResumeTargetId = resumeTargetId;
             session.ResumeLeaseToken = null;
             session.ResumeLeaseExpiresAt = null;
-            if (HostedSessionStates.IsTerminal(newState)) TerminalWriteCount++;
+            if (HostedSessionStates.IsTerminal(newState)) Interlocked.Increment(ref _terminalWriteCount);
             return Task.FromResult(AZOAResult<HostedSession>.Success(Clone(session)));
         }
     }

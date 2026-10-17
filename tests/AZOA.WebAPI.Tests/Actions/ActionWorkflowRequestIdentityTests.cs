@@ -9,6 +9,7 @@ using AZOA.WebAPI.Tests.Fakes;
 using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Services;
 
 namespace AZOA.WebAPI.Tests.Actions;
 

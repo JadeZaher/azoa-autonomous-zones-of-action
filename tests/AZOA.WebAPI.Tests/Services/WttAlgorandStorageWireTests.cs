@@ -28,7 +28,7 @@ public sealed class WttAlgorandStorageWireTests
         protocol.LSig.Args.Should().BeNull();
         protocol.LSig.Sig.Should().BeNull();
         protocol.LSig.Msig.Should().BeNull();
-        var signed = new[] { Encode(payer.SignTransaction(transactions[0])), Encode(protocol) };
+        var signed = new[] { Encode(transactions[0].Sign(payer)), Encode(protocol) };
         WttAlgorandStorageWire.ValidateSigned(input, signed).Select(item => item.Tx.TxID())
             .Should().Equal(transactions.Select(item => item.TxID()));
     }
@@ -55,11 +55,11 @@ public sealed class WttAlgorandStorageWireTests
         if (mutation == "program") protocol.LSig.Logic[^1] ^= 1;
         if (mutation == "logic-args") protocol.LSig.Args = [new byte[] { 1 }];
         if (mutation == "delegation") protocol.LSig.Sig = new Signature(Enumerable.Repeat((byte)7, 64).ToArray());
-        var envelopes = new[] { Encode(payer.SignTransaction(transactions[0])), Encode(protocol) };
+        var envelopes = new[] { Encode(transactions[0].Sign(payer)), Encode(protocol) };
         if (mutation == "order") (envelopes[0], envelopes[1]) = (envelopes[1], envelopes[0]);
         if (mutation == "trailing") envelopes[1] = Convert.ToBase64String([..Convert.FromBase64String(envelopes[1]), 0]);
         Action validate = () => WttAlgorandStorageWire.ValidateSigned(input, envelopes);
-        validate.Should().Throw<Exception>().Where(error => error is InvalidDataException or InvalidOperationException);
+        validate.Should().Throw<Exception>().Where(error => error is InvalidDataException || error is InvalidOperationException);
     }
 
     private static WttAlgorandStorageParameters Parameters(AlgoAccount payer) => new("bridge:storage:0", payer.Address.ToString(),

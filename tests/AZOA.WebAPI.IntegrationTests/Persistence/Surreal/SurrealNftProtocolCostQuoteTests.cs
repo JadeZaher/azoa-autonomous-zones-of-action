@@ -4,6 +4,7 @@ using AZOA.WebAPI.Providers.Stores.Surreal;
 using FluentAssertions;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 

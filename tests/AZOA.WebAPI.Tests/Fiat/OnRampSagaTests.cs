@@ -29,6 +29,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using AZOA.WebAPI.Models;
 
 namespace AZOA.WebAPI.Tests.Fiat;
 

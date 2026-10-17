@@ -2,6 +2,7 @@ using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using FluentAssertions;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 

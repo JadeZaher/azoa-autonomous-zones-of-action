@@ -16,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using AZOA.WebAPI.Core.Signing;
 using AlgoAccount = Algorand.Algod.Model.Account;
 
 namespace AZOA.WebAPI.Tests.Signing;

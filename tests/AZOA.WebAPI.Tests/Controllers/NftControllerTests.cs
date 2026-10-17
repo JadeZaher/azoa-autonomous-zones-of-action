@@ -13,6 +13,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests.Controllers;
 

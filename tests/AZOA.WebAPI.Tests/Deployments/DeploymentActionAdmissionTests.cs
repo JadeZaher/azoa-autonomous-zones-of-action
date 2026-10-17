@@ -17,6 +17,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
 using Xunit;
+using ActionGraphBundle = AZOA.WebAPI.Models.ActionGraphBundle;
+using ActionNodeExecution = AZOA.WebAPI.Models.Actions.ActionNodeExecution;
 
 namespace AZOA.WebAPI.Tests.Deployments;
 

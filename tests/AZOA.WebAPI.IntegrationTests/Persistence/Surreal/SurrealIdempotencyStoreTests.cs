@@ -96,7 +96,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
                 SubjectUserId = Guid.NewGuid().ToString("N"), ChainType = "Algorand", AssetId = "123",
                 Environment = "test", ChainNetwork = "Devnet", Status = OnRampLotStatuses.RefundPending,
                 CurrencyCode = "USD", FiatMinorUnits = 100, CreatedAt = old, UpdatedAt = old };
-            (await executor.ExecuteAsync(SurrealWriter.Create(row).Build(), default)).EnsureAllOk();
+            (await executor.ExecuteAsync(SurrealWriter.Create(row), default)).EnsureAllOk();
         }
         var options = new FiatOptions { Enabled = true };
         var refunds = new OnRampRecovery(null!, _store, null!, null!, options, null!, TimeProvider.System);

@@ -17,6 +17,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests.Credentials;
 public sealed class CredentialIssuanceAuthorizationTests

@@ -10,6 +10,7 @@ using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
+using AZOA.WebAPI.Models;
 
 namespace AZOA.WebAPI.Tests.Actions;
 

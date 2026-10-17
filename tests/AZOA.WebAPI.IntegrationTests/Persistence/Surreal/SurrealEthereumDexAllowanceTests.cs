@@ -287,7 +287,7 @@ public sealed class SurrealEthereumDexAllowanceTests : IAsyncLifetime
         CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow, NextAttemptAt = DateTimeOffset.UtcNow
     });
 
-    private async Task Save<T>(T row) where T : class, ISurrealRecord
+    private async Task Save<T>(T row) where T : class, ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 
     private static EthereumDexAllowance Candidate(string operation, string? protocol = null)

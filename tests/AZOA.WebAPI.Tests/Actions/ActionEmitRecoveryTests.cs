@@ -10,6 +10,7 @@ using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
 using Moq;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using Receipt = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionEmitReceipt;
 
 namespace AZOA.WebAPI.Tests.Actions;

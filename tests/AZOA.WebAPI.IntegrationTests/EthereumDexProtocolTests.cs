@@ -207,7 +207,7 @@ public sealed class EthereumDexProtocolTests : IAsyncLifetime
         return document.RootElement.GetProperty("result").Clone();
     }
 
-    private async Task Save<T>(T row) where T : class, ISurrealRecord
+    private async Task Save<T>(T row) where T : class, ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 
     private string Text(string name) => _setup.GetProperty(name).GetString()!;

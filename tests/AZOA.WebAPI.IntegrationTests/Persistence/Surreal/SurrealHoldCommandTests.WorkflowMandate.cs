@@ -50,7 +50,7 @@ public sealed partial class SurrealHoldCommandTests
         (await _store.CommitWorkflowOpeningAsync(pending, acceptance with { DraftHash = "different" }, direct.Direct)).Should().BeNull();
         if (recovery == "Replace")
         {
-            var expired = quote with { CreatedAt = now.AddMinutes(-10), ExpiresAt = now.AddMinutes(-5) };
+            var expired = quote with { QuotedAt = now.AddMinutes(-10), ExpiresAt = now.AddMinutes(-5) };
             expired = expired with { QuoteId = ValueCustodyIdentity.QuoteId(expired) };
             var expiredDraft = draft with { Quote = expired };
             pending.WorkflowMandateDraftJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(expiredDraft));

@@ -101,7 +101,7 @@ public sealed class DeploymentArtifactCompilerTests
     {
         var action = Graph();
         action.Edges[0].Condition = "run.Read.value == 'run.Read.value' && upstream.Read.text == \"upstream.Read.text\"";
-        action.Nodes[1].NodeType = ActionNodeType.Gate;
+        action.Nodes[1].NodeType = ActionNodeType.GateCheck;
         action.Nodes[1].Config = JsonSerializer.Serialize(new { predicate = "run.Read.value == 'it\\\'s run.Read.value'" });
         var compiled = _compiler.Compose(Guid.NewGuid(), action.UserId, [Source(action, "0")], [], []);
         compiled.Graph.Edges[0].Condition.Should().Be("run.o0_Read.value == 'run.Read.value' && upstream.o0_Read.text == \"upstream.Read.text\"");

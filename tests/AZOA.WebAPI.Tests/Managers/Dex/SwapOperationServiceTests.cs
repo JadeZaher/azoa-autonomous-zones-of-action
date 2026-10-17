@@ -14,6 +14,7 @@ using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
 using Moq;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;
 

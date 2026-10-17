@@ -101,7 +101,7 @@ public sealed class FrozenSoulboundClawbackTests
         custody.Setup(service => service.WithSigningKeyAsync(It.IsAny<SigningContext>(), It.IsAny<Func<byte[], Task<AZOAResult<byte[]>>>>()))
             .Returns(async (SigningContext context, Func<byte[], Task<AZOAResult<byte[]>>> sign) =>
             {
-                context.UserId.Should().BeOneOf(_issuerUser, _holderUser);
+                new[] { _issuerUser, _holderUser }.Should().Contain(context.UserId);
                 var account = context.UserId == _issuerUser ? _issuerA : _holderB;
                 return AZOAResult<AZOAResult<byte[]>>.Success(await sign((byte[])account.KeyPair.ClearTextPrivateKey.Clone()));
             });

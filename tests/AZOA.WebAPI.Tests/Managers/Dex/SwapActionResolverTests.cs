@@ -17,6 +17,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 using ActionNodeExecution = AZOA.WebAPI.Models.Actions.ActionNodeExecution;
 
 namespace AZOA.WebAPI.Tests.Managers.Dex;

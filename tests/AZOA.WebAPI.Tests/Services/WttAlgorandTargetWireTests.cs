@@ -23,13 +23,13 @@ public sealed class WttAlgorandTargetWireTests
         Assert.Equal(batches + 2, wire.Count);
         var signatureBytes = Convert.FromHexString(input.Proof.Vaa.EnvelopeHex).AsSpan(6, count * 66).ToArray();
         Assert.Equal(signatureBytes, wire.Take(batches).Cast<ApplicationNoopTransaction>()
-            .SelectMany(transaction => transaction.ApplicationArgs[1]).ToArray());
+            .SelectMany(transaction => transaction.ApplicationArgs.ElementAt(1)).ToArray());
         Assert.All(wire.Take(batches), transaction => { Assert.Equal(WttAlgorandTargetWire.VerifierAddress, transaction.Sender.ToString()); Assert.Equal(0UL, transaction.Fee); });
         var verified = WttAlgorandTargetWire.ValidateSigned(input, Sign(input, signer));
         Assert.Equal(wire.Select(transaction => transaction.TxID()), verified.Select(transaction => transaction.Tx.TxID()));
         var complete = Assert.IsType<ApplicationNoopTransaction>(wire[^1]);
-        Assert.Equal("completeTransfer"u8.ToArray(), complete.ApplicationArgs[0]);
-        Assert.Equal(input.Recipient, complete.Accounts[3].ToString());
+        Assert.Equal("completeTransfer"u8.ToArray(), complete.ApplicationArgs.ElementAt(0));
+        Assert.Equal(input.Recipient, complete.Accounts.ElementAt(3).ToString());
         Assert.Equal(ulong.MaxValue, Assert.Single(complete.ForeignAssets));
     }
 
@@ -39,11 +39,11 @@ public sealed class WttAlgorandTargetWireTests
         var signer = new AlgoAccount(); var input = Parameters(signer, "Register", 7) with { Asset = 0 };
         var wire = WttAlgorandTargetWire.Build(input);
         Assert.Equal(7, wire.Count);
-        Assert.Equal("verifyVAA"u8.ToArray(), Assert.IsType<ApplicationNoopTransaction>(wire[^5]).ApplicationArgs[0]);
+        Assert.Equal("verifyVAA"u8.ToArray(), Assert.IsType<ApplicationNoopTransaction>(wire[^5]).ApplicationArgs.ElementAt(0));
         Assert.Equal(100000UL, Assert.IsType<PaymentTransaction>(wire[^4]).Amount);
-        Assert.Equal(new byte[] { 1 }, Assert.IsType<ApplicationNoopTransaction>(wire[^3]).ApplicationArgs[1]);
-        Assert.Equal(new byte[] { 2 }, Assert.IsType<ApplicationNoopTransaction>(wire[^2]).ApplicationArgs[1]);
-        Assert.Equal("receiveAttest"u8.ToArray(), Assert.IsType<ApplicationNoopTransaction>(wire[^1]).ApplicationArgs[0]);
+        Assert.Equal(new byte[] { 1 }, Assert.IsType<ApplicationNoopTransaction>(wire[^3]).ApplicationArgs.ElementAt(1));
+        Assert.Equal(new byte[] { 2 }, Assert.IsType<ApplicationNoopTransaction>(wire[^2]).ApplicationArgs.ElementAt(1));
+        Assert.Equal("receiveAttest"u8.ToArray(), Assert.IsType<ApplicationNoopTransaction>(wire[^1]).ApplicationArgs.ElementAt(0));
         Assert.Equal(wire.Count, wire.Select(transaction => transaction.TxID()).Distinct().Count());
         Assert.Equal(wire.Count, WttAlgorandTargetWire.ValidateSigned(input, Sign(input, signer)).Count);
     }
@@ -62,7 +62,7 @@ public sealed class WttAlgorandTargetWireTests
         var envelopes = Sign(input, signer);
         var first = AlgorandSignedEnvelope.DecodeCanonical(envelopes[0]);
         if (mutation == "program") first = new(first.Tx, null, null, new LogicsigSignature([1, 2, 3]), null);
-        if (mutation == "guardian") ((ApplicationCallTransaction)first.Tx).ApplicationArgs[2][0] ^= 1;
+        if (mutation == "guardian") ((ApplicationCallTransaction)first.Tx).ApplicationArgs.ElementAt(2)[0] ^= 1;
         if (mutation == "rekey") first.Tx.RekeyTo = signer.Address;
         if (mutation == "fee") first.Tx.SetFee(1000);
         envelopes[0] = Convert.ToBase64String(Encoder.EncodeToMsgPackOrdered(first));

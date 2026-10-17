@@ -11,6 +11,7 @@ using AZOA.WebAPI.Services.Consent;
 using AZOA.WebAPI.Services.Signing;
 using Moq;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests;
 

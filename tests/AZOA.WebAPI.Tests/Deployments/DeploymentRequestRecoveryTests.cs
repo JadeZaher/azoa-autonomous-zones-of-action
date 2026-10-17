@@ -12,6 +12,7 @@ using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Moq;
 using Run = AZOA.WebAPI.Models.Actions.ActionRun;
+using ActionDefinition = AZOA.WebAPI.Models.Actions.ActionDefinition;
 
 namespace AZOA.WebAPI.Tests.Deployments;
 

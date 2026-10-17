@@ -10,6 +10,7 @@ using AZOA.WebAPI.Services.Webhooks;
 using FluentAssertions;
 using Moq;
 using SurrealForge.Client;
+using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Tests.Webhooks;
 

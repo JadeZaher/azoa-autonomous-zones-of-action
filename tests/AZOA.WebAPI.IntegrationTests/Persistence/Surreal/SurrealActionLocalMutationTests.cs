@@ -131,6 +131,6 @@ public sealed class SurrealActionLocalMutationTests : IAsyncLifetime
             CreatedAt = DateTimeOffset.UtcNow };
     }
 
-    private async Task Save<T>(T row) where T : ISurrealRecord
+    private async Task Save<T>(T row) where T : ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
 }
