@@ -4,8 +4,9 @@ round: 4
 wave: W2
 lane: L3
 branch: r4/money
-status: merged
+status: d8-ready
 merged: f6b9e04a
+followup: d8 (phase 2, awaiting follow-up merge signal)
 ---
 
 # Round 4 · L3 money lane (`r4/money`, merge #5)
@@ -43,19 +44,28 @@ integration test, container or E2E ran. Helper `r4/money-hold` (Hold/exchange) �
 | `FungibleCreationController` authz review | owner/tenant scoping and signing scopes are enforced (controller `HasSigningScope`, service `BindDirectAsync`/`BindConsentAsync`, store actor/tenant match); added `[EnableRateLimiting("financial")]` on the six POSTs that quote/consent/move |
 | W0 D1 re-verified | code path reviewed (`FiatHostedCreation`); new fixture `tests/AZOA.WebAPI.Tests/Fiat/CheckoutCreationFenceTests.cs` + helper B's `PayoutAccountCreationFenceTests.cs` |
 
-## D-8 summary (design only — waiting for the critic verdict)
+## D-8 — tenant-funded payouts (phase 2, built after merge #5)
 
-Who pays = who priced: a cash-out priced by a tenant schedule carries `funding_tenant_id` and draws on
-that tenant's `tenant_payout_float`; node-priced cash-outs stay node-funded. Source: per-tenant float
-credited only by settled tenant top-ups through the existing Checkout rail (purpose
-`tenant-payout-float`), aged by the rail's reversal window before counting; top-up chargebacks reverse
-credits (float may go negative and then refuses). Rejected: Stripe connected-account debits (async
-bank pull, cannot prove coverage before the send). Coverage: in `RequestAsync`, before lots/saga, one
-transaction creates `tenant_payout_debit:{payoutId}` (UNIQUE `payout_id`) and decrements available
-under a version CAS with a coverage predicate, THROW → typed refusal; `SendMoneyAsync` sends only
-against a `Reserved` debit. Exactly-once: Reserved→Finalized on authoritative `Paid`, Reserved→Released
-on definitive no-money, cumulative `reversed_minor_units` after Paid; invariant
-`balance = credits − finalized − reserved` with an operator consistency view. Four fixtures as planned.
+Critic verdict ACCEPT-WITH-CHANGES; all seven required changes and owner decisions (a)–(c) applied.
+Full design + as-built: `Services/Fiat/OffRamp/AGENTS.md` §tenant-funded. Base `ca756013`.
+
+| Item | Where |
+|---|---|
+| Float / credit / debit POCOs (new tables) | `Persistence/SurrealDb/Models/TenantPayoutFloat.cs`; generated `tenant_payout_{float,credit,debit}.surql` |
+| Ledger (one `BEGIN…COMMIT` per transition: float version CAS + entry CAS/create, THROW) | `Services/Fiat/OffRamp/TenantPayoutLedger.cs` `CommitAsync`, `ReadSnapshotAsync` (one-transaction read) |
+| Reserve / sync (finalize, release, reversal) / credit promotion + reversal / views | `Services/Fiat/OffRamp/TenantPayoutFunding.cs` |
+| Rule 1: release only on proof of no transfer; 409/`idempotency_error` → busy | `TenantPayoutFunding.ReadTransferEvidenceAsync`/`Plan`; `Providers/Fiat/StripeConnectGateway.cs` error mapping |
+| Rule 2: `reversed = min(a, max(stored, amount_reversed))` in Reserved and Finalized | `TenantPayoutFunding.Plan`; `PayoutReversalEventHandler.FundingSyncedAsync`; `OffRampService.RecoverFailedBankAsync` sync |
+| Rule 3: credit `WHERE state=$from` + float CAS atomically | `TenantPayoutLedger.CommitAsync` (`UpdateCredit`) |
+| Rule 4: stranded `Reserved` sweep; never-started cash-out fenced + abandoned | `Services/Fiat/OffRamp/TenantPayoutSweep.cs` (+ hosted worker in `AddFiatOffRamp`) |
+| Rule 5: who pays = who priced, re-derived at send | `OffRampService.Funding.cs` `RefuseUnfundedSendAsync`; `funding_tenant_id` set from `OffRampContext` at claim |
+| Rule 6: maturity covers the dispute horizon, deficit separate, consistent from one transaction, tenant bound from the intent | `TenantPayoutTopUp.cs` (`MaturesAt`, binding), `TenantPayoutFunding.DescribeAsync` |
+| Rule 7: rejected-alternative rationale corrected | `Services/Fiat/OffRamp/AGENTS.md` §tenant-funded |
+| Owner (a) credit = `balance_transaction.net`; dispute fees reverse the credit | `IReversalFactSource.GetPaymentBalanceAsync`; `TenantPayoutTopUpReversalHandler` |
+| Owner (b) tenant-attributed reserve partition | `IPlatformReserve.ReattributeReturnAsync` (`PlatformReserveService.cs`), `fiat_payout.collect_partition`, `Services/Reserve/AGENTS.md` §reattribution |
+| Owner (c) lot pricing scope + exit cap | `on_ramp_lot.pricing_scope_key` (set in `OnRampSettlementHandler`), `OffRampService.ExceedsSoldPriceAsync` |
+| Top-up path | `TenantPayoutBalanceController` (`POST …/top-up`), purpose `tenant-payout-float` (allowlisted), rail KYB gate + server-built admission key (`FiatRailProvider.BeginCheckoutAsync`), on-ramp handler ignores top-ups |
+| Real-DB probe | the Surreal ledger (create, replay, coverage, stale CAS loses, wrong-state loses **and rolls back the float bump**, release, credit reversal, snapshot indexes) passed against a throwaway SurrealDB 3.1.4 (`--user 0:0`, :8043, reaped); the probe file was not committed |
 
 ## Hunks
 
@@ -78,13 +88,20 @@ builder.Services.AddHostedService<AZOA.WebAPI.Services.Governance.NodeFeeSettlem
       Fiat__Test__ConnectWebhookSecret: "${Fiat__Test__ConnectWebhookSecret:-}"
 ```
 
+```hunk path=appsettings.json
+      "AllowedPurposes": [ "funds-top-up", "tenant-payout-float" ],
+```
+
 ## POCO deltas
 
 - `FiatReversal.PendingMoveKey` → `fiat_reversal.pending_move_key option<string>` (existing table,
   `option<>`, no CAS reads it → no backfill). Schema regenerated with the project generator
   (`Generated/Schemas/fiat_reversal.surql`, +1 line). Not baselined.
-- D-8 tables (`tenant_payout_float`, `tenant_payout_credit`, `tenant_payout_debit`,
-  `fiat_payout.funding_tenant_id option<record<user>>`): **not yet added** (gated).
+- D-8 (phase 2): new tables `tenant_payout_float` (UNIQUE `(tenant_id, currency_code, environment)`),
+  `tenant_payout_credit` (UNIQUE `intent_id`), `tenant_payout_debit` (UNIQUE `payout_id`); new
+  `option<>` fields `fiat_payout.funding_tenant_id option<record<user>>`, `fiat_payout.collect_partition`,
+  `on_ramp_lot.pricing_scope_key` (no CAS reads them on old rows → no backfill; generation reset applies,
+  no forward migrations). Schema regenerated with the project generator.
 
 ## Published contracts (for L7)
 
@@ -93,7 +110,10 @@ builder.Services.AddHostedService<AZOA.WebAPI.Services.Governance.NodeFeeSettlem
 | `POST /api/admin/fiat-payouts/{id}/resolve` | `{ resolution: "record-paid" \| "return-units", reason }` → `FiatPayoutView`; 409 with reason when evidence refuses |
 | `POST /api/admin/fiat-reversals/{id}/resolve` | `{ reason }` → `FiatReversalView` (now also `pendingMoveKey`); re-queues the unwind |
 | `FiatPayoutView.subjectUserId/tenantId/reversalId` | now bare compact ids (were link text when read back) |
-| Tenant payout balance read + top-up (§4.9) | D-8, after the critic verdict: `GET /api/fiat/tenant-payout-balance`, `POST /api/fiat/tenant-payout-balance/top-up`, operator `GET /api/admin/tenant-payout-floats/{tenantId}` |
+| `GET /api/fiat/tenant-payout-balance` (tenant principal; ApiKey needs `tenant:provision`) | → `TenantPayoutFloatView[]` per (currency, environment): credited, reserved, finalized, available, deficit, pending credits, recomputed sums, consistent |
+| `POST /api/fiat/tenant-payout-balance/top-up` | `{ requestKey, amountMinorUnits, successUrl?, cancelUrl? }` → `FiatCheckoutIntent` (403 `KYB_REQUIRED` without KYB) |
+| `GET /api/admin/tenant-payout-floats/{tenantId}` (Operator) | → `TenantPayoutFloatView[]` |
+| Cash-out refusal code | `TENANT_PAYOUT_BALANCE_INSUFFICIENT` (400 body code) when the pricing tenant's float does not cover the amount |
 
 ## Tests (owned; run by filter)
 
@@ -113,10 +133,28 @@ builder.Services.AddHostedService<AZOA.WebAPI.Services.Governance.NodeFeeSettlem
   red), `OnRampRecoveryTests` ×2 (adopt listed refund; provably absent → exactly one new attempt),
   `OffRampTests.Another_driver_reusing_a_request_key_…` (F-H8).
 - Last filtered run (final tree): Fiat + NodeFee + Fungible unit tests **364/364** green.
+- **D-8 phase 2 added:** `OffRampTests.TenantFunded.cs` (13: concurrent reservations vs a balance
+  covering one; uncovered refusal with the typed code and no transfer; reservation vs top-up promotion;
+  Paid → Finalized then partial + duplicate `transfer.reversed`; crash between reserve and send → one
+  transfer; abandon → released once; 409 at send keeps Reserved and parks; partial restitution releases
+  only the recovered amount and a repeat adds nothing; promotion vs credit reversal; crash after reserve
+  before the saga closed by the sweep with the collect fenced; pre-D-8 tenant-priced row with no debit
+  parks; tenant driver with node fallback → node-funded at node price; arbitrage cap theory),
+  `TenantPayoutTopUpTests.cs` (3: net credited once and never matures without a window; subject/key
+  mismatch credits nothing; refund reverses the pending credit by the gross),
+  `StripeBankPayoutGatewayTests` theory (409 / `idempotency_error` → busy; a genuine 4xx → refused).
+  Races use a commit barrier on `InMemoryTenantPayoutLedger` (production commit contract) so both
+  contenders read before either commits. Mutation-checked (coverage check + `max()` reversal → 4 red).
+  Harness: `OffRampTests` is now `partial`; `FixedClock` is settable; the connect mock lists transfers
+  by group; the node-fallback default is explicit (`NodeFallback = true`) so pre-existing tenant-driver
+  tests keep their node-priced meaning. Final run: Fiat + Exchange + Reserve + NodeFee + Fungible +
+  schema goldens/orphans + enum converters **700/700** green.
 
 ## Compile result
 
 `dotnet build azoa.sln -c Debug` → **0 errors, 22 warnings** (baseline ≤ 25; none new).
+
+D-8 phase 2 tree: `dotnet build azoa.sln -c Debug` → **0 errors, 13 warnings** (≤ 25; all pre-existing xUnit analyzer notes); with `-p:GenerateDocumentationFile=true` (IDE0005 enforced) → 0 errors. `merge-check.mjs` ok; secret scan clean.
 
 ## Checklists
 
@@ -159,8 +197,23 @@ the synchronous `ICustodialRecipientPreparer` for allocation issuance (out of ro
   them). Converting to typed writers is a pruning follow-up.
 - Node-fee `Prepared` settlements with no accepted atomic group stay uncollected (recovery submits
   nothing by design).
+- D-8: a collect whose claim completed but whose row write was lost replays without the reserve draw /
+  reattribution (pre-existing for the node partition too); the partition counter is then behind until
+  an operator repairs it. A reattribution failure is logged and makes a later unit return from the tenant
+  partition fail closed (parks with units owed).
+- D-8: the debit sweep acts only on `Reserved` debits older than 30 min with a terminal or never-started
+  payout; a Finalized debit's later reversal is applied only through `transfer.reversed` delivery /
+  recovery (a lost sync fails the event so it is retried).
+- D-8 unit fixtures run over the commit-contract fake; the Surreal store was exercised against a real
+  SurrealDB 3.1.4 by a throwaway probe, but real-DB integration fixtures for the ledger are L6/sweep work.
 
 ## Needs other lane
+
+- **L7 (D-8):** tenant payout-balance page (GET balance, POST top-up) and operator float view; surface
+  `TENANT_PAYOUT_BALANCE_INSUFFICIENT` on cash-out.
+- **L6 (D-8):** real-DB fixtures for `SurrealTenantPayoutLedger` (concurrent reserve vs one balance,
+  promotion vs reversal) and an architecture rule that every `tenant_payout_*` write goes through
+  `CommitAsync`/`RecordCreditAsync`.
 
 - **L2 (merged before me):** D-6 KYB at payout price schedules — call
   `IKybGate.RequireVerifiedTenantAsync(tenant, KybCapability.PayoutPriceSchedule)` in
