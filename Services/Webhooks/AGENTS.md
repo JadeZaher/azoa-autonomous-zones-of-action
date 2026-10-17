@@ -89,7 +89,9 @@ plus a database-time guard (`lease_expires_at <= time::now()`) inside the same t
 the registration lock and the immutable retry audit. It clears the lease, so a crashed holder
 that wakes up cannot finish: `FinishAsync` requires its exact version and an unexpired lease.
 An abandoned attempt may already have reached the receiver; the retry reuses the event's
-idempotency id, so receivers deduplicate as for any lost response.
+idempotency id, so receivers deduplicate as for any lost response. A crashed holder cannot still
+be sending once its lease has expired: workers lease for the HTTP timeout plus 30 s and
+`LeasedWebhookSender` starts no request whose timeout would outlive the lease.
 
 ## §activation
 
