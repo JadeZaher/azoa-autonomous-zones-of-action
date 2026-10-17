@@ -164,11 +164,13 @@ one line with an AGENTS.md pointer; dead `RotateSecretAsync` removed.
    re-evolves `node_fee_settlement.{fee,gross,net}_amount` ASSERTs every run (comparer reads the
    `dec` literal / quote spelling as drift) and reports `executes`/`forked_from` `in`/`out` as
    removals.
-3. **Consequence of `--no-reconcile`:** nothing evolves a shipped definition implicitly. Any
-   field/index change on a table that exists on a deployed database needs a forward
-   `DEFINE … OVERWRITE` migration. Affects W1 "Decisions needed 1": if the owner picks
-   baselines-plus-forward-migrations over the fresh-DB re-base, W1's five index changes and type
-   widenings need OVERWRITE migrations (fresh databases are already exact).
+3. **Deploy path (owner decision at merge time, 2026-10-17): `--no-reconcile` + generation
+   reset.** Round 4's schema ships by resetting the database (`dev-up -ResetDb` locally; Railway
+   SurrealDB volume reset before the next deploy), so W1's changed files need no baselines or
+   forward migrations; a fresh database applied with `--no-reconcile` is exactly
+   `Generated/Schemas` (probe above). After the reset, nothing evolves a shipped definition
+   implicitly: a later field/index change on a deployed table ships as a forward
+   `DEFINE … OVERWRITE` migration or another generation reset.
 4. **Governance authoring gap (stated, not hidden):** no real-DB fixture races a local-graph
    mutation against finalization (both take `LocalEntityMutationFence.Holons()`); the runtime
    reviewer decides whether it blocks the lift.
@@ -206,6 +208,13 @@ one line with an AGENTS.md pointer; dead `RotateSecretAsync` removed.
   lands on tenant provisioning, seed `TestDataBuilders.KybApprovedTenant` in
   `WebhookOutboxDrainFlowTests.OnboardTenantAsync` callers.
 
+## Merge-time additions (orchestrator signal)
+
+- L3 ask: `Helpers/DevelopmentProviderSecrets.cs:21,43` also maps the `Fiat__Test__ConnectWebhookSecret`
+  `.env` alias (Development only, same rules as the other aliases).
+- L3 ask: `Controllers/Admin/ProjectTreasuryController.cs` ledger view shows the bare tenant id
+  (`SurrealRecordGuid.BareId` of `user:<hex>`; empty stays empty).
+
 ## Decisions needed
 
-None new. Finding 3 is an input to W1's open checksum re-base decision.
+None. Deploy path recorded in finding 3.

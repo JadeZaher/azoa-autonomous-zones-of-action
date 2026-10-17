@@ -39,7 +39,9 @@ fields as removals, so the CI re-run gate can never pass. Probe (throwaway v3.1.
 `--no-reconcile` → `INFO FOR TABLE` identical to `Generated/Schemas` alone for all 131 tables;
 second run `applied 0 … evolved 0`; composed + default reconcile → the one ASSERT difference.
 
-Consequence: nothing evolves a shipped definition implicitly. Any change to a field or index on a
+Round 4 ships its schema by **generation reset** (owner decision 2026-10-17: `dev-up -ResetDb`
+locally, Railway SurrealDB volume reset before the next deploy), so W1's changed generated files
+need no baselines or forward migrations. Consequence after the reset: nothing evolves a shipped definition implicitly. Any change to a field or index on a
 table that already exists on a deployed database ships as a forward migration with
 `DEFINE … OVERWRITE` (the same rule §compatibility-baselines already imposes on baselined tables;
 a changed generated file aborts `up` on checksum first anyway).
