@@ -38,7 +38,7 @@ public partial class BlockchainOperationManager
         operation.Parameters["DeploymentOperationId"] = operationId;
         operation.Parameters["ChainType"] = start.Target.ChainType;
         operation.Parameters["ChainNetwork"] = start.Target.Network;
-        var admitted = await _deployments.StartAsync(actor.Value, operation.ActingTenantId, key, start);
+        var admitted = await _deployments.StartWithCredentialAsync(actor.Value, operation.ActingTenantId, key, start, request?.AuthenticationWitness);
         if (admitted.IsError || admitted.Result is null)
             return AZOAResult<IBlockchainOperation>.Failure(admitted.Message, operation);
         ProjectNative(operation, admitted.Result);

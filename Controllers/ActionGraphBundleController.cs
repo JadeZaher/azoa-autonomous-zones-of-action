@@ -17,9 +17,13 @@ public class ActionGraphBundleController : ControllerBase
 {
     private readonly IActionGraphBundleManager _manager;
 
-    public ActionGraphBundleController(IActionGraphBundleManager manager)
+    private readonly AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? _signingAuthority;
+
+    public ActionGraphBundleController(IActionGraphBundleManager manager,
+        AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null)
     {
         _manager = manager;
+        _signingAuthority = signingAuthority;
     }
 
     [HttpGet("{id:guid}")]
@@ -42,6 +46,7 @@ public class ActionGraphBundleController : ControllerBase
     /// <summary>Creates a new ActionGraphBundle owned by the authenticated user, or
     /// upserts an existing record they already own (by name).</summary>
     [HttpPost]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> CreateOrUpdate([FromBody] ActionGraphBundleCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -54,6 +59,7 @@ public class ActionGraphBundleController : ControllerBase
     /// <summary>Updates an existing ActionGraphBundle by route id. Verifies the record is
     /// owned by the authenticated user before writing — closes the PUT IDOR.</summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<IActionGraphBundle>>> Update(Guid id, [FromBody] ActionGraphBundleCreateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -64,6 +70,7 @@ public class ActionGraphBundleController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResponse>> Delete(Guid id, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
@@ -92,7 +99,10 @@ public class ActionGraphBundleController : ControllerBase
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
 
-        var result = await _manager.DeployAsync(id, request, Request.Headers["Idempotency-Key"].ToString(), userId.Value, ActingTenantId(), ct);
+        // Audit-1 H1: native signers bind to the caller's captured credential; none ⇒ native signing fails closed.
+        var credential = _signingAuthority is null ? null : await _signingAuthority.CaptureCredentialAsync(User, ct);
+        var result = await _manager.DeployAsync(id, request, Request.Headers["Idempotency-Key"].ToString(), userId.Value, ActingTenantId(), ct,
+            credential is { IsError: false } ? credential.Result : null);
         if (result.IsError) return BadRequest(result);
         return result.Result?.State is "Confirmed" or "Failed" or "Cancelled" ? Ok(result) : StatusCode(202, result);
     }
@@ -105,6 +115,7 @@ public class ActionGraphBundleController : ControllerBase
     /// ActionGraphBundle's ecosystem tree and returns the recomposed tree. The owner is the
     /// authenticated user — no owner id is read from the body (IDOR-resistant).</summary>
     [HttpPost("{id:guid}/ecosystem/dapp-series")]
+    [Authorize(Policy = "DappDevelop")]
     public async Task<ActionResult<AZOAResult<EcosystemTree>>> AddDappSeries(Guid id, [FromBody] AddDappSeriesRequest request, [FromQuery] AZOARequest? providerRequest)
     {
         var userId = GetUserIdFromClaims();

@@ -11,6 +11,7 @@ using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Actions.Workflow;
+using AZOA.WebAPI.Services.Signing;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.Tests.TestSupport;
@@ -24,19 +25,21 @@ public sealed class DurableActionExecutionHarness
 
     public DurableActionExecutionHarness(IActionStore actions, IActionRunStore runs, IActionNodeExecutionStore executions,
         IActionDagValidator validator, IActionDagExecutabilityValidator executable, IActionNodeHandlerRegistry handlers,
-        ISagaStore sagas, IWalletManager wallets, IBlockchainProviderFactory chains, ActionConfigBindingResolver bindings)
+        ISagaStore sagas, IWalletManager wallets, IBlockchainProviderFactory chains, ActionConfigBindingResolver bindings,
+        IActionAccessRequestStore? accessRequests = null)
     {
         _runs = runs;
         _admission = new(runs, executions);
         Manager = new(actions, runs, executions, validator, executable, handlers, sagas, wallets, chains, bindings,
-            workflowAdmission: _admission);
+            accessRequestStore: accessRequests, workflowAdmission: _admission);
         _stepper = new(actions, runs, executions, handlers, sagas, wallets, chains, bindings,
-            NullLogger<ActionNodeStepHandler>.Instance, workflowAdmission: _admission);
+            NullLogger<ActionNodeStepHandler>.Instance, workflowAdmission: _admission,
+            signingAuthority: OwnerSigningAuthority());
     }
 
     public async Task<AZOAResult<ActionRun>> ExecuteAsync(Guid action, Guid actor)
     {
-        var started = await Manager.ExecuteAsync(action, actor, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var started = await Manager.ExecuteAsync(action, actor, Request(actor));
         if (started.IsError || started.Result is null) return started;
         for (var count = 0; _admission.Pending.Count > 0; count++)
         {
@@ -45,10 +48,22 @@ public sealed class DurableActionExecutionHarness
             var result = await _stepper.ExecuteAsync(new StepExecutionContext<ActionStepPayload>(ActionWorkflowSaga.Name,
                 node.ToString("N"), started.Result.Id.ToString("N"), "fixture-step", 1,
                 new(started.Result.Id, action, actor, node)), default);
-            if (result.Park is not null) throw new InvalidOperationException("This immediate DAG fixture unexpectedly parked.");
+            if (result.Park is not null) throw new InvalidOperationException($"This immediate DAG fixture unexpectedly parked: {result.Park} {result.Error}");
         }
         return await _runs.GetByIdAsync(started.Result.Id);
     }
+
+    /// <summary>Signing authority for first-party owner credentials (no tenant, so no grant reads reach the executor).</summary>
+    public static SigningAdmissionAuthorityFactory OwnerSigningAuthority() => new(Moq.Mock.Of<IUserStore>(), Moq.Mock.Of<IWalletStore>(),
+        Moq.Mock.Of<SurrealForge.Client.Query.ISurrealExecutor>());
+
+    /// <summary>A first-party login request for <paramref name="actor"/>: a fresh run key plus the owner credential the durable stepper binds.</summary>
+    public static AZOARequest Request(Guid actor) => new()
+    {
+        IdempotencyKey = Guid.NewGuid().ToString("N"),
+        AuthenticationWitness = new(1, "Jwt", actor, null, null, DateTimeOffset.UtcNow.AddSeconds(-5), DateTimeOffset.UtcNow.AddHours(1),
+            null, null, [], true, TokenUse: AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin),
+    };
 
     private sealed class Admission(IActionRunStore runs, IActionNodeExecutionStore executions) : IActionWorkflowAdmissionStore
     {

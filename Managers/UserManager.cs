@@ -273,6 +273,12 @@ public class UserManager : IUserManager
         var existing = await _userStore.GetByIdAsync(targetUserId, ct);
         if (existing.IsError || existing.Result is null)
             return new AZOAResult<IUser> { IsError = true, Message = "User not found." };
+        if (!actingIsOperator && AzoaDappRoles.CanManage(existing.Result.DappRole))
+            return new AZOAResult<IUser>
+            {
+                IsError = true,
+                Message = "Changing a current DApp manager's role requires an operator."
+            };
 
         return await _userStore.TryAssignDappRoleAsync(targetUserId, existing.Result.DappRole, normalized, ct);
     }

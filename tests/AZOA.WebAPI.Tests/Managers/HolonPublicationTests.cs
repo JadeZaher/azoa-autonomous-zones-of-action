@@ -57,8 +57,10 @@ public class HolonPublicationTests
     }
 
     [Fact]
-    public async Task CreateAsync_PublishesAGovernanceProposal_WhenAskedTo()
+    public async Task CreateAsync_RefusesAGovernanceProposal_OnTheGenericRoute_AndWritesNothing()
     {
+        // Election projections are minted only by authenticated governance commands
+        // (Services/Governance/AGENTS.md), never by the generic holon create.
         var result = await _manager.CreateAsync(
             new HolonCreateModel
             {
@@ -68,8 +70,8 @@ public class HolonPublicationTests
             },
             Owner);
 
-        result.IsError.Should().BeFalse(result.Message);
-        result.Result!.IsPublic.Should().BeTrue();
+        result.IsError.Should().BeTrue();
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -120,14 +122,17 @@ public class HolonPublicationTests
     }
 
     [Fact]
-    public async Task UpdateAsync_AllowsUnpublishing()
+    public async Task UpdateAsync_CannotUnpublishAnElectionProjection()
     {
+        // A published proposal is the notice its electorate votes on; the generic
+        // update cannot withdraw it (election projections are immutable outside
+        // governance commands).
         var proposal = Existing(ConsumerGovernanceHolonTypes.ProposalAssetType, isPublic: true);
 
         var result = await _manager.UpdateAsync(proposal.Id, new HolonUpdateModel { IsPublic = false }, Owner);
 
-        result.IsError.Should().BeFalse(result.Message);
-        result.Result!.IsPublic.Should().BeFalse();
+        result.IsError.Should().BeTrue();
+        _store.Verify(s => s.UpsertAsync(It.IsAny<IHolon>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     /// <summary>

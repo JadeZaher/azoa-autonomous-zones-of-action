@@ -22,6 +22,8 @@ public interface IActionManager
 
     // DAG validation
     Task<AZOAResult<bool>> ValidateDAGAsync(Guid actionId, AZOARequest? request = null);
+    /// <summary>Owner-scoped DAG validation for the HTTP route; a non-owned action answers like a missing one.</summary>
+    Task<AZOAResult<bool>> ValidateDAGAsync(Guid actionId, Guid userId, AZOARequest? request = null);
 
     // Execution — produces an ActionRun (one execution attempt). Per the
     // action-temporal-fork-model track, runtime state lives on ActionRun +
@@ -57,13 +59,16 @@ public interface IActionManager
 
     // Templates
     Task<AZOAResult<ActionTemplate>> CreateTemplateAsync(ActionTemplateCreateModel model, Guid userId, AZOARequest? request = null);
-    Task<AZOAResult<ActionTemplate>> GetTemplateAsync(Guid id, AZOARequest? request = null);
-    Task<AZOAResult<IEnumerable<ActionTemplate>>> ListTemplatesAsync(AZOARequest? request = null);
+    /// <summary>Owner-or-public read of an action template; an unreadable one answers "not found".</summary>
+    Task<AZOAResult<ActionTemplate>> GetTemplateAsync(Guid id, Guid? callerUserId, AZOARequest? request = null);
+    /// <summary>Action templates the caller authored or that are public.</summary>
+    Task<AZOAResult<IEnumerable<ActionTemplate>>> ListTemplatesAsync(Guid? callerUserId, AZOARequest? request = null);
     Task<AZOAResult<ActionDefinition>> InstantiateTemplateAsync(Guid templateId, Guid userId, Dictionary<string, string>? parameters = null, AZOARequest? request = null);
 
     // Node Templates
     Task<AZOAResult<ActionNodeTemplate>> CreateNodeTemplateAsync(ActionNodeTemplateCreateModel model, Guid userId, AZOARequest? request = null);
-    Task<AZOAResult<IEnumerable<ActionNodeTemplate>>> ListNodeTemplatesAsync(AZOARequest? request = null);
+    /// <summary>Node templates the caller authored or that are public.</summary>
+    Task<AZOAResult<IEnumerable<ActionNodeTemplate>>> ListNodeTemplatesAsync(Guid? callerUserId, AZOARequest? request = null);
 
     // ── Action Nodes sub-resource (post-hoc CRUD on a persisted action) ──
     // Mutating the node set re-shapes the DAG; AddNodeAsync defers re-validation
@@ -136,11 +141,11 @@ public interface IActionManager
     /// leaves an indeterminate node parked.</summary>
     Task<AZOAResult<ActionReconciliationResult>> ReconcileRunAsync(Guid runId, Guid userId, AZOARequest? request = null);
 
-    /// <summary>Operator/background sweep: re-probe EVERY run currently parked in
-    /// <see cref="ActionRunStatus.AwaitingReconciliation"/>. Unscoped (operator
-    /// context) — the per-run re-probe is the same chain-truth logic as
-    /// <see cref="ReconcileRunAsync"/>. Returns one result per run swept.</summary>
-    Task<AZOAResult<IEnumerable<ActionReconciliationResult>>> SweepReconciliationAsync(AZOARequest? request = null);
+    /// <summary>Operator sweep: re-probe every run parked in
+    /// <see cref="ActionRunStatus.AwaitingReconciliation"/> (unscoped, same chain-truth logic as
+    /// <see cref="ReconcileRunAsync"/>). Returns the scanned count with one result per run
+    /// re-probed, so zero scanned is never reported as a successful sweep.</summary>
+    Task<AZOAResult<ActionReconciliationSweepResult>> SweepReconciliationAsync(AZOARequest? request = null);
 
     // ── Invitations + access requests (action-invitations-approval) ──
     // Run-authorization (RunAccess/InvitedUserIds) is orthogonal to IsPublic

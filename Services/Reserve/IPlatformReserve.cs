@@ -74,6 +74,15 @@ public interface IPlatformReserve
     /// </summary>
     Task<AZOAResult<ReserveDrawOutcome>> DrawAsync(
         ReserveDrawRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Units issued from <paramref name="request"/>'s partition come back to the reserve OWNED by
+    /// <paramref name="toPartition"/>: the source returns them and gives up the same budget, the
+    /// target's budget grows by it. Total declared supply is unchanged; replay-keyed like a draw.
+    /// See <c>Services/Reserve/AGENTS.md</c> §reattribution.
+    /// </summary>
+    Task<AZOAResult<ReserveDrawOutcome>> ReattributeReturnAsync(
+        ReserveDrawRequest request, string toPartition, CancellationToken ct = default);
 }
 
 /// <summary>Persistence seam for the reserve ledger; the Surreal implementation ships with the service.</summary>

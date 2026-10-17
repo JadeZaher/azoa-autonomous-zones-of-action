@@ -13,4 +13,9 @@ public interface IWttParticipantModule : IBlockchainProviderModule
     /// <summary>Verifies exact message and expected participant signature, returning a durable candidate for persistence before authorized submission.</summary>
     Task<AZOAResult<WttStagePreparation>> AcceptWttParticipantSignatureAsync(WttOperationIntent intent,
         WttStageQuote quote, WttParticipantPreparation prepared, string signedTransactionBase64, CancellationToken ct = default);
+
+    /// <summary>Observes a disclosed message the server never authorized: the participant's own landed signature, proven
+    /// expiry without effect, or pending (with resumable scan evidence).</summary>
+    Task<AZOAResult<WttExposedObservation>> ObserveExposedWttParticipantAsync(WttOperationIntent intent, WttStageQuote quote,
+        WttParticipantPreparation participant, string? previousEvidenceJson, CancellationToken ct = default);
 }

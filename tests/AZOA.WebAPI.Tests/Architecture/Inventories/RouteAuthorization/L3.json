@@ -46,5 +46,8 @@
   { "route": "POST api/admin/on-ramp-lots/intents/{intentId}/refund", "controller": "OnRampLotOperatorController", "action": "Refund", "class": "value-moving", "scope": "Operator", "enforcement": "Operator principal + reason; no-effect proof; provider evidence; financial limiter" },
   { "route": "GET api/admin/on-ramp-lots", "controller": "OnRampLotOperatorController", "action": "ListNeedingOperator", "class": "non-value", "scope": "Operator", "enforcement": "Operator policy" },
   { "route": "GET api/admin/on-ramp-lots/intents/{intentId}", "controller": "OnRampLotOperatorController", "action": "GetByIntent", "class": "non-value", "scope": "Operator", "enforcement": "Operator policy" },
-  { "route": "GET api/admin/on-ramp-lots/accounts/{userId}/issued", "controller": "OnRampLotOperatorController", "action": "ListIssuedForAccount", "class": "non-value", "scope": "Operator", "enforcement": "Operator policy" }
+  { "route": "GET api/admin/on-ramp-lots/accounts/{userId}/issued", "controller": "OnRampLotOperatorController", "action": "ListIssuedForAccount", "class": "non-value", "scope": "Operator", "enforcement": "Operator policy" },
+  {"route": "GET api/fiat/tenant-payout-balance", "controller": "TenantPayoutBalanceController", "action": "Get", "class": "non-value", "scope": "tenant principal (self) | ApiKey tenant:provision", "enforcement": "caller is the tenant; delegated acting-tenant refused"},
+  {"route": "POST api/fiat/tenant-payout-balance/top-up", "controller": "TenantPayoutBalanceController", "action": "TopUp", "class": "value-moving", "scope": "tenant principal (self) | ApiKey tenant:provision; KYB PayoutPriceSchedule", "enforcement": "server-built payout-float admission key; rail KYB gate; financial limiter"},
+  {"route": "GET api/admin/tenant-payout-floats/{tenantId}", "controller": "TenantPayoutOperatorController", "action": "Get", "class": "non-value", "scope": "Operator", "enforcement": "Operator policy"}
 ]

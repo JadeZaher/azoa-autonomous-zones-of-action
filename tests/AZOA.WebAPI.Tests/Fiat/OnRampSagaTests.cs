@@ -799,6 +799,9 @@ public class OnRampSagaTests
                     ? new List<RegisteredPriceSchedule> { schedule }
                     : new List<RegisteredPriceSchedule>()));
 
+        public Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>> ListLatestPerScopeAsync(
             string chainType, string assetId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>.Success(

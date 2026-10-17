@@ -15,19 +15,24 @@ public sealed partial class NftLifecycleService
         var row = await store.GetAsync(operationId, ct);
         if (row is null || row.ActorUserId != credential.ActorUserId.ToString("N")) return Refused("NFT operation not found.");
         var command = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!;
-        if (command.ActingTenantId != (credential.TenantId ?? Guid.Empty)) return Refused("NFT operation not found.");
+        // F-H12: the owner's own direct credential may take over a tenant-acting or workflow-admitted lifecycle.
+        var takeover = (credential.TenantId ?? Guid.Empty) == Guid.Empty
+            && (command.ActingTenantId != Guid.Empty || command.ActionAuthority is not null);
+        if (!takeover && command.ActingTenantId != (credential.TenantId ?? Guid.Empty)) return Refused("NFT operation not found.");
         var prior = NftActorContinuationIdentity.Read(row).SingleOrDefault(item => item.Request.RequestId == request.RequestId);
         if (prior is not null) return prior.Request == request && prior.Authority.Credential.ActorUserId == credential.ActorUserId
             ? AZOAResult<NftLifecycleView>.Success(View(row)) : Refused("The renewal request is bound to another lifecycle version.");
-        if (command.ActorAuthority?.Kind is not ("DirectJwt" or "DirectApiKey") || command.ActionAuthority is not null)
+        if (!takeover && (command.ActorAuthority?.Kind is not ("DirectJwt" or "DirectApiKey") || command.ActionAuthority is not null))
             return Refused("Workflow authority continues through its original run, not a direct renewal.");
+        if (!takeover && NftActorContinuationIdentity.TakenOver(row, command))
+            return Refused("The owner has taken this NFT operation over; the original tenant authority no longer continues it.");
         if (!NftActorContinuationIdentity.Continuable(row) || request.ExpectedVersion != row.Version || request.State != row.State
             || request.Stage != row.Stage || request.Generation != row.PreparationGeneration)
             return Refused("NFT stage changed; review its current state before renewing authority.");
         var wallet = await wallets.GetByIdAsync(command.ActorWalletId, ct);
         if (wallet.IsError || wallet.Result is null || wallet.Result.Address != command.ActorAddress)
             return Refused("The original requester wallet changed.");
-        var authority = await BindActorAsync(command.Actor, command.ActingTenantId, wallet.Result, row.Operation, credential, ct);
+        var authority = await BindActorAsync(command.Actor, takeover ? Guid.Empty : command.ActingTenantId, wallet.Result, row.Operation, credential, ct);
         if (authority is null) return Refused("Current requester authority is required to renew this NFT operation.");
         var renewal = new NftActorContinuation(request, authority, clock.GetUtcNow());
         row.ActorContinuationsJson = JsonSerializer.Serialize(NftActorContinuationIdentity.Read(row).Append(renewal));

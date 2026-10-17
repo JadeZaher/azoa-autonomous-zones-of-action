@@ -3,6 +3,7 @@
 -- Aggregate: BlockchainOperation (Models/BlockchainOperation.cs)
 -- Guardrail: G6 SCHEMAFULL, G2 idempotency unique index
 -- Note: Status values from OperationStatus constants; Parameters is Dictionary<string,string> stored as object.
+-- Note: D-3: NeedsOperator parks a client-signed transfer the chain cannot settle on its own (an unexpired Ethereum signature); see Services/Blockchain/AGENTS.md.
 -- Note: B3 review: operation_log_idempotency_key UNIQUE on option<string>. NONE rows do NOT collide (verified on SurrealDB 3.1.4) -- adapter MUST supply a non-NONE key on the claim path; api-safety-hardening §4 validator enforces this end-to-end.
 -- Note: D13: amount is a STRING of decimal base units, not a number. The domain type is RailAmount (BigInteger base units), so a numeric column would re-impose the 64-bit ceiling the widening removed -- an ordinary wei-denominated Ethereum amount does not fit in i64. Written via RailAmount.ToBaseUnitString(), read via RailAmount.TryParse.
 -- Note: W3.3: an allocation's caller-supplied Purpose, and an issuance's ReserveAddress / ReservePartition / AllocationKind, live as keys INSIDE the FLEXIBLE parameters object -- deliberately, not as columns. SurrealBlockchainOperationStore.ToRow is the only writer of this table and it maps the whole parameters bag; it does not map arbitrary new columns, so a dedicated purpose column would be schema that nothing ever fills. Add one only together with the ToRow mapping.
@@ -12,7 +13,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- OperationLog.StatusKind
-DEFINE PARAM IF NOT EXISTS $operation_log_status VALUE ["Pending", "Unknown", "Failed", "Completed", "AwaitingSignature", "PendingConfirmation", "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called"];
+DEFINE PARAM IF NOT EXISTS $operation_log_status VALUE ["Pending", "Unknown", "Failed", "Completed", "AwaitingSignature", "PendingConfirmation", "Minted", "Burned", "Exchanged", "Swapped", "Transferred", "Deployed", "Called", "NeedsOperator"];
 
 DEFINE TABLE IF NOT EXISTS operation_log SCHEMAFULL;
 

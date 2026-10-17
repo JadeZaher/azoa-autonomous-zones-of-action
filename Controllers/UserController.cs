@@ -145,11 +145,9 @@ public class UserController : ControllerBase
     public async Task<ActionResult<AZOAResult<IUser>>> AssignDappRole(
         Guid id, [FromBody] UserRoleAssignmentModel model)
     {
-        // Manager authority is the CURRENT dapp_role signal (the real ApiKey handler
-        // stamps this from the owner's live store role), NOT scope-or-role — so a
-        // stale-scope key whose owner was demoted cannot grant roles.
+        // Manager authority = current dapp_role AND (first-party login or an explicit dapp:manage key).
         var result = await _manager.AssignDappRoleAsync(
-            id, model.Role, ActingIsOperator(), User.HasDappManagerRole(), HttpContext.RequestAborted);
+            id, model.Role, ActingIsOperator(), User.CanAssignDappRoles(), HttpContext.RequestAborted);
 
         if (result.IsError)
             return result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true

@@ -80,6 +80,7 @@ public sealed class ValueRailCapabilityGateTests
             // ActionNodeStepHandler depends on the binding resolver (holon-path $from
             // resolution); register the pass-through fake so the scope can build it.
             services.AddSingleton(BindingResolverFakes.PassThrough());
+            services.AddSingleton(DurableActionExecutionHarness.OwnerSigningAuthority());
             services.AddScoped<IStepHandler<ActionStepPayload>, ActionNodeStepHandler>();
             services.AddScoped<IStepHandler<ActionCompensatePayload>, ActionCompensateStepHandler>();
 
@@ -193,7 +194,7 @@ public sealed class ValueRailCapabilityGateTests
         var transferNode = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -223,7 +224,7 @@ public sealed class ValueRailCapabilityGateTests
         var transferNode = action.Nodes[0];
 
         var manager = h.NewManager();
-        var run = await manager.ExecuteAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var run = await manager.ExecuteAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         run.IsError.Should().BeFalse(run.Message);
         var (legacyProcessor, legacyScope) = h.NewProcessor();
         await h.PumpAsync(legacyProcessor);
@@ -258,7 +259,7 @@ public sealed class ValueRailCapabilityGateTests
         var action = BuildLinearAction(h, ActionNodeType.Condition, "A", "B", "C");
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 
@@ -291,7 +292,7 @@ public sealed class ValueRailCapabilityGateTests
         var transferNode = action.Nodes[0];
 
         var manager = h.NewManager();
-        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, new AZOARequest { IdempotencyKey = Guid.NewGuid().ToString("N") });
+        var start = await manager.StartWorkflowRunAsync(action.Id, UserId, DurableActionExecutionHarness.Request(UserId));
         start.IsError.Should().BeFalse(start.Message);
         var runId = start.Result!.Id;
 

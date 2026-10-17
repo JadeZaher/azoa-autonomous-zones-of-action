@@ -3,7 +3,6 @@ using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Services.Actions;
 
-
 namespace AZOA.WebAPI.Helpers;
 
 /// <summary>Declares signing scope requirements from resolved immutable action input.</summary>
@@ -41,12 +40,15 @@ public static class ActionSigningScopes
             || config.Deployment is not { Target: not null } request) return null;
         if (request.Target.Kind == "PlatformRuntime") return request.NativeIntent is null ? [] : null;
         if (request.Target.Kind != "NativeContract" || request.NativeIntent is not { } intent) return null;
-        return intent.Kind switch
-        {
-            "Deploy" or "Recovery" => [AzoaScopes.ContractDeploySign],
-            "Call" => [AzoaScopes.ContractCallSign],
-            "Account" when string.Equals(intent.ChainType, "Solana", StringComparison.OrdinalIgnoreCase) => [AzoaScopes.SolanaAccountSign],
-            _ => null,
-        };
+        return ForNativeIntent(intent.Kind, intent.ChainType) is { } scope ? [scope] : null;
     }
+
+    /// <summary>The single signing scope a native deployment intent kind requires; null when the kind is unsupported on the chain.</summary>
+    public static string? ForNativeIntent(string? kind, string? chainType) => kind switch
+    {
+        "Deploy" or "Recovery" => AzoaScopes.ContractDeploySign,
+        "Call" => AzoaScopes.ContractCallSign,
+        "Account" when string.Equals(chainType, "Solana", StringComparison.OrdinalIgnoreCase) => AzoaScopes.SolanaAccountSign,
+        _ => null,
+    };
 }

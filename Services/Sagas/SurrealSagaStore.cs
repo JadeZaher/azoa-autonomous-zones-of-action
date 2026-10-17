@@ -431,7 +431,7 @@ public sealed class SurrealSagaStore : ISagaStore
         var surrealId = SurrealId.ToSurrealId(id);
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_pending, attempt_count = attempt_count + 1, next_run_at = $_next, claimed_at = NONE, last_error = $_error ?? NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_pending", StatusPending)
@@ -486,7 +486,7 @@ public sealed class SurrealSagaStore : ISagaStore
 
         // raw: lease-guarded compensation transition and enqueue share one transaction.
         var transition = SurrealQuery
-            .Of("LET $_transitioned = UPDATE type::record($_t, $_id) SET status = $_compensating, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
+            .Of("LET $_transitioned = UPDATE type::record($_t, $_id) SET status = $_compensating, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error ?? NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_compensating", StatusCompensating)
@@ -522,7 +522,7 @@ public sealed class SurrealSagaStore : ISagaStore
         var surrealId = SurrealId.ToSurrealId(id);
 
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_dead, dead_lettered = true, attempt_count = attempt_count + 1, claimed_at = NONE, last_error = $_error ?? NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_dead", StatusDeadLettered)
@@ -636,7 +636,7 @@ public sealed class SurrealSagaStore : ISagaStore
         // the operator reason on last_error for the audit trail. Idempotent: a
         // re-cancel of an already-Cancelled row matches zero rows.
         var q = SurrealQuery
-            .Of("UPDATE type::record($_t, $_id) SET status = $_cancelled, claimed_at = NONE, gate_id = NONE, last_error = $_reason, updated_at = $_now WHERE status INSIDE $_cancellable RETURN AFTER")
+            .Of("UPDATE type::record($_t, $_id) SET status = $_cancelled, claimed_at = NONE, gate_id = NONE, last_error = $_reason ?? NONE, updated_at = $_now WHERE status INSIDE $_cancellable RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", surrealId)
             .WithParam("_cancelled", StatusCancelled)
@@ -655,7 +655,7 @@ public sealed class SurrealSagaStore : ISagaStore
         string? output,
         DateTime nowUtc)
         => SurrealQuery
-            .Of("LET $_transitioned = UPDATE type::record($_t, $_id) SET status = $_completed, output = $_output, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
+            .Of("LET $_transitioned = UPDATE type::record($_t, $_id) SET status = $_completed, output = $_output ?? NONE, claimed_at = NONE, updated_at = $_now WHERE status = $_in_progress AND claimed_at = $_claimed_at RETURN AFTER")
             .WithParam("_t", TableName)
             .WithParam("_id", SurrealId.ToSurrealId(id))
             .WithParam("_completed", StatusCompleted)

@@ -17,6 +17,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 /// <summary>
@@ -50,7 +52,8 @@ public class BridgeKillSwitchTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = realValueEnabled }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         return (svc, bridgeStore, idempotencyStore);
     }
@@ -150,7 +153,8 @@ public class BridgeKillSwitchTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = false }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         var result = await svc.InitiateBridgeAsync(
             "SimChainA", "SimChainB", "tok1", "addr", Guid.NewGuid(), 1, BridgeMode.Trusted);
@@ -240,7 +244,8 @@ public class BridgeKillSwitchTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         var result = await svc.InitiateBridgeAsync(
             "Solana", "Algorand", "tok1", "addr", Guid.NewGuid(), 1, BridgeMode.Trusted);
@@ -318,7 +323,8 @@ public class BridgeKillSwitchTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = false }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         // Redeem must be refused before TryClaimAsync.
         var redeemResult = await svc.RedeemWithVAAAsync("wh_bridge_test");
@@ -382,7 +388,8 @@ public class BridgeKillSwitchTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = false }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         var routesOff = (await svcOff.GetSupportedRoutesAsync()).Result!.ToList();
 
@@ -407,7 +414,8 @@ public class BridgeKillSwitchTests
             Mock.Of<ILogger<CrossChainBridgeService>>(),
             Options.Create(new BridgeOptions { RealValueEnabled = true }),
             new ConfigurationBuilder().Build(),
-            new ApprovedRealValueKycGate());
+            new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
 
         var routesOn = (await svcOn.GetSupportedRoutesAsync()).Result!.ToList();
 

@@ -54,4 +54,12 @@ public sealed class SurrealWttStageKeyStore(ISurrealExecutor executor) : IWttSta
         return executor.QuerySingleAsync<WttStageKeyEnvelope>(SurrealQuery<WttStageKeyEnvelope>.From()
             .Where(row => !versions.Contains(row.KeyVersion)).Limit(1), ct);
     }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<WttStageKeyEnvelope>> FindNotOnVersionAsync(string activeVersion, int limit, CancellationToken ct = default)
+    {
+        if (limit is < 1 or > 500 || string.IsNullOrWhiteSpace(activeVersion)) return [];
+        return await executor.QueryAsync<WttStageKeyEnvelope>(SurrealQuery<WttStageKeyEnvelope>.From()
+            .Where(row => row.KeyVersion != activeVersion).OrderBy(row => row.Id).Limit(limit), ct);
+    }
 }

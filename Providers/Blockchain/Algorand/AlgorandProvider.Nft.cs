@@ -342,7 +342,7 @@ public partial class AlgorandProvider
         if (feeSigned.Tx is not PaymentTransaction payment || payment.Sender?.EncodeAsString() != authorization.ActorAddress
             || payment.Receiver?.EncodeAsString() != (fee?.Quote.TreasuryAddress ?? authorization.ActorAddress)
             || !ulong.TryParse(expectedAmount, NumberStyles.None, CultureInfo.InvariantCulture, out var amount)
-            || payment.Amount != amount || payment.CloseRemainderTo is not null || payment.RekeyTo is not null
+            || (payment.Amount ?? 0UL) != amount || payment.CloseRemainderTo is not null || payment.RekeyTo is not null
             || payment.Group is null || !payment.Group.Equals(transaction.Group) || payment.GenesisHash is null
             || !payment.GenesisHash.Equals(transaction.GenesisHash) || payment.FirstValid != transaction.FirstValid
             || payment.LastValid != transaction.LastValid || payment.Note is null || !payment.Note.AsSpan().SequenceEqual(transaction.Note)

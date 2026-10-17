@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using Algorand;
 using Algorand.Algod.Model.Transactions;
-using Algorand.Utils;
 using AZOA.WebAPI.Core.Blockchain;
 
 namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
@@ -71,11 +70,7 @@ internal static class TinymanSwapWire
         var result = new List<SignedTransaction>();
         for (var index = 0; index < expected.Count; index++)
         {
-            var signed = AlgorandSignedEnvelope.DecodeCanonical(envelopes[index]);
-            if (!Encoder.EncodeToMsgPackOrdered(signed.Tx).AsSpan().SequenceEqual(Encoder.EncodeToMsgPackOrdered(expected[index])))
-                throw new InvalidOperationException("Tinyman signed transaction differs from the admitted canonical group.");
-            AlgorandSignedEnvelope.RequireSingleSender(signed, parameters.Owner);
-            result.Add(signed);
+            result.Add(AlgorandSignedEnvelope.MatchExact(envelopes[index], expected[index], parameters.Owner));
         }
         return result;
     }

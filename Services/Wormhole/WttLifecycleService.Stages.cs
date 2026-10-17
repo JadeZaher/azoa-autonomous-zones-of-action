@@ -14,12 +14,22 @@ public sealed partial class WttLifecycleService
         long OperationVersion);
 
     /// <summary>Claims and prepares the next stage under current custody; optionally authorizes its first send.</summary>
-    public async Task<AZOAResult<WttOperationView>> ContinueAsync(string operationId, WttContinueCommand command,
+    public Task<AZOAResult<WttOperationView>> ContinueAsync(string operationId, WttContinueCommand command,
         SigningCredentialWitness credential, CancellationToken ct = default)
+        => ContinueCoreAsync(new(credential, null), operationId, command, ct);
+
+    /// <summary>Workflow continuation of the node's own operation under its frozen witness.</summary>
+    internal Task<AZOAResult<WttOperationView>> ContinueForWorkflowAsync(WorkflowSigningWitness witness, string operationId,
+        WttContinueCommand command, CancellationToken ct = default)
+        => ContinueCoreAsync(new(witness.Credential, witness), operationId, command, ct);
+
+    private async Task<AZOAResult<WttOperationView>> ContinueCoreAsync(WttPrincipal principal, string operationId, WttContinueCommand command,
+        CancellationToken ct)
     {
         if (command is null || command.ExpectedVersion < 0) return Changed<WttOperationView>();
-        var operation = await ReadOwnedAsync(operationId, credential, false, ct);
+        var operation = await ReadOwnedAsync(operationId, principal.Credential, false, ct);
         if (operation is null || operation.Version != command.ExpectedVersion) return Changed<WttOperationView>();
+        if (AuthorityMismatch(operation, principal) is { } mismatch) return Forbidden<WttOperationView>(mismatch);
         var intent = Intent(operation);
         if (operation.State is not ("Admitted" or "Ready" or "Active"))
             return Conflict<WttOperationView>("No participant step is available while the operation is " + operation.State + "; refresh its state.");
@@ -28,10 +38,10 @@ public sealed partial class WttLifecycleService
             await recovery.ReconcileAsync(operationId, ct);
             operation = (await store.GetAsync(operationId, ct))!;
             if (operation.State is not ("Admitted" or "Ready")) return AZOAResult<WttOperationView>.Success(await ProjectAsync(operation, ct));
-            await SealUnsentAsync(intent, await store.ReadStagesAsync(operationId, ct), ct);
+            await SealUnsentAsync(operation, await store.ReadStagesAsync(operationId, ct), ct);
             var next = await NextStageAsync(operationId, operation, intent, ct);
             if (next.IsError || next.Result is null) return AZOAResult<WttOperationView>.FailureWithCode(next.Message, next.Code ?? AzoaErrorCodes.Conflict);
-            var claimed = await ClaimAsync(operationId, operation, intent, next.Result, credential, ct);
+            var claimed = await ClaimAsync(operationId, operation, intent, next.Result, principal, ct);
             if (claimed.IsError) return AZOAResult<WttOperationView>.FailureWithCode(claimed.Message, claimed.Code ?? AzoaErrorCodes.Conflict);
             operation = (await store.GetAsync(operationId, ct))!;
         }
@@ -49,7 +59,7 @@ public sealed partial class WttLifecycleService
         }
         if (command.AuthorizeSubmission && current.State == "Prepared")
         {
-            var authorized = await AuthorizeCurrentAsync(operationId, operation, intent, current, credential, ct);
+            var authorized = await AuthorizeCurrentAsync(operationId, operation, intent, current, principal, ct);
             if (authorized.IsError) return AZOAResult<WttOperationView>.FailureWithCode(authorized.Message, authorized.Code ?? AzoaErrorCodes.Conflict);
         }
         return AZOAResult<WttOperationView>.Success(await ProjectAsync((await store.GetAsync(operationId, ct))!, ct));
@@ -63,7 +73,7 @@ public sealed partial class WttLifecycleService
         if (selected is null) return Changed<WttOperationView>();
         var (operation, stage) = selected.Value;
         if (stage.PreparedJson is null || stage.State is not ("Prepared" or "Exposed")) return Changed<WttOperationView>();
-        var authorized = await AuthorizeCurrentAsync(operationId, operation, Intent(operation), stage, credential, ct);
+        var authorized = await AuthorizeCurrentAsync(operationId, operation, Intent(operation), stage, new(credential, null), ct);
         return authorized.IsError ? AZOAResult<WttOperationView>.FailureWithCode(authorized.Message, authorized.Code ?? AzoaErrorCodes.Conflict)
             : AZOAResult<WttOperationView>.Success(await ProjectAsync((await store.GetAsync(operationId, ct))!, ct));
     }
@@ -145,7 +155,8 @@ public sealed partial class WttLifecycleService
         if (saved is null) return Changed<WttOperationView>();
         if (command.AuthorizeSubmission)
         {
-            var authorized = await AuthorizeCurrentAsync(operationId, (await store.GetAsync(operationId, ct))!, intent, saved, credential, ct);
+            var authorized = await AuthorizeCurrentAsync(operationId, (await store.GetAsync(operationId, ct))!, intent, saved,
+                new(credential, null), ct);
             if (authorized.IsError) return AZOAResult<WttOperationView>.FailureWithCode(authorized.Message, authorized.Code ?? AzoaErrorCodes.Conflict);
         }
         return AZOAResult<WttOperationView>.Success(await ProjectAsync((await store.GetAsync(operationId, ct))!, ct));
@@ -178,6 +189,7 @@ public sealed partial class WttLifecycleService
             if (operation.ProofsJson is null) return Conflict<NextStage>("The source publication is still awaiting verified guardian proof.");
             proofs = Read<WttTargetProofs>(operation.ProofsJson);
         }
+        var intentHash = IntentHashOf(operation);
         var admitted = phase == "Source" ? Read<WttStageQuote>(operation.SourceQuoteJson)
             : operation.TargetQuoteJson is { } targetQuote ? Read<WttStageQuote>(targetQuote) : null;
         var version = operation.Version;
@@ -203,7 +215,7 @@ public sealed partial class WttLifecycleService
             }
             if (fresh.IsError || fresh.Result is null) return Conflict<NextStage>(fresh.Message);
             quote = fresh.Result;
-            if (quote.IntentHash != operation.IntentHash || quote.Phase != phase || quote.ProtocolIdentity != network.ProtocolIdentity
+            if (quote.IntentHash != intentHash || quote.Phase != phase || quote.ProtocolIdentity != network.ProtocolIdentity
                 || quote.ExpiresAt <= now || quote.ExpiresAt > now.Add(MaximumOfferLifetime))
                 return Conflict<NextStage>("The continuation quote changed the frozen intent or its validity window.");
             if (!WithinBudget(phase == "Source" ? intent.SourceBudget : intent.TargetBudget, attempts, quote, confirmed))
@@ -230,9 +242,9 @@ public sealed partial class WttLifecycleService
     }
 
     private async Task<AZOAResult<WttOperationStage>> ClaimAsync(string operationId, WttOperation operation, WttOperationIntent intent,
-        NextStage next, SigningCredentialWitness credential, CancellationToken ct)
+        NextStage next, WttPrincipal principal, CancellationToken ct)
     {
-        var authority = await StageAuthorityAsync(intent, next.Phase, next.ParticipantAddress is not null, null, credential, ct);
+        var authority = await StageAuthorityAsync(intent, next.Phase, next.ParticipantAddress is not null, null, principal, ct);
         if (authority.IsError || authority.Result is null) return Forbidden<WttOperationStage>(authority.Message);
         var quoteJson = Canonical(next.Quote);
         var stage = new WttOperationStage
@@ -277,8 +289,8 @@ public sealed partial class WttLifecycleService
         {
             if (nonces is null)
             {
-                await store.RetireStageAsync(operationId, operation.Version, BareId(stage.Id), stage.Version, prepared.Message, ct);
-                await SealUnsentAsync(intent, await store.ReadStagesAsync(operationId, ct), ct);
+                await store.RetireStageAsync(operationId, operation.Version, BareId(stage.Id), stage.Version, prepared.Message, ct: ct);
+                await SealUnsentAsync((await store.GetAsync(operationId, ct))!, await store.ReadStagesAsync(operationId, ct), ct);
             }
             else await ResolveFailedReservationAsync(operationId, intent, stage, nonces, prepared.Message, ct);
             return Conflict<WttOperationStage>(string.IsNullOrWhiteSpace(prepared.Message)
@@ -290,12 +302,12 @@ public sealed partial class WttLifecycleService
     }
 
     private async Task<AZOAResult<WttOperationStage>> AuthorizeCurrentAsync(string operationId, WttOperation operation,
-        WttOperationIntent intent, WttOperationStage stage, SigningCredentialWitness credential, CancellationToken ct)
+        WttOperationIntent intent, WttOperationStage stage, WttPrincipal principal, CancellationToken ct)
     {
         string? originalPhase = null;
         if (stage.Phase == "Cleanup")
             originalPhase = stage.OriginalStageId is { } originalId ? (await store.GetStageAsync(originalId, ct))?.Phase : null;
-        var authority = await StageAuthorityAsync(intent, stage.Phase, stage.ParticipantAddress is not null, originalPhase, credential, ct);
+        var authority = await StageAuthorityAsync(intent, stage.Phase, stage.ParticipantAddress is not null, originalPhase, principal, ct);
         if (authority.IsError || authority.Result is null) return Forbidden<WttOperationStage>(authority.Message);
         var authorized = await store.AuthorizeAsync(operationId, operation.Version, BareId(stage.Id), stage.Version, authority.Result, ct);
         if (authorized is null) return Changed<WttOperationStage>();
@@ -304,8 +316,11 @@ public sealed partial class WttLifecycleService
     }
 
     private async Task<AZOAResult<WttStageAuthority>> StageAuthorityAsync(WttOperationIntent intent, string phase, bool participant,
-        string? originalPhase, SigningCredentialWitness credential, CancellationToken ct)
+        string? originalPhase, WttPrincipal principal, CancellationToken ct)
     {
+        var credential = principal.Credential;
+        if (principal.Workflow is not null && (participant || phase is "NativeOutput" or "Cleanup"))
+            return Forbidden<WttStageAuthority>("A workflow node signs only its source and target payer stages.");
         if (participant || phase == "NativeOutput")
         {
             var consent = await authorities.BindConsentAsync(credential, [AzoaScopes.WttParticipantSign], ct);
@@ -323,7 +338,7 @@ public sealed partial class WttLifecycleService
         if (owner is null) return Forbidden<WttStageAuthority>("No signing authority applies to this stage.");
         if (phase == "Cleanup" && credential.TenantId is not null)
             return Forbidden<WttStageAuthority>("Residual return requires the original owner's direct credential.");
-        var signing = await authorities.BindDirectAsync(credential, owner.Context.WalletId, network.ChainType, owner.Address, [scope], ct);
+        var signing = await BindSigningAsync(principal, owner.Context.WalletId, network.ChainType, owner.Address, scope, ct);
         return signing.IsError || signing.Result is null ? Forbidden<WttStageAuthority>(signing.Message)
             : AZOAResult<WttStageAuthority>.Success(new(scope, signing.Result, null));
     }
@@ -334,7 +349,8 @@ public sealed partial class WttLifecycleService
         if (command is null || command.ExpectedVersion < 0 || command.ExpectedStageVersion < 0
             || !WttOperationIdentity.IsCanonicalId(command.StageId)) return null;
         var operation = await ReadOwnedAsync(operationId, credential, false, ct);
-        if (operation is null || operation.CurrentStageId != command.StageId || !allowAnyVersion && operation.Version != command.ExpectedVersion)
+        if (operation is null || operation.CurrentStageId != command.StageId || !allowAnyVersion && operation.Version != command.ExpectedVersion
+            || operation.ActionRunId is not null)
             return null;
         var stage = await store.GetStageAsync(command.StageId, ct);
         return stage is null || stage.OperationId != operationId || stage.IntentHash != operation.IntentHash
@@ -350,23 +366,25 @@ public sealed partial class WttLifecycleService
         if (hold == WttNonceHold.Unsigned && await nonces.ReleaseUnsignedWttReservationAsync(intent, stage.Phase, stage.Stage, stage.Generation, ct))
             hold = WttNonceHold.None;
         if (hold != WttNonceHold.None || await store.GetAsync(operationId, ct) is not { } operation) return;
-        await store.RetireStageAsync(operationId, operation.Version, BareId(stage.Id), stage.Version, detail, ct);
+        await store.RetireStageAsync(operationId, operation.Version, BareId(stage.Id), stage.Version, detail, reservationProbedFree: true, ct);
     }
 
     /// <summary>Idempotently seals every never-sent retired or cancelled custodial generation.</summary>
-    private async Task SealUnsentAsync(WttOperationIntent intent, IReadOnlyList<WttOperationStage> stages, CancellationToken ct)
+    private async Task SealUnsentAsync(WttOperation operation, IReadOnlyList<WttOperationStage> stages, CancellationToken ct)
     {
         foreach (var stage in stages.Where(candidate => candidate.State is "Retired" or "Cancelled" && candidate.AuthorizedAt is null
             && candidate.ExposedAt is null))
-            await SealAsync(intent, stage, ct);
+            await SealAsync(operation, stage, ct);
     }
 
-    private async Task SealAsync(WttOperationIntent intent, WttOperationStage stage, CancellationToken ct)
+    private async Task SealAsync(WttOperation operation, WttOperationStage stage, CancellationToken ct)
     {
         if (stage.Phase is not ("Source" or "Target")) return;
-        var chain = stage.Phase == "Source" ? intent.Source.ChainType : intent.Target.ChainType;
-        if (chain == "Ethereum") return;
         var quote = Read<WttStageQuote>(stage.QuoteJson);
+        var intent = IntentFor(operation, quote.IntentHash);
+        var network = stage.Phase == "Source" ? intent.Source : intent.Target;
+        // A durable-nonce chain's signed candidate owns its nonce; its recovery layer resolves it, never a seal.
+        if (modules.Resolve<IWttNonceReservationModule>(network.ChainType, network.Network) is not null) return;
         var binding = new WttPreparationBinding(quote.ProtocolIdentity, intent.ActorUserId, intent.TenantId, intent.OperationId,
             stage.Phase, stage.Stage, stage.Generation, quote.IntentHash, quote.QuoteId);
         await preparations.SealAsync(WttPreparationIdentity.Id(binding), Canonical(binding), ct);
@@ -403,6 +421,15 @@ public sealed partial class WttLifecycleService
         return fee <= WttPayloadCodec.ParseAmount(budget.MaximumNetworkFee) && deposit <= WttPayloadCodec.ParseAmount(budget.MaximumLockedDeposit)
             && value <= WttPayloadCodec.ParseAmount(budget.MaximumValue);
     }
+
+    /// <summary>Refusal when a direct credential reaches a workflow-owned operation, or a workflow reaches another operation.</summary>
+    private static string? AuthorityMismatch(WttOperation operation, WttPrincipal principal)
+        => ActionOf(operation) != principal.Action
+            ? operation.ActionRunId is null ? "A workflow node can only continue the operation it admitted."
+                : "This operation's signing belongs to the workflow node that admitted it."
+            : operation.OwnerIntentJson is not null && principal.Credential.TenantId is not null
+                ? "The owner took over this transfer; only the owner's direct credential can continue it."
+                : null;
 
     private static string BareId(string id) => SurrealRecordGuid.BareId(id);
 }

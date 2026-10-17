@@ -231,17 +231,15 @@ public class ApiKeyController : ControllerBase
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
         var ok = await _store.RevokeAsync(id, userId, DateTime.UtcNow, HttpContext.RequestAborted);
-        if (!ok)
+        if (!ok && await _store.GetByIdForUserAsync(id, userId, HttpContext.RequestAborted) is not { IsActive: false })
             return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
         return Ok(new AZOAResult<object> { IsError = false, Message = "API key revoked." });
     }
 
     /// <summary>
-    /// Rotate an API key: mint a NEW key inheriting the old key's name, scopes, and
-    /// expiry window, revoke the old key, and return the new raw key ONCE (same shape
-    /// as Create). Scoped to (id, authenticated user) — a user may only rotate
-    /// its OWN key.
+    /// Rotate an ACTIVE, explicitly-scoped key whose scopes the caller may still self-issue: revoke it,
+    /// mint a successor with the same name, scopes and remaining expiry, and return the raw key once.
     /// </summary>
     [HttpPost("{id:guid}/rotate")]
     public async Task<IActionResult> Rotate(Guid id)
@@ -251,7 +249,19 @@ public class ApiKeyController : ControllerBase
             return Unauthorized(new AZOAResult<object> { IsError = true, Message = "User not authenticated." });
 
         var existing = await _store.GetByIdForUserAsync(id, userId, HttpContext.RequestAborted);
-        if (existing is null)
+        if (existing is null || !existing.IsActive || existing.RevokedAt is not null
+            || existing.ExpiresAt is { } expiry && expiry <= DateTime.UtcNow)
+            return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
+        var inherited = (existing.Scopes ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).ToList();
+        if (inherited.Count == 0)
+            return BadRequest(AZOAResult<object>.Failure("A legacy full-access key cannot be rotated; create a key with explicit scopes."));
+        var notIssuable = inherited.Where(scope => !User.CanSelfIssueApiKeyScope(scope)).ToList();
+        if (notIssuable.Count > 0)
+            return BadRequest(AZOAResult<object>.Failure(
+                $"The key carries scope(s) you may not issue on your own key: {string.Join(", ", notIssuable)}."));
+        // Revoke first: the active-key CAS makes a concurrent second rotate lose instead of minting two successors.
+        if (!await _store.RevokeAsync(id, userId, DateTime.UtcNow, HttpContext.RequestAborted))
             return NotFound(new AZOAResult<object> { IsError = true, Message = "API key not found." });
 
         var rawKey = ApiKeyAuthenticationHandler.GenerateRawKey();
@@ -270,12 +280,11 @@ public class ApiKeyController : ControllerBase
             KeyHash = keyHash,
             KeyPrefix = rawKey[..16],
             ExpiresAt = expiresAt,
-            Scopes = existing.Scopes,
+            Scopes = string.Join(',', inherited),
             AllowedOrigins = existing.AllowedOrigins,
         };
 
         await _store.CreateAsync(apiKey, HttpContext.RequestAborted);
-        await _store.RevokeAsync(id, userId, DateTime.UtcNow, HttpContext.RequestAborted);
 
         return Ok(new AZOAResult<CreateApiKeyResponse>
         {

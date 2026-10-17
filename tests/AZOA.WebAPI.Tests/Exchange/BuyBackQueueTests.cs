@@ -503,6 +503,10 @@ public sealed class BuyBackQueueTests
                     }),
             }));
 
+        public Task<AZOAResult<ReserveDrawOutcome>> ReattributeReturnAsync(
+            ReserveDrawRequest request, string toPartition, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<AZOAResult<ReserveDrawOutcome>> DrawAsync(
             ReserveDrawRequest request, CancellationToken ct = default)
         {

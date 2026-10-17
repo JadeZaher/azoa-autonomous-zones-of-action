@@ -1,11 +1,13 @@
-using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Models.Actions;
 
 namespace AZOA.WebAPI.Services.Actions.Handlers;
 
-/// <inheritdoc/>
-public sealed class RefundNodeHandler(INftLifecycleService lifecycle) : IActionNodeHandler
+/// <summary>
+/// Declares the NFT <see cref="ActionNodeType.Refund"/>; effects run only through <see cref="ActionNftOperationService"/>,
+/// which the registry wraps around this declaration (the direct body was unreachable and is pruned).
+/// </summary>
+public sealed class RefundNodeHandler : IActionNodeHandler
 {
     /// <inheritdoc/>
     public ActionNodeType NodeType => ActionNodeType.Refund;
@@ -13,27 +15,8 @@ public sealed class RefundNodeHandler(INftLifecycleService lifecycle) : IActionN
     public bool RequiresChainCapability => true;
 
     /// <inheritdoc/>
-    public async Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
-    {
-        if (!ActionNodeConfig.TryDeserialize<RefundNodeConfig>(context.Node.Config, nameof(ActionNodeType.Refund), out var cfg, out var error))
-            return ActionNodeResults.Invalid(error);
-        foreach (var (sourceId, execution) in context.AllRunExecutions)
-        {
-            var node = context.ActionDefinition.Nodes.FirstOrDefault(item => item.Id == sourceId);
-            if (execution.State != ActionNodeState.Succeeded || node?.NodeType != ActionNodeType.Transfer) continue;
-            if (!ActionNodeConfig.TryDeserialize<TransferNodeConfig>(node.Config, nameof(ActionNodeType.Transfer), out var transfer, out _)
-                || transfer.NftId != cfg.NftId) continue;
-            var originalId = NftLifecycleIdentity.ForRequest(context.ActingUserId, "Transfer", $"{context.RunId:N}:{sourceId:N}", context.ActingTenantId ?? Guid.Empty);
-            var result = await lifecycle.RefundAsync(context.ActingUserId, originalId, $"{context.RunId:N}:{context.NodeId:N}",
-                ct, context.ActingTenantId ?? Guid.Empty, cfg.Request.FeeAuthorization);
-            if (result.IsError || result.Result is null) return ActionNodeResults.Fail(result.Message);
-            if (result.Result.State != "Completed")
-                return ActionNodeResults.Fail($"NFT refund {result.Result.OperationId} is {result.Result.State}; resume this lifecycle after participant authorization.");
-            return ActionNodeResults.Ok(System.Text.Json.JsonSerializer.Serialize(result.Result), txHash: result.Result.TransactionId,
-                chainType: result.Result.FeeQuote?.ChainType);
-        }
-        return ActionNodeResults.Invalid("Refund requires a succeeded transfer of this exact NFT earlier in the same run.");
-    }
+    public Task<ActionNodeHandlerResult> HandleAsync(ActionNodeExecutionContext context, CancellationToken ct = default)
+        => Task.FromResult(ActionNodeResults.Invalid("NFT refunds run only through the durable NFT lifecycle admission."));
 }
 
 /// <summary>
