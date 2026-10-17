@@ -103,9 +103,10 @@ public sealed class IdentomatHttpTransport : IIdentomatHttpTransport
                 _logger.LogError(
                     "Identomat rate-limited the node on {Operation}; the shared budget is parked until the ban clears.",
                     operation);
+                // The documented block answers every request with 529 without acting on it.
                 return AZOAResult<TResponse>.FailureWithCode(
                     RateLimitedMessage,
-                    AzoaErrorCodes.DependencyUnavailable);
+                    HostedSessionFlow.ProviderRefusedCode);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -116,9 +117,12 @@ public sealed class IdentomatHttpTransport : IIdentomatHttpTransport
                     "Identomat {Operation} returned HTTP {StatusCode}.",
                     operation,
                     (int)response.StatusCode);
+                // 4xx is a definitive refusal (nothing created); 5xx stays uncertain. See Providers/Kyc/AGENTS.md §F-M1.
                 return AZOAResult<TResponse>.FailureWithCode(
                     DependencyMessage,
-                    AzoaErrorCodes.DependencyUnavailable);
+                    IsDefinitiveRefusal(response.StatusCode)
+                        ? HostedSessionFlow.ProviderRefusedCode
+                        : AzoaErrorCodes.DependencyUnavailable);
             }
 
             var parsed = await response.Content.ReadFromJsonAsync<TResponse>(Json, cts.Token);
@@ -145,4 +149,8 @@ public sealed class IdentomatHttpTransport : IIdentomatHttpTransport
                 AzoaErrorCodes.DependencyUnavailable);
         }
     }
+
+    /// <summary>A 4xx answer means the vendor refused the request outright, so no session exists.</summary>
+    public static bool IsDefinitiveRefusal(HttpStatusCode status)
+        => (int)status is >= 400 and <= 499;
 }

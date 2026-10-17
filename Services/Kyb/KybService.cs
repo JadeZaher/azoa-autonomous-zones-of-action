@@ -109,6 +109,9 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
         if (session.IsError || session.Result is null || session.Result.TenantId != tenantId.ToString("N")
             || session.Result.AdmissionKey != verification.AdmissionKey)
             return AZOAResult<KybStatusResponse?>.FailureWithCode("Business verification could not be refreshed.", AzoaErrorCodes.DependencyUnavailable);
+        // No vendor session is attached yet (creation in flight or awaiting operator reconciliation): nothing to re-fetch.
+        if (string.IsNullOrWhiteSpace(session.Result.ProviderSessionId))
+            return status;
         id = Guid.Parse(session.Result.Id);
         var refreshed = await flow.RefreshAsync(provider, id, ct);
         if (refreshed.IsError)

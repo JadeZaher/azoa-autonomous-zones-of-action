@@ -40,6 +40,9 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
     /// <summary>Provider guarantees that no external create request was sent.</summary>
     public const string RequestNotSentCode = "PROVIDER_REQUEST_NOT_SENT";
 
+    /// <summary>The provider definitively refused the request (4xx, rate-limit block): nothing was created.</summary>
+    public const string ProviderRefusedCode = "PROVIDER_REQUEST_REFUSED";
+
     private const int MaxCallbackBodyBytes = 65536;
 
     private readonly IHostedSessionStore _store;
@@ -159,18 +162,26 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         var created = await provider.CreateHostedSessionAsync(request, ct);
         if (created.IsError || created.Result is null)
         {
-            if (created.Code == RequestNotSentCode)
+            // Unsent or definitively refused: no provider session exists, so the admission is released.
+            var nothingCreated = created.Code is RequestNotSentCode or ProviderRefusedCode;
+            if (nothingCreated)
                 await _store.ReleaseUnsentAdmissionAsync(ParseId(session.Id), candidate.CreationToken!, ct);
             else
                 _logger.LogWarning(
                 "Provider session creation failed for {FlowKind}/{ProviderKey}; the admission claim requires reconciliation.",
                 request.FlowKind,
                 provider.ProviderKey);
-            return AZOAResult<HostedSessionStartResult>.FailureWithCode(
-                created.Code == RequestNotSentCode
+            return new AZOAResult<HostedSessionStartResult>
+            {
+                IsError = true,
+                Message = nothingCreated
                     ? created.Message
                     : "NeedsOperator: the provider request outcome is uncertain and requires reconciliation.",
-                created.Code == RequestNotSentCode ? AzoaErrorCodes.DependencyUnavailable : AzoaErrorCodes.Conflict);
+                Code = !nothingCreated ? AzoaErrorCodes.Conflict
+                    : created.RetryAfterSeconds is > 0 ? AzoaErrorCodes.OperationNotAllowed
+                    : AzoaErrorCodes.DependencyUnavailable,
+                RetryAfterSeconds = created.RetryAfterSeconds,
+            };
         }
 
         var attached = await _store.TryAttachProviderSessionAsync(

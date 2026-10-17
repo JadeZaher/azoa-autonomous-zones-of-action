@@ -39,7 +39,7 @@ public sealed class IdentomatScreeningTests
             ArgumentError = IdentomatScreeningService.AlreadyExistsArgumentError,
         });
         var result = await NewService(transport, store).RegisterMonitorAsync(
-            user, null, "John Doe", null, lineageKey: "attempt-current");
+            user, null, "John Doe", null, "attempt-current");
         result.IsError.Should().BeFalse();
         result.Result!.ProviderMonitorId.Should().Be("monitor-shared");
         result.Result.LineageKey.Should().Be("attempt-current");
@@ -69,7 +69,7 @@ public sealed class IdentomatScreeningTests
         // The vendor's own dedup guard. Treating it as an error would make a retry
         // look like a broken integration and could unregister a live monitor.
         var store = new InMemoryKycScreeningStore();
-        var existing = store.SeedMonitor("John Doe", "1980-11-07T13:07:59.790Z", "monitor-abc");
+        var existing = store.SeedMonitor("John Doe", "1980-11-07T13:07:59.790Z", "monitor-abc", lineageKey: "attempt-test");
         var transport = new FakeTransport();
         transport.OnMonitorRegister(new IdentomatMonitorRegisterResponse
         {
@@ -78,7 +78,7 @@ public sealed class IdentomatScreeningTests
         var service = NewService(transport, store);
 
         var registered = await service.RegisterMonitorAsync(
-            Guid.NewGuid(), null, "John Doe", "1980-11-07T13:07:59.790Z");
+            Guid.NewGuid(), null, "John Doe", "1980-11-07T13:07:59.790Z", "attempt-test");
 
         registered.IsError.Should().BeFalse("already-exists is the vendor confirming the monitor is live");
         registered.Result!.ProviderMonitorId.Should().Be(existing.ProviderMonitorId);
@@ -98,7 +98,7 @@ public sealed class IdentomatScreeningTests
         var service = NewService(transport, new InMemoryKycScreeningStore());
 
         var registered = await service.RegisterMonitorAsync(
-            Guid.NewGuid(), null, "John Doe", null);
+            Guid.NewGuid(), null, "John Doe", null, "attempt-test");
 
         registered.IsError.Should().BeTrue();
         registered.Code.Should().Be(AzoaErrorCodes.Conflict);
@@ -115,7 +115,7 @@ public sealed class IdentomatScreeningTests
         var service = NewService(transport, store);
 
         await service.RegisterMonitorAsync(
-            Guid.NewGuid(), null, "  John Doe  ", " 1980-11-07T13:07:59.790Z ");
+            Guid.NewGuid(), null, "  John Doe  ", " 1980-11-07T13:07:59.790Z ", "attempt-test");
 
         var saved = store.SavedMonitors.Should().ContainSingle().Subject;
         saved.QueryFullName.Should().Be("John Doe");
@@ -140,7 +140,7 @@ public sealed class IdentomatScreeningTests
         });
         var service = NewService(transport, new InMemoryKycScreeningStore());
 
-        var registered = await service.RegisterMonitorAsync(Guid.NewGuid(), null, "John Doe", null);
+        var registered = await service.RegisterMonitorAsync(Guid.NewGuid(), null, "John Doe", null, "attempt-test");
 
         registered.IsError.Should().BeTrue();
         registered.Code.Should().Be(AzoaErrorCodes.InvalidRequest);
@@ -437,7 +437,7 @@ public sealed class IdentomatScreeningTests
         var service = NewService(transport, store);
 
         var registered = await service.RegisterMonitorAsync(
-            Guid.NewGuid(), tenantB, "John Doe", "1980-11-07T13:07:59.790Z");
+            Guid.NewGuid(), tenantB, "John Doe", "1980-11-07T13:07:59.790Z", "attempt-test");
 
         registered.IsError.Should().BeFalse(registered.Message);
         registered.Result!.Id.Should().NotBe(seeded.Id, "tenant B must get its OWN row");
@@ -458,7 +458,7 @@ public sealed class IdentomatScreeningTests
         transport.OnMonitorRegister(new IdentomatMonitorRegisterResponse { Result = "monitor-xyz" });
         var service = NewService(transport, store);
 
-        await service.RegisterMonitorAsync(Guid.NewGuid(), tenantId, "John Doe", null);
+        await service.RegisterMonitorAsync(Guid.NewGuid(), tenantId, "John Doe", null, "attempt-test");
 
         var saved = store.SavedMonitors.Should().ContainSingle().Subject;
         saved.TenantScope.Should().Be(tenantId.ToString("N"),

@@ -25,15 +25,17 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
     private const string TenantPredicate =
         "(($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE))";
 
-    private const string EraseSubjectQuery =
-        "BEGIN TRANSACTION; UPDATE type::table($_result_t) SET query_full_name = NONE, query_birthday_time_from = NONE,"
+    private const string EraseResultsStatement =
+        "UPDATE type::table($_result_t) SET query_full_name = NONE, query_birthday_time_from = NONE,"
         + " erased_at = $_erased_at, erasure_reason = $_reason, modified_date = $_erased_at"
         + " WHERE subject_user_id INSIDE $_users AND " + TenantPredicate + " AND erased_at = NONE"
-        + " RETURN VALUE id;"
-        + " UPDATE type::table($_monitor_t) SET query_full_name = NONE, query_birthday_time_from = NONE,"
+        + " RETURN VALUE id";
+
+    private const string EraseMonitorsStatement =
+        "UPDATE type::table($_monitor_t) SET query_full_name = NONE, query_birthday_time_from = NONE,"
         + " erased_at = $_erased_at, erasure_reason = $_reason, modified_date = $_erased_at"
         + " WHERE subject_user_id INSIDE $_users AND " + TenantPredicate + " AND erased_at = NONE"
-        + " RETURN VALUE id; COMMIT TRANSACTION;";
+        + " RETURN VALUE id";
 
     private readonly ISurrealExecutor _executor;
     private readonly ILogger<SurrealKycScreeningStore> _logger;
@@ -295,9 +297,12 @@ public sealed class SurrealKycScreeningStore : IKycScreeningStore
         // Explicit SET: the verdict, the provider ids, the scope, and the audit
         // timestamps survive. Only the two retained personal fields are tombstoned.
         // raw: atomically erase both AML tables; see AGENTS.md AML persistence.
-        var statements = EraseSubjectQuery.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(SurrealQuery.Of).ToList();
-        statements.Insert(1, KycEvidenceFence.Create(userIds, tenantId?.ToString("N")));
-        var query = SurrealQuery.Combine(statements.ToArray())
+        var query = SurrealQuery.Combine(
+                SurrealQuery.Of("BEGIN TRANSACTION"),
+                KycEvidenceFence.Create(userIds, tenantId?.ToString("N")),
+                SurrealQuery.Of(EraseResultsStatement),
+                SurrealQuery.Of(EraseMonitorsStatement),
+                SurrealQuery.Of("COMMIT TRANSACTION"))
             .WithParam("_result_t", KycScreeningResult.SchemaNameConst)
             .WithParam("_monitor_t", KycScreeningMonitor.SchemaNameConst)
             .WithParam("_users", links)

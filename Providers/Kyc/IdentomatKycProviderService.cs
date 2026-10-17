@@ -188,9 +188,13 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             ct);
         if (started.IsError || started.Result is null)
         {
-            return AZOAResult<KycSessionStartModel>.FailureWithCode(
-                started.Message,
-                started.Code ?? AzoaErrorCodes.DependencyUnavailable);
+            return new AZOAResult<KycSessionStartModel>
+            {
+                IsError = true,
+                Message = started.Message,
+                Code = started.Code ?? AzoaErrorCodes.DependencyUnavailable,
+                RetryAfterSeconds = started.RetryAfterSeconds,
+            };
         }
 
         return AZOAResult<KycSessionStartModel>.Success(new KycSessionStartModel
@@ -278,8 +282,13 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             return AZOAResult<HostedSessionCreation>.Failure(capabilities.UnavailableReason!);
 
         if (!_quota.TryConsume(request.TenantId, KycQuotaOperation.BeginSession))
-            return AZOAResult<HostedSessionCreation>.FailureWithCode(
-                "This tenant's KYC begin-session quota is exhausted.", HostedSessionFlow.RequestNotSentCode);
+            return new AZOAResult<HostedSessionCreation>
+            {
+                IsError = true,
+                Message = "This tenant's KYC begin-session quota is exhausted.",
+                Code = HostedSessionFlow.RequestNotSentCode,
+                RetryAfterSeconds = Math.Max(1, _quota.RetryAfterSeconds),
+            };
         var body = new IdentomatBeginRequestWithSessionOverrides
         {
             CompanyKey = _settings.CompanyKey!.Trim(),

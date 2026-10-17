@@ -14,7 +14,6 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
-using AZOA.WebAPI.Services.Bridge;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 using AZOA.WebAPI.Tests.TestSupport;
@@ -163,7 +162,7 @@ public sealed class KycAmlValueGateTests
         screening.SeedResult(userId, null, KycScreeningDecision.HIT, lineageKey: ApprovalLineage);
         var store = StoreWithCurrentApproval(userId);
 
-        var gate = new RealValueKycGate(
+        var gate = new KycGateService(
             store,
             screening,
             ReadyProvider(),
@@ -177,7 +176,7 @@ public sealed class KycAmlValueGateTests
     public async Task RealValueGate_WithNoScreening_StaysShut()
     {
         var userId = Guid.NewGuid();
-        var gate = new RealValueKycGate(
+        var gate = new KycGateService(
             StoreWithCurrentApproval(userId),
             new InMemoryKycScreeningStore(),
             ReadyProvider(),
@@ -514,8 +513,8 @@ public sealed class KycAmlValueGateTests
             Guid? tenantId,
             string fullName,
             string? birthdayTimeFrom,
-            CancellationToken ct = default,
-            string? lineageKey = null)
+            string lineageKey,
+            CancellationToken ct = default)
         {
             MonitorCount++;
             order?.Record("monitor");

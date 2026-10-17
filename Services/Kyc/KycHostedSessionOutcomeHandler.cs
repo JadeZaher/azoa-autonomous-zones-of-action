@@ -99,7 +99,9 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
             _logger.LogError(
                 "Hosted session {SessionId} resolved an active KYC attempt that belongs to another session; refusing to terminalize it.",
                 session.Id);
-            if (submission.ProviderSessionId != session.Id && submission.SubmittedAt > session.CreatedDate)
+            // The open attempt belongs to another session: this session's own attempt is retired or
+            // superseded, so it terminalizes with no identity effect instead of retrying forever.
+            if (!string.Equals(submission.ProviderSessionId?.Trim(), session.Id?.Trim(), StringComparison.OrdinalIgnoreCase))
                 return AZOAResult<string?>.Success(null);
             if (MatchesSession(submission, session) && submission.ExpiresAt <= now)
                 return AZOAResult<string?>.Success(null);
@@ -240,8 +242,8 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
             tenantId,
             fullName,
             subject.Birthday,
-            ct,
-            lineageKey: lineageKey);
+            lineageKey,
+            ct);
         return registered;
     }
 

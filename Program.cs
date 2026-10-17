@@ -1275,8 +1275,8 @@ builder.Services.AddScoped<AZOA.WebAPI.Services.Kyc.IIdentomatScreeningService,
     AZOA.WebAPI.Services.Kyc.IdentomatScreeningService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyc.IdentomatKycProviderService>();
 // Cold poll for AML ongoing monitoring. There is NO push channel for monitoring at
-// all, so this worker is the only change-detection path; it self-disables unless
-// Kyc:Identomat:Screening:MonitorPollEnabled is set.
+// all, so this worker is the only change-detection path; it runs wherever an Identomat
+// config id is set unless Kyc:Identomat:Screening:MonitorPollEnabled is false.
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Kyc.KycScreeningMonitorPollWorker>();
 // PII retention/erasure sweep. Without this registration the retention window is
 // decorative: nothing ever expires a KYC identity record (GDPR Art. 17 vs the
@@ -1684,7 +1684,7 @@ builder.Services.AddOptions<AZOA.WebAPI.Services.Bridge.BridgeOptions>()
     .Bind(builder.Configuration.GetSection(
         AZOA.WebAPI.Services.Bridge.BridgeOptions.SectionName));
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.IRealValueKycGate,
-    AZOA.WebAPI.Services.Bridge.RealValueKycGate>();
+    AZOA.WebAPI.Services.Kyc.KycGateService>();
 // CrossChainBridgeService takes IBridgeProtocol<WormholeVAA>; this registers the
 // protocol implementations that satisfy it. Registered by request of the bridge
 // agent, which owns the extension itself (Services/Bridge/BridgeProtocolServiceCollectionExtensions.cs).

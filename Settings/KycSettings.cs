@@ -206,8 +206,8 @@ public sealed class IdentomatScreeningSettings
     /// <summary>Minutes between batched monitoring polls; clamped to 5-1440.</summary>
     public int MonitorPollIntervalMinutes { get; set; } = 60;
 
-    /// <summary>Enables the cold-poll monitoring worker. Off unless an operator opts in.</summary>
-    public bool MonitorPollEnabled { get; set; }
+    /// <summary>Cold-poll monitoring switch; unset means on wherever an Identomat config id is set (plan A-4).</summary>
+    public bool? MonitorPollEnabled { get; set; }
 
     /// <summary>Maximum pages walked per poll cycle; bounds the shared rate budget.</summary>
     public int MonitorPollMaxPagesPerCycle { get; set; } = 10;

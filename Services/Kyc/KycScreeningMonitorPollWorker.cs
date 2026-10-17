@@ -26,6 +26,7 @@ public sealed class KycScreeningMonitorPollWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IdentomatScreeningSettings _settings;
+    private readonly bool _enabled;
     private readonly ILogger<KycScreeningMonitorPollWorker> _logger;
 
     public KycScreeningMonitorPollWorker(
@@ -35,15 +36,16 @@ public sealed class KycScreeningMonitorPollWorker : BackgroundService
     {
         _scopeFactory = scopeFactory;
         _settings = options.Value.Identomat.Screening;
+        _enabled = _settings.MonitorPollEnabled ?? !string.IsNullOrWhiteSpace(options.Value.Identomat.ConfigId);
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_settings.MonitorPollEnabled)
+        if (!_enabled)
         {
             _logger.LogInformation(
-                "AML monitoring poll is disabled; set Kyc:Identomat:Screening:MonitorPollEnabled to enable it.");
+                "AML monitoring poll is off: no Identomat config id is set, or Kyc:Identomat:Screening:MonitorPollEnabled is false.");
             return;
         }
 

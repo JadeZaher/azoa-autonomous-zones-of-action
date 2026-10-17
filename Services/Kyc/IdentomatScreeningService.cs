@@ -38,8 +38,8 @@ public interface IIdentomatScreeningService
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
-        CancellationToken ct = default,
-        string? lineageKey = null);
+        string lineageKey,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Unregisters one tenant's monitoring. The upstream registration is removed only
@@ -183,13 +183,16 @@ public sealed class IdentomatScreeningService : IIdentomatScreeningService
         Guid? tenantId,
         string fullName,
         string? birthdayTimeFrom,
-        CancellationToken ct = default,
-        string? lineageKey = null)
+        string lineageKey,
+        CancellationToken ct = default)
     {
         if (!IsConfigured)
             return AZOAResult<KycScreeningMonitor>.Failure(UnconfiguredMessage);
         if (string.IsNullOrWhiteSpace(fullName))
             return AZOAResult<KycScreeningMonitor>.Failure("A full name is required to monitor.");
+        // A NONE lineage_key escapes UNIQUE kyc_screening_monitor_query; see Services/Kyc/AGENTS.md.
+        if (string.IsNullOrWhiteSpace(lineageKey))
+            return AZOAResult<KycScreeningMonitor>.Failure("An attempt lineage key is required to monitor.");
         if (!_quota.TryConsume(tenantId, KycQuotaOperation.Screening))
         {
             return new AZOAResult<KycScreeningMonitor>
