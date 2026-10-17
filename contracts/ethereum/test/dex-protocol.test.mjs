@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import ganache from 'ganache';
+import { localChain } from '../scripts/hardhat-network.mjs';
 import solc from 'solc';
 import { AbiCoder, BrowserProvider, ContractFactory, NonceManager, Wallet, ZeroAddress, keccak256, toUtf8Bytes } from 'ethers';
 
@@ -29,66 +29,64 @@ function tokenArtifact(name = 'DexTestToken') {
 }
 
 async function fixture() {
-  const rpc = ganache.provider({ logging: { quiet: true }, chain: { chainId: 31337, hardfork: 'shanghai' }, wallet: { totalAccounts: 5, defaultBalance: 1000 } });
-  try {
-    const provider = new BrowserProvider(rpc);
-    assert.equal((await provider.getNetwork()).chainId, 31337n);
-    const wallets = Object.values(rpc.getInitialAccounts()).map(account => new Wallet(account.secretKey, provider));
-    const senders = wallets.map(wallet => new NonceManager(wallet));
-    const deploy = async (artifact, args = []) => {
-      const contract = await new ContractFactory(artifact.abi, artifact.bytecode, senders[0]).deploy(...args);
-      await contract.waitForDeployment(); return contract;
-    };
-    const wethBytes = fs.readFileSync(path.join(root, 'test/fixtures/WETH9.json'));
-    assert.equal(createHash('sha256').update(wethBytes).digest('hex'), '67f36a6b7174cc41af5e6e2bcf393d5da253c380c8de72becbe8c3173e34c8da');
-    const weth = await deploy(JSON.parse(wethBytes.toString('utf8')));
-    const factory = await deploy(json('node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json'));
-    const router = await deploy(json('node_modules/@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json'), [await factory.getAddress(), await weth.getAddress()]);
-    const quoter = await deploy(json('node_modules/@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json'), [await factory.getAddress(), await weth.getAddress()]);
-    const positions = await deploy(json('node_modules/@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json'),
-      [await factory.getAddress(), await weth.getAddress(), ZeroAddress]);
-    const token = tokenArtifact();
-    const input = await deploy(token); const output = await deploy(token);
-    for (const asset of [input, output]) {
-      await (await asset.mint(wallets[0].address, 10n ** 24n)).wait();
-      await (await asset.mint(wallets[1].address, 10n ** 22n)).wait();
-    }
-    await (await weth.deposit({ value: 100n * 10n ** 18n })).wait();
-    const addPool = async (left, right) => {
-      const addresses = [await left.getAddress(), await right.getAddress()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
-      await (await positions.createAndInitializePoolIfNecessary(addresses[0], addresses[1], 3000, 1n << 96n)).wait();
-      const liquidityAmount = 20n * 10n ** 18n;
-      for (const asset of [left, right]) await (await asset.approve(await positions.getAddress(), liquidityAmount)).wait();
-      await (await positions.mint({ token0: addresses[0], token1: addresses[1], fee: 3000, tickLower: -887220, tickUpper: 887220,
-        amount0Desired: liquidityAmount, amount1Desired: liquidityAmount, amount0Min: 0, amount1Min: 0,
-        recipient: wallets[0].address, deadline: 4102444800 })).wait();
-      return factory.getPool(addresses[0], addresses[1], 3000);
-    };
-    const tokenPool = await addPool(input, output);
-    const nativePool = await addPool(input, weth);
-    const executor = await deploy(json('artifacts/AzoaDexExecutor.json'),
-      [await router.getAddress(), await factory.getAddress(), await weth.getAddress(), wallets[4].address, policyVersion]);
-    const domain = { name: 'AZOA DEX', version: '1', chainId: 31337, verifyingContract: await executor.getAddress() };
-    const encode = e => AbiCoder.defaultAbiCoder().encode([tuple], [e]);
-    const permit = async (e, signingDomain = domain, signer = wallets[4]) => {
-      const payload = encode(e);
-      return [payload, await signer.signTypedData(signingDomain, types, { payloadHash: keccak256(payload) })];
-    };
-    const effect = async (overrides = {}) => {
-      const tokenIn = await input.getAddress(); const tokenOut = await output.getAddress();
-      return { operation: keccak256(toUtf8Bytes('operation-' + randomUUID())), quoteHash: keccak256(toUtf8Bytes('persisted-fixture-quote')),
-        owner: wallets[1].address, recipient: wallets[2].address, tokenIn, tokenOut, pool: tokenPool, treasury: wallets[3].address,
-        grossInput: 10n ** 17n, platformFee: 10n ** 14n, minimumOutput: 1n, poolFee: 3000,
-        deadline: 4102444800n, feeRevision: 1n, policyKeyVersion: policyVersion,
-        inputCodeHash: keccak256(await provider.getCode(tokenIn)), outputCodeHash: keccak256(await provider.getCode(tokenOut)),
-        nativeInput: false, nativeOutput: false, ...overrides };
-    };
-    const execute = async e => {
-      const args = await permit(e);
-      return (await executor.connect(senders[1]).execute(...args, { value: e.nativeInput ? e.grossInput : 0, gasLimit: 3_000_000 })).wait();
-    };
-    return { rpc, provider, wallets, senders, input, output, weth, factory, router, quoter, positions, executor, nativePool, domain, permit, effect, execute, deploy };
-  } catch (error) { await rpc.disconnect(); throw error; }
+  const { provider: rpc, keys } = await localChain({ totalAccounts: 5, balanceEther: 1000 });
+  const provider = new BrowserProvider(rpc);
+  assert.equal((await provider.getNetwork()).chainId, 31337n);
+  const wallets = keys.map(key => new Wallet(key, provider));
+  const senders = wallets.map(wallet => new NonceManager(wallet));
+  const deploy = async (artifact, args = []) => {
+    const contract = await new ContractFactory(artifact.abi, artifact.bytecode, senders[0]).deploy(...args);
+    await contract.waitForDeployment(); return contract;
+  };
+  const wethBytes = Buffer.from(fs.readFileSync(path.join(root, 'test/fixtures/WETH9.json'), 'utf8').replace(/\r\n/g, '\n'), 'utf8');
+  assert.equal(createHash('sha256').update(wethBytes).digest('hex'), '67f36a6b7174cc41af5e6e2bcf393d5da253c380c8de72becbe8c3173e34c8da');
+  const weth = await deploy(JSON.parse(wethBytes.toString('utf8')));
+  const factory = await deploy(json('node_modules/@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json'));
+  const router = await deploy(json('node_modules/@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json'), [await factory.getAddress(), await weth.getAddress()]);
+  const quoter = await deploy(json('node_modules/@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json'), [await factory.getAddress(), await weth.getAddress()]);
+  const positions = await deploy(json('node_modules/@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json'),
+    [await factory.getAddress(), await weth.getAddress(), ZeroAddress]);
+  const token = tokenArtifact();
+  const input = await deploy(token); const output = await deploy(token);
+  for (const asset of [input, output]) {
+    await (await asset.mint(wallets[0].address, 10n ** 24n)).wait();
+    await (await asset.mint(wallets[1].address, 10n ** 22n)).wait();
+  }
+  await (await weth.deposit({ value: 100n * 10n ** 18n })).wait();
+  const addPool = async (left, right) => {
+    const addresses = [await left.getAddress(), await right.getAddress()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+    await (await positions.createAndInitializePoolIfNecessary(addresses[0], addresses[1], 3000, 1n << 96n)).wait();
+    const liquidityAmount = 20n * 10n ** 18n;
+    for (const asset of [left, right]) await (await asset.approve(await positions.getAddress(), liquidityAmount)).wait();
+    await (await positions.mint({ token0: addresses[0], token1: addresses[1], fee: 3000, tickLower: -887220, tickUpper: 887220,
+      amount0Desired: liquidityAmount, amount1Desired: liquidityAmount, amount0Min: 0, amount1Min: 0,
+      recipient: wallets[0].address, deadline: 4102444800 })).wait();
+    return factory.getPool(addresses[0], addresses[1], 3000);
+  };
+  const tokenPool = await addPool(input, output);
+  const nativePool = await addPool(input, weth);
+  const executor = await deploy(json('artifacts/AzoaDexExecutor.json'),
+    [await router.getAddress(), await factory.getAddress(), await weth.getAddress(), wallets[4].address, policyVersion]);
+  const domain = { name: 'AZOA DEX', version: '1', chainId: 31337, verifyingContract: await executor.getAddress() };
+  const encode = e => AbiCoder.defaultAbiCoder().encode([tuple], [e]);
+  const permit = async (e, signingDomain = domain, signer = wallets[4]) => {
+    const payload = encode(e);
+    return [payload, await signer.signTypedData(signingDomain, types, { payloadHash: keccak256(payload) })];
+  };
+  const effect = async (overrides = {}) => {
+    const tokenIn = await input.getAddress(); const tokenOut = await output.getAddress();
+    return { operation: keccak256(toUtf8Bytes('operation-' + randomUUID())), quoteHash: keccak256(toUtf8Bytes('persisted-fixture-quote')),
+      owner: wallets[1].address, recipient: wallets[2].address, tokenIn, tokenOut, pool: tokenPool, treasury: wallets[3].address,
+      grossInput: 10n ** 17n, platformFee: 10n ** 14n, minimumOutput: 1n, poolFee: 3000,
+      deadline: 4102444800n, feeRevision: 1n, policyKeyVersion: policyVersion,
+      inputCodeHash: keccak256(await provider.getCode(tokenIn)), outputCodeHash: keccak256(await provider.getCode(tokenOut)),
+      nativeInput: false, nativeOutput: false, ...overrides };
+  };
+  const execute = async e => {
+    const args = await permit(e);
+    return (await executor.connect(senders[1]).execute(...args, { value: e.nativeInput ? e.grossInput : 0, gasLimit: 3_000_000 })).wait();
+  };
+  return { rpc, provider, wallets, senders, input, output, weth, factory, router, quoter, positions, executor, nativePool, domain, permit, effect, execute, deploy };
 }
 
 test('actual Uniswap pool settles exact input and atomic platform fee once', async () => {
@@ -109,7 +107,7 @@ test('actual Uniswap pool settles exact input and atomic platform fee once', asy
     assert.equal(await f.executor.consumedOperations(e.operation), true);
     assert(receipt.logs.some(log => log.address.toLowerCase() === e.pool.toLowerCase()), 'actual pool emitted settlement evidence');
     await assert.rejects(f.execute(e));
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('slippage failure rolls back owner debit, fee and operation consumption', async () => {
@@ -122,7 +120,7 @@ test('slippage failure rolls back owner debit, fee and operation consumption', a
     assert.equal(await f.input.balanceOf(e.owner), ownerBefore);
     assert.equal(await f.input.balanceOf(e.treasury), treasuryBefore);
     assert.equal(await f.executor.consumedOperations(e.operation), false);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('owner cannot forge zero fee, revision, treasury or another EIP712 domain', async () => {
@@ -141,7 +139,7 @@ test('owner cannot forge zero fee, revision, treasury or another EIP712 domain',
     }
     const ownerPermit = await f.permit(e, f.domain, f.wallets[1]);
     await assert.rejects(async () => (await f.executor.connect(f.senders[1]).execute(...ownerPermit, { gasLimit: 3_000_000 })).wait());
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('explicit native input and native output use the actual WETH pool', async () => {
@@ -159,7 +157,7 @@ test('explicit native input and native output use the actual WETH pool', async (
     const before = BigInt(await f.provider.send('eth_getBalance', [nativeOutput.recipient, 'latest']));
     await f.execute(nativeOutput);
     assert(BigInt(await f.provider.send('eth_getBalance', [nativeOutput.recipient, 'latest'])) > before);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('executor preserves prior token dust and refuses changed owner or trailing ABI bytes', async () => {
@@ -177,7 +175,7 @@ test('executor preserves prior token dust and refuses changed owner or trailing 
     await f.execute(e);
     assert.equal(await f.input.balanceOf(address), 71n);
     assert.equal(await f.output.balanceOf(address), 83n);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('native treasury callback cannot execute a second valid policy-authorized swap', async () => {
@@ -199,7 +197,7 @@ test('native treasury callback cannot execute a second valid policy-authorized s
     assert.equal(await f.executor.consumedOperations(second.operation), false);
     await (await receiver.run(await encodeCall(second), second.grossInput, { gasLimit: 4_000_000 })).wait();
     assert.equal(await f.executor.consumedOperations(second.operation), true);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('refused native treasury payment rolls back the swap and fee', async () => {
@@ -216,5 +214,5 @@ test('refused native treasury payment rolls back the swap and fee', async () => 
     assert.equal(await f.input.balanceOf(e.recipient), outputBefore);
     assert.equal(await f.executor.consumedOperations(e.operation), false);
     assert.equal(BigInt(await f.provider.send('eth_getBalance', [e.treasury, 'latest'])), 0n);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
