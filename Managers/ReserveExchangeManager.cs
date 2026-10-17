@@ -166,6 +166,10 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         if (windowError is not null)
             return Invalid(windowError);
 
+        // ── Step 6b: D-7 — settle only where the provider declares the exchange module for this network ──
+        if (!ExchangeDeclared(chainType))
+            return AZOAResult<ExchangeReceipt>.FailureWithCode(UnavailableMessage, ConsumerSafeErrorCodes.RailUnavailable);
+
         // ── Step 7: quote-only ────────────────────────────────────────────────
         if (request.PreviewOnly)
             return await PreviewAsync(request, caller, chainType, projectAssetId, platformAssetId, partition, projectReference,
@@ -431,6 +435,20 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             || !UnsignedIntegerText.TryParse(_options.MaximumRecipientFundingBaseUnits?.Trim(), out var cap) || shortfall > cap)
             return RailRefusal<string?>("minimum balance");
         return AZOAResult<string?>.Success(shortfall.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// D-7: the provider's own <see cref="IExchangeTransactionModule"/> advertisement for the settlement network is the single
+    /// activation pin; absent, an exchange (and its quote) refuses before any journal row (Services/Reserve/AGENTS.md §d7-activation).
+    /// </summary>
+    private bool ExchangeDeclared(string chainType)
+    {
+        try
+        {
+            return _providers.GetProvider(chainType, _providers.DefaultNetwork).TryGetModule<IExchangeTransactionModule>(out var module)
+                && module is not null;
+        }
+        catch (ValueRailProviderNotFoundException) { return false; }
     }
 
     // ── Source construction ──────────────────────────────────────────────────

@@ -155,6 +155,23 @@ public sealed partial class SurrealHoldCommandTests
         (await flow.Settlement.ReconcileAsync(result.Result.SourceId!)).Result!.State.Should().Be("Completed");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnUndeclaredExchangeNetworkRefusesQuotesAndExchangesBeforeAnyJournal(bool preview)
+    {
+        var flow = await FlowAsync();
+        flow.Chain.Declared = false;
+        var request = flow.Request();
+        request.PreviewOnly = preview;
+
+        var result = await flow.Manager.ExchangeAsync(request, flow.Caller("purchase-1"));
+
+        result.Code.Should().Be(ConsumerSafeErrorCodes.RailUnavailable);
+        (await _executor.QueryAsync<ExchangeHoldSource>(SurrealQuery<ExchangeHoldSource>.From())).Should().BeEmpty();
+        (await Counters()).Held.Should().Be(0);
+    }
+
     [Fact]
     public async Task AnotherApiKeyCannotReadTheReceipt()
     {
@@ -182,7 +199,9 @@ public sealed partial class SurrealHoldCommandTests
         {
             ["TryGetModule"] = (method, args) =>
             {
-                args[0] = method.GetGenericArguments()[0].IsInstanceOfType(chain) ? chain : null;
+                var requested = method.GetGenericArguments()[0];
+                args[0] = requested.IsInstanceOfType(chain) && (chain.Declared || requested != typeof(IExchangeTransactionModule))
+                    ? chain : null;
                 return args[0] is not null;
             },
         });
@@ -237,6 +256,7 @@ public sealed partial class SurrealHoldCommandTests
     private sealed class FakeExchangeChain : IExchangeTransactionModule, IValueCustodyModule, IRecipientPreparationModule
     {
         public RecipientAssetReadiness Readiness { get; set; } = new(true, false, "0");
+        public bool Declared { get; set; } = true;
         public ExchangeWireIntent? LastIntent { get; private set; }
         public bool SupportsRecipientPreparation => true;
 
