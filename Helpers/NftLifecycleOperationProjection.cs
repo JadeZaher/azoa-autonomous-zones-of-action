@@ -29,7 +29,7 @@ public static class NftLifecycleOperationProjection
         {
             Id = Guid.Parse(view.OperationId),
             UserId = actor, WalletId = wallet, OperationType = "NftLifecycle",
-            Status = view.State == "Completed" ? OperationStatus.Confirmed : OperationStatus.PendingConfirmation,
+            Status = view.State == "Completed" ? OperationStatus.Completed : OperationStatus.PendingConfirmation,
             Parameters = new Dictionary<string, string>
             {
                 ["LifecycleId"] = view.OperationId, ["holonId"] = view.NftId.ToString(),

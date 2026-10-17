@@ -1160,7 +1160,7 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IConsentManager,
     AZOA.WebAPI.Managers.ConsentManager>();
 // user-sovereign-identity: wallet-challenge auth + claim flow.
 builder.Services.AddSingleton<AZOA.WebAPI.Interfaces.IWalletSignatureVerifier,
-    AZOA.WebAPI.Services.Signing.Ed25519SignatureVerifier>();
+    AZOA.WebAPI.Services.Signing.WalletSignatureVerifier>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IWalletAuthManager,
     AZOA.WebAPI.Managers.WalletAuthManager>();
 // Webhook bridge (AC7/AC8): SSRF guard + timestamped HMAC signer (singletons) +
@@ -1350,6 +1350,16 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IAllocationReceiptMan
 builder.Services.AddScoped<AZOA.WebAPI.Managers.FungibleTokenManager>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleTokenManager>(
     sp => sp.GetRequiredService<AZOA.WebAPI.Managers.FungibleTokenManager>());
+// Durable fungible creation lifecycle (store, service, action resolver, recovery worker); see Services/Fungible.
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IFungibleCreationStore,
+    AZOA.WebAPI.Providers.Stores.Surreal.SurrealFungibleCreationStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFungibleCreationService,
+    AZOA.WebAPI.Services.Fungible.FungibleCreationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>();
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IActionExternalOperationResolver>(sp =>
+    sp.GetRequiredService<AZOA.WebAPI.Services.Actions.ActionFungibleCreationService>());
+builder.Services.AddHostedService<AZOA.WebAPI.Services.Fungible.FungibleCreationRecoveryWorker>();
+
 // D19 soulbound-credential revocation (Algorand AssetClawback). Backs both
 // CredentialController and CredentialRevokeNodeHandler -- and the handler set is
 // constructed EAGERLY (ActionNodeHandlerRegistry takes IEnumerable<IActionNodeHandler>

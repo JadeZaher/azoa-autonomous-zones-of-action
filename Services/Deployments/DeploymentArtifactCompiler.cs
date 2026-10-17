@@ -51,7 +51,7 @@ public sealed class DeploymentArtifactCompiler(IActionDagValidator validator)
                 copy.Name = names[(source.Occurrence, node.Id)];
                 var config = JsonNode.Parse(copy.Config) ?? throw new ArgumentException("Node configuration is missing.");
                 RewriteBindings(config, nameMap);
-                if (copy.NodeType == ActionNodeType.Gate && config is JsonObject gate
+                if (copy.NodeType == ActionNodeType.GateCheck && config is JsonObject gate
                     && gate["predicate"] is JsonValue predicate && predicate.TryGetValue<string>(out var expression))
                     gate["predicate"] = RewriteCondition(expression, nameMap);
                 copy.Config = config.ToJsonString();

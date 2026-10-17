@@ -49,6 +49,7 @@ public sealed partial class SurrealWebhookRegistrationStore
             {
                 var response = await executor.ExecuteAsync(atomic, ct);
                 response.EnsureAllOk();
+                return response;
             }, ct);
             return AZOAResult<WebhookRegistrationWithdrawal>.Success(new(command.RequestId, false, null));
         }
