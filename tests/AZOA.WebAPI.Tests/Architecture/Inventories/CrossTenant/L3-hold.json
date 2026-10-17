@@ -185,42 +185,42 @@
     "tenantCheck": "caller-checked: HoldCommandService/HoldReleaseMandateService compare the row's actor, tenant or saved recipient to the authenticated caller before returning it"
   },
   {
-    "store": "SurrealProjectTreasuryLedgerStore",
+    "store": "IProjectTreasuryLedgerStore",
     "method": "GetAsync",
     "tenantCheck": "record id is SHA-256(chain|network|tenant|project); ProjectTreasuryService.GuardRowOwnership refuses a row whose tenant disagrees"
   },
   {
-    "store": "SurrealProjectTreasuryLedgerStore",
+    "store": "IProjectTreasuryLedgerStore",
     "method": "CreateIfAbsentAsync",
     "tenantCheck": "record id derived from the principal's tenant; tenant_id written as record<user> link (SQL-04)"
   },
   {
-    "store": "SurrealProjectTreasuryLedgerStore",
+    "store": "IProjectTreasuryLedgerStore",
     "method": "UpdateIfVersionAsync",
     "tenantCheck": "version CAS on a row already read through GuardRowOwnership"
   },
   {
-    "store": "SurrealProjectTreasuryLedgerStore",
+    "store": "IProjectTreasuryLedgerStore",
     "method": "ListByTenantAsync",
     "tenantCheck": "query-pinned: tenant_id = record<user> parameter (operator surface only)"
   },
   {
-    "store": "SurrealHoldCommandStore",
+    "store": "IHoldLiabilityReadStore",
     "method": "ListLiabilitiesAsync",
     "tenantCheck": "query-pinned: own tenant-less, received, or caller-as-custody-tenant; re-checked by HoldLiabilityReadService.Visible"
   },
   {
-    "store": "SurrealHoldCommandStore",
+    "store": "IHoldLiabilityReadStore",
     "method": "ListReserveAssetsAsync",
     "tenantCheck": "query-pinned: rows registered by the caller's tenant (+ platform unit for an acting tenant/operator); filtered by ReservePartitionScope.Refuse"
   },
   {
-    "store": "SurrealHoldCommandStore",
+    "store": "IExchangeRetiredResolutionStore",
     "method": "ListRetiredExchangeRowsAsync",
     "tenantCheck": "operator-only: node-wide by design, served only under the Operator policy"
   },
   {
-    "store": "SurrealHoldCommandStore",
+    "store": "IExchangeRetiredResolutionStore",
     "method": "GetRetiredExchangeRowAsync",
     "tenantCheck": "operator-only: node-wide by design, served only under the Operator policy"
   }

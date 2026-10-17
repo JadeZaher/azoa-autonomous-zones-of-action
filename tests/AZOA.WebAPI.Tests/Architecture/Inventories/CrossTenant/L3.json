@@ -1,30 +1,262 @@
 [
-  { "store": "SurrealFiatPayoutLedger", "method": "ClaimAsync", "tenantCheck": "record id = subject|request key|env|network; OffRampService.RequestAsync honours a non-created claim only when DroveBy(row, request.TenantId)" },
-  { "store": "SurrealFiatPayoutLedger", "method": "GetAsync", "tenantCheck": "operator/saga only (no tenant route reads by id)" },
-  { "store": "SurrealFiatPayoutLedger", "method": "GetByTransferAsync", "tenantCheck": "provider-event correlation only (signature-verified webhook)" },
-  { "store": "SurrealFiatPayoutLedger", "method": "UpdateIfVersionAsync", "tenantCheck": "saga/operator only; version CAS" },
-  { "store": "SurrealFiatPayoutLedger", "method": "ListForUserAsync", "tenantCheck": "subject link; OffRampService.ListForUserAsync filters to rows the acting tenant drove" },
-  { "store": "SurrealFiatPayoutLedger", "method": "ListCommittingForUserAsync", "tenantCheck": "subject link; availability arithmetic only (not projected to a tenant)" },
-  { "store": "SurrealFiatPayoutLedger", "method": "ListBoardAsync", "tenantCheck": "Operator policy only" },
-  { "store": "SurrealOnRampLotLedger", "method": "ClaimAsync", "tenantCheck": "record id = hash(intent); intent ownership checked on the hosted session before settlement" },
-  { "store": "SurrealOnRampLotLedger", "method": "GetByIntentAsync", "tenantCheck": "operator/settlement only" },
-  { "store": "SurrealOnRampLotLedger", "method": "UpdateIfVersionAsync", "tenantCheck": "settlement/cash-out/reversal only; version CAS" },
-  { "store": "SurrealOnRampLotLedger", "method": "ListIssuedForUserAsync", "tenantCheck": "subject link; cash-out aging arithmetic only" },
-  { "store": "SurrealOnRampLotLedger", "method": "ListNeedingOperatorAsync", "tenantCheck": "Operator policy only" },
-  { "store": "SurrealFiatReversalLedger", "method": "ClaimAsync", "tenantCheck": "record id = provider|scope|object; signature-verified webhook only" },
-  { "store": "SurrealFiatReversalLedger", "method": "GetAsync", "tenantCheck": "operator/saga only" },
-  { "store": "SurrealFiatReversalLedger", "method": "UpdateIfVersionAsync", "tenantCheck": "operator/saga only; version CAS" },
-  { "store": "SurrealFiatReversalLedger", "method": "ListOpenAsync", "tenantCheck": "Operator policy only" },
-  { "store": "SurrealFiatReversalLedger", "method": "ListForUserAsync", "tenantCheck": "Operator policy only" },
-  { "store": "SurrealFiatReversalLedger", "method": "HasActiveFlagAsync", "tenantCheck": "value gate for the subject; returns a boolean only" },
-  { "store": "SurrealTenantPriceScheduleStore", "method": "RegisterAsync", "tenantCheck": "scope key resolved by the controller from the caller; tenant_id written as user link" },
-  { "store": "SurrealTenantPriceScheduleStore", "method": "GetLatestAsync", "tenantCheck": "scope key = caller's tenant or node; projection parses tenant link (tenant-less only for node rows)" },
-  { "store": "SurrealTenantPriceScheduleStore", "method": "ListVersionsAsync", "tenantCheck": "scope key = caller's tenant or node" },
-  { "store": "SurrealTenantPriceScheduleStore", "method": "ListLatestPerScopeAsync", "tenantCheck": "node-level declared-rate read (D16); no tenant projection" },
-  { "store": "IHostedSessionStore (fiat checkout)", "method": "GetByIdAsync via FiatRailProvider.GetIntentAsync", "tenantCheck": "OwnedBy(subject) && DrivenBy(tenant), one NotFound for every refusal" },
-  { "store": "IHostedSessionStore (fiat checkout)", "method": "ClaimAdmissionAsync via FiatRailProvider.BeginCheckoutAsync", "tenantCheck": "admission key {subject}:{tenant|self}:{key}; resumed claim must match subject and driver" },
-  {"store": "SurrealTenantPayoutLedger", "method": "GetOrCreateFloatAsync / ListFloatsAsync", "tenantCheck": "tenant comes from the payout row's funding_tenant_id or the authenticated tenant principal; record id hashes tenant|currency|environment"},
-  {"store": "SurrealTenantPayoutLedger", "method": "CommitAsync", "tenantCheck": "float id taken from the debit/credit row it justifies; version CAS"},
-  {"store": "SurrealTenantPayoutLedger", "method": "GetCreditByPaymentAsync / GetDebitAsync / ListStaleReservedAsync / ListMaturedPendingAsync", "tenantCheck": "internal (webhook, saga, sweep); never projected to a tenant"},
-  {"store": "SurrealTenantPayoutLedger", "method": "ReadSnapshotAsync", "tenantCheck": "float id from ListFloatsAsync(caller tenant) or operator route"}
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "ClaimAsync",
+    "tenantCheck": "record id = subject|request key|env|network; OffRampService.RequestAsync honours a non-created claim only when DroveBy(row, request.TenantId)"
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "GetAsync",
+    "tenantCheck": "operator/saga only (no tenant route reads by id)"
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "GetByTransferAsync",
+    "tenantCheck": "provider-event correlation only (signature-verified webhook)"
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "UpdateIfVersionAsync",
+    "tenantCheck": "saga/operator only; version CAS"
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "ListForUserAsync",
+    "tenantCheck": "subject link; OffRampService.ListForUserAsync filters to rows the acting tenant drove"
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "ListCommittingForUserAsync",
+    "tenantCheck": "subject link; availability arithmetic only (not projected to a tenant)"
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "ListBoardAsync",
+    "tenantCheck": "Operator policy only"
+  },
+  {
+    "store": "IOnRampLotLedger",
+    "method": "ClaimAsync",
+    "tenantCheck": "record id = hash(intent); intent ownership checked on the hosted session before settlement"
+  },
+  {
+    "store": "IOnRampLotLedger",
+    "method": "GetByIntentAsync",
+    "tenantCheck": "operator/settlement only"
+  },
+  {
+    "store": "IOnRampLotLedger",
+    "method": "UpdateIfVersionAsync",
+    "tenantCheck": "settlement/cash-out/reversal only; version CAS"
+  },
+  {
+    "store": "IOnRampLotLedger",
+    "method": "ListIssuedForUserAsync",
+    "tenantCheck": "subject link; cash-out aging arithmetic only"
+  },
+  {
+    "store": "IOnRampLotLedger",
+    "method": "ListNeedingOperatorAsync",
+    "tenantCheck": "Operator policy only"
+  },
+  {
+    "store": "IFiatReversalLedger",
+    "method": "ClaimAsync",
+    "tenantCheck": "record id = provider|scope|object; signature-verified webhook only"
+  },
+  {
+    "store": "IFiatReversalLedger",
+    "method": "GetAsync",
+    "tenantCheck": "operator/saga only"
+  },
+  {
+    "store": "IFiatReversalLedger",
+    "method": "UpdateIfVersionAsync",
+    "tenantCheck": "operator/saga only; version CAS"
+  },
+  {
+    "store": "IFiatReversalLedger",
+    "method": "ListOpenAsync",
+    "tenantCheck": "Operator policy only"
+  },
+  {
+    "store": "IFiatReversalLedger",
+    "method": "ListForUserAsync",
+    "tenantCheck": "Operator policy only"
+  },
+  {
+    "store": "IFiatReversalLedger",
+    "method": "HasActiveFlagAsync",
+    "tenantCheck": "value gate for the subject; returns a boolean only"
+  },
+  {
+    "store": "ITenantPriceScheduleStore",
+    "method": "RegisterAsync",
+    "tenantCheck": "scope key resolved by the controller from the caller; tenant_id written as user link"
+  },
+  {
+    "store": "ITenantPriceScheduleStore",
+    "method": "GetLatestAsync",
+    "tenantCheck": "scope key = caller's tenant or node; projection parses tenant link (tenant-less only for node rows)"
+  },
+  {
+    "store": "ITenantPriceScheduleStore",
+    "method": "ListVersionsAsync",
+    "tenantCheck": "scope key = caller's tenant or node"
+  },
+  {
+    "store": "ITenantPriceScheduleStore",
+    "method": "ListLatestPerScopeAsync",
+    "tenantCheck": "node-level declared-rate read (D16); no tenant projection"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "ClaimAdmissionAsync",
+    "tenantCheck": "admission key {subject}:{tenant|self}:{key}; resumed claim must match subject and driver"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "GetOrCreateFloatAsync",
+    "tenantCheck": "tenant comes from the payout row's funding_tenant_id or the authenticated tenant principal; record id hashes tenant|currency|environment"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "ListFloatsAsync",
+    "tenantCheck": "tenant comes from the payout row's funding_tenant_id or the authenticated tenant principal; record id hashes tenant|currency|environment"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "CommitAsync",
+    "tenantCheck": "float id taken from the debit/credit row it justifies; version CAS"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "GetCreditByPaymentAsync",
+    "tenantCheck": "internal (webhook, saga, sweep); never projected to a tenant"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "GetDebitAsync",
+    "tenantCheck": "internal (webhook, saga, sweep); never projected to a tenant"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "ListStaleReservedAsync",
+    "tenantCheck": "internal (webhook, saga, sweep); never projected to a tenant"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "ListMaturedPendingAsync",
+    "tenantCheck": "internal (webhook, saga, sweep); never projected to a tenant"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "ReadSnapshotAsync",
+    "tenantCheck": "float id from ListFloatsAsync(caller tenant) or operator route"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "caller-checked: id = FungibleCreationIdentity.OperationId(actor, tenant, requestKey) with actor/tenant from the captured credential; replay must match the same admission"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: FungibleCreationService.Matches(row, actor, tenant) on every user path; the genesis controller requires the node-operator actor and no tenant"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "CancelAsync",
+    "tenantCheck": "fenced: the store refuses unless row actor and tenant equal the captured credential; genesis rows are never cancellable here"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "ReplaceAsync",
+    "tenantCheck": "caller-checked: expected row passed only after Matches(row, credential actor, tenant)"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "AuthorizeAsync",
+    "tenantCheck": "caller-checked: expected row passed only after Matches(row, actor, tenant) and a credential whose actor/tenant equal them"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "GetAttachmentAsync",
+    "tenantCheck": "query-pinned: discloses only when the row tenant matches and the attached Holon is the actor's own active Holon"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "ReplayAttachmentAsync",
+    "tenantCheck": "keyed: receipt id hashes (operation, request, actor, tenant) and the stored receipt must repeat them"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "SetQuoteAsync",
+    "tenantCheck": "caller-checked: expected row passed only after Matches(row, actor, tenant)"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "UpdateAsync",
+    "tenantCheck": "caller-checked: candidate row came from a Matches-checked read (or the recovery worker); version CAS"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "CompleteAsync",
+    "tenantCheck": "caller-checked: expected row from the Matches-checked advance loop; one transaction"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "ListParticipantAsync",
+    "tenantCheck": "query-scoped: filters by actor and tenant"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "ListRecoverableAsync",
+    "tenantCheck": "worker-only: FungibleCreationRecoveryWorker"
+  },
+  {
+    "store": "IFungibleCreationStore",
+    "method": "TouchRecoveryAsync",
+    "tenantCheck": "worker-only: FungibleCreationRecoveryWorker rotates the observed row"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "GetFloatAsync",
+    "tenantCheck": "keyed: float id is derived server-side from (tenant, currency, environment) via GetOrCreateFloatAsync on the payout row's funding tenant; never caller input"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "GetCreditAsync",
+    "tenantCheck": "keyed: credit id comes from the server-persisted credit or reversal fact; never caller input"
+  },
+  {
+    "store": "ITenantPayoutLedger",
+    "method": "RecordCreditAsync",
+    "tenantCheck": "caller-checked: top-up credit built server-side for the claims tenant (or from a verified provider payment)"
+  },
+  {
+    "store": "ITenantPriceScheduleStore",
+    "method": "GetVersionAsync",
+    "tenantCheck": "keyed: schedule id read from the server-persisted payout row; the funding tenant is then compared to the schedule tenant"
+  },
+  {
+    "store": "IPlatformReserveLedgerStore",
+    "method": "GetAsync",
+    "tenantCheck": "node-level: platform reserve rows keyed by (chain, asset); no tenant or user data; reserve service only"
+  },
+  {
+    "store": "IPlatformReserveLedgerStore",
+    "method": "CreateIfAbsentAsync",
+    "tenantCheck": "node-level: registers a platform reserve asset (operator genesis or reserve registration); no tenant data"
+  },
+  {
+    "store": "IPlatformReserveLedgerStore",
+    "method": "UpdateIfVersionAsync",
+    "tenantCheck": "node-level: version CAS on the platform reserve ledger; draws attribute partitions server-side"
+  },
+  {
+    "store": "IPlatformTokenStore",
+    "method": "ClaimIfAbsentAsync",
+    "tenantCheck": "node-level: one platform token per network, claimed by the operator genesis (RecentNodeOperatorSession)"
+  }
 ]
