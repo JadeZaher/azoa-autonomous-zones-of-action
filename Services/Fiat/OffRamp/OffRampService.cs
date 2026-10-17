@@ -3,6 +3,7 @@
 using System.Numerics;
 using System.Text.Json;
 using SurrealForge.Client;
+using UserRecord = AZOA.WebAPI.Persistence.SurrealDb.Models.User;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
@@ -332,15 +333,15 @@ public sealed class OffRampService : IOffRamp
             Id = FiatPayout.RecordIdFor(request.SubjectUserId, request.RequestKey, _fiat.ActiveEnvironment.Name, _providerFactory.DefaultNetwork.ToString()),
             Environment = _fiat.ActiveEnvironment.Name,
             ChainNetwork = _providerFactory.DefaultNetwork.ToString(),
-            SubjectUserId = request.SubjectUserId.ToString("N"),
+            SubjectUserId = SurrealLink.ToLink(UserRecord.SchemaNameConst, request.SubjectUserId.ToString("N"))!,
             RequestKey = request.RequestKey.Trim(),
-            TenantId = request.TenantId?.ToString("N"),
+            TenantId = request.TenantId is { } tenant ? SurrealLink.ToLink(UserRecord.SchemaNameConst, tenant.ToString("N")) : null,
             ChainType = context.ChainType,
             AssetId = context.AssetId,
             QuantityBaseUnits = OffRampAging.Format(quantity),
             AmountMinorUnits = request.AmountMinorUnits,
             CurrencyCode = context.CurrencyCode.ToUpperInvariant(),
-            PriceScheduleId = context.PriceScheduleId,
+            PriceScheduleId = SurrealLink.ToLink(TenantPriceSchedule.SchemaNameConst, context.PriceScheduleId),
             PriceScheduleVersion = context.PriceScheduleVersion,
             UnitsPerMinorUnit = PriceScheduleMath.FormatRate(context.UnitsPerMinorUnit),
             ConnectedAccountId = accountId.Result,
@@ -607,7 +608,7 @@ public sealed class OffRampService : IOffRamp
             new StripeTransferRequest
             {
                 PayoutId = row.Id,
-                SubjectUserId = row.SubjectUserId,
+                SubjectUserId = SurrealLink.FromLink(row.SubjectUserId)!,
                 ConnectedAccountId = accountId.Result!,
                 AmountMinorUnits = row.AmountMinorUnits,
                 Currency = row.CurrencyCode.ToLowerInvariant(),

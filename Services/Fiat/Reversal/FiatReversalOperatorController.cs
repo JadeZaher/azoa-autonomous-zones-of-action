@@ -3,6 +3,7 @@
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Sagas;
+using SurrealForge.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -181,7 +182,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
         var now = DateTimeOffset.UtcNow;
         row.AccountFlagged = false;
         row.FlagClearedAt = now;
-        row.FlagClearedBy = operatorUserId.Value.ToString("N");
+        row.FlagClearedBy = SurrealLink.ToLink(AZOA.WebAPI.Persistence.SurrealDb.Models.User.SchemaNameConst, operatorUserId.Value.ToString("N"));
         row.FlagReason = string.IsNullOrWhiteSpace(body?.Reason)
             ? row.FlagReason
             : body!.Reason!.Trim();
@@ -293,7 +294,7 @@ public sealed class FiatReversalView
         StatusReason = row.StatusReason,
         LastEventType = row.LastEventType,
         ChargeId = row.ChargeId,
-        SubjectUserId = row.SubjectUserId,
+        SubjectUserId = SurrealLink.FromLink(row.SubjectUserId),
         FlowPurpose = row.FlowPurpose,
         AmountMinorUnits = row.AmountMinorUnits,
         SourceAmountMinorUnits = row.SourceAmountMinorUnits,

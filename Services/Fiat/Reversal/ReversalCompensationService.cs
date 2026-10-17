@@ -14,6 +14,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
 using AZOA.WebAPI.Services.Reserve;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat.Reversal;
 
@@ -215,7 +216,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         // ── Rung 0: purchase recoveries a previous pass committed but never recorded on this row ──
         // They are immutable store receipts (a clawback counts once its move completed): a pass whose row save lost a
         // version race is counted here, before any rung can take the same units again.
-        var committed = Guid.TryParseExact(row.SubjectUserId, "N", out var reversalSubject) && reversalSubject != Guid.Empty
+        var committed = Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var reversalSubject) && reversalSubject != Guid.Empty
             ? await _purchases.ListReversalRecoveriesAsync(row.Id, reversalSubject, ct)
             : Array.Empty<ExchangePurchaseRecoveryResult>();
         var committedTotal = BigInteger.Zero;
@@ -454,7 +455,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         if (string.IsNullOrWhiteSpace(row.ChainType) || string.IsNullOrWhiteSpace(row.AssetId))
             return RungResult.Refused("The reversal does not name the units it has to take back.");
 
-        if (!Guid.TryParseExact(row.SubjectUserId, "N", out var subjectUserId) || subjectUserId == Guid.Empty)
+        if (!Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) || subjectUserId == Guid.Empty)
             return RungResult.Refused("The reversal does not name an account to take units back from.");
 
         if (!TryGetAsaModule(row.ChainType!, out var asa, out var moduleError))
@@ -594,7 +595,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         if (!_provenance.IsAvailable)
             return RungResult.Refused(UnavailableReversedPurchaseProvenance.UnavailableReason);
 
-        if (!Guid.TryParseExact(row.SubjectUserId, "N", out var subjectUserId) || subjectUserId == Guid.Empty)
+        if (!Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subjectUserId) || subjectUserId == Guid.Empty)
             return RungResult.Refused("The reversal does not name an account to unwind purchases for.");
 
         var claims = await _provenance.ListForLotAsync(row.LotId!, subjectUserId, ct);
@@ -671,7 +672,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
         FiatReversal row, ReversedPurchaseClaim claim, BigInteger cumulativeWant, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(claim.SourceId) || string.IsNullOrWhiteSpace(row.LotId)
-            || !Guid.TryParseExact(row.SubjectUserId, "N", out var subject) || subject == Guid.Empty)
+            || !Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subject) || subject == Guid.Empty)
             return RungResult.Refused("A commitment this payment funded names no settled purchase to recover.");
 
         var recovered = await _purchases.RecoverExchangePurchaseAsync(new ExchangePurchaseRecovery(1, row.Id, row.LotId!,
@@ -695,7 +696,7 @@ public sealed class ReversalCompensationService : IReversalCompensation
     {
         if (string.IsNullOrWhiteSpace(claim.AssetId) || string.IsNullOrWhiteSpace(claim.ChainType)
             || string.IsNullOrWhiteSpace(claim.HolderAddress) || string.IsNullOrWhiteSpace(claim.SourceId)
-            || string.IsNullOrWhiteSpace(row.LotId) || !Guid.TryParseExact(row.SubjectUserId, "N", out var subject) || subject == Guid.Empty)
+            || string.IsNullOrWhiteSpace(row.LotId) || !Guid.TryParseExact(SurrealLink.FromLink(row.SubjectUserId), "N", out var subject) || subject == Guid.Empty)
         {
             return RungResult.Refused(
                 "What this payment bought is not described precisely enough to take back.");
