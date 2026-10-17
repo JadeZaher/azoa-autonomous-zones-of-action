@@ -1238,6 +1238,7 @@ builder.Services.AddScoped<AZOA.WebAPI.Providers.Kyb.IdentomatKybProvider>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IKybVerificationStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealKybVerificationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IKybService, AZOA.WebAPI.Services.Kyb.KybService>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Kyb.IKybGate, AZOA.WebAPI.Services.Kyb.KybGate>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Users.NftLifecycleService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.NftWorkflowCostConsentService>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INftLifecycleService>(sp => sp.GetRequiredService<AZOA.WebAPI.Services.Users.NftLifecycleService>());
