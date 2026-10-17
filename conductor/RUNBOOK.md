@@ -87,7 +87,11 @@ static-review verdict, not runtime proof.
     (retry plus `/delete/` of late arrivals works without the vendor). Ten carry-forwards are unrecorded
     deferrals. Proposed sequencing: one fix batch → compile-until-clean (6–8 builds) → one full sweep →
     ≤3–4 targeted fix batches; ~9–12 waves total.
-  - SurrealForge pre-publish re-review of `3aacd25..2067ae4` (opus reviewer; verdict pending)
+  - SurrealForge 1.3.0 re-review of `3aacd25..2067ae4`: **PUBLISH AFTER FIXES** — anchor both
+    classifiers (strip the client prefix; require the vendor shape at the start, since user data echoed in
+    errors can steer substring matches); capture parallel same-id / UNIQUE races; fix the pre-existing
+    buffered-flush collateral blame (buffered transactions never reached `IsRetryableConflict`); scope
+    the CHANGELOG claims. Fix pass running; then a final re-review → owner publishes.
 
 ### Review ledger
 
