@@ -397,3 +397,43 @@ amounts`. The float counters must equal those sums recomputed from the entry row
 
 Mutation check: dropping the coverage predicate, the UNIQUE `payout_id`, or the state guard on
 finalize/release each makes one of these fixtures double-spend or double-release.
+
+## §operator-resolution — audited exits for parked and reversed cash-outs (round 4)
+
+`POST /api/admin/fiat-payouts/{id}/resolve` (Operator policy, financial limiter) with
+`{ "resolution": "record-paid" | "return-units", "reason": "…" }` → `OffRampService.ResolveForOperatorAsync`
+(`OffRampService.Resolution.cs`). Only `NeedsOperator` and `Reversed` rows qualify. Evidence is never
+the operator's word:
+
+- **Stripe transfer record:** every cash-out transfer is created in transfer group
+  `azoa-payout-{payoutId}`; the resolution lists that group (`ListTransfersByGroupAsync`). An
+  incomplete page, more than one transfer, or a transfer whose livemode/amount/currency/destination
+  differ from the row refuses with nothing changed.
+- **record-paid** (`NeedsOperator` only): requires exactly one unreversed matching transfer. With a
+  bank payout on the row, its server-fetched status decides: `paid` → `Paid`; `failed`/`canceled` →
+  refused (use `/recover`); otherwise → `BankPending`, where the bank-payout lifecycle continues.
+- **return-units** on `NeedsOperator`: refused while any transfer exists. The collect leg decides what
+  is returned: claim absent or definitively failed → nothing moved, lots released, `Refused`;
+  completed → the units are returned through the prepared-transfer path (`ReturnUnitsAsync`, keyed and
+  idempotent), lots released, `Returned`; ambiguous → the transaction id recorded with the ambiguity
+  marker (` tx=`) is re-read on chain (`GetTransactionConfirmationAsync`): confirmed = collected,
+  failed on chain = not collected, anything else refuses. An InProgress collect claim (crash with no
+  recorded transaction) still refuses: only a by-hand chain reconciliation can decide it.
+- **return-units** on `Reversed`: reinstates `units_owed_base_units` once Stripe's `amount_reversed`
+  covers the recorded reversal, under key `fiat-off-ramp:reinstate-{reversedMinorUnits}:{id}` so a
+  later, larger reversal reinstates only its own increment. Refused while a failed-bank recovery owns
+  the row.
+
+Every resolution appends `{actor, action, reason, at, priorStatus, transferId}` to
+`recovery_audit_json` through `PayoutAudit.Append`, which keeps earlier entries of other shapes
+verbatim (the failed-bank recovery writes through the same helper).
+
+## §stale-pay-claim — a pay claim left InProgress by a crash (round 4)
+
+The pay leg claims `fiat-off-ramp:pay:{id}` and creates the Connect transfer under the stable Stripe
+key `azoa-payout-{id}`. A crash between the two left the claim InProgress forever ("already in
+progress"). Now a claim InProgress for at least 5 minutes and less than 23 hours (Stripe keeps keys
+≥ 24 h) is replayed under the same Stripe key: Stripe returns the transfer the lost attempt created,
+or creates the one it never sent — never a second. A concurrent duplicate gets Stripe's 409 and parks
+for the operator resolution above. Past 23 hours the claim stays put and only the operator resolution
+(transfer-group evidence) can move the row.

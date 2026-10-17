@@ -213,6 +213,18 @@ public sealed partial class OffRampService
         };
     }
 
+    /// <summary>A pay claim stuck InProgress past a crash window but still inside Stripe's key retention.</summary>
+    private bool IsReplayablePayClaim(IdempotencyRecord record)
+    {
+        if (record.State != IdempotencyState.InProgress)
+            return false;
+        var age = _clock.GetUtcNow() - new DateTimeOffset(DateTime.SpecifyKind(record.CreatedAt, DateTimeKind.Utc));
+        return age >= StalePayClaimAge && age < FiatHostedCreation.ReplayWindow;
+    }
+
+    /// <summary>How long an InProgress pay claim must sit before it is treated as abandoned by a crash.</summary>
+    public static readonly TimeSpan StalePayClaimAge = TimeSpan.FromMinutes(5);
+
     private bool MatchesTransfer(FiatPayout row, StripeTransfer transfer)
         => transfer.Livemode == (_fiat.ActiveEnvironment.Kind == RailEnvironmentKind.Live)
            && transfer.AmountMinorUnits == row.AmountMinorUnits

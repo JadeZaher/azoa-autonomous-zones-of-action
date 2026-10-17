@@ -613,7 +613,12 @@ public sealed partial class OffRampService : IOffRamp
                 case ClaimReplay.Ambiguous:
                     return await ParkAsync(row, AmbiguousMoveReason, ct);
                 default:
-                    return Indeterminate(row, "A payment for this cash-out is already in progress.");
+                    // A claim left InProgress by a crash is replayed under the SAME Stripe key, which
+                    // returns the transfer the lost attempt created (or creates the one it never sent);
+                    // see AGENTS.md §stale-pay-claim.
+                    if (!IsReplayablePayClaim(claim.Record))
+                        return Indeterminate(row, "A payment for this cash-out is already in progress.");
+                    break;
             }
         }
 

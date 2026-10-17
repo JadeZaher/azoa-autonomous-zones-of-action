@@ -151,3 +151,16 @@ Finalization reads only person_operation_claim cast-time evidence and checks the
 The active closeout track records remaining source review and runtime verification. These notes describe the intended implemented contract, not proof that unrun database race tests have passed. Shared KYC/AML evidence mutation serialization is being completed before source acceptance.
 
 Deterministically invalid frozen commands also receive an atomic failed receipt. Recovery cannot convert invalid input into endless ambiguity, nor can a stale successful plan commit after rejection has won the command identity. A previously committed success wins replay. Authority/transaction conflicts remain recoverable rather than being mislabeled as proof of no effect.
+
+## node-fee-recovery — hosted settlement recovery (round 4, L3)
+
+`NodeFeeSettlementRecoveryWorker` is a hosted `BackgroundService` (registered beside the settlement
+store in `Program.cs`). Every minute it builds one bounded request (50 rows, 2 min lease, 5 min retry)
+and runs, in order: `INodeFeeSettlementAtomicGroupReconciler.ReconcileDueAsync` (claims settlements
+with an accepted atomic-group receipt, observes the group on chain, settles exact confirmations,
+records non-terminal observations), then `INodeFeeSettlementManager.RecoverDueAsync` (defers the
+remaining due rows without any chain submission). Reconciliation runs first because a deferral pushes
+a row's next attempt past the tick. Both are lease-claimed, so concurrent nodes contend safely; a
+failed tick is logged and the next tick re-reads durable state. Recovery still submits nothing: a
+`Prepared` fee with no accepted group stays uncollected (no user funds held) until a submitting path
+exists.
