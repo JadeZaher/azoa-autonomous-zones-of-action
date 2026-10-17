@@ -1466,7 +1466,9 @@ builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     // Faucet operations are provider-scoped: the Algorand provider owns the
     // test-ALGO top-up path and delegates the idempotent build/sign/submit to the
     // injected IAlgorandFaucet (WalletManager no longer depends on it directly).
-    faucet: sp.GetRequiredService<IAlgorandFaucet>()));
+    faucet: sp.GetRequiredService<IAlgorandFaucet>(),
+    // D9: named chain RPC clients (ChainRpcHttp.ClientName) so hosts and fixtures can supply handlers.
+    httpClientFactory: sp.GetRequiredService<IHttpClientFactory>()));
 builder.Services.AddTransient<SolanaProvider>();
 // Ethereum: a BARE AddTransient on purpose. Constructor selection then picks the 4-arg
 // overload whose every parameter is a root-resolvable singleton (config, logger, signer

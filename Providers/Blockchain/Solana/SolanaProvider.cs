@@ -46,6 +46,7 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
     private HttpClient _rpcHttpClient = null!;
     private readonly BlockchainConfigurationManager _configManager;
     private readonly HttpMessageHandler? _httpMessageHandler;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private int _requestId;
 
     // Signing seam. The provider compiles the canonical Solana MESSAGE and delegates
@@ -93,6 +94,19 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
         : this(config, logger, signerFactory, custodyService: null,
                custodyScopeFactory, httpMessageHandler: null)
     {
+    }
+
+    /// <summary>Production overload with the host's <see cref="IHttpClientFactory"/> for named chain RPC clients (D9).</summary>
+    public SolanaProvider(
+        IConfiguration config,
+        ILogger<SolanaProvider> logger,
+        ITransactionSignerFactory signerFactory,
+        IServiceScopeFactory custodyScopeFactory,
+        IHttpClientFactory httpClientFactory)
+        : this(config, logger, signerFactory, custodyService: null,
+               custodyScopeFactory, httpMessageHandler: null)
+    {
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <summary>
@@ -150,9 +164,7 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
 
     private HttpClient BuildRpcClient(BlockchainNetworkConfig config)
     {
-        var client = _httpMessageHandler is null
-            ? new HttpClient()
-            : new HttpClient(_httpMessageHandler, disposeHandler: false);
+        var client = ChainRpcHttp.Create(ChainType, _httpMessageHandler, _httpClientFactory);
 
         client.BaseAddress = new Uri(config.NodeUrl);
         client.Timeout = TimeSpan.FromMilliseconds(config.TimeoutMs ?? 30000);
@@ -591,7 +603,6 @@ public partial class SolanaProvider : BaseBlockchainProvider, ISolanaMetaplexMod
                 ["currentSlot"] = slotResp.Error == null ? slotResp.Result.ToString() : "unknown",
                 ["totalSupply"] = supplyResp.Result?.Value?.Total.ToString() ?? "unknown",
                 ["circulatingSupply"] = supplyResp.Result?.Value?.Circulating.ToString() ?? "unknown",
-                ["rpcEndpoint"] = RpcHttpClient.BaseAddress?.ToString() ?? "",
                 ["time"] = DateTime.UtcNow
             };
 

@@ -18,8 +18,11 @@ public sealed class DexOperatorController(SwapOperationService swaps, ILogger<De
     public async Task<IActionResult> SettleReview(string id, [FromBody] SwapOperatorSettlementRequest request, CancellationToken ct)
     {
         if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        logger.LogWarning("Operator {OperatorId} settled the parked review of swap {OperationId}", actor, id);
         var settled = await swaps.SettleOperatorReviewAsync(id, request.ExpectedVersion, actor, request.Reason, ct);
+        if (settled.IsError)
+            logger.LogWarning("Operator {OperatorId} settle-review of swap {OperationId} was refused: {Reason}", actor, id, settled.Message);
+        else
+            logger.LogWarning("Operator {OperatorId} settled the parked review of swap {OperationId}", actor, id);
         Response.Headers.CacheControl = "no-store";
         return settled.IsError ? Conflict(settled) : Ok(settled);
     }

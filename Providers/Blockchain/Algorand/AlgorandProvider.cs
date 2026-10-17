@@ -35,6 +35,7 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
     private HttpClient _algodHttpClient = null!;
     private HttpClient? _indexerHttpClient;
     private readonly HttpMessageHandler? _httpMessageHandler;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly BlockchainConfigurationManager _configManager;
 
     // Signing seam (signing-core-keystone). The provider builds canonical
@@ -319,7 +320,8 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
         IKeyCustodyService? custodyService,
         IServiceScopeFactory? custodyScopeFactory,
         IAlgorandFaucet? faucet = null,
-        HttpMessageHandler? httpMessageHandler = null)
+        HttpMessageHandler? httpMessageHandler = null,
+        IHttpClientFactory? httpClientFactory = null)
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
@@ -329,7 +331,7 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
         _custodyScopeFactory = custodyScopeFactory;
         _faucet = faucet;
         _httpMessageHandler = httpMessageHandler;
-
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <inheritdoc/>
@@ -370,9 +372,7 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
 
     private HttpClient CreateHttpClient(string baseUrl, string? apiToken, int? timeoutMs)
     {
-        var client = _httpMessageHandler is null
-            ? new HttpClient()
-            : new HttpClient(_httpMessageHandler, disposeHandler: false);
+        var client = ChainRpcHttp.Create(ChainType, _httpMessageHandler, _httpClientFactory);
         client.BaseAddress = new Uri(baseUrl);
         client.Timeout = TimeSpan.FromMilliseconds(timeoutMs ?? 30000);
         if (!string.IsNullOrWhiteSpace(apiToken))
