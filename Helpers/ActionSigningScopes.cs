@@ -17,7 +17,7 @@ public static class ActionSigningScopes
         ActionNodeType.CredentialRevoke => [AzoaScopes.CredentialRevokeSign],
         ActionNodeType.FungibleTokenCreate => [AzoaScopes.TokenCreateSign],
         ActionNodeType.Swap => [AzoaScopes.SwapSign],
-        ActionNodeType.Bridge or ActionNodeType.Back => [AzoaScopes.WttSourceSign],
+        ActionNodeType.Bridge or ActionNodeType.Back => Bridge(configuration),
         ActionNodeType.ActionGraphBundleDeploy => Deployment(configuration),
         ActionNodeType.HolonCreate or ActionNodeType.HolonUpdate or ActionNodeType.HolonDelete or ActionNodeType.HolonGet
             or ActionNodeType.HolonQuery or ActionNodeType.HolonInteract or ActionNodeType.HolonGetChildren or ActionNodeType.HolonGetPeers
@@ -33,6 +33,14 @@ public static class ActionSigningScopes
             or ActionNodeType.LoanRepaymentRecord or ActionNodeType.LoanBalance => [],
         _ => null,
     };
+
+    /// <summary>X-1: the WTT route needs both payer scopes; a legacy trusted-bridge node signs a transfer. Mirrors
+    /// <c>ActionNodeHandlerRegistry.TryGetFor</c> so admission, the store fence and participant re-authorization agree.</summary>
+    private static IReadOnlyList<string>? Bridge(string configuration)
+    {
+        try { return WttActionResolver.ReadConfig(configuration) is not null ? WttActionResolver.SigningScopes : [AzoaScopes.TransferSign]; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
 
     private static IReadOnlyList<string>? Deployment(string configuration)
     {
