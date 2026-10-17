@@ -13,7 +13,7 @@ public interface IActionWebhookDeliveryStore
     /// <summary>Reads one tenant-scoped delivery status without exposing protected material.</summary>
     Task<WebhookEventStatus?> GetAsync(Guid tenantId, Guid eventId, CancellationToken ct = default);
 
-    /// <summary>Audits a fresh retry cycle against exact dead-letter version and unchanged original destination.</summary>
+    /// <summary>Audits a fresh retry cycle from the exact version of an undelivered event with no live attempt and an unchanged original destination.</summary>
     Task<WebhookEventRetryReceipt?> RetryAsync(Guid tenantId, Guid eventId, WebhookEventRetryCommand command,
         SigningConsentWitness authority, CancellationToken ct = default);
     /// <summary>Returns bounded due candidates; discovery does not authorize any send.</summary>

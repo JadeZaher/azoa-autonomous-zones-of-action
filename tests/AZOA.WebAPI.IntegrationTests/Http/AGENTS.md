@@ -113,3 +113,15 @@ Cut: no tests for request-validation variants already covered by unit tests
    never against public RPC.
 4. Assert responses and rows (`RowsAsync`, typed `SurrealQuery<T>`); add a fixture-contract check
    when a slice consumes the payload.
+
+## §webhook-drain — `Infrastructure/WebhookDrainWebApplicationFactory.cs`, `WebhookOutboxDrainFlowTests.cs`
+
+The flow host plus `Webhooks:Enabled=true`, a one-second poll, no startup delay and
+`MaxAttempts=1` (one receiver failure dead-letters). The class declares
+`IClassFixture<WebhookDrainWebApplicationFactory>` on top of the base's fixture; xUnit builds
+both, but the unused base factory never starts a host. Each test owns a tenant and a unique
+`receiver-<guid>.flow.test` host registered on the edge, so the shared worker cannot cross
+tests. The event is produced by a real transition (tenant provisions a child → participation
+grant → consent notification); the only arranged state is the crashed-worker lease in the
+abandoned-attempt test, which no public route can create. Signature verification re-implements
+the documented length-prefixed HMAC (`Core/Webhooks/WebhookHmacSigner.cs`) independently.

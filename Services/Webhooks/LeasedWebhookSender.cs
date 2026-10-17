@@ -49,7 +49,7 @@ public sealed class LeasedWebhookSender(IHttpClientFactory clients, WebhookSsrfG
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested) { error = "HTTP_TIMEOUT"; }
         catch (HttpRequestException) { error = "HTTP_TRANSPORT_FAILED"; }
-        var exhausted = lease.CycleAttemptCount >= Math.Clamp(options.MaxAttempts, 1, 100);
+        var exhausted = lease.CycleAttemptCount >= options.BoundedMaxAttempts;
         var baseSeconds = Math.Clamp(options.BaseBackoffSeconds, 1, 86400);
         var maximumSeconds = Math.Clamp(options.MaxBackoffSeconds, baseSeconds, 86400);
         var delay = TimeSpan.FromSeconds(Math.Min(maximumSeconds,

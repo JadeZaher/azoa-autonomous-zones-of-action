@@ -88,18 +88,6 @@ public sealed partial class SurrealWebhookRegistrationStore(ISurrealExecutor exe
         return new() { Result = row is null ? null : ToDomain(row) };
     }
 
-    /// <inheritdoc/>
-    public async Task<AZOAResult<bool>> RotateSecretAsync(Guid tenantId, string newSecret, DateTime now, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(newSecret) || newSecret.Length is < 32 or > 512)
-            return new() { IsError = true, Message = "Webhook secrets must contain 32 to 512 characters." };
-        var current = await GetByTenantAsync(tenantId, ct);
-        if (current.Result is null) return new() { Result = false };
-        current.Result.Secret = newSecret;
-        var result = await UpsertAsync(current.Result, ct);
-        return new() { Result = !result.IsError, IsError = result.IsError, Message = result.Message };
-    }
-
     private Task<Row?> ReadAsync(Guid tenantId, CancellationToken ct)
     {
         var tenant = SurrealLink.ToLink("user", tenantId.ToString("N"))!;
