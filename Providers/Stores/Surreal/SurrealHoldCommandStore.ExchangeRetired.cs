@@ -31,6 +31,14 @@ public sealed partial class SurrealHoldCommandStore : IExchangeRetiredResolution
     }
 
     /// <inheritdoc/>
+    public async Task<OperationLog?> GetRetiredExchangeRowAsync(Guid operationId, CancellationToken ct = default)
+    {
+        var row = await executor.QuerySingleAsync<OperationLog>(SurrealQuery<OperationLog>.Key(operationId.ToString("N")), ct);
+        return row is { OperationType: ReserveExchangeManager.ChainOperationType }
+            && row.Status is not (OperationLog.StatusKind.Completed or OperationLog.StatusKind.Failed) ? row : null;
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<OperationLog>> ListRetiredExchangeRowsAsync(int limit, CancellationToken ct = default)
         => await executor.QueryAsync<OperationLog>(SurrealQuery<OperationLog>.From()
             .Where(row => row.OperationType == ReserveExchangeManager.ChainOperationType

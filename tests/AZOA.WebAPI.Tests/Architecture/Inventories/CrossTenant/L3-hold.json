@@ -218,5 +218,10 @@
     "store": "SurrealHoldCommandStore",
     "method": "ListRetiredExchangeRowsAsync",
     "tenantCheck": "operator-only: node-wide by design, served only under the Operator policy"
+  },
+  {
+    "store": "SurrealHoldCommandStore",
+    "method": "GetRetiredExchangeRowAsync",
+    "tenantCheck": "operator-only: node-wide by design, served only under the Operator policy"
   }
 ]

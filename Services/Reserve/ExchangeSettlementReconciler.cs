@@ -30,6 +30,9 @@ public interface IExchangeRetiredResolutionStore
     /// <summary>Creates the resolution once; returns the stored row (the original on an identical replay) or null on a conflicting one.</summary>
     Task<ExchangeRetiredResolution?> RecordRetiredResolutionAsync(ExchangeRetiredResolution resolution, CancellationToken ct = default);
 
+    /// <summary>Reads one exchange operation row while reconciliation still leaves it open; null otherwise.</summary>
+    Task<OperationLog?> GetRetiredExchangeRowAsync(Guid operationId, CancellationToken ct = default);
+
     /// <summary>Lists unresolved-by-reconciliation exchange operation rows, oldest first.</summary>
     Task<IReadOnlyList<OperationLog>> ListRetiredExchangeRowsAsync(int limit, CancellationToken ct = default);
 }

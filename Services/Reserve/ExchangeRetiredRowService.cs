@@ -50,8 +50,7 @@ public sealed class ExchangeRetiredRowService(IExchangeRetiredResolutionStore st
             return AZOAResult<RetiredExchangeRowView>.FailureWithCode(
                 "An operation, an outcome of Confirmed or Failed, and a reason of at most 1000 characters are required.",
                 AzoaErrorCodes.InvalidRequest);
-        var row = (await store.ListRetiredExchangeRowsAsync(200, ct))
-            .FirstOrDefault(candidate => SurrealRecordGuid.Parse(candidate.Id) == operationId);
+        var row = await store.GetRetiredExchangeRowAsync(operationId, ct);
         if (row is null || TransactionHash(row) is not { } hash)
             return AZOAResult<RetiredExchangeRowView>.FailureWithCode(
                 "No unresolved retired exchange row with an observed transaction has that id.", AzoaErrorCodes.NotFound);

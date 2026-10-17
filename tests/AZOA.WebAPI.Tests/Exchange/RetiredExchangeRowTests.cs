@@ -108,6 +108,9 @@ public sealed class RetiredExchangeRowTests
                 && stored.Reason == resolution.Reason ? stored : null);
         }
 
+        public Task<OperationLog?> GetRetiredExchangeRowAsync(Guid operationId, CancellationToken ct = default)
+            => Task.FromResult<OperationLog?>(row.Id == operationId.ToString("N") ? row : null);
+
         public Task<IReadOnlyList<OperationLog>> ListRetiredExchangeRowsAsync(int limit, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<OperationLog>>([row]);
     }

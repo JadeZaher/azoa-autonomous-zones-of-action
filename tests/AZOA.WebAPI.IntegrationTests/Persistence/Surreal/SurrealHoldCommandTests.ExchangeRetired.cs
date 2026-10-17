@@ -17,6 +17,7 @@ public sealed partial class SurrealHoldCommandTests
 
         (await _store.ListRetiredExchangeRowsAsync(50)).Select(row => row.Id).Should().ContainSingle()
             .Which.Should().EndWith(open.ToString("N"));
+        (await _store.GetRetiredExchangeRowAsync(open)).Should().NotBeNull();
 
         var resolution = new ExchangeRetiredResolution { Id = open.ToString("N"), OperationId = open.ToString("N"), Outcome = "Confirmed",
             TransactionHash = "tx-1", Reason = "Credited by hand.", ResolvedByUserId = _actor.ToString("N"), CreatedAt = DateTimeOffset.UtcNow };
