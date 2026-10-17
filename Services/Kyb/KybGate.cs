@@ -2,6 +2,7 @@
 
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Kyb;
 
 namespace AZOA.WebAPI.Services.Kyb;
@@ -56,14 +57,18 @@ public sealed class KybGate(IKybVerificationStore store, IdentomatKybProvider pr
             && string.Equals(current.AuthorityRevision, provider.AuthorityRevision, StringComparison.Ordinal))
             return AZOAResult<bool>.Success(true);
         // An early renewal in flight keeps the prior approval effective until it is decided (RV-L2 L2-7).
-        if (current is { Status: "PENDING", EffectiveApprovalEvidenceJson: not null, EffectiveApprovalExpiresAt: { } until }
-            && until > now
-            && string.Equals(current.EffectiveApprovalAuthorityRevision, provider.AuthorityRevision, StringComparison.Ordinal))
+        if (current is not null && HasEffectiveCarriedApproval(current, provider.AuthorityRevision, now))
             return AZOAResult<bool>.Success(true);
 
         logger.LogInformation("KYB gate denied {Capability} for tenant {TenantId}.", capability, tenantId);
         return Denied();
     }
+
+    /// <summary>A PENDING renewal still carrying an unexpired approval decided under the current authority.</summary>
+    public static bool HasEffectiveCarriedApproval(KybVerification row, string authorityRevision, DateTimeOffset now)
+        => row is { Status: "PENDING", EffectiveApprovalEvidenceJson: not null, EffectiveApprovalExpiresAt: { } until }
+            && until > now
+            && string.Equals(row.EffectiveApprovalAuthorityRevision, authorityRevision, StringComparison.Ordinal);
 
     private static AZOAResult<bool> Denied()
         => new() { IsError = true, Result = false, Code = RequiredCode, Message = RequiredMessage };

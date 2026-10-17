@@ -224,8 +224,9 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
 
         var active = await _kycStore.GetActiveSubmissionAsync(userId, tenantId, ct);
         var now = _clock.GetUtcNow();
+        // Extended once, on entering review: a fixed horizon bounds both the attempt and the poll (RV-L2 L2-6).
         if (active.IsError || active.Result is not { } submission || !MatchesSession(submission, session)
-            || submission.ExpiresAt is null || submission.ExpiresAt <= now)
+            || submission.Status != KycStatus.PENDING || submission.ExpiresAt is null || submission.ExpiresAt <= now)
             return;
 
         var days = Math.Clamp(_configuration?.GetValue<int?>(SubmissionExpiryDaysKey) ?? DefaultSubmissionExpiryDays, 1, 365);

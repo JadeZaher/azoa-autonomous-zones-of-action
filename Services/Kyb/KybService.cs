@@ -141,10 +141,9 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
             candidate.EffectiveApprovalEvidenceJson = approved.BusinessEvidenceJson;
             candidate.EffectiveApprovalAuthorityRevision = approved.AuthorityRevision;
         }
-        else if (current is { Status: "PENDING", EffectiveApprovalExpiresAt: { } until, EffectiveApprovalEvidenceJson: not null }
-            && until > now && current.EffectiveApprovalAuthorityRevision == provider.AuthorityRevision)
+        else if (current is not null && KybGate.HasEffectiveCarriedApproval(current, provider.AuthorityRevision, now))
         {
-            candidate.EffectiveApprovalExpiresAt = until;
+            candidate.EffectiveApprovalExpiresAt = current.EffectiveApprovalExpiresAt;
             candidate.EffectiveApprovalEvidenceJson = current.EffectiveApprovalEvidenceJson;
             candidate.EffectiveApprovalAuthorityRevision = current.EffectiveApprovalAuthorityRevision;
         }
@@ -191,12 +190,14 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
 
     private KybStatusResponse Project(KybVerification verification)
     {
-        var fresh = verification.ExpiresAt > clock.GetUtcNow()
+        var now = clock.GetUtcNow();
+        var fresh = verification.ExpiresAt > now
             && verification.AuthorityRevision == provider.AuthorityRevision && GetCapabilities().Available;
+        var carried = GetCapabilities().Available && KybGate.HasEffectiveCarriedApproval(verification, provider.AuthorityRevision, now);
         var evidence = verification.BusinessEvidenceJson is null ? null
             : JsonSerializer.Deserialize<KybBusinessEvidence>(verification.BusinessEvidenceJson);
         return new KybStatusResponse(Guid.Parse(verification.AttemptId), fresh ? verification.Status : "EXPIRED",
-            fresh && verification.Status == "APPROVED" && evidence is { Beneficiaries.Count: > 0 },
+            (fresh && verification.Status == "APPROVED" && evidence is { Beneficiaries.Count: > 0 }) || carried,
             verification.ExpiresAt, verification.ReviewedAt, evidence?.Beneficiaries.Count ?? 0);
     }
 }

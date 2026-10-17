@@ -407,7 +407,9 @@ is now the sole trigger and only `IdentomatKycProviderService.MapOutcome` sets i
 `ADDITIONAL_INFORMATION_REQUESTED` stay PENDING with their short expiry. The extended IN_REVIEW
 attempt is what the outcome poll's relevance probe keys on (`ProbeAsync`: live while the attempt
 bound to the session is PENDING/IN_REVIEW and unexpired), so the poll keeps fetching until a late
-human decision lands or the extended attempt expires (L2-6).
+human decision lands or the extended attempt expires (L2-6). The extension is applied once, on the
+PENDING -> IN_REVIEW move; later `MANUAL_CHECK` reads do not push it again, so a review that never
+ends cannot keep the attempt (and its hourly poll) alive indefinitely.
 
 **The admin manual-review queue lists MANUAL submissions only (L2-9).** `GetPendingAsync` skips
 hosted IN_REVIEW attempts: `ApproveAsync`/`RejectAsync` refuse every non-MANUAL row, so showing
