@@ -2,6 +2,7 @@ using System.Text.Json;
 using AZOA.WebAPI.Helpers.Deployments;
 using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Interfaces;
 
@@ -62,27 +63,27 @@ public sealed partial class DeploymentService
 
     /// <inheritdoc/>
     public async Task<AZOAResult<DeploymentReceipt>> RecoverWithinBudgetAsync(string operationId, Guid actor, Guid? tenant,
-        DeploymentOriginalBudgetRecoveryRequest request, CancellationToken ct = default)
+        DeploymentOriginalBudgetRecoveryRequest request, CancellationToken ct = default, SigningCredentialWitness? credential = null)
     {
         if (request is null || !request.AcknowledgeRecovery || request.Mode is not ("AbortCleanup" or "ContinueCleanup" or "FinalizeAuthority"))
             return Fail<DeploymentReceipt>("Explicit recovery mode consent is required.");
         var parent = await OwnedAsync(operationId, actor, tenant, ct);
         if (parent is null) return Fail<DeploymentReceipt>("Original operation not found.");
         if (parent.RecoveryMode == request.Mode && parent.RecoveryChildId is null)
-            return await AdvanceAsync(parent, actor, tenant, true, ct);
+            return await AdvanceAsync(parent, actor, tenant, true, ct, credential);
         if (parent.Version != request.ExpectedVersion || !RecoveryEligible(parent) || parent.RecoveryMode != "None")
             return Fail<DeploymentReceipt>("Original operation must be resolved and unchanged before selecting recovery.");
         var original = Read<DeploymentStartRequest>(parent.RequestJson);
         if (original.NativeIntent is not { } intent || Module(original.Target) is not INativeRecoveryModule recovery)
             return Fail<DeploymentReceipt>("Provider does not support original-budget recovery.");
-        var authority = await CheckSigningAuthorityAsync(intent, actor, tenant, ct);
-        if (authority is not null) return Fail<DeploymentReceipt>(authority);
+        var authority = await BindNativeAuthorityAsync(intent, actor, tenant, parent.ActionRunId, credential, ct);
+        if (authority.IsError) return Fail<DeploymentReceipt>(authority.Message);
         var next = await recovery.GetRecoveryNextStageAsync(intent, Read<List<NativeStageHistory>>(parent.HistoryJson), request.Mode, ct);
         if (next.IsError || next.Result is null) return Fail<DeploymentReceipt>(next.Message);
         parent.RecoveryMode = request.Mode; parent.State = "AwaitingAuthorization";
         var saved = await store.UpdateAsync(parent, parent.Version, ct);
         return saved is null ? Fail<DeploymentReceipt>("Original operation changed while selecting recovery.")
-            : await AdvanceAsync(saved, actor, tenant, true, ct);
+            : await AdvanceAsync(saved, actor, tenant, true, ct, credential);
     }
 
     /// <inheritdoc/>
@@ -128,7 +129,7 @@ public sealed partial class DeploymentService
 
     /// <inheritdoc/>
     public async Task<AZOAResult<DeploymentReceipt>> StartRecoveryAsync(string operationId, Guid actor, Guid? tenant,
-        DeploymentRecoveryStartRequest request, CancellationToken ct = default)
+        DeploymentRecoveryStartRequest request, CancellationToken ct = default, SigningCredentialWitness? credential = null)
     {
         if (request?.Quote?.Intent is not { } supplied || supplied.Authorities is null
             || supplied.Authorities.Any(item => item is null) || supplied.Budget is null || supplied.Input.ValueKind != JsonValueKind.Object)
@@ -166,8 +167,8 @@ public sealed partial class DeploymentService
         var expectedPredecessor = predecessor.Result is { } old ? await AuditedPredecessorAsync(parent, old, ct) : null;
         if ((predecessor.Result is not null && expectedPredecessor is null) || recovery.Predecessor != expectedPredecessor)
             return Fail<DeploymentReceipt>("Quoted recovery predecessor changed; obtain a new quote and consent.");
-        var authority = await CheckSigningAuthorityAsync(intent, actor, tenant, ct);
-        if (authority is not null) return Fail<DeploymentReceipt>(authority);
+        var authority = await BindNativeAuthorityAsync(intent, actor, tenant, null, credential, ct);
+        if (authority.IsError) return Fail<DeploymentReceipt>(authority.Message);
         var candidate = new DeploymentOperation
         {
             Id = childId, ActorUserId = parent.ActorUserId, TenantId = parent.TenantId, ArtifactId = parent.ArtifactId,
@@ -180,7 +181,7 @@ public sealed partial class DeploymentService
             ? await store.ReplaceRecoveryChildAsync(parent, previous, candidate, ct)
             : await store.ClaimRecoveryChildAsync(parent, candidate, ct);
         return child is null ? Fail<DeploymentReceipt>("Recovery claim lost its original-operation fence.")
-            : await AdvanceAsync(child, actor, tenant, true, ct);
+            : await AdvanceAsync(child, actor, tenant, true, ct, credential);
     }
 
     private static bool RecoveryKey(string key) => !string.IsNullOrWhiteSpace(key) && key.Length <= 200 && !key.Any(char.IsControl);
