@@ -38,6 +38,7 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
         if (parameters.Id != NodeGovernanceParameters.LocalId)
             return AZOAResult<NodeGovernanceParameters>.Failure("Node governance policy must use the local singleton identity.");
         // raw: governance CAS and immutable audit append share one transaction.
+        // lock: the policy row read here is upserted below in this batch, and NodeGovernancePolicyFence.Lock() writes the policy lock row first.
         var readVersion = SurrealQuery
             .Of("LET $_versions = SELECT VALUE version FROM type::record($_pt, $_pid)")
             .WithParam("_pt", ParametersTable)

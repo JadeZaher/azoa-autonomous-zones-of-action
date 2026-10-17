@@ -68,6 +68,7 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
         // raw: credential revision CAS, hash rotation, and JWT watermark advance must commit together.
         var transaction = SurrealQuery.Combine(
             SurrealQuery.Of("BEGIN"),
+            // lock: the bootstrap state row read here is UPDATEd below in this batch, so a concurrent rotation or session bump conflicts.
             SurrealQuery
                 .Of("LET $_binding = SELECT VALUE credential_revision FROM type::record($_state_table, $_state_id) WHERE user_id = $_user")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
@@ -125,6 +126,7 @@ public sealed class SurrealAdminBootstrapStateStore : IAdminBootstrapStateStore
         var userLink = SurrealLink.ToLink("user", SurrealId.ToSurrealId(operatorId));
         var transaction = SurrealQuery.Combine(
             SurrealQuery.Of("BEGIN"),
+            // lock: the bootstrap state row read here is UPDATEd below in this batch, so a concurrent rotation or session bump conflicts.
             SurrealQuery
                 .Of("LET $_binding = SELECT credential_revision, session_revision FROM type::record($_state_table, $_state_id) WHERE user_id = $_user")
                 .WithParam("_state_table", AdminBootstrapState.SchemaNameConst)
