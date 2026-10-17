@@ -3,12 +3,14 @@ using AZOA.WebAPI.Interfaces.ActionExecution;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Actions.Handlers;
 using AZOA.WebAPI.Tests.Fakes;
+using AZOA.WebAPI.Tests.TestSupport;
 using Moq;
 using Xunit;
 using ActionEntity = AZOA.WebAPI.Models.Actions.ActionDefinition;
@@ -60,7 +62,8 @@ public class ActionInvitationsTests
             BlockchainProviderFactoryFakes.Returning(),
             BindingResolverFakes.PassThrough(),
             configuration: null,
-            accessRequestStore: (accessStore ?? new Mock<IActionAccessRequestStore>()).Object);
+            accessRequestStore: (accessStore ?? new Mock<IActionAccessRequestStore>()).Object,
+            workflowAdmission: new InMemoryActionWorkflowAdmissionStore(runStore, execStore, new InMemorySagaStore()));
 
         return (manager, actionStore, runStore);
     }
@@ -99,6 +102,9 @@ public class ActionInvitationsTests
         return action;
     }
 
+    // Every run start carries a fresh request key (the durable admission's idempotency identity).
+    private static AZOARequest Keyed() => new() { IdempotencyKey = Guid.NewGuid().ToString("N") };
+
     private static async Task<int> RunCountAsync(InMemoryActionRunStore runStore, Guid actionId) =>
         (await runStore.GetByActionIdAsync(actionId)).Result!.Count();
 
@@ -113,7 +119,7 @@ public class ActionInvitationsTests
         var action = PublishedAction(ActionRunAccess.Open);
         await actionStore.UpsertActionAsync(action);
 
-        var result = await manager.ExecuteAsync(action.Id, Outsider);
+        var result = await manager.ExecuteAsync(action.Id, Outsider, Keyed());
 
         // Open + public ⇒ the invite gate must NOT fire. A run row proves the
         // start was permitted through the LoadStartableAction chokepoint.
@@ -132,7 +138,7 @@ public class ActionInvitationsTests
         var action = PublishedAction(ActionRunAccess.InviteOnly); // empty invite set
         await actionStore.UpsertActionAsync(action);
 
-        var result = await manager.ExecuteAsync(action.Id, Outsider);
+        var result = await manager.ExecuteAsync(action.Id, Outsider, Keyed());
 
         result.IsError.Should().BeTrue();
         result.Message.Should().ContainEquivalentOf(InviteRejectionFragment,
@@ -148,7 +154,7 @@ public class ActionInvitationsTests
         var action = PublishedAction(ActionRunAccess.InviteOnly, Invited);
         await actionStore.UpsertActionAsync(action);
 
-        var result = await manager.ExecuteAsync(action.Id, Invited);
+        var result = await manager.ExecuteAsync(action.Id, Invited, Keyed());
 
         result.Message.Should().NotContainEquivalentOf(InviteRejectionFragment);
         (await RunCountAsync(runStore, action.Id)).Should().Be(1,
@@ -162,7 +168,7 @@ public class ActionInvitationsTests
         var action = PublishedAction(ActionRunAccess.InviteOnly); // owner NOT in invite list
         await actionStore.UpsertActionAsync(action);
 
-        var result = await manager.ExecuteAsync(action.Id, Owner);
+        var result = await manager.ExecuteAsync(action.Id, Owner, Keyed());
 
         result.Message.Should().NotContainEquivalentOf(InviteRejectionFragment);
         (await RunCountAsync(runStore, action.Id)).Should().Be(1,
@@ -208,7 +214,7 @@ public class ActionInvitationsTests
         reloaded.InvitedUserIds.Should().NotContain(Invited);
 
         // The now-uninvited user is gated on a fresh start.
-        var start = await manager.ExecuteAsync(action.Id, Invited);
+        var start = await manager.ExecuteAsync(action.Id, Invited, Keyed());
         start.IsError.Should().BeTrue();
         start.Message.Should().ContainEquivalentOf(InviteRejectionFragment);
         (await RunCountAsync(runStore, action.Id)).Should().Be(0);

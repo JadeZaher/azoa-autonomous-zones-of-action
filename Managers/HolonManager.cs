@@ -40,6 +40,21 @@ public class HolonManager : IHolonManager
     private static bool CanRead(IHolon holon, Guid? callerUserId) =>
         callerUserId.HasValue && holon.UserId == callerUserId.Value || holon.IsPublic;
 
+    // Refusal for a mutation on a holon the caller does not own: a holon the caller
+    // cannot even read answers "not found" so the refusal is no existence oracle.
+    private static string OwnershipRefusal(IHolon holon, Guid? callerUserId) =>
+        CanRead(holon, callerUserId) ? "Holon is owned by a different user." : "Holon not found.";
+
+    /// <summary>Null when <paramref name="parentId"/> is a holon owned by <paramref name="userId"/>;
+    /// see Managers/AGENTS.md §holon-owned-parent.</summary>
+    private async Task<string?> EnsureOwnedParentAsync(Guid parentId, Guid userId)
+    {
+        var parent = await _holonStore.GetByIdAsync(parentId, default);
+        return parent.IsError || parent.Result == null || !IsOwnedBy(parent.Result, userId)
+            ? "Parent holon not found."
+            : null;
+    }
+
     // Publication allow-list. IsPublic is what CanRead above reads, so it makes a
     // holon readable by EVERY caller on the node; this repo has leaked cross-tenant
     // through generic read surfaces three times, so the flag is deliberately NOT a
@@ -143,6 +158,9 @@ public class HolonManager : IHolonManager
         // vacuous for a brand-new holon, but self-parent is still a cycle).
         if (model.ParentHolonId.HasValue)
         {
+            var parentError = await EnsureOwnedParentAsync(model.ParentHolonId.Value, userId);
+            if (parentError != null)
+                return new AZOAResult<IHolon> { IsError = true, Message = parentError };
             var cycleError = await EnsureNotDescendantAsync(holon.Id, model.ParentHolonId.Value, request);
             if (cycleError != null)
                 return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
@@ -165,8 +183,9 @@ public class HolonManager : IHolonManager
     {
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null) return existing;
-        if (userId.HasValue && !IsOwnedBy(existing.Result, userId.Value))
-            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different user." };
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
+            return new AZOAResult<IHolon> { IsError = true, Message = OwnershipRefusal(existing.Result, userId) };
 
         // Election projections are immutable; see Services/Governance/AGENTS.md.
         var freezeError = await FrozenProposalRewriteErrorAsync(
@@ -182,6 +201,12 @@ public class HolonManager : IHolonManager
         // FR-6 / AC-6b: guard cycle on parent change.
         if (model.ParentHolonId.HasValue)
         {
+            if (model.ParentHolonId != existing.Result.ParentHolonId)
+            {
+                var parentError = await EnsureOwnedParentAsync(model.ParentHolonId.Value, userId.Value);
+                if (parentError != null)
+                    return new AZOAResult<IHolon> { IsError = true, Message = parentError };
+            }
             var cycleError = await EnsureNotDescendantAsync(id, model.ParentHolonId.Value, request);
             if (cycleError != null)
                 return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
@@ -231,8 +256,9 @@ public class HolonManager : IHolonManager
         var existing = await _holonStore.GetByIdAsync(id, default);
         if (existing.IsError || existing.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = existing.Message ?? "Holon not found." };
-        if (userId.HasValue && !IsOwnedBy(existing.Result, userId.Value))
-            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different user." };
+        // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
+            return new AZOAResult<bool> { IsError = true, Message = OwnershipRefusal(existing.Result, userId) };
 
         // Election projections remain available after finalization.
         var freezeError = await FrozenProposalErrorAsync(existing.Result, "a vote has already been recorded on it");
@@ -254,7 +280,7 @@ public class HolonManager : IHolonManager
         if (existing.IsError || existing.Result == null) return existing;
         // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
         if (!userId.HasValue || !IsOwnedBy(existing.Result, userId.Value))
-            return new AZOAResult<IHolon> { IsError = true, Message = "Holon is owned by a different user." };
+            return new AZOAResult<IHolon> { IsError = true, Message = OwnershipRefusal(existing.Result, userId) };
 
         // Metadata interaction cannot mutate an election projection.
         var interactionFreezeError = await FrozenProposalRewriteErrorAsync(
@@ -285,6 +311,12 @@ public class HolonManager : IHolonManager
         // FR-6 / AC-6b: guard cycle on reparent via Interact.
         if (request.NewParentHolonId.HasValue)
         {
+            if (request.NewParentHolonId != holon.ParentHolonId)
+            {
+                var parentError = await EnsureOwnedParentAsync(request.NewParentHolonId.Value, userId.Value);
+                if (parentError != null)
+                    return new AZOAResult<IHolon> { IsError = true, Message = parentError };
+            }
             var cycleError = await EnsureNotDescendantAsync(id, request.NewParentHolonId.Value, providerRequest);
             if (cycleError != null)
                 return new AZOAResult<IHolon> { IsError = true, Message = cycleError };
@@ -430,38 +462,25 @@ public class HolonManager : IHolonManager
             return new AZOAResult<int> { IsError = true, Message = rootResult.Message ?? "Holon not found." };
         // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
         if (!userId.HasValue || !IsOwnedBy(rootResult.Result, userId.Value))
-            return new AZOAResult<int> { IsError = true, Message = "Holon is owned by a different user." };
+            return new AZOAResult<int> { IsError = true, Message = OwnershipRefusal(rootResult.Result, userId) };
 
-        var count = 0;
-        var queue = new Queue<Guid>();
-        var visited = new HashSet<Guid>();
-
+        // Plan every write before the first one, and only over holons the caller owns: a
+        // descendant owned by another user is walked through but never written. See
+        // Managers/AGENTS.md §holon-owned-parent.
+        var targets = new List<Holon>();
         if (request.IncludeSelf)
+            targets.Add((Holon)rootResult.Result);
+        foreach (var descendant in await CollectDescendantsAsync(id))
         {
-            queue.Enqueue(id);
-            visited.Add(id);
-        }
-        else
-        {
-            // Start with children only
-            var childrenResult = await _holonStore.QueryAsync(new HolonQueryRequest { ParentHolonId = id }, default);
-            foreach (var child in childrenResult.Result ?? Enumerable.Empty<IHolon>())
-            {
-                if (visited.Add(child.Id))
-                    queue.Enqueue(child.Id);
-            }
+            if (IsOwnedBy(descendant, userId.Value))
+                targets.Add((Holon)descendant);
         }
 
-        while (queue.Count > 0)
+        if (targets.Any(holon => holon.AssetType == ConsumerGovernanceHolonTypes.ProposalAssetType))
+            return AZOAResult<int>.Failure("Election projections cannot be changed by propagation.");
+
+        foreach (var holon in targets)
         {
-            var currentId = queue.Dequeue();
-            var holonResult = await _holonStore.GetByIdAsync(currentId, default);
-            if (holonResult.IsError || holonResult.Result == null) continue;
-
-            var holon = (Holon)holonResult.Result;
-            if (holon.AssetType == ConsumerGovernanceHolonTypes.ProposalAssetType)
-                return AZOAResult<int>.Failure("Election projections cannot be changed by propagation.");
-
             if (request.Property.Equals("IsActive", StringComparison.OrdinalIgnoreCase))
                 holon.IsActive = request.Value;
             else
@@ -469,17 +488,9 @@ public class HolonManager : IHolonManager
 
             holon.ModifiedDate = DateTime.UtcNow;
             await _holonStore.UpsertAsync(holon, default);
-            count++;
-
-            var childrenResult = await _holonStore.QueryAsync(new HolonQueryRequest { ParentHolonId = currentId }, default);
-            foreach (var child in childrenResult.Result ?? Enumerable.Empty<IHolon>())
-            {
-                if (visited.Add(child.Id))
-                    queue.Enqueue(child.Id);
-            }
         }
 
-        return new AZOAResult<int> { Result = count, Message = $"Propagated to {count} holons." };
+        return new AZOAResult<int> { Result = targets.Count, Message = $"Propagated to {targets.Count} holons." };
     }
 
     public async Task<AZOAResult<HolonComposition>> ComposeAsync(Guid id, Guid? callerUserId = null, AZOARequest? request = null)
@@ -556,18 +567,21 @@ public class HolonManager : IHolonManager
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
 
         var original = (Holon)originalResult.Result;
-        if (original.AssetType == ConsumerGovernanceHolonTypes.ProposalAssetType)
-            return AZOAResult<IHolon>.Failure("Election projections cannot be cloned.");
         // H-2: cross-user clone is the marketplace TEMPLATE mechanic — only the
         // owner, or anyone when the source is IsPublic, may clone. A non-owner
         // cloning a private holon is a cross-tenant IP-theft vector; fail closed as
         // "not found" so a private holon's existence is not confirmed by id probing.
-        if (!IsOwnedBy(original, userId) && !original.IsPublic)
+        if (!CanRead(original, userId))
             return new AZOAResult<IHolon> { IsError = true, Message = "Holon not found." };
+        if (original.AssetType == ConsumerGovernanceHolonTypes.ProposalAssetType)
+            return AZOAResult<IHolon>.Failure("Election projections cannot be cloned.");
+        if (request.NewParentId.HasValue)
+        {
+            var parentError = await EnsureOwnedParentAsync(request.NewParentId.Value, userId);
+            if (parentError != null)
+                return new AZOAResult<IHolon> { IsError = true, Message = parentError };
+        }
 
-        var idMap = new Dictionary<Guid, Guid>();
-
-        // Clone the root
         var clone = new Holon
         {
             Id = _entityId(),
@@ -588,13 +602,14 @@ public class HolonManager : IHolonManager
             SourceHolonId = original.Id,
             OriginUserId = original.UserId
         };
-
-        idMap[original.Id] = clone.Id;
-        await _holonStore.UpsertAsync(clone, default);
+        var clones = new List<Holon> { clone };
 
         if (request.IncludeSubtree)
         {
-            // BFS clone all descendants, remapping parent IDs
+            // audit-2 H1: copy only descendants the caller may read; an unreadable child is
+            // skipped with its whole branch (its clone would have no parent). Planned in
+            // full before any write. See Managers/AGENTS.md §holon-owned-parent.
+            var idMap = new Dictionary<Guid, Guid> { [original.Id] = clone.Id };
             var queue = new Queue<Guid>();
             queue.Enqueue(original.Id);
             var visited = new HashSet<Guid> { original.Id };
@@ -607,7 +622,7 @@ public class HolonManager : IHolonManager
 
                 foreach (var child in children)
                 {
-                    if (!visited.Add(child.Id)) continue;
+                    if (!visited.Add(child.Id) || !CanRead(child, userId)) continue;
                     if (child.AssetType == ConsumerGovernanceHolonTypes.ProposalAssetType)
                         return AZOAResult<IHolon>.Failure("A subtree containing an election projection cannot be cloned.");
 
@@ -632,11 +647,14 @@ public class HolonManager : IHolonManager
                     };
 
                     idMap[child.Id] = childClone.Id;
-                    await _holonStore.UpsertAsync(childClone, default);
+                    clones.Add(childClone);
                     queue.Enqueue(child.Id);
                 }
             }
         }
+
+        foreach (var holon in clones)
+            await _holonStore.UpsertAsync(holon, default);
 
         return new AZOAResult<IHolon> { Result = clone, Message = "Holon cloned." };
     }
@@ -658,16 +676,20 @@ public class HolonManager : IHolonManager
 
     public async Task<AZOAResult<bool>> MoveSubtreeAsync(Guid id, Guid newParentId, Guid? userId = null, AZOARequest? request = null)
     {
-        // FR-6 / AC-6a: guard via shared helper (MoveSubtree precedent).
-        var cycleError = await EnsureNotDescendantAsync(id, newParentId, request);
-        if (cycleError != null) return new AZOAResult<bool> { IsError = true, Message = cycleError };
-
         var holonResult = await _holonStore.GetByIdAsync(id, default);
         if (holonResult.IsError || holonResult.Result == null)
             return new AZOAResult<bool> { IsError = true, Message = "Holon not found." };
         // Fail-closed: a mutating call with no acting user is a wiring bug, not an admin escape hatch.
+        // Ownership is settled before the cycle walk so a refusal says nothing about the subtree.
         if (!userId.HasValue || !IsOwnedBy(holonResult.Result, userId.Value))
-            return new AZOAResult<bool> { IsError = true, Message = "Holon is owned by a different user." };
+            return new AZOAResult<bool> { IsError = true, Message = OwnershipRefusal(holonResult.Result, userId) };
+
+        var parentError = await EnsureOwnedParentAsync(newParentId, userId.Value);
+        if (parentError != null) return new AZOAResult<bool> { IsError = true, Message = parentError };
+
+        // FR-6 / AC-6a: guard via shared helper (MoveSubtree precedent).
+        var cycleError = await EnsureNotDescendantAsync(id, newParentId, request);
+        if (cycleError != null) return new AZOAResult<bool> { IsError = true, Message = cycleError };
 
         var holon = (Holon)holonResult.Result;
         if (holon.AssetType == ConsumerGovernanceHolonTypes.ProposalAssetType)

@@ -72,7 +72,7 @@ public class DappCompositionManagerTests
         var get = await _manager.GetAsync(seriesId, otherUser);
 
         get.IsError.Should().BeTrue();
-        get.Message.Should().Contain("Forbidden");
+        get.Message.Should().Be($"DappSeries {seriesId} not found.", "a foreign series reads exactly like a missing one");
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class DappCompositionManagerTests
         });
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().Contain("Forbidden");
+        result.Message.Should().Be($"DappSeries {seriesId} not found.");
     }
 
     // ── Validator 1: All Actions Completed ─────────────────────────────────────
@@ -292,7 +292,7 @@ public class DappCompositionManagerTests
         var deploy = await _manager.DeployAsync(seriesId, _userId, new("artifact", "hash", new("PlatformRuntime", "Algorand", "Devnet")), "key");
 
         deploy.IsError.Should().BeTrue();
-        deploy.Message.Should().Contain("Ready");
+        deploy.Message.Should().Contain("generated artifact").And.Contain("Draft");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
