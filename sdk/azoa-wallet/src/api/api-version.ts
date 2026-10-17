@@ -149,6 +149,8 @@ export const API_PATHS = {
   // Per-run reconciliation re-probe (reconcile-before-retry §7). Un-parks an
   // `AwaitingReconciliation` run against chain truth; NEVER re-broadcasts.
   ACTION_RUN_RECONCILE: (runId: string) => `/api/action/runs/${runId}/reconcile`,
+  // Operator sweep over every parked run → { scanned, results, errors, hardStuck }.
+  ACTION_RUN_RECONCILE_SWEEP: "/api/action/runs/reconcile-sweep",
 
   // Invite-gated actions + request/approval flow (action-invitations-approval).
   // Run-access is orthogonal to `IsPublic` discoverability: an Open action runs
@@ -256,4 +258,52 @@ export const API_PATHS = {
   NODE_TRANSPARENCY_FEE_AUDIT: "/api/node-transparency/audit/fees",
   NODE_TRANSPARENCY_TREASURY_AUDIT: "/api/node-transparency/audit/treasury",
   NODE_TRANSPARENCY_HISTORY_CHECKPOINT: "/api/node-transparency/audit/checkpoint",
+
+  // First-party KYC (KycController): begin/resume the hosted session, read and re-fetch status.
+  KYC_SESSION: "/api/kyc/session",
+  KYC_STATUS: "/api/kyc/status",
+  KYC_REFRESH: "/api/kyc/refresh",
+  HOSTED_SESSION_REFRESH: (sessionId: string) => `/api/operator/hosted-sessions/${sessionId}/refresh`,
+
+  // External wallet ownership proof (WalletController, audit-1 M2).
+  WALLET_OWNERSHIP_CHALLENGE: (walletId: string) => `/api/wallet/${walletId}/ownership-challenge`,
+  WALLET_OWNERSHIP_PROOF: (walletId: string) => `/api/wallet/${walletId}/ownership-proof`,
+
+  // D-3 client-signed operations (BlockchainOperationController).
+  BLOCKCHAIN_OPERATION_SIGNING_PLAN: (operationId: string) => `/api/blockchain/operations/${operationId}/signing-plan`,
+  BLOCKCHAIN_OPERATION_SUBMIT_SIGNED: (operationId: string) => `/api/blockchain/operations/${operationId}/submit-signed`,
+  OPERATOR_STUCK_OPERATIONS: "/api/operator/blockchain-operations/stuck",
+  OPERATOR_OPERATION_RESOLVE: (operationId: string) => `/api/operator/blockchain-operations/${operationId}/resolve`,
+
+  // Deployment operator exit (DeploymentOperatorController, F-H12).
+  OPERATOR_DEPLOYMENTS: "/api/operator/deployments",
+  OPERATOR_DEPLOYMENT_RESOLVE: (operationId: string) => `/api/operator/deployments/${operationId}/resolve`,
+
+  // Fiat operator resolutions (Operator policy).
+  FIAT_PAYOUT_RESOLVE: (payoutId: string) => `/api/admin/fiat-payouts/${encodeURIComponent(payoutId)}/resolve`,
+  FIAT_REVERSAL_RESOLVE: (reversalId: string) => `/api/admin/fiat-reversals/${encodeURIComponent(reversalId)}/resolve`,
+
+  // D-8 tenant payout float.
+  TENANT_PAYOUT_BALANCE: "/api/fiat/tenant-payout-balance",
+  TENANT_PAYOUT_TOP_UP: "/api/fiat/tenant-payout-balance/top-up",
+  TENANT_PAYOUT_FLOAT: (tenantId: string) => `/api/admin/tenant-payout-floats/${tenantId}`,
+
+  // Direct hold admission reads (HoldCommandsController).
+  HOLD_LIABILITIES: "/api/hold-commands/liabilities",
+  HOLD_LIABILITY: (holdRecordId: string) => `/api/hold-commands/liabilities/${holdRecordId}`,
+  HOLD_RESERVE_ASSETS: "/api/hold-commands/reserve-assets",
+
+  // Retired exchange rows (ExchangeController, Operator policy).
+  EXCHANGE_RETIRED_ROWS: "/api/exchange/operator/retired-rows",
+  EXCHANGE_RETIRED_ROW_RESOLVE: (operationId: string) => `/api/exchange/operator/retired-rows/${operationId}/resolve`,
+
+  // Operator console surfaces.
+  OPERATOR_WALLET_IDENTITIES: "/api/operator/wallet-identities",
+  OPERATOR_WALLET_IDENTITY_CLEAR: "/api/operator/wallet-identities/clear-conflicting-binding",
+  OPERATOR_DEX_SETTLE_REVIEW: (operationId: string) => `/api/operator/dex/operations/${operationId}/settle-review`,
+  OPERATOR_WTT_OPERATION: (operationId: string) => `/api/operator/wtt/operations/${operationId}`,
+  OPERATOR_WTT_ACTION: (operationId: string, action: "reconcile" | "refetch-proof" | "resume-proof") =>
+    `/api/operator/wtt/operations/${operationId}/${action}`,
+  OPERATOR_WTT_STAGE_KEY_READINESS: "/api/operator/wtt/stage-keys/readiness",
+  OPERATOR_WTT_STAGE_KEY_REWRAP: "/api/operator/wtt/stage-keys/rewrap",
 } as const;

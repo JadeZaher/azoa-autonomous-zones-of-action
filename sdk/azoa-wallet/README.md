@@ -2,7 +2,7 @@
 
 Cross-platform TypeScript SDK for AZOA — a typed HTTP client + fluent facades
 over the AZOA WebAPI, built for **browser / React Native / Lynx**. Client-side
-signing, multi-chain wallet, DEX integration, and a durable **workflow** run
+signing, multi-chain wallet, durable node-side DEX swaps, and a durable **workflow** run
 driver. No `btoa`/`atob`/`Buffer`; pure-JS encoding only.
 
 ```ts

@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
-/// <reference types="@vitest/browser/providers/playwright" />
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
+import { playwright } from '@vitest/browser-playwright'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 /**
@@ -68,7 +68,7 @@ export default defineConfig({
           setupFiles: ['./src/test/slices/setup-browser.ts'],
           browser: {
             enabled: true,
-            provider: 'playwright',
+            provider: playwright(),
             headless: true,
             instances: [{ browser: 'chromium' }],
           },

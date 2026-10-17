@@ -5,6 +5,10 @@ export type * from "./api/wtt.js";
 export type * from "./api/consent.js";
 // Core
 export type * from "./api/deployments.js";
+export type * from "./api/identity.js";
+export type * from "./api/money.js";
+export type * from "./api/operations.js";
+export type * from "./api/operator.js";
 export { AzoaWallet } from "./wallet.js";
 export {
   ok,
@@ -17,6 +21,8 @@ export {
   SdkError,
   SdkErrorCode,
   isActionConflict,
+  isKybRequired,
+  KYB_REQUIRED,
   toHex,
   fromHex,
   concatBytes,
@@ -47,10 +53,6 @@ export type {
   TransferParams,
   MintParams,
   BurnParams,
-  SwapQuote,
-  SwapRouteStep,
-  SwapParams,
-  DexAdapter,
   ChainProviderRegistration,
   RetryOptions,
 } from "./core/index.js";
@@ -60,11 +62,6 @@ export { AlgorandProvider } from "./algorand/index.js";
 export type { AlgorandProviderConfig } from "./algorand/index.js";
 export { SolanaProvider } from "./solana/index.js";
 export type { SolanaProviderConfig } from "./solana/index.js";
-
-// DEX adapters
-export { TinymanAdapter, JupiterAdapter } from "./dex/index.js";
-export type { TinymanConfig, AlgodClientConfig } from "./dex/tinyman.js";
-export type { JupiterConfig } from "./dex/jupiter.js";
 
 // API client
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./api/index.js";
@@ -95,6 +92,7 @@ export type {
   BusinessVerificationStatus,
   BusinessVerificationSession,
   FiatPayoutView,
+  BlockchainOperationResult,
   ActionRecoveryView,
   ActionRecoveryRequest,
   ActionRecoveryReceipt,
@@ -262,6 +260,7 @@ export type {
   WorkflowNodeExecution,
   WorkflowExecutionState,
   WorkflowReconciliationResult,
+  WorkflowReconciliationSweep,
   AdvanceParams,
   SignalParams,
   StartRunParams,

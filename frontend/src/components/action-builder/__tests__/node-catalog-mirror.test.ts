@@ -48,7 +48,7 @@ const BACKEND_ACTION_NODE_TYPES = [
 const EXPECTED_MEMBER_COUNT = 54
 
 /** Nodes awaiting their independent activation review. */
-const PREVIEW_TYPES = ['CredentialRevoke']
+const PREVIEW_TYPES = ['CredentialRevoke', 'GovernanceProposalCreate', 'GovernanceVote', 'GovernanceTally']
 
 const missingFrom = (present: Iterable<string>) => {
   const have = new Set(present)

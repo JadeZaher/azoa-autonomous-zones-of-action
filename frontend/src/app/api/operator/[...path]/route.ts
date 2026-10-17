@@ -8,6 +8,7 @@ import {
   sanitizedOperatorResponse,
 } from '@/lib/operator-bff'
 import { KYC_PROVIDER_DISPLAY_NAME_MAX_LENGTH } from '@/lib/operator-contracts'
+import { resolveConsoleRoute } from '@/lib/operator-routes'
 
 export const dynamic = 'force-dynamic'
 
@@ -288,6 +289,26 @@ function sanitizeMutationBody(
   return null
 }
 
+/** Round-4 console actions (`lib/operator-routes.ts`); null when the path is not one of them. */
+async function proxyConsoleRoute(request: NextRequest, requestedPath: string, method: 'GET' | 'PUT' | 'POST'): Promise<NextResponse | null> {
+  const rawBody = method === 'GET' ? null : await readSmallJson(request.clone() as NextRequest)
+  const resolved = resolveConsoleRoute(requestedPath, method, request.nextUrl.searchParams, rawBody)
+  if (resolved === null) return null
+  if (resolved === 'invalid-body') {
+    return NextResponse.json({ message: 'The request body was invalid.' }, { status: 400, headers: NO_STORE_HEADERS })
+  }
+  const token = (await cookies()).get(OPERATOR_COOKIE_NAME)?.value
+  if (!token) {
+    return NextResponse.json({ message: 'Operator sign-in is required.' }, { status: 401, headers: NO_STORE_HEADERS })
+  }
+  try {
+    const upstream = await operatorUpstreamFetch(resolved.upstreamPath, token, { method, body: resolved.body })
+    return sanitizedOperatorResponse(upstream, { bare: resolved.bare })
+  } catch {
+    return NextResponse.json({ message: 'The node operator service is unavailable.' }, { status: 503, headers: NO_STORE_HEADERS })
+  }
+}
+
 async function proxy(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -299,6 +320,8 @@ async function proxy(
   }
   const requestedParts = (await context.params).path
   const requestedPath = requestedParts.join('/')
+  const consoleRoute = await proxyConsoleRoute(request, requestedPath, method)
+  if (consoleRoute) return consoleRoute
   const path = resolvePath(requestedParts, request, method)
   if (!path) {
     const invalidAuditQuery = method === 'GET' && requestedPath === 'kyc/audit'

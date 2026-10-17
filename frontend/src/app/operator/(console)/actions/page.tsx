@@ -64,7 +64,7 @@ export default function ActionRecoveryPage() {
         : <form className="space-y-3" onSubmit={event => { event.preventDefault(); void retry() }}>
           <Label htmlFor="action-recovery-reason">Investigation and reason for retry</Label>
           <Input id="action-recovery-reason" value={request?.reason ?? reason} disabled={busy || request !== null} minLength={20} maxLength={1000} required onChange={event => setReason(event.target.value)} />
-          <Button disabled={busy || (request?.reason ?? reason).trim().length < 20}>{request ? 'Retry same recovery request' : 'Request recovery'}</Button>
+          <Button type="submit" disabled={busy || (request?.reason ?? reason).trim().length < 20}>{request ? 'Retry same recovery request' : 'Request recovery'}</Button>
         </form>}
       <h3 className="font-medium">Recent recovery requests</h3>
       {history.length === 0 ? <p>No recovery requests recorded.</p> : history.map(item => <div key={item.id} className="border-t py-2">

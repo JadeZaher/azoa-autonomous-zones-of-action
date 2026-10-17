@@ -35,6 +35,8 @@ export interface SdkErrorOptions {
   path?: string;
   /** Server-side exception chain, surfaced when backend debug mode is on. */
   detail?: SdkErrorDetail;
+  /** The server's typed refusal code (`AZOAResult.code`, e.g. `KYB_REQUIRED`), when it sent one. */
+  serverCode?: string;
 }
 
 export class SdkError extends Error {
@@ -45,6 +47,7 @@ export class SdkError extends Error {
   readonly method?: string;
   readonly path?: string;
   readonly detail?: SdkErrorDetail;
+  readonly serverCode?: string;
 
   constructor(
     code: SdkErrorCode,
@@ -60,6 +63,7 @@ export class SdkError extends Error {
     this.method = options?.method;
     this.path = options?.path;
     this.detail = options?.detail;
+    this.serverCode = options?.serverCode;
   }
 
   /**
@@ -78,6 +82,7 @@ export class SdkError extends Error {
       ...(this.method !== undefined ? { method: this.method } : {}),
       ...(this.path !== undefined ? { path: this.path } : {}),
       ...(this.detail !== undefined ? { detail: this.detail } : {}),
+      ...(this.serverCode !== undefined ? { serverCode: this.serverCode } : {}),
       ...(this.cause !== undefined
         ? { cause: { name: this.cause.name, message: this.cause.message } }
         : {}),
@@ -132,4 +137,13 @@ export function isActionConflict(error: SdkError): boolean {
     error.code === SdkErrorCode.API_ERROR &&
     /(publish|unpublish|action run) conflict/i.test(error.message)
   );
+}
+
+/** Server code for a refusal that needs the tenant's business verification (D-6). */
+export const KYB_REQUIRED = "KYB_REQUIRED";
+
+/** True when the node refused because the acting tenant's business verification is missing, lapsed or not approved. */
+export function isKybRequired(error: unknown): boolean {
+  if (!(error instanceof SdkError)) return false;
+  return error.serverCode === KYB_REQUIRED || error.message.includes(KYB_REQUIRED);
 }

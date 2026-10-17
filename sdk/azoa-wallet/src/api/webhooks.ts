@@ -63,6 +63,8 @@ export interface WebhookEventStatus {
   registrationId?: string | null;
   destinationRevision?: number | null;
   attemptInFlight: boolean;
+  /** Same classifier the server's retry uses: offer Retry only when this is true. */
+  retryable: boolean;
 }
 
 export interface WebhookEventRetryCommand {
@@ -83,4 +85,8 @@ export interface WebhookEventRetryReceipt {
   version: number;
   retryGeneration: number;
   recordedAt: string;
+  /** Undelivered state the cycle restarted from; absent on pre-round-4 receipts. */
+  retriedFrom?: WebhookRetriedFrom | null;
 }
+
+export type WebhookRetriedFrom = "DeadLettered" | "AttemptBudgetExhausted" | "AbandonedAttempt";
