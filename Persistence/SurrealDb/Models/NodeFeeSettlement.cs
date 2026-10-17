@@ -6,6 +6,7 @@
 using System;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 
@@ -109,16 +110,19 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 13)]
         [Inside("Prepared", "PrimarySubmitted", "FeeSubmitted", "AwaitingReconciliation", "Settled", "Cancelled")]
         [Default("\"Prepared\"")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public StateKind State { get; set; } = StateKind.Prepared;
 
         [Column(Order = 14)]
         [Inside("NotStarted", "Submitted", "Confirmed", "Failed", "Unknown")]
         [Default("\"NotStarted\"")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public EffectStateKind PrimaryEffectState { get; set; } = EffectStateKind.NotStarted;
 
         [Column(Order = 15)]
         [Inside("NotStarted", "Submitted", "Confirmed", "Failed", "Unknown")]
         [Default("\"NotStarted\"")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public EffectStateKind FeeEffectState { get; set; } = EffectStateKind.NotStarted;
 
         [Column(Order = 16)]

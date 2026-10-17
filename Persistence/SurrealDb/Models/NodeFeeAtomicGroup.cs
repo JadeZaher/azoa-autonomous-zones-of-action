@@ -5,6 +5,7 @@
 
 using System;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using SurrealForge.Client;
 using SurrealForge.Client.Schema;
 
@@ -71,6 +72,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 9)]
         [Inside("Submitted", "PendingConfirmation", "Confirmed")]
         [ReadOnly]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public StateKind State { get; set; }
 
         [Column(Order = 10)]

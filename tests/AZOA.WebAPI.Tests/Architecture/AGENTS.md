@@ -68,3 +68,12 @@ remain prohibited direct references. The runtime remains in the separate
 `conductor/tracks/federation-v2/holochain-dotnet-bridge-contract.md`.
 The source scan blocks any `Holochain` or `Azoa.Holochain` implementation
 namespace, not merely a current allowlist of known runtime types.
+
+## enum-storage
+
+`EnumStorageConverterTests` reflects over every `[SurrealTable]` type in the API assembly and
+requires each enum-typed property (or its enum type) to carry
+`[JsonConverter(typeof(JsonStringEnumConverter))]`. Without it `SurrealWriter` stores the C# name
+while SurrealForge 1.3.0 typed reads bind the camelCase form, so a typed filter silently misses
+writer-written rows (found for `NodeFeeSettlement`/`NodeFeeAtomicGroup`, round 4 W0). Storage
+mappers convert enums by name (`Enum.Parse(x.ToString())`), never by ordinal cast.
