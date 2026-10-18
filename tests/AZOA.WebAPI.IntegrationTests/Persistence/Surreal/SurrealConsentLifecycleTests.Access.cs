@@ -17,7 +17,7 @@ public sealed partial class SurrealConsentLifecycleTests
     public async Task Status_release_rechecks_exact_current_authority_after_snapshot(string change)
     {
         var provisioning = new SigningConsentWitness(1, Authority() with { ActorUserId = _tenant }, [AzoaScopes.TenantProvision], []);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(value => value.OwnerTenantId, "user:" + _tenant.ToString("N")).Set(value => value.ExternalUserId, "child").Build())).EnsureAllOk();
         var original = (await _store.AdmitProvisionedAsync(_actor, "child", provisioning))!;
         var service = new TenantCustodialAccess(_executor);
@@ -26,11 +26,11 @@ public sealed partial class SurrealConsentLifecycleTests
         captured.Should().NotBeNull();
         (await service.ValidateAsync(captured, AzoaScopes.KycRead)).Should().BeTrue();
         if (change == "claimed")
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
                 .Unset(value => value.OwnerTenantId).Set(value => value.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         else if (change == "revoked") (await _store.RevokeUserExplicitAsync(original.GrantId, Authority())).Should().NotBeNull();
         else if (change == "offboarded") (await _store.OffboardAsync(_tenant, original.ParticipationRef!, provisioning)).Should().NotBeNull();
-        else (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_tenant.ToString("N"))
+        else (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_tenant.ToString("N")).Where(seed => true)
             .Set(value => value.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         (await service.ValidateAsync(captured, AzoaScopes.KycRead)).Should().BeFalse();
     }

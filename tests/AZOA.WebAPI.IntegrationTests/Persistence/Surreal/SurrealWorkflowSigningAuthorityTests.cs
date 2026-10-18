@@ -65,21 +65,21 @@ public sealed class SurrealWorkflowSigningAuthorityTests : IAsyncLifetime
         var (node, witness) = await SeedAsync();
         if (change == "revoked-original")
         {
-            await Execute(SurrealWriter.UpdateOnly<GrantRow>(witness.Grants[1].Id.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<GrantRow>(witness.Grants[1].Id.ToString("N")).Where(seed => true)
                 .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
             await Execute(SurrealWriter.Create(new GrantRow { Id = Guid.NewGuid().ToString("N"),
                 GrantorUserId = $"user:{witness.Credential.ActorUserId:N}", TenantId = $"user:{witness.Credential.TenantId:N}",
                 Scopes = AzoaScopes.TokenCreateSign, GrantedAt = DateTimeOffset.UtcNow, Origin = "UserExplicit" }));
         }
         else if (change == "changed-watermark")
-            await Execute(SurrealWriter.UpdateOnly<UserRow>(witness.Credential.ActorUserId.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<UserRow>(witness.Credential.ActorUserId.ToString("N")).Where(seed => true)
                 .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow.AddSeconds(1)).Build());
         else if (change == "missing-original")
-            await Execute(SurrealWriter.UpdateOnly<RunRow>(node.RunId.ToString("N")).Unset(row => row.AuthenticationWitnessJson).Build());
+            await Execute(SurrealWriter.UpdateOnly<RunRow>(node.RunId.ToString("N")).Where(seed => true).Unset(row => row.AuthenticationWitnessJson).Build());
         else
         {
             var narrowed = witness.Credential with { Scopes = [AzoaScopes.ActionExecute] };
-            await Execute(SurrealWriter.UpdateOnly<RunRow>(node.RunId.ToString("N"))
+            await Execute(SurrealWriter.UpdateOnly<RunRow>(node.RunId.ToString("N")).Where(seed => true)
                 .Set(row => row.AuthenticationWitnessJson, CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(narrowed))).Build());
         }
         (await _nodes.TryAdmitAsync(node, expectedRunVersion: 0)).Result.Should().BeNull();
@@ -135,13 +135,13 @@ public sealed class SurrealWorkflowSigningAuthorityTests : IAsyncLifetime
     {
         var (audit, witness, node, step) = await ParkedLegacyAsync();
         if (change == "cancel")
-            await Execute(SurrealWriter.UpdateOnly<RunRow>(audit.RunId).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
+            await Execute(SurrealWriter.UpdateOnly<RunRow>(audit.RunId).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
         else if (change == "grant")
-            await Execute(SurrealWriter.UpdateOnly<GrantRow>(witness.Grants[0].Id.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+            await Execute(SurrealWriter.UpdateOnly<GrantRow>(witness.Grants[0].Id.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         else if (change == "version")
-            await Execute(SurrealWriter.UpdateOnly<NodeRow>(audit.ExecutionId).Set(row => row.Version, node.Version + 1).Build());
+            await Execute(SurrealWriter.UpdateOnly<NodeRow>(audit.ExecutionId).Where(seed => true).Set(row => row.Version, node.Version + 1).Build());
         else if (change == "actor") audit.ActorId = Guid.NewGuid().ToString("N");
-        else await Execute(SurrealWriter.UpdateOnly<StepRow>(step.Id).Set(row => row.GateId, SagaOpaqueKey.Encode("different" )).Build());
+        else await Execute(SurrealWriter.UpdateOnly<StepRow>(step.Id).Where(seed => true).Set(row => row.GateId, SagaOpaqueKey.Encode("different" )).Build());
         var store = new SurrealActionSigningAuthorizationStore(_executor);
         (await store.AuthorizeAsync(audit, witness, node, step, default)).IsError.Should().BeTrue();
         (await store.GetAsync(audit.Id, default)).Should().BeNull();
@@ -157,7 +157,7 @@ public sealed class SurrealWorkflowSigningAuthorityTests : IAsyncLifetime
         var saved = await _nodes.UpdateAsync(candidate, ActionNodeState.Pending);
         saved.IsError.Should().BeFalse(saved.Message);
         candidate = saved.Result!;
-        await Execute(SurrealWriter.UpdateOnly<RunRow>(candidate.RunId.ToString("N")).Unset(row => row.AuthenticationWitnessJson)
+        await Execute(SurrealWriter.UpdateOnly<RunRow>(candidate.RunId.ToString("N")).Where(seed => true).Unset(row => row.AuthenticationWitnessJson)
             .Set(row => row.Status, RunRow.ActionRunStatusKind.AwaitingReconciliation).Build());
         var run = (await _executor.QuerySingleAsync<RunRow>(SurrealQuery<RunRow>.Key(candidate.RunId.ToString("N"))))!;
         var payload = new ActionStepPayload(candidate.RunId, SurrealRecordGuid.Parse(run.ActionId), original.Credential.ActorUserId, candidate.NodeId);
@@ -188,7 +188,7 @@ public sealed class SurrealWorkflowSigningAuthorityTests : IAsyncLifetime
         var now = DateTimeOffset.UtcNow.AddMinutes(-1);
         foreach (var id in new[] { actor, tenant })
             await Execute(SurrealWriter.Create(new UserRow { Id = id.ToString("N"), Username = id.ToString("N"),
-                Email = id.ToString("N") + "@example.test", IsActive = true, CreatedDate = now }));
+                Email = id.ToString("N") + "@example.test", IsActive = true, CreatedDate = now, PasswordHash = "fixture-no-login" }));
         var credential = new SigningCredentialWitness(1, "Jwt", actor, tenant, null, now, now.AddMinutes(10), null, null,
             [AzoaScopes.ActionExecute, AzoaScopes.TokenCreateSign], false, TokenUse: AzoaClaims.TokenUseChild);
         var grants = new List<SigningGrantWitness>();

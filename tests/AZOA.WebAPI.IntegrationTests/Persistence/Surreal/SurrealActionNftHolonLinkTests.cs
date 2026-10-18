@@ -3,12 +3,12 @@ using AZOA.WebAPI.Helpers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Blockchain;
+using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Governance;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Moq;
 using SurrealForge.Client;
 using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
@@ -41,10 +41,7 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
         _executor = new DefaultSurrealExecutor(_connection);
         _holons = new(_executor);
         _mutations = new(_executor);
-        var governance = new Mock<INodeGovernanceGuard>();
-        governance.Setup(guard => guard.EnsureAllowedAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(NodeGovernanceDecision.Allowed);
-        _services = new ServiceCollection().AddSingleton(governance.Object).BuildServiceProvider();
+        _services = new ServiceCollection().AddSingleton(NodeGovernanceGuard.Unrestricted).BuildServiceProvider();
         await Save(new User { Id = _actor.ToString("N"), Username = _actor.ToString("N"), Email = _actor + "@test.invalid",
             PasswordHash = "test", IsActive = true });
     }
@@ -75,7 +72,7 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
         changed.UserId = Guid.NewGuid();
         changed.TokenId = "later-owner-binding";
         (await _holons.UpsertAsync(changed)).IsError.Should().BeFalse();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Set(row => row.IsActive, false).Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true).Set(row => row.IsActive, false).Build())).EnsureAllOk();
         (await service.LinkAsync(reference, input, confirmed, default)).Should().BeNull();
         (await _holons.GetByIdAsync(holon.Id)).Result!.TokenId.Should().Be("later-owner-binding");
     }
@@ -87,25 +84,21 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
     public async Task ChangeAfterPlanningRollsBackAttachmentAndReceipt(string change)
     {
         var (input, reference, confirmed, holon) = await Command();
-        var intercepted = new Mock<IActionLocalMutationStore>();
-        intercepted.Setup(store => store.GetReceiptAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns((string id, CancellationToken ct) => _mutations.GetReceiptAsync(id, ct));
-        intercepted.Setup(store => store.CommitAsync(It.IsAny<ActionLocalMutationPlan>(), It.IsAny<Receipt>(), It.IsAny<long?>(), false, It.IsAny<CancellationToken>()))
-            .Returns(async (ActionLocalMutationPlan plan, Receipt receipt, long? policy, bool wallet, CancellationToken ct) =>
+        // Real store; the concurrent change lands between planning and the atomic commit.
+        var intercepted = new ChangeBeforeCommit(_mutations, async ct =>
+        {
+            if (change == "cancel")
+                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<RunRow>(input.RunId.ToString("N")).Where(seed => true)
+                    .Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build(), ct)).EnsureAllOk();
+            else
             {
-                if (change == "cancel")
-                    (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<RunRow>(input.RunId.ToString("N"))
-                        .Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build(), ct)).EnsureAllOk();
-                else
-                {
-                    var changed = ActionLocalSnapshot.Copy((await _holons.GetByIdAsync(holon.Id, ct)).Result!);
-                    if (change == "owner") changed.UserId = Guid.NewGuid();
-                    else changed.TokenId = "concurrent-asset";
-                    (await _holons.UpsertAsync(changed, ct)).IsError.Should().BeFalse();
-                }
-                return await _mutations.CommitAsync(plan, receipt, policy, wallet, ct);
-            });
-        var service = new ActionNftHolonLinkService(_services, _holons, intercepted.Object, _executor);
+                var changed = ActionLocalSnapshot.Copy((await _holons.GetByIdAsync(holon.Id, ct)).Result!);
+                if (change == "owner") changed.UserId = Guid.NewGuid();
+                else changed.TokenId = "concurrent-asset";
+                (await _holons.UpsertAsync(changed, ct)).IsError.Should().BeFalse();
+            }
+        });
+        var service = new ActionNftHolonLinkService(_services, _holons, intercepted, _executor);
         (await service.LinkAsync(reference, input, confirmed, default))!.Status.Should().Be(ActionExternalOperationStatus.Ambiguous);
         (await _executor.QueryAsync<Receipt>(SurrealQuery<Receipt>.From())).Should().BeEmpty();
         (await _holons.GetByIdAsync(holon.Id)).Result!.TokenId.Should().NotBe(confirmed.AssetId);
@@ -152,4 +145,17 @@ public sealed class SurrealActionNftHolonLinkTests : IAsyncLifetime
 
     private async Task Save<T>(T row) where T : ISurrealRecord, new()
         => (await _executor.ExecuteAsync(SurrealWriter.Create(row))).EnsureAllOk();
+
+    /// <summary>Delegates to the real store and runs <paramref name="change"/> just before the atomic commit.</summary>
+    private sealed class ChangeBeforeCommit(IActionLocalMutationStore inner, Func<CancellationToken, Task> change) : IActionLocalMutationStore
+    {
+        public Task<Receipt?> GetReceiptAsync(string commandId, CancellationToken ct = default) => inner.GetReceiptAsync(commandId, ct);
+
+        public async Task<AZOAResult<Receipt>> CommitAsync(ActionLocalMutationPlan plan, Receipt receipt, long? expectedPolicyVersion,
+            bool requiresWalletScope, CancellationToken ct = default)
+        {
+            await change(ct);
+            return await inner.CommitAsync(plan, receipt, expectedPolicyVersion, requiresWalletScope, ct);
+        }
+    }
 }
