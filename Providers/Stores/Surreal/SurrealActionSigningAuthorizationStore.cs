@@ -83,8 +83,10 @@ public sealed class SurrealActionSigningAuthorizationStore(ISurrealExecutor exec
             .Set(row => row.SigningAuthorityJson, audit.WitnessJson).Set(row => row.RecoveryState, "ParticipantAuthorized")
             .Unset(row => row.Error).Build(), "participant_node"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<ActionRun>(audit.RunId)
+            .Where(row => row.Status == ActionRun.ActionRunStatusKind.Running || row.Status == ActionRun.ActionRunStatusKind.AwaitingReconciliation)
             .Set(row => row.Status, ActionRun.ActionRunStatusKind.Running).Build(), "participant_run"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<SagaSteps>(step.Id)
+            .Where(row => row.Status == SagaSteps.StepStatus.Parked)
             .Set(row => row.Status, SagaSteps.StepStatus.Pending).Set(row => row.NextRunAt, audit.CreatedAt)
             .Set(row => row.UpdatedAt, audit.CreatedAt).Unset(row => row.GateId).Unset(row => row.ClaimedAt).Build(), "participant_step"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "participant_audit"));

@@ -69,9 +69,10 @@ internal static partial class SurrealQlSourceRules
     {
         foreach (Match match in ConditionalMutation().Matches(source.Code))
         {
+            // A builder split across statements (var update = UpdateOnly…; update = update.Unset…; update.Build()) is
+            // checked up to its first Build(); one returned unbuilt (no Build() after it) is the caller's to finish.
             var build = source.Code.IndexOf(".Build(", match.Index, StringComparison.Ordinal);
-            var statementEnd = source.Code.IndexOf(';', match.Index);
-            if (build < 0 || (statementEnd >= 0 && statementEnd < build)) continue;
+            if (build < 0) continue;
             if (!WhereCall().IsMatch(source.Code[match.Index..build]))
                 yield return $"{source.Location(match.Index)} SurrealWriter.{match.Groups[1].Value} without Where: Build() throws on SurrealForge 1.3.0";
         }

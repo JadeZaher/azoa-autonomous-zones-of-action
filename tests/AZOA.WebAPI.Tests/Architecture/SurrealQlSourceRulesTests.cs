@@ -33,6 +33,8 @@ public sealed class SurrealQlSourceRulesTests
         { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Unset(row => row.AllowedChains).Build();", true },
         { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Where(row => row.Version == version).Unset(row => row.AllowedChains).Build();", false },
         { "no-where", "var q = SurrealWriter.DeleteOnly<Row>(id).Build();", true },
+        { "no-where", "var update = SurrealWriter.UpdateOnly<Row>(id);\nif (a) update = update.Unset(row => row.Label);\nvar q = update.Build();", true },
+        { "no-where", "var update = SurrealWriter.UpdateOnly<Row>(id);\nupdate = update.Where(row => row.Version == v).Unset(row => row.Label);\nvar q = update.Build();", false },
         { "tenant-payout", "var debit = new TenantPayoutDebit { Id = id };\nawait executor.ExecuteAsync(SurrealWriter.Create(debit));", true },
         { "tenant-payout", "var q = SurrealWriter.UpdateOnly<TenantPayoutFloat>(id).Where(row => row.Version == v).Set(row => row.ReservedMinorUnits, 0).Build();", true },
         { "tenant-payout", "var q = SurrealQuery.Of(\"UPDATE tenant_payout_float SET reserved_minor_units = 0\");", true },
@@ -134,13 +136,6 @@ public sealed class SurrealQlSourceRulesTests
     private static readonly Dictionary<(string Rule, string File), (int Count, string Owner)> KnownViolations = new()
     {
         // Fail-closed residue found by these rules after every W2 lane merged: W3 fix batch, round4-lane-L6-verification.md §Needs other lane.
-        [("no-where", "Providers/Stores/Surreal/SurrealActionLocalMutationStore.cs")] = (2, "W3 fix batch (L4)"),
-        [("no-where", "Providers/Stores/Surreal/SurrealActionSigningAuthorizationStore.cs")] = (2, "W3 fix batch (L4)"),
-        [("no-where", "Providers/Stores/Surreal/SurrealHolonStore.cs")] = (1, "W3 fix batch (L4)"),
-        [("no-where", "Providers/Stores/Surreal/SurrealWalletStore.cs")] = (1, "W3 fix batch (L4)"),
-        [("no-where", "Providers/Stores/Surreal/SurrealFungibleCreationStore.cs")] = (1, "W3 fix batch (L3)"),
-        [("no-where", "Providers/Stores/Surreal/SurrealGovernanceStore.Finalization.cs")] = (1, "W3 fix batch (L1)"),
-        [("no-where", "Providers/Stores/Surreal/SurrealNftLifecycleStore.cs")] = (1, "W3 fix batch (L5)"),
         [("bare-id", "Services/Fiat/Reversal/FiatReversalEventHandler.cs")] = (1, "W3 fix batch (L3): LotId = lot?.Id is the stripped [Id]"),
         // Convention residue (not fail-closed today): SQL-13 class.
         [("non-literal", "Helpers/HostedSessionAliasFence.cs")] = (2, "W3 fix batch (L2/L1): per-index alias names via SurrealIdentifierTemplate"),
