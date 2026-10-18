@@ -12,11 +12,11 @@
   ],
   "phases": {
     "P0": "done",
-    "P1": "pending",
-    "P2": "pending",
-    "P3": "pending",
-    "P4": "pending",
-    "P5": "pending"
+    "P1": "merged",
+    "P2": "in_progress",
+    "P3": "merged",
+    "P4": "merged",
+    "P5": "join-done; smoke re-run + docs pending"
   },
   "partitions": {
     "computed_at_commit": "1e68d59d",
@@ -53,11 +53,37 @@
       "date": "2026-10-18",
       "verdict": "APPROVE WITH EDITS",
       "note": "C1 dominance, C2 server-side sessions + live perms, C3 reserved-id inventory, H1-H6, M1-M7 folded into plan.md §8 (binding)"
+    },
+    {
+      "phase": "P1+P3",
+      "reviewer": "security-reviewer (opus)",
+      "verdict": "FIX FIRST -> FIX FIRST -> MERGE",
+      "note": "H-1 lockout race, M-1 sid exposure, M-2 pending-role enrollment, M-3 audit flood; NEW-1 challenge-cap root DoS (stateless challenges), NEW-2 rogue-admin root revocation (root-only); LOW deferred: known-key timing oracle"
+    },
+    {
+      "phase": "P4",
+      "reviewer": "code-reviewer (opus) + automated security-guidance",
+      "verdict": "FIX FIRST -> fixed (3277259c)",
+      "note": "shell:true injection in rootEnv; H1 --node token leak, H2 no-op Windows ACL verify, H3 key overwrite/path traversal; M1-M6"
+    },
+    {
+      "phase": "P5",
+      "reviewer": "join (real CLI vs real API)",
+      "verdict": "PASS",
+      "note": "backend unchanged; 3 CLI bugs fixed (FIFO stdin, bare 4xx mapping, bootstrap revision)"
     }
   ],
   "lanes_plan": {
     "A1": "P1+P3 identity/auth/MFA/audit/admin CRUD (opus)",
     "A2": "P2 RBAC + operator-policy integration (opus, after A1)",
     "B": "P4 CLI (sonnet, parallel with A1)"
-  }
+  },
+  "merges": {
+    "A1": "b3f7aeb8 (feat/node-admin-a1 @ a90f6ab6)",
+    "B": "8fb69665 (feat/node-admin-cli @ 3277259c)",
+    "join_report": "088c0329"
+  },
+  "owner_signoff_pending": [
+    "L-5: root can single-handedly create+enroll+activate an owner (audit-flagged created_by=root:<fp>) until four-eyes ships"
+  ]
 }
