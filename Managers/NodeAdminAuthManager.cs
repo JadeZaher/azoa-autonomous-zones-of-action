@@ -32,6 +32,7 @@ public sealed class NodeAdminAuthManager(
     private static readonly TimeSpan BaseLockDuration = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MaxLockDuration = TimeSpan.FromHours(24);
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan ChallengeLifetimeTolerance = TimeSpan.FromSeconds(30);
     private static readonly string[] RootAmr = ["ed25519", "root"];
     private static readonly string[] AdminAmr = ["ed25519", "totp"];
 
@@ -71,6 +72,9 @@ public sealed class NodeAdminAuthManager(
         if (!DateTimeOffset.TryParseExact(challenge.ExpiresAt, NodeAdminCrypto.TimestampFormat, CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var expiresAt) || expiresAt <= now)
             return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "challenge_expired", info);
+        // A challenge can never outlive its issuance window; an exp further out than lifetime + skew was not issued by this clock.
+        if (expiresAt - now > ChallengeLifetime + ChallengeLifetimeTolerance)
+            return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "challenge_lifetime_exceeded", info);
         if (!string.Equals(challenge.Audience, runtime.Audience, StringComparison.Ordinal))
             return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "audience_changed", info);
         if (!NodeAdminCrypto.FixedTimeEquals(Encoding.ASCII.GetBytes(challenge.Fingerprint), Encoding.ASCII.GetBytes(fingerprint)))

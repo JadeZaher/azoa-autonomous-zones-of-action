@@ -4,6 +4,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -35,11 +36,10 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromBody] NodeGovernanceParametersUpdateRequest request,
         CancellationToken ct)
     {
-        var actorUserId = GetUserIdFromClaims();
-        if (actorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
 
-        var result = await _manager.UpdateParametersAsync(request, actorUserId.Value, ct);
+        var result = await _manager.UpdateParametersAsync(request, operatorActor.SubjectUserId, operatorActor, ct);
         if (result.IsError && result.Message.Contains("version conflict", StringComparison.OrdinalIgnoreCase))
             return Conflict(result);
         if (result.IsError) return BadRequest(result);
@@ -61,11 +61,10 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromBody] NodeFeeScheduleUpdateRequest request,
         CancellationToken ct)
     {
-        var actorUserId = GetUserIdFromClaims();
-        if (actorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
 
-        var result = await _feeManager.UpdateScheduleAsync(request, actorUserId.Value, ct);
+        var result = await _feeManager.UpdateScheduleAsync(request, operatorActor.SubjectUserId, operatorActor, ct);
         if (result.IsError && result.Message.Contains("version conflict", StringComparison.OrdinalIgnoreCase))
             return Conflict(result);
         if (result.IsError) return BadRequest(result);
@@ -90,11 +89,10 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromBody] NodeTreasuryDestinationUpdateRequest request,
         CancellationToken ct)
     {
-        var actorUserId = GetUserIdFromClaims();
-        if (actorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
 
-        var result = await _treasuryManager.UpdateDestinationAsync(request, actorUserId.Value, ct);
+        var result = await _treasuryManager.UpdateDestinationAsync(request, operatorActor.SubjectUserId, operatorActor, ct);
         if (result.IsError && result.Message.Contains("version conflict", StringComparison.OrdinalIgnoreCase))
             return Conflict(result);
         if (result.IsError) return BadRequest(result);
@@ -106,12 +104,4 @@ public sealed class NodeGovernanceController : ControllerBase
         [FromQuery] int limit = 50,
         CancellationToken ct = default)
         => Ok(await _treasuryManager.ListAuditAsync(limit, ct));
-
-    private Guid? GetUserIdFromClaims()
-    {
-        var raw = User.FindFirst("UserId")?.Value
-                  ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                  ?? User.FindFirst("sub")?.Value;
-        return Guid.TryParse(raw, out var id) ? id : null;
-    }
 }

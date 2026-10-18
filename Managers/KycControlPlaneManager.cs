@@ -9,6 +9,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Services.Kyc;
 using SurrealForge.Client;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -81,6 +82,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         string providerKey,
         UpdateKycProviderProfileRequest request,
         Guid operatorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default)
     {
         providerKey = KycProviderRegistry.NormalizeProviderKey(providerKey);
@@ -162,6 +164,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             PreviousTrustRevision = current?.TrustRevision,
             TrustRevision = profile.TrustRevision,
             ActorUserId = SurrealId.ToSurrealId(operatorUserId),
+            Actor = actor?.AuditActor,
             OccurredAt = now,
         };
         var saved = await _control.SaveProfileAsync(
@@ -216,6 +219,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         SelectTenantKycProviderRequest request,
         Guid actorUserId,
         bool requireTenantAuthority,
+        OperatorActor? actor = null,
         CancellationToken ct = default)
     {
         var authority = await HasCurrentTenantAuthorityAsync(tenantId, ct);
@@ -294,6 +298,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             PreviousProviderKey = current?.ProviderKey,
             Version = selection.SelectionVersion,
             ActorUserId = SurrealId.ToSurrealId(actorUserId),
+            Actor = actor?.AuditActor,
             OccurredAt = now,
         };
         var saved = await _control.SaveSelectionAsync(
@@ -510,6 +515,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         Guid subjectUserId,
         AmlManualReviewDecisionRequest request,
         Guid operatorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -596,10 +602,11 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
             return CopyFailure<KycScreeningResult, AmlManualReviewItem>(saved);
 
         _logger?.LogInformation(
-            "AML manual review decided by operator {OperatorUserId}: subject {SubjectUserId}, tenant {TenantId}, "
+            "AML manual review decided by operator {OperatorUserId} ({OperatorActor}): subject {SubjectUserId}, tenant {TenantId}, "
             + "decision {Decision}, superseded screening {SupersededScreeningId} with {SupersedingScreeningId}. "
             + "Reason: {Reason}",
             operatorUserId,
+            actor?.AuditActor ?? OperatorActor.LegacyAuditActor,
             subjectUserId,
             tenantId,
             cleared ? AmlManualReviewDecisionRequest.Clear : AmlManualReviewDecisionRequest.Deny,
@@ -882,6 +889,7 @@ public sealed class KycControlPlaneManager : IKycControlPlaneManager
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
         ActorUserId = Guid.TryParse(audit.ActorUserId, out var actorId) ? actorId : Guid.Empty,
+        Actor = audit.Actor,
         OccurredAt = audit.OccurredAt,
     };
 

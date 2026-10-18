@@ -29,6 +29,7 @@ DEFINE FIELD IF NOT EXISTS destination_json ON TABLE node_treasury_audit TYPE st
 DEFINE FIELD IF NOT EXISTS detail ON TABLE node_treasury_audit TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS occurred_at ON TABLE node_treasury_audit TYPE datetime
     READONLY;
+DEFINE FIELD IF NOT EXISTS actor ON TABLE node_treasury_audit TYPE option<string>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

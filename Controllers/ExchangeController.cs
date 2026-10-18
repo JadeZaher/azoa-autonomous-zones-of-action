@@ -12,6 +12,7 @@ using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Reserve;
 using AZOA.WebAPI.Services.Signing;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -85,9 +86,9 @@ public sealed class ExchangeController : ControllerBase
         if (_retiredRows is null)
             return StatusCode(StatusCodes.Status503ServiceUnavailable, AZOAResult<RetiredExchangeRowView>.FailureWithCode(
                 "Retired exchange resolution is not wired on this node.", AzoaErrorCodes.DependencyUnavailable));
-        if (!TryGetUserId(out var operatorUserId))
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized(AZOAResult<RetiredExchangeRowView>.FailureWithCode("Invalid token.", AzoaErrorCodes.Forbidden));
-        var result = await _retiredRows.ResolveAsync(operationId, request, operatorUserId, ct);
+        var result = await _retiredRows.ResolveAsync(operationId, request, operatorActor.SubjectUserId, ct);
         if (!result.IsError) return Ok(result);
         return result.Code switch
         {

@@ -5,6 +5,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Signing;
+using AZOA.WebAPI.Services.NodeAdmin;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 using ApiKeyRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ApiKey;
@@ -25,6 +26,7 @@ public sealed class SigningAdmissionAuthorityFactory(IUserStore users, IWalletSt
 
     public async Task<AZOAResult<SigningCredentialWitness>> CaptureCredentialAsync(ClaimsPrincipal principal, CancellationToken ct = default)
     {
+        if (NodeAdminClaims.IsNodeAdmin(principal)) return await CaptureNodeAdminAsync(principal, ct);
         if (principal.Identity?.IsAuthenticated != true || !AzoaClaims.TryGetSubjectId(principal, out var actor) || actor == Guid.Empty)
             return AZOAResult<SigningCredentialWitness>.Failure("An authenticated signing principal is required.");
         var user = await users.GetByIdAsync(actor, ct);
@@ -68,6 +70,45 @@ public sealed class SigningAdmissionAuthorityFactory(IUserStore users, IWalletSt
             null, null, principal.GetScopes().Order(StringComparer.Ordinal).ToArray(), kind == AzoaClaims.TokenUseLogin,
             TokenUse: kind, OperatorCredentialRevision: operatorRevision, OperatorSessionRevision: operatorSession));
     }
+
+    /// <summary>Operator authority exercised through a node-admin session: acts as the operator subject and carries the session
+    /// evidence the fences re-lock; see Services/NodeAdmin/AGENTS.md §operator-actor.</summary>
+    private async Task<AZOAResult<SigningCredentialWitness>> CaptureNodeAdminAsync(ClaimsPrincipal principal, CancellationToken ct)
+    {
+        var failure = AZOAResult<SigningCredentialWitness>.Failure("The node-admin signing authority is incomplete, expired or revoked.");
+        var subject = NodeAdminClaims.Find(principal, NodeAdminClaims.Subject);
+        if (principal.Identity?.IsAuthenticated != true || subject is null
+            || !NodeAdminCrypto.TrySessionRecordId(NodeAdminClaims.Find(principal, NodeAdminClaims.SessionId), out var sessionRecordId)
+            || !ValidatedTokenTime.TryRead(principal, out var issued, out var expires)
+            || issued > DateTimeOffset.UtcNow || expires <= DateTimeOffset.UtcNow)
+            return failure;
+        OperatorActor actor;
+        NodeAdminAuthorityWitness evidence;
+        if (subject.StartsWith(NodeAdminClaims.AdminPrincipalPrefix, StringComparison.Ordinal)
+            && Guid.TryParseExact(subject[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out var adminId)
+            && TryLong(principal, NodeAdminClaims.AdminRevision, out var adminRevision)
+            && TryLong(principal, NodeAdminClaims.SessionRevision, out var sessionRevision))
+        {
+            actor = OperatorActor.Admin(adminId);
+            evidence = new(subject, sessionRecordId, adminRevision, sessionRevision, null, null);
+        }
+        else if (subject.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal)
+            && NodeAdminCrypto.IsFingerprint(subject[NodeAdminClaims.RootPrincipalPrefix.Length..])
+            && TryLong(principal, NodeAdminClaims.RootKeyRevision, out var keyRevision)
+            && TryLong(principal, NodeAdminClaims.RootSessionRevision, out var rootSessionRevision))
+        {
+            actor = OperatorActor.Root(subject[NodeAdminClaims.RootPrincipalPrefix.Length..]);
+            evidence = new(subject, sessionRecordId, null, null, keyRevision, rootSessionRevision);
+        }
+        else return failure;
+        var user = await users.GetByIdAsync(actor.SubjectUserId, ct);
+        if (user.IsError || user.Result is not { IsActive: true }) return AZOAResult<SigningCredentialWitness>.Failure("The node operator subject is unavailable.");
+        return AZOAResult<SigningCredentialWitness>.Success(new(1, "Jwt", actor.SubjectUserId, null, Utc(user.Result.AuthNotBefore), issued, expires,
+            null, null, [AzoaScopes.Operator], false, TokenUse: NodeAdminClaims.TokenUseNodeAdmin, NodeAdmin: evidence));
+    }
+
+    private static bool TryLong(ClaimsPrincipal principal, string claim, out long value)
+        => long.TryParse(NodeAdminClaims.Find(principal, claim), NumberStyles.None, CultureInfo.InvariantCulture, out value) && value >= 0;
 
     public async Task<AZOAResult<SigningAdmissionAuthority>> BindDirectAsync(SigningCredentialWitness credential, Guid walletId,
         string chain, string address, IReadOnlyList<string> requiredScopes, CancellationToken ct = default)

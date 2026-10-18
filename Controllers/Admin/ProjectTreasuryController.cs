@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Reserve;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers.Admin;
 
@@ -124,14 +125,13 @@ public sealed class ProjectTreasuryController : ControllerBase
         if (body is null)
             return BadRequest(AZOAResult<ProjectTreasuryLedgerView>.Failure("A request body is required."));
 
-        var operatorUserId = GetUserIdFromClaims();
-        if (operatorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
 
         var request = new ProjectTreasuryCloseRequest(
             new ProjectTreasuryReference(body.Chain, body.TenantId, body.ProjectReference),
             body.Reason ?? string.Empty,
-            operatorUserId.Value);
+            operatorActor.SubjectUserId);
 
         var closed = await _treasuries.CloseAsync(request, ct);
         if (closed.IsError || closed.Result is null)
@@ -139,14 +139,6 @@ public sealed class ProjectTreasuryController : ControllerBase
 
         return Ok(AZOAResult<ProjectTreasuryLedgerView>.Success(
             ProjectTreasuryLedgerView.From(closed.Result), closed.Message));
-    }
-
-    private Guid? GetUserIdFromClaims()
-    {
-        var raw = User.FindFirst("UserId")?.Value
-                  ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                  ?? User.FindFirst("sub")?.Value;
-        return Guid.TryParse(raw, out var id) ? id : null;
     }
 }
 

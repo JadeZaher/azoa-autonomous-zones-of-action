@@ -9,6 +9,7 @@ using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.Simulated;
 using FluentAssertions;
+using AZOA.WebAPI.Services.Admin;
 
 namespace AZOA.WebAPI.IntegrationTests.Controllers;
 
@@ -68,7 +69,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PublicTransparency_AnonymousReadsAreSanitizedCursorPagedAndCacheable()
     {
-        var actorId = Guid.NewGuid();
+        var actorId = NodeOperatorIdentity.UserId; // the only subject a node-operator token can carry
         using var nodeGovernor = Factory.CreateNodeGovernClient(actorId);
         var beforeResponse = await nodeGovernor.GetAsync("api/node-governance/fee-schedule");
         var before = await ReadResultAsync<NodeFeeScheduleResponse>(beforeResponse);
@@ -247,7 +248,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PutFeeSchedule_AsNodeGovernor_PersistsGetRoundTripsAndAudits()
     {
-        var actorId = Guid.NewGuid();
+        var actorId = NodeOperatorIdentity.UserId; // the only subject a node-operator token can carry
         using var nodeGovernor = Factory.CreateNodeGovernClient(actorId);
         var beforeResponse = await nodeGovernor.GetAsync("api/node-governance/fee-schedule");
         beforeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -295,6 +296,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         var audit = await ReadResultAsync<List<NodeFeeAuditResponse>>(auditResponse);
         var entry = audit!.Result.Should().ContainSingle(a =>
             a.ActorUserId == actorId
+            && a.Actor == AZOA.WebAPI.Core.OperatorActor.LegacyAuditActor
             && a.Action == "ScheduleUpdated"
             && a.PreviousVersion == expectedVersion - 1
             && a.NewVersion == expectedVersion).Which;
@@ -305,8 +307,8 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PutFeeSchedule_ConcurrentSameVersion_AllowsExactlyOneWriter()
     {
-        using var firstGovernor = Factory.CreateNodeGovernClient(Guid.NewGuid());
-        using var secondGovernor = Factory.CreateNodeGovernClient(Guid.NewGuid());
+        using var firstGovernor = Factory.CreateNodeGovernClient(NodeOperatorIdentity.UserId);
+        using var secondGovernor = Factory.CreateNodeGovernClient(NodeOperatorIdentity.UserId);
         var beforeResponse = await firstGovernor.GetAsync("api/node-governance/fee-schedule");
         beforeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var before = await ReadResultAsync<NodeFeeScheduleResponse>(beforeResponse);
@@ -347,7 +349,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PutTreasuryDestination_AsNodeGovernor_PersistsGetRoundTripsAndAudits()
     {
-        var actorId = Guid.NewGuid();
+        var actorId = NodeOperatorIdentity.UserId; // the only subject a node-operator token can carry
         var address = SimulatedBlockchainProvider.SimAddress(
             "Simulated",
             $"node-treasury-{Guid.NewGuid():N}");
@@ -399,6 +401,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         var audit = await ReadResultAsync<List<NodeTreasuryAuditResponse>>(auditResponse);
         audit!.Result.Should().Contain(a =>
             a.ActorUserId == actorId
+            && a.Actor == AZOA.WebAPI.Core.OperatorActor.LegacyAuditActor
             && a.Action == "DestinationUpdated"
             && a.Chain == "Simulated"
             && a.Network == ChainNetwork.Devnet
@@ -409,7 +412,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PutParameters_AsNodeGovernor_PersistsGetRoundTripsAndAudits()
     {
-        var actorId = Guid.NewGuid();
+        var actorId = NodeOperatorIdentity.UserId; // the only subject a node-operator token can carry
         using var nodeGovernor = Factory.CreateNodeGovernClient(actorId);
         var beforeResponse = await nodeGovernor.GetAsync("api/node-governance/parameters");
         beforeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -444,6 +447,7 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
         var audit = await ReadResultAsync<List<NodeGovernanceAuditResponse>>(auditResponse);
         audit!.Result.Should().Contain(a =>
             a.ActorUserId == actorId
+            && a.Actor == AZOA.WebAPI.Core.OperatorActor.LegacyAuditActor
             && a.Action == "ParametersUpdated"
             && a.PreviousVersion == expectedVersion - 1
             && a.NewVersion == expectedVersion
@@ -466,8 +470,8 @@ public sealed class NodeGovernanceControllerIntegrationTests : IntegrationTestBa
     [Fact]
     public async Task PutParameters_ConcurrentExpectedVersion_HasExactlyOneWinner()
     {
-        using var governorA = Factory.CreateNodeGovernClient(Guid.NewGuid());
-        using var governorB = Factory.CreateNodeGovernClient(Guid.NewGuid());
+        using var governorA = Factory.CreateNodeGovernClient(NodeOperatorIdentity.UserId);
+        using var governorB = Factory.CreateNodeGovernClient(NodeOperatorIdentity.UserId);
         var beforeResponse = await governorA.GetAsync("api/node-governance/parameters");
         var before = await ReadResultAsync<NodeGovernanceParametersResponse>(beforeResponse);
         var expectedVersion = before!.Result!.Version;

@@ -1,7 +1,7 @@
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Services.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -22,7 +22,8 @@ public sealed class WalletIdentityOperatorController(WalletAuthIdentityMigration
     [HttpPost("clear-conflicting-binding")]
     public async Task<IActionResult> Clear(Repair request, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actor = operatorActor.SubjectUserId;
         var result = await migration.ClearConflictAsync(actor, request.Version, request.UserId, request.ExpectedIdentity, request.Reason, ct);
         return result.IsError ? Conflict(result) : Ok(result);
     }

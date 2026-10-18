@@ -38,6 +38,12 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
     // user.surql joined the baselined set 2026-10-18 (user-discoverable): the exact pre-change
     // generated golden, before `discoverable` — see CompatibilityBaselines/README.md.
     [InlineData("user.surql", "c29e9122d4888795249030376909e7ab0702d2a138030bca3a5fae468312af87")]
+    // Operator-actor audits joined 2026-10-18 (node-admin lane A2): pre-change goldens, see CompatibilityBaselines/README.md.
+    [InlineData("kyc_control_audit.surql", "d51c8459601a8afae92b9b6d5ed6c414881ee504100fdbe49f9a28d99f238aa9")]
+    [InlineData("node_governance_audit.surql", "b2aa8a48bc44ec1fa86d26c795e7128a34abca7108966282ae00912308fe9cfe")]
+    [InlineData("node_fee_audit.surql", "24c2f0854f76d024477b412768ca7cd90ff73e1678095a3cf60e2fc8e85c2913")]
+    [InlineData("node_treasury_audit.surql", "ca09cda1ee4c9dca9fd3477a936c719ec7e568c5b671be920dedc65dac69e9da")]
+    [InlineData("action_recovery_audit.surql", "2c338a817a619e3b04255c3b23d75a2b0331fdf2bb1027e787f97517e9e632bb")]
     public void CompatibilityBaseline_RetainsTheShippedChecksum(string fileName, string expectedChecksum)
     {
         var path = Path.Combine(

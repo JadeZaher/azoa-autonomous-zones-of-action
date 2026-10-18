@@ -507,6 +507,10 @@ builder.Services.AddAuthorization(o =>
             if (isFirstPartyLogin)
                 return true;
 
+            // Node admins are never first-party users; on a mapped operator route the operator policies decide (§route-permission-map).
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
+
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
                 || ctx.Resource is not HttpContext httpContext)
             {
@@ -560,12 +564,14 @@ builder.Services.AddAuthorization(o =>
     {
         p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
         p.RequireAuthenticatedUser();
+        // Dual-accepting: node-admin branch first, legacy predicate unchanged; see Services/NodeAdmin/AGENTS.md §route-permission-map.
         p.RequireAssertion(ctx =>
-            AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+            AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx)
+            ?? (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
             && AZOA.WebAPI.Core.AzoaClaims.TryGetSubjectId(ctx.User, out var subject)
             && subject == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
             && ctx.User.GetActingTenantId() is null
-            && !string.Equals(ctx.User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase));
+            && !string.Equals(ctx.User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase)));
     });
     o.AddPolicy("RecentNodeOperatorSession", p =>
     {
@@ -573,6 +579,8 @@ builder.Services.AddAuthorization(o =>
         p.RequireAuthenticatedUser();
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
                 || !AZOA.WebAPI.Core.AzoaClaims.TryGetSubjectId(ctx.User, out var subject)
                 || subject != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
@@ -611,6 +619,8 @@ builder.Services.AddAuthorization(o =>
         p.RequireAuthenticatedUser();
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User))
                 return ctx.User.CanAssignDappRoles();
             if (!ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
@@ -629,6 +639,8 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("Operator", p =>
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             // Axis 1: reject API-key-authenticated principals outright. An API key can
             // never be an operator — operator authority originates only from a JWT.
             var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
@@ -643,6 +655,8 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("NodeGovern", p =>
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
             if (string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase))
                 return false;

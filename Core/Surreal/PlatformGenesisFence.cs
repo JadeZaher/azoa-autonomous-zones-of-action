@@ -24,7 +24,7 @@ public static class PlatformGenesisFence
     public static IReadOnlyList<SurrealQuery>? Operator(SigningCredentialWitness credential)
     {
         if (credential.ActorUserId != NodeOperatorIdentity.UserId || credential.TenantId is not null
-            || credential.TokenUse != AzoaClaims.TokenUseNodeOperator || credential.OwnerAuthority || credential.IssuedAt is null) return null;
+            || !OperatorActor.IsOperatorCredential(credential) || credential.OwnerAuthority || credential.IssuedAt is null) return null;
         var current = SigningAuthorityFence.ForRunAdmission(credential, "fungible_genesis");
         if (current is null) return null;
         var statements = current.ToList();

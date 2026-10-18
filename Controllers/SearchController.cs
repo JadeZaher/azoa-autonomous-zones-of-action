@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -50,10 +51,9 @@ public class SearchController : ControllerBase
     [Authorize(Policy = "Operator")]
     public async Task<ActionResult<AZOAResult<SearchResult>>> OperatorSearch([FromBody] SearchRequest request, [FromQuery] AZOARequest? providerRequest)
     {
-        var callerUserId = GetUserIdFromClaims();
-        if (callerUserId is null) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
 
-        var result = await _searchManager.SearchAsync(request, callerUserId, providerRequest, isNodeAdmin: true);
+        var result = await _searchManager.SearchAsync(request, operatorActor.SubjectUserId, providerRequest, isNodeAdmin: true);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }

@@ -26,7 +26,7 @@ public sealed partial class SurrealWebhookRegistrationStore
             || string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Trim().Length is < 10 or > 1000)
             return AZOAResult<WebhookRegistrationMutationResult>.Failure("An exact request, registration/version and 10-1000 character reason are required.");
         var credential = authority.Credential;
-        var isOperator = credential.TokenUse == AzoaClaims.TokenUseNodeOperator;
+        var isOperator = OperatorActor.IsOperatorCredential(credential);
         if (credential.TenantId is not null || (!isOperator && credential.ActorUserId != tenantId))
             return AZOAResult<WebhookRegistrationMutationResult>.Failure("Only this tenant's own credential or the node operator can manage its registration.");
         var scopes = new[] { isOperator ? AzoaScopes.Operator : AzoaScopes.TenantProvision };

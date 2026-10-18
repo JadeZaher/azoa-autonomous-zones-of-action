@@ -1,6 +1,7 @@
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Governance;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Interfaces.Managers;
 
@@ -12,10 +13,12 @@ public interface INodeFeeScheduleManager
     /// <summary>Validates and atomically versions a schedule plus its audit row.</summary>
     /// <param name="request">Partial schedule values and optional expected version.</param>
     /// <param name="actorUserId">Authenticated node-governance actor.</param>
+    /// <param name="actor">Real operator actor recorded on the audit row.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<AZOAResult<NodeFeeScheduleResponse>> UpdateScheduleAsync(
         NodeFeeScheduleUpdateRequest request,
         Guid actorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default);
 
     /// <summary>Loads the newest operator-only fee audit rows.</summary>

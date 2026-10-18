@@ -54,7 +54,7 @@ public sealed class TenantKycConfigurationController : ControllerBase
         if (!AzoaClaims.TryGetSubjectId(User, out var tenantId))
             return Unauthorized();
         return Translate(await _manager.SelectTenantProviderAsync(
-            tenantId, request, tenantId, true, ct));
+            tenantId, request, tenantId, true, ct: ct));
     }
 
     private ActionResult<AZOAResult<T>> Translate<T>(AZOAResult<T> result)

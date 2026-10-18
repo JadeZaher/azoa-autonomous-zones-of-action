@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 namespace AZOA.WebAPI.IntegrationTests.NodeAdmin;
 
 /// <summary>Real-auth host for node-admin flows: production JWT validation (no TestAuthHandler), a fresh namespace and a generated root key.</summary>
-public sealed class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
+public class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
 {
     public const string Audience = "https://node.example.test";
 
@@ -24,7 +24,7 @@ public sealed class NodeAdminWebApplicationFactory : WebApplicationFactory<Progr
 
     protected override IHost CreateHost(IHostBuilder builder)
     {
-        SurrealTestSchema.BootstrapAsync(TestNamespace, Tables).GetAwaiter().GetResult();
+        SurrealTestSchema.BootstrapAsync(TestNamespace, [.. Tables, .. ExtraTables]).GetAwaiter().GetResult();
         return base.CreateHost(builder);
     }
 
@@ -46,9 +46,15 @@ public sealed class NodeAdminWebApplicationFactory : WebApplicationFactory<Progr
             ["NodeAdmin:Audience"] = Audience,
             ["RateLimiting:OperatorLogin:PermitLimit"] = "1000",
             ["AZOA:WalletEncryptionKey"] = "node-admin-integration-test-wallet-key-0123456789",
-        })
+        }.Concat(ExtraSettings))
             builder.UseSetting(key, value);
     }
+
+    /// <summary>Additional table goldens a derived host's flows touch.</summary>
+    protected virtual IEnumerable<string> ExtraTables => [];
+
+    /// <summary>Additional host settings a derived host needs.</summary>
+    protected virtual IEnumerable<KeyValuePair<string, string>> ExtraSettings => [];
 
     public override async ValueTask DisposeAsync()
     {

@@ -42,7 +42,13 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
         if (!Request.Headers.ContainsKey(AuthHeaderName))
             return Task.FromResult(AuthenticateResult.NoResult());
 
-        var userId = ResolveUserId();
+        var operatorRequested = Request.Headers.TryGetValue(OperatorHeaderName, out var operatorHeader)
+            && string.Equals(operatorHeader.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        // A real node-operator token always names the reserved operator subject (OnTokenValidated enforces it), so an
+        // operator principal defaults to it; operator routes resolve their actor from it (Services/NodeAdmin/AGENTS.md §operator-actor).
+        var userId = ResolveUserId(operatorRequested
+            ? AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId.ToString()
+            : DefaultUserId);
 
         var dappRole = ResolveDappRole();
 
@@ -97,14 +103,14 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 
-    private string ResolveUserId()
+    private string ResolveUserId(string fallback)
     {
         if (Request.Headers.TryGetValue(UserHeaderName, out var raw)
             && Guid.TryParse(raw.ToString(), out var parsed))
         {
             return parsed.ToString();
         }
-        return DefaultUserId;
+        return fallback;
     }
 
     private string ResolveDappRole()

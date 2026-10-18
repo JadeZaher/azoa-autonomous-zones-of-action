@@ -5,8 +5,8 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using System.Security.Claims;
 using SurrealForge.Client;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Services.Fiat.OnRamp;
 
@@ -28,7 +28,8 @@ public sealed class OnRampLotOperatorController : ControllerBase
     public async Task<IActionResult> Resume(Guid intentId, [FromBody] OnRampRecoveryReason body,
         [FromServices] OnRampRecovery recovery, CancellationToken ct)
     {
-        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var actor)) return Forbid();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Forbid();
+        var actor = operatorActor.SubjectUserId;
         var result = await recovery.ResumeAsync(intentId, actor, body.Reason, ct);
         return result.IsError ? Conflict(result) : Ok(AZOAResult<OnRampLotView>.Success(OnRampLotView.From(result.Result!)));
     }
@@ -39,7 +40,8 @@ public sealed class OnRampLotOperatorController : ControllerBase
     public async Task<IActionResult> Refund(Guid intentId, [FromBody] OnRampRecoveryReason body,
         [FromServices] OnRampRecovery recovery, CancellationToken ct)
     {
-        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var actor)) return Forbid();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Forbid();
+        var actor = operatorActor.SubjectUserId;
         var result = await recovery.RefundAsync(intentId, actor, body.Reason, ct, body.ProviderRefundId, body.RetryFailed, body.ExpectedRefundAttempt);
         return result.IsError ? Conflict(result) : Ok(AZOAResult<OnRampLotView>.Success(OnRampLotView.From(result.Result!)));
     }

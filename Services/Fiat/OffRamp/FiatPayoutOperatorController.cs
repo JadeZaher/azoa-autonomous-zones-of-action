@@ -7,6 +7,7 @@ using SurrealForge.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;
 
@@ -117,8 +118,8 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     [ProducesResponseType(typeof(AZOAResult<PayoutAccountSetupResolution>), StatusCodes.Status200OK)]
     public async Task<IActionResult> ResolveAccountSetup(Guid userId, [FromBody] FiatPayoutOperatorReason body, CancellationToken ct)
     {
-        var identity = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
-        if (!Guid.TryParse(identity, out var actor) || actor == Guid.Empty) return Forbid();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Forbid();
+        var actor = operatorActor.SubjectUserId;
         var result = await _accounts.ResolveStuckSetupAsync(userId, actor, body?.Reason ?? string.Empty, ct);
         if (!result.IsError)
             return Ok(result);
@@ -248,8 +249,8 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<IActionResult> Recover(string id, [FromBody] FiatPayoutOperatorReason body, CancellationToken ct)
     {
-        var identity = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
-        if (!Guid.TryParse(identity, out var actor) || actor == Guid.Empty) return Forbid();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Forbid();
+        var actor = operatorActor.SubjectUserId;
         var result = await _offRamp.RecoverFailedBankAsync(id, actor, body.Reason ?? string.Empty, ct);
         return result.IsError ? Conflict(result) : Ok(AZOAResult<FiatPayoutView>.Success(FiatPayoutView.From(result.Result!)));
     }
@@ -264,8 +265,8 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Resolve(string id, [FromBody] FiatPayoutResolveRequest body, CancellationToken ct)
     {
-        var identity = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
-        if (!Guid.TryParse(identity, out var actor) || actor == Guid.Empty) return Forbid();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Forbid();
+        var actor = operatorActor.SubjectUserId;
         PayoutResolution? resolution = body?.Resolution switch
         {
             "record-paid" => PayoutResolution.RecordPaid,

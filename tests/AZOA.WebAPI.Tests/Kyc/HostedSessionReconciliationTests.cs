@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using AZOA.WebAPI.Controllers;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Tests.TestSupport;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
@@ -21,7 +23,7 @@ public sealed class HostedSessionReconciliationTests
     public async Task ConfirmedAbsence_PreservesOperatorAuditAndReleasesAdmissionKey()
     {
         var store = new InMemoryHostedSessionStore();
-        var actor = Guid.NewGuid();
+        var actor = NodeOperatorIdentity.UserId;
         var candidate = NewCandidate();
         await store.ClaimAdmissionAsync(candidate);
         var controller = NewController(store, actor);
@@ -91,7 +93,7 @@ public sealed class HostedSessionReconciliationTests
         var candidate = NewCandidate();
         await store.ClaimAdmissionAsync(candidate);
 
-        var result = await NewController(store, Guid.NewGuid()).Reconcile(Guid.ParseExact(candidate.Id, "N"),
+        var result = await NewController(store, NodeOperatorIdentity.UserId).Reconcile(Guid.ParseExact(candidate.Id, "N"),
             new() { ConfirmedProviderAbsence = true, Reason = "Unverified assumption that no provider session exists." }, CancellationToken.None);
 
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -116,8 +118,9 @@ public sealed class HostedSessionReconciliationTests
             {
                 HttpContext = new DefaultHttpContext
                 {
+                    // Only the node operator reaches this RecentNodeOperatorSession route; it acts as the operator subject.
                     User = new ClaimsPrincipal(new ClaimsIdentity(
-                        [new Claim(ClaimTypes.NameIdentifier, actor.ToString())], "Bearer")),
+                        [new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator), new Claim(ClaimTypes.NameIdentifier, actor.ToString())], "Bearer")),
                 },
             },
         };

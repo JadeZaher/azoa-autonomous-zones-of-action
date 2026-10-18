@@ -8,6 +8,7 @@ using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Actions.Workflow;
 using Execution = AZOA.WebAPI.Models.Actions.ActionNodeExecution;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Services.Actions;
 
@@ -34,7 +35,8 @@ public sealed class ActionOperationRecoveryService(SurrealActionRecoveryStore st
     public Task<IReadOnlyList<ActionRecoveryAudit>> HistoryAsync(Guid id, CancellationToken ct)
         => store.HistoryAsync(id.ToString("N"), ct);
 
-    public async Task<AZOAResult<ActionRecoveryReceipt>> RetryAsync(Guid id, Guid operatorId, ActionRecoveryRequest request, CancellationToken ct)
+    public async Task<AZOAResult<ActionRecoveryReceipt>> RetryAsync(Guid id, Guid operatorId, ActionRecoveryRequest request, CancellationToken ct,
+        OperatorActor? actor = null)
     {
         if (id == Guid.Empty || operatorId == Guid.Empty || request.RequestId == Guid.Empty || request.ExpectedVersion < 0
             || request.IntentHash is not { Length: 64 } || request.IntentHash.Any(character => !char.IsAsciiHexDigit(character))
@@ -43,7 +45,7 @@ public sealed class ActionOperationRecoveryService(SurrealActionRecoveryStore st
         var audit = new ActionRecoveryAudit
         {
             Id = CanonicalJson.Hash(new { Domain = "action-recovery-v1", OperatorId = operatorId, request.RequestId })[..32],
-            OperatorId = operatorId.ToString("N"), ExecutionId = id.ToString("N"), ExpectedVersion = request.ExpectedVersion,
+            OperatorId = operatorId.ToString("N"), Actor = actor?.AuditActor, ExecutionId = id.ToString("N"), ExpectedVersion = request.ExpectedVersion,
             IntentHash = request.IntentHash, Reason = request.Reason.Trim(),
             RequestHash = CanonicalJson.Hash(new { ExecutionId = id, request.ExpectedVersion, request.IntentHash, Reason = request.Reason.Trim() }),
             CreatedAt = DateTimeOffset.UtcNow

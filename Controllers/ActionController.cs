@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Signing;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -329,8 +330,7 @@ public class ActionController : ControllerBase
     [Authorize(Policy = "Operator")]
     public async Task<ActionResult<AZOAResult<ActionReconciliationSweepResult>>> ReconcileSweep([FromQuery] AZOARequest? request)
     {
-        var userId = GetUserIdFromClaims();
-        if (userId == null)
+        if (!HttpContext.TryGetOperatorActor(out _))
             return Unauthorized(new AZOAResult<ActionReconciliationSweepResult> { IsError = true, Message = "Invalid token." });
 
         var result = await _actionManager.SweepReconciliationAsync(request);

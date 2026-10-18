@@ -1,5 +1,6 @@
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Interfaces.Managers;
 
@@ -11,6 +12,7 @@ public interface IKycControlPlaneManager
         string providerKey,
         UpdateKycProviderProfileRequest request,
         Guid operatorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default);
     Task<AZOAResult<IReadOnlyList<TenantKycProviderChoiceResponse>>> ListTenantChoicesAsync(
         Guid tenantId,
@@ -24,6 +26,7 @@ public interface IKycControlPlaneManager
         SelectTenantKycProviderRequest request,
         Guid actorUserId,
         bool requireTenantAuthority,
+        OperatorActor? actor = null,
         CancellationToken ct = default);
     Task<AZOAResult<CursorPage<OperatorTenantKycSummaryResponse>>> ListTenantsAsync(
         int limit,
@@ -52,6 +55,7 @@ public interface IKycControlPlaneManager
         Guid subjectUserId,
         AmlManualReviewDecisionRequest request,
         Guid operatorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default);
 
     Task<AZOAResult<NodeOperatorOverviewResponse>> GetOverviewAsync(CancellationToken ct = default);

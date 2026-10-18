@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using AZOA.WebAPI.Models.Actions;
 
 namespace AZOA.WebAPI.Models.Signing;
@@ -7,7 +8,12 @@ public sealed record SigningCredentialWitness(int Version, string Kind, Guid Act
     DateTimeOffset? AuthNotBefore, DateTimeOffset? IssuedAt, DateTimeOffset? ExpiresAt,
     Guid? ApiKeyId, string? ApiKeyIdentityHash, IReadOnlyList<string> Scopes, bool OwnerAuthority,
     IReadOnlyList<string>? StoredApiKeyScopes = null, string? TokenUse = null,
-    long? OperatorCredentialRevision = null, long? OperatorSessionRevision = null);
+    long? OperatorCredentialRevision = null, long? OperatorSessionRevision = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NodeAdminAuthorityWitness? NodeAdmin = null);
+
+/// <summary>Node-admin session evidence behind operator authority (admin or root revisions); omitted from JSON when absent so legacy witness hashes are unchanged.</summary>
+public sealed record NodeAdminAuthorityWitness(string Principal, string SessionRecordId,
+    long? AdminRevision, long? SessionRevision, long? RootKeyRevision, long? RootSessionRevision);
 
 /// <summary>One exact selected delegated grant and its unchanged scope/expiry evidence.</summary>
 public sealed record SigningGrantWitness(Guid Id, string RequiredScope, string StoredScopes,

@@ -47,6 +47,9 @@ public partial class KycControlAudit : ISurrealRecord
     [References(typeof(User))]
     public string ActorUserId { get; set; } = string.Empty;
 
+    /// <summary>Real operator actor: <c>legacy-operator</c> | <c>admin:&lt;id&gt;</c> | <c>root:&lt;fingerprint&gt;</c>; NONE on rows written before named node admins.</summary>
+    public string? Actor { get; set; }
+
     [Default("time::now()"), ReadOnly]
     public DateTimeOffset OccurredAt { get; set; }
 }

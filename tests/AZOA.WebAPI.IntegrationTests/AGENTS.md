@@ -144,3 +144,13 @@ generated root key, a fixed audience and a raised `operator-login` limit, and dr
 Clients sign with real Ed25519 (`NodeAdminTestKey`, BouncyCastle aliased `BCCrypto2` exactly like the API
 project) and compute real TOTP codes; `AwaitStepHeadroomAsync` keeps a ±1-step sequence inside one 30 s
 window so step boundaries cannot flake the run.
+
+`NodeAdminOperatorRoutesFactory` (lane A2) derives from it through `ExtraTables`/`ExtraSettings`: it adds the
+governance and KYC tables and seeds the legacy reserved operator (`NodeOperator:*`), so one host exercises named
+admins, root and the legacy operator token against the same operator routes (`NodeAdminOperatorRouteFlowTests`,
+`NodeAdminOperatorFenceTests`). Step-up is driven by rewinding the session row's `auth_time`, never by a fake clock.
+
+`TestAuthHandler`'s operator principal (`X-Test-Operator`) defaults its subject to the reserved operator id, the only
+subject a real `node_operator` token can carry: operator controllers resolve their actor with
+`HttpContext.TryGetOperatorActor`, which refuses any other subject. Operator tests that assert `actor_user_id`
+therefore expect `NodeOperatorIdentity.UserId`.

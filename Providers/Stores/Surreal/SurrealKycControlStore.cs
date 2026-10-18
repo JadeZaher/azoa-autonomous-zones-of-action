@@ -376,6 +376,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
         ActorUserId = SurrealLink.ToLink("user", audit.ActorUserId)!,
+        Actor = audit.Actor,
         OccurredAt = audit.OccurredAt,
     };
 
@@ -402,6 +403,7 @@ public sealed class SurrealKycControlStore : IKycControlStore
         PreviousTrustRevision = audit.PreviousTrustRevision,
         TrustRevision = audit.TrustRevision,
         ActorUserId = SurrealLink.FromLink(audit.ActorUserId)!,
+        Actor = audit.Actor,
         OccurredAt = audit.OccurredAt,
     };
 }
