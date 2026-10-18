@@ -40,5 +40,8 @@ public class User : IUser
     // signing seam + credential checks. UTC; null = no cut applied.
     public DateTime? AuthNotBefore { get; set; }
 
+    /// Opt-in: appears in another caller's search results only when true. Default false.
+    public bool Discoverable { get; set; }
+
     public List<Wallet> Wallets { get; set; } = new();
 }

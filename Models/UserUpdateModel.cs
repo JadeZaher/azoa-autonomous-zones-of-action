@@ -8,4 +8,6 @@ public class UserUpdateModel
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
     public bool? IsActive { get; set; }
+    /// Opt-in: appears in another caller's search results only when true. Absent = unchanged.
+    public bool? Discoverable { get; set; }
 }

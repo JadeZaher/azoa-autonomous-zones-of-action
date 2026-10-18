@@ -29,7 +29,7 @@ public class SearchManager : ISearchManager
         _bundleStore = bundleStore;
     }
 
-    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, Guid? callerUserId, AZOARequest? providerRequest = null)
+    public async Task<AZOAResult<SearchResult>> SearchAsync(SearchRequest request, Guid? callerUserId, AZOARequest? providerRequest = null, bool isNodeAdmin = false)
     {
         // Clamp page size
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -41,7 +41,10 @@ public class SearchManager : ISearchManager
         // Cross-tenant isolation: the caller may NOT enumerate another user's
         // private data. Sensitive entity types are force-scoped to callerUserId
         // and the caller-supplied request.UserId is IGNORED for them. Users are
-        // the one intentionally-public type (already PII-free — see User section).
+        // PII-free (see User section) but, since owner decision 2026-10-18
+        // (user-discoverable), are no longer unconditionally enumerable: a user
+        // surfaces in another caller's results only via the Discoverable opt-in
+        // predicate below, closing the prior any-signed-in-caller enumeration gap.
         // A null callerUserId fails closed (no sensitive rows returned at all).
         // Holon/ActionGraphBundle additionally surface IsPublic rows via the owner-or-public
         // predicate below so the marketplace stays discoverable.
@@ -52,7 +55,13 @@ public class SearchManager : ISearchManager
             var users = await _userStore.GetAllAsync(default);
             if (!users.IsError && users.Result != null)
             {
-                var filtered = users.Result.Where(a => MatchesUser(a, query, request));
+                // Discoverable gate (owner decision 2026-10-18): a user is a hit only if they
+                // opted in, the caller is matching themself, or the caller is a node admin.
+                // Filtered here, before Skip/Take, so pagination/TotalCount never leak a
+                // non-discoverable row via post-LIMIT filtering.
+                var filtered = users.Result
+                    .Where(a => isNodeAdmin || a.Discoverable || (callerUserId.HasValue && a.Id == callerUserId.Value))
+                    .Where(a => MatchesUser(a, query, request));
                 facets.Add(new SearchFacet { EntityType = SearchableEntityType.User, Count = filtered.Count(), Label = "Users" });
                 hits.AddRange(filtered.Select(a => new SearchHit
                 {

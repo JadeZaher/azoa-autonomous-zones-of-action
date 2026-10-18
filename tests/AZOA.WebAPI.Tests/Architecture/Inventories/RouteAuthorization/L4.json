@@ -1171,6 +1171,18 @@
     ]
   },
   {
+    "route": "POST /api/search/operator",
+    "controller": "SearchController",
+    "action": "OperatorSearch",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "class-level [Authorize] plus method-level Operator policy (JWT operator:admin, never an API key); node-admin user search that bypasses the Discoverable opt-in gate (SearchManager isNodeAdmin), since a node-operator session cannot reach the plain [Authorize] POST /api/search route at all (Program.cs OnTokenValidated policy allowlist); no writes",
+    "policies": [
+      "Operator",
+      "authenticated"
+    ]
+  },
+  {
     "route": "DELETE /api/tenant/consent/participation/{participationref}",
     "controller": "TenantConsentController",
     "action": "RevokeByParticipation",

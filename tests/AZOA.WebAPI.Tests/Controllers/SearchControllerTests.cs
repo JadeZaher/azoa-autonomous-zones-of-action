@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -36,7 +37,7 @@ public class SearchControllerTests
     [Fact]
     public async Task Search_ReturnsOk()
     {
-        _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+        _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), It.IsAny<bool>()))
             .ReturnsAsync(new AZOAResult<SearchResult> { Result = new SearchResult() });
 
         var result = await _controller.Search(new SearchRequest(), null);
@@ -47,12 +48,56 @@ public class SearchControllerTests
     [Fact]
     public async Task Search_Error_ReturnsBadRequest()
     {
-        _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>()))
+        _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), It.IsAny<bool>()))
             .ReturnsAsync(new AZOAResult<SearchResult> { IsError = true, Message = "Error" });
 
         var result = await _controller.Search(new SearchRequest(), null);
 
         result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Search_OrdinaryLoginPrincipal_AlwaysPassesIsNodeAdminFalse()
+    {
+        // Security-review fix (owner correction 2026-10-18): the plain POST /api/search
+        // route unconditionally passes isNodeAdmin: false — it is unreachable for a
+        // node-operator session at all (Program.cs OnTokenValidated policy allowlist),
+        // so there is no claims check left to get wrong here.
+        bool? observedIsNodeAdmin = null;
+        _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), false))
+            .Callback<SearchRequest, Guid?, AZOARequest?, bool>((_, _, _, isNodeAdmin) => observedIsNodeAdmin = isNodeAdmin)
+            .ReturnsAsync(new AZOAResult<SearchResult> { Result = new SearchResult() });
+
+        var result = await _controller.Search(new SearchRequest(), null);
+
+        result.Result.Should().BeOfType<OkObjectResult>("the manager setup only matches isNodeAdmin == false");
+        observedIsNodeAdmin.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task OperatorSearch_AlwaysPassesIsNodeAdminTrue()
+    {
+        // Node admins reach every user — Discoverable or not — only through this
+        // dedicated Operator-policy action; see Controllers/AGENTS.md §User responses.
+        bool? observedIsNodeAdmin = null;
+        _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), true))
+            .Callback<SearchRequest, Guid?, AZOARequest?, bool>((_, _, _, isNodeAdmin) => observedIsNodeAdmin = isNodeAdmin)
+            .ReturnsAsync(new AZOAResult<SearchResult> { Result = new SearchResult() });
+
+        var result = await _controller.OperatorSearch(new SearchRequest(), null);
+
+        result.Result.Should().BeOfType<OkObjectResult>("the manager setup only matches isNodeAdmin == true");
+        observedIsNodeAdmin.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OperatorSearch_CarriesTheOperatorPolicy()
+    {
+        var method = typeof(SearchController).GetMethod(nameof(SearchController.OperatorSearch));
+        var policy = method!.GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+            .Cast<AuthorizeAttribute>().Single().Policy;
+
+        policy.Should().Be("Operator", "a node-operator session is otherwise rejected at token validation before reaching this action");
     }
 
     [Fact]

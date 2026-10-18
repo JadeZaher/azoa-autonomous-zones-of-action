@@ -25,7 +25,35 @@ public class SearchController : ControllerBase
         var callerUserId = GetUserIdFromClaims();
         if (callerUserId is null) return Unauthorized();
 
-        var result = await _searchManager.SearchAsync(request, callerUserId, providerRequest);
+        // Discoverable gate always applies here (owner decision 2026-10-18): this plain
+        // [Authorize] route can never carry a node-operator session in the first place —
+        // see OperatorSearch below and Controllers/AGENTS.md §User responses.
+        var result = await _searchManager.SearchAsync(request, callerUserId, providerRequest, isNodeAdmin: false);
+        if (result.IsError) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Security-review fix (owner correction 2026-10-18): the plain <see cref="Search"/>
+    /// route's bare <c>[Authorize]</c> is NOT in the fixed policy allowlist
+    /// (<c>NodeOperatorSession</c>/<c>RecentNodeOperatorSession</c>/<c>DappRoleAssignment</c>/
+    /// <c>Operator</c>/<c>NodeGovern</c>) that <c>Program.cs</c>'s <c>OnTokenValidated</c> accepts
+    /// a node-operator session token on — a node-operator bearer hitting <c>POST /api/search</c>
+    /// is rejected at token validation (401) before this controller ever runs. "Node admins will
+    /// always be able to find users" is therefore served by this dedicated <c>Operator</c>-policy
+    /// route instead of a claims check inside <see cref="Search"/>: every real node-operator
+    /// session token already carries <c>scope=operator</c> and no acting tenant
+    /// (<c>NodeOperatorManager.CreateToken</c>), so the policy is exactly the reachable set.
+    /// See Controllers/AGENTS.md §User responses.
+    /// </summary>
+    [HttpPost("operator")]
+    [Authorize(Policy = "Operator")]
+    public async Task<ActionResult<AZOAResult<SearchResult>>> OperatorSearch([FromBody] SearchRequest request, [FromQuery] AZOARequest? providerRequest)
+    {
+        var callerUserId = GetUserIdFromClaims();
+        if (callerUserId is null) return Unauthorized();
+
+        var result = await _searchManager.SearchAsync(request, callerUserId, providerRequest, isNodeAdmin: true);
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }

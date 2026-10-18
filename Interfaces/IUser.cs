@@ -37,4 +37,7 @@ public interface IUser
     // at credential checks, closing the residual 15-min window after a claim. UTC;
     // null = never claimed/revoked-forward.
     DateTime? AuthNotBefore { get; set; }
+
+    /// Opt-in: this user appears in another caller's search results only when true. Default false.
+    bool Discoverable { get; set; }
 }
