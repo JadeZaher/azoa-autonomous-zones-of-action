@@ -195,6 +195,32 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RenewedAuthorizationPointsTheOperationAtTheNewAuthorityExactlyOnce()
+    {
+        var (row, _, _, issuer, _) = await SeedAsync();
+        var command = JsonSerializer.Deserialize<FungibleCreationCommand>(row.RequestJson)!;
+        var intent = JsonSerializer.Deserialize<FungibleCreationIntent>(row.IntentJson)!;
+        await Execute(SurrealWriter.Create(new Wallet { Id = command.WalletId.ToString("N"), UserId = $"user:{issuer:N}",
+            ChainType = "Algorand", Address = "creator", CreatedDate = DateTimeOffset.UtcNow }));
+        await Execute(SurrealWriter.UpdateOnly<FungibleCreationOperation>(row.Id).Where(seed => true).Set(value => value.State, "Admitted")
+            .Unset(value => value.ObservationJson).Unset(value => value.AssetId).Build());
+        row = (await _store.GetAsync(row.Id))!;
+        var authorization = new FungibleCreationAuthorization { Id = Guid.NewGuid().ToString("N"), OperationId = row.Id,
+            ActorId = row.ActorUserId, ExpectedVersion = row.Version, RequestHash = "renewed-authorization-request", IntentHash = FungibleCreationIdentity.IntentHash(intent),
+            AuthorityJson = JsonSerializer.Serialize(new SigningAdmissionAuthority(1, "DirectJwt", Consent(issuer).Credential,
+                new(command.WalletId, issuer, "creator", "Algorand"), [AzoaScopes.TokenCreateSign], [])), CreatedAt = DateTimeOffset.UtcNow };
+
+        var saved = await _store.AuthorizeAsync(row, authorization);
+        var replay = await _store.AuthorizeAsync(row, authorization);
+
+        saved.Should().NotBeNull("the pointer update is guarded by the version the same batch just locked");
+        saved!.Version.Should().Be(row.Version + 1);
+        saved.CurrentAuthorityId.Should().Be(authorization.Id);
+        replay!.Version.Should().Be(saved.Version, "a replayed authorization reads back instead of bumping again");
+        (await _executor.QueryAsync<FungibleCreationAuthorization>(SurrealQuery<FungibleCreationAuthorization>.From())).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task ReplacementArchivesExactAbsenceAndRequiresANewQuoteWithoutChangingTheOriginalRequest()
     {
         var (row, _, _, issuer, _) = await SeedAsync();

@@ -34,11 +34,13 @@ public static class ActionSigningScopes
         _ => null,
     };
 
-    /// <summary>X-1: the WTT route needs both payer scopes; a legacy trusted-bridge node signs a transfer. Mirrors
-    /// <c>ActionNodeHandlerRegistry.TryGetFor</c> so admission, the store fence and participant re-authorization agree.</summary>
+    /// <summary>X-1/R-4: any <c>wtt</c> property (well-formed or not) selects the WTT payer pair, exactly as
+    /// <c>ActionNodeHandlerRegistry.TryGetFor</c> does, so a malformed body reaches the WTT route's own refusal.</summary>
     private static IReadOnlyList<string>? Bridge(string configuration)
     {
-        try { return WttActionResolver.ReadConfig(configuration) is not null ? WttActionResolver.SigningScopes : [AzoaScopes.TransferSign]; }
+        if (WttActionResolver.Selects(configuration)) return WttActionResolver.SigningScopes;
+        if (string.IsNullOrWhiteSpace(configuration)) return [AzoaScopes.TransferSign];
+        try { using var _ = System.Text.Json.JsonDocument.Parse(configuration); return [AzoaScopes.TransferSign]; }
         catch (System.Text.Json.JsonException) { return null; }
     }
 

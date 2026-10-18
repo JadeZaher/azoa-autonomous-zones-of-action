@@ -38,6 +38,7 @@ compiled. "Approved at source review" is never written as "closed".
 | D-8b | Tenant-funded collects return units to a tenant-attributed reserve partition `tenant-payout:{tenant}` (2026-10-17) | L3 D-8, merged `9f484c6b` |
 | D-8c | Cross-scope arbitrage closed: `on_ramp_lot.pricing_scope_key` caps a node-funded exit at the lot's sold price (2026-10-17) | L3 D-8, merged `9f484c6b` |
 | D-9 | **Schema moves by generation reset**: fresh DB (`dev-up -ResetDb`; Railway SurrealDB volume reset before the next deploy); no baselines/forward migrations for round-4 changes; deploy path `surrealforge up --no-reconcile`; P2 becomes a sandbox data-compatibility rehearsal (2026-10-17) | W1/L1p/L6; Railway reset is an owner step at deploy time |
+| D-10 | **Track provenance on transfer; chain is source of truth** (owner, 2026-10-17): AZOA↔AZOA transfers are the norm and platform flows are conveniences; units moved between AZOA users inherit their source lots' pricing provenance so the D-8c exit cap follows the units; a flow whose asset is no longer held on chain fails and is marked invalid, never paid | r4/fix-money2 |
 
 **Defaults recorded (owner accepted):** IDENTOMAT-RECOVERY closed via retry + `/external-api/delete/`;
 Veriff/generic live → `deferred.md` unless test credentials arrive; Ethereum/Solana value-custody parity stays

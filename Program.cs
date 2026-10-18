@@ -1367,7 +1367,8 @@ builder.Services.AddScoped<IUserNFTService, UserNFTService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionConfigBindingResolver>();
 builder.Services.AddScoped<ActionManager>();
 builder.Services.AddScoped<IActionManager>(sp => sp.GetRequiredService<ActionManager>());
-builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFrozenActionRuntime>(sp => sp.GetRequiredService<ActionManager>());
+// Deferred per-call resolution: a factory over ActionManager here deadlocks host start (see Managers/AGENTS.md §DeferredFrozenActionRuntime).
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFrozenActionRuntime, AZOA.WebAPI.Managers.DeferredFrozenActionRuntime>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionWorkflowAdmissionStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealActionWorkflowAdmissionStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IActionLocalMutationStore,

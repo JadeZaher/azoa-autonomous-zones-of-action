@@ -4,8 +4,8 @@ type: runbook
 
 # AZOA — Session Runbook
 
-**Last updated:** 2026-10-17 09:40 MDT · **Branch:** `feat/platform-stub-closeout` ·
-**Last commit:** see `git log -1` (round-4 plan final = `c854f2c`, on top of `0522fdf`) — unpushed; `main` at `bb512cf`.
+**Last updated:** 2026-10-17 (evening) · **Branch:** `feat/platform-stub-closeout` ·
+**Last commit:** see `git log -1` — **`main` = `5dc1b239`, pushed 2026-10-17 19:00 MDT for live QA** (214 commits; secret scans clean). Railway deploy waits on the owner turning off Wait-for-CI + the D-9 DB reset.
 
 > **Rewritten from scratch 2026-10-17** at the owner's request. The previous 2,127-line runbook
 > (Aug–Sep 2026 programs: Phases 0–4, the ArdaNova production-readiness waves, launch-readiness L0,
@@ -49,9 +49,11 @@ program runs) and `terminology-neutralization-cutover` (consumer cutover) remain
 
 ## 2. State
 
-**Rounds 1–3 closed at source level; round 4 started 2026-10-17. Nothing has been compiled or tested
-in this tree** except lane V's frontend harness smoke runs. Every "approved/closed" below is a
-static-review verdict, not runtime proof.
+**Round 4 executed 2026-10-17: all 7 lanes + D-8 + the W3 fix batch are merged into
+`feat/platform-stub-closeout`; the whole solution compiles (0 errors, warnings ≤ 25). The integrated test
+sweep has NOT run — most new tests are *Authored* only.** Owner decision (2026-10-17): push `main` for
+**live QA on Railway** (owner turns off Railway "Wait for CI"; Railway SurrealDB volume reset per D-9) and
+defer further loops until after QA → [`round4-post-qa-deferrals.md`](tracks/platform-stub-closeout_20261015/round4-post-qa-deferrals.md).
 
 - **History:** Codex (VS Code, rollout `01a13fa5`, `~/.codex/sessions/2026/10/15/`) ran rounds 1–3 on
   2026-10-15 and stopped mid-round-3 at 23:04Z. Claude Code checkpointed it as `3d08ace`, finished
@@ -80,7 +82,9 @@ static-review verdict, not runtime proof.
   the sweep. Estimate 35–45 agent runs (~10 short re-checks), ~60–120M tokens, 5–7 days. Inputs, all
   recorded in the ledger §Round-4 inputs: both assessments, two controller audits, two liveness sweeps
   (the identity/consent one recovered from its transcript → `round4-input-liveness-identity.md`).
-  **Next: W0** (§7).
+  **Executed** — merges #1–#9 + #5b (D-8); W3 review ledger `round4-review-ledger.md` (7 reviews, 1 FAIL
+  remediated, all HIGH re-checked); fix batch merged `afaa46dc`…`75b23986`; final fix round (core2 / gates2 /
+  money2 / frontend2) merging before the push. Execution notes in §8.
 - *Historical — how the round-4 inputs arrived:*
   - adversarial assessment → `tracks/platform-stub-closeout_20261015/round4-assessment-adversarial.md` —
     **DONE 2026-10-17.** Bottom line: no KYC, KYB or Stripe journey works end to end even in principle,
@@ -291,45 +295,47 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 
 ## 7. Continuation plan
 
-### ▶ RESUME HERE (2026-10-17 09:40 — round-4 plan final, W0 launching)
+### ▶ RESUME HERE (2026-10-17 evening — live QA on Railway; loops deferred until after QA)
 
-The plan is the brief: [`round4-plan.md`](tracks/platform-stub-closeout_20261015/round4-plan.md). Every
-lane's scope, owned globs, merge order and acceptance live there; this list is only the orchestration.
+1. **Verify state.** `git status`, `git log -5 --oneline` on `feat/platform-stub-closeout` and `main`;
+   `git worktree list` (round-4 worktrees `../oasis-sleek-r4-*` can be removed once their branches are merged).
+   Check whether `main` was pushed (`git rev-list --count upstream/main..main` = 0) and which Railway deployment is live.
+2. **Pushed 2026-10-17 as `5dc1b239`** (fix-core2/gates2/money2 merged; fix-frontend2 not yet — ship it as a follow-up push). If redoing: the gate is fix-core2 (API startup DI deadlock broken + host proven to start;
+   9 `UpdateOnly`/`DeleteOnly`-without-`Where` write paths fixed). Merge each finished final-round branch with
+   `scratchpad/merge-lane.ps1` (recreate from §5 if the scratchpad is gone: base merge in worktree → build →
+   merge-check → secret-scan → `--no-ff` into the main checkout → identical-tree check). Then `git switch main`,
+   `git merge --no-ff feat/platform-stub-closeout`, secret-scan `upstream/main..main`, push (owner-approved).
+3. **QA deploy (owner steps):** Railway "Wait for CI" off on the AZOA services; reset the Railway SurrealDB
+   volume (D-9 generation reset); confirm the deploy reaches healthy and the schema job applies `--no-reconcile`.
+4. **During QA:** record every finding in `round4-post-qa-deferrals.md` §Recorded during QA. Don't fix one at a time —
+   batch them.
+5. **After QA:** one fix round over the QA findings + the deferral ledger's engineering items → the integrated
+   sweep (plan §8) → CI green → **re-enable Railway "Wait for CI"** (release blocker) → close round 4
+   (`round4-closeout.md`, metadata `round_states.4 = closed`).
 
-1. **Verify state.** `git status` (main checkout clean), `git log -5 --oneline`, `git worktree list`,
-   `git branch --list "r4/*"`. Each lane writes `round4-lane-<lane>.md` (`type: lane-checkpoint`) in
-   the track directory; `merged: <hash>` in its frontmatter means that merge is done. A lane branch with
-   commits but no record is in flight or died mid-run — read its last commit before relaunching.
-2. **W0 — L1 `r4/core`** (plan §4 L1 W0). Lead (opus executor) creates
-   `..\oasis-sleek-r4-core` on `r4/core`, bumps SurrealForge to **1.3.0 from nuget.org** (published; no
-   local source), does the prelude (`Helpers/Encoding.cs` → `ByteEncoding`; `AlgorandEncoder` alias) and
-   commits it as `r4(core): prelude …`. Then two opus helpers branch from that commit in their own
-   worktrees: **A** `r4/core-chains` (`Providers/Blockchain/**`), **B** `r4/core-fiat` (fiat subtree).
-   They commit `r4(core-…): ready …` when their subtree compiles clean; the lead merges both into
-   `r4/core`, converges both test projects, writes `scripts/round4/merge-check.mjs`, the `Program.cs`
-   order rule and host tests, the `TestDataBuilders` partial + KYB-approved builder, then **merge #1**
-   per plan §3.3. Gate: `azoa.sln` 0 errors, warnings ≤ 25, SDK + frontend compile.
-3. **W1 — L1 `r4/schema`** from the merged tree (schema regen, unique-index audit, old-row rule,
-   defensive `REMOVE INDEX IF EXISTS`) **∥** the read-only SurrealQL re-sweep (opus) →
-   `round4-sql-sweep.md`, findings tagged by owning lane → **merge #2**.
-4. **W2 — seven lanes in worktrees** (L1 platform, L2–L7, helpers per plan §4). Start L2–L5 first, then
-   L6/L7 (peak ≤10 agents). Raise the Identomat configs request to the owner when L2 starts. L3 writes
-   the D-8 design note → one short opus critic pass → implement. Lanes report "ready to merge"; signal
-   them in order L1p → L2 → L3 → L4 → L5 → L6 → L7 (merges #3–#9), one at a time.
-5. **W3 — review** (plan §7): RV-L1…RV-L6L7 + RV-X in separate contexts, prompted to refute, writing
-   `round4-review-ledger.md` → one fix batch (≤3 fixers, `r4/fix-<domain>`) → bounded re-check of every
-   CRITICAL/HIGH fix → `round4-closeout.md` → offer `oasis-sleek-38` a merge hash → remove worktrees.
-6. **Sweep, once** (plan §8): prerequisites P-1…P5, then the ranked gates (KYC/KYB, Stripe and
-   exactly-once first), ≤3 failure batches, stop rule on batch 3.
-7. **Merge-to-main** (plan §9) → READY TO PUSH in §2. The owner pushes `main` and does the Railway steps.
-
-**Owner actions outstanding:** create the Identomat KYC + KYB configs and authorize ~8 live sessions
-(else KYC/KYB end as *Built (vendor-doc fakes)*); optional Veriff test credentials; redeploy
-`logseq-ai-hub` (lost in the podman incident).
+**Agent git note:** mid-session the permission classifier started denying git to subagents; the owner chose
+orchestrator-run merges with per-command approval. Fixers edit files and report changed-file lists; the
+orchestrator commits and merges.
 
 ---
 
 ## 8. Session log
+
+### 2026-10-17 (afternoon–evening) — round 4 executed (Claude Code, orchestrator)
+- Done: W0 compile convergence (247 errors → 0) + W1 schema regen (131 tables, old-row DEFAULT ALWAYS) +
+  seven W2 lanes merged in order (L7 swapped ahead of L6) + D-8 tenant-funded payouts (critic
+  ACCEPT-WITH-CHANGES, owner D-8a/b/c); `main` pushed once mid-round at W0 (`e0deb11`, CI red as expected,
+  Railway held); W3: 7 independent reviews (RV-L4 FAIL) → 6 fixers → bounded re-checks of every HIGH → merged;
+  owner D-9 (generation reset) and D-10 (provenance on transfer, chain is source of truth).
+- Found and fixed along the way: double clawback on an ambiguous broadcast; one Ethereum tx settling two
+  operations; Solana false "never landed"; DApp-manager escalation via child credentials; reversal pause
+  bypassed by the bare KYC gate; NFT recipient resolution after duplicate wallets; payout setup permanent
+  lock-out; silently empty operator pages.
+- Found by L6, fixed in the final round (fix-core2): API startup DI deadlock (every host test + the real process
+  hung); SurrealForge 1.3.0 `UpdateOnly`/`DeleteOnly` without `Where` throws (9 prod write paths).
+- Retro: a fail-closed compile is not a running app — the deadlock passed every build, review and 4,700 unit
+  tests; only starting the host found it. "Unknown treated as absent" recurred on three money rails.
+  Cross-lane seams (scope delegation × scope-trusting policy) produced the worst security bug.
 
 ### 2026-10-16 → 10-17 — Codex resume, round 3 completed, round 4 started (Claude Code)
 - Done: recovered the Codex trace from `~/.codex/sessions`; checkpoint `3d08ace`; lanes N/A/B/C/V

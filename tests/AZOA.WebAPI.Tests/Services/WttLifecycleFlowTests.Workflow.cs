@@ -113,6 +113,62 @@ public sealed partial class WttLifecycleFlowTests
         Assert.Empty(rig.Source.Sent);
     }
 
+    public static TheoryData<string> ClosedValueGates => new() { "reversal pause", "lapsed KYC" };
+
+    /// <summary>R-2: once the source leg left, the redeem to the actor's own wallet finishes even under a closed gate,
+    /// so value is never stranded in bridge custody.</summary>
+    [Theory]
+    [MemberData(nameof(ClosedValueGates))]
+    public async Task AfterTheSourceLegLeftAClosedGateStillRedeemsToTheActorsOwnWallet(string closed)
+    {
+        var rig = new Rig();
+        var view = await rig.PublishAndProveAsync(await rig.StartAsync("flow-own-redeem"));
+        rig.ValueGate.Paused = closed == "reversal pause";
+        rig.ValueGate.KycLapsed = closed == "lapsed KYC";
+
+        view = Ok(await rig.Service.ContinueAsync(view.OperationId, new(view.Version, true), rig.Credential));
+
+        Assert.Equal("TargetSubmitted", view.PublicState);
+        Assert.Single(rig.Target.Sent);
+    }
+
+    /// <summary>R-2: a delivery to another party is still a value move out, so it stays gated after the source leg.</summary>
+    [Fact]
+    public async Task APausedAccountCannotRedeemToAnotherPartyAfterTheSourceLeg()
+    {
+        var rig = new Rig();
+        const string key = "flow-third-party";
+        var quoted = await rig.Service.QuoteAsync(rig.Credential, rig.Request(key) with { RecipientAddress = "OtherParty11111111111111111111111111111111" });
+        Assert.False(quoted.IsError, quoted.Message);
+        var view = Ok(await rig.Service.StartAsync(rig.Credential, new(quoted.Result!.OfferId, quoted.Result.OfferHash, true), key));
+        view = await rig.PublishAndProveAsync(view);
+        rig.ValueGate.Paused = true;
+
+        var refused = await rig.Service.ContinueAsync(view.OperationId, new(view.Version, true), rig.Credential);
+
+        Assert.Equal(AzoaErrorCodes.Forbidden, refused.Code);
+        Assert.Empty(rig.Target.Sent);
+    }
+
+    /// <summary>R-2: a workflow node follows the capability gate's policy: the reversal pause stops its first send, a lapsed
+    /// KYC approval does not (identity is never a precondition of workflow moves).</summary>
+    [Fact]
+    public async Task AWorkflowSourceSendIsStoppedByTheReversalPauseButNotByALapsedKycApproval()
+    {
+        var paused = new Rig();
+        paused.ValueGate.Paused = true;
+        var stopped = WorkflowNode.Bridge(paused);
+        var refused = await stopped.Resolver(paused).ObserveAsync(stopped.Reference, stopped.FrozenInput);
+        Assert.NotEqual(ActionExternalOperationStatus.Succeeded, refused.Status);
+        Assert.Empty(paused.Source.Sent);
+
+        var lapsed = new Rig();
+        lapsed.ValueGate.KycLapsed = true;
+        var running = WorkflowNode.Bridge(lapsed);
+        Assert.Equal(ActionExternalOperationStatus.Pending, (await running.Resolver(lapsed).ObserveAsync(running.Reference, running.FrozenInput)).Status);
+        Assert.Single(lapsed.Source.Sent.Distinct());
+    }
+
     [Fact]
     public async Task WithTheWttSwitchOffNothingIsQuotedOrAdmittedDirectlyOrByAWorkflow()
     {

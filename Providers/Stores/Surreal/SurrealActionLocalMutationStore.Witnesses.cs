@@ -130,7 +130,8 @@ public sealed partial class SurrealActionLocalMutationStore
 
     private static void AppendHolonNulls(List<SurrealQuery> statements, AZOA.WebAPI.Models.Holon row, int index)
     {
-        var update = SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(row.Id.ToString("N"));
+        var owner = SurrealHolonStore.ToPoco(row).UserId;
+        var update = SurrealWriter.UpdateOnly<SurrealHolonStore.HolonPoco>(row.Id.ToString("N")).Where(item => item.UserId == owner);
         var needed = false;
         if (row.ParentHolonId is null) { update = update.Unset(item => item.ParentHolonId); needed = true; }
         if (row.ChainId is null) { update = update.Unset(item => item.ChainId); needed = true; }
@@ -144,7 +145,8 @@ public sealed partial class SurrealActionLocalMutationStore
 
     private static void AppendWalletNulls(List<SurrealQuery> statements, AZOA.WebAPI.Models.Wallet row, int index)
     {
-        var update = SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.Wallet>(row.Id.ToString("N"));
+        var owner = SurrealWalletStore.ToPoco(row).UserId;
+        var update = SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.Wallet>(row.Id.ToString("N")).Where(item => item.UserId == owner);
         var needed = false;
         if (row.PublicKey is null) { update = update.Unset(item => item.PublicKey); needed = true; }
         if (row.Label is null) { update = update.Unset(item => item.Label); needed = true; }

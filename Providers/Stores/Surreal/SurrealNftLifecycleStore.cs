@@ -307,7 +307,7 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
             ? SurrealWriter.Create(authority) : SurrealWriter.Upsert(authority), "authority"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Upsert(ownership), "ownership"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NftAssetAuthority>(authority.Id)
-            .Unset(row => row.ActiveLifecycleId).Build(), "release"));
+            .Where(row => row.Version == authority.Version).Unset(row => row.ActiveLifecycleId).Build(), "release"));
         statements.Add(SurrealQuery.Of("COMMIT"));
         var query = SurrealQuery.Combine(statements.ToArray());
         try

@@ -7,6 +7,7 @@ using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Services.Fiat.Reversal;
 using AZOA.WebAPI.Services.Signing;
 
 namespace AZOA.WebAPI.Services.Dex;
@@ -14,7 +15,7 @@ namespace AZOA.WebAPI.Services.Dex;
 /// <summary>Owns authenticated immutable swap admission and public operation projections.</summary>
 public sealed partial class SwapOperationService(ISwapOperationStore operations, IDexQuoteStore quotes,
     SigningAdmissionAuthorityFactory authorities, DexModuleResolver modules, SwapStageCoordinator stages, SwapRecoveryService recovery,
-    IRealValueKycGate valueGate)
+    IRealValueKycGate valueGate, IFiatReversalLedger? accountPause = null)
 {
     public async Task<AZOAResult<SwapOperationView>> StartAsync(SigningCredentialWitness credential,
         SwapAdmissionRequest request, WorkflowSigningWitness? workflow = null, CancellationToken ct = default)
@@ -33,7 +34,7 @@ public sealed partial class SwapOperationService(ISwapOperationStore operations,
                 !SameWorkflow(existing, workflow)) return Fail("The request key already belongs to a different immutable swap.");
             return AZOAResult<SwapOperationView>.Success(await ProjectAsync(existing, ct));
         }
-        if (await ValueRefusalAsync(credential, null, ct) is { } refused) return refused;
+        if (await ValueRefusalAsync(credential, null, workflow, ct) is { } refused) return refused;
         var quote = await quotes.GetAsync(request.QuoteId, ct);
         if (quote is null || quote.ActorUserId != credential.ActorUserId.ToString("N") || quote.TenantId != Tenant(credential.TenantId) ||
             quote.QuoteHash != request.QuoteHash || quote.QuoteHash != CanonicalJson.HashCanonical(quote.QuoteJson))
@@ -117,18 +118,46 @@ public sealed partial class SwapOperationService(ISwapOperationStore operations,
         => credential.OwnerAuthority || credential.Scopes.Contains(AzoaScopes.SwapSign, StringComparer.Ordinal);
     private static bool ValidKey(string key) => key is { Length: > 0 and <= 256 } && key == key.Trim() && !key.Any(char.IsControl);
     private static string Tenant(Guid? tenant) => tenant?.ToString("N") ?? "";
-    /// <summary>X-2: the risk-hold-wrapped real-value gate (KYC + reversal pause); a residual-return Cleanup stage stays open.</summary>
+    /// <summary>X-2/R-2: gates admission and the first value-sending stage only. A direct caller passes the risk-hold-wrapped
+    /// real-value gate (KYC + pause), a workflow node only the pause; see AGENTS.md §Value gate and pin scope.</summary>
     private async Task<AZOAResult<SwapOperationView>?> ValueRefusalAsync(SigningCredentialWitness credential, SwapStageRecord? stage,
-        CancellationToken ct)
+        WorkflowSigningWitness? workflow, CancellationToken ct)
     {
-        if (stage is not null && JsonSerializer.Deserialize<SwapStagePlan>(stage.PlanJson)?.Purpose == "Cleanup") return null;
-        var admitted = credential.TenantId is { } tenant
-            ? await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, tenant, ct)
-            : await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, ct);
-        return admitted.IsError || !admitted.Result
-            ? AZOAResult<SwapOperationView>.FailureWithCode(admitted.Message ?? "This account cannot move value right now.", AzoaErrorCodes.Forbidden)
-            : null;
+        if (stage is not null && (Purpose(stage) == "Cleanup" || await EarlierEffectConfirmedAsync(stage, ct))) return null;
+        string? refusal;
+        if (workflow is not null)
+        {
+            var standing = await AZOA.WebAPI.Services.Actions.ValueRailCapabilityGate.AccountStandingAsync(accountPause, credential.ActorUserId, ct);
+            refusal = standing.IsAllowed ? null : standing.RefusalMessage;
+        }
+        else
+        {
+            var admitted = credential.TenantId is { } tenant
+                ? await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, tenant, ct)
+                : await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, ct);
+            refusal = admitted.IsError || !admitted.Result ? admitted.Message ?? "This account cannot move value right now." : null;
+        }
+        return refusal is null ? null : AZOAResult<SwapOperationView>.FailureWithCode(refusal, AzoaErrorCodes.Forbidden);
     }
+
+    /// <summary>True once an earlier, differently named Effect stage of this swap confirmed: value already left, and the
+    /// remaining effect returns the output to the owner's own wallet, so blocking it would strand the swap mid-way.</summary>
+    private async Task<bool> EarlierEffectConfirmedAsync(SwapStageRecord stage, CancellationToken ct)
+    {
+        var previousId = stage.PreviousStageId;
+        for (var hop = 0; previousId is not null && hop < MaximumStageHops; hop++)
+        {
+            var previous = await operations.GetStageAsync(previousId, ct);
+            if (previous is null || previous.OperationId != stage.OperationId) return false;
+            if (previous.State == "Confirmed" && previous.Stage != stage.Stage && Purpose(previous) == "Effect") return true;
+            previousId = previous.PreviousStageId;
+        }
+        return false;
+    }
+
+    private const int MaximumStageHops = 64;
+
+    private static string? Purpose(SwapStageRecord stage) => JsonSerializer.Deserialize<SwapStagePlan>(stage.PlanJson)?.Purpose;
 
     private static AZOAResult<SwapOperationView> Fail(string message) => AZOAResult<SwapOperationView>.FailureWithCode(message, "Conflict");
 }

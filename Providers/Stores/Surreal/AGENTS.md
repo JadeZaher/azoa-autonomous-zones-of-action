@@ -1091,3 +1091,29 @@ is still a non-transactional multi-request fan-out (pre-existing shape; a partia
 visible on failure) — moving the whole aggregate into one `BEGIN…COMMIT` is a follow-up.
 
 - **Custodial NFT recipient lookup (RV-L4-08):** probe the canonical chain/address spellings from `Helpers/NftRecipientLookupForms` through the `wallet_chain_address` index; never case-fold Solana/Algorand addresses.
+
+## Typed conditional mutations always carry a guard (SurrealForge 1.3.0, round 4 r4/fix-core2)
+
+`SurrealWriter.UpdateOnly/DeleteOnly(...).Build()` throws without a `Where`. Never satisfy it with `Where(_ => true)` in
+production: the guard restates the state the surrounding batch (or call) just read, locked or wrote, so it is always true on
+the allow path and turns a concurrent change into "no row affected" instead of a blind write.
+
+| Site | Guard | Why it holds on the allow path |
+|---|---|---|
+| `SurrealActionLocalMutationStore` holon/wallet delete | `user_id` = owner of the witnessed read row | the row witness locked and compared the full row earlier in the same transaction; plan validation requires owner == actor |
+| `…Witnesses` `AppendHolonNulls/AppendWalletNulls` | `user_id` = owner of the row just upserted | same transaction, written two statements earlier |
+| `SurrealActionSigningAuthorizationStore` run / saga step | run `status IN (Running, AwaitingReconciliation)`; step `status = Parked` | both verified (and the run version-bumped) earlier in the batch |
+| `SurrealHolonStore.DeleteAsync` / `SurrealWalletStore.DeleteAsync` | `user_id` = owner this call just read | an owner change between read and delete affects 0 rows → refusal, not a delete of someone else's row |
+| `SurrealFungibleCreationStore.AuthorizeAsync` pointer | `version` = `expected.Version` | the lock statement set version to itself and asserted it |
+| `SurrealGovernanceStore.FinalizeAsync` | `definition_hash` matches and `final_result_json = NONE` | the `$_finalizing` lock asserted exactly that |
+| `SurrealNftLifecycleStore.CommitAsync` release | `version` = the authority version just created/upserted | written earlier in the same batch |
+
+`SurrealQlSourceRulesTests.Typed_conditional_mutations_always_carry_a_Where` also catches builders split across statements
+(`var update = UpdateOnly…; …; update.Build()`), which is how the two `Append*Nulls` sites escaped the first ratchet.
+
+`HolonPoco`'s `[References]` on `parent_holon_id`/`user_id`/`source_holon_id`/`origin_user_id` carry `Optional = true` to mirror
+the canonical `Persistence/SurrealDb/Models/Holon` (`option<record<…>>`): SurrealForge reads optionality from `[References]`
+before the column type, so without it `Unset(ParentHolonId)` threw "required field cannot be unset".
+
+`SurrealQuery.Combine` refuses a single query: `SurrealFungibleCreationStore.UpdateAsync` sends its lone progress statement
+directly when no effect authorization (and so no BEGIN/COMMIT fence) is needed — a single statement is already atomic.

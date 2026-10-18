@@ -143,7 +143,7 @@ public sealed partial class SurrealNftLifecycleStoreTests : IAsyncLifetime
     };
     private static NftOwnership Ownership(NftLifecycle row) => new()
     {
-        Id = row.NftId, UserId = row.RecipientUserId, ChainType = row.ChainType, ContractAddress = "ASA", TokenId = "777", TokenStandard = "ASA",
+        Id = row.NftId, UserId = "user:" + row.RecipientUserId, ChainType = row.ChainType, ContractAddress = "ASA", TokenId = "777", TokenStandard = "ASA",
         MetadataUri = "ipfs://asset", Name = "Ownership projection", IsCurrent = true, IsActive = true,
         CurrentOwner = "holder", MintedDate = row.CreatedAt,
     };

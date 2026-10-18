@@ -13,6 +13,10 @@ public interface IWalletOwnershipProofStore
     /// whose canonical address that same user currently holds a signature proof for (the WTT recipient seam).</summary>
     Task<bool> IsSignatureProvenAsync(Guid walletId, Guid ownerUserId, CancellationToken ct = default);
 
+    /// <summary>True only while another user's proof for the address is still valid (its holder's External wallet still holds the
+    /// address); a stale proof never blocks the current key holder from adding and proving the address (RV-L4-09).</summary>
+    Task<bool> IsHeldByAnotherUserAsync(string chainType, string address, Guid userId, CancellationToken ct = default);
+
     /// <summary>Records the proof (callers pass only an address whose ownership challenge just verified). Refused while another user's
     /// proof is still valid; a stale one is superseded atomically (see Controllers/AGENTS.md §Wallet ownership proof).</summary>
     Task<AZOAResult<WalletOwnershipProofWrite>> RecordAsync(WalletOwnershipProof proof, CancellationToken ct = default);

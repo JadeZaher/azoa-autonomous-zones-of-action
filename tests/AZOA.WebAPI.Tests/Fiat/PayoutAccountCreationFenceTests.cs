@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Fiat.OffRamp;
@@ -141,7 +142,7 @@ public sealed class PayoutAccountCreationFenceTests
         resolved.Code.Should().Be(AzoaErrorCodes.Conflict);
         harness.Stripe.ListCalls.Should().Be(0);
         (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-            PayoutAccountFlow.AdmissionKeyFor(subject))).Result!.CreationQuarantinedAt.Should().BeNull();
+            PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result!.CreationQuarantinedAt.Should().BeNull();
     }
 
     [Fact]
@@ -158,7 +159,28 @@ public sealed class PayoutAccountCreationFenceTests
 
         resolved.Code.Should().Be(AzoaErrorCodes.Conflict);
         (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-            PayoutAccountFlow.AdmissionKeyFor(subject))).Result.Should().NotBeNull("the claim is not released");
+            PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result.Should().NotBeNull("the claim is not released");
+    }
+
+    [Fact]
+    public async Task A_test_to_live_switch_never_releases_a_claim_whose_account_lives_in_the_other_environment()
+    {
+        // RV-L1 R-1: the account the lost test-mode create opened is invisible to live credentials.
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.LoseNextResponse = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+        var live = harness.ServiceIn(RailEnvironmentNames.Live);
+
+        var resolved = await live.ResolveStuckSetupAsync(subject, Operator, Evidence);
+
+        resolved.Code.Should().Be(AzoaErrorCodes.NotFound, "live mode has no setup of its own to resolve");
+        harness.Stripe.ListCalls.Should().Be(0);
+        var testClaim = (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result;
+        testClaim.Should().NotBeNull("the test-mode claim is neither released nor quarantined from live mode");
+        testClaim!.CreationQuarantinedAt.Should().BeNull();
     }
 
     private static readonly Guid Operator = Guid.NewGuid();
@@ -172,7 +194,7 @@ public sealed class PayoutAccountCreationFenceTests
 
         var status = await harness.Service.GetStatusAsync(subject);
         var claimAfterRead = await harness.Store.GetByAdmissionAsync(
-            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subject));
+            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test));
         var setup = await harness.Service.BeginSetupAsync(subject, tenantId: null);
 
         status.Result!.AccountOpened.Should().BeFalse();
@@ -188,12 +210,18 @@ public sealed class PayoutAccountCreationFenceTests
         public MutableClock Clock { get; } = new(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero));
         public PayoutAccountService Service { get; }
 
-        public Harness()
+        public Harness() => Service = ServiceIn(RailEnvironmentNames.Test);
+
+        /// <summary>A service over the same store and Stripe fake, configured for <paramref name="environment"/>.</summary>
+        public PayoutAccountService ServiceIn(string environment)
         {
-            var fiat = new FiatOptions { Enabled = true, Environment = RailEnvironmentNames.Test, ApiBaseUrl = "https://api.example" };
+            var fiat = new FiatOptions { Enabled = true, Environment = environment, ApiBaseUrl = "https://api.example" };
             fiat.Test.IsEnabled = true;
             fiat.Test.SecretKey = "sk_test_fence_fixture";
             fiat.Test.WebhookSecret = "whsec_fence_fixture";
+            fiat.Live.IsEnabled = true;
+            fiat.Live.SecretKey = "sk_live_fence_fixture";
+            fiat.Live.WebhookSecret = "whsec_live_fence_fixture";
             fiat.Checkout.AllowedReturnOrigins.Add(ReturnOrigin);
             var offRamp = new OffRampOptions
             {
@@ -201,12 +229,12 @@ public sealed class PayoutAccountCreationFenceTests
                 OnboardingReturnUrl = ReturnOrigin + "/payout/return",
                 OnboardingRefreshUrl = ReturnOrigin + "/payout/refresh",
             };
-            Service = new PayoutAccountService(fiat, offRamp, Stripe, Store, NullLogger<PayoutAccountService>.Instance, Clock);
+            return new PayoutAccountService(fiat, offRamp, Stripe, Store, NullLogger<PayoutAccountService>.Instance, Clock);
         }
 
         public async Task<string?> AttachedAccountAsync(Guid subject)
             => (await Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-                PayoutAccountFlow.AdmissionKeyFor(subject))).Result?.ProviderSessionId;
+                PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result?.ProviderSessionId;
     }
 
     /// <summary>Models Stripe idempotency: a key replays its account, a concurrent same-key request is refused, a new key opens a new account.</summary>

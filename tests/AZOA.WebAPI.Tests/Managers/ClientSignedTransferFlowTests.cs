@@ -312,7 +312,8 @@ public sealed class ClientSignedTransferFlowTests
         var wallets = new Mock<IWalletStore>();
         wallets.Setup(store => store.GetByIdAsync(WalletId, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IWallet>.Success(
             new Wallet { Id = WalletId, UserId = _owner, ChainType = chainType, Address = sender, WalletType = WalletType.External }));
-        var manager = new BlockchainOperationManager(_log, factory, _idempotency, wallets: wallets.Object);
+        var manager = new BlockchainOperationManager(_log, factory, _idempotency, wallets: wallets.Object,
+            valueAccess: new AZOA.WebAPI.Services.Kyc.ValueAccessService(_valueGate));
         var service = new ClientSignedOperationService(_log, _log, factory, _idempotency,
             Options.Create(new ReconciliationOptions { ClientSignatureTtlSeconds = 0 }), NullLogger<ClientSignedOperationService>.Instance, _valueGate);
         return (manager, service);

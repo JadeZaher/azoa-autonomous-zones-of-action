@@ -50,6 +50,7 @@ public sealed partial class SurrealGovernanceStore
                 .WithParam("_option" + suffix, pair.Key).WithParam("_count" + suffix, pair.Value));
         }
         queries.Add(Scope(SurrealWriter.UpdateOnly<GovernanceProposal>(proposal.Id)
+            .Where(row => row.DefinitionHash == proposal.DefinitionHash && row.FinalResultJson == null)
             .Set(row => row.FinalResultJson, receipt.OutputJson).Set(row => row.FinalizedAt, receipt.CreatedAt).Build(), "final"));
         queries.Add(SurrealQuery.Of("UPDATE ONLY type::record('holon', $_proposal_id) SET metadata.status = 'Closed' RETURN NONE")
             .WithParam("_proposal_id", proposal.Id));

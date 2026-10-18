@@ -30,7 +30,7 @@ public sealed partial class SwapOperationService
         var selected = await CommandAsync(operationId, command, credential, ct);
         if (selected is null) return Changed();
         var (operation, stage) = selected.Value;
-        if (await ValueRefusalAsync(credential, stage, ct) is { } refused) return refused;
+        if (await ValueRefusalAsync(credential, stage, workflow, ct) is { } refused) return refused;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
         var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for this network.");
@@ -47,7 +47,7 @@ public sealed partial class SwapOperationService
         var selected = await CommandAsync(operationId, command, credential, ct);
         if (selected is null) return Changed();
         var (operation, stage) = selected.Value;
-        if (await ValueRefusalAsync(credential, stage, ct) is { } refused) return refused;
+        if (await ValueRefusalAsync(credential, stage, workflow, ct) is { } refused) return refused;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
         var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for this network.");

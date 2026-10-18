@@ -48,7 +48,7 @@ public sealed partial class SurrealActionLocalMutationStore(ISurrealExecutor exe
         var index = 0;
         foreach (var (id, row) in plan.HolonWrites.OrderBy(pair => pair.Key))
         {
-            SurrealQuery write = row is null ? SurrealWriter.DeleteOnly<SurrealHolonStore.HolonPoco>(id.ToString("N")).Build()
+            SurrealQuery write = row is null ? DeleteHolon(id, plan.HolonReads[id]!)
                 : plan.HolonReads.GetValueOrDefault(id) is null ? SurrealWriter.Create(SurrealHolonStore.ToPoco(row))
                 : SurrealWriter.Upsert(SurrealHolonStore.ToPoco(row));
             statements.Add(SurrealGeneratedStatementScope.Apply(write, Name("holon_write", index++)));
@@ -56,7 +56,7 @@ public sealed partial class SurrealActionLocalMutationStore(ISurrealExecutor exe
         }
         foreach (var (id, row) in plan.WalletWrites.OrderBy(pair => pair.Key))
         {
-            SurrealQuery write = row is null ? SurrealWriter.DeleteOnly<Wallet>(id.ToString("N")).Build()
+            SurrealQuery write = row is null ? DeleteWallet(id, plan.WalletReads[id]!)
                 : plan.WalletReads.GetValueOrDefault(id) is null ? SurrealWriter.Create(SurrealWalletStore.ToPoco(row))
                 : SurrealWriter.Upsert(SurrealWalletStore.ToPoco(row));
             statements.Add(SurrealGeneratedStatementScope.Apply(write, Name("wallet_write", index++)));
@@ -92,6 +92,18 @@ public sealed partial class SurrealActionLocalMutationStore(ISurrealExecutor exe
     private static AZOAResult<ActionLocalReceipt> Replay(ActionLocalReceipt saved, ActionLocalReceipt expected)
         => Same(saved, expected) ? AZOAResult<ActionLocalReceipt>.Success(saved)
             : AZOAResult<ActionLocalReceipt>.Failure("Local command identity conflicts with its committed intent.");
+
+    private static SurrealQuery DeleteHolon(Guid id, AZOA.WebAPI.Models.Holon read)
+    {
+        var owner = SurrealHolonStore.ToPoco(read).UserId;
+        return SurrealWriter.DeleteOnly<SurrealHolonStore.HolonPoco>(id.ToString("N")).Where(item => item.UserId == owner).Build();
+    }
+
+    private static SurrealQuery DeleteWallet(Guid id, AZOA.WebAPI.Models.Wallet read)
+    {
+        var owner = SurrealWalletStore.ToPoco(read).UserId;
+        return SurrealWriter.DeleteOnly<Wallet>(id.ToString("N")).Where(item => item.UserId == owner).Build();
+    }
 
     private static string Name(string prefix, int index) => prefix + "_" + string.Concat(BitConverter.GetBytes(index)
         .Select(value => $"{(char)('a' + value / 16)}{(char)('a' + value % 16)}"));
