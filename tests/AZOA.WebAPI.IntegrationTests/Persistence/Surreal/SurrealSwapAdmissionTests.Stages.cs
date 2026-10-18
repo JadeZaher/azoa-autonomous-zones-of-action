@@ -76,15 +76,15 @@ public sealed partial class SurrealSwapAdmissionTests
     {
         var (operation, stage, authority, _) = await PreparedStageAsync("revocation");
         var stageId = SurrealRecordGuid.BareId(stage.Id);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId).Where(seed => true)
             .Set(row => row.IsActive, false).Build())).EnsureAllOk();
         (await _store.AuthorizeStageAsync(operation.Id, 2, stageId, 1, authority)).Should().BeNull();
         (await _store.GetAsync(operation.Id))!.Version.Should().Be(2);
         (await _store.GetStageAsync(stageId))!.State.Should().Be("Prepared");
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId).Where(seed => true)
             .Set(row => row.IsActive, true).Build())).EnsureAllOk();
         var authorized = (await _store.AuthorizeStageAsync(operation.Id, 2, stageId, 1, authority))!;
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId).Where(seed => true)
             .Set(row => row.IsActive, false).Build())).EnsureAllOk();
         var replay = await _store.AuthorizeStageAsync(operation.Id, 2, stageId, 1,
             authority with { Credential = authority.Credential with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) } });

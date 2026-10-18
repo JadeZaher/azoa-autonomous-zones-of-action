@@ -42,7 +42,7 @@ public sealed partial class SurrealConsentLifecycleTests
         var notification = await DeliverableEvent();
         var store = new SurrealConsentWebhookDeliveryStore(_executor);
         var id = SurrealRecordGuid.BareId(notification.Id);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(notification.RegistrationId!)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(notification.RegistrationId!).Where(seed => true)
             .Set(row => row.Version, 2L).Set(row => row.DestinationRevision, 2L)
             .Set(row => row.Url, "https://replacement.example/events").Build())).EnsureAllOk();
         (await store.TryClaimAsync(id, 0, TimeSpan.FromMinutes(1), 8)).Should().BeNull();
@@ -81,7 +81,7 @@ public sealed partial class SurrealConsentLifecycleTests
     {
         var notification = await DeliverableEvent();
         var id = SurrealRecordGuid.BareId(notification.Id);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Event>(id).Set(row => row.BodyJson, "{}").Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Event>(id).Where(seed => true).Set(row => row.BodyJson, "{}").Build())).EnsureAllOk();
         var store = new SurrealConsentWebhookDeliveryStore(_executor);
         (await store.TryClaimAsync(id, 0, TimeSpan.FromMinutes(1), 8)).Should().BeNull();
         (await store.SuspendUnavailableAsync(id, 0, 8)).Should().BeTrue();

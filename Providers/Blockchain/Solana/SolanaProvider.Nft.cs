@@ -31,6 +31,7 @@ public partial class SolanaProvider
         if (signingContexts is null) return AZOAResult<PreparedNftTransaction>.Failure("One Solana public key cannot replace another participant's custody consent.");
         var mint = intent.Kind == NftTransactionKinds.Create ? DeriveNftMint(intent) : new PublicKey(intent.AssetId!);
         ulong rent = 0;
+        ulong stageRent = 0;
         NftCostEvidence? costs = null;
         var createDestination = false;
         if (intent.Kind == NftTransactionKinds.Create)
@@ -51,37 +52,14 @@ public partial class SolanaProvider
         }
         else
         {
-            var asset = await ReadNftAssetAsync(mint, ct);
-            if (asset is null || asset.Metadata.Uri != intent.MetadataUri || asset.Metadata.Name != intent.Name
-                || asset.Credential != intent.Soulbound || (intent.Soulbound && asset.Metadata.Issuer != intent.Authorization!.IssuerAddress))
-                return AZOAResult<PreparedNftTransaction>.Failure("NFT mint or immutable metadata does not match recorded issuance.");
-            var destinationOwner = NftDestination(intent);
-            var destination = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(destinationOwner, mint);
-            var destinationAccount = await ReadParsedAccountAsync(destination.Key, ct);
-            createDestination = destinationAccount is null;
-            if (intent.Kind == NftTransactionKinds.Accept)
+            var inspected = await InspectNftMovementAsync(intent, mint, ct);
+            if (inspected.IsError) return new() { IsError = true, Message = inspected.Message, Code = inspected.Code };
+            createDestination = inspected.Result;
+            if (IsNftStageCostKind(intent.Kind))
             {
-                if (destinationOwner.Key != intent.SignerAddress) return AZOAResult<PreparedNftTransaction>.Failure("Acceptance requires the destination owner's signature.");
-                if (destinationAccount is not null && !ValidHolding(destinationAccount.Value, destinationOwner.Key, mint.Key, false, out _))
-                    return AZOAResult<PreparedNftTransaction>.Failure("Destination account cannot accept the recorded NFT.");
-            }
-            else
-            {
-                var sourceOwner = NftSource(intent);
-                var source = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(sourceOwner, mint);
-                var sourceAccount = await ReadParsedAccountAsync(source.Key, ct);
-                var frozenSource = intent.Soulbound && intent.Kind == NftTransactionKinds.Revoke;
-                if (sourceAccount is null || !ValidHolding(sourceAccount.Value, sourceOwner.Key, mint.Key, frozenSource, out var balance) || balance != 1)
-                    return AZOAResult<PreparedNftTransaction>.Failure("Recorded NFT source does not hold the single token.");
-                if (frozenSource && !HasIssuerDelegate(sourceAccount.Value, intent.Authorization!.IssuerAddress!))
-                    return AZOAResult<PreparedNftTransaction>.Failure("Frozen credential does not retain its immutable issuer delegate.");
-                if (intent.Kind != NftTransactionKinds.Burn && intent.Soulbound
-                    && (destinationAccount is null || !ValidHolding(destinationAccount.Value, destinationOwner.Key, mint.Key, true, out var destinationBalance)
-                        || destinationBalance != 0 || !HasIssuerDelegate(destinationAccount.Value, intent.Authorization!.IssuerAddress!)))
-                    return AZOAResult<PreparedNftTransaction>.FailureWithCode("The destination must authorize its frozen credential account again.", "NFT_RECIPIENT_ACCEPTANCE_REQUIRED");
-                if (!intent.Soulbound && destinationAccount is not null
-                    && !ValidHolding(destinationAccount.Value, destinationOwner.Key, mint.Key, false, out _))
-                    return AZOAResult<PreparedNftTransaction>.Failure("NFT destination account is incompatible.");
+                if (!MatchesNftStageCostReceipt(intent))
+                    return AZOAResult<PreparedNftTransaction>.Failure("This Solana NFT stage requires its paying participant's accepted cost receipt.");
+                stageRent = createDestination ? await NativeRentAsync(NftTokenAccountLength, ct) : 0;
             }
         }
         var plan = await NewPlanAsync(mint.Key, rent, 0, createDestination, IntentDigest(intent), ct);
@@ -94,6 +72,9 @@ public partial class SolanaProvider
             if (!NftProtocolCostContract.Covers(intent.ProtocolCostQuote!.Limits, NftCostAmounts(costs, networkFee)))
                 return AZOAResult<PreparedNftTransaction>.Failure("NFT network fee exceeds its accepted independent limit.");
         }
+        else if (IsNftStageCostKind(intent.Kind)
+            && !NftProtocolCostContract.Covers(intent.ProtocolCostQuote!.Limits, NftStageAmounts(await NativeMessageFeeAsync(message, ct), stageRent)))
+            return AZOAResult<PreparedNftTransaction>.Failure("NFT stage costs exceed the paying participant's accepted limits; review a new quote.");
         var signed = await SignDurableAsync(message, signingContexts, ct);
         if (signed.IsError || signed.Result is null) return AZOAResult<PreparedNftTransaction>.Failure(signed.Message);
         if (signed.Result.Length > 1232) return AZOAResult<PreparedNftTransaction>.Failure("Atomic Solana NFT transaction exceeds the network packet limit.");
@@ -112,6 +93,13 @@ public partial class SolanaProvider
             var fee = await NativeMessageFeeAsync(CompileDurable(plan, NftPayer(prepared.Intent), NftInstructions(prepared.Intent, plan)), ct);
             if (!NftProtocolCostContract.Covers(prepared.Intent.ProtocolCostQuote!.Limits, NftCostAmounts(costs, fee)))
                 throw new InvalidOperationException("The exact NFT message exceeds its accepted network fee limit.");
+        }
+        else if (prepared.Intent.ProtocolCostQuote is { } stageQuote)
+        {
+            var fee = await NativeMessageFeeAsync(CompileDurable(plan, NftPayer(prepared.Intent), NftInstructions(prepared.Intent, plan)), ct);
+            var holdingRent = plan.CreateDestination ? await NativeRentAsync(NftTokenAccountLength, ct) : 0;
+            if (!NftProtocolCostContract.Covers(stageQuote.Limits, NftStageAmounts(fee, holdingRent)))
+                throw new InvalidOperationException("The exact NFT stage message exceeds its accepted cost limits.");
         }
         await SubmitDurableAsync(prepared.SignedTransactionBase64, prepared.TransactionId, plan, ct);
     }
@@ -167,7 +155,7 @@ public partial class SolanaProvider
             || prepared.AtomicGroupIdentity is not null || plan.Decimals != 0 || plan.LastValidBlockHeight <= 0 || plan.ContextSlot < 0
             || plan.Mint != (prepared.Intent.Kind == NftTransactionKinds.Create ? DeriveNftMint(prepared.Intent).Key : prepared.Intent.AssetId)
             || prepared.TokenStandard != (prepared.Intent.Soulbound ? SolanaNftMetadata.CredentialStandard : SolanaNftMetadata.MasterEditionStandard)
-            || (plan.NftCosts is null ? prepared.Intent.ProtocolCostQuote is not null :
+            || (plan.NftCosts is null ? prepared.Intent.ProtocolCostQuote is not null && !MatchesNftStageCostReceipt(prepared.Intent) :
                 !MatchesNftCostReceipt(prepared.Intent, plan.NftCosts) || plan.MintRent != plan.NftCosts.Accounts.MintRent)
             || !MatchesDurableWire(prepared.SignedTransactionBase64, prepared.TransactionId,
                 CompileDurable(plan, NftPayer(prepared.Intent), NftInstructions(prepared.Intent, plan)), out _))

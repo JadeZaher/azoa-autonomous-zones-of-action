@@ -50,7 +50,7 @@ public sealed partial class SurrealActionEmitTests : IAsyncLifetime
         results[0]!.Id.Should().Be(results[1]!.Id);
         (await _executor.QueryAsync<ActionEmitReceipt>(SurrealQuery<ActionEmitReceipt>.From())).Should().ContainSingle();
         (await _executor.QueryAsync<Event>(SurrealQuery<Event>.From())).Should().BeEmpty();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(user => user.IsActive, false).Build())).EnsureAllOk();
         (await _store.AcceptAsync(input, authority))!.CreatedAt.Should().Be(results[0]!.CreatedAt);
     }
@@ -74,7 +74,7 @@ public sealed partial class SurrealActionEmitTests : IAsyncLifetime
     {
         var (input, authority) = await Command();
         (await _store.AcceptAsync(input.Replace("hello", "changed", StringComparison.Ordinal), authority)).Should().BeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Run>(authority.Action.RunId.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Run>(authority.Action.RunId.ToString("N")).Where(seed => true)
             .Set(row => row.Status, Run.ActionRunStatusKind.Cancelled).Build())).EnsureAllOk();
         (await _store.AcceptAsync(input, authority)).Should().BeNull();
         (await _executor.QueryAsync<ActionEmitReceipt>(SurrealQuery<ActionEmitReceipt>.From())).Should().BeEmpty();
@@ -105,11 +105,11 @@ public sealed partial class SurrealActionEmitTests : IAsyncLifetime
         evt.RegistrationId.Should().Be(registration.Id);
         evt.BodyJson.Should().Contain("hello");
         (await _store.HasAcceptedEventAsync(receipts[0]!)).Should().BeTrue();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<WebhookRegistration>(registration.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<WebhookRegistration>(registration.Id).Where(seed => true)
             .Set(row => row.Version, 2L).Set(row => row.DestinationRevision, 2L)
             .Set(row => row.Url, "https://replacement.example/events").Build())).EnsureAllOk();
         (await _store.AcceptAsync(input, authority))!.DestinationUrl.Should().Be(registration.Url);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Event>(receipts[0]!.EventId!)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Event>(receipts[0]!.EventId!).Where(seed => true)
             .Set(row => row.BodyJson, "{\"tampered\":true}").Build())).EnsureAllOk();
         (await _store.HasAcceptedEventAsync(receipts[0]!)).Should().BeFalse();
     }

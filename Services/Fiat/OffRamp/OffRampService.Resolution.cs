@@ -57,10 +57,12 @@ public sealed partial class OffRampService
             _fiat.CredentialsFor(_fiat.ActiveEnvironment), TransferGroupFor(row.Id), ct);
         if (listed.IsError || listed.Result is not { HasMore: false } page)
             return Conflict("Stripe's transfer record for this cash-out could not be read completely. Nothing was changed.");
-        var ours = page.Transfers.Where(transfer => transfer.IntentId == row.Id).ToList();
-        if (ours.Count > 1)
+        // L2: group membership is the evidence; a group transfer that does not name this cash-out refuses.
+        if (page.Transfers.Any(listed => listed.IntentId != row.Id))
+            return Conflict("A transfer in this cash-out's group does not name it. Reconcile it in Stripe first.");
+        if (page.Transfers.Count > 1)
             return Conflict("More than one transfer names this cash-out. Reconcile it in Stripe first.");
-        var transfer = ours.SingleOrDefault();
+        var transfer = page.Transfers.SingleOrDefault();
         if (transfer is not null && !MatchesTransfer(row, transfer))
             return Conflict("The transfer Stripe holds does not match this cash-out.");
 
@@ -137,6 +139,10 @@ public sealed partial class OffRampService
         if (transfer is not null)
             return Conflict("Money left the platform for this cash-out. Record it paid, or recover the failed bank payout.");
 
+        // M1: no pay attempt may be (or become) in flight once units go back.
+        if (await FencePayLegAsync(row, ct) is { } payInFlight)
+            return Conflict(payInFlight);
+
         var collected = await ResolveCollectionAsync(row, ct);
         if (collected is null)
             return Conflict("Whether the units were collected is still unknown on chain. Nothing was changed.");
@@ -184,19 +190,71 @@ public sealed partial class OffRampService
         return AZOAResult<FiatPayout>.Success(row);
     }
 
+    /// <summary>Operation type of a fence claim, so a fence a crash left InProgress is never mistaken for a lost pay attempt.</summary>
+    public const string OperatorFenceOperationType = "fiat-off-ramp-fence";
+
+    /// <summary>Reason a fenced move claim records: the operator closed the cash-out, so this leg may never run.</summary>
+    public const string OperatorFenceReason = "Fenced by an operator resolution: this cash-out was closed and this move must never run.";
+
+    /// <summary>Longest an InProgress pay claim can still have a live Stripe request behind it (key retention + margin).</summary>
+    public static readonly TimeSpan PayClaimInFlightHorizon = FiatHostedCreation.ReplayWindow + TimeSpan.FromHours(2);
+
+    /// <summary>
+    /// M1 fence on the pay leg. An absent claim is taken and failed so a late send step loses it; a live,
+    /// completed or ambiguous claim refuses. Null = no money can leave for this cash-out any more.
+    /// </summary>
+    private async Task<string?> FencePayLegAsync(FiatPayout row, CancellationToken ct)
+    {
+        var key = MoveIdempotencyKey(row.Id, "pay");
+        var record = await _idempotency.GetAsync(key, ct);
+        if (record is null)
+        {
+            var claim = await _idempotency.TryClaimAsync(key, OperatorFenceOperationType, ct);
+            if (claim.Won)
+            {
+                await _idempotency.FailAsync(key, OperatorFenceReason, ct);
+                return null;
+            }
+            record = claim.Record;
+        }
+
+        var age = _clock.GetUtcNow() - new DateTimeOffset(DateTime.SpecifyKind(record.CreatedAt, DateTimeKind.Utc));
+        return record.State switch
+        {
+            IdempotencyState.InProgress when age < PayClaimInFlightHorizon
+                => "A payment attempt for this cash-out may still be in flight. Wait for it, then reconcile.",
+            IdempotencyState.InProgress => null,
+            IdempotencyState.Completed
+                => "A payment attempt for this cash-out completed, but Stripe lists no transfer. Reconcile it in Stripe first.",
+            _ when IsAmbiguousFailure(record.Error)
+                => "A payment attempt for this cash-out has an unknown outcome. Reconcile it in Stripe first.",
+            _ => null,
+        };
+    }
+
     /// <summary>True = units are in the reserve; false = provably never moved; null = still unknown.</summary>
+    /// <remarks>An absent collect claim is fenced (claimed + failed) first, so a late collect step can never move units (M1).</remarks>
     private async Task<bool?> ResolveCollectionAsync(FiatPayout row, CancellationToken ct)
     {
-        var claim = await _idempotency.GetAsync(MoveIdempotencyKey(row.Id, "collect"), ct);
+        var key = MoveIdempotencyKey(row.Id, "collect");
+        var claim = await _idempotency.GetAsync(key, ct);
         if (claim is null)
-            return false;
+        {
+            var fence = await _idempotency.TryClaimAsync(key, OperatorFenceOperationType, ct);
+            if (fence.Won)
+            {
+                await _idempotency.FailAsync(key, OperatorFenceReason, ct);
+                return false;
+            }
+            claim = fence.Record;
+        }
         if (claim.State == IdempotencyState.Completed)
             return true;
         if (claim.State == IdempotencyState.InProgress)
             return null;
 
         var error = claim.Error ?? string.Empty;
-        if (!error.Contains(AmbiguousMoveReason, StringComparison.Ordinal))
+        if (!IsAmbiguousFailure(error))
             return false;
 
         // Ambiguous: only the chain can say. The submitted id was recorded with the marker.
@@ -218,7 +276,7 @@ public sealed partial class OffRampService
     /// <summary>A pay claim stuck InProgress past a crash window but still inside Stripe's key retention.</summary>
     private bool IsReplayablePayClaim(IdempotencyRecord record)
     {
-        if (record.State != IdempotencyState.InProgress)
+        if (record.State != IdempotencyState.InProgress || record.OperationType != PayoutOperationType)
             return false;
         var age = _clock.GetUtcNow() - new DateTimeOffset(DateTime.SpecifyKind(record.CreatedAt, DateTimeKind.Utc));
         return age >= StalePayClaimAge && age < FiatHostedCreation.ReplayWindow;

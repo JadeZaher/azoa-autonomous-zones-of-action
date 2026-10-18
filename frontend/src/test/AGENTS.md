@@ -50,6 +50,10 @@ Change a fixture only together with the API model it mirrors.
 - `render-slice.tsx` — `renderSlice(ui, { apis, session })`: registers the fake APIs, signs the
   real SDK in (`azoa_token`/`azoa_user_id` in `localStorage`, then `azoa.session.restore()`),
   renders with Testing Library and returns `user` (user-event), `network` and `session`.
+- `renderSliceWithAuth(ui, { apis, session, wallets })` — the same, wrapped in the real
+  `AzoaAuthProvider` for surfaces that read `useAzoaAuth()` (funds, cash-out, payout balance). It adds
+  `msw/handlers/session.ts` (the profile and wallet reads the provider makes on mount) and resolves only
+  after the provider's session restore settled, so a page never renders against `loading: true`.
 - `lifecycle.ts` — one lifecycle for both projects. **An API call no handler models fails the
   test that made it** (`afterEach` asserts `network.unhandled` is empty), which is how SDK↔API
   route drift surfaces without a running backend.
@@ -66,7 +70,7 @@ like a user, assert what the user sees and what the fake API ended up holding (i
 request counts. Fake APIs enforce the real API's rules (the webhook fake refuses a reused request
 id with a different command, as the store's command hash does), so a UI outcome such as "The
 original change was accepted" proves the client resent the identical command. Slices so far: business verification (KYB),
-tenant KYC provider policy, webhook registration.
+tenant KYC provider policy, webhook registration, verify identity, payout balance (the first slice on the auth variant).
 
 ## §migration — from `vi.mock('@/lib/azoa')` to slices
 

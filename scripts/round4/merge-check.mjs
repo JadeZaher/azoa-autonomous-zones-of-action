@@ -12,12 +12,29 @@ const normalize = (text) => text.replace(/\s+/g, " ").trim();
 
 // Program.cs ordering (root AGENTS.md §Program.cs registration order).
 const program = stripLineComments(read("Program.cs"));
-const kycRegistrations = [...program.matchAll(/\.(?:Try)?Add(?:Scoped|Singleton|Transient)\s*<\s*[\w.]*\bIRealValueKycGate\b\s*[,>]/g)];
+// Every syntactic way to register the KYC gate: generic Add*/TryAdd*, Add*(typeof(...)), ServiceDescriptor
+// (generic, typeof, new) and services.Replace(...). Only Program.cs (exactly once) and the reversal decorator may.
+const kycRegistrationForms = [
+  /\.(?:Try)?Add\w*\s*<\s*[\w.]*\bIRealValueKycGate\b\s*[,>]/g,
+  /\.(?:Try)?Add\w*\s*\(\s*typeof\s*\(\s*[\w.]*\bIRealValueKycGate\s*\)/g,
+  /\bServiceDescriptor\s*\.\s*\w+\s*(?:<\s*[\w.]*\bIRealValueKycGate\b|\(\s*typeof\s*\(\s*[\w.]*\bIRealValueKycGate\s*\))/g,
+  /\bnew\s+ServiceDescriptor\s*\(\s*typeof\s*\(\s*[\w.]*\bIRealValueKycGate\s*\)/g,
+  /\.Replace\s*\([^;]*\bIRealValueKycGate\b/g,
+];
+const kycRegistrationsIn = (source) => kycRegistrationForms.flatMap((form) => [...source.matchAll(form)]).sort((a, b) => a.index - b.index);
+const kycRegistrations = kycRegistrationsIn(program);
 if (kycRegistrations.length !== 1)
   violations.push(`Program.cs: expected exactly one IRealValueKycGate registration, found ${kycRegistrations.length}`);
+const allowedKycRegistrars = new Set(["Program.cs", "Services/Fiat/Reversal/ReversalRegistration.cs"]);
+const trackedSources = execSync('git ls-files -- "*.cs"', { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
+  .split(/\r?\n/).filter((file) => file && !file.startsWith("tests/") && !allowedKycRegistrars.has(file));
+for (const file of trackedSources)
+  if (existsSync(join(root, file)) && kycRegistrationsIn(stripLineComments(read(file))).length)
+    violations.push(`${file}: registers IRealValueKycGate outside Program.cs; an extension called after AddReversalRiskValueGate would replace RiskHoldValueGate`);
 const ordered = [
   ["IRealValueKycGate registration", kycRegistrations[0]?.index ?? -1],
   ["AddFiatOnRamp", program.search(/\.AddFiatOnRamp\s*\(/)],
+  ["AddOnRampValueRateSource", program.search(/\.AddOnRampValueRateSource\s*\(/)],
   ["AddFiatReversalPipeline", program.search(/\.AddFiatReversalPipeline\s*\(/)],
   ["AddReversalRiskValueGate", program.search(/\.AddReversalRiskValueGate\s*\(/)],
 ];

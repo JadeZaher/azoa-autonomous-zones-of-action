@@ -287,9 +287,21 @@ Three lane-B must-fixes, closed in `ReversalCompensationService`:
    `Failed` key, so each move's claim key is attempt-suffixed (`MoveAttemptKey`: attempt 0 is the
    original key, then `…:attempt:N`, at most 5). `ResolveMoveSlotAsync` walks the attempts: absent →
    claim it; `Failed` without the ambiguity marker (the provider refused before broadcasting) → next
-   attempt; anything else → that record decides (completed replays, in-progress waits, ambiguous
+   attempt — and ONLY then (see the H1 note below); anything else → that record decides (completed replays, in-progress waits, ambiguous
    parks). All attempts refused → `Unconfirmed` and the reversal parks. Chosen over a ledger re-claim
    API (assumption A-2): that would change semantics for every SurrealForge consumer.
+
+**H1 — an unacknowledged broadcast is ambiguous, never a definitive failure (RV-L3, round 4).** A clawback
+whose provider ERROR carries `OperationStatus.OutcomeUnknownMarker` (algod may have accepted the POST) is
+recorded with the ambiguity marker plus the txid the message names, exactly like a pending confirmation, and
+parks. `ResolveMoveSlotAsync`/`ReplayRecord` treat a legacy `Failed` record carrying that phrase as ambiguous
+too. So a new attempt key opens only after chain truth (the operator resolution's `absent`) or a provider
+certification (pre-broadcast refusal, Algod 4xx) proves the prior transaction never landed; otherwise the
+reversal parks. The Algorand provider now reports a non-4xx broadcast failure as `PendingConfirmation` with the
+txid (`Providers/Blockchain/AGENTS.md` §broadcast-outcome), so the clawback lands in the existing ambiguous
+branch. Residual: Algorand's confirmation classifier never yields `FailedOnChain`, so a move that truly never
+landed stays parked until a person reconciles it by hand (an expiry proof needs the transaction's `LastValid`,
+which the provider does not return yet).
 
 **Parked-move exit.** An ambiguous move records `chain=…, amount=…, tx=…` with the marker, and parking
 stores the move's claim key in `fiat_reversal.pending_move_key`.

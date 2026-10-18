@@ -53,6 +53,25 @@ public static class OperationStatus
     /// </summary>
     public const string PendingConfirmationMarker = "Submitted, pending confirmation";
 
+    /// <summary>
+    /// Phrase every provider puts in an ERROR whose broadcast outcome is unknown (sent, not acknowledged).
+    /// A caller must treat such an error as ambiguous, never as "nothing moved".
+    /// </summary>
+    public const string OutcomeUnknownMarker = "reconcile against chain truth";
+
+    /// <summary>The <c>(tx …)</c> id a provider names in a message, or null when it names none.</summary>
+    public static string? TransactionIdIn(string? message)
+    {
+        const string open = "(tx ";
+        var start = message?.IndexOf(open, StringComparison.Ordinal) ?? -1;
+        if (start < 0)
+            return null;
+        start += open.Length;
+        var end = message!.IndexOfAny([')', ',', ' '], start);
+        var id = (end < 0 ? message[start..] : message[start..end]).Trim();
+        return id.Length == 0 ? null : id;
+    }
+
     /// <summary>D-3: parked; only an operator (re-proving chain state) or the signer submitting can settle the row.</summary>
     public const string NeedsOperator = "NeedsOperator";
 

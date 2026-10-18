@@ -507,6 +507,10 @@ public sealed partial class OffRampService : IOffRamp
         if (!TryGetProvider(row.ChainType, out var provider, out var providerError))
             return Indeterminate(row, providerError);
 
+        // Set before the claim (L1) so a Completed replay attributes the return to the same partition.
+        row.CollectPartition = SurrealRecordGuid.ParseOptional(row.FundingTenantId) is { } funder
+            ? TenantPartitionFor(funder)
+            : null;
         var key = MoveIdempotencyKey(row.Id, "collect");
         var claim = await _idempotency.TryClaimAsync(key, PayoutOperationType, ct);
         if (!claim.Won)
@@ -518,6 +522,8 @@ public sealed partial class OffRampService : IOffRamp
             switch (ClassifyReplay(claim))
             {
                 case ClaimReplay.Completed:
+                    // The draw is replay-windowed under the same key, so re-applying it repairs a crash before it.
+                    await ApplyCollectDrawAsync(row, quantity, key, ct);
                     return await MarkUnitsCollectedAsync(row, claim.Record.ResultPayload, ct);
                 case ClaimReplay.Ambiguous:
                     return await ParkAsync(row, AmbiguousMoveReason, ct);
@@ -526,9 +532,6 @@ public sealed partial class OffRampService : IOffRamp
             }
         }
 
-        row.CollectPartition = SurrealRecordGuid.ParseOptional(row.FundingTenantId) is { } funder
-            ? TenantPartitionFor(funder)
-            : null;
         var signingContext = BuildUserSigningContext(row, subjectUserId, wallet.Wallet.Id);
 
         var moved = await provider.TransferAsync(
@@ -539,26 +542,33 @@ public sealed partial class OffRampService : IOffRamp
             signingContext,
             ct);
 
-        if (moved.IsError)
+        if (moved.IsError && !IsOutcomeUnknown(moved.Message))
         {
-            // The provider proves every precondition against the node BEFORE signing, so a
-            // refusal here means nothing was broadcast.
+            // A definitive refusal (precondition or pool rejection): nothing was broadcast.
             await _idempotency.FailAsync(key, moved.Message, ct);
             await CountAttemptAsync(row, moved.Message, ct);
             return Indeterminate(row, $"The units could not be collected: {moved.Message}");
         }
 
-        if (IsPendingConfirmation(moved.Message))
+        if (moved.IsError || IsPendingConfirmation(moved.Message))
         {
-            await _idempotency.FailAsync(key, AmbiguousWithTransaction(moved.Result), ct);
+            // Sent and not confirmed (M2): never "not collected" until chain truth says so.
+            await _idempotency.FailAsync(key, AmbiguousWithTransaction(
+                moved.IsError ? OperationStatus.TransactionIdIn(moved.Message) : moved.Result), ct);
             return await ParkAsync(row, AmbiguousMoveReason, ct);
         }
 
         await _idempotency.CompleteAsync(key, moved.Result ?? string.Empty, ct);
+        await ApplyCollectDrawAsync(row, quantity, key, ct);
+        return await MarkUnitsCollectedAsync(row, moved.Result, ct);
+    }
 
-        // The units are back in the reserve, so the partition they were issued from gets its
-        // availability back. Without this draw the on-ramp partition would shrink by every
-        // cash-out the node successfully completed.
+    /// <summary>
+    /// Returns collected units to their partition: the on-ramp partition, or the funding tenant's (owner decision b).
+    /// Keyed on the collect claim, so a replay re-applies nothing twice.
+    /// </summary>
+    private async Task ApplyCollectDrawAsync(FiatPayout row, BigInteger quantity, string key, CancellationToken ct)
+    {
         // The node's own off-ramp rail: neither the asset (a node-written payout row) nor the
         // partition (node configuration) can be named by a caller.
         var returnDraw = new ReserveDrawRequest(
@@ -578,8 +588,6 @@ public sealed partial class OffRampService : IOffRamp
                 + "counter was not updated: {Detail}",
                 row.Id, row.QuantityBaseUnits, draw.Message);
         }
-
-        return await MarkUnitsCollectedAsync(row, moved.Result, ct);
     }
 
     // ─── Saga step 2: the money goes out ───
@@ -742,6 +750,10 @@ public sealed partial class OffRampService : IOffRamp
             // trusted: closing this as "nothing moved" would leave a person short of the units
             // the reserve is already holding.
             var collected = await _idempotency.GetAsync(MoveIdempotencyKey(row.Id, "collect"), ct);
+            // A collect in flight or of unknown outcome may still take the units: never close it as "nothing moved".
+            if (collected?.State == IdempotencyState.InProgress
+                || (collected?.State == IdempotencyState.Failed && IsAmbiguousFailure(collected.Error)))
+                return await ParkAsync(row, $"{reason} The collection's outcome is not established yet.", ct);
             if (collected?.State != IdempotencyState.Completed)
             {
                 await ReleaseLotsAsync(SubjectOf(row), row.ReadConsumedLots(), ct);
@@ -1395,10 +1407,7 @@ public sealed partial class OffRampService : IOffRamp
     private static ClaimReplay ClassifyReplay(IdempotencyClaim claim) => claim.Record.State switch
     {
         IdempotencyState.Completed => ClaimReplay.Completed,
-        IdempotencyState.Failed =>
-            (claim.Record.Error ?? string.Empty).Contains(AmbiguousMoveReason, StringComparison.Ordinal)
-                ? ClaimReplay.Ambiguous
-                : ClaimReplay.Retryable,
+        IdempotencyState.Failed => IsAmbiguousFailure(claim.Record.Error) ? ClaimReplay.Ambiguous : ClaimReplay.Retryable,
         _ => ClaimReplay.Retryable,
     };
 
@@ -1412,6 +1421,14 @@ public sealed partial class OffRampService : IOffRamp
 
     private static bool IsPendingConfirmation(string? message)
         => message?.Contains(OperationStatus.PendingConfirmationMarker, StringComparison.Ordinal) == true;
+
+    /// <summary>A provider error that could not certify nothing was broadcast.</summary>
+    private static bool IsOutcomeUnknown(string? message)
+        => message?.Contains(OperationStatus.OutcomeUnknownMarker, StringComparison.Ordinal) == true;
+
+    /// <summary>A failed move claim whose value may have landed: marked ambiguous or outcome-unknown.</summary>
+    private static bool IsAmbiguousFailure(string? error)
+        => (error ?? string.Empty).Contains(AmbiguousMoveReason, StringComparison.Ordinal) || IsOutcomeUnknown(error);
 
     private static AZOAResult<OffRampStepOutcome> Definite(FiatPayout row)
         => AZOAResult<OffRampStepOutcome>.Success(new OffRampStepOutcome(row, true, null), "Success");

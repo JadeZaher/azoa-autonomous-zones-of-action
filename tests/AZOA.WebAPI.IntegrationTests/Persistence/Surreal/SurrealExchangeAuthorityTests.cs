@@ -53,16 +53,16 @@ public sealed class SurrealExchangeAuthorityTests : IAsyncLifetime
     {
         var authority = await SeedAsync();
         var now = DateTimeOffset.UtcNow;
-        if (change == "key") await Execute(SurrealWriter.UpdateOnly<KeyRow>(authority.Tenant.Credential.ApiKeyId!.Value.ToString("N")).Set(row => row.RevokedAt, now).Build());
-        else if (change == "grant") await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Set(row => row.RevokedAt, now).Build());
-        else if (change == "participant-watermark") await Execute(SurrealWriter.UpdateOnly<UserRow>(authority.ParticipantUserId.ToString("N")).Set(row => row.AuthNotBefore, now).Build());
-        else if (change == "tenant-watermark") await Execute(SurrealWriter.UpdateOnly<UserRow>(authority.Tenant.Credential.ActorUserId.ToString("N")).Set(row => row.AuthNotBefore, now).Build());
-        else if (change == "wallet-owner") await Execute(SurrealWriter.UpdateOnly<WalletRow>(authority.Wallet.Id.ToString("N")).Set(row => row.UserId, $"user:{authority.Tenant.Credential.ActorUserId:N}").Build());
-        else if (change == "grant-origin") await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Set(row => row.Origin, "Participation").Build());
+        if (change == "key") await Execute(SurrealWriter.UpdateOnly<KeyRow>(authority.Tenant.Credential.ApiKeyId!.Value.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, now).Build());
+        else if (change == "grant") await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, now).Build());
+        else if (change == "participant-watermark") await Execute(SurrealWriter.UpdateOnly<UserRow>(authority.ParticipantUserId.ToString("N")).Where(seed => true).Set(row => row.AuthNotBefore, now).Build());
+        else if (change == "tenant-watermark") await Execute(SurrealWriter.UpdateOnly<UserRow>(authority.Tenant.Credential.ActorUserId.ToString("N")).Where(seed => true).Set(row => row.AuthNotBefore, now).Build());
+        else if (change == "wallet-owner") await Execute(SurrealWriter.UpdateOnly<WalletRow>(authority.Wallet.Id.ToString("N")).Where(seed => true).Set(row => row.UserId, $"user:{authority.Tenant.Credential.ActorUserId:N}").Build());
+        else if (change == "grant-origin") await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Where(seed => true).Set(row => row.Origin, "Participation").Build());
         else
         {
             var expired = now.AddMinutes(-1);
-            await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Set(row => row.ExpiresAt, expired).Build());
+            await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Where(seed => true).Set(row => row.ExpiresAt, expired).Build());
             authority = authority with { Grant = authority.Grant with { ExpiresAt = expired } };
         }
 
@@ -77,7 +77,7 @@ public sealed class SurrealExchangeAuthorityTests : IAsyncLifetime
         // raw: the fixture effect must share the actual two-party authority transaction.
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
         statements.AddRange(guards);
-        statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<WalletRow>(authority.Wallet.Id.ToString("N"))
+        statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<WalletRow>(authority.Wallet.Id.ToString("N")).Where(seed => true)
             .Set(row => row.Label, "authorized-effect").Build(), "exchange_effect"));
         statements.Add(SurrealQuery.Of("COMMIT"));
         await Execute(SurrealQuery.Combine(statements.ToArray()));
@@ -88,7 +88,7 @@ public sealed class SurrealExchangeAuthorityTests : IAsyncLifetime
         var tenant = Guid.NewGuid(); var participant = Guid.NewGuid(); var wallet = Guid.NewGuid(); var key = Guid.NewGuid(); var grant = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
         foreach (var id in new[] { tenant, participant })
-            await Execute(SurrealWriter.Create(new UserRow { Id = id.ToString("N"), Username = id.ToString("N"), Email = $"{id:N}@example.test", IsActive = true }));
+            await Execute(SurrealWriter.Create(new UserRow { Id = id.ToString("N"), Username = id.ToString("N"), Email = $"{id:N}@example.test", IsActive = true, PasswordHash = "fixture-no-login" }));
         var keyHash = new string('a', 64);
         await Execute(SurrealWriter.Create(new KeyRow { Id = key.ToString("N"), UserId = $"user:{tenant:N}", KeyHash = keyHash,
             KeyPrefix = "fixture", IsActive = true, Scopes = [AzoaScopes.SwapSign], CreatedDate = now }));

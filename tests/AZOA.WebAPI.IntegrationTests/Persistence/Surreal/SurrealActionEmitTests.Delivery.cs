@@ -28,7 +28,7 @@ public sealed partial class SurrealActionEmitTests
         JsonSerializer.Serialize(lease).Should().NotContain(lease.EncryptedSecret);
         var original = protector.Unprotect(lease.TenantId, lease.RegistrationId, lease.SecretRevision, lease.EncryptedSecret);
         var replacement = protector.Protect(lease.TenantId, lease.RegistrationId, 2, WebhookSecretProtector.GenerateSecret());
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(registration.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(registration.Id).Where(seed => true)
             .Set(row => row.Version, 2L).Set(row => row.SecretRevision, 2L).Set(row => row.EncryptedSecret, replacement).Build())).EnsureAllOk();
         protector.Unprotect(lease.TenantId, lease.RegistrationId, lease.SecretRevision, lease.EncryptedSecret).Should().Be(original);
         (await deliveries.FinishAsync(lease, WebhookAttemptOutcome.Retry, TimeSpan.Zero, "HTTP_503")).Should().BeTrue();
@@ -52,7 +52,7 @@ public sealed partial class SurrealActionEmitTests
         var (eventId, registration, _) = await DeliveryEvent();
         var deliveries = new SurrealActionWebhookDeliveryStore(_executor, _store);
         var lease = (await deliveries.TryClaimAsync(eventId, 0, TimeSpan.FromMinutes(1), 8))!;
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(registration.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Registration>(registration.Id).Where(seed => true)
             .Set(row => row.Version, 2L).Set(row => row.IsActive, false).Build())).EnsureAllOk();
         (await deliveries.SuspendUnavailableAsync(eventId, lease.Version, 8)).Should().BeFalse();
         (await deliveries.FinishAsync(lease, WebhookAttemptOutcome.Retry, TimeSpan.Zero, "HTTP_503")).Should().BeTrue();
@@ -70,7 +70,7 @@ public sealed partial class SurrealActionEmitTests
         var (eventId, _, _) = await DeliveryEvent();
         var deliveries = new SurrealActionWebhookDeliveryStore(_executor, _store);
         var lease = (await deliveries.TryClaimAsync(eventId, 0, TimeSpan.FromMinutes(1), 1))!;
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Event>(eventId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Event>(eventId).Where(seed => true)
             .Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)).Build())).EnsureAllOk();
         (await deliveries.TryClaimAsync(eventId, 1, TimeSpan.FromMinutes(1), 1)).Should().BeNull();
         (await deliveries.SuspendUnavailableAsync(eventId, 1, 1)).Should().BeTrue();

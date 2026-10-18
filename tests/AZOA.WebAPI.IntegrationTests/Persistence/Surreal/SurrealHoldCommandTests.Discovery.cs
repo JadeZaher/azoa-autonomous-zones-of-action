@@ -35,7 +35,7 @@ public sealed partial class SurrealHoldCommandTests
         (await _store.ScheduleReconciliationAsync(submitted, now.AddMinutes(1))).Should().BeTrue();
         (await _store.ScheduleReconciliationAsync(submitted, now.AddMinutes(1))).Should().BeFalse();
         var acceptance = due.Single(row => row.Id == "acceptance");
-        await Execute(SurrealWriter.UpdateOnly<HoldCommand>(acceptance.Id)
+        await Execute(SurrealWriter.UpdateOnly<HoldCommand>(acceptance.Id).Where(seed => true)
             .Set(row => row.AcceptanceState, "Confirmed").Set(row => row.Version, 1L).Build());
         (await _store.ScheduleReconciliationAsync(acceptance, now.AddMinutes(1))).Should().BeFalse();
         (await _store.ListReconciliationAsync(now, 50)).Should().BeEmpty();

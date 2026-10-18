@@ -56,10 +56,10 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
     {
         var seed = await SeedAsync(change, expired: change == "expired-offer");
         if (change == "wallet-owner")
-            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(seed.SourceWallet.ToString("N"))
+            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(seed.SourceWallet.ToString("N")).Where(seed => true)
                 .Set(row => row.UserId, SurrealLink.ToLink("user", Guid.NewGuid().ToString("N"))!).Build())).EnsureAllOk();
         if (change == "logout")
-            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(seed.Intent.ActorUserId.ToString("N"))
+            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(seed.Intent.ActorUserId.ToString("N")).Where(seed => true)
                 .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         Assert.Null(await store.AdmitAsync(seed.Candidate, seed.Source));
         Assert.Null(await store.GetAsync(seed.Candidate.Id));
