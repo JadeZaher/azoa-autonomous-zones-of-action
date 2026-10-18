@@ -103,16 +103,21 @@ public abstract class NodeAdminHttpTestBase(NodeAdminWebApplicationFactory facto
         return new ActiveAdmin(id, enrolled, login.Result.GetProperty("accessToken").GetString()!);
     }
 
-    protected async Task<Call> SendAsync(HttpMethod method, string path, object? body = null, string? token = null, string? rawJson = null)
+    protected Task<Call> SendAsync(HttpMethod method, string path, object? body = null, string? token = null, string? rawJson = null)
+        => SendToAsync(method, Base + path, body, token, rawJson);
+
+    /// <summary>Sends to any route (not only <c>api/node-admin</c>), e.g. an operator route a node admin is mapped onto.</summary>
+    protected async Task<Call> SendToAsync(HttpMethod method, string absolutePath, object? body = null, string? token = null, string? rawJson = null)
     {
-        using var request = new HttpRequestMessage(method, Base + path);
+        using var request = new HttpRequestMessage(method, absolutePath);
         if (body is not null) request.Content = JsonContent.Create(body);
         if (rawJson is not null) request.Content = new StringContent(rawJson, System.Text.Encoding.UTF8, "application/json");
         if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await Client.SendAsync(request);
         var text = await response.Content.ReadAsStringAsync();
         var json = string.IsNullOrWhiteSpace(text) ? default : JsonDocument.Parse(text).RootElement.Clone();
-        return new Call(response.StatusCode, json);
+        return new Call(response.StatusCode, json,
+            response.Headers.TryGetValues("x-azoa-auth-requirement", out var requirement) ? requirement.SingleOrDefault() : null);
     }
 
     protected async Task<IReadOnlyList<JsonElement>> AuditRowsAsync(string readerToken)
@@ -149,7 +154,7 @@ public abstract class NodeAdminHttpTestBase(NodeAdminWebApplicationFactory facto
         return bytes.ToArray();
     }
 
-    protected sealed record Call(HttpStatusCode Status, JsonElement Body)
+    protected sealed record Call(HttpStatusCode Status, JsonElement Body, string? AuthRequirement = null)
     {
         public JsonElement Result => Body.GetProperty("result");
 

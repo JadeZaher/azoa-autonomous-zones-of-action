@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SurrealForge.Client;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Services.Fiat;
 
@@ -64,7 +65,7 @@ public sealed class FiatEventOperatorController : ControllerBase
         var result = await recovery.ReplayAsync(id, ct);
         if (result.IsError || result.Result is null) return Conflict(result);
         _logger.LogWarning("Operator {Actor} replayed fiat event {EventId}; status {Status}.",
-            User.Identity?.Name, id, result.Result.Status);
+            HttpContext.TryGetOperatorActor(out var operatorActor) ? operatorActor.AuditActor : User.Identity?.Name, id, result.Result.Status);
         return Ok(AZOAResult<FiatEventView>.Success(FiatEventView.From(result.Result)));
     }
 }

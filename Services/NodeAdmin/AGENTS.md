@@ -232,13 +232,13 @@ table with a tag and a reason.
 
 | File | Sites | Tag | Reason |
 |---|---|---|---|
-| Controllers/Admin/PlatformGenesisRecoveryController.cs | 1 | actor-aware | `OwnsGenesisAsync` resolves the operator subject from the `OperatorActor` |
 | Controllers/ApiKeyController.cs | 1 | legacy-only | target guard: the reserved user can never own a tenant key |
 | Controllers/HoldCommandsController.cs | 1 | legacy-only | reserve-asset listing on a plain `[Authorize]` route; node-admin tokens are refused there |
 | Controllers/PlatformReserveController.cs | 1 | legacy-only | mixed operator/tenant declaration lane on a non-operator-policy route |
 | Controllers/TenantPriceScheduleController.cs | 1 | legacy-only | mixed operator/tenant price lane on a non-operator-policy route |
 | Controllers/UserController.cs | 2 | actor-aware | `ActingIsOperator` (dapp-role assignment) accepts any resolved `OperatorActor` |
 | Core/AzoaClaims.cs | 1 | legacy-only | definition of the legacy `node_operator` token predicate |
+| Core/OperatorActor.cs | 1 | actor-aware | `SubjectUserId`: the one place every `OperatorActor` maps to the operator-subject user row |
 | Core/Surreal/PlatformGenesisFence.cs | 1 | actor-aware | operator subject check; the credential may be a legacy or node-admin witness |
 | Core/Surreal/SigningAuthorityFence.cs | 1 | actor-aware | legacy witness branch; node-admin witnesses lock their session/admin rows instead |
 | Helpers/PlatformGenesisIdentity.cs | 1 | actor-aware | genesis acts as the operator subject for any `OperatorActor` |
@@ -258,7 +258,8 @@ table with a tag and a reason.
 | Services/Kyc/KycProviderRegistry.cs | 1 | legacy-only | tenant exclusion |
 | Services/Reserve/PlatformReserveService.cs | 1 | legacy-only | reserve declaration authority from the non-operator-policy reserve route |
 | Services/Reserve/ReserveDrawAuthority.cs | 4 | legacy-only | reserve draw authority flag (non-operator-policy routes) |
-| Services/Reserve/ReserveFungibleTokenMinter.cs | 1 | legacy-only | reserve mint from the non-operator-policy reserve route |
+| Services/NodeAdmin/OperatorActorResolver.cs | 1 | actor-aware | recognizes the legacy operator token when resolving the request's `OperatorActor` |
+| Services/Reserve/ReserveFungibleTokenMinter.cs | 1 | actor-aware | platform genesis mint: operator subject check; the credential may be a legacy or node-admin witness |
 | Services/Signing/SigningAdmissionAuthorityFactory.cs | 1 | actor-aware | legacy credential capture; node-admin principals take the node-admin witness branch |
 
 ## §deferred

@@ -28,7 +28,7 @@ public static class NodeAdminOperatorAccess
             || !NodeAdminRoutePermissions.TryResolve(http.GetEndpoint(), http.Request.Method, out var grant)
             || grant.Permission is null || !caller.Permissions.Contains(grant.Permission))
             return NodeAdminErrorCodes.PermissionDenied;
-        var clock = http.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System;
+        var clock = http.RequestServices?.GetService<TimeProvider>() ?? TimeProvider.System;
         return grant.RequireRecent && !caller.IsRecent(clock.GetUtcNow()) ? NodeAdminErrorCodes.StepUpRequired : null;
     }
 

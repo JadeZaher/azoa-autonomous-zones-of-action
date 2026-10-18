@@ -105,10 +105,11 @@ public static class SigningAuthorityFence
         {
             result.Add(Sql("""
                 IF $_sa_issued > time::now() OR ($_sa_direct AND $_sa_expires <= time::now())
-                    OR ($_sa_watermark_present AND $_sa_issued < $_sa_cutoff) { THROW 'SIGNING_AUTHORITY_CHANGED' }
+                    OR ($_sa_cutoff_applies AND $_sa_issued < $_sa_cutoff) { THROW 'SIGNING_AUTHORITY_CHANGED' }
                 """, prefix).WithParam(prefix + "_issued", value.IssuedAt!.Value).WithParam(prefix + "_expires", value.ExpiresAt!.Value)
-                    // A node-admin session is revoked through its own rows, never the reserved user's login watermark.
-                    .WithParam(prefix + "_direct", direct).WithParam(prefix + "_watermark_present", value.AuthNotBefore.HasValue && !nodeAdmin)
+                    // Statement params share one namespace per transaction, so the cutoff switch has its own name. A node-admin
+                    // session is revoked through its own rows, never the reserved user's login watermark.
+                    .WithParam(prefix + "_direct", direct).WithParam(prefix + "_cutoff_applies", value.AuthNotBefore.HasValue && !nodeAdmin)
                     .WithParam(prefix + "_cutoff", value.AuthNotBefore?.AddSeconds(-1) ?? DateTimeOffset.UnixEpoch));
             if (value.TokenUse == AzoaClaims.TokenUseNodeOperator)
             {

@@ -7,6 +7,7 @@ using SurrealForge.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Services.Fiat.Reversal;
 
@@ -138,11 +139,10 @@ public sealed class FiatReversalOperatorController : ControllerBase
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Resolve(string id, [FromBody] ClearReversalFlagRequest? body, CancellationToken ct)
     {
-        var operatorUserId = GetUserIdFromClaims();
-        if (operatorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Forbid();
 
-        var resolved = await _compensation.ResolveParkedAsync(id, operatorUserId.Value, body?.Reason ?? string.Empty, ct);
+        var resolved = await _compensation.ResolveParkedAsync(id, operatorActor.SubjectUserId, body?.Reason ?? string.Empty, ct);
         if (resolved.IsError)
             return resolved.Code switch
             {
@@ -204,8 +204,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     public async Task<IActionResult> ClearFlag(
         string id, [FromBody] ClearReversalFlagRequest? body, CancellationToken ct)
     {
-        var operatorUserId = GetUserIdFromClaims();
-        if (operatorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized(new { message = "An identified operator is required to lift a pause." });
 
         var read = await _reversals.GetAsync(id, ct);
@@ -221,7 +220,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
         var now = DateTimeOffset.UtcNow;
         row.AccountFlagged = false;
         row.FlagClearedAt = now;
-        row.FlagClearedBy = SurrealLink.ToLink(AZOA.WebAPI.Persistence.SurrealDb.Models.User.SchemaNameConst, operatorUserId.Value.ToString("N"));
+        row.FlagClearedBy = SurrealLink.ToLink(AZOA.WebAPI.Persistence.SurrealDb.Models.User.SchemaNameConst, operatorActor.SubjectUserId.ToString("N"));
         row.FlagReason = string.IsNullOrWhiteSpace(body?.Reason)
             ? row.FlagReason
             : body!.Reason!.Trim();
@@ -239,17 +238,10 @@ public sealed class FiatReversalOperatorController : ControllerBase
 
         _logger.LogWarning(
             "Operator {OperatorId} lifted the pause on the account behind reversal {ReversalId}.",
-            operatorUserId, row.Id);
+            operatorActor.AuditActor, row.Id);
 
         return Ok(AZOAResult<FiatReversalView>.Success(
             FiatReversalView.From(saved.Result!), "The pause was lifted."));
-    }
-
-    private Guid? GetUserIdFromClaims()
-    {
-        var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                  ?? User.FindFirst("sub")?.Value;
-        return Guid.TryParse(sub, out var id) ? id : null;
     }
 }
 
