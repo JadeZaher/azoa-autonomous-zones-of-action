@@ -75,6 +75,7 @@ public sealed class WalletAuthIdentityMigrationService(ISurrealExecutor executor
         }
         // raw: readiness is published only with the leased gate locked and no unversioned bound user.
         var finish = SurrealQuery.Combine(SurrealQuery.Of("BEGIN"), LeaseGuard(token), AssertLease(),
+            // lock: LeaseGuard writes the migration row every migration commit also writes; other user writers stamp auth_identity_version = 1 (SurrealUserStore.ToStorage).
             SurrealQuery.Of("""
                 UPDATE wallet_auth_identity_migration:v1 SET status = IF array::len(
                     SELECT id FROM user WHERE (auth_wallet_address != NONE OR auth_wallet_chain_type != NONE)

@@ -33,6 +33,9 @@ public sealed class KycManager : IKycManager
     private readonly KycSettings _settings;
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration? _configuration;
+    private readonly IHostedSessionStore? _hostedSessions;
+    private readonly IHostedSessionRecoveryStore? _recovery;
+    private readonly TimeProvider _clock;
 
     public KycManager(
         IKycStore store,
@@ -41,6 +44,7 @@ public sealed class KycManager : IKycManager
         IHostEnvironment environment,
         IConfiguration? configuration = null, IHostedSessionFlow? hostedFlow = null)
     {
+        _clock = TimeProvider.System;
         _store = store;
         _provider = provider;
         _registry = null;
@@ -57,8 +61,13 @@ public sealed class KycManager : IKycManager
         IKycProviderRegistry registry,
         IOptions<KycSettings> settings,
         IHostEnvironment environment,
-        IConfiguration? configuration = null, IHostedSessionFlow? hostedFlow = null)
+        IConfiguration? configuration = null, IHostedSessionFlow? hostedFlow = null,
+        IHostedSessionStore? hostedSessions = null, IHostedSessionRecoveryStore? recovery = null,
+        TimeProvider? clock = null)
     {
+        _hostedSessions = hostedSessions;
+        _recovery = recovery;
+        _clock = clock ?? TimeProvider.System;
         _store = store;
         _provider = provider;
         _registry = registry;
@@ -114,6 +123,33 @@ public sealed class KycManager : IKycManager
         Guid userId,
         CancellationToken ct = default)
         => BeginCoreAsync(userId, null, ct);
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<KycSubmissionModel>> RefreshAsync(Guid userId, CancellationToken ct = default)
+    {
+        if (userId == Guid.Empty)
+            return Error<KycSubmissionModel>("An authenticated user is required.");
+        var active = await GetActiveAsync(userId, null, ct);
+        if (active.IsError)
+            return Error<KycSubmissionModel>(active.Message, active.Exception, active.Code);
+        if (active.Result is { HostedVerification: true } attempt && _hostedFlow is not null
+            && string.Equals(attempt.Id, attempt.ProviderSessionId, StringComparison.Ordinal)
+            && Guid.TryParseExact(attempt.ProviderSessionId, "N", out var sessionId))
+        {
+            var authority = await ResolveAuthorityAsync(null, ct);
+            if (!authority.IsError && authority.Result?.Provider is IHostedSessionProvider hosted)
+            {
+                // An unattached or mismatched session refreshes to an opaque no-op; the status read below is authoritative.
+                // Per-session cooldown (RV-L2 L2-3); only a node-wide budget refusal is a 503, a per-session vendor
+                // refusal falls through to the stored status (L2-5).
+                var refreshed = await _hostedFlow.RefreshOnDemandAsync(hosted, sessionId, _settings.Identomat.OutcomePoll.RefreshCooldown, ct);
+                if (refreshed.IsError && refreshed.Code == HostedSessionFlow.RequestNotSentCode)
+                    return Error<KycSubmissionModel>(refreshed.Message, code: AzoaErrorCodes.DependencyUnavailable);
+            }
+        }
+
+        return await GetStatusCoreAsync(userId, null, ct);
+    }
 
     /// <inheritdoc/>
     public Task<AZOAResult<KycSessionStartModel>> BeginCustodialAsync(TenantCustodialWitness witness, CancellationToken ct = default)
@@ -284,6 +320,16 @@ public sealed class KycManager : IKycManager
             return string.IsNullOrWhiteSpace(attempt.VerificationUrl)
                 ? Error<KycSessionStartModel>("NeedsOperator: this legacy verification requires correlation reconciliation.", code: AzoaErrorCodes.Conflict)
                 : Ok(ToSessionStart(attempt));
+        if (provider is not IPreparedHostedSessionProvider && _hostedSessions is not null && _recovery is not null)
+        {
+            var admission = await _hostedSessions.GetByIdAsync(sessionId, ct);
+            // Any abandoned admission (superseded orphan, poll close-out, operator release) can never be reused:
+            // its session id is the attempt id, so the still-open attempt is retired and restarted (RV-L2 L2-6).
+            if (!admission.IsError && admission.Result is { State: HostedSessionStates.Abandoned })
+                return await RetireAndRestartAsync(attempt, userId, tenantId, ct, custody);
+            if (!admission.IsError && admission.Result is { } existing && IsOrphan(existing, _clock.GetUtcNow()))
+                return await SupersedeOrphanAsync(attempt, existing, userId, tenantId, ct, custody);
+        }
         var started = await _hostedFlow.BeginAsync(hosted, new HostedSessionRequest
         {
             FlowKind = HostedSessionFlowKinds.Kyc, SubjectUserId = userId, TenantId = tenantId,
@@ -301,6 +347,49 @@ public sealed class KycManager : IKycManager
             ? Error<KycSessionStartModel>("The verification changed; reload its status.")
             : Ok(ToSessionStart(attached.Result));
     }
+
+    /// <summary>A sent create with no attached vendor session past the bounded wait (or quarantined).</summary>
+    private bool IsOrphan(HostedSession admission, DateTimeOffset now)
+        => admission.State == HostedSessionStates.Claimed
+            && admission.ProviderSessionId is null
+            && admission.CreationStartedAt is not null
+            && (admission.CreationQuarantinedAt is not null
+                || (admission.CreationClaimedAt ?? admission.CreatedDate)
+                    <= now.AddMinutes(-Math.Clamp(_settings.Identomat.OrphanWaitMinutes, 1, 1440)));
+
+    /// <summary>
+    /// IDENTOMAT-RECOVERY: the vendor offers no lookup for a lost create, and an unattached vendor session is
+    /// inert, so a bounded number of orphans per subject are superseded by a fresh attempt. A late original
+    /// response is deleted by the flow. See Services/HostedSessions/AGENTS.md §recovery.
+    /// </summary>
+    private async Task<AZOAResult<KycSessionStartModel>> SupersedeOrphanAsync(KycSubmission attempt, HostedSession orphan,
+        Guid userId, Guid? tenantId, CancellationToken ct, TenantCustodialWitness? custody)
+    {
+        var now = _clock.GetUtcNow();
+        var used = await _recovery!.CountSupersededSinceAsync(HostedSessionFlowKinds.Kyc, userId, now.AddDays(-1), ct);
+        if (used >= Math.Clamp(_settings.Identomat.OrphanSupersedesPerDay, 0, 10))
+            return Error<KycSessionStartModel>(
+                "NeedsOperator: the previous verification request is unresolved; retry tomorrow or contact support.",
+                code: AzoaErrorCodes.Conflict);
+        var superseded = await _recovery.TrySupersedeOrphanAsync(orphan, now, ct);
+        if (superseded.IsError || superseded.Result is null)
+            return Error<KycSessionStartModel>("The verification changed; retry.", code: AzoaErrorCodes.Conflict);
+        return await RetireAndRestartAsync(attempt, userId, tenantId, ct, custody);
+    }
+
+    /// <summary>
+    /// Second half of a supersede, also reached when a crash interrupted it: the attempt whose admission
+    /// was superseded is retired and a fresh attempt begins (its session id is the attempt id, so it cannot be reused).
+    /// </summary>
+    private async Task<AZOAResult<KycSessionStartModel>> RetireAndRestartAsync(KycSubmission attempt,
+        Guid userId, Guid? tenantId, CancellationToken ct, TenantCustodialWitness? custody)
+    {
+        var retired = await RetireAttemptAsync(attempt, _clock.GetUtcNow(), custody, ct);
+        if (retired.IsError || retired.Result is null)
+            return Error<KycSessionStartModel>("The verification changed; retry.", retired.Exception, retired.Code ?? AzoaErrorCodes.Conflict);
+        return await BeginCoreAsync(userId, tenantId, ct, custody);
+    }
+
     public Task<AZOAResult<KycSubmissionModel>> SubmitAsync(
         SubmitKycModel model,
         Guid userId,
@@ -504,7 +593,7 @@ public sealed class KycManager : IKycManager
             (docs.Result ?? Enumerable.Empty<KycDocument>()).Select(ToDocumentModel).ToList());
     }
 
-    // â”€â”€ Admin surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Admin surface ─────────────────────────────────────────────────────────
 
     public async Task<AZOAResult<IEnumerable<KycSubmissionModel>>> GetPendingAsync(CancellationToken ct = default)
     {
@@ -513,7 +602,9 @@ public sealed class KycManager : IKycManager
             return Error<IEnumerable<KycSubmissionModel>>(pending.Message, pending.Exception, pending.Code);
 
         var models = new List<KycSubmissionModel>();
-        foreach (var submission in pending.Result ?? Enumerable.Empty<KycSubmission>())
+        // Only MANUAL submissions are decidable here (ApproveAsync/RejectAsync refuse the rest); hosted
+        // IN_REVIEW attempts are decided by their vendor and stay out of this queue (RV-L2 L2-9).
+        foreach (var submission in (pending.Result ?? Enumerable.Empty<KycSubmission>()).Where(item => item.Provider == KycProvider.MANUAL))
         {
             var withDocs = await WithDocuments(submission, ParseTenantId(submission), ct);
             if (withDocs.IsError || withDocs.Result is null)
@@ -661,7 +752,7 @@ public sealed class KycManager : IKycManager
         return await WithDocuments(saved.Result, tenantId, ct);
     }
 
-    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Loads a submission by id and asserts the authenticated user owns it.

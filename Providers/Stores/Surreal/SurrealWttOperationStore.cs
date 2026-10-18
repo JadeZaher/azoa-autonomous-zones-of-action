@@ -84,7 +84,7 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
         if (intent is null || !SamePrincipal(intent, authority.Signing?.Credential, false)) return null;
         var existing = await GetAsync(candidate.Id, ct);
         if (existing is not null) return SameRequest(existing, candidate) ? existing : null;
-        var guards = WttSigningAuthorityFence.Stage(intent, "Source", null, authority, "wtt_fence_admission");
+        var guards = WttSigningAuthorityFence.Stage(intent, "Source", null, authority, "wtt_fence_admission", Action(candidate));
         if (guards is null) return null;
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
         statements.AddRange(guards);
@@ -116,7 +116,7 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
 
     /// <inheritdoc/>
     public async Task<WttOperation?> CancelAsync(WttOperation candidate, WttStageAuthority authority, long? probedVersion = null,
-        CancellationToken ct = default)
+        bool durableNonce = false, CancellationToken ct = default)
     {
         var intent = ValidateCandidate(candidate);
         if (intent is null || !SamePrincipal(intent, authority.Consent?.Credential, true)) return null;
@@ -152,7 +152,7 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
             || existing.State is not ("Admitted" or "Ready" or "Active")) return null;
         // A durable-nonce journal cancels only at the exact version whose reservation rows the caller probed.
         if (probedVersion is { } probed && probed != existing.Version
-            || intent.Source.ChainType == "Ethereum" && existing.CurrentStageId is not null && probedVersion is null) return null;
+            || durableNonce && existing.CurrentStageId is not null && probedVersion is null) return null;
         var current = existing.CurrentStageId is { } stageId ? await GetStageAsync(stageId, ct) : null;
         if (existing.CurrentStageId is not null && (current is null || current.OperationId != candidate.Id)) return null;
         // Version-pinned stage set: a sent or disclosed Transfer without proven no-effect may already have published.
@@ -166,7 +166,7 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
             // Preparing may already hold a reserved nonce; a signed EVM candidate owns its nonce until it resolves on chain.
             if (current.Phase != "Source" || current.AuthorizedAt is not null || current.ExposedAt is not null
                 || current.State is not ("Planned" or "Prepared")
-                || intent.Source.ChainType == "Ethereum" && current.State == "Prepared") return null;
+                || durableNonce && current.State == "Prepared") return null;
             var stageVersion = current.Version;
             var stageState = current.State;
             stageMutation = SurrealWriter.UpdateOnly<WttOperationStage>(SurrealRecordGuid.BareId(current.Id))
@@ -217,7 +217,8 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
     private static bool ExpectedConflict(SurrealStatementException exception)
         => SurrealIdempotencyLedger.IsUniqueViolation(exception.Message)
             || exception.Message.Contains(ConflictMarker, StringComparison.Ordinal)
-            || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal);
+            || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal)
+            || exception.Message.Contains(ActionExecutionFence.FailureMarker, StringComparison.Ordinal);
 
     private static bool SamePrincipal(WttOperationIntent intent, SigningCredentialWitness? credential, bool allowDirectOwner)
         => credential is not null && credential.ActorUserId == intent.ActorUserId && credential.TenantId != Guid.Empty
@@ -227,11 +228,18 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
         => left.ActorUserId == right.ActorUserId && left.TenantId == right.TenantId && left.RequestKeyHash == right.RequestKeyHash
             && left.OfferId == right.OfferId && left.OfferHash == right.OfferHash && left.IntentHash == right.IntentHash
             && left.IntentJson == right.IntentJson && left.SourceQuoteJson == right.SourceQuoteJson
-            && left.ReturnOfOperationId == right.ReturnOfOperationId;
+            && left.ReturnOfOperationId == right.ReturnOfOperationId && left.ActionRunId == right.ActionRunId
+            && left.ActionNodeId == right.ActionNodeId && left.ActionIntentHash == right.ActionIntentHash;
 
     private static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
 
-    internal static WttOperationIntent Intent(WttOperation operation) => JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!;
+    /// <summary>Current signing intent: the owner-takeover intent once recorded, otherwise the admitted intent.</summary>
+    internal static WttOperationIntent Intent(WttOperation operation)
+        => JsonSerializer.Deserialize<WttOperationIntent>(operation.OwnerIntentJson ?? operation.IntentJson)!;
+
+    /// <summary>The workflow binding that owns signing; none once the owner took the operation over.</summary>
+    internal static WttActionBinding? Action(WttOperation operation)
+        => operation.OwnerIntentJson is null ? WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash) : null;
 
     private static bool ValidOffer(WttOffer offer)
         => offer is not null && Guid.TryParseExact(offer.Id, "N", out var id) && id != Guid.Empty
@@ -247,7 +255,10 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
             || candidate.CurrentStageId is not null || candidate.TargetQuoteJson is not null || candidate.TransferPublicationJson is not null
             || candidate.AttestationPublicationJson is not null || candidate.TransferEnvelopeBase64 is not null
             || candidate.AttestationEnvelopeBase64 is not null || candidate.ProofsJson is not null || candidate.BodyClaimId is not null
-            || candidate.SettlementJson is not null || !WttOperationIdentity.IsCanonicalId(candidate.Id)
+            || candidate.SettlementJson is not null || candidate.OwnerIntentJson is not null
+            || (candidate.ActionRunId is null) != (candidate.ActionNodeId is null)
+            || (candidate.ActionRunId is null) != (candidate.ActionIntentHash is null)
+            || !WttOperationIdentity.IsCanonicalId(candidate.Id)
             || !WttOperationIdentity.IsCanonicalId(candidate.RequestKeyHash) || !WttOperationIdentity.IsCanonicalId(candidate.OfferHash)
             || !Guid.TryParseExact(candidate.OfferId, "N", out _) || !Canonical(candidate.IntentJson, candidate.IntentHash)
             || !Canonical(candidate.SourceQuoteJson, null))

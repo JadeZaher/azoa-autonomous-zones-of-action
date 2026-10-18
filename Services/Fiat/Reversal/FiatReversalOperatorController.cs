@@ -3,6 +3,7 @@
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Sagas;
+using SurrealForge.Client;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -92,6 +93,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// back only what is still outstanding, and a move whose outcome cannot be established parks
     /// the reversal rather than repeating it.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/recover")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -112,6 +114,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// Closes the reversal: whatever is still outstanding becomes a recorded platform loss and,
     /// per the flow's policy, a pause on the account.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/settle")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -126,10 +129,46 @@ public sealed class FiatReversalOperatorController : ControllerBase
     }
 
     /// <summary>
+    /// Settles a reversal parked on an ambiguous move with chain evidence: the node re-reads the
+    /// move's transaction, records it landed or absent, and re-queues the unwind.
+    /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
+    [HttpPost("{id}/resolve")]
+    [EnableRateLimiting("financial")]
+    [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Resolve(string id, [FromBody] ClearReversalFlagRequest? body, CancellationToken ct)
+    {
+        var operatorUserId = GetUserIdFromClaims();
+        if (operatorUserId is null)
+            return Forbid();
+
+        var resolved = await _compensation.ResolveParkedAsync(id, operatorUserId.Value, body?.Reason ?? string.Empty, ct);
+        if (resolved.IsError)
+            return resolved.Code switch
+            {
+                AzoaErrorCodes.NotFound => NotFound(resolved),
+                AzoaErrorCodes.InvalidRequest => BadRequest(resolved),
+                AzoaErrorCodes.Conflict => Conflict(resolved),
+                _ => StatusCode(StatusCodes.Status503ServiceUnavailable, resolved),
+            };
+
+        var row = resolved.Result!;
+        await _sagas.StartAsync(
+            FiatCompensationSaga.Name,
+            FiatCompensationSaga.CorrelationKeyFor(row.Id),
+            new FiatCompensationPayload(row.Id, row.ChargeId, row.LotId),
+            ct);
+
+        return Ok(AZOAResult<FiatReversalView>.Success(
+            FiatReversalView.From(row), "The move was resolved and the unwind was queued."));
+    }
+
+    /// <summary>
     /// Starts (or restarts) the durable unwind for a reversal whose saga was never enqueued or
     /// was cancelled. The saga is idempotent per reversal, so a second run replays rather than
     /// recovering twice.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/restart")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -158,6 +197,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// Lifts the pause on an account. Stamped with who lifted it and when — this is the one verb
     /// here that gives an account its ability to move value back.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/clear-flag")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -181,7 +221,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
         var now = DateTimeOffset.UtcNow;
         row.AccountFlagged = false;
         row.FlagClearedAt = now;
-        row.FlagClearedBy = operatorUserId.Value.ToString("N");
+        row.FlagClearedBy = SurrealLink.ToLink(AZOA.WebAPI.Persistence.SurrealDb.Models.User.SchemaNameConst, operatorUserId.Value.ToString("N"));
         row.FlagReason = string.IsNullOrWhiteSpace(body?.Reason)
             ? row.FlagReason
             : body!.Reason!.Trim();
@@ -234,6 +274,9 @@ public sealed class FiatReversalView
     public string Status { get; init; } = string.Empty;
 
     public string? StatusReason { get; init; }
+
+    /// <summary>The ambiguous move this reversal is parked on; resolve it with chain evidence.</summary>
+    public string? PendingMoveKey { get; init; }
 
     /// <summary>The provider event that last moved this reversal.</summary>
     public string LastEventType { get; init; } = string.Empty;
@@ -291,9 +334,10 @@ public sealed class FiatReversalView
         Kind = row.Kind,
         Status = row.Status,
         StatusReason = row.StatusReason,
+        PendingMoveKey = row.PendingMoveKey,
         LastEventType = row.LastEventType,
         ChargeId = row.ChargeId,
-        SubjectUserId = row.SubjectUserId,
+        SubjectUserId = SurrealLink.FromLink(row.SubjectUserId),
         FlowPurpose = row.FlowPurpose,
         AmountMinorUnits = row.AmountMinorUnits,
         SourceAmountMinorUnits = row.SourceAmountMinorUnits,

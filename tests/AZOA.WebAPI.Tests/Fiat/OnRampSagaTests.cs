@@ -60,7 +60,7 @@ public class OnRampSagaTests
         (await harness.ApplyAsync()).Should().Be(FiatEventOutcome.AcceptedPending);
         var pending = harness.Lots.Single();
         pending.Status.Should().NotBe(OnRampLotStatuses.Issued);
-        pending.OperationId.Should().Be(harness.IssuanceId.ToString("N"));
+        pending.OperationId.Should().Be($"operation_log:{harness.IssuanceId:N}");
         pending.IssuedAt.Should().BeNull();
         pending.ReversalWindowEnds.Should().BeNull();
         var allocationKey = harness.CapturedIdempotencyKey;
@@ -196,8 +196,9 @@ public class OnRampSagaTests
 
         var lot = harness.Lots.Single();
         lot.Status.Should().Be(OnRampLotStatuses.Issued);
-        lot.SubjectUserId.Should().Be(SubjectUserId.ToString("N"));
-        lot.IntentId.Should().Be(IntentId.ToString("N"));
+        // Record-link columns carry table:id links, exactly as SurrealDB reads them back.
+        lot.SubjectUserId.Should().Be($"user:{SubjectUserId:N}");
+        lot.IntentId.Should().Be($"hosted_session:{IntentId:N}");
         lot.FiatMinorUnits.Should().Be(1000L);
         lot.CurrencyCode.Should().Be("USD");
         lot.GrossQuantityBaseUnits.Should().Be("100000");
@@ -752,6 +753,9 @@ public class OnRampSagaTests
                     .Select(Clone)
                     .ToList()));
 
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(Array.Empty<OnRampLot>()));
+
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
             int limit, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
@@ -797,6 +801,9 @@ public class OnRampSagaTests
                 _byScope.TryGetValue(scopeKey, out var schedule)
                     ? new List<RegisteredPriceSchedule> { schedule }
                     : new List<RegisteredPriceSchedule>()));
+
+        public Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default)
+            => throw new NotSupportedException();
 
         public Task<AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>> ListLatestPerScopeAsync(
             string chainType, string assetId, CancellationToken ct = default)

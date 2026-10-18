@@ -88,6 +88,12 @@ concurrent refiller loses on the marker or the unique index and retries through
 the allocator loop. Only never-signed rows reach `Released`; see
 `Providers/Blockchain/Ethereum/AGENTS.md` §Nonce holes.
 
+Client-signed reservations (RV-L5-01) share the table and the live-nonce index: `State = ClientReserved`, empty owner,
+`IntentJson = "{}"`, never signed, released or recovered by custody. They are claimed with the same `TryClaimAsync`
+(create; a unique violation on the id or the live nonce returns the existing row or null), so one live owner per
+(protocol, sender, nonce) still holds across custody and client-signed plans. See
+`Providers/Blockchain/Ethereum/AGENTS.md` §Client-signed nonces.
+
 Deploy note: the index was renamed, so the schema sync (`IF NOT EXISTS`) defines
 the new one. A database that still has the old `ethereum_preparation_nonce`
 index must drop it (dev: `-ResetDb`). Until then, refills fail closed as "busy"
@@ -684,6 +690,14 @@ enforce all-or-nothing mutation. Historical allocated totals are preserved and
 the separate released total can never exceed them. No unknown reservation is
 released by an observed missing current holding.
 
+## WTT owner takeover of a workflow operation
+
+`TakeOverAsync` on an action-bound operation prepends `WttSigningAuthorityFence.ActionStopped` to the takeover
+transaction (`// raw:` the run/execution liveness read and the version CAS on `wtt_operation` must share one commit). It
+reads `action_run.status` and the node's `Running` execution on the frozen-input hash and throws the journal conflict while
+both are live; the version CAS serializes it against any concurrent workflow stage claim. After takeover `Action(operation)`
+returns null, so every later stage fence demands the owner's direct authority (RV-L5-07).
+
 ## WTT preparation identity
 
 wtt_preparation claims one unsigned blockhash/round/account plan per physical protocol, operation, phase, stage and generation. Quote and owner are immutable binding checks rather than partition keys: changing either cannot create a second candidate. Signed bytes fill once under exact version, plan and unsealed state; retries recover the winner. Typed single-record CRUD expresses these invariants. This row alone never authorizes submission; the operation journal must atomically fence first-send and cancellation against the same preparation.
@@ -966,6 +980,8 @@ ActorContinuationsJson is append-only under the same version CAS and requires th
 
 `NftEffectAuthorities.Select` is the single list of credential witnesses each lifecycle write fences, shared by the durable store and the in-memory test store. `NftLifecycleWrite` names the kind. A fresh admission fences the original requester (the empty cancellation marker and the deterministic workflow rejection fence none). An effect (participant consent append, preparation, first send) fences the effective requester plus the current stage participant when the stage needs one. A replacement-cost acceptance additionally fences the accepting credential and the receipt's database-time expiry. A requester renewal or participant renewal fences only its new credential, because it signs nothing; the next effect checks everything again. Workflow fences (`ActionExecutionFence`, workflow cost authority) join admissions, effects and cost acceptances, never renewals. A missing or non-binding witness fails closed before the batch is sent. Every contended lifecycle batch runs through `SurrealTransientConflict.RetryOnConflictAsync`; a retried loser fails its own version predicate (null or `NFT_LIFECYCLE_CHANGED`) and the caller re-reads. The mutation result is captured as `$_nft_effect_row` and returned by name, not by a guard-count offset. `CancelUnsentAsync` fences the requester's current consent (`SigningAuthorityFence.ForConsent`, operation scope) with the cancellation.
 
+A recipient-stage cost acceptance (`StageCostAcceptance`, F-M11) fences only the accepting payer's credential plus the stage receipt's immutability and database-time expiry (`NftProtocolCostAdmissionFence`) in the same batch as the version CAS; it signs nothing, so no workflow fence joins it. Every other authority-bearing write on a cost-bearing Solana stage (preparation, first send) must pass `NftStageCostContract.AdmitsWrite` before the batch is built; the consent history is part of the row, so the version CAS proves the checked history is the committed one. A workflow-authority write (`workflowAuthority: true`) is refused once `NftActorContinuationIdentity.TakenOver` holds on the stored row, and every lifecycle UPDATE also predicates on the unchanged `actor_continuations_json`, so a takeover committed between the read and the write makes the stale run's write match no row (RV-L5-09). `FindCustodialWalletIdsAsync` reads Platform wallet ids for one exact (chain, address) through `wallet_chain_address` (Ethereum also probes its checksummed and lowercase forms); a wallet whose stored chain spelling differs is simply not found, which fails closed.
+
 ## Hold command and exchange source transactions
 
 `SurrealHoldCommandStore` partials compose multi-table atomic transactions. Every raw statement is
@@ -1032,3 +1048,72 @@ immutable receipt rather than failing.
 - **Local commands** close an Active mandate atomically, and the transition `WHERE` pins both
   `EconomicSourceId == null` and the mandate pointer that was read (see `Services/Hold/AGENTS.md`
   §purchased-liabilities and §mandates).
+
+## consent-grant-store
+
+`SurrealConsentGrantStore` is read-only (round 4). Every `consent_grant` write goes through
+`SurrealConsentLifecycleStore` (command-id single winner, version CAS, audit + webhook
+outbox in one transaction). The former `UpsertAsync` (fresh `Guid.NewGuid()` outside the
+lifecycle transaction), `ListByTenantAndParticipationRefAsync` and `RevokeAllByGrantorAsync`
+(a raw multi-row UPDATE with no version bump, audit or notification) had no production
+caller and were deleted. Reads are typed (`SurrealQuery<ConsentGrant>`); store failures
+propagate to the HTTP boundary instead of being swallowed into an error result.
+
+## wallet-ownership-proof
+
+`SurrealWalletOwnershipProofStore` keeps one row per canonical `(chain, address)`
+(`WalletAuthIdentity.TryCreate`), record id = sha256(`chain:address`) — the deterministic id
+is the lock (transaction-scope rule 3), so concurrent proofs for one address serialize on
+the key and the last verified proof wins. The row is written only after
+`WalletAuthManager.VerifyAddressControlAsync` atomically consumed a live challenge and the
+signature verified; `wallet` rows are never touched, so a full-POCO wallet upsert cannot
+forge or clobber a proof. `GetAsync` re-checks the stored chain/address against the key.
+
+## RETURN slots and explicit NULL (round 4 SQL-01/02/12)
+
+Probed on SurrealDB 3.1.4 (HTTP `/sql` and `/rpc`): `BEGIN; LET; IF; RETURN $x; COMMIT;`
+returns five slots — `COMMIT` keeps its slot, statements *between* a top-level `RETURN` and
+`COMMIT` are skipped and dropped. End-relative reads (`Statements.Count - 2`) therefore
+happened to be right only while `RETURN` stays directly before `COMMIT`; the claim
+(`SurrealUserStore`) and tenant-bootstrap (`SurrealWalletStore.TenantBootstrap`) batches now
+capture `statements.Count` before adding `RETURN`, like the WTT stores. Raw `SET col = $x`
+with a possibly-null C# value: a SCHEMAFULL `option<T>` column rejects `NULL`
+("Expected `none | string` but found `NULL`"), so `SurrealSagaStore` writes
+`$x ?? NONE` (probed: NULL → field absent, a value → stored).
+
+## action-dependencies
+
+`SurrealActionStore` persists `ActionDefinition.Dependencies` in `action_dependency` (round 4):
+cleared and re-written with the nodes/edges on upsert, read back in the same combined child
+SELECT, deleted with the head. Before this, dependencies round-tripped as empty, so run-start
+dependency enforcement (`ActionManager.EnforceDependenciesAsync`) only bit in-memory. The store
+is still a non-transactional multi-request fan-out (pre-existing shape; a partial write is
+visible on failure) — moving the whole aggregate into one `BEGIN…COMMIT` is a follow-up.
+
+- **Custodial NFT recipient lookup (RV-L4-08):** probe the canonical chain/address spellings from `Helpers/NftRecipientLookupForms` through the `wallet_chain_address` index; never case-fold Solana/Algorand addresses.
+
+## Typed conditional mutations always carry a guard (SurrealForge 1.3.0, round 4 r4/fix-core2)
+
+`SurrealWriter.UpdateOnly/DeleteOnly(...).Build()` throws without a `Where`. Never satisfy it with `Where(_ => true)` in
+production: the guard restates the state the surrounding batch (or call) just read, locked or wrote, so it is always true on
+the allow path and turns a concurrent change into "no row affected" instead of a blind write.
+
+| Site | Guard | Why it holds on the allow path |
+|---|---|---|
+| `SurrealActionLocalMutationStore` holon/wallet delete | `user_id` = owner of the witnessed read row | the row witness locked and compared the full row earlier in the same transaction; plan validation requires owner == actor |
+| `…Witnesses` `AppendHolonNulls/AppendWalletNulls` | `user_id` = owner of the row just upserted | same transaction, written two statements earlier |
+| `SurrealActionSigningAuthorizationStore` run / saga step | run `status IN (Running, AwaitingReconciliation)`; step `status = Parked` | both verified (and the run version-bumped) earlier in the batch |
+| `SurrealHolonStore.DeleteAsync` / `SurrealWalletStore.DeleteAsync` | `user_id` = owner this call just read | an owner change between read and delete affects 0 rows → refusal, not a delete of someone else's row |
+| `SurrealFungibleCreationStore.AuthorizeAsync` pointer | `version` = `expected.Version` | the lock statement set version to itself and asserted it |
+| `SurrealGovernanceStore.FinalizeAsync` | `definition_hash` matches and `final_result_json = NONE` | the `$_finalizing` lock asserted exactly that |
+| `SurrealNftLifecycleStore.CommitAsync` release | `version` = the authority version just created/upserted | written earlier in the same batch |
+
+`SurrealQlSourceRulesTests.Typed_conditional_mutations_always_carry_a_Where` also catches builders split across statements
+(`var update = UpdateOnly…; …; update.Build()`), which is how the two `Append*Nulls` sites escaped the first ratchet.
+
+`HolonPoco`'s `[References]` on `parent_holon_id`/`user_id`/`source_holon_id`/`origin_user_id` carry `Optional = true` to mirror
+the canonical `Persistence/SurrealDb/Models/Holon` (`option<record<…>>`): SurrealForge reads optionality from `[References]`
+before the column type, so without it `Unset(ParentHolonId)` threw "required field cannot be unset".
+
+`SurrealQuery.Combine` refuses a single query: `SurrealFungibleCreationStore.UpdateAsync` sends its lone progress statement
+directly when no effect authorization (and so no BEGIN/COMMIT fence) is needed — a single statement is already atomic.

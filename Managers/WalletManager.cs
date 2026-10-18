@@ -23,6 +23,10 @@ public class WalletManager : IWalletManager
     private readonly IHostEnvironment? _environment;
     private readonly BlockchainConfigurationManager _blockchainConfig;
     private readonly Func<Guid> _entityId;
+    private readonly IWalletAuthManager? _walletAuth;
+    private readonly IWalletOwnershipProofStore? _ownershipProofs;
+    private readonly ILogger<WalletManager>? _logger;
+    private const string OwnershipProofUnavailable = "Wallet ownership proof is unavailable on this node.";
 
     /// <param name="environment">
     /// Host environment the custody predicate reads. Optional so the manager can be
@@ -36,7 +40,10 @@ public class WalletManager : IWalletManager
         WalletKeyService keyService,
         IConfiguration config,
         IHostEnvironment? environment = null,
-        Func<Guid>? entityId = null)
+        Func<Guid>? entityId = null,
+        IWalletAuthManager? walletAuth = null,
+        IWalletOwnershipProofStore? ownershipProofs = null,
+        ILogger<WalletManager>? logger = null)
     {
         _walletStore = walletStore;
         _holonStore = holonStore;
@@ -46,6 +53,9 @@ public class WalletManager : IWalletManager
         _environment = environment;
         _blockchainConfig = new BlockchainConfigurationManager(config);
         _entityId = entityId ?? Guid.NewGuid;
+        _walletAuth = walletAuth;
+        _ownershipProofs = ownershipProofs;
+        _logger = logger;
     }
 
     public async Task<AZOAResult<IWallet>> GetAsync(Guid id, Guid userId, AZOARequest? request = null)
@@ -77,15 +87,14 @@ public class WalletManager : IWalletManager
 
     public async Task<AZOAResult<IWallet>> CreateAsync(WalletCreateModel model, Guid userId, AZOARequest? request = null)
     {
-        // Address uniqueness per chain
-        var all = await _walletStore.GetAllAsync(default);
-        if (all.IsError || all.Result is null) return AZOAResult<IWallet>.Failure(all.Message);
-        var existing = all.Result?.FirstOrDefault(w =>
-            ChainAddressIdentity.Equivalent(model.ChainType, w.Address, model.Address) &&
-            w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase));
-
-        if (existing != null)
+        // Unproven rows grant nothing, so only the caller's own row or another user's proof blocks (audit-1 M2).
+        var owned = await _walletStore.GetByUserAsync(userId, default);
+        if (owned.IsError || owned.Result is null) return AZOAResult<IWallet>.Failure(owned.Message);
+        if (owned.Result.Any(w => w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase)
+            && ChainAddressIdentity.Equivalent(model.ChainType, w.Address, model.Address)))
             return new AZOAResult<IWallet> { IsError = true, Message = "Wallet address already exists for this chain." };
+        if (await ProvenByAnotherUserAsync(model.ChainType, model.Address, userId))
+            return new AZOAResult<IWallet> { IsError = true, Message = ProvenElsewhere };
 
         var wallet = new Wallet
         {
@@ -525,28 +534,25 @@ public class WalletManager : IWalletManager
         if (string.IsNullOrWhiteSpace(model.Address))
             return new AZOAResult<IWallet> { IsError = true, Message = "Address is required." };
 
-        // Optional: Verify ownership via signed message
-        if (!string.IsNullOrEmpty(model.SignedMessage) && !string.IsNullOrEmpty(model.OriginalMessage))
-        {
-            // In production, verify the signature using chain-specific recovery
-            // For now, trust the address if they provide it (lightweight verification)
-        }
+        var owned = await _walletStore.GetByUserAsync(userId, default);
+        if (owned.IsError || owned.Result is null) return AZOAResult<IWallet>.Failure(owned.Message);
+        var existing = owned.Result.FirstOrDefault(w => w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase)
+            && ChainAddressIdentity.Equivalent(model.ChainType, w.Address, model.Address));
+        // RV-L4-03: proofs bind to a purpose-bound challenge naming the wallet, so they follow connect (ownership-challenge + ownership-proof).
+        if (!string.IsNullOrWhiteSpace(model.SignedMessage))
+            return AZOAResult<IWallet>.Failure(InlineProofRetired);
+        if (existing is not null)
+            return new AZOAResult<IWallet> { Result = existing, Message = "Wallet already connected." };
+        if (await ProvenByAnotherUserAsync(model.ChainType, model.Address, userId))
+            return new AZOAResult<IWallet> { IsError = true, Message = ProvenElsewhere };
+        return await CreateExternalAsync(model, userId);
+    }
 
-        // Check uniqueness
-        var all = await _walletStore.GetAllAsync(default);
-        var existing = all.Result?.FirstOrDefault(w =>
-            w.Address.Equals(model.Address, StringComparison.OrdinalIgnoreCase) &&
-            w.ChainType.Equals(model.ChainType, StringComparison.OrdinalIgnoreCase));
+    private const string InlineProofRetired =
+        "Inline ownership proofs are retired; connect the wallet, then prove it via POST /api/wallet/{id}/ownership-challenge and ownership-proof.";
 
-        if (existing != null)
-        {
-            // If the wallet belongs to this user, return it
-            if (existing.UserId == userId)
-                return new AZOAResult<IWallet> { Result = existing, Message = "Wallet already connected." };
-
-            return new AZOAResult<IWallet> { IsError = true, Message = "Address already registered by another user." };
-        }
-
+    private async Task<AZOAResult<IWallet>> CreateExternalAsync(WalletConnectRequest model, Guid userId)
+    {
         var wallet = new Wallet
         {
             UserId = userId,
@@ -563,6 +569,50 @@ public class WalletManager : IWalletManager
 
         return await _walletStore.UpsertAsync(wallet, default);
     }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<WalletChallengeResponse>> CreateOwnershipChallengeAsync(Guid walletId, Guid userId, CancellationToken ct = default)
+    {
+        var wallet = await OwnedExternalWalletAsync(walletId, userId, ct);
+        if (wallet.IsError || wallet.Result is null) return AZOAResult<WalletChallengeResponse>.Failure(wallet.Message);
+        if (_walletAuth is null || _ownershipProofs is null) return AZOAResult<WalletChallengeResponse>.Failure(OwnershipProofUnavailable);
+        return await _walletAuth.CreateOwnershipChallengeAsync(userId, walletId, wallet.Result.Address, wallet.Result.ChainType, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<WalletOwnershipProof>> ProveOwnershipAsync(Guid walletId, Guid userId, string signature, string? message,
+        CancellationToken ct = default)
+    {
+        var wallet = await OwnedExternalWalletAsync(walletId, userId, ct);
+        if (wallet.IsError || wallet.Result is null) return AZOAResult<WalletOwnershipProof>.Failure(wallet.Message);
+        if (_walletAuth is null || _ownershipProofs is null) return AZOAResult<WalletOwnershipProof>.Failure(OwnershipProofUnavailable);
+        if (!WalletAuthIdentity.TryCreate(wallet.Result.Address, wallet.Result.ChainType, out var address, out var chain))
+            return AZOAResult<WalletOwnershipProof>.Failure("This wallet's chain does not support signature ownership proofs.");
+        var control = await _walletAuth.VerifyOwnershipProofAsync(userId, walletId, address, chain, signature, message, ct);
+        if (control.IsError) return AZOAResult<WalletOwnershipProof>.Failure(control.Message);
+        if (control.Result.Address != address || control.Result.ChainType != chain)
+            return AZOAResult<WalletOwnershipProof>.Failure("The verified challenge is bound to a different wallet identity.");
+        var recorded = await _ownershipProofs.RecordAsync(new WalletOwnershipProof(userId, walletId, chain, address, DateTime.UtcNow), ct);
+        if (recorded.IsError || recorded.Result is null) return AZOAResult<WalletOwnershipProof>.Failure(recorded.Message);
+        if (recorded.Result.SupersededUserId is { } previous)
+            _logger?.LogWarning("Wallet ownership proof for {Chain}:{Address} moved from stale holder {PreviousUserId} to {UserId} (wallet {WalletId}).",
+                chain, address, previous, userId, walletId);
+        return AZOAResult<WalletOwnershipProof>.Success(recorded.Result.Proof, "Wallet ownership proven.");
+    }
+
+    private async Task<AZOAResult<IWallet>> OwnedExternalWalletAsync(Guid walletId, Guid userId, CancellationToken ct)
+    {
+        var wallet = await _walletStore.GetByIdAsync(walletId, ct);
+        if (wallet.IsError || wallet.Result is null || wallet.Result.UserId != userId) return AZOAResult<IWallet>.Failure("Wallet not found.");
+        return wallet.Result.WalletType == WalletType.External ? wallet
+            : AZOAResult<IWallet>.Failure("Platform wallets are custodial; ownership proofs apply to external wallets.");
+    }
+
+    private const string ProvenElsewhere = "This address is proven by another account whose wallet still holds it; that account must remove the wallet first.";
+
+    /// <summary>RV-L4-09: only a still-valid foreign proof blocks; a stale one is superseded by the new holder's ownership proof.</summary>
+    private async Task<bool> ProvenByAnotherUserAsync(string chainType, string address, Guid userId)
+        => _ownershipProofs is not null && await _ownershipProofs.IsHeldByAnotherUserAsync(chainType, address, userId);
 
     // ─── New: Export wallet private key ───
 
@@ -630,9 +680,12 @@ public class WalletManager : IWalletManager
             return new AZOAResult<object> { IsError = true, Message = "Top-up (faucet) is disabled on mainnet." };
 
         var defaultAmount = _config.GetValue<decimal?>("Blockchain:Faucet:DefaultAmount") ?? 5m;
+        var maxAmount = _config.GetValue<decimal?>("Blockchain:Faucet:MaxAmount") ?? defaultAmount;
         var dispenseAmount = amount.GetValueOrDefault(defaultAmount);
         if (dispenseAmount <= 0)
             return new AZOAResult<object> { IsError = true, Message = "Amount must be a positive value." };
+        if (dispenseAmount > maxAmount)
+            return new AZOAResult<object> { IsError = true, Message = $"Top-up is capped at {maxAmount} per request." };
 
         // Faucet operations are provider-scoped (defined on IBlockchainProvider):
         // the chain owns whether and how it tops up. The manager stays chain-agnostic

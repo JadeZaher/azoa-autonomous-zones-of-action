@@ -5,6 +5,10 @@ export type * from "./wtt.js";
 export type * from "./consent.js";
 export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
 export type * from "./deployments.js";
+export type * from "./identity.js";
+export type * from "./money.js";
+export type * from "./operations.js";
+export type * from "./operator.js";
 export type {
   ActionRecoveryView,
   ActionRecoveryRequest,
@@ -133,6 +137,7 @@ export type {
   NftOperation,
   NftStageAcceptance,
   NftReplacementCostAcceptance,
+  NftStageCostAcceptance,
   NftReplacementCostReconciliation,
   NftProtocolCostLimits,
   NftProtocolCostAuthorization,

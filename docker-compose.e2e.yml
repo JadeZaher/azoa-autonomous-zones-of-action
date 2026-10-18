@@ -43,9 +43,13 @@ services:
       surrealdb:
         condition: service_healthy
     # host.docker.internal: the host-run fake vendors (Desktop and podman add it themselves).
-    # webhook-receiver.e2e.azoa.test: the journeys' webhook destination, pinned without DNS to a
-    # public-range address so the SSRF guard (which refuses the private gateway) admits it.
-    # Delivery is disabled, so it is never dialled.
+    # webhook-receiver.e2e.azoa.test: the journeys' webhook destination, pinned without DNS to the
+    # `webhook-receiver` service's static address on `e2e_webhooks` -- a public-range subnet, because
+    # the SSRF guard refuses private and gateway addresses. Delivery is on and lands there
+    # (frontend/e2e/AGENTS.md §webhook-receiver).
+    networks:
+      default: {}
+      e2e_webhooks: {}
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "webhook-receiver.e2e.azoa.test:198.51.99.10"
@@ -107,8 +111,8 @@ services:
       Fiat__OffRamp__OnboardingReturnUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
       Fiat__OffRamp__OnboardingRefreshUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}/wallets"
 
-      # Registered webhook destinations are never dialled during a journey.
-      Webhooks__Enabled: "false"
+      # Delivery workers run in e2e (Services/Webhooks/AGENTS.md §activation).
+      Webhooks__Enabled: "true"
     ports:
       - "${AZOA_E2E_API_PORT:-5200}:5000"
     volumes:
@@ -122,6 +126,25 @@ services:
       timeout: 5s
       retries: 36
       start_period: 30s
+
+  webhook-receiver:
+    image: node:20-alpine
+    container_name: azoa-e2e-webhook-receiver
+    command: ["node", "/receiver/receiver.mjs"]
+    # Serves TLS with the per-run vendor certificate (SAN webhook-receiver.e2e.azoa.test), which the
+    # API trusts through the per-run CA; the published port is the journeys' control plane only.
+    volumes:
+      - ./frontend/e2e/support/webhook-receiver:/receiver:ro
+      # Only the leaf certificate and key, never the per-run CA key beside them.
+      - ./frontend/e2e/.generated/vendor.pem:/certs/vendor.pem:ro
+      - ./frontend/e2e/.generated/vendor-key.pem:/certs/vendor-key.pem:ro
+    networks:
+      # default: carries only the published loopback control-plane port.
+      default: {}
+      e2e_webhooks:
+        ipv4_address: 198.51.99.10
+    ports:
+      - "127.0.0.1:${AZOA_E2E_WEBHOOK_RECEIVER_PORT:-9445}:8443"
 
   azoa-frontend:
     build:
@@ -138,6 +161,15 @@ services:
       NODE_ENV: "production"
     ports:
       - "${AZOA_E2E_FRONTEND_PORT:-3200}:3000"
+
+networks:
+  # Public-range on purpose (the SSRF guard refuses private and TEST-NET ranges); `internal` gives the
+  # bridge no outbound route, so a delivery to 198.51.99.10 can only reach the receiver (RV-L1-07).
+  e2e_webhooks:
+    internal: true
+    ipam:
+      config:
+        - subnet: 198.51.99.0/24
 
 volumes:
   e2e_surrealdb_data:

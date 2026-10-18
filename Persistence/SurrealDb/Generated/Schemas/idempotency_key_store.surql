@@ -35,6 +35,12 @@ DEFINE FIELD IF NOT EXISTS result_payload ON TABLE idempotency_key_store TYPE op
 -- Failure reason when state == Failed
 DEFINE FIELD IF NOT EXISTS error ON TABLE idempotency_key_store TYPE option<string>;
 
+-- Structured owner proof before value effects; never inferred from error text
+DEFINE FIELD IF NOT EXISTS effect_disposition ON TABLE idempotency_key_store TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS prepared_transaction_json ON TABLE idempotency_key_store TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS preparation_generation ON TABLE idempotency_key_store TYPE int
+    DEFAULT ALWAYS 0;
+
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_at ON TABLE idempotency_key_store TYPE datetime
     READONLY;

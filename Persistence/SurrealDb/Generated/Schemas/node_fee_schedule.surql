@@ -7,6 +7,7 @@
 
 DEFINE TABLE IF NOT EXISTS node_fee_schedule SCHEMAFULL;
 
+DEFINE FIELD IF NOT EXISTS swap_flat_denomination ON TABLE node_fee_schedule TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS id ON TABLE node_fee_schedule TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS mint_flat_base_units ON TABLE node_fee_schedule TYPE string

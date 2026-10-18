@@ -1,0 +1,1501 @@
+[
+  {
+    "route": "POST /api/action/{actionid}/dependencies",
+    "controller": "ActionController",
+    "action": "AddDependency",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; target owner-or-public; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{actionid}/edges",
+    "controller": "ActionController",
+    "action": "AddEdge",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{actionid}/nodes",
+    "controller": "ActionController",
+    "action": "AddNode",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/{runid}/advance",
+    "controller": "ActionController",
+    "action": "Advance",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "run owner from claims; advancing re-enters node admission; credential captured at run admission; each economic node selects workflow signing authority atomically at node admission (SigningAuthorityFence.ForNodeAdmission); actor + acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action",
+    "controller": "ActionController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/node-templates",
+    "controller": "ActionController",
+    "action": "CreateNodeTemplate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/templates",
+    "controller": "ActionController",
+    "action": "CreateTemplate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/access-requests/{requestid}/decision",
+    "controller": "ActionController",
+    "action": "DecideAccessRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/action/{id}",
+    "controller": "ActionController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/action/{actionid}/nodes/{nodeid}",
+    "controller": "ActionController",
+    "action": "DeleteNode",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/execute",
+    "controller": "ActionController",
+    "action": "Execute",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "credential captured at run admission; each economic node selects workflow signing authority atomically at node admission (SigningAuthorityFence.ForNodeAdmission); actor + acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/nodes/{nodeid}/execute",
+    "controller": "ActionController",
+    "action": "ExecuteNode",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "owner/acting-tenant scoped run; credential captured at run admission; each economic node selects workflow signing authority atomically at node admission (SigningAuthorityFence.ForNodeAdmission); actor + acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/{runid}/fork",
+    "controller": "ActionController",
+    "action": "Fork",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; run owner-only; actor/acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/templates/{id}/instantiate",
+    "controller": "ActionController",
+    "action": "InstantiateTemplate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; template owner-or-public; node templates as author; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/invite",
+    "controller": "ActionController",
+    "action": "Invite",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/{runid}/complete",
+    "controller": "ActionController",
+    "action": "MarkRunCompleted",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; run owner-only; actor/acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/{runid}/mark-failed",
+    "controller": "ActionController",
+    "action": "MarkRunFailed",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; run owner-only; actor/acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/publish",
+    "controller": "ActionController",
+    "action": "Publish",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only, version CAS; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/{runid}/reconcile",
+    "controller": "ActionController",
+    "action": "Reconcile",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; run owner-only; never re-broadcasts; actor/acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/reconcile-sweep",
+    "controller": "ActionController",
+    "action": "ReconcileSweep",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy; cross-user by design; never re-broadcasts; actor/acting tenant from claims",
+    "policies": [
+      "Operator",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/action/{actionid}/dependencies/{depid}",
+    "controller": "ActionController",
+    "action": "RemoveDependency",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/action/{actionid}/edges/{edgeid}",
+    "controller": "ActionController",
+    "action": "RemoveEdge",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/access-requests",
+    "controller": "ActionController",
+    "action": "RequestAccess",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; requester = caller; actor/acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/action/{id}/invite/{userid}",
+    "controller": "ActionController",
+    "action": "RevokeInvite",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/action/{id}/run-access",
+    "controller": "ActionController",
+    "action": "SetRunAccess",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/runs/{runid}/signal",
+    "controller": "ActionController",
+    "action": "Signal",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "run owner from claims; a signal can release a parked economic node through node admission; credential captured at run admission; each economic node selects workflow signing authority atomically at node admission (SigningAuthorityFence.ForNodeAdmission); actor + acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/start-workflow",
+    "controller": "ActionController",
+    "action": "StartWorkflow",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "credential captured at run admission; each economic node selects workflow signing authority atomically at node admission (SigningAuthorityFence.ForNodeAdmission); actor + acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/unpublish",
+    "controller": "ActionController",
+    "action": "Unpublish",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/action/{id}",
+    "controller": "ActionController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/action/{actionid}/nodes/{nodeid}",
+    "controller": "ActionController",
+    "action": "UpdateNode",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; Draft only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/{id}/validate",
+    "controller": "ActionController",
+    "action": "Validate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/action/access-requests/{requestid}/withdraw",
+    "controller": "ActionController",
+    "action": "WithdrawAccessRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; requester-only; actor/acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/actiongraphbundle/{id}/ecosystem/dapp-series",
+    "controller": "ActionGraphBundleController",
+    "action": "AddDappSeries",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; bundle + reference owner-only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/actiongraphbundle",
+    "controller": "ActionGraphBundleController",
+    "action": "CreateOrUpdate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner = caller; by (name, user); actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/actiongraphbundle/{id}",
+    "controller": "ActionGraphBundleController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/actiongraphbundle/{id}/deploy",
+    "controller": "ActionGraphBundleController",
+    "action": "Deploy",
+    "class": "value-moving",
+    "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
+    "enforcement": "DappManage policy; calls IDeploymentService.StartAsync WITHOUT a captured credential, so native signing fails closed (platform runtime only) until the lead threads StartWithCredentialAsync",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/actiongraphbundle/{id}/generate",
+    "controller": "ActionGraphBundleController",
+    "action": "Generate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/actiongraphbundle/{id}",
+    "controller": "ActionGraphBundleController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy; owner-only; 404 unreadable / 403 public; actor/acting tenant from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/operator/action-recovery/{id}/retry",
+    "controller": "ActionRecoveryOperatorController",
+    "action": "Retry",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "RecentNodeOperatorSession policy; operator re-drives a parked action recovery; never re-broadcasts without durable correlation",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/action/executions/{executionid}/signing-authorization",
+    "controller": "ActionSigningAuthorizationController",
+    "action": "Authorize",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "participant credential captured and frozen per execution (ActionSigningAuthorizationService, SigningAuthorityFence.ForRunAdmission + ForNodeAdmission)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/apikey",
+    "controller": "ApiKeyController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; owner = caller; explicit scopes only, each self-issuable by the caller's current role (CanSelfIssueApiKeyScope)",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/apikey/tenant",
+    "controller": "ApiKeyController",
+    "action": "CreateTenantKey",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (JWT operator:admin); RecentNodeOperatorSession policy; operator subject logged; actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "DELETE /api/apikey/{id}",
+    "controller": "ApiKeyController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; DELETE scoped WHERE user_id = caller (cross-user id = 404)",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/apikey/{id}/revoke",
+    "controller": "ApiKeyController",
+    "action": "Revoke",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; active-key CAS scoped to user_id = caller; idempotent for an already-revoked own key",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/apikey/{id}/rotate",
+    "controller": "ApiKeyController",
+    "action": "Rotate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; owner from claims; only an active, unexpired, explicitly-scoped key whose scopes the caller may still self-issue; old key revoked first by an active-key CAS",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/{id}/fetch-vaa",
+    "controller": "BridgeController",
+    "action": "FetchVAA",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; bridge tx owner-scoped (CallerOwns, foreign = not found); observation only, no chain effect",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/initiate",
+    "controller": "BridgeController",
+    "action": "InitiateBridge",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "owner from claims; refuses act_as_tenant principals; HasSigningScope(transfer:sign) (audit-2 M8, BridgeController.SigningRefusal); KYC gate on real-value routes",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/{id}/redeem",
+    "controller": "BridgeController",
+    "action": "RedeemWithVAA",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "owner-scoped bridge tx; refuses act_as_tenant principals; HasSigningScope(transfer:sign) (audit-2 M8)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/{id}/reverse",
+    "controller": "BridgeController",
+    "action": "ReverseBridge",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "owner-scoped bridge tx; refuses act_as_tenant principals; HasSigningScope(transfer:sign); release only to the owner's Platform wallet or ownership-proven External wallet on the source chain (audit-2 M8)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/user/consent",
+    "controller": "ConsentController",
+    "action": "Grant",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; grantor = caller; written only through the consent lifecycle store (command-id single winner)",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "DELETE /api/user/consent/{id}",
+    "controller": "ConsentController",
+    "action": "Revoke",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; grantor-scoped revoke through the lifecycle store (foreign grant = not found)",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/user/consent/withdraw",
+    "controller": "ConsentController",
+    "action": "Withdraw",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; grantor = caller; lifecycle-store withdrawal",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/credential/issue/{recipientuserid}",
+    "controller": "CredentialController",
+    "action": "Issue",
+    "class": "value-moving",
+    "scope": "nft:mint",
+    "enforcement": "HasSigningScope(nft:mint) + credential capture; issuer from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/credential/issue/{recipientuserid}/cost-quote",
+    "controller": "CredentialController",
+    "action": "QuoteIssueCosts",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; issuer = caller; quote only, no signing",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/credential/{assetid}/revoke",
+    "controller": "CredentialController",
+    "action": "Revoke",
+    "class": "value-moving",
+    "scope": "credential:revoke:sign",
+    "enforcement": "HasSigningScope(credential:revoke:sign) + credential capture; issuer check in CredentialManager",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dapp-series/{id}/compose",
+    "controller": "DappCompositionController",
+    "action": "Compose",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dapp-series/{id}/deploy",
+    "controller": "DappCompositionController",
+    "action": "Deploy",
+    "class": "value-moving",
+    "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
+    "enforcement": "DappManage policy; deploys through the composed bundle; native signing fails closed without a captured credential (see ActionGraphBundle.Deploy)",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dapp-series/{id}/generate",
+    "controller": "DappCompositionController",
+    "action": "Generate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dapp-series/{seriesid}/actions",
+    "controller": "DappSeriesController",
+    "action": "AddAction",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dapp-series",
+    "controller": "DappSeriesController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/dapp-series/{id}",
+    "controller": "DappSeriesController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/dapp-series/{seriesid}/actions/{actionid}",
+    "controller": "DappSeriesController",
+    "action": "RemoveAction",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/dapp-series/{seriesid}/actions/{actionid}/order",
+    "controller": "DappSeriesController",
+    "action": "ReorderAction",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/dapp-series/{id}",
+    "controller": "DappSeriesController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/dapp-series/{seriesid}/actions/{actionid}/mappings",
+    "controller": "DappSeriesController",
+    "action": "UpdateMappings",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/operator/deployments/{id}/resolve",
+    "controller": "DeploymentOperatorController",
+    "action": "Resolve",
+    "class": "value-moving",
+    "scope": "none new: Reobserve may resubmit the already-authorized saved wire (authorizeNewStage false)",
+    "enforcement": "RecentNodeOperatorSession policy; re-observes first (a pending verdict resubmits the saved wire, never a new stage); closes only an unresolvable observation with reason + AcknowledgeNoFurtherEffect and never an action-linked row (RV-L4-05); version-fenced CAS; operator id stored in EvidenceJson",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "GET /api/deployments/artifacts/{artifactId}",
+    "controller": "DeploymentsController",
+    "action": "Artifact",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "actor + acting tenant from claims; rows filtered by actor and tenant (acting-tenant read)",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/cancel",
+    "controller": "DeploymentsController",
+    "action": "Cancel",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy; owned row (actor + acting tenant); no-effect CAS only before submission authority",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/request/cancel",
+    "controller": "DeploymentsController",
+    "action": "CancelRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/continue",
+    "controller": "DeploymentsController",
+    "action": "Continue",
+    "class": "value-moving",
+    "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
+    "enforcement": "DappManage policy; caller credential captured and every native signer bound via SigningAdmissionAuthorityFactory.BindDirectAsync(..., [ForNativeIntent(kind)]) and locked by SigningAuthorityFence in the Preparing/Submitted CAS (DeploymentService.BindNativeAuthorityAsync); actor + acting tenant from claims",
+    "childCredentialScope": "dapp:manage",
+    "childSigningScopes": [
+      "contract:deploy:sign",
+      "contract:call:sign",
+      "solana:account:sign"
+    ],
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/bundles/{bundleid}/generate",
+    "controller": "DeploymentsController",
+    "action": "Generate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy; bundle owned by actor; artifact stamped with actor + acting tenant; no signing",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET /api/deployments/{id}",
+    "controller": "DeploymentsController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "actor + acting tenant from claims; rows filtered by actor and tenant (acting-tenant read)",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET /api/deployments/request",
+    "controller": "DeploymentsController",
+    "action": "GetRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "actor + acting tenant from claims; rows filtered by actor and tenant (acting-tenant read)",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/recovery/ancestry/inspect",
+    "controller": "DeploymentsController",
+    "action": "InspectRecoveryAncestry",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/recovery/invalidate",
+    "controller": "DeploymentsController",
+    "action": "InvalidateRecovery",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/invoke",
+    "controller": "DeploymentsController",
+    "action": "Invoke",
+    "class": "value-moving",
+    "scope": "action:execute + per-node signing scopes (ActionSigningScopes.Required)",
+    "enforcement": "credential captured (CaptureCredentialAsync) and passed as the run's authentication witness; credential captured at run admission; each economic node selects workflow signing authority atomically at node admission (SigningAuthorityFence.ForNodeAdmission); actor + acting tenant from claims",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET /api/deployments",
+    "controller": "DeploymentsController",
+    "action": "List",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "actor + acting tenant from claims; rows filtered by actor and tenant (acting-tenant read)",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/contract-query",
+    "controller": "DeploymentsController",
+    "action": "QueryContract",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; read-only contract query, no signing or state change",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/quote",
+    "controller": "DeploymentsController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy; artifact owned by actor + acting tenant; ValidAuthority(kind scope); server-issued quote, no signing",
+    "childCredentialScope": "dapp:manage",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/recovery/quote",
+    "controller": "DeploymentsController",
+    "action": "QuoteRecovery",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappManage policy (dapp:manage scope or manager role); ownership in the service; actor from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/recovery/original-budget",
+    "controller": "DeploymentsController",
+    "action": "RecoverWithinBudget",
+    "class": "value-moving",
+    "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
+    "enforcement": "DappManage policy; caller credential captured and every native signer bound via SigningAdmissionAuthorityFactory.BindDirectAsync(..., [ForNativeIntent(kind)]) and locked by SigningAuthorityFence in the Preparing/Submitted CAS (DeploymentService.BindNativeAuthorityAsync); actor + acting tenant from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments",
+    "controller": "DeploymentsController",
+    "action": "Start",
+    "class": "value-moving",
+    "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
+    "enforcement": "DappManage policy; caller credential captured and every native signer bound via SigningAdmissionAuthorityFactory.BindDirectAsync(..., [ForNativeIntent(kind)]) and locked by SigningAuthorityFence in the Preparing/Submitted CAS (DeploymentService.BindNativeAuthorityAsync); actor + acting tenant from claims",
+    "childCredentialScope": "dapp:manage",
+    "childSigningScopes": [
+      "contract:deploy:sign",
+      "contract:call:sign",
+      "solana:account:sign"
+    ],
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/deployments/{id}/recovery/start",
+    "controller": "DeploymentsController",
+    "action": "StartRecovery",
+    "class": "value-moving",
+    "scope": "contract:deploy:sign | contract:call:sign | solana:account:sign by intent kind (ActionSigningScopes.ForNativeIntent)",
+    "enforcement": "DappManage policy; caller credential captured and every native signer bound via SigningAdmissionAuthorityFactory.BindDirectAsync(..., [ForNativeIntent(kind)]) and locked by SigningAuthorityFence in the Preparing/Submitted CAS (DeploymentService.BindNativeAuthorityAsync); actor + acting tenant from claims",
+    "policies": [
+      "DappManage",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon/{id}/clone",
+    "controller": "HolonController",
+    "action": "Clone",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon",
+    "controller": "HolonController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/holon/{id}",
+    "controller": "HolonController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon/{id}/exchange",
+    "controller": "HolonController",
+    "action": "Exchange",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "DappDevelop policy; owner from claims; exchange checks land in BlockchainOperationManager (L5 M9, in place)",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon/{id}/interact",
+    "controller": "HolonController",
+    "action": "Interact",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon/{id}/mint",
+    "controller": "HolonController",
+    "action": "Mint",
+    "class": "value-moving",
+    "scope": "nft:mint",
+    "enforcement": "DappDevelop policy; owner from claims; mint checks + user-key signing land in BlockchainOperationManager (L5 M9, in place)",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon/{id}/move",
+    "controller": "HolonController",
+    "action": "MoveSubtree",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon/{id}/propagate",
+    "controller": "HolonController",
+    "action": "Propagate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/holon/{id}",
+    "controller": "HolonController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop policy (dapp:develop scope or developer role); ownership in the manager; actor from claims",
+    "policies": [
+      "DappDevelop",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon-types/{assettype}/deactivate",
+    "controller": "HolonTypeRegistryController",
+    "action": "Deactivate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (JWT operator:admin); actor from claims",
+    "policies": [
+      "Operator",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/holon-types/{assettype}",
+    "controller": "HolonTypeRegistryController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (JWT operator:admin); actor from claims",
+    "policies": [
+      "Operator",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/holon-types",
+    "controller": "HolonTypeRegistryController",
+    "action": "Register",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (JWT operator:admin); actor from claims",
+    "policies": [
+      "Operator",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/admin/key-rotation/rotate",
+    "controller": "KeyRotationController",
+    "action": "Rotate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy + RecentNodeOperatorSession step-up; returns counts only",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/admin/sagas/{id}/cancel",
+    "controller": "SagaOperatorController",
+    "action": "Cancel",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (JWT operator:admin, never an API key); dead-letter console",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/admin/sagas/{id}/requeue",
+    "controller": "SagaOperatorController",
+    "action": "Requeue",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (JWT operator:admin, never an API key); dead-letter console",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/search",
+    "controller": "SearchController",
+    "action": "Search",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize]; owner-or-public read scope applied in SearchManager (callerUserId); no writes",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/tenant/consent/participation/{participationref}",
+    "controller": "TenantConsentController",
+    "action": "RevokeByParticipation",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy; tenant = caller; offboard through the lifecycle store, tenant's own participation only",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "DELETE /api/tenant/consent/provisioned",
+    "controller": "TenantConsentController",
+    "action": "RevokeProvisioned",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy; tenant = caller; revokes only grants this tenant was given",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/tenant/custodial-accounts/{externalsubject}/kyc/session",
+    "controller": "TenantController",
+    "action": "BeginCustodialKyc",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy; kyc:submit scope; captured credential bound to live consent (tenant:provision + kyc:submit)",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "PUT /api/tenant/custodial-accounts/{externalsubject}",
+    "controller": "TenantController",
+    "action": "EnsureCustodialAccount",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy; wallet:manage + kyc:read scopes; captured credential bound to live consent; Idempotency-Key",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/tenant/users/{id}/credential",
+    "controller": "TenantController",
+    "action": "IssueChildCredential",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy (tenant:provision API key, never a child or acting-tenant principal); node switch Tenant:DelegatedChildCredentials:Enabled; scopes = tenant key ∩ live grant ∩ request ∩ DelegatedChildCredentialCatalog; tenant:provision never delegated; no-store",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/tenant/users",
+    "controller": "TenantController",
+    "action": "ProvisionChild",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy; tenant = caller; deterministic child id per (tenant, external user); tenant email never stored (synthetic)",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/tenant/custodial-accounts/{externalsubject}/kyc/submissions",
+    "controller": "TenantController",
+    "action": "SubmitCustodialKyc",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy; kyc:submit scope; captured credential bound to live consent; HTTPS document refs validated",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "PUT /api/user/{id}/dapp-role",
+    "controller": "UserController",
+    "action": "AssignDappRole",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappRoleAssignment policy: recent node-operator session, or CanAssignDappRoles (current manager AND first-party login or explicit dapp:manage key); a manager cannot change a current manager (audit-2 H2); target id from route",
+    "policies": [
+      "DappRoleAssignment"
+    ]
+  },
+  {
+    "route": "DELETE /api/user/{id}",
+    "controller": "UserController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/user/login",
+    "controller": "UserController",
+    "action": "Login",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous by design (credential bootstrap); rate-limited",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/user/logout",
+    "controller": "UserController",
+    "action": "LogoutEverywhere",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/user/register",
+    "controller": "UserController",
+    "action": "Register",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous by design (credential bootstrap); rate-limited",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "PUT /api/user/{id}",
+    "controller": "UserController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/user/auth/challenge",
+    "controller": "WalletAuthController",
+    "action": "Challenge",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous by design (credential bootstrap); rate-limited",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/user/claim",
+    "controller": "WalletAuthController",
+    "action": "Claim",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous by design (credential bootstrap); rate-limited",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/user/claim-invite",
+    "controller": "WalletAuthController",
+    "action": "CreateClaimInvite",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "TenantScope policy (tenant:provision); tenant from the key subject; actor from claims",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/user/wallet/link",
+    "controller": "WalletAuthController",
+    "action": "LinkWallet",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "RecentFirstPartyLogin policy; actor from claims",
+    "policies": [
+      "RecentFirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/user/auth/verify",
+    "controller": "WalletAuthController",
+    "action": "Verify",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous by design (credential bootstrap); rate-limited",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/connect",
+    "controller": "WalletController",
+    "action": "Connect",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/wallet",
+    "controller": "WalletController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/wallet/{id}",
+    "controller": "WalletController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/{id}/export",
+    "controller": "WalletController",
+    "action": "Export",
+    "class": "value-moving",
+    "scope": "first-party recent login only (never delegable)",
+    "enforcement": "RecentFirstPartyLogin policy; rejects API keys and tenant provenance; no-store; audit without key material",
+    "policies": [
+      "RecentFirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/generate",
+    "controller": "WalletController",
+    "action": "Generate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/{id}/set-default",
+    "controller": "WalletController",
+    "action": "SetDefault",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/{id}/topup",
+    "controller": "WalletController",
+    "action": "TopUp",
+    "class": "value-moving",
+    "scope": "wallet:manage",
+    "enforcement": "HasSigningScope(wallet:manage); owner from claims; Idempotency-Key exactly-once dispense; faucet cap (L4 lead)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/wallet/{id}",
+    "controller": "WalletController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy (login JWT only); actor from claims",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/operator/wallet-identities/clear-conflicting-binding",
+    "controller": "WalletIdentityOperatorController",
+    "action": "Clear",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "RecentNodeOperatorSession policy; operator resolves a wallet-auth identity conflict",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/{id}/ownership-challenge",
+    "controller": "WalletController",
+    "action": "CreateOwnershipChallenge",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; caller's own External wallet only (else 404); issues a wallet-auth challenge; rate-limited",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/wallet/{id}/ownership-proof",
+    "controller": "WalletController",
+    "action": "ProveOwnership",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin policy; caller's own External wallet only (else 404); consumes + verifies the challenge signature before recording wallet_ownership_proof; rate-limited",
+    "policies": [
+      "FirstPartyLogin",
+      "authenticated"
+    ]
+  }
+]

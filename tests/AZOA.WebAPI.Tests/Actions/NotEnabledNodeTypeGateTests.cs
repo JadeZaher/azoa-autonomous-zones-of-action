@@ -82,12 +82,32 @@ public sealed class NotEnabledNodeTypeGateTests
     [Fact]
     public void EveryBlockedType_IsANamedTrackedException()
     {
-        NotEnabledActionNodeTypes.All.Should().HaveCount(1,
-            "each blocked type is tracked by a design track; adding one without a track "
-            + "turns a temporary gate into silent dead surface");
+        NotEnabledActionNodeTypes.All.Should().BeEquivalentTo(new[]
+            {
+                ActionNodeType.CredentialRevoke,
+                ActionNodeType.GovernanceProposalCreate,
+                ActionNodeType.GovernanceVote,
+                ActionNodeType.GovernanceTally,
+            },
+            "each blocked type is tracked by a design track or verdict; adding one without a track "
+            + "turns a temporary gate into silent dead surface; lifting one must change this test with its verdict (RV-L1-05)");
 
         var source = SourceOf("Services", "Actions", "NotEnabledActionNodeTypes.cs");
         source.Should().Contain("round2-governance-source-review.md",
             "source activation must name its independently recorded review");
+    }
+
+    /// <summary>CredentialRevoke lifts only as the final Phase 4 step of its own track, after its recorded security review.</summary>
+    [Fact]
+    public void CredentialRevoke_StaysBlockedUntilItsTrackChecksTheGateRemovalStep()
+    {
+        var plan = SourceOf("conductor", "tracks", "credential-third-party-issuance_20260906", "plan.md");
+        var step = System.Text.RegularExpressions.Regex.Match(plan,
+            @"^- \[(?<done>[ x])\] Remove `Services/Actions/NotEnabledActionNodeTypes`' `CredentialRevoke` entry",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        step.Success.Should().BeTrue("the track must keep its explicit gate-removal step");
+        NotEnabledActionNodeTypes.IsBlocked(ActionNodeType.CredentialRevoke).Should().Be(step.Groups["done"].Value != "x",
+            "the gate and its track's recorded Phase 4 step must change together");
     }
 }

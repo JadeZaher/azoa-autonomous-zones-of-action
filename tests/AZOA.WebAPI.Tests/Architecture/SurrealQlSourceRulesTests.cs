@@ -1,0 +1,187 @@
+using FluentAssertions;
+
+namespace AZOA.WebAPI.Tests.Architecture;
+
+/// <summary>Round-4 SurrealQL source rules over production code, each pinned red/green by a pre-fix/post-fix snippet; see Architecture/AGENTS.md §surrealql-source-rules.</summary>
+public sealed class SurrealQlSourceRulesTests
+{
+    private static readonly Lazy<IReadOnlyList<CSharpSource>> Production = new(CSharpSource.Production);
+
+    private static readonly Dictionary<string, HashSet<string>> SnippetColumns = new()
+    {
+        ["TenantPriceSchedule"] = ["TenantId", "RegisteredByUserId"],
+        ["NftOwnership"] = ["UserId"],
+    };
+
+    public static TheoryData<string, string, bool> Snippets => new()
+    {
+        // rule, snippet, expected violation (pre-fix = true, post-fix = false)
+        { "semicolon", """var q = SurrealQuery.Of("UPDATE a SET b = 1; UPDATE c SET d = 2");""", true },
+        { "semicolon", """var q = SurrealQuery.Of("UPDATE a SET b = $_b").WithParam("_b", ";");""", false },
+        { "semicolon", "var q = SurrealQuery\n    .Of(\"\"\"\n    LET $x = 1; RETURN $x\n    \"\"\");", true },
+        { "non-literal", """var q = SurrealQuery.Of(sql);""", true },
+        { "non-literal", """var q = SurrealQuery.Of($"SELECT * FROM {table}");""", true },
+        { "non-literal", """var all = text.Split('|').Select(SurrealQuery.Of);""", true },
+        { "non-literal", """var q = SurrealQuery.Of("SELECT " + "* FROM a");""", false },
+        { "non-literal", """var q = SurrealQuery.Of(cancel ? "DELETE a" : "UPDATE a SET b = 1");""", false },
+        { "non-literal", """var q = SurrealQuery.Of(cancel ? sql : "UPDATE a SET b = 1");""", true },
+        { "non-literal", "private const string Erase = \"DELETE a\";\nvar q = SurrealQuery.Of(Erase);", false },
+        { "srdb0001", "#pragma warning disable SRDB0001\nvar q = 1;", true },
+        { "srdb0001", "var q = 1;", false },
+        { "assign-key", """var s = SurrealGeneratedStatementScope.Assign(SurrealQuery<Row>.Key(id), "x", "_x");""", true },
+        { "assign-key", """var s = SurrealGeneratedStatementScope.AssignRecord(SurrealQuery<Row>.Key(id), "x", "_x");""", false },
+        { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Unset(row => row.AllowedChains).Build();", true },
+        { "no-where", "var q = SurrealWriter.UpdateOnly<Row>(id).Where(row => row.Version == version).Unset(row => row.AllowedChains).Build();", false },
+        { "no-where", "var q = SurrealWriter.DeleteOnly<Row>(id).Build();", true },
+        { "no-where", "var update = SurrealWriter.UpdateOnly<Row>(id);\nif (a) update = update.Unset(row => row.Label);\nvar q = update.Build();", true },
+        { "no-where", "var update = SurrealWriter.UpdateOnly<Row>(id);\nupdate = update.Where(row => row.Version == v).Unset(row => row.Label);\nvar q = update.Build();", false },
+        { "tenant-payout", "var debit = new TenantPayoutDebit { Id = id };\nawait executor.ExecuteAsync(SurrealWriter.Create(debit));", true },
+        { "tenant-payout", "var q = SurrealWriter.UpdateOnly<TenantPayoutFloat>(id).Where(row => row.Version == v).Set(row => row.ReservedMinorUnits, 0).Build();", true },
+        { "tenant-payout", "var q = SurrealQuery.Of(\"UPDATE tenant_payout_float SET reserved_minor_units = 0\");", true },
+        { "tenant-payout", "var debit = new TenantPayoutDebit { Id = id };\nawait ledger.CommitAsync(new TenantPayoutTransition(observed, next, new TenantPayoutEntryChange.CreateDebit(debit)));", false },
+        { "ordinal", "var state = (Row.ActionNodeState)(int)execution.State;", true },
+        { "ordinal", "var state = Enum.Parse<Row.ActionNodeState>(execution.State.ToString());", false },
+        { "end-relative", "statements.Add(SurrealQuery.Of(\"RETURN $_user\"));\nvar row = response.GetValues<User>(statements.Count - 2).Single();", true },
+        { "end-relative", "var resultIndex = statements.Count;\nstatements.Add(SurrealQuery.Of(\"RETURN $_user\"));\nvar row = response.GetValues<User>(resultIndex).Single();", false },
+        { "after-return", "statements.Add(SurrealQuery.Of(\"RETURN $_fee_saved\"));\nstatements.Add(appendAudit);\nstatements.Add(SurrealQuery.Of(\"COMMIT\"));", true },
+        { "after-return", "var q = SurrealQuery.Combine(SurrealQuery.Of(\"BEGIN\"), write, SurrealQuery.Of(\"RETURN $_x\"), SurrealQuery.Of(\"UPDATE a SET b = 1\"), SurrealQuery.Of(\"COMMIT\"));", true },
+        { "after-return", "var q = SurrealQuery.Combine(SurrealQuery.Of(\"BEGIN\"), write, appendAudit, SurrealQuery.Of(\"RETURN $_x\"), SurrealQuery.Of(\"COMMIT\"));", false },
+        { "after-return", "statements.Add(SurrealQuery.Of(\"RETURN $_x\"));\nstatements.Add(SurrealQuery.Of(\"COMMIT\"));", false },
+        { "bare-id", """var row = new TenantPriceSchedule { TenantId = tenantId.ToString("N"), Name = name };""", true },
+        { "bare-id", """var row = new TenantPriceSchedule { TenantId = SurrealLink.ToLink("user", tenantId.ToString("N")), Name = name };""", false },
+        { "bare-id", """var row = new TenantPriceSchedule { TenantId = existing.TenantId, RegisteredByUserId = actorLink };""", false },
+        { "bare-id", """var row = new TenantPriceSchedule { RegisteredByUserId = SurrealLink.FromLink(link) };""", true },
+        { "bare-id", """var write = SurrealWriter.UpdateOnly<NftOwnership>(id).Set(row => row.UserId, authority.HolderUserId).Build();""", true },
+        { "bare-id", """var write = SurrealWriter.UpdateOnly<NftOwnership>(id).Set(row => row.UserId, SurrealLink.ToLink("user", authority.HolderUserId)!).Build();""", false },
+    };
+
+    [Theory]
+    [MemberData(nameof(Snippets))]
+    public void Each_rule_is_red_on_its_pre_fix_pattern_and_green_on_the_fix(string rule, string snippet, bool violates)
+    {
+        var source = CSharpSource.Parse("Providers/Stores/Surreal/Snippet.cs", snippet);
+        Run(rule, source).Any().Should().Be(violates, snippet);
+    }
+
+    [Fact]
+    public void No_semicolon_inside_SurrealQuery_Of_literals()
+        => AssertNone("semicolon", "SurrealForge splits Of(...) on `;` and throws (round4-sql-sweep F-H13)");
+
+    [Fact]
+    public void SurrealQuery_Of_takes_only_literal_text_outside_the_template_helpers()
+        => AssertNone("non-literal", "a `var sql` indirection slips past SRDB0001 (round4-sql-sweep SQL-13)");
+
+    [Fact]
+    public void SRDB0001_is_suppressed_only_in_the_template_helpers()
+        => AssertNone("srdb0001", "identifier templating is localized to the reviewed helpers (round4-plan A-1)");
+
+    [Fact]
+    public void Project_files_never_silence_SRDB0001()
+    {
+        var root = CSharpSource.RepositoryRoot();
+        var offenders = Directory.EnumerateFiles(root, "*.csproj", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.EnumerateFiles(root, ".editorconfig", SearchOption.TopDirectoryOnly))
+            .Concat(Directory.EnumerateFiles(root, "Directory.Build.*", SearchOption.TopDirectoryOnly))
+            .Concat(Directory.EnumerateFiles(root, "GlobalSuppressions.cs", SearchOption.TopDirectoryOnly))
+            .Where(path => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(path),
+                @"<NoWarn>[^<]*SRDB0001|dotnet_diagnostic\.SRDB0001\.severity\s*=\s*(none|silent|suggestion)|SuppressMessage\s*\([^)]*SRDB0001"))
+            .Select(path => Path.GetFileName(path));
+        offenders.Should().BeEmpty("a project-wide NoWarn/severity override would disable the analyzer everywhere");
+    }
+
+    [Fact]
+    public void Single_record_reads_are_never_captured_with_Assign()
+        => AssertNone("assign-key", "Assign wraps the read as an array; guards comparing it to NONE never fire");
+
+    [Fact]
+    public void Typed_conditional_mutations_always_carry_a_Where()
+        => AssertNone("no-where", "SurrealForge 1.3.0 UpdateOnly/DeleteOnly Build() throws without a predicate, failing the flow at runtime");
+
+    [Fact]
+    public void Tenant_payout_rows_change_only_through_the_ledger_commit()
+        => AssertNone("tenant-payout", "D-8 exactly-once accounting holds only if every float/credit/debit change rides the float version CAS (round4-lane-L3-money.md)");
+
+    [Fact]
+    public void Persisted_enums_are_never_cast_by_ordinal()
+        => AssertNone("ordinal", "a member reorder silently remaps states, including inside CAS guards (round4-sql-sweep SQL-10)");
+
+    [Fact]
+    public void Results_are_never_read_end_relative_after_a_top_level_RETURN()
+        => AssertNone("end-relative", "prefer the absolute index captured before RETURN: robust to any statement added later (RV-L4's 3.1.4 probe shows BEGIN and COMMIT keep their slots, so SQL-01/02 were not live defects)");
+
+    /// <summary>Migrations at or before this prefix shipped under checksum (bytes immutable); later ones must change definitions with OVERWRITE.</summary>
+    private const string LastShippedMigration = "20261017_130000";
+
+    [Fact]
+    public void Forward_migrations_change_definitions_with_OVERWRITE()
+    {
+        var directory = Path.Combine(CSharpSource.RepositoryRoot(), "Persistence", "SurrealDb", "Migrations");
+        var offenders = Directory.EnumerateFiles(directory, "*.surql")
+            .Where(path => string.CompareOrdinal(Path.GetFileName(path)[..15], LastShippedMigration) > 0)
+            .SelectMany(path => File.ReadAllLines(path).Select((line, index) => (path, line, index)))
+            .Where(entry => System.Text.RegularExpressions.Regex.IsMatch(entry.line, @"^\s*DEFINE\s+\w+\s+(?!OVERWRITE\b)", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .Select(entry => $"{Path.GetFileName(entry.path)}:{entry.index + 1} {entry.line.Trim()}");
+        offenders.Should().BeEmpty("with --no-reconcile and IF NOT EXISTS goldens, a migration that does not OVERWRITE silently no-ops on an existing database (RV-L1-02)");
+    }
+
+    [Fact]
+    public void Nothing_follows_a_top_level_RETURN_except_COMMIT()
+        => AssertNone("after-return", "SurrealDB 3.1.4 silently skips statements between a top-level RETURN and COMMIT (RV-L4 probe)");
+
+    [Fact]
+    public void Reference_columns_are_never_assigned_a_bare_id()
+        => AssertNone("bare-id", "record<T> columns reject bare text; the write fails after its side effects (round4-sql-sweep D2/SQL-03..08)");
+
+    /// <summary>Ratchet of reviewed residue: (rule, file) → exact count + owning fix. A new site fails; a fixed site must be removed here.</summary>
+    private static readonly Dictionary<(string Rule, string File), (int Count, string Owner)> KnownViolations = new()
+    {
+        // Fail-closed residue found by these rules after every W2 lane merged: W3 fix batch, round4-lane-L6-verification.md §Needs other lane.
+        [("bare-id", "Services/Fiat/Reversal/FiatReversalEventHandler.cs")] = (1, "W3 fix batch (L3): LotId = lot?.Id is the stripped [Id]"),
+        // Convention residue (not fail-closed today): SQL-13 class.
+        [("non-literal", "Helpers/HostedSessionAliasFence.cs")] = (2, "W3 fix batch (L2/L1): per-index alias names via SurrealIdentifierTemplate"),
+        [("non-literal", "Mcp/Tools/VectorSearchTool.cs")] = (1, "W3 fix batch (L1): ternary of two consts inline"),
+        [("non-literal", "Services/Fiat/Reversal/OnRampLotLookup.cs")] = (1, "W3 fix batch (L3): pass the const at each call site"),
+    };
+
+    private static void AssertNone(string rule, string because)
+    {
+        var found = Production.Value.SelectMany(source => Run(rule, source)).ToList();
+        var problems = new List<string>();
+        foreach (var group in found.GroupBy(violation => violation[..violation.IndexOf(':')]))
+        {
+            var known = KnownViolations.GetValueOrDefault((rule, group.Key));
+            if (group.Count() > known.Count)
+                problems.AddRange(group.Select(violation => known.Count == 0 ? violation : $"{violation} (known {known.Count}, owner {known.Owner})"));
+        }
+
+        foreach (var ((knownRule, file), (count, owner)) in KnownViolations.Where(entry => entry.Key.Rule == rule))
+        {
+            var actual = found.Count(violation => violation.StartsWith(file + ":", StringComparison.Ordinal));
+            if (actual < count)
+                problems.Add($"{file}: {knownRule} residue fixed ({actual} < {count}, {owner}); lower or remove its KnownViolations entry");
+        }
+
+        Assert.True(problems.Count == 0, because + Environment.NewLine + string.Join(Environment.NewLine, problems));
+    }
+
+    [Fact]
+    public void Stores_trusted_to_normalize_reference_columns_actually_link_every_one()
+        => SurrealQlSourceRules.NormalizingStores.Keys
+            .SelectMany(type => SurrealQlSourceRules.UnnormalizedColumns(type, Production.Value))
+            .Should().BeEmpty("the bare-id rule skips callers of these POCOs only because their store links each column in ToStorage");
+
+    private static IEnumerable<string> Run(string rule, CSharpSource source) => rule switch
+    {
+        "semicolon" => SurrealQlSourceRules.SemicolonInOfLiteral(source),
+        "non-literal" => SurrealQlSourceRules.NonLiteralOf(source),
+        "srdb0001" => SurrealQlSourceRules.Srdb0001Suppression(source),
+        "assign-key" => SurrealQlSourceRules.AssignOfKey(source),
+        "no-where" => SurrealQlSourceRules.ConditionalMutationWithoutWhere(source),
+        "tenant-payout" => SurrealQlSourceRules.TenantPayoutWriteOutsideLedger(source),
+        "ordinal" => SurrealQlSourceRules.OrdinalEnumCast(source),
+        "end-relative" => SurrealQlSourceRules.EndRelativeResultIndex(source),
+        "after-return" => SurrealQlSourceRules.StatementAfterReturn(source),
+        "bare-id" => SurrealQlSourceRules.BareIdReference(source, source.RelativePath.EndsWith("Snippet.cs", StringComparison.Ordinal) ? SnippetColumns : null),
+        _ => throw new ArgumentOutOfRangeException(nameof(rule), rule, null),
+    };
+}

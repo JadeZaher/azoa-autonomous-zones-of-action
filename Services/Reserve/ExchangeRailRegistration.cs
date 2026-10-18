@@ -6,7 +6,6 @@
 
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Providers.Stores.Surreal;
-using AZOA.WebAPI.Services.Custody;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AZOA.WebAPI.Services.Reserve;
@@ -45,12 +44,11 @@ public static class ExchangeRailRegistration
 
         services.TryAddScoped<IBuyBackBackstop, ReserveToTreasuryBuyBackBackstop>();
 
-        // A direct-delivery purchase or sale readies the participant's account before journaling its source.
-        if (services.All(descriptor => descriptor.ServiceType != typeof(ICustodialRecipientPreparer)))
-            services.AddCustodialRecipientPreparation();
-
-        // Retired post-submit exchange rows are surfaced for operator recovery, never settled from the row.
+        // Retired post-submit exchange rows close only on an operator resolution that chain truth agrees with.
+        services.TryAddScoped<SurrealHoldCommandStore>();
+        services.TryAddScoped<IExchangeRetiredResolutionStore>(provider => provider.GetRequiredService<SurrealHoldCommandStore>());
         services.TryAddScoped<IExchangeSettlementReconciler, ExchangeSettlementReconciler>();
+        services.TryAddScoped<ExchangeRetiredRowService>();
 
         // Durable exchange settlement (see Services/Reserve/AGENTS.md §durable-exchange): the source journal shares the
         // hold command store instance, the coordinator advances exact saved wire, and the worker only observes,

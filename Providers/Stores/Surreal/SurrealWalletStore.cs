@@ -42,7 +42,7 @@ public sealed partial class SurrealWalletStore(ISurrealExecutor executor) : IWal
         if (wallet.Id == Guid.Empty) return AZOAResult<IWallet>.Failure("A wallet identity is required.");
         var response = await ExecuteMutationAsync(SurrealWriter.Upsert(ToPoco(wallet)), ct);
         response.EnsureAllOk();
-        return AZOAResult<IWallet>.Success(FromPoco(response.GetValues<GeneratedWallet>(2).Single()));
+        return AZOAResult<IWallet>.Success(FromPoco(response.GetValues<GeneratedWallet>(2).Single()), "Saved.");
     }
 
     /// <inheritdoc/>
@@ -66,9 +66,12 @@ public sealed partial class SurrealWalletStore(ISurrealExecutor executor) : IWal
     /// <inheritdoc/>
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        var response = await ExecuteMutationAsync(SurrealWriter.DeleteOnly<GeneratedWallet>(id.ToString("N")).Build(), ct);
-        response.EnsureAllOk();
-        return response[2].AffectedCount() == 1 ? AZOAResult<bool>.Success(true)
+        var existing = await executor.QuerySingleAsync<GeneratedWallet>(SurrealQuery<GeneratedWallet>.Key(id.ToString("N")), ct);
+        if (existing is null) return AZOAResult<bool>.Failure("Wallet not found.");
+        var owner = existing.UserId;
+        var response = await ExecuteMutationAsync(SurrealWriter.DeleteOnly<GeneratedWallet>(id.ToString("N"))
+            .Where(row => row.UserId == owner).Build(), ct);
+        return response[2].AffectedCount() == 1 ? AZOAResult<bool>.Success(true, "Deleted.")
             : AZOAResult<bool>.Failure("Wallet not found.");
     }
 

@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
@@ -11,12 +12,9 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
+using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
-
-// AZOA.WebAPI.Helpers also declares an Encoding (base32/base64 chain helpers), so the
-// bare name is ambiguous here. Every use below is UTF-8 byte counting/hashing.
-using Encoding = System.Text.Encoding;
 
 namespace AZOA.WebAPI.Services.Reserve;
 
@@ -80,7 +78,7 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             Id = recordId,
             Chain = reference.NormalizedChainType,
             Network = _providerFactory.DefaultNetwork.ToString(),
-            TenantId = reference.TenantIdText,
+            TenantId = SurrealLink.ToLink("user", reference.TenantIdText)!,
             ProjectReference = reference.NormalizedProjectReference,
             TreasuryAddress = address,
             DerivationVersion = ProjectTreasuryKeyDerivation.Version,
@@ -375,7 +373,7 @@ public sealed class ProjectTreasuryService : IProjectTreasury
             var expectedVersion = row.Version;
             row.Status = ProjectTreasuryStatus.Closed.ToString();
             row.ClosedAt = DateTimeOffset.UtcNow;
-            row.ClosedByUserId = request.ClosedByUserId.ToString("N");
+            row.ClosedByUserId = SurrealLink.ToLink("user", request.ClosedByUserId.ToString("N"));
             row.CloseReason = request.Reason.Trim();
             row.Version = expectedVersion + 1;
             row.UpdatedAt = DateTimeOffset.UtcNow;

@@ -113,6 +113,43 @@ instant that happens, and the node would learn about it by sending money that bo
 decision re-reads the account server-side, and the check is `payouts_enabled` specifically: not
 "details submitted", not "charges enabled".
 
+## §account-recovery — a setup stuck past the Stripe replay window (RV-L1-01, round 4)
+
+The admission key is fixed per person, so a claim whose Stripe create was lost and is now past
+`FiatHostedCreation.ReplayWindow` (or quarantined) would lock the person out of payouts forever. Exit:
+`POST /api/admin/fiat-payouts/accounts/{userId}/setup/resolve` (Operator + `RecentNodeOperatorSession`,
+financial limiter, reason 20–1000 chars) → `PayoutAccountService.ResolveStuckSetupAsync`:
+
+1. **Classify read-only.** Only a `Claimed`, unattached, begun claim past the window (or quarantined) is
+   operator work; anything else refuses. It never calls `BeginOrResume` (that would start a fence).
+2. **List Stripe.** Stripe cannot search accounts by metadata, so `ListConnectedAccountsCreatedAsync` pages
+   `/v1/accounts` over `[creation_started_at − 1h, creation_started_at + 23h + 1h]` (≤ 100 pages; more =
+   incomplete). An unreadable or incomplete listing refuses: it is not evidence of absence.
+3. **Found** (exactly one account whose `azoa_payout_claim` = the row id and `azoa_user_id` = the subject) →
+   verified with a fresh account read, then attached through `ReconcileAdmissionAsync` (version CAS, audit
+   entry with actor + reason). The next setup call resumes on it.
+4. **Absent**, and the window plus 5 minutes has passed (no original create or replay can still be in flight)
+   → `ReconcileAdmissionAsync` quarantines with the audit entry, then `ReleaseUnsentAdmissionAsync` (CAS on
+   `Claimed` + creation token + no provider id + version) abandons the row and renames its admission key. The
+   person's next setup claims a fresh row: new creation token, new Stripe idempotency key. Two accounts for
+   one claim, or a claim account naming another person, refuse.
+
+### Residuals closed (RV-L1 re-check R-1..R-3, round 4 fix-money2)
+
+- **R-1 environment.** The admission key is now `{userId:N}:payout-account:{test|live}`
+  (`PayoutAccountFlow.AdmissionKeyFor(subject, environment)`): one setup per person *per payment environment*.
+  A test↔live switch finds no row in the new environment, so it can neither resolve (list with the wrong
+  credentials, see "absent", release) nor reuse a claim whose account exists only in the other environment; it
+  opens a fresh setup there, which is correct because a test account can never receive live money. Legacy rows
+  keyed without the suffix are unreachable — acceptable under D-9 (fresh database before launch).
+- **R-2 timeout margin.** `FiatOptions.EffectiveRequestTimeout` clamps `RequestTimeoutSeconds` to 1..120 s, and the
+  absence margin is derived from it (`PayoutAccountService.AbsenceMargin`: max(5 min, 2 × timeout + 1 min)), so a
+  configured long timeout can never let an in-flight create land after the release.
+- **R-3 scale.** The listing reads up to 100 pages (10,000 accounts created in the 25 h window). Beyond that it
+  reports itself incomplete and the resolve **refuses** — fail-closed by design: an incomplete listing is not
+  evidence of absence, and attaching needs proof there is no second account. If Connect volume ever approaches
+  that, narrow the window per create attempt (record each attempt's start) rather than raising the cap.
+
 ## §collect-quantity — collect always takes the claimed quantity (round 4)
 
 `CollectUnitsAsync` once read `requestedQuantity ?? row.QuantityBaseUnits` with no
@@ -293,3 +330,226 @@ matching genesis block. Only finalized absence after the validity window or a
 positive on-chain failure may clear the expected preparation for a replacement.
 Ethereum/Solana module parity remains an active implementation subwave; unsupported
 modules refuse before any value movement, and this is not a completed parity claim.
+
+## §tenant-funded — D-8: a tenant-priced payout is paid from the tenant's own balance (round 4)
+
+Status: **built** (critic verdict ACCEPT-WITH-CHANGES; all seven required changes and the three owner
+decisions of 2026-10-17 are applied). Code: `TenantPayoutLedger.cs`, `TenantPayoutFunding.cs`,
+`TenantPayoutTopUp.cs`, `TenantPayoutSweep.cs`, `OffRampService.Funding.cs`, `TenantPayoutBalanceController.cs`;
+POCOs `Persistence/SurrealDb/Models/TenantPayoutFloat.cs`.
+
+**The defect (audit-2 H3).** A tenant-driven cash-out was priced by the tenant's own
+`tenant_price_schedule` and paid from the **node's** Stripe balance, so a tenant registering a generous
+price spent the operator's money.
+
+### Who pays = who priced (critic rule 5)
+
+`funding_tenant_id` (`fiat_payout`, `option<record<user>>`, immutable after the claim) is set from the
+**same schedule record** that priced the row (`OffRampContext.FundingTenantId`: the schedule's tenant when
+its scope is not `node`), never from the caller's tenant and never re-resolved. A tenant driver priced by
+the node fallback (`AllowNodeDefaultScheduleFallback`) is node-funded at the node price. At send,
+`RefuseUnfundedSendAsync` re-reads `row.PriceScheduleId`: a tenant-scoped price requires
+`funding_tenant_id` = that tenant **and** a `Reserved` debit for exactly this cash-out; a node-scoped price
+requires no funding tenant. Anything else parks — including a pre-D-8 tenant-priced row with no debit.
+
+### Funding source — a per-tenant top-up float
+
+- `tenant_payout_float` — one row per `(tenant, currency, environment)` (UNIQUE), counters `credited`,
+  `reserved`, `finalized`, `version`. **available = credited − finalized − reserved.**
+- `tenant_payout_credit` — one per settled top-up (record id from the checkout intent, UNIQUE
+  `intent_id`). Top-ups ride the existing Checkout rail with purpose `tenant-payout-float`
+  (allowlisted) and a **server-built admission key** `payout-float:{tenant}:{key}`; ordinary keys start
+  with a 32-hex subject, so a caller-chosen key can never forge one. The rail refuses that purpose
+  without such a key and refuses such a key on any other purpose; it gates top-ups on the tenant's KYB
+  (`KybCapability.PayoutPriceSchedule`) instead of personal KYC.
+- **Tenant binding (critic rule 6):** `TenantPayoutTopUpHandler` binds the tenant from the
+  server-recorded intent — the admission key's tenant must equal the hosted session's
+  `subject_user_id` — never from provider metadata. The on-ramp settlement handler ignores top-up
+  intents (it must never issue units for them).
+- **Owner decision (a): credit = `balance_transaction.net`.** The handler re-reads the session and the
+  payment's latest charge with its expanded balance transaction (`IReversalFactSource.GetPaymentBalanceAsync`);
+  the tenant bears Stripe's processing fee. Currency must match the charge or nothing is credited.
+- **Maturity (critic rule 6):** `available_at = settled + the rail's declared SettlementProfile window`,
+  and only when that window covers the dispute horizon (`Fiat:ChargebackWindowDays`). No declared window,
+  or a shorter one → `available_at` absent → the credit **never** matures on its own.
+- **Promotion and reversal (critic rule 3):** every credit change is `UPDATE credit WHERE version AND
+  state = $from` plus the float version CAS in one `BEGIN … COMMIT`, `THROW` if either matched nothing.
+  Promotion `Pending → Available` adds `net − reversed`; a later credit simply raises `credited`, so it
+  nets against a deficit first. `TenantPayoutTopUpReversalHandler` re-reads the charge (refunds return the
+  gross) and, when disputed, the dispute's balance impact (amount **plus dispute fee**, owner decision a),
+  and sets the credit's authoritative `reversed` total; on an Available credit `credited` moves by the
+  difference and may go negative. A negative float covers nothing and shows as `deficit` on the views.
+
+**Rejected alternative (critic rule 7, corrected): debiting the tenant's Stripe connected account.**
+Connect account debits pull from the connected account's **Stripe balance** (synchronous when that balance
+is available), not a bank pull. The rejection stands on: (1) eligibility — account debits are limited by
+connected-account type and region; (2) coupling — every pricing tenant would have to be onboarded as a
+Connect account under the platform's control, tying KYB to Connect onboarding; (3) coverage — the node
+would need a pre-funded tenant Stripe balance it cannot reserve against, so two concurrent payouts could
+both pass a balance read and one debit fail after its transfer left. The float puts the money on the
+platform first, so coverage is a local, synchronous compare-and-swap.
+
+### Coverage check — reserve before anything moves
+
+In `RequestAsync`, after the claim and availability check and **before** consuming lots or starting the
+saga: `TenantPayoutFunding.ReserveAsync` promotes matured credits, then one transaction creates
+`tenant_payout_debit:{payoutId}` (record id = payout id, UNIQUE `payout_id`) and raises `reserved` under
+the float's version CAS. Coverage is checked on the version it CASes (`available ≥ amount`); a lost CAS
+re-reads and re-checks. Insufficient → typed refusal `TENANT_PAYOUT_BALANCE_INSUFFICIENT`, the row is
+`Refused`, no unit moved and no Stripe call was made. No DB transaction spans a Stripe or chain call.
+
+### Exactly-once accounting
+
+| Transition | Authoritative trigger | Float effect |
+|---|---|---|
+| `Reserved → Finalized` | payout `Paid` (server-fetched bank payout), or a terminal row (`Paid`/`Returned`/`Refused`/`Reversed`) whose transfer exists | `reserved −= a−r`, `finalized += a−r` |
+| `Reserved → Released` | terminal no-money row (`Refused`/`Returned`) **and** no transfer ever existed | `reserved −= a` |
+| `reversed` raised (Reserved or Finalized) | Stripe's cumulative `amount_reversed` | the state's counter `−= delta` |
+
+- **Critic rule 1 — release only on proof of no transfer.** A row that never held a pay claim (and has
+  no transfer id) releases directly — e.g. every refusal inside `RequestAsync`. Any row that ever held a
+  pay claim releases only when a **complete** `ListTransfersByGroupAsync("azoa-payout-{id}")` page shows
+  zero transfers for it; an unreadable or incomplete page, or more than one transfer, leaves it Reserved.
+  Stripe 409 / `idempotency_error` maps to *busy* (ambiguous), never *refused*, so the send leg parks
+  instead of abandoning.
+- **Critic rule 2 — one reversal source in every state.** `reversed_minor_units = min(a, max(stored,
+  Stripe amount_reversed))`, applied in Reserved and Finalized. A partial failed-bank restitution
+  therefore releases exactly what Stripe returned, and a following `transfer.reversed` with the same
+  cumulative figure adds nothing. `Released` means only "no transfer ever existed".
+- **Invariant:** `balance = credits − finalized − reserved`, with `credits = Σ Available (net − reversed)`,
+  `finalized = Σ Finalized (a − r)`, `reserved = Σ Reserved (a − r)`. `ReadSnapshotAsync` reads the float
+  and its entries in **one transaction**; `DescribeAsync` lists **every** (currency, environment) float
+  with counters, recomputed sums, `consistent`, pending credits and a separate `deficit`. `consistent` is also
+  false while any debit has been `Reserved` longer than `TenantPayoutFunding.StrandedReservedAfter` (7 days);
+  the view carries `strandedReservedCount` and `oldestReservedAt` (RV-L3 M4).
+- **Evidence = group membership (RV-L3 L2).** Every transfer in group `azoa-payout-{id}` counts; one whose
+  metadata names another cash-out makes the evidence unresolvable (sync → Retry, resolution → refused) rather
+  than being filtered out as "no transfer".
+- **Top-up reversals never drop (RV-L3 M3).** A refund/dispute of a top-up whose credit is not written yet
+  answers `Failed` (the inbox redelivers) instead of `Ignored`; and the credit write itself reads the charge's
+  cumulative refund + dispute state (`PaymentBalanceFacts`) and seeds `reversed`, converging an existing credit
+  through `ApplyCreditReversalAsync`. The credit matures from the charge's `created` time (L3), and promotion
+  filters matured credits by float in the query.
+- Triggers: saga steps (`SettleAsync`, bank payout outcomes, operator resolutions, failed-bank recovery)
+  and `PayoutReversalEventHandler` (fails the event on a lost sync so it is redelivered or swept).
+
+### Sweep (critic rule 4)
+
+`TenantPayoutSweepWorker` (1 min) promotes matured credits and walks `Reserved` debits older than 30 min:
+the walk is cursor-paged over EVERY stale Reserved debit (`created_at ≥ cursor`, 100 per page, up to 100
+pages a pass; RV-L3 M4 — the old oldest-100 read starved newer debits behind long-lived BankPending ones);
+a terminal payout (`Paid`/`Refused`/`Returned`/`Reversed`) is re-synced (repairs a lost transition write,
+e.g. a `RefuseAsync` release that failed); a payout still `Requested` an hour after its claim with **no
+collect attempt** (crash between reserve and `StartSagaAsync`) has its collect claim fenced
+(claimed + failed, so a late saga can never move units) and is abandoned, which releases the debit.
+
+### Owner decision (b) — tenant-funded collects return units to the tenant
+
+The collect leg sets `collect_partition = tenant-payout:{tenant}` and calls
+`IPlatformReserve.ReattributeReturnAsync` (see `Services/Reserve/AGENTS.md` §reattribution): the on-ramp
+partition returns the units and gives up the same budget; the tenant partition's budget grows by it.
+Returning units for such a cash-out draws `Issue` from that same partition.
+
+### Owner decision (c) — no cross-scope arbitrage
+
+`on_ramp_lot.pricing_scope_key` records the scope whose schedule priced each lot. A **node-funded**
+cash-out whose FIFO plan draws a lot priced by a tenant scope is refused when it would pay more per unit
+than that lot was sold for (`node rate < lot rate`, in units per minor unit). Tenant-funded exits are
+uncapped: the tenant pays. Units of no matured lot of known scope are capped too — see §arbitrage-cap.
+
+### §arbitrage-cap — units the FIFO plan cannot attribute (RV-L3 H2, round 4)
+
+**The hole.** The platform unit is not `DefaultFrozen`, so a person can move units on chain to an account
+that has no lots. Before this change the cap checked only matured lots in the plan: lot-less ("unaged")
+units were never capped, and lots with a null `pricing_scope_key` (legacy) were skipped. Buy cheap at
+tenant T's price, move the units to account V, cash out node-funded at the node price: the node pays the
+gap on every unit.
+
+**Rule (implemented in `OffRampService.Funding.cs`).** For a node-funded exit:
+
+1. A drawn lot of a tenant scope caps at its own sold rate (unchanged).
+2. A drawn lot of node scope is uncapped (the node sold it at its own price).
+3. **Units without a matured lot of known scope** — the plan's unaged remainder (transferred-in or earned
+   units) and drawn lots whose scope is null — cap at the **cross-scope floor**: the highest
+   units-per-minor-unit rate (= the lowest money per unit) any non-node scope (tenant or null) sold this
+   unit at, for the same environment, network, chain, asset and currency, among lots created within the
+   lot maturity window (`Fiat:ChargebackWindowDays`, default 120 days). `IOnRampLotLedger.ListSoldSinceAsync`.
+4. **Fail closed.** If the sold-lot record cannot be read, or any lot in the window carries an unreadable
+   rate, the exit is refused (`SoldPriceUnknownRefusal`) — "unknown price" never means "no cap".
+5. If no non-node scope sold the unit within the window, the floor is vacuous and the exit proceeds: there
+   is no cheaper price inside the window to arbitrage, and refusing would block every earned unit on a node
+   whose tenants have not sold recently without closing anything.
+
+**Trade-off (owner-confirmable).** Rule 3 caps honestly earned or gifted units at the cheapest recent tenant
+price: if any tenant sold cheaper than the node within 120 days, a person cashing out earned units node-funded
+is refused above that price (they can still exit tenant-funded through that tenant, or at a lower amount).
+**Residuals:** a tenant sale older than the window is not in the floor (raise the window to tighten it);
+the floor read is an unindexed scan of lots created in the window per node-funded cash-out with unaged units
+(add an `issued_at` index if the lot table grows); a person can still route units through a transfer to defeat
+the source-aged chargeback hold (pre-existing, separate from pricing).
+
+**D-10 (owner, 2026-10-17) — provenance follows the units: DEFERRED until after live QA.** The decided target
+replaces rule 3's node-wide floor for platform-moved units with per-unit provenance (scope + sold price inherited
+on every platform transfer, lowest-priced lots first; chain-balance reconciliation before any provenance-dependent
+flow, with units no longer held → the flow is refused with a typed outcome, never paid; units arriving by a raw
+on-chain transfer keep this floor). None of it is wired yet, so **the floor rule above remains in force unchanged**
+— nothing half-built can pay. Design notes and the transfer-path inventory are in
+`conductor/tracks/platform-stub-closeout_20261015/round4-lane-fix-money2.md` §Deferred.
+
+### Fixtures (unit, `OffRampTests.TenantFunded.cs`, `TenantPayoutTopUpTests.cs`, over a ledger fake with the production commit contract; the Surreal store was probed against SurrealDB 3.1.4)
+
+Two concurrent reservations against a balance covering one; uncovered request refused with the typed
+code before anything moves; reservation racing a top-up promotion; Paid → Finalized then a partial and a
+duplicate `transfer.reversed`; crash between reserve and send → one transfer; abandon before send →
+released once; 409 at send keeps Reserved and parks; partial restitution releases only the recovered
+amount and a repeat adds nothing; credit promotion racing its reversal; crash after reserve before the
+saga → sweep closes and fences; pre-D-8 tenant-priced row with no debit parks; tenant driver with node
+fallback → node-funded at node price; arbitrage cap (theory); top-up credited net once, never matures
+without a window, subject/key mismatch credits nothing, refund reverses by the gross. Mutation-checked:
+removing the coverage check and the `max()` reversal together turns four of them red.
+
+## §operator-resolution — audited exits for parked and reversed cash-outs (round 4)
+
+`POST /api/admin/fiat-payouts/{id}/resolve` (Operator policy, financial limiter) with
+`{ "resolution": "record-paid" | "return-units", "reason": "…" }` → `OffRampService.ResolveForOperatorAsync`
+(`OffRampService.Resolution.cs`). Only `NeedsOperator` and `Reversed` rows qualify. Evidence is never
+the operator's word:
+
+- **Stripe transfer record:** every cash-out transfer is created in transfer group
+  `azoa-payout-{payoutId}`; the resolution lists that group (`ListTransfersByGroupAsync`). An
+  incomplete page, more than one transfer, or a transfer whose livemode/amount/currency/destination
+  differ from the row refuses with nothing changed.
+- **record-paid** (`NeedsOperator` only): requires exactly one unreversed matching transfer. With a
+  bank payout on the row, its server-fetched status decides: `paid` → `Paid`; `failed`/`canceled` →
+  refused (use `/recover`); otherwise → `BankPending`, where the bank-payout lifecycle continues.
+- **Fences (RV-L3 M1).** return-units on `NeedsOperator` first fences the pay leg: an absent pay claim is
+  claimed and failed (`OperatorFenceReason`), so a send step that read the row earlier loses the claim and
+  sends nothing; an InProgress pay claim younger than `PayClaimInFlightHorizon` (Stripe key retention + 2 h),
+  a Completed one with no listed transfer, or an ambiguous one refuses. An absent collect claim is fenced the
+  same way before "nothing was collected" is concluded. Fences run after the transfer-group read; a transfer
+  created in between leaves its claim InProgress/Completed, which refuses.
+- **return-units** on `NeedsOperator`: refused while any transfer exists. The collect leg decides what
+  is returned: claim absent or definitively failed → nothing moved, lots released, `Refused`;
+  completed → the units are returned through the prepared-transfer path (`ReturnUnitsAsync`, keyed and
+  idempotent), lots released, `Returned`; ambiguous → the transaction id recorded with the ambiguity
+  marker (` tx=`) is re-read on chain (`GetTransactionConfirmationAsync`): confirmed = collected,
+  failed on chain = not collected, anything else refuses. An InProgress collect claim (crash with no
+  recorded transaction) still refuses: only a by-hand chain reconciliation can decide it.
+- **return-units** on `Reversed`: reinstates `units_owed_base_units` once Stripe's `amount_reversed`
+  covers the recorded reversal, under key `fiat-off-ramp:reinstate-{reversedMinorUnits}:{id}` so a
+  later, larger reversal reinstates only its own increment. Refused while a failed-bank recovery owns
+  the row.
+
+Every resolution appends `{actor, action, reason, at, priorStatus, transferId}` to
+`recovery_audit_json` through `PayoutAudit.Append`, which keeps earlier entries of other shapes
+verbatim (the failed-bank recovery writes through the same helper).
+
+## §stale-pay-claim — a pay claim left InProgress by a crash (round 4)
+
+The pay leg claims `fiat-off-ramp:pay:{id}` and creates the Connect transfer under the stable Stripe
+key `azoa-payout-{id}`. A crash between the two left the claim InProgress forever ("already in
+progress"). Now a claim InProgress for at least 5 minutes and less than 23 hours (Stripe keeps keys
+≥ 24 h) is replayed under the same Stripe key: Stripe returns the transfer the lost attempt created,
+or creates the one it never sent — never a second. A concurrent duplicate gets Stripe's 409 and parks
+for the operator resolution above. Past 23 hours the claim stays put and only the operator resolution
+(transfer-group evidence) can move the row.

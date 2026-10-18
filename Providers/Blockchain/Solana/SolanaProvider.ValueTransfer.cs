@@ -14,35 +14,43 @@ public partial class SolanaProvider
     /// <inheritdoc/>
     public async Task<AZOAResult<PreparedValueTransfer>> PrepareValueTransferAsync(ValueTransferIntent intent, CancellationToken ct)
     {
+        var planned = await PlanValueMessageAsync(intent, ct);
+        if (planned.IsError) return AZOAResult<PreparedValueTransfer>.Failure(planned.Message);
+        var (plan, message) = planned.Result;
+        var signed = await SignDurableAsync(message, new Dictionary<string, SigningContext> { [intent.Sender] = intent.SigningContext }, ct);
+        if (signed.IsError || signed.Result is null) return AZOAResult<PreparedValueTransfer>.Failure(signed.Message);
+        var txid = Encoders.Base58.EncodeData(Transaction.Deserialize(signed.Result).Signatures[0].Signature);
+        return AZOAResult<PreparedValueTransfer>.Success(new(txid, Convert.ToBase64String(signed.Result), "solana:" + plan.Genesis, intent, JsonSerializer.Serialize(plan)));
+    }
+
+    /// <summary>Validates the accounts and compiles the exact value-transfer message both custody and client signing sign.</summary>
+    private async Task<AZOAResult<(DurableSolanaPlan Plan, byte[] Message)>> PlanValueMessageAsync(ValueTransferIntent intent, CancellationToken ct)
+    {
         _ = RpcHttpClient;
-        if (!ValidValueIntent(intent)) return AZOAResult<PreparedValueTransfer>.Failure("Invalid Solana value-transfer intent.");
+        if (!ValidValueIntent(intent)) return AZOAResult<(DurableSolanaPlan, byte[])>.Failure("Invalid Solana value-transfer intent.");
         var mint = intent.AssetId == "SOL" ? null : new PublicKey(intent.AssetId);
         byte decimals = 9;
         var createDestination = false;
         if (mint is not null)
         {
             var mintAccount = await ReadParsedAccountAsync(mint.Key, ct);
-            if (mintAccount is null) return AZOAResult<PreparedValueTransfer>.Failure("Solana token mint does not exist.");
+            if (mintAccount is null) return AZOAResult<(DurableSolanaPlan, byte[])>.Failure("Solana token mint does not exist.");
             var info = TokenInfo(mintAccount.Value, "mint");
             decimals = info.GetProperty("decimals").GetByte();
-            if (!info.GetProperty("isInitialized").GetBoolean()) return AZOAResult<PreparedValueTransfer>.Failure("Solana mint is uninitialized.");
+            if (!info.GetProperty("isInitialized").GetBoolean()) return AZOAResult<(DurableSolanaPlan, byte[])>.Failure("Solana mint is uninitialized.");
             var source = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(new PublicKey(intent.Sender), mint);
             var sourceAccount = await ReadParsedAccountAsync(source.Key, ct);
             if (sourceAccount is null || !ValidHolding(sourceAccount.Value, intent.Sender, mint.Key, false, out var amount)
                 || amount < ulong.Parse(intent.QuantityBaseUnits, System.Globalization.CultureInfo.InvariantCulture))
-                return AZOAResult<PreparedValueTransfer>.Failure("Solana source token account is unavailable or insufficient.");
+                return AZOAResult<(DurableSolanaPlan, byte[])>.Failure("Solana source token account is unavailable or insufficient.");
             var destination = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(new PublicKey(intent.Recipient), mint);
             var destinationAccount = await ReadParsedAccountAsync(destination.Key, ct);
             createDestination = destinationAccount is null;
             if (destinationAccount is not null && !ValidHolding(destinationAccount.Value, intent.Recipient, mint.Key, false, out _))
-                return AZOAResult<PreparedValueTransfer>.Failure("Solana destination token account is incompatible.");
+                return AZOAResult<(DurableSolanaPlan, byte[])>.Failure("Solana destination token account is incompatible.");
         }
         var plan = await NewPlanAsync(mint?.Key ?? "SOL", 0, decimals, createDestination, IntentDigest(intent), ct);
-        var message = CompileDurable(plan, new PublicKey(intent.Sender), ValueInstructions(intent, plan));
-        var signed = await SignDurableAsync(message, new Dictionary<string, SigningContext> { [intent.Sender] = intent.SigningContext }, ct);
-        if (signed.IsError || signed.Result is null) return AZOAResult<PreparedValueTransfer>.Failure(signed.Message);
-        var txid = Encoders.Base58.EncodeData(Transaction.Deserialize(signed.Result).Signatures[0].Signature);
-        return AZOAResult<PreparedValueTransfer>.Success(new(txid, Convert.ToBase64String(signed.Result), "solana:" + plan.Genesis, intent, JsonSerializer.Serialize(plan)));
+        return AZOAResult<(DurableSolanaPlan, byte[])>.Success((plan, CompileDurable(plan, new PublicKey(intent.Sender), ValueInstructions(intent, plan))));
     }
 
     /// <inheritdoc/>

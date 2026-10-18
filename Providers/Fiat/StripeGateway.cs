@@ -200,6 +200,12 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
         => SendAsync(credentials, HttpMethod.Get, "/v1/refunds/" + Uri.EscapeDataString(refundId),
             null, null, "read a refund", ct, StripeRefund.Parse);
 
+    /// <inheritdoc/>
+    public Task<AZOAResult<StripeRefundList>> ListRefundsForPaymentAsync(StripeCredentials credentials, string paymentIntentId, CancellationToken ct = default)
+        => SendAsync(credentials, HttpMethod.Get,
+            "/v1/refunds?limit=100&payment_intent=" + Uri.EscapeDataString(paymentIntentId),
+            null, null, "list a payment's refunds", ct, StripeRefundList.Parse);
+
     private async Task<AZOAResult<T>> SendAsync<T>(
         StripeCredentials credentials,
         HttpMethod method,

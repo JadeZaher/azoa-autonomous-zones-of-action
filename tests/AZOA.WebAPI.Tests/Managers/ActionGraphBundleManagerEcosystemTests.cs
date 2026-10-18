@@ -77,7 +77,7 @@ public class ActionGraphBundleManagerEcosystemTests
     }
 
     [Fact]
-    public async Task AddDappSeries_ForeignActionGraphBundle_ReturnsForbidden_NoWrite()
+    public async Task AddDappSeries_ForeignPrivateActionGraphBundle_ReturnsNotFound_NoWrite()
     {
         var owner = Guid.NewGuid();
         var attacker = Guid.NewGuid();
@@ -88,12 +88,12 @@ public class ActionGraphBundleManagerEcosystemTests
         var result = await _manager.AddDappSeriesAsync(bundle.Id, req, attacker);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.Forbidden);
+        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.NotFound);
         _ecosystemStore.Verify(e => e.UpsertNodeAsync(It.IsAny<PocoEcosystemNode>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task AddDappSeries_ForeignSeries_ReturnsForbidden()
+    public async Task AddDappSeries_ForeignSeries_ReturnsNotFound()
     {
         var user = Guid.NewGuid();
         var otherUser = Guid.NewGuid();
@@ -107,7 +107,7 @@ public class ActionGraphBundleManagerEcosystemTests
         var result = await _manager.AddDappSeriesAsync(bundle.Id, req, user);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.Forbidden);
+        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.NotFound);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class ActionGraphBundleManagerEcosystemTests
     }
 
     [Fact]
-    public async Task GetEcosystem_ForeignActionGraphBundle_ReturnsForbidden()
+    public async Task GetEcosystem_ForeignPrivateActionGraphBundle_ReturnsNotFound()
     {
         var owner = Guid.NewGuid();
         var attacker = Guid.NewGuid();
@@ -192,6 +192,6 @@ public class ActionGraphBundleManagerEcosystemTests
         var result = await _manager.GetEcosystemAsync(bundle.Id, attacker);
 
         result.IsError.Should().BeTrue();
-        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.Forbidden);
+        result.Message.Should().StartWith(ActionGraphBundleAuthorizationError.NotFound);
     }
 }

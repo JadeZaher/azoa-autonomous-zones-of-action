@@ -60,6 +60,8 @@ DEFINE FIELD IF NOT EXISTS received_at ON TABLE fiat_event TYPE datetime
     DEFAULT time::now()
     READONLY;
 DEFINE FIELD IF NOT EXISTS applied_at ON TABLE fiat_event TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS provider_account_id ON TABLE fiat_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS provider_object_id ON TABLE fiat_event TYPE option<string>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

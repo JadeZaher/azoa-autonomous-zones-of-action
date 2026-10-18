@@ -26,9 +26,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public long? DestinationRevision { get; set; }
         public string? DestinationUrl { get; set; }
         public string? BodyJson { get; set; }
-        [Default("0")] public long Version { get; set; }
-        [Default("0")] public long RetryGeneration { get; set; }
-        [Default("0")] public long CycleAttemptCount { get; set; }
+        [Default("ALWAYS 0")] public long Version { get; set; }
+        [Default("ALWAYS 0")] public long RetryGeneration { get; set; }
+        [Default("ALWAYS 0")] public long CycleAttemptCount { get; set; }
         public string? LeaseId { get; set; }
         public DateTimeOffset? LeaseExpiresAt { get; set; }
         public long? AttemptSecretRevision { get; set; }

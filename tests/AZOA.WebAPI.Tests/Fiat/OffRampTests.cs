@@ -36,7 +36,7 @@ using Xunit;
 
 namespace AZOA.WebAPI.Tests.Fiat;
 
-public class OffRampTests
+public partial class OffRampTests
 {
     private const string ChainType = "Algorand";
     private const string AssetId = "1001";
@@ -284,6 +284,28 @@ public class OffRampTests
         second.IsError.Should().BeFalse();
         second.Result!.Id.Should().Be(first.Result!.Id);
         harness.Payouts.Rows.Should().ContainSingle();
+        harness.SagasStarted.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Another_driver_reusing_a_request_key_gets_a_conflict_and_never_sees_the_cash_out()
+    {
+        // F-H8: the replay is honoured only for the tenant (or the person) that drove the cash-out.
+        var harness = new Harness();
+        var tenantOne = Guid.NewGuid();
+        var tenantTwo = Guid.NewGuid();
+
+        var original = await harness.RequestAsync(amountMinorUnits: 500, tenantId: tenantOne);
+        var otherTenant = await harness.RequestAsync(amountMinorUnits: 500, tenantId: tenantTwo);
+        var firstParty = await harness.RequestAsync(amountMinorUnits: 500);
+        var otherHistory = await harness.Service.ListForUserAsync(SubjectUserId, 25, tenantTwo);
+        var ownHistory = await harness.Service.ListForUserAsync(SubjectUserId, 25, tenantOne);
+
+        original.IsError.Should().BeFalse();
+        otherTenant.Code.Should().Be(AzoaErrorCodes.Conflict);
+        firstParty.Code.Should().Be(AzoaErrorCodes.Conflict);
+        otherHistory.Result.Should().BeEmpty();
+        ownHistory.Result.Should().ContainSingle().Which.Id.Should().Be(original.Result!.Id);
         harness.SagasStarted.Should().Be(1);
     }
 
@@ -626,6 +648,8 @@ public class OffRampTests
         GrossQuantityBaseUnits = quantity,
         ConsumedBaseUnits = consumed,
         CurrencyCode = "USD",
+        PricingScopeKey = PriceScheduleScope.Node,
+        UnitsPerMinorUnit = "100",
         Status = OnRampLotStatuses.Issued,
         IssuedAt = windowEnds?.AddDays(-120) ?? Now.AddDays(-1),
         ReversalWindowEnds = windowEnds,
@@ -675,6 +699,73 @@ public class OffRampTests
 
         public int SagasStarted { get; private set; }
 
+        /// <summary>The clock every collaborator reads; tests may move it forward.</summary>
+        public FixedClock Clock { get; } = new(Now);
+
+        /// <summary>D-8: the tenant whose schedule prices requests; null = the node's own schedule.</summary>
+        public Guid? PricingTenant { get; set; }
+
+        /// <summary>Units per minor unit of the node schedule (the tenant schedule uses <see cref="SettledBaseRate"/>).</summary>
+        public decimal NodeRate { get; set; } = SettledBaseRate;
+
+        /// <summary>When true a tenant-scoped request with no tenant schedule falls back to the node's.</summary>
+        public bool NodeFallback { get; set; } = true;
+
+        /// <summary>
+        /// Stripe answers the funding transfer with an idempotency conflict (409 → busy): a concurrent request under
+        /// the same key created the transfer, so the transfer group lists it.
+        /// </summary>
+        public bool TransferConflict { get; set; }
+
+        /// <summary>The process dies right after Stripe created the transfer, before the pay claim completes.</summary>
+        public bool CrashAfterTransferCreated { get; set; }
+
+        /// <summary>The transfer group also holds a transfer whose metadata names another cash-out (L2).</summary>
+        public bool ForeignGroupTransfer { get; set; }
+
+        /// <summary>The collect broadcast was sent and not acknowledged: an outcome-unknown provider error (M2).</summary>
+        public bool TransferOutcomeUnknown { get; set; }
+
+        /// <summary>What the chain says about a recorded transaction id.</summary>
+        public ChainConfirmation ChainVerdict { get; set; } = ChainConfirmation.Unknown;
+
+        /// <summary>Transfers Stripe actually created, one per idempotency key (Stripe's key contract).</summary>
+        public IReadOnlyCollection<StripeTransferRequest> CreatedTransfers => _created.Values;
+        private readonly Dictionary<string, StripeTransferRequest> _created = new(StringComparer.Ordinal);
+
+        /// <summary>Stripe's cumulative <c>amount_reversed</c> on the cash-out transfer.</summary>
+        public long TransferReversedMinorUnits { get; set; }
+
+        /// <summary>The bank payout status Stripe reports.</summary>
+        public string BankPayoutStatus { get; set; } = "paid";
+
+        public InMemoryTenantPayoutLedger TenantLedger => _tenantLedger ??= new InMemoryTenantPayoutLedger(Clock);
+        private InMemoryTenantPayoutLedger? _tenantLedger;
+
+        public TenantPayoutFunding Funding => _funding ??= new TenantPayoutFunding(
+            TenantLedger, Idempotency, ConnectGateway, BuildFiatOptions(), Clock, NullLogger<TenantPayoutFunding>.Instance);
+        private TenantPayoutFunding? _funding;
+
+        public List<(ReserveDrawRequest Draw, string To)> Reattributions { get; } = new();
+
+        private IStripeConnectGateway ConnectGateway => _connect ??= BuildConnect().Object;
+        private IStripeConnectGateway? _connect;
+
+        public TenantPayoutSweep BuildSweep() => new(TenantLedger, Funding, Payouts, Service, Idempotency, Clock,
+            NullLogger<TenantPayoutSweep>.Instance);
+
+        /// <summary>The KYB gate (D-6); approves by default, as an APPROVED kyb_verification row would.</summary>
+        public Mock<AZOA.WebAPI.Services.Kyb.IKybGate> Kyb { get; } = ApprovingKyb();
+
+        private static Mock<AZOA.WebAPI.Services.Kyb.IKybGate> ApprovingKyb()
+        {
+            var gate = new Mock<AZOA.WebAPI.Services.Kyb.IKybGate>();
+            gate.Setup(g => g.RequireVerifiedTenantAsync(It.IsAny<Guid>(),
+                    It.IsAny<AZOA.WebAPI.Services.Kyb.KybCapability>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<bool>.Success(true));
+            return gate;
+        }
+
         /// <summary>Built on first use: the object initialiser runs AFTER the constructor.</summary>
         public OffRampService Service => _service ??= BuildService();
 
@@ -705,8 +796,9 @@ public class OffRampTests
                 Payouts,
                 Reversals,
                 connect.Object,
+                Funding,
                 NullLogger<PayoutReversalEventHandler>.Instance,
-                new FixedClock(Now));
+                Clock);
         }
 
         public FiatEventContext ReversalContext(string payoutId) => new(
@@ -742,39 +834,8 @@ public class OffRampTests
             return fiat;
         }
 
-        private OffRampService BuildService()
+        private Mock<IStripeConnectGateway> BuildConnect()
         {
-            var options = new OffRampOptions
-            {
-                Enabled = true,
-                OnboardingReturnUrl = "https://app.example/payouts/done",
-                OnboardingRefreshUrl = "https://app.example/payouts/retry",
-            };
-
-            var schedules = new Mock<ITenantPriceScheduleStore>();
-            schedules
-                .Setup(s => s.GetLatestAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new AZOAResult<RegisteredPriceSchedule?>
-                {
-                    Result = new RegisteredPriceSchedule(
-                        "tenant_price_schedule:node", PriceScheduleScope.Node, null, ChainType, AssetId,
-                        "USD", 1, SettledBaseRate, "test", null, PriceScheduleStatuses.Active,
-                        Now.AddDays(-1), Now.AddDays(-1)),
-                });
-
-            var accounts = new Mock<IPayoutAccountService>();
-            accounts
-                .Setup(a => a.RequireReadyAccountAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() => AccountReady
-                    ? AZOAResult<string>.Success(ConnectedAccountId, "Success")
-                    : AZOAResult<string>.FailureWithCode(
-                        PayoutAccountService.SetupNeededMessage, AzoaErrorCodes.InvalidRequest));
-            accounts
-                .Setup(a => a.GetStatusAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() => AZOAResult<PayoutAccountStatus>.Success(
-                    new PayoutAccountStatus(true, true, AccountReady, true, 0, null, null, "ok"), "Success"));
-
             var connect = new Mock<IStripeConnectGateway>();
             connect
                 .Setup(c => c.CreatePayoutTransferAsync(
@@ -783,9 +844,17 @@ public class OffRampTests
                 .ReturnsAsync((StripeCredentials _, StripeTransferRequest request, CancellationToken __) =>
                 {
                     SentTransfers.Add(request);
-                    return TransferRefused
-                        ? FiatPayoutErrors.RailRefused<StripeTransfer>("corr")
-                        : AZOAResult<StripeTransfer>.Success(new StripeTransfer
+                    if (TransferRefused)
+                        return FiatPayoutErrors.RailRefused<StripeTransfer>("corr");
+                    _created.TryAdd(request.IdempotencyKey, request);
+                    if (TransferConflict)
+                        return FiatPayoutErrors.RailBusy<StripeTransfer>("corr");
+                    if (CrashAfterTransferCreated)
+                    {
+                        CrashAfterTransferCreated = false;
+                        throw new InvalidOperationException("The process stopped after Stripe created the transfer.");
+                    }
+                    return AZOAResult<StripeTransfer>.Success(new StripeTransfer
                         {
                             TransferId = "tr_test_1",
                             AmountMinorUnits = request.AmountMinorUnits,
@@ -812,9 +881,77 @@ public class OffRampTests
                 .ReturnsAsync((StripeCredentials _, StripeTransferRequest request, CancellationToken __) =>
                     AZOAResult<StripeBankPayout>.Success(new StripeBankPayout
                     {
-                        PayoutId = "po_test_1", IntentId = request.PayoutId, Status = "paid",
+                        PayoutId = "po_test_1", IntentId = request.PayoutId, Status = BankPayoutStatus,
                         AmountMinorUnits = request.AmountMinorUnits, Currency = request.Currency,
                     }));
+
+            connect.Setup(c => c.ListTransfersByGroupAsync(It.IsAny<StripeCredentials>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((StripeCredentials _, string group, CancellationToken _) =>
+                    AZOAResult<StripeTransferList>.Success(new StripeTransferList(_created.Values
+                        .Where(sent => OffRampService.TransferGroupFor(sent.PayoutId) == group)
+                        .Select(sent => new StripeTransfer
+                        {
+                            TransferId = "tr_test_1", IntentId = sent.PayoutId, AmountMinorUnits = sent.AmountMinorUnits,
+                            AmountReversedMinorUnits = TransferReversedMinorUnits, Currency = sent.Currency,
+                            Destination = sent.ConnectedAccountId, Livemode = false,
+                        })
+                        .Concat(ForeignGroupTransfer
+                            ? [new StripeTransfer { TransferId = "tr_foreign", IntentId = "someone-else", AmountMinorUnits = 500,
+                                Currency = "usd", Destination = ConnectedAccountId }]
+                            : Array.Empty<StripeTransfer>())
+                        .ToList(), HasMore: false)));
+            return connect;
+        }
+
+        private OffRampService BuildService()
+        {
+            var options = new OffRampOptions
+            {
+                Enabled = true,
+                OnboardingReturnUrl = "https://app.example/payouts/done",
+                OnboardingRefreshUrl = "https://app.example/payouts/retry",
+            };
+
+            var nodeSchedule = new RegisteredPriceSchedule(
+                "nodeschedule", PriceScheduleScope.Node, null, ChainType, AssetId,
+                "USD", 1, NodeRate, "test", null, PriceScheduleStatuses.Active, Now.AddDays(-1), Now.AddDays(-1));
+            RegisteredPriceSchedule? TenantSchedule(string scope) => PricingTenant is { } tenant && scope == tenant.ToString("N")
+                ? new RegisteredPriceSchedule("tenantschedule", scope, tenant, ChainType, AssetId,
+                    "USD", 1, SettledBaseRate, "test", null, PriceScheduleStatuses.Active, Now.AddDays(-1), Now.AddDays(-1))
+                : null;
+            var schedules = new Mock<ITenantPriceScheduleStore>();
+            schedules
+                .Setup(s => s.GetLatestAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string scope, string _, string _, CancellationToken _) => new AZOAResult<RegisteredPriceSchedule?>
+                {
+                    Result = PriceScheduleScope.IsNode(scope) ? nodeSchedule : TenantSchedule(scope),
+                });
+            schedules
+                .Setup(s => s.GetVersionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string id, CancellationToken _) => new AZOAResult<RegisteredPriceSchedule?>
+                {
+                    Result = SurrealForge.Client.SurrealLink.FromLink(id) switch
+                    {
+                        "nodeschedule" => nodeSchedule,
+                        "tenantschedule" when PricingTenant is { } tenant => TenantSchedule(tenant.ToString("N")),
+                        _ => null,
+                    },
+                });
+
+            var accounts = new Mock<IPayoutAccountService>();
+            accounts
+                .Setup(a => a.RequireReadyAccountAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => AccountReady
+                    ? AZOAResult<string>.Success(ConnectedAccountId, "Success")
+                    : AZOAResult<string>.FailureWithCode(
+                        PayoutAccountService.SetupNeededMessage, AzoaErrorCodes.InvalidRequest));
+            accounts
+                .Setup(a => a.GetStatusAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => AZOAResult<PayoutAccountStatus>.Success(
+                    new PayoutAccountStatus(true, true, AccountReady, true, 0, null, null, "ok"), "Success"));
+
+            var connect = Mock.Get(ConnectGateway);
 
             var platformToken = new Mock<IPlatformTokenGenesis>();
             platformToken
@@ -842,6 +979,15 @@ public class OffRampTests
                         request.AssetId, request.Partition, request.Kind, request.Amount,
                         ReservePartitionCounters.Declaring(new BigInteger(1_000_000)), 1, false));
                 });
+            reserve
+                .Setup(r => r.ReattributeReturnAsync(It.IsAny<ReserveDrawRequest>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((ReserveDrawRequest request, string to, CancellationToken _) =>
+                {
+                    Reattributions.Add((request, to));
+                    return AZOAResult<ReserveDrawOutcome>.Success(new ReserveDrawOutcome(
+                        request.AssetId, to, request.Kind, request.Amount,
+                        ReservePartitionCounters.Declaring(request.Amount), 1, false));
+                });
 
             var asa = new Mock<IAlgorandASAModule>();
             asa
@@ -866,6 +1012,9 @@ public class OffRampTests
 
                     if (TransferFails)
                         return AZOAResult<string>.Failure("The node could not be reached.");
+                    if (TransferOutcomeUnknown)
+                        return AZOAResult<string>.Failure(
+                            "Broadcast failed to transfer (tx AMBIGTX); reconcile against chain truth before re-sending: timeout");
 
                     return TransferConfirms
                         ? AZOAResult<string>.Success("MOVETX", "confirmed in round 42")
@@ -888,10 +1037,16 @@ public class OffRampTests
                     return Task.CompletedTask;
                 });
             preparedModule.Setup(m => m.ObserveValueTransferAsync(It.IsAny<PreparedValueTransfer>(), It.IsAny<CancellationToken>()))
+                // A transaction never submitted is not observable on chain (Unknown), which is what
+                // makes the service submit it; a submitted one is Confirmed or still Pending.
                 .ReturnsAsync((PreparedValueTransfer prepared, CancellationToken _) => AZOAResult<ChainConfirmation>.Success(
-                    submitted.Contains(prepared.TransactionId) && TransferConfirms ? ChainConfirmation.Confirmed : ChainConfirmation.Pending));
+                    !submitted.Contains(prepared.TransactionId) ? ChainConfirmation.Unknown
+                    : TransferConfirms ? ChainConfirmation.Confirmed : ChainConfirmation.Pending));
             provider.Setup(p => p.TryGetModule<IValueTransferTransactionModule>(out It.Ref<IValueTransferTransactionModule?>.IsAny))
                 .Returns((out IValueTransferTransactionModule? valueModule) => { valueModule = preparedModule.Object; return true; });
+
+            provider.Setup(p => p.GetTransactionConfirmationAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => AZOAResult<ChainConfirmation>.Success(ChainVerdict));
 
             var factory = new Mock<IBlockchainProviderFactory>();
             factory
@@ -933,7 +1088,7 @@ public class OffRampTests
             return new OffRampService(
                 BuildFiatOptions(),
                 options,
-                new OnRampOptions(),
+                new OnRampOptions { AllowNodeDefaultScheduleFallback = NodeFallback },
                 Payouts,
                 Lots,
                 schedules.Object,
@@ -946,8 +1101,10 @@ public class OffRampTests
                 Idempotency,
                 kyc.Object,
                 sagas.Object,
+                Kyb.Object,
+                Funding,
                 NullLogger<OffRampService>.Instance,
-                new FixedClock(Now));
+                Clock);
         }
     }
 
@@ -1003,7 +1160,7 @@ public class OffRampTests
             Guid userId, int limit, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<FiatPayout>>.Success(
                 _rows.Values
-                    .Where(row => row.SubjectUserId == userId.ToString("N"))
+                    .Where(row => SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N"))
                     .OrderByDescending(row => row.RequestedAt)
                     .Take(limit)
                     .Select(Clone)
@@ -1013,7 +1170,7 @@ public class OffRampTests
             Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<FiatPayout>>.Success(
                 _rows.Values
-                    .Where(row => row.SubjectUserId == userId.ToString("N")
+                    .Where(row => SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N")
                                   && FiatPayoutStatuses.Committing.Contains(row.Status))
                     .Select(Clone)
                     .ToList()));
@@ -1075,7 +1232,7 @@ public class OffRampTests
             Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
                 _rows.Values
-                    .Where(row => row.SubjectUserId == userId.ToString("N")
+                    .Where(row => SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N")
                                   && row.Status == OnRampLotStatuses.Issued)
                     .OrderBy(row => row.IssuedAt)
                     .Select(Clone)
@@ -1088,6 +1245,14 @@ public class OffRampTests
                     .Where(row => OnRampLotStatuses.NeedsOperator(row.Status))
                     .Select(Clone)
                     .ToList()));
+
+        public bool FailSoldRead { get; set; }
+
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(FailSoldRead
+                ? AZOAResult<IReadOnlyList<OnRampLot>>.Failure("lot store unavailable")
+                : AZOAResult<IReadOnlyList<OnRampLot>>.Success(_rows.Values
+                    .Where(row => row.CreatedAt >= since && row.IssuedAt is not null).Select(Clone).ToList()));
 
         private static OnRampLot Clone(OnRampLot row) => System.Text.Json.JsonSerializer.Deserialize<OnRampLot>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }
@@ -1134,16 +1299,17 @@ public class OffRampTests
 
         public Task<AZOAResult<bool>> HasActiveFlagAsync(Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<bool>.Success(
-                _rows.Values.Any(row => row.AccountFlagged && row.SubjectUserId == userId.ToString("N"))));
+                _rows.Values.Any(row => row.AccountFlagged && SurrealForge.Client.SurrealLink.FromLink(row.SubjectUserId) == userId.ToString("N"))));
     }
 
     /// <summary>A clock that does not move, so a window assertion is exact.</summary>
     private sealed class FixedClock : TimeProvider
     {
-        private readonly DateTimeOffset _now;
+        public FixedClock(DateTimeOffset now) => Now = now;
 
-        public FixedClock(DateTimeOffset now) => _now = now;
+        /// <summary>The instant every reader sees; settable so a test can age durable rows.</summary>
+        public DateTimeOffset Now { get; set; }
 
-        public override DateTimeOffset GetUtcNow() => _now;
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 }

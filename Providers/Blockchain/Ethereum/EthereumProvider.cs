@@ -21,7 +21,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 /// Ethereum provider over direct JSON-RPC with a real EIP-1559 build→sign→submit→confirm
 /// pipeline. See <c>Providers/Blockchain/Ethereum/AGENTS.md</c>.
 /// </summary>
-public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule
+public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueModule, AZOA.WebAPI.Interfaces.IDexTransactionModule
 {
     /// <summary>Config path of the Ethereum platform signing key (0x-prefixed 32-byte secp256k1 scalar).</summary>
     public const string PlatformPrivateKeyConfigPath = "AZOA:Ethereum:PlatformPrivateKey";
@@ -46,6 +46,7 @@ public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueMo
     private HttpClient _rpcHttpClient = null!;
     private readonly BlockchainConfigurationManager _configManager;
     private readonly HttpMessageHandler? _httpMessageHandler;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private int _requestId;
 
     // Signing seam. The provider builds the canonical EIP-1559 signing payload and
@@ -106,6 +107,19 @@ public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueMo
         : this(config, logger, signerFactory, custodyService: null,
                custodyScopeFactory, httpMessageHandler: null)
     {
+    }
+
+    /// <summary>Production overload with the host's <see cref="IHttpClientFactory"/> for named chain RPC clients (D9).</summary>
+    public EthereumProvider(
+        IConfiguration config,
+        ILogger<EthereumProvider> logger,
+        ITransactionSignerFactory signerFactory,
+        IServiceScopeFactory custodyScopeFactory,
+        IHttpClientFactory httpClientFactory)
+        : this(config, logger, signerFactory, custodyService: null,
+               custodyScopeFactory, httpMessageHandler: null)
+    {
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <summary>
@@ -175,9 +189,7 @@ public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueMo
 
     private HttpClient BuildRpcClient(BlockchainNetworkConfig config)
     {
-        var client = _httpMessageHandler is null
-            ? new HttpClient()
-            : new HttpClient(_httpMessageHandler, disposeHandler: false);
+        var client = ChainRpcHttp.Create(ChainType, _httpMessageHandler, _httpClientFactory);
 
         client.BaseAddress = new Uri(config.NodeUrl);
         client.Timeout = TimeSpan.FromMilliseconds(config.TimeoutMs ?? 30000);
@@ -808,7 +820,6 @@ public partial class EthereumProvider : BaseBlockchainProvider, IEthereumValueMo
                 ["maxPriorityFeePerGasWei"] = fees.IsError ? "unknown" : fees.Result!.MaxPriorityFeePerGas.ToString(CultureInfo.InvariantCulture),
                 ["maxFeePerGasWei"] = fees.IsError ? "unknown" : fees.Result!.MaxFeePerGas.ToString(CultureInfo.InvariantCulture),
                 ["transactionType"] = "EIP-1559 (type 0x02)",
-                ["rpcEndpoint"] = RpcHttpClient.BaseAddress?.ToString() ?? string.Empty,
                 ["time"] = DateTime.UtcNow,
             };
 

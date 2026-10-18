@@ -338,19 +338,29 @@ public sealed class IdentomatKycProviderServiceTests
     [Fact]
     public async Task BeginSession_WhenTenantQuotaIsExhausted_IsRefusedBeforeAnyExternalCall()
     {
+        // Quota is spent at the send point inside the durable flow (a resumed session costs nothing),
+        // so the observable contract is: typed refusal with Retry-After, no vendor call, and the
+        // admission released so the next attempt can proceed.
         var quota = new Mock<IKycTenantQuota>();
         quota.Setup(item => item.TryConsume(It.IsAny<Guid?>(), KycQuotaOperation.BeginSession))
             .Returns(false);
         quota.SetupGet(item => item.RetryAfterSeconds).Returns(60);
-        var flow = new StubFlow(AZOAResult<HostedSessionStartResult>.Failure("should not be reached"));
-        var provider = IdentomatTestFactory.Create(quota: quota.Object, flow: flow);
+        var transport = new Mock<IIdentomatHttpTransport>(MockBehavior.Strict);
+        var store = new InMemoryHostedSessionStore();
+        var flow = new AZOA.WebAPI.Services.HostedSessions.HostedSessionFlow(
+            store, Mock.Of<AZOA.WebAPI.Services.HostedSessions.IHostedSessionOutcomeHandler>());
+        var provider = IdentomatTestFactory.Create(transport: transport.Object, quota: quota.Object, flow: flow);
+        var user = Guid.NewGuid();
+        var tenant = Guid.NewGuid();
 
-        var started = await provider.BeginSessionAsync(Guid.NewGuid(), Guid.NewGuid());
+        var started = await provider.BeginSessionAsync(user, tenant);
 
         started.IsError.Should().BeTrue();
         started.Code.Should().Be(AzoaErrorCodes.OperationNotAllowed);
         started.RetryAfterSeconds.Should().Be(60);
-        flow.BeginCallCount.Should().Be(0);
+        var admission = await store.GetByAdmissionAsync(HostedSessionFlowKinds.Kyc,
+            IdentomatKycProviderService.ProviderKeyValue, IdentomatKycProviderService.AdmissionKeyFor(user, tenant));
+        admission.Result.Should().BeNull("an unsent admission is released under a resolved key");
     }
 
     [Fact]

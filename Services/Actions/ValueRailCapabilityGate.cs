@@ -76,7 +76,7 @@ public readonly record struct ValueNodeAdmission(bool IsAllowed, string RefusalM
 /// engine.</para>
 /// <para><b>Why the ledger and not <c>IRealValueKycGate</c>.</b> The pause is only ONE of the two
 /// conditions that gate composes: the wrapped inner gate additionally demands current KYC
-/// provenance and an AML NO_HIT (<c>Services/Bridge/RealValueKycGate.cs</c>). Resolving the whole
+/// provenance and an AML NO_HIT (<c>Services/Kyc/KycGateService.cs</c>). Resolving the whole
 /// gate here would silently make identity verification a precondition of every internal unit move
 /// in the workflow engine — a policy nobody decided, and one that refuses the very people the
 /// platform is for. So this reads the same flag through the same ledger, refuses with the same
@@ -170,17 +170,22 @@ public sealed class ValueRailCapabilityGate
     /// rail, through any node. Reuses <see cref="RiskHoldValueGate"/>'s sentences so the workflow
     /// engine, checkout, the on-ramp and the bridge all say the same thing to the same person.
     /// </summary>
-    private async Task<ValueNodeAdmission> CheckAccountStandingAsync(Guid actorUserId, CancellationToken ct)
+    private Task<ValueNodeAdmission> CheckAccountStandingAsync(Guid actorUserId, CancellationToken ct)
+        => AccountStandingAsync(_accountPauseLedger, actorUserId, ct);
+
+    /// <summary>The pause-only predicate (no KYC), shared with the WTT and DEX workflow paths (RV-X R-2).</summary>
+    public static async Task<ValueNodeAdmission> AccountStandingAsync(IFiatReversalLedger? accountPauseLedger, Guid actorUserId,
+        CancellationToken ct = default)
     {
         // The empty case is resolved HERE rather than left to a default. No ledger means no
         // reversal pipeline in this container, which means no flag has ever been written for it to
         // read — not "assume clear". Guid.Empty is not an account, and the ledger says so too.
-        if (_accountPauseLedger is null || actorUserId == Guid.Empty)
+        if (accountPauseLedger is null || actorUserId == Guid.Empty)
             return ValueNodeAdmission.Allowed;
 
         try
         {
-            var flagged = await _accountPauseLedger.HasActiveFlagAsync(actorUserId, ct);
+            var flagged = await accountPauseLedger.HasActiveFlagAsync(actorUserId, ct);
             if (flagged.IsError)
                 return ValueNodeAdmission.Refused(RiskHoldValueGate.UnreadableMessage);
 

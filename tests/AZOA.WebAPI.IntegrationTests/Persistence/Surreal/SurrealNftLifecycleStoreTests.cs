@@ -23,7 +23,7 @@ public sealed partial class SurrealNftLifecycleStoreTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await SurrealTestSchema.BootstrapAsync(_namespace, "nft_lifecycle", "nft_asset_authority", "nft_ownership", "nft_protocol_cost_quote",
-            "nft_workflow_cost_acceptance", "nft_workflow_cost_retirement", "user", "wallet", "consent_grant", "api_key", "action_definition", "action_node", "action_run", "action_node_execution");
+            "nft_workflow_cost_acceptance", "nft_workflow_cost_retirement", "user", "wallet", "consent_grant", "api_key", "action", "action_node", "action_run", "action_node_execution");
         _connection = new SurrealDbNetConnection(new SurrealConnectionOptions
         {
             Endpoint = SurrealTestDefaults.Endpoint, Namespace = _namespace, Database = "test",
@@ -143,7 +143,7 @@ public sealed partial class SurrealNftLifecycleStoreTests : IAsyncLifetime
     };
     private static NftOwnership Ownership(NftLifecycle row) => new()
     {
-        Id = row.NftId, UserId = row.RecipientUserId, ChainType = row.ChainType, ContractAddress = "ASA", TokenId = "777", TokenStandard = "ASA",
+        Id = row.NftId, UserId = "user:" + row.RecipientUserId, ChainType = row.ChainType, ContractAddress = "ASA", TokenId = "777", TokenStandard = "ASA",
         MetadataUri = "ipfs://asset", Name = "Ownership projection", IsCurrent = true, IsActive = true,
         CurrentOwner = "holder", MintedDate = row.CreatedAt,
     };

@@ -322,6 +322,27 @@ public sealed class SurrealSagaStoreTests : IAsyncLifetime
         ok2.Should().BeFalse("subsequent Complete on a non-InProgress row must be a no-op");
     }
 
+    /// <summary>SQL-12: a step that completes with no output must not write NULL into option&lt;string&gt;.</summary>
+    [SkippableFact]
+    public async Task CompleteStep_WithNullOutput_Succeeds_And_LeavesOutputAbsent()
+    {
+        Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
+
+        var enq = await _store.EnqueueAsync(
+            "S", "Outputless", UniqueCorrelation(), UniqueIdempotency(),
+            "{}", false, CancellationToken.None);
+        var claimed = await _store.TryClaimDueStepAsync(
+            enq.Id, DateTime.UtcNow.AddSeconds(5), CancellationToken.None);
+        claimed.Should().NotBeNull();
+
+        (await _store.CompleteStepAsync(enq.Id, claimed!.ClaimedAt!.Value, null, CancellationToken.None))
+            .Should().BeTrue("a null output is written as NONE, which the SCHEMAFULL option<string> column accepts");
+
+        var fetched = await _store.GetAsync(enq.Id, CancellationToken.None);
+        fetched!.Status.Should().Be(StepStatus.Completed);
+        fetched.Output.Should().BeNull();
+    }
+
     [SkippableFact]
     public async Task CompleteAndEnqueueNextStep_IsAtomicLeaseGuardedAndRollsBackInvalidSuccessor()
     {

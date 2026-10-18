@@ -154,7 +154,7 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
         var command = new WebhookRegistrationCommand(Guid.NewGuid(), Guid.NewGuid(), 0,
             "https://receiver.example/hook", true, false, "Configure the tenant event receiver.");
         (await _store.MutateAsync(Guid.NewGuid(), command, authority)).IsError.Should().BeTrue();
-        var revoked = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.User>(tenant.ToString("N"))
+        var revoked = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.User>(tenant.ToString("N")).Where(seed => true)
             .Set(user => user.IsActive, false).Build());
         revoked.EnsureAllOk();
         (await _store.MutateAsync(tenant, command, authority)).IsError.Should().BeTrue();
@@ -234,15 +234,17 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
         var mutation = _store.MutateAsync(tenant, command, authority);
         var withdrawal = _store.WithdrawAsync(tenant, command, authority);
         await Task.WhenAll(mutation, withdrawal);
-        withdrawal.Result.IsError.Should().BeFalse(withdrawal.Result.Message);
+        var mutated = await mutation;
+        var withdrawn = await withdrawal;
+        withdrawn.IsError.Should().BeFalse(withdrawn.Message);
         var row = (await _store.GetByTenantAsync(tenant)).Result;
-        if (withdrawal.Result.Result!.AlreadyApplied)
+        if (withdrawn.Result!.AlreadyApplied)
         {
-            mutation.Result.IsError.Should().BeFalse(); row.Should().NotBeNull();
+            mutated.IsError.Should().BeFalse(); row.Should().NotBeNull();
         }
         else
         {
-            mutation.Result.IsError.Should().BeTrue(); row.Should().BeNull();
+            mutated.IsError.Should().BeTrue(); row.Should().BeNull();
         }
         var audits = await _executor.QueryAsync<AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistrationAudit>(
             SurrealQuery<AZOA.WebAPI.Persistence.SurrealDb.Models.WebhookRegistrationAudit>.From());
@@ -253,7 +255,7 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
     {
         var actor = Guid.NewGuid(); var now = DateTimeOffset.UtcNow.AddSeconds(-5);
         var created = await _executor.ExecuteAsync(SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.User
-        { Id = actor.ToString("N"), Username = actor.ToString("N"), Email = actor.ToString("N") + "@example.test", IsActive = true, CreatedDate = now }));
+        { Id = actor.ToString("N"), Username = actor.ToString("N"), Email = actor.ToString("N") + "@example.test", IsActive = true, CreatedDate = now, PasswordHash = "fixture-no-login" }));
         created.EnsureAllOk();
         return new(1, new SigningCredentialWitness(1, "Jwt", actor, null, null, now, now.AddMinutes(10),
             null, null, [], true, TokenUse: AzoaClaims.TokenUseLogin), [AzoaScopes.TenantProvision], []);

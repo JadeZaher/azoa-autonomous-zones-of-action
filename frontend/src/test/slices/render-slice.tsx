@@ -1,8 +1,10 @@
-import type { ReactElement } from 'react'
-import { render, type RenderResult } from '@testing-library/react'
+import { useEffect, type ReactElement } from 'react'
+import { render, waitFor, type RenderResult } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import type { HttpHandler } from 'msw'
 import { azoa } from '@/lib/azoa'
+import { AzoaAuthProvider, useAzoaAuth } from '@/lib/azoa-auth'
+import { sessionApi, type SessionApiWallet } from '../msw/handlers/session'
 import type { SliceNetwork } from '../msw/network'
 import { currentNetwork } from './lifecycle'
 
@@ -47,6 +49,37 @@ export async function renderSlice(ui: ReactElement, options: SliceOptions): Prom
 
   const user = userEvent.setup()
   return { ...render(ui), user, network, session }
+}
+
+export interface AuthSliceOptions extends SliceOptions {
+  /** Wallets the provider's mount-time `/api/wallet` read returns for the signed-in owner. */
+  wallets?: SessionApiWallet[]
+}
+
+/**
+ * `renderSlice` inside the real `AzoaAuthProvider`, for surfaces that read `useAzoaAuth()` (funds,
+ * cash-out, payout balance). Adds the profile + wallet fakes the provider reads on mount and
+ * resolves only once its session restore settled. See `src/test/AGENTS.md` §slices.
+ */
+export async function renderSliceWithAuth(ui: ReactElement, options: AuthSliceOptions): Promise<SliceHarness> {
+  const userId = options.session === 'anonymous' ? null : (options.session?.userId ?? SLICE_TENANT_ID)
+  const apis = userId ? [...options.apis, sessionApi(userId, options.wallets)] : options.apis
+  let settled = false
+  const harness = await renderSlice(
+    <AzoaAuthProvider>
+      <AuthSettled onSettled={() => { settled = true }} />
+      {ui}
+    </AzoaAuthProvider>,
+    { ...options, apis },
+  )
+  await waitFor(() => { if (!settled) throw new Error('AzoaAuthProvider is still restoring the session.') })
+  return harness
+}
+
+function AuthSettled({ onSettled }: { onSettled: () => void }) {
+  const { loading } = useAzoaAuth()
+  useEffect(() => { if (!loading) onSettled() }, [loading, onSettled])
+  return null
 }
 
 /** JWT-shaped (header.payload.signature) so the SDK can read `sub`; never verified by a fake API. */

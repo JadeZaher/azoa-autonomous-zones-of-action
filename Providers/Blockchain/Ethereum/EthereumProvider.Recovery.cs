@@ -77,6 +77,8 @@ public partial class EthereumProvider : IEthereumRecoveryModule
         if (row is null || row.Network != ActiveNetwork.ToString() || string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
             return Error<EthereumPreparationView>("Ethereum preparation or recovery reason is invalid.");
         // A released reservation was never signed and its nonce may already belong to a successor: a same-nonce send would hit that successor.
+        if (row.State == ClientReservedState)
+            return Error<EthereumPreparationView>("A client-signed nonce reservation settles only through its operation; custody never signs it.");
         if (ReleasedReservation(row.State))
             return Error<EthereumPreparationView>("A released reservation was never signed and no longer owns its nonce; there is nothing to recover.");
         var call = JsonSerializer.Deserialize<EthereumCall>(row.IntentJson) ?? throw new InvalidOperationException("Ethereum intent is missing.");
@@ -108,7 +110,12 @@ public partial class EthereumProvider : IEthereumRecoveryModule
             var prepared = await PrepareCallAsync(row.PreparationKey, call.Sender, call.Target,
                 BigInteger.Parse(call.Value, CultureInfo.InvariantCulture), Convert.FromHexString(call.Data[2..]), call.Label, recoveryContext, ct);
             if (prepared.IsError || prepared.Result is null) return Error<EthereumPreparationView>(prepared.Message);
-            await SubmitPreparationAsync(prepared.Result, ct);
+            try { await SubmitPreparationAsync(prepared.Result, ct); }
+            catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+            {
+                // D6: the signed candidate is durable; a refused or unconfirmed send is a recovery outcome (409), not a server fault.
+                return Error<EthereumPreparationView>("The recovered candidate is durable but was not sent; reconcile it: " + exception.Message);
+            }
             return Ok(PreparationView(prepared.Result));
         }
         var candidates = JsonSerializer.Deserialize<List<EthereumCancellation>>(row.RecoveryCandidatesJson) ?? [];

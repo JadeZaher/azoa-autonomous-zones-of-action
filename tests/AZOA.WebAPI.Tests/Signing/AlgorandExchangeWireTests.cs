@@ -251,7 +251,7 @@ public sealed class AlgorandExchangeWireTests
         private Dictionary<string, object> Receipt(Transaction transaction, int index)
         {
             var result = new Dictionary<string, object> { ["id"] = transaction.TxID(), ["sender"] = transaction.Sender.ToString(),
-                ["fee"] = Tamper == "fee" && index == 0 ? 1UL : transaction.Fee!.Value,
+                ["fee"] = Tamper == "fee" && index == 0 ? 1UL : transaction.Fee ?? 0UL, // msgpack omits zero fields
                 ["first-valid"] = transaction.FirstValid!.Value, ["last-valid"] = transaction.LastValid!.Value,
                 ["note"] = Convert.ToBase64String(transaction.Note), ["group"] = Convert.ToBase64String(transaction.Group.Bytes),
                 ["confirmed-round"] = transaction.FirstValid.Value + 1, ["intra-round-offset"] = index };
@@ -265,7 +265,7 @@ public sealed class AlgorandExchangeWireTests
             {
                 var payment = (PaymentTransaction)transaction;
                 result["tx-type"] = "pay";
-                result["payment-transaction"] = new Dictionary<string, object> { ["receiver"] = payment.Receiver.ToString(), ["amount"] = payment.Amount! };
+                result["payment-transaction"] = new Dictionary<string, object> { ["receiver"] = payment.Receiver.ToString(), ["amount"] = payment.Amount ?? 0UL };
             }
             return result;
         }

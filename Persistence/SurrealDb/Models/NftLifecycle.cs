@@ -32,6 +32,8 @@ public partial class NftLifecycle : ISurrealRecord
     public string ReplacementCostConsentsJson { get; set; } = "[]";
     public string ReplacementCostRetirementsJson { get; set; } = "[]";
     public string ActorContinuationsJson { get; set; } = "[]";
+    /// <summary>Recipient-stage Solana cost consents (F-M11); null on rows that never accepted one.</summary>
+    public string? StageCostConsentsJson { get; set; }
     public string? AssetId { get; set; }
     public string? ProtocolIdentity { get; set; }
     public string? ContractAddress { get; set; }

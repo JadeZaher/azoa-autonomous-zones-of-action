@@ -33,9 +33,9 @@ and ignores arbitrary scope input by having none: it always stamps exactly
 `tenant:provision,wallet:manage,kyc:read,kyc:submit`. It returns the raw key once
 under `Cache-Control: no-store`; no value-signing or operator scope can enter.
 
-Delegated child JWTs are temporarily disabled at validation and issuance. They
-remain default-deny until every future accepting endpoint has an explicit scope
-policy. Consent, user ownership mutations, API-key management, and wallet
+Delegated child JWTs are default-deny: only endpoints carrying
+`[DelegatedChildCredential]` accept them, behind a node switch, with live consent
+(see `Services/Consent/AGENTS.md` §Delegated child credentials). Consent, user ownership mutations, API-key management, and wallet
 ownership mutations require a first-party login JWT. Service-to-service wallet
 setup uses the tenant custodial-account routes instead.
 
@@ -133,7 +133,8 @@ may name only the runner's OWN holons, never a public one owned by someone else)
 - Internal cycle-detection (`HolonManager.EnsureNotDescendantAsync`) uses an
   UNFILTERED subtree walk (`CollectDescendantsAsync`) — a cycle can run through a
   private cross-tenant descendant, so the guard must see the full tree.
-- Holon `Clone` cross-user template mechanic — already own-or-public gated.
+- Holon `Clone` cross-user template mechanic — own-or-public gated on the root, and the subtree copy
+  skips descendants the caller cannot read (round 4; see `Managers/AGENTS.md` §holon-owned-parent).
 
 ## §dapp-composition-rbac
 
@@ -151,20 +152,24 @@ surface into two buckets:
   (`/compose`, `/generate`, `/deploy`) use `Authorize(Policy = "DappManage")`.
   API-key policies require both the key scope and the owning user's current
   DApp role, so a stale key cannot keep DApp authority after a role downgrade.
+- The same `DappDevelop` gate covers the action authoring routes (publish/unpublish,
+  node/edge/dependency edits, instantiate) and ActionGraphBundle create/update/delete (round 4).
+- `/deploy` (series and bundle) captures the caller's signing credential and passes it down to
+  `IDeploymentService.StartWithCredentialAsync`; without one, native signing fails closed.
 
 ## user-dapp-rbac — role-assignment endpoint (`UserController`)
 
 - `PUT api/user/{id}/dapp-role` sets a user's `DappRole`. Target id is the
   ROUTE id, never the body (IDOR rule). Body is `UserRoleAssignmentModel { Role }`.
-- Method-level `[Authorize]` only (both JWT and API-key principals may authenticate);
-  authority is decided in the manager from two controller-computed flags:
-  - `ActingIsOperator()` mirrors the `Operator` policy EXACTLY (JWT-only floor +
-    explicit operator:admin/Admin signal). Operator may assign ANY role incl.
-    manager — this is the operator-bootstrap path that creates the first manager.
-  - `User.HasDappManagerRole()` (the CURRENT `dapp_role` claim, which the real
-    ApiKey handler re-reads from the owner's live store role) — a manager may grant
-    only developer/user, never manager/operator. Using the role claim (not
-    scope-or-role) keeps a stale-scope key fail-closed after a demotion.
+- Policy `DappRoleAssignment`: a node-operator session with a recent `auth_time`, or
+  `User.CanAssignDappRoles()` (`Helpers/ClaimsPrincipalExtensions.cs`): the CURRENT
+  `dapp_role` is manager AND the caller is either a first-party login JWT or an API key
+  that explicitly carries `dapp:manage` (round 4, audit-2 H2: a legacy empty-CSV key or a
+  key scoped to anything else is refused). The manager receives `ActingIsOperator()` and
+  the same `CanAssignDappRoles()` flag.
+  - Operator may assign ANY role incl. manager (operator bootstrap of the first manager).
+  - A manager may grant only developer/user, and may not change the role of a user who is
+    CURRENTLY a manager (no manager-demotes-manager); that needs the operator.
 - CRITICAL: operator:admin can NEVER be assigned. `AzoaDappRoles.IsAssignableRole`
   rejects anything outside dapp:user/developer/manager BEFORE authority is checked,
   so no request can set a role that yields operator:admin.
@@ -216,7 +221,7 @@ or value-operation retry.
 
 ## Hosted-session reconciliation
 
-The hosted-session recovery queue and mutation routes require the Operator policy.
+The hosted-session recovery queue and mutation routes require the `RecentNodeOperatorSession` policy.
 Only aged unattached admissions are eligible. Recovery accepts an evidence reference
 and explicit operator attestation, re-fetches the real vendor outcome before attach,
 and persists actor, timestamp and decision evidence on the original admission.
@@ -247,3 +252,52 @@ User consent creation requires a caller-persisted requestId and actual first-par
 NFT mint-cost-quote endpoints require the same authenticated NftMint scope and request key as mint. Credential issue cost-quote additionally requires the manager role and distinct recipient, and normalizes soulbound/nontransferable flags identically to issuance. Responses include the exact receipt hash and category limits as an acceptance payload; returning that payload does not itself authorize execution.
 
 NFT workflow cost endpoints bind authenticated actor/tenant to the exact persisted execution. Quote and accept capture actual credentials; acceptance checks original workflow and current participant authority transactionally. Reconcile is an authenticated receipt read and does not demand new signing consent. Accept returns 202 because admission alone is not mint completion. See `Services/Actions/AGENTS.md` for saved-request and recovery semantics.
+
+## Wallet ownership proof (round 4, audit-1 M2; RV-L4-03)
+
+`POST /api/wallet/{id}/ownership-challenge` issues a purpose-bound challenge for the caller's own External
+wallet. Its signed text starts `AZOA-WALLET-OWNERSHIP-v1` and names `purpose:wallet-ownership-proof`, the
+AZOA user id, the wallet id, the chain and address, a nonce and the expiry.
+`POST /api/wallet/{id}/ownership-proof` consumes it (the challenge named by the echoed message's nonce,
+else the latest live one), checks the stored text equals the ownership text for exactly this user and
+wallet, then verifies the signature (`WalletAuthManager.VerifyOwnershipProofAsync`). A login challenge
+(`AZOA-AUTH-v1`, no user or wallet) never satisfies a proof, and an ownership challenge never logs in, so a
+signature relayed from a wallet sign-in, or from another account's proof, is refused. `connect` no longer
+accepts an inline `SignedMessage`; prove after connecting.
+
+The `wallet_ownership_proof` row (record id = sha256 of the canonical chain:address) has one current
+prover per address. Supersession rule: a new proof by another user is refused while the current holder's
+proof is still valid, meaning the wallet it names is still that holder's External wallet for the same
+canonical identity. Once the holder removes or loses that wallet, the proof is stale and the next verified
+proof replaces it in a CAS on the old (user, wallet) pair, and `WalletManager` logs the supersession with
+both user ids. Unproven External rows grant nothing: create/connect refuse only an address another user holds a
+*still-valid* proof for (`IWalletOwnershipProofStore.IsHeldByAnotherUserAsync`, the same holder-validity rule as
+supersession, RV-L4-09). A stale proof never blocks the new key holder from adding the address and proving it. Consumers that trust an External address (WTT recipient, bridge reversal, NFT recipient
+resolution) must require `IWalletOwnershipProofStore.GetAsync(...).UserId == actor` or a Platform wallet.
+
+## Public network endpoints (RV-L4-07)
+
+The anonymous `GET /api/network` publishes a configured node or indexer URL as scheme, host and port only.
+A URL with any path (keys hide there in every encoding) or a key-shaped host label (16+ characters, or 10+
+with a digit) is withheld (`null`), and the frontend keeps its own default endpoint.
+
+## Legacy bridge value routes (round 4, audit-2 M8)
+
+`initiate`, `redeem` and `reverse` refuse tenant-delegated principals and require the
+`transfer:sign` signing scope (`HasSigningScope`). Reversal releases only to one of the
+bridge owner's wallets on the source chain: a Platform wallet or an External wallet with a
+current ownership proof (`CrossChainBridgeService.OwnsReversalRecipientAsync`).
+
+## Smaller round-4 hardening
+
+- `HasSigningScope` treats a delegated child token (or any `act_as_tenant` principal) like a
+  scoped API key: it must carry the scope.
+- API-key rotate only rotates an active, unexpired, explicitly-scoped key whose scopes the
+  caller may still self-issue; the old key is revoked first by an active-key CAS, so a
+  concurrent second rotate loses.
+- `GET /api/network` (anonymous) returns node/indexer URLs without credentials or query
+  strings and withholds any URL with a key-shaped path segment.
+- `POST /api/admin/key-rotation/rotate` additionally requires `RecentNodeOperatorSession`.
+- Tenant child projections expose only correlation ids once the user has claimed the
+  account (audit-1 M1); tenant provisioning never writes a tenant-supplied email into the
+  unique email column (a tenant cannot prove a mailbox).

@@ -42,6 +42,16 @@ public interface IWalletAuthManager
         Guid authedUserId, string address, string chainType, string signature, string? message,
         CancellationToken ct = default);
 
+    /// <summary>Issues a purpose-bound ownership-proof challenge naming <paramref name="userId"/>, <paramref name="walletId"/>,
+    /// the chain and address; a login challenge never satisfies an ownership proof, nor the reverse.</summary>
+    Task<AZOAResult<WalletChallengeResponse>> CreateOwnershipChallengeAsync(
+        Guid userId, Guid walletId, string address, string chainType, CancellationToken ct = default);
+
+    /// <summary>Consumes the ownership-proof challenge issued for exactly this user, wallet, chain and address and verifies its
+    /// signature; returns the canonical <c>(Address, ChainType)</c> proved. No identity is created or changed.</summary>
+    Task<AZOAResult<(string Address, string ChainType)>> VerifyOwnershipProofAsync(
+        Guid userId, Guid walletId, string address, string chainType, string signature, string? message, CancellationToken ct = default);
+
     /// <summary>
     /// AC4: a tenant mints a single-use, short-TTL claim token for a child it owns
     /// (ownership asserted; cross-tenant/unowned target → NotFound). The token alone

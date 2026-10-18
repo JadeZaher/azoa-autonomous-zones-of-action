@@ -153,6 +153,12 @@ public sealed class IdentomatKycSettings
     /// </summary>
     public int ReplicaCount { get; set; } = 1;
 
+    /// <summary>
+    /// Percent of the per-minute budget that result re-fetches (poll, refresh, callbacks) may use, so they
+    /// can never starve begin and AML screening. Clamped to 10-100.
+    /// </summary>
+    public int ResultRequestSharePercent { get; set; } = 50;
+
     /// <summary>Minutes the adapter stays circuit-open after an observed HTTP 529 ban.</summary>
     public int RateLimitBanCooldownMinutes { get; set; } = 60;
 
@@ -161,6 +167,46 @@ public sealed class IdentomatKycSettings
 
     /// <summary>Per-tenant call quotas; see <see cref="KycTenantQuotaSettings"/>.</summary>
     public KycTenantQuotaSettings TenantQuota { get; set; } = new();
+
+    /// <summary>Lost-callback outcome poll; see <see cref="IdentomatOutcomePollSettings"/>.</summary>
+    public IdentomatOutcomePollSettings OutcomePoll { get; set; } = new();
+
+    /// <summary>Orphan supersede: bounded wait before a possibly-sent create counts as an orphan.</summary>
+    public int OrphanWaitMinutes { get; set; } = 5;
+
+    /// <summary>Orphans one subject may supersede per rolling day; past it the admission waits for an operator.</summary>
+    public int OrphanSupersedesPerDay { get; set; } = 1;
+}
+
+/// <summary>
+/// Backoff poll of <c>/external-api/result/</c> for attached Identomat sessions whose callback was lost.
+/// Every call spends the shared <c>IdentomatRateBudget</c>. See <c>Services/HostedSessions/AGENTS.md</c> §recovery.
+/// </summary>
+public sealed class IdentomatOutcomePollSettings
+{
+    /// <summary>Unset means on wherever an Identomat config id is set (plan A-4 posture).</summary>
+    public bool? Enabled { get; set; }
+
+    /// <summary>Seconds between sweeps; clamped to 5-600.</summary>
+    public int SweepIntervalSeconds { get; set; } = 30;
+
+    /// <summary>Sessions polled per sweep; clamped to 1-100. Bounds the share of the shared budget.</summary>
+    public int BatchSize { get; set; } = 20;
+
+    /// <summary>First backoff step in seconds; doubles per poll. Clamped to 10-3600.</summary>
+    public int InitialDelaySeconds { get; set; } = 60;
+
+    /// <summary>Backoff ceiling in minutes; clamped to 1-1440.</summary>
+    public int MaxIntervalMinutes { get; set; } = 60;
+
+    /// <summary>Backstop: hours after creation a session whose attempt state is unknown is abandoned; clamped to 1-2160. Live attempts poll until they expire.</summary>
+    public int MaxAgeHours { get; set; } = 720;
+
+    /// <summary>Minimum seconds between two user/tenant-initiated re-fetches of one session; clamped to 5-3600.</summary>
+    public int RefreshCooldownSeconds { get; set; } = 30;
+
+    /// <summary>The clamped on-demand refresh cooldown.</summary>
+    public TimeSpan RefreshCooldown => TimeSpan.FromSeconds(Math.Clamp(RefreshCooldownSeconds, 5, 3600));
 }
 
 /// <summary>
@@ -206,8 +252,8 @@ public sealed class IdentomatScreeningSettings
     /// <summary>Minutes between batched monitoring polls; clamped to 5-1440.</summary>
     public int MonitorPollIntervalMinutes { get; set; } = 60;
 
-    /// <summary>Enables the cold-poll monitoring worker. Off unless an operator opts in.</summary>
-    public bool MonitorPollEnabled { get; set; }
+    /// <summary>Cold-poll monitoring switch; unset means on wherever an Identomat config id is set (plan A-4).</summary>
+    public bool? MonitorPollEnabled { get; set; }
 
     /// <summary>Maximum pages walked per poll cycle; bounds the shared rate budget.</summary>
     public int MonitorPollMaxPagesPerCycle { get; set; } = 10;

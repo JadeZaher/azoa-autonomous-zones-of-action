@@ -43,9 +43,17 @@ public sealed class SurrealKybVerificationStore(ISurrealExecutor executor) : IKy
             .Unset(row => row.BusinessEvidenceJson)
             .Unset(row => row.ReviewedAt)
             .Set(row => row.CreatedAt, candidate.CreatedAt)
-            .Set(row => row.ExpiresAt, candidate.ExpiresAt)
-            .Build();
-        var response = await executor.ExecuteAsync(query, ct);
+            .Set(row => row.ExpiresAt, candidate.ExpiresAt);
+        query = candidate.EffectiveApprovalExpiresAt is { } effectiveUntil
+            && candidate.EffectiveApprovalEvidenceJson is { } effectiveEvidence
+            && candidate.EffectiveApprovalAuthorityRevision is { } effectiveAuthority
+            ? query.Set(row => row.EffectiveApprovalExpiresAt, (DateTimeOffset?)effectiveUntil)
+                .Set(row => row.EffectiveApprovalEvidenceJson, effectiveEvidence)
+                .Set(row => row.EffectiveApprovalAuthorityRevision, effectiveAuthority)
+            : query.Unset(row => row.EffectiveApprovalExpiresAt)
+                .Unset(row => row.EffectiveApprovalEvidenceJson)
+                .Unset(row => row.EffectiveApprovalAuthorityRevision);
+        var response = await executor.ExecuteAsync(query.Build(), ct);
         response.EnsureAllOk();
         return response.GetValues<KybVerification>(0).SingleOrDefault();
     }
@@ -72,7 +80,11 @@ public sealed class SurrealKybVerificationStore(ISurrealExecutor executor) : IKy
             .Set(row => row.Status, status)
             .Set(row => row.ReviewedAt, (DateTimeOffset?)reviewedAt)
             .Set(row => row.ExpiresAt, expiresAt)
-            .Set(row => row.Version, expected.Version + 1);
+            .Set(row => row.Version, expected.Version + 1)
+            // The renewal's own decision supersedes any carried prior approval.
+            .Unset(row => row.EffectiveApprovalExpiresAt)
+            .Unset(row => row.EffectiveApprovalEvidenceJson)
+            .Unset(row => row.EffectiveApprovalAuthorityRevision);
         decision = evidence is null ? decision.Unset(row => row.BusinessEvidenceJson)
             : decision.Set(row => row.BusinessEvidenceJson, evidence);
         var query = decision.Build();

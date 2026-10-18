@@ -32,45 +32,71 @@ public static class ClaimsPrincipalExtensions
         return false;
     }
 
+    /// <summary>The <c>DappDevelop</c> policy predicate; see `Helpers/AGENTS.md` §Role-bound dApp policies.</summary>
     public static bool HasDappDevelopAccess(this ClaimsPrincipal principal)
-    {
-        if (principal is null)
-            return false;
+        => HasRoleBoundAccess(principal, AZOA.WebAPI.Core.AzoaScopes.DappDevelop, principal.HasDappDeveloperRole());
 
-        if (principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappDevelop))
-            return true;
-
-        return principal.HasDappDeveloperRole();
-    }
-
+    /// <summary>The <c>DappManage</c> policy predicate; see `Helpers/AGENTS.md` §Role-bound dApp policies.</summary>
     public static bool HasDappManageAccess(this ClaimsPrincipal principal)
-    {
-        if (principal is null)
-            return false;
-
-        if (principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage))
-            return true;
-
-        return principal.HasDappManagerRole();
-    }
+        => HasRoleBoundAccess(principal, AZOA.WebAPI.Core.AzoaScopes.DappManage, principal.HasDappManagerRole());
 
     public static bool HasDappDeveloperRole(this ClaimsPrincipal principal)
-        => AZOA.WebAPI.Core.AzoaDappRoles.CanDevelop(principal?.FindFirst("dapp_role")?.Value);
+        => AZOA.WebAPI.Core.AzoaDappRoles.CanDevelop(principal.TrustedDappRole());
 
     public static bool HasDappManagerRole(this ClaimsPrincipal principal)
-        => AZOA.WebAPI.Core.AzoaDappRoles.CanManage(principal?.FindFirst("dapp_role")?.Value);
+        => AZOA.WebAPI.Core.AzoaDappRoles.CanManage(principal.TrustedDappRole());
+
+    /// <summary>The dApp role the server vouches for: a delegated token's role comes only from the store-loaded live-role identity.</summary>
+    private static string? TrustedDappRole(this ClaimsPrincipal? principal)
+    {
+        if (principal is null) return null;
+        if (!principal.IsDelegated()) return principal.FindFirst("dapp_role")?.Value;
+        return principal.Identities
+            .FirstOrDefault(identity => identity.AuthenticationType == AZOA.WebAPI.Core.AzoaClaims.LiveRoleIdentity)
+            ?.FindFirst("dapp_role")?.Value;
+    }
+
+    /// <summary>True for a tenant-delegated principal (child credential or acting-tenant token).</summary>
+    private static bool IsDelegated(this ClaimsPrincipal principal)
+        => AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal) || principal.GetActingTenantId() is not null;
+
+    private static bool HasRoleBoundAccess(ClaimsPrincipal? principal, string scope, bool hasRole)
+    {
+        if (principal is null || !hasRole) return false;                  // the role is always required; a scope alone never admits.
+        if (principal.IsDelegated()) return principal.HasScope(scope);    // delegated: live role AND the delegated scope.
+        if (!principal.IsApiKey()) return true;                           // login JWT: role claim (its dapp scopes are implied by it).
+        if (string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
+            return false;                                                 // all-forbidden CSV → not full access.
+        return principal.GetScopes().Count == 0 || principal.HasScope(scope); // legacy empty CSV, or an explicit scope.
+    }
+
+    /// <summary>True for a first-party login JWT: <c>token_use=login</c>, no acting tenant, not an API key.</summary>
+    public static bool IsFirstPartyLogin(this ClaimsPrincipal principal)
+        => principal is not null
+            && string.Equals(principal.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value, AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin, StringComparison.Ordinal)
+            && principal.GetActingTenantId() is null
+            && !principal.IsApiKey();
+
+    /// <summary>True when the principal authenticated with an API key.</summary>
+    public static bool IsApiKey(this ClaimsPrincipal principal)
+        => string.Equals(principal?.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Non-operator DApp-role assignment authority: a current manager's first-party login, or an API key
+    /// that explicitly carries <c>dapp:manage</c> and whose owner is a current manager (see `Controllers/AGENTS.md` §user-dapp-rbac).</summary>
+    public static bool CanAssignDappRoles(this ClaimsPrincipal principal)
+    {
+        if (principal is null || !principal.HasDappManagerRole()) return false;
+        if (!principal.IsApiKey()) return principal.IsFirstPartyLogin();
+        return !string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase)
+            && principal.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage);
+    }
 
     public static bool CanSelfIssueApiKeyScope(this ClaimsPrincipal principal, string scope)
     {
         if (!AZOA.WebAPI.Core.AzoaScopes.IsIssuableByUser(scope))
             return false;
 
-        return scope switch
-        {
-            AZOA.WebAPI.Core.AzoaScopes.DappDevelop => principal.HasDappDeveloperRole(),
-            AZOA.WebAPI.Core.AzoaScopes.DappManage => principal.HasDappManagerRole(),
-            _ => true,
-        };
+        return AZOA.WebAPI.Core.AzoaDappRoles.GrantsScope(principal.TrustedDappRole(), scope);
     }
 
     /// <summary>
@@ -98,14 +124,15 @@ public static class ClaimsPrincipalExtensions
     /// <summary>
     /// Financial-endpoint signing-scope gate (mirrors the shipped <c>DappDevelop</c>
     /// authorization policy exactly). Returns true — i.e. the caller MAY perform the
-    /// value-moving action — unless the principal is a SCOPED API key that lacks
-    /// <paramref name="scope"/>. JWT owners and empty-CSV legacy full-access keys are
-    /// never blocked; only a key that carries SOME scopes but not the required signing
-    /// one is denied. Centralized here so the three financial controllers can't drift.
+    /// value-moving action — unless the principal is a SCOPED API key or a delegated child
+    /// token that lacks <paramref name="scope"/>. First-party JWT owners and empty-CSV legacy
+    /// full-access keys are never blocked. Centralized here so the three financial controllers can't drift.
     /// See Controllers/AGENTS.md.
     /// </summary>
     public static bool HasSigningScope(this ClaimsPrincipal principal, string scope)
     {
+        if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal) || principal.GetActingTenantId() is not null)
+            return principal.HasScope(scope);                             // delegated child token → scoped like a key.
         var isApiKey = string.Equals(principal.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
         if (!isApiKey) return true;                                        // JWT owner → unaffected.
         if (string.Equals(principal.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))

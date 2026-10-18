@@ -4,6 +4,7 @@ using System.Globalization;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;   // SurrealTransientConflict (retryable 3.x txn conflicts)
 using SurrealForge.Client.Query;
 
@@ -47,13 +48,14 @@ public interface ITenantPriceScheduleStore
     /// </summary>
     Task<AZOAResult<IReadOnlyList<RegisteredPriceSchedule>>> ListLatestPerScopeAsync(
         string chainType, string assetId, CancellationToken ct = default);
+
+    /// <summary>One exact version by record id (bare or link form); null result when absent.</summary>
+    Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default);
 }
 
 /// <summary>SurrealDB-backed price-schedule store. Colocated with the seam, like the webhook inbox.</summary>
 public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
 {
-    private const string Table = TenantPriceSchedule.SchemaNameConst;
-
     /// <summary>Attempts to win the next version before giving up to a concurrent registrant.</summary>
     private const int VersionClaimAttempts = 4;
 
@@ -132,7 +134,9 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
             {
                 Id = TenantPriceSchedule.RecordIdFor(scope, chainType, assetId, version),
                 ScopeKey = scope,
-                TenantId = tenantId is { } tenant && tenant != Guid.Empty ? tenant.ToString("N") : null,
+                TenantId = tenantId is { } tenant && tenant != Guid.Empty
+                    ? SurrealLink.ToLink(User.SchemaNameConst, tenant.ToString("N"))
+                    : null,
                 ChainType = chainType,
                 AssetId = assetId,
                 CurrencyCode = PriceScheduleLimits.SupportedCurrencyCode,
@@ -143,7 +147,7 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
                 Status = registration.Retire ? PriceScheduleStatuses.Retired : PriceScheduleStatuses.Active,
                 DeclaredAt = declaredAt,
                 RegisteredAt = DateTimeOffset.UtcNow,
-                RegisteredByUserId = registeredByUserId.ToString("N"),
+                RegisteredByUserId = SurrealLink.ToLink(User.SchemaNameConst, registeredByUserId.ToString("N"))!,
             };
 
             var created = await TryCreateAsync(row, ct);
@@ -278,11 +282,7 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
     {
         try
         {
-            var create = SurrealQuery
-                .Of("CREATE type::record($_t, $_id) CONTENT $_body RETURN AFTER")
-                .WithParam("_t", Table)
-                .WithParam("_id", row.Id)
-                .WithParam("_body", row);
+            var create = SurrealWriter.Create(row);
 
             var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
             {
@@ -307,6 +307,17 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
             return new AZOAResult<TenantPriceSchedule>()
                 .CaptureException(ex, $"Price schedule write failed: {ex.Message}");
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<RegisteredPriceSchedule?>> GetVersionAsync(string recordId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(recordId))
+            return AZOAResult<RegisteredPriceSchedule?>.Success(null, "Not found.");
+        var read = await GetByIdAsync(SurrealRecordGuid.BareId(recordId), ct);
+        return read.IsError
+            ? AZOAResult<RegisteredPriceSchedule?>.Failure(read.Message)
+            : AZOAResult<RegisteredPriceSchedule?>.Success(read.Result is null ? null : Project(read.Result));
     }
 
     private async Task<AZOAResult<TenantPriceSchedule?>> GetByIdAsync(string recordId, CancellationToken ct)
@@ -343,7 +354,7 @@ public sealed class SurrealTenantPriceScheduleStore : ITenantPriceScheduleStore
         return new RegisteredPriceSchedule(
             row.Id,
             row.ScopeKey,
-            Guid.TryParseExact(row.TenantId, "N", out var tenantId) ? tenantId : null,
+            SurrealRecordGuid.ParseOptional(row.TenantId),
             row.ChainType,
             row.AssetId,
             row.CurrencyCode,

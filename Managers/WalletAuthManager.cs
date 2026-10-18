@@ -14,6 +14,8 @@ public sealed class WalletAuthManager : IWalletAuthManager
 {
     private const string DomainPrefix = "AZOA-AUTH-v1";
 
+    private const string OwnershipPrefix = "AZOA-WALLET-OWNERSHIP-v1";
+
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(5);
 
     private static readonly TimeSpan ClaimTokenLifetime = TimeSpan.FromMinutes(15);
@@ -42,8 +44,32 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<WalletChallengeResponse>> CreateChallengeAsync(
+    public Task<AZOAResult<WalletChallengeResponse>> CreateChallengeAsync(
         string address, string chainType, CancellationToken ct = default)
+        => IssueChallengeAsync(address, chainType, BuildDomainMessage, ct);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<WalletChallengeResponse>> CreateOwnershipChallengeAsync(
+        Guid userId, Guid walletId, string address, string chainType, CancellationToken ct = default)
+        => userId == Guid.Empty || walletId == Guid.Empty
+            ? Task.FromResult(AZOAResult<WalletChallengeResponse>.Failure("An owner and wallet are required."))
+            : IssueChallengeAsync(address, chainType,
+                (chain, addr, nonce, expiresAt) => BuildOwnershipMessage(userId, walletId, chain, addr, nonce, expiresAt), ct);
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<(string Address, string ChainType)>> VerifyOwnershipProofAsync(
+        Guid userId, Guid walletId, string address, string chainType, string signature, string? message, CancellationToken ct = default)
+    {
+        if (userId == Guid.Empty || walletId == Guid.Empty) return AZOAResult<(string, string)>.Failure("An owner and wallet are required.");
+        var proof = await ConsumeAndVerifyAsync(address, chainType, signature, message,
+            challenge => BuildOwnershipMessage(userId, walletId, challenge.ChainType, challenge.Address, challenge.Nonce, challenge.ExpiresAt), ct);
+        return proof.IsError || proof.Result is null
+            ? new AZOAResult<(string, string)> { IsError = true, Message = proof.Message, Exception = proof.Exception }
+            : AZOAResult<(string, string)>.Success((proof.Result.Address, proof.Result.ChainType));
+    }
+
+    private async Task<AZOAResult<WalletChallengeResponse>> IssueChallengeAsync(
+        string address, string chainType, Func<string, string, string, DateTime, string> buildMessage, CancellationToken ct)
     {
         var result = new AZOAResult<WalletChallengeResponse>();
 
@@ -67,7 +93,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         var nonce = Crypto.GenerateNonce();
         var expiresAt = now.Add(ChallengeLifetime);
-        var domainMessage = BuildDomainMessage(chain, addr, nonce, expiresAt);
+        var domainMessage = buildMessage(chain, addr, nonce, expiresAt);
 
         var challenge = new WalletAuthChallenge
         {
@@ -410,8 +436,16 @@ public sealed class WalletAuthManager : IWalletAuthManager
     }
 
 
-    private async Task<AZOAResult<WalletAuthChallenge>> ConsumeAndVerifyAsync(
+    private Task<AZOAResult<WalletAuthChallenge>> ConsumeAndVerifyAsync(
         string address, string chainType, string signature, string? clientMessage, CancellationToken ct)
+        => ConsumeAndVerifyAsync(address, chainType, signature, clientMessage,
+            challenge => BuildDomainMessage(challenge.ChainType, challenge.Address, challenge.Nonce, challenge.ExpiresAt), ct);
+
+    /// <summary>Consumes the addressed live challenge (the one the signed message names, else the latest) after checking it was
+    /// issued for exactly <paramref name="expectedMessage"/>'s purpose, then verifies the signature.</summary>
+    private async Task<AZOAResult<WalletAuthChallenge>> ConsumeAndVerifyAsync(
+        string address, string chainType, string signature, string? clientMessage,
+        Func<WalletAuthChallenge, string> expectedMessage, CancellationToken ct)
     {
         var result = new AZOAResult<WalletAuthChallenge>();
 
@@ -424,7 +458,9 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         var now = DateTime.UtcNow;
 
-        var lookup = await _challenges.GetLatestLiveByAddressAsync(addr, chain, now, ct);
+        var lookup = MessageNonce(clientMessage) is { } namedNonce
+            ? await _challenges.GetByNonceAsync(namedNonce, ct)
+            : await _challenges.GetLatestLiveByAddressAsync(addr, chain, now, ct);
         if (lookup.IsError)
         {
             result.IsError = true;
@@ -443,7 +479,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         var boundChain = string.Equals(challenge.ChainType, chain, StringComparison.Ordinal);
         var boundAddress = string.Equals(challenge.Address, addr, StringComparison.Ordinal);
         var msg = challenge.DomainMessage;
-        var wellFormed = string.Equals(msg, BuildDomainMessage(chain, addr, challenge.Nonce, challenge.ExpiresAt), StringComparison.Ordinal);
+        var wellFormed = string.Equals(msg, expectedMessage(challenge), StringComparison.Ordinal);
         if (!boundChain || !boundAddress || !wellFormed)
         {
             result.IsError = true;
@@ -549,6 +585,29 @@ public sealed class WalletAuthManager : IWalletAuthManager
         return sb.ToString();
     }
 
+
+    /// <summary>Purpose-bound ownership-proof text naming the AZOA user and wallet, so a login signature cannot be relayed (RV-L4-03).</summary>
+    private string BuildOwnershipMessage(Guid userId, Guid walletId, string chainType, string address, string nonce, DateTime expiresAtUtc)
+    {
+        var expiryIso = expiresAtUtc.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        return new StringBuilder()
+            .Append(OwnershipPrefix).Append('\n')
+            .Append("purpose:wallet-ownership-proof").Append('\n')
+            .Append("issuer:").Append(_config["Jwt:Issuer"] ?? string.Empty).Append('\n')
+            .Append("audience:").Append(_config["Jwt:Audience"] ?? string.Empty).Append('\n')
+            .Append("user:").Append(userId.ToString("D")).Append('\n')
+            .Append("wallet:").Append(walletId.ToString("D")).Append('\n')
+            .Append("chain:").Append(chainType).Append('\n')
+            .Append("address:").Append(address).Append('\n')
+            .Append("nonce:").Append(nonce).Append('\n')
+            .Append("expires:").Append(expiryIso)
+            .ToString();
+    }
+
+    /// <summary>The <c>nonce:</c> line of a client-echoed challenge message, or null.</summary>
+    private static string? MessageNonce(string? message)
+        => message?.Split('\n').Select(line => line.TrimEnd('\r'))
+            .FirstOrDefault(line => line.StartsWith("nonce:", StringComparison.Ordinal)) is { Length: > 6 } line ? line[6..] : null;
 
     private string GenerateLoginJwt(IUser user)
         => AZOA.WebAPI.Services.Auth.UserLoginTokenIssuer.BuildLoginToken(_config, user);

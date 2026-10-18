@@ -1,0 +1,729 @@
+[
+  {
+    "route": "POST /api/blockchain/operations/{id}/submit-signed",
+    "controller": "BlockchainOperationController",
+    "action": "SubmitSigned",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "owner + acting tenant pinned to the row; HasSigningScope; exact saved-plan bytes signed by the plan signer; status CAS persists bytes before broadcast",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/operator/blockchain-operations/{id}/resolve",
+    "controller": "BlockchainOperationController",
+    "action": "Resolve",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; outcome re-proven from chain state; status CAS; never signs or sends",
+    "policies": [
+      "RecentNodeOperatorSession",
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/operator/dex/operations/{id}/settle-review",
+    "controller": "DexOperatorController",
+    "action": "SettleReview",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; re-proves the same-call winner from finalized chain state; version CAS; never signs or sends",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/ethereum/recovery/{network}/activate",
+    "controller": "EthereumRecoveryController",
+    "action": "Activate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "FirstPartyLogin; caller's own Ethereum wallet; clean finalized nonce checkpoint",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/ethereum/recovery/{network}/{id}",
+    "controller": "EthereumRecoveryController",
+    "action": "Recover",
+    "class": "value-moving",
+    "scope": "original signer scope",
+    "enforcement": "FirstPartyLogin; own preparation only; requires the original signer authority and its signing scope",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/operator/ethereum/recovery/{network}/activate",
+    "controller": "EthereumOperatorRecoveryController",
+    "action": "Activate",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; platform signer checkpoint",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/operator/ethereum/recovery/{network}/{id}",
+    "controller": "EthereumOperatorRecoveryController",
+    "action": "Recover",
+    "class": "value-moving",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; platform-signed reservations only; same-nonce cancel under an explicit gas cap",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/dex/quotes",
+    "controller": "DexController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": "swap:sign",
+    "enforcement": "captured credential; quote bound to actor/tenant; no signing",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations",
+    "controller": "DexController",
+    "action": "Start",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "captured credential; BindDirectAsync(swap:sign) on the owned wallet; quote consumption CAS",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/prepare",
+    "controller": "DexController",
+    "action": "Prepare",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner/tenant InScope; signing authority fence in the stage CAS",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/sign",
+    "controller": "DexController",
+    "action": "Sign",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; custody admission CAS + DexSigningAuthorityFence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/external-signing",
+    "controller": "DexController",
+    "action": "Expose",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; exposure CAS through CommitStageAsync",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/external-signature",
+    "controller": "DexController",
+    "action": "AcceptBrowser",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; exact saved-plan bytes; stage CAS",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/withdraw-submission",
+    "controller": "DexController",
+    "action": "WithdrawSubmission",
+    "class": "non-value",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; stage CAS",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/submit",
+    "controller": "DexController",
+    "action": "Submit",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; authorize-stage CAS before broadcast",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/refresh",
+    "controller": "DexController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; observation only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/cancel",
+    "controller": "DexController",
+    "action": "Cancel",
+    "class": "non-value",
+    "scope": "swap:sign",
+    "enforcement": "owner InScope; consent fence; unsent stages only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/cleanup",
+    "controller": "DexController",
+    "action": "Cleanup",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner direct credential; cleanup consent fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/dex/operations/{id}/cleanup/prepare",
+    "controller": "DexController",
+    "action": "PrepareCleanup",
+    "class": "value-moving",
+    "scope": "swap:sign",
+    "enforcement": "owner direct credential; cleanup consent fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft/mint-cost-quote",
+    "controller": "NftController",
+    "action": "QuoteMintCosts",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "HasSigningScope; quote only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft/mint",
+    "controller": "NftController",
+    "action": "Mint",
+    "class": "value-moving",
+    "scope": "nft:mint",
+    "enforcement": "HasSigningScope; captured credential; NFT lifecycle authority fences",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft/fungible-mint",
+    "controller": "NftController",
+    "action": "FungibleMint",
+    "class": "value-moving",
+    "scope": "token:create:sign",
+    "enforcement": "HasSigningScope; captured credential; fungible creation fences",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft/{id}/transfer",
+    "controller": "NftController",
+    "action": "Transfer",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "HasSigningScope; captured credential; current ownership + lifecycle fences",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft/{id}/burn",
+    "controller": "NftController",
+    "action": "Burn",
+    "class": "value-moving",
+    "scope": "nft:burn",
+    "enforcement": "HasSigningScope; captured credential; current ownership + lifecycle fences",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/mint-cost-quote",
+    "controller": "UserNFTController",
+    "action": "QuoteMintCosts",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "HasSigningScope; quote only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/mint",
+    "controller": "UserNFTController",
+    "action": "MintUserNFT",
+    "class": "value-moving",
+    "scope": "nft:mint",
+    "enforcement": "HasSigningScope; captured credential; lifecycle fences",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/{id}/transfer",
+    "controller": "UserNFTController",
+    "action": "TransferUserNFT",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "HasSigningScope; captured credential; current owner",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/usernft/{id}",
+    "controller": "UserNFTController",
+    "action": "BurnUserNFT",
+    "class": "value-moving",
+    "scope": "nft:burn",
+    "enforcement": "HasSigningScope; captured credential; current owner",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/{usernftid}/holons/{holonid}/bind",
+    "controller": "UserNFTController",
+    "action": "BindHolonToUserNFT",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "current NFT owner AND target holon owner",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/usernft/holons/{bindingid}",
+    "controller": "UserNFTController",
+    "action": "UpdateHolonBinding",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "current NFT owner AND target holon owner (M7)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/usernft/holons/{bindingid}",
+    "controller": "UserNFTController",
+    "action": "RemoveHolonBinding",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "current NFT owner or target holon owner",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/{usernftid}/wallets/{walletid}/bind",
+    "controller": "UserNFTController",
+    "action": "BindWalletToUserNFT",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "current NFT owner AND target wallet owner",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "PUT /api/usernft/wallets/{bindingid}",
+    "controller": "UserNFTController",
+    "action": "UpdateWalletBinding",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "current NFT owner AND target wallet owner (M7)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "DELETE /api/usernft/wallets/{bindingid}",
+    "controller": "UserNFTController",
+    "action": "RemoveWalletBinding",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "current NFT owner or target wallet owner",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/verify-ownership",
+    "controller": "UserNFTController",
+    "action": "VerifyUserNFTOwnership",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "read-only boolean for the caller",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/verify-holon-access",
+    "controller": "UserNFTController",
+    "action": "VerifyHolonAccess",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "read-only; caller must own NFT and target",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/verify-wallet-access",
+    "controller": "UserNFTController",
+    "action": "VerifyWalletAccess",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "read-only; caller must own NFT and target",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/lifecycle/request/cancel",
+    "controller": "UserNFTController",
+    "action": "CancelRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "requester + admitted tenant; captured credential for admitted work",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/lifecycle/{sourcelifecycleid}/refund",
+    "controller": "UserNFTController",
+    "action": "Refund",
+    "class": "value-moving",
+    "scope": "transfer:sign",
+    "enforcement": "HasSigningScope; captured credential; source lifecycle requester/tenant",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/lifecycle/{operationid}/refresh",
+    "controller": "UserNFTController",
+    "action": "RefreshLifecycle",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "requester/counterparty visibility; never prepares new effects without fenced authority",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/lifecycle/{operationid}/accept",
+    "controller": "UserNFTController",
+    "action": "AcceptLifecycle",
+    "class": "value-moving",
+    "scope": "per-operation NFT scope",
+    "enforcement": "HasSigningScope(operation scope); captured participant credential; stage consent fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/lifecycle/{operationid}/renew-authority",
+    "controller": "UserNFTController",
+    "action": "RenewLifecycleAuthority",
+    "class": "non-value",
+    "scope": "per-operation NFT scope",
+    "enforcement": "original requester or owner takeover (F-H12); renewal fenced live",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/usernft/lifecycle/{operationid}/cancel",
+    "controller": "UserNFTController",
+    "action": "CancelLifecycle",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "requester under admitted tenant (owner alone after takeover); consent fence; unsent only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-replacement-costs/{operationid}/accept",
+    "controller": "NftReplacementCostsController",
+    "action": "Accept",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; original payer/requester; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-replacement-costs/{operationid}/quote",
+    "controller": "NftReplacementCostsController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; original payer/requester; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-replacement-costs/{operationid}/reconcile",
+    "controller": "NftReplacementCostsController",
+    "action": "Reconcile",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; original payer/requester; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-replacement-costs/{operationid}/retire",
+    "controller": "NftReplacementCostsController",
+    "action": "Retire",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; original payer/requester; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-workflow-costs/accept",
+    "controller": "NftWorkflowCostsController",
+    "action": "Accept",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; workflow execution owner; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-workflow-costs/reconcile",
+    "controller": "NftWorkflowCostsController",
+    "action": "Reconcile",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; workflow execution owner; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-workflow-costs/retire",
+    "controller": "NftWorkflowCostsController",
+    "action": "Retire",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; workflow execution owner; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/nft-workflow-costs/{executionid}/quote",
+    "controller": "NftWorkflowCostsController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": "nft:mint",
+    "enforcement": "captured credential; workflow execution owner; acceptance CAS; never signs",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/quotes",
+    "controller": "WttBridgeController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": "wtt:source:sign",
+    "enforcement": "captured credential; own wallets; quote only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations",
+    "controller": "WttBridgeController",
+    "action": "Start",
+    "class": "value-moving",
+    "scope": "wtt:source:sign",
+    "enforcement": "captured credential; WttSigningAuthorityFence(Source) in admission CAS",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/cancel",
+    "controller": "WttBridgeController",
+    "action": "Cancel",
+    "class": "non-value",
+    "scope": "wtt:source:sign",
+    "enforcement": "owner/tenant InScope; unsent only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/continue",
+    "controller": "WttBridgeController",
+    "action": "Continue",
+    "class": "value-moving",
+    "scope": "wtt:source:sign|wtt:target:sign",
+    "enforcement": "InScope; stage authority fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/submit",
+    "controller": "WttBridgeController",
+    "action": "Submit",
+    "class": "value-moving",
+    "scope": "wtt:source:sign|wtt:target:sign",
+    "enforcement": "InScope; authorize CAS before broadcast",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/participant",
+    "controller": "WttBridgeController",
+    "action": "Participant",
+    "class": "value-moving",
+    "scope": "wtt:participant:sign",
+    "enforcement": "participant consent fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/participant-signature",
+    "controller": "WttBridgeController",
+    "action": "ParticipantSignature",
+    "class": "value-moving",
+    "scope": "wtt:participant:sign",
+    "enforcement": "exact saved-plan bytes; participant fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/refresh",
+    "controller": "WttBridgeController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "InScope; observation only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/native-output",
+    "controller": "WttBridgeController",
+    "action": "NativeOutput",
+    "class": "value-moving",
+    "scope": "wtt:participant:sign",
+    "enforcement": "recipient consent fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/cleanup",
+    "controller": "WttBridgeController",
+    "action": "Cleanup",
+    "class": "value-moving",
+    "scope": "wtt:cleanup:sign",
+    "enforcement": "owner cleanup consent fence",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/bridge/wtt/operations/{id}/owner-takeover",
+    "controller": "WttBridgeController",
+    "action": "OwnerTakeover",
+    "class": "value-moving",
+    "scope": "wtt:target:sign",
+    "enforcement": "direct owner credential + WttSigningAuthorityFence(Target) in the takeover CAS",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST /api/operator/wtt/operations/{id}/reconcile",
+    "controller": "WttOperatorController",
+    "action": "Reconcile",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; observation only",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/operator/wtt/operations/{id}/refetch-proof",
+    "controller": "WttOperatorController",
+    "action": "RefetchProof",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; proof refetch, no signing",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/operator/wtt/operations/{id}/resume-proof",
+    "controller": "WttOperatorController",
+    "action": "ResumeProof",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; attributed publication only",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/operator/wtt/stage-keys/rewrap",
+    "controller": "WttOperatorController",
+    "action": "RewrapStageKeys",
+    "class": "non-value",
+    "scope": "RecentNodeOperatorSession",
+    "enforcement": "operator policy; CAS rewrap only, no signing",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  }
+]

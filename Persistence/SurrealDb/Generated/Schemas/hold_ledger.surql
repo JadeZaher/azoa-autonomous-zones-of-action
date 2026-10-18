@@ -1,25 +1,28 @@
 -- ============================================================
 -- Table: hold_ledger
--- Aggregate: PlatformHold (Services/Hold/PlatformHoldService.cs)
--- Guardrail: G6 SCHEMAFULL; one row per (chain, network, hold id) and it is the idempotency anchor
--- Note: One row is ONE hold: units committed in the platform-custodial holding account for a named beneficiary until release_not_before elapses. The row -- not a caller-supplied header -- is the idempotency anchor, so a retried open, release or refund reads the state it already reached instead of moving value twice.
--- Note: holding_address is the operator-owned custodial account the units sit in, frozen at open. It is the platform reserve account: the reserve is the manager/reserve authority on every asset this node creates, so it can already hold them and no separate holding account has to be funded and made able to accept each asset. A hold is REFUSED for an asset the reserve has no ledger row for.
--- Note: state is a strict machine: Pending -> Held -> Releasing -> Released, Pending|Held -> Refunded, and Held -> ReleasedIntoHold. Releasing exists because the reserve partition draw commits BEFORE the outbound move; a row parked there is one whose units are already counted as issued, so a refund from it is refused rather than double-counted.
--- Note: release_not_before is the hold window (Q5). A plain release before it is refused; a release INTO a second hold is allowed early because no value leaves the holding account -- but the child window may never be earlier than the parent's, or chaining would be a way out of the funder's window.
--- Note: inherits_reserve_commitment marks a hold that took NO partition draw of its own because its parent already did. Exactly one row in a parent/child chain performs the release-hold or cancel-hold draw, which is what keeps the reserve counters from double-counting a single commitment.
--- Note: settlement_transaction_id is written as soon as the rail returns it. A retried release reads it first and reconciles against chain truth before re-sending, so a broadcast-then-timeout cannot become a second payment.
--- Note: version is the compare-and-swap anchor. Every transition reads the row, decides in process, and writes back only while version is unchanged, so two concurrent releases cannot both settle one hold.
+-- Aggregate: HoldCommand (Services/Hold/HoldCommandService.cs)
+-- Guardrail: G6 SCHEMAFULL; protocol, network, owner and tenant qualified custody liability
+-- Note: Immutable definition and opening command bind liability; atomic command receipts preserve replay independently of later state. See Services/Hold/AGENTS.md.
 -- ============================================================
 
 -- ── Enums ─────────────────────────────────────────────────
 
 DEFINE PARAM IF NOT EXISTS $hold_ledger_network VALUE ["Devnet", "Testnet", "Mainnet"];
 DEFINE PARAM IF NOT EXISTS $hold_ledger_funding_source VALUE ["Reserve", "Funder"];
-DEFINE PARAM IF NOT EXISTS $hold_ledger_state VALUE ["Pending", "Held", "Releasing", "Released", "Refunded", "ReleasedIntoHold"];
+DEFINE PARAM IF NOT EXISTS $hold_ledger_state VALUE ["Pending", "AwaitingSourceSettlement", "Held", "Releasing", "Released", "Refunded", "ReleasedIntoHold", "Cancelled", "PartiallyRecovered"];
 
 DEFINE TABLE IF NOT EXISTS hold_ledger SCHEMAFULL;
 
--- Core identity (record id is the SHA-256 of chain|network|hold id)
+DEFINE FIELD IF NOT EXISTS protocol_identity ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS owner_user_id ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS definition_hash ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS definition_json ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS opening_command_id ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS active_command_id ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS active_release_mandate_id ON TABLE hold_ledger TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS economic_source_id ON TABLE hold_ledger TYPE option<string>;
+
+-- Core custody identity
 DEFINE FIELD IF NOT EXISTS id ON TABLE hold_ledger TYPE string
     ASSERT $value != NONE AND $value != "";
 DEFINE FIELD IF NOT EXISTS hold_id ON TABLE hold_ledger TYPE string
@@ -74,7 +77,7 @@ DEFINE FIELD IF NOT EXISTS updated_at ON TABLE hold_ledger TYPE datetime;
 
 DEFINE INDEX IF NOT EXISTS hold_ledger_hold
     ON TABLE hold_ledger
-    FIELDS chain, network, hold_id
+    FIELDS chain, network, protocol_identity, owner_user_id, tenant_id, hold_id
     UNIQUE;
 
 DEFINE INDEX IF NOT EXISTS hold_ledger_due

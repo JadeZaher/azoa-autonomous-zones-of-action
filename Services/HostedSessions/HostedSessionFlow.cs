@@ -24,6 +24,13 @@ public interface IHostedSessionFlow
     Task<AZOAResult<HostedCallbackResult>> RefreshAsync(
         IHostedSessionProvider provider, Guid sessionId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Caller-initiated (user/tenant) refresh: at most one vendor re-fetch per session per
+    /// <paramref name="cooldown"/>; inside it the stored state answers. See AGENTS.md §recovery (budget fairness).
+    /// </summary>
+    Task<AZOAResult<HostedCallbackResult>> RefreshOnDemandAsync(
+        IHostedSessionProvider provider, Guid sessionId, TimeSpan cooldown, CancellationToken ct = default);
+
     /// <summary>Authenticates a callback and applies authoritative outcomes under a renewable lease.</summary>
     Task<AZOAResult<HostedCallbackResult>> HandleCallbackAsync(
         IHostedSessionProvider provider,
@@ -39,6 +46,9 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
 
     /// <summary>Provider guarantees that no external create request was sent.</summary>
     public const string RequestNotSentCode = "PROVIDER_REQUEST_NOT_SENT";
+
+    /// <summary>The provider definitively refused the request (4xx, rate-limit block): nothing was created.</summary>
+    public const string ProviderRefusedCode = "PROVIDER_REQUEST_REFUSED";
 
     private const int MaxCallbackBodyBytes = 65536;
 
@@ -159,18 +169,26 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         var created = await provider.CreateHostedSessionAsync(request, ct);
         if (created.IsError || created.Result is null)
         {
-            if (created.Code == RequestNotSentCode)
+            // Unsent or definitively refused: no provider session exists, so the admission is released.
+            var nothingCreated = created.Code is RequestNotSentCode or ProviderRefusedCode;
+            if (nothingCreated)
                 await _store.ReleaseUnsentAdmissionAsync(ParseId(session.Id), candidate.CreationToken!, ct);
             else
                 _logger.LogWarning(
                 "Provider session creation failed for {FlowKind}/{ProviderKey}; the admission claim requires reconciliation.",
                 request.FlowKind,
                 provider.ProviderKey);
-            return AZOAResult<HostedSessionStartResult>.FailureWithCode(
-                created.Code == RequestNotSentCode
+            return new AZOAResult<HostedSessionStartResult>
+            {
+                IsError = true,
+                Message = nothingCreated
                     ? created.Message
                     : "NeedsOperator: the provider request outcome is uncertain and requires reconciliation.",
-                created.Code == RequestNotSentCode ? AzoaErrorCodes.DependencyUnavailable : AzoaErrorCodes.Conflict);
+                Code = !nothingCreated ? AzoaErrorCodes.Conflict
+                    : created.RetryAfterSeconds is > 0 ? AzoaErrorCodes.OperationNotAllowed
+                    : AzoaErrorCodes.DependencyUnavailable,
+                RetryAfterSeconds = created.RetryAfterSeconds,
+            };
         }
 
         var attached = await _store.TryAttachProviderSessionAsync(
@@ -190,6 +208,9 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 && !string.IsNullOrWhiteSpace(recovered.RedirectUrl)
                 && !HostedSessionStates.IsTerminal(recovered.State))
                 return AZOAResult<HostedSessionStartResult>.Success(Project(recovered, resumed: true));
+            if (!current.IsError && current.Result is { } closed && HostedSessionStates.IsTerminal(closed.State)
+                && closed.ProviderSessionId is null)
+                await DeleteLateProviderSessionAsync(provider, closed, created.Result.ProviderSessionId, ct);
             return AZOAResult<HostedSessionStartResult>.FailureWithCode(
                 attached.IsError
                     ? attached.Message
@@ -250,6 +271,32 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
         return await ProcessSessionAsync(provider, located.Result, ct);
     }
 
+    /// <inheritdoc/>
+    public async Task<AZOAResult<HostedCallbackResult>> RefreshOnDemandAsync(
+        IHostedSessionProvider provider, Guid sessionId, TimeSpan cooldown, CancellationToken ct = default)
+    {
+        var located = await _store.GetByIdAsync(sessionId, ct);
+        if (located.IsError || located.Result is null
+            || located.Result.FlowKind != provider.FlowKind
+            || located.Result.ProviderKey != provider.ProviderKey)
+            return OpaqueFailure();
+        var session = located.Result;
+        if (!HostedSessionStates.IsTerminal(session.State) && _store is IHostedSessionRecoveryStore recovery)
+        {
+            var now = _clock.GetUtcNow();
+            if ((session.LastRefreshAt is { } last && last > now - cooldown)
+                || !await recovery.TryClaimRefreshAsync(session, now, ct))
+                return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
+                {
+                    SessionId = sessionId,
+                    State = session.State,
+                    Outcome = session.AuthoritativeOutcome,
+                    RefreshThrottled = true,
+                });
+        }
+        return await ProcessSessionAsync(provider, session, ct);
+    }
+
     private async Task<AZOAResult<HostedCallbackResult>> ProcessSessionAsync(
         IHostedSessionProvider provider, HostedSession session, CancellationToken ct)
     {
@@ -294,6 +341,9 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
                 return AZOAResult<HostedCallbackResult>.FailureWithCode(parked.Message, parked.Code ?? AzoaErrorCodes.DependencyUnavailable);
             if (parked.Result is null)
                 return await ReadObservedAsync(sessionId, ct);
+            // Only a genuine vendor manual review is progress; "pending"/"not yet submitted" changes nothing (RV-L2 L2-1).
+            if (outcome.Result.IsManualReview && _outcomeHandler is IHostedSessionProgressHandler progress)
+                await progress.ObserveProgressAsync(parked.Result, outcome.Result, ct);
             return AZOAResult<HostedCallbackResult>.Success(new HostedCallbackResult
             {
                 SessionId = sessionId,
@@ -393,6 +443,30 @@ public sealed class HostedSessionFlow : IHostedSessionFlow
             TerminalWriteApplied = transitioned.Result is not null,
             AlreadyTerminal = transitioned.Result is null,
         });
+    }
+
+    /// <summary>
+    /// The create succeeded after this admission was superseded or released: the vendor session has no
+    /// AZOA owner, so it is deleted and the deletion audited. See Services/HostedSessions/AGENTS.md §recovery.
+    /// </summary>
+    private async Task DeleteLateProviderSessionAsync(
+        IHostedSessionProvider provider, HostedSession closed, string providerSessionId, CancellationToken ct)
+    {
+        if (provider is not IDeletableHostedSessionProvider deletable)
+        {
+            _logger.LogError("A late {ProviderKey} session for closed admission {SessionId} cannot be deleted by this provider.",
+                provider.ProviderKey, closed.Id);
+            return;
+        }
+
+        var deleted = await deletable.DeleteProviderSessionAsync(providerSessionId, ct);
+        var action = deleted.IsError ? "LateProviderSessionDeleteFailed" : "LateProviderSessionDeleted";
+        if (deleted.IsError)
+            _logger.LogError("Deleting the late {ProviderKey} session for closed admission {SessionId} failed; it stays inert.",
+                provider.ProviderKey, closed.Id);
+        if (_store is IHostedSessionRecoveryStore recovery)
+            await recovery.AppendAuditAsync(ParseId(closed.Id), "system", action,
+                "The provider create response arrived after the admission closed.", _clock.GetUtcNow(), ct);
     }
 
     private async Task<AZOAResult<HostedCallbackResult>> ReadObservedAsync(Guid sessionId, CancellationToken ct)

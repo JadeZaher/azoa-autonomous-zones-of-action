@@ -17,11 +17,16 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
     internal bool LoseNextAdmissionResponse { get; set; }
     internal int Admissions { get; private set; }
     internal bool FailNextPreparationEpoch { get; set; }
+    /// <summary>Stands in for the SQL action-execution liveness read: true while the admitting run could still sign.</summary>
+    internal bool ActionRunLive { get; set; } = true;
 
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
     private static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
     private static bool Terminal(string state) => WttStageStates.IsTerminal(state);
-    private static WttOperationIntent Intent(WttOperation operation) => JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!;
+    private static WttOperationIntent Intent(WttOperation operation)
+        => JsonSerializer.Deserialize<WttOperationIntent>(operation.OwnerIntentJson ?? operation.IntentJson)!;
+    private static WttActionBinding? Action(WttOperation operation)
+        => operation.OwnerIntentJson is null ? WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash) : null;
 
     public Task<WttOffer?> GetOfferAsync(string id, CancellationToken ct = default)
     { lock (_gate) return Task.FromResult(_offers.TryGetValue(id, out var row) ? Copy(row) : null); }
@@ -64,7 +69,7 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
             if (authority.Signing?.Credential.ActorUserId != intent.ActorUserId) return Task.FromResult<WttOperation?>(null);
             if (_operations.TryGetValue(candidate.Id, out var existing))
                 return Task.FromResult(existing.OfferId == candidate.OfferId && existing.IntentJson == candidate.IntentJson ? Copy(existing) : null);
-            if (WttSigningAuthorityFence.Stage(intent, "Source", null, authority, "wtt_admission") is null
+            if (WttSigningAuthorityFence.Stage(intent, "Source", null, authority, "wtt_admission", Action(candidate)) is null
                 || !_offers.TryGetValue(candidate.OfferId, out var offer) || offer.ConsumedByOperationId is not null
                 || offer.ExpiresAt <= Now || offer.OfferHash != candidate.OfferHash || offer.OperationId != candidate.Id)
                 return Task.FromResult<WttOperation?>(null);
@@ -77,7 +82,7 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
     }
 
     public Task<WttOperation?> CancelAsync(WttOperation candidate, WttStageAuthority authority, long? probedVersion = null,
-        CancellationToken ct = default)
+        bool durableNonce = false, CancellationToken ct = default)
     {
         lock (_gate)
         {
@@ -93,7 +98,7 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
             if (existing.State == "Cancelled") return Task.FromResult<WttOperation?>(Copy(existing));
             if (existing.Phase != "Source" || existing.TransferPublicationJson is not null || existing.State is not ("Admitted" or "Ready" or "Active")
                 || probedVersion is { } probed && probed != existing.Version
-                || intent.Source.ChainType == "Ethereum" && existing.CurrentStageId is not null && probedVersion is null)
+                || durableNonce && existing.CurrentStageId is not null && probedVersion is null)
                 return Task.FromResult<WttOperation?>(null);
             if (_stages.Values.Any(stage => stage.OperationId == candidate.Id && stage.Phase == "Source" && stage.Stage == "Transfer"
                     && (stage.AuthorizedAt is not null || stage.ExposedAt is not null) && stage.State is not ("FailedOnChain" or "ExpiredNoEffect")))
@@ -102,7 +107,7 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
             {
                 var stage = _stages[stageId];
                 if (stage.Phase != "Source" || stage.AuthorizedAt is not null || stage.ExposedAt is not null || stage.State is not ("Planned" or "Prepared")
-                    || intent.Source.ChainType == "Ethereum" && stage.State == "Prepared")
+                    || durableNonce && stage.State == "Prepared")
                     return Task.FromResult<WttOperation?>(null);
                 stage.State = "Cancelled"; stage.Version++;
             }
@@ -130,7 +135,7 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
                 : stage.OriginalStageId is not null)
                 return Task.FromResult<WttOperationStage?>(null);
             var fencePhase = stage.ParticipantAddress is not null ? "Participant" : stage.Phase;
-            if (WttSigningAuthorityFence.Stage(Intent(operation), fencePhase, original?.Phase, authority, "wtt_fence_stage") is null)
+            if (WttSigningAuthorityFence.Stage(Intent(operation), fencePhase, original?.Phase, authority, "wtt_fence_stage", Action(operation)) is null)
                 return Task.FromResult<WttOperationStage?>(null);
             if (resumable) operation.ResumeState = operation.State;
             operation.State = "Active"; operation.CurrentStageId = stage.Id; operation.Version++;
@@ -171,7 +176,8 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
         {
             if (stage.ExposedAt is not null) return stage.ParticipantJson == participantJson;
             if (stage.State != "Planned" || stage.ParticipantAddress is null
-                || WttSigningAuthorityFence.Stage(Intent(operation), "Participant", null, authority, "wtt_fence_exposure") is null) return false;
+                || WttSigningAuthorityFence.Stage(Intent(operation), "Participant", null, authority, "wtt_fence_exposure", Action(operation)) is null)
+                return false;
             stage.ParticipantJson = participantJson; stage.ExposedAt = Now; stage.State = "Exposed";
             return null;
         });
@@ -194,7 +200,8 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
             var original = stage.OriginalStageId is { } id ? _stages[id] : null;
             var phase = stage.ExposedAt is not null || stage.ParticipantAddress is not null ? "Participant" : stage.Phase;
             if (stage.PreparedJson is null || stage.State is not ("Prepared" or "Exposed")
-                || WttSigningAuthorityFence.Stage(Intent(operation), phase, original?.Phase, authority, "wtt_fence_send") is null) return false;
+                || WttSigningAuthorityFence.Stage(Intent(operation), phase, original?.Phase, authority, "wtt_fence_send", Action(operation)) is null)
+                return false;
             stage.State = "SubmissionAuthorized"; stage.AuthorizedAt = Now;
             return null;
         });
@@ -228,11 +235,11 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
     }
 
     public Task<WttOperationStage?> RetireStageAsync(string operationId, long expectedVersion, string stageId, long expectedStageVersion,
-        string detail, CancellationToken ct = default)
+        string detail, bool reservationProbedFree = false, CancellationToken ct = default)
         => Transition(operationId, expectedVersion, stageId, expectedStageVersion, (operation, stage) =>
         {
             if (stage.State is not ("Planned" or "Preparing") || stage.PreparedJson is not null || stage.ExposedAt is not null
-                || stage.AuthorizedAt is not null) return false;
+                || stage.AuthorizedAt is not null || stage.State == "Preparing" && !reservationProbedFree) return false;
             stage.State = "Retired";
             operation.State = operation.ResumeState ?? "Ready"; operation.ResumeState = null; operation.Detail = detail;
             return null;
@@ -284,6 +291,53 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
             return Task.FromResult<WttOperation?>(Copy(operation));
         }
     }
+
+    public Task<WttOperation?> TakeOverAsync(string operationId, long expectedVersion, string ownerIntentJson, WttStageAuthority authority,
+        CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            var operation = _operations[operationId];
+            var owner = WttOwnerIntent.From(JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!);
+            if (operation.Version != expectedVersion || operation.TenantId.Length == 0 && operation.ActionRunId is null
+                || operation.OwnerIntentJson is not null || operation.ActionRunId is not null && ActionRunLive
+                || operation.Phase != "Target" || operation.State != "Ready" || operation.ProofsJson is null
+                || ownerIntentJson != CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(owner))
+                || _stages.Values.Any(stage => stage.OperationId == operationId && stage.Phase is "Target" or "NativeOutput"
+                    && (stage.AuthorizedAt is not null || stage.ExposedAt is not null))
+                || WttSigningAuthorityFence.Stage(owner, "Target", null, authority, "wtt_fence_takeover") is null)
+                return Task.FromResult<WttOperation?>(null);
+            operation.OwnerIntentJson = ownerIntentJson; operation.TargetQuoteJson = null; operation.Version++;
+            return Task.FromResult<WttOperation?>(Copy(operation));
+        }
+    }
+
+    public Task<WttOperationStage?> ResolveExposedAsync(string operationId, long expectedVersion, string stageId, long expectedStageVersion,
+        string observationJson, string verdict, string? participantPreparedJson = null, CancellationToken ct = default)
+        => Transition(operationId, expectedVersion, stageId, expectedStageVersion, (operation, stage) =>
+        {
+            if (stage.State != "Exposed") return stage.ObservationJson == observationJson;
+            if (operation.State != "Active" || stage.ExposedAt is null || stage.AuthorizedAt is not null
+                || verdict == "Landed" && (participantPreparedJson is null || stage.PreparedJson is not null && stage.PreparedJson != participantPreparedJson))
+                return false;
+            stage.ObservationJson = observationJson;
+            switch (verdict)
+            {
+                case "Pending":
+                    break;
+                case "ExpiredNoEffect":
+                    stage.State = "ExpiredNoEffect";
+                    operation.State = operation.ResumeState ?? "Ready"; operation.ResumeState = null;
+                    break;
+                case "Landed":
+                    stage.PreparedJson ??= participantPreparedJson; stage.PreparedHash = CanonicalJson.HashCanonical(stage.PreparedJson!);
+                    stage.State = "SubmissionAuthorized"; stage.AuthorizedAt = Now;
+                    break;
+                default:
+                    return false;
+            }
+            return null;
+        });
 
     public Task<IReadOnlyList<WttOperation>> ReadDueAsync(int limit = 50, CancellationToken ct = default)
     {

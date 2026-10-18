@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Services.Kyc;
 
-/// <inheritdoc/>
-public sealed class ValueAccessService(IKycGateService kycGate) : IValueAccessService
+/// <summary>
+/// Value-path KYC check over the host's <see cref="IRealValueKycGate"/> (the reversal risk hold wrapping the
+/// KYC gate), never the bare <see cref="IKycGateService"/>. See <c>Services/Kyc/AGENTS.md</c> §value gate.
+/// </summary>
+public sealed class ValueAccessService(IRealValueKycGate valueGate) : IValueAccessService
 {
     /// <inheritdoc/>
     public async Task<ValueAccessDecision> GetDecisionAsync(
@@ -31,7 +35,7 @@ public sealed class ValueAccessService(IKycGateService kycGate) : IValueAccessSe
                 KycAuthorizationError.Forbidden + KycAuthorizationError.VerificationRequiredMessage));
 
         return tenantId.HasValue
-            ? kycGate.RequireVerifiedAsync(participantId, tenantId.Value, ct)
-            : kycGate.RequireVerifiedAsync(participantId);
+            ? valueGate.RequireCurrentApprovalAsync(participantId, tenantId.Value, ct)
+            : valueGate.RequireCurrentApprovalAsync(participantId, ct);
     }
 }

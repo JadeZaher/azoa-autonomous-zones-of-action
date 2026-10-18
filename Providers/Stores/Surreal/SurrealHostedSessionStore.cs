@@ -15,7 +15,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <inheritdoc/>
-public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialHostedSessionStore
+public sealed partial class SurrealHostedSessionStore : IHostedSessionStore, ICustodialHostedSessionStore
 {
     private readonly ISurrealExecutor _executor;
 
@@ -149,7 +149,9 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         DateTimeOffset before, int limit, CancellationToken ct = default)
     {
         var query = SurrealQuery<HostedSession>.From()
-            .Where(row => row.State == HostedSessionStates.Claimed && row.ProviderSessionId == null && (row.CreationClaimedAt <= before || (row.CreationClaimedAt == null && row.CreatedDate <= before)))
+            // Identity flows only: fiat creation claims have their own lifecycle and operator resolve (RV-L1-03).
+            .Where(row => (row.FlowKind == HostedSessionFlowKinds.Kyc || row.FlowKind == HostedSessionFlowKinds.Kyb)
+                && row.State == HostedSessionStates.Claimed && row.ProviderSessionId == null && (row.CreationClaimedAt <= before || (row.CreationClaimedAt == null && row.CreatedDate <= before)))
             .OrderBy(row => row.CreatedDate).Limit(Math.Clamp(limit, 1, 100));
         var rows = await _executor.QueryAsync<HostedSession>(query, ct);
         return rows.Select(FromStorage).ToArray();
@@ -436,6 +438,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         OutcomeDetail = session.OutcomeDetail,
         CallbackCount = session.CallbackCount,
         ResumeTargetId = session.ResumeTargetId,
+        NextPollAt = session.NextPollAt?.ToUniversalTime(),
+        PollAttemptCount = session.PollAttemptCount,
         CreatedDate = session.CreatedDate.ToUniversalTime(),
         ModifiedDate = session.ModifiedDate?.ToUniversalTime(),
         ExpiresAt = session.ExpiresAt?.ToUniversalTime(),
@@ -478,6 +482,8 @@ public sealed class SurrealHostedSessionStore : IHostedSessionStore, ICustodialH
         OutcomeDetail = session.OutcomeDetail,
         CallbackCount = session.CallbackCount,
         ResumeTargetId = session.ResumeTargetId,
+        NextPollAt = session.NextPollAt,
+        PollAttemptCount = session.PollAttemptCount,
         CreatedDate = session.CreatedDate,
         ModifiedDate = session.ModifiedDate,
         ExpiresAt = session.ExpiresAt,

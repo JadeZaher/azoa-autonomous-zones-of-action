@@ -1,11 +1,7 @@
 -- ============================================================
 -- Table: action_webhook_event
--- Aggregate: ActionWebhookEvent (Models/ActionWebhookEvent.cs)
--- Guardrail: G6 SCHEMAFULL, transactional-outbox single-winner due-scan
--- Note: Generic action.emit webhook transactional outbox (final-hardening F3). Generalizes the consent_webhook_event outbox to arbitrary tenant-defined events fired by an Emit action node. One row == one action.emit event owed to exactly one tenant. Written in the SAME logical write as the Emit node output (no dual-write); a polling delivery worker claims due rows and POSTs them with retry + idempotency id. Mirrors the consent_webhook_event outbox SHAPE exactly.
--- Note: Due-scan: status='Pending' AND next_attempt_at<=now, oldest first. Conditional transitions (MarkDelivered/Reschedule/DeadLetter) assert AffectedCount==1 — the same single-winner discipline as the saga step claim, so behaviour is safe under one worker (and identical across engines).
--- Note: BEST-EFFORT (notification): this row is a NOTIFICATION. Delivery never writes back to action_run or action_node_execution. The Emit node's serialized Output remains the tenant's authoritative settlement surface; the webhook is a convenience push.
--- Note: STRICT per-tenant isolation (H5): tenant_id scopes every delivery to ONLY that tenant's webhook_registration + secret (the SAME registration table the consent path uses). idempotency_id is the stable per-event dedup id sent to the receiver (X-Azoa-Idempotency-Id), constant across all retries of this event.
+-- Aggregate: Immutable accepted action webhook event
+-- Guardrail: G6 SCHEMAFULL, immutable accepted event and versioned delivery
 -- ============================================================
 
 -- ── Enums ─────────────────────────────────────────────────
@@ -14,6 +10,22 @@
 DEFINE PARAM IF NOT EXISTS $action_webhook_event_status VALUE ["Pending", "Delivered", "DeadLettered"];
 
 DEFINE TABLE IF NOT EXISTS action_webhook_event SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS receipt_id ON TABLE action_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS registration_id ON TABLE action_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS destination_revision ON TABLE action_webhook_event TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS destination_url ON TABLE action_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS body_json ON TABLE action_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS version ON TABLE action_webhook_event TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS retry_generation ON TABLE action_webhook_event TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS cycle_attempt_count ON TABLE action_webhook_event TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS lease_id ON TABLE action_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS lease_expires_at ON TABLE action_webhook_event TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS attempt_secret_revision ON TABLE action_webhook_event TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS attempt_encrypted_secret ON TABLE action_webhook_event TYPE option<string>;
 
 -- Core identity
 DEFINE FIELD IF NOT EXISTS id ON TABLE action_webhook_event TYPE string

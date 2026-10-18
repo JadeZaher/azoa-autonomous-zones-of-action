@@ -82,6 +82,13 @@ renews it:
 
 Bytes that are already submitted keep reconciling with no live authority at all.
 
+Round 4 verified the converse for workflow stages: the frozen `WorkflowSigningWitness` is fenced on
+revocation (user active + `auth_not_before` watermark), never on its login's `ExpiresAt`
+(`SigningAuthorityFence.Credential` checks expiry only when `direct`). So a workflow hold opening
+admitted hours after the run's login expired still admits, while the participant's own consent
+stage refuses the expired login and accepts a renewed one without restarting the quote, stage or
+generation (`SurrealHoldCommandTests.LoginExpiry.cs`).
+
 ## §workers and §durable-registration
 
 `HoldRegistration.AddPlatformHold` checks its prerequisites, then registers the following with
@@ -122,6 +129,32 @@ person cannot refund or release a hold this tenant does not hold. `ReleaseIntoHo
 and the mandates already enforce the same rule. Discovery is scoped server-side:
 tenant callers see only their exact actor/tenant commands; a person sees commands they acted on
 or receive.
+
+## §liability-reads — what backs direct hold admission
+
+`HoldLiabilityReadService` (`GET /api/hold-commands/liabilities`, `/liabilities/{holdRecordId}`,
+`/reserve-assets`) gives a participant the reads an admission UI needs without granting authority:
+
+- **Liabilities** mirror command discovery. A login caller (no acting tenant) sees liabilities it
+  owns with no custody tenant, liabilities it is the beneficiary of, and liabilities it holds in
+  custody as a tenant (`tenant_id = user:<caller>`). A child-credential caller sees only liabilities
+  in the acting tenant's custody that it owns or receives. The store query and `Visible` apply the
+  same rule; a hidden liability reads exactly like a missing one.
+- **Decided rule (round 4, L6 #5): what is owed to you is yours to see.** A login caller sees a
+  liability it is the beneficiary of *whatever tenant holds custody* — the entitlement belongs to the
+  person, not to the app they received it through (self-sovereignty: one person, many tenants). What
+  stays tenant-confidential is the *sending* side: a liability the caller merely owns (opened, funded)
+  under tenant T's custody is visible only under T's credential, never from the bare login. The earlier
+  integration fixture expected owed-under-a-tenant rows hidden from the login; it was test drift, now
+  aligned. Table: `tests/AZOA.WebAPI.Tests/Hold/HoldLiabilityVisibilityTests.cs`.
+- **Reserve assets** list the exact `HoldAssetIdentity` (including the holding address an `Open`
+  must name) and per-partition availability for every reserve row `Open` would let this caller
+  draw: the store's own `ReservePartitionScope.Refuse` with the same authority derivation as
+  `CommitLocalAsync` (credential tenant, else the caller when it registered the asset; node operator
+  only for the platform unit).
+
+Captured-null negatives for `FindOwnedHoldAsync` and the workflow-mandate run guard live in
+`SurrealHoldCommandTests.CapturedNull.cs` / `.WorkflowMandate.cs` (`TenantedRun`).
 
 ## History
 

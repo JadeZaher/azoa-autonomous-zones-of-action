@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Fiat.Reversal;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;
 
@@ -39,6 +40,7 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
     private readonly IFiatPayoutLedger _payouts;
     private readonly IFiatReversalLedger _reversals;
     private readonly IStripeConnectGateway _connect;
+    private readonly ITenantPayoutFunding _funding;
     private readonly ILogger<PayoutReversalEventHandler> _logger;
     private readonly TimeProvider _clock;
 
@@ -47,9 +49,11 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
         IFiatPayoutLedger payouts,
         IFiatReversalLedger reversals,
         IStripeConnectGateway connect,
+        ITenantPayoutFunding funding,
         ILogger<PayoutReversalEventHandler> logger,
         TimeProvider? clock = null)
     {
+        _funding = funding ?? throw new ArgumentNullException(nameof(funding));
         _fiat = fiat ?? throw new ArgumentNullException(nameof(fiat));
         _payouts = payouts ?? throw new ArgumentNullException(nameof(payouts));
         _reversals = reversals ?? throw new ArgumentNullException(nameof(reversals));
@@ -159,8 +163,8 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
         reversedMinorUnits = recorded.Result.AmountMinorUnits;
         owed = OffRampAging.ParseBaseUnits(recorded.Result.ReinstatementOwedBaseUnits);
         if (row.ReversedMinorUnits >= reversedMinorUnits
-            && string.Equals(row.ReversalId, recorded.Result.Id, StringComparison.Ordinal))
-            return FiatEventOutcome.Applied;
+            && string.Equals(SurrealLink.FromLink(row.ReversalId), recorded.Result.Id, StringComparison.Ordinal))
+            return await FundingSyncedAsync(row, ct);
 
         owed = System.Numerics.BigInteger.Max(System.Numerics.BigInteger.Zero, owed - OffRampAging.ParseBaseUnits(row.RestoredQuantityBaseUnits));
         row.Status = row.Status == FiatPayoutStatuses.Returned && owed == 0 ? FiatPayoutStatuses.Returned : FiatPayoutStatuses.Reversed;
@@ -171,7 +175,7 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
             MaxReasonLength);
         row.ReversedMinorUnits = reversedMinorUnits;
         row.ReversedAt ??= _clock.GetUtcNow();
-        row.ReversalId = recorded.Result.Id;
+        row.ReversalId = SurrealLink.ToLink(FiatReversal.SchemaNameConst, recorded.Result.Id);
         row.UnitsOwedBaseUnits = OffRampAging.Format(owed);
         row.UpdatedAt = _clock.GetUtcNow();
 
@@ -193,8 +197,17 @@ public sealed class PayoutReversalEventHandler : IFiatEventHandler
             + "back and {Owed} base units are owed to the account.",
             row.Id, transfer.AmountReversedMinorUnits, row.CurrencyCode, row.UnitsOwedBaseUnits);
 
-        return FiatEventOutcome.Applied;
+        return await FundingSyncedAsync(saved.Result ?? row, ct);
     }
+
+    /// <summary>
+    /// Critic rule 2: a tenant-funded cash-out's debit takes Stripe's cumulative <c>amount_reversed</c>.
+    /// A sync that could not complete fails the event so the delivery (or the recovery sweep) retries it.
+    /// </summary>
+    private async Task<FiatEventOutcome> FundingSyncedAsync(FiatPayout row, CancellationToken ct)
+        => row.FundingTenantId is null || await _funding.SyncAsync(row, ct) != TenantFundingSync.Retry
+            ? FiatEventOutcome.Applied
+            : FiatEventOutcome.Failed;
 
     /// <summary>
     /// Writes the reversal as a first-class fact in W4.3's ledger, at a status that asks for a

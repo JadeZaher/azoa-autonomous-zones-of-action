@@ -15,11 +15,11 @@
 DEFINE FIELD OVERWRITE amount ON TABLE operation_log TYPE option<int | string>;
 
 -- Step 2 of 3. Rewrite the stored numeric amounts into the canonical decimal string.
--- Guarded by type::is::number so re-running the migration is a no-op on rows already
+-- Guarded by type::is_number so re-running the migration is a no-op on rows already
 -- rewritten (the runner is forward-only, but a partially applied batch must be safe).
 UPDATE operation_log
     SET amount = <string> amount
-    WHERE amount != NONE AND type::is::number(amount);
+    WHERE amount != NONE AND type::is_number(amount);
 
 -- Step 3 of 3. Pin the final type and reject anything that is not an unsigned decimal
 -- count — no sign, no separators, no exponent, matching RailAmount.TryParse.

@@ -63,6 +63,20 @@ examples") and `Providers/Kyb/IdentomatKybResultParser.cs`. `IdentomatSessionMod
 KYB `/result` and callbacks are keyed by the session `id` (docs: "Use this to … receive
 callbacks"). Tests flip `IdentomatSession.Verdict` to play the vendor's review and post callbacks
 with `IdentomatVendor.CallbackBody`.
+
+Undecided vs manual review (round-4 fix batch, RV-L2 test gap): the documented `result` values are
+`APPROVED | REJECTED | MANUAL_CHECK | ADDITIONAL_INFORMATION_REQUESTED`
+(`identomat-callback-contract-2026-10-15.md`); the docs give no shape for a session nobody has
+submitted yet. `Pending` therefore answers `{"result":null}` (no verdict, which the adapter maps to a
+non-terminal `UNKNOWN` without manual review), and `ManualCheck` answers the documented
+`MANUAL_CHECK`. The fake previously answered `MANUAL_CHECK` for every undecided session, which hid
+L2-1/L2-2. `IdentityResultRequests` counts `/external-api/result/` calls for budget assertions.
+
+The widget host also answers the documented `POST /external-api/delete/` (`company_key`, `session_token`):
+`true` when it deletes, `{"argumentError":"session-not-found"}` otherwise (`Providers/Kyc/IdentomatSessionDeletion.cs`
+treats both as gone). A deleted session stops answering `/external-api/result/`; `DeleteRequests` lets an orphan or
+late-response flow assert the node actually asked (IDENTOMAT-RECOVERY, L2).
+
 ## §stripe-fake — `Infrastructure/StripeVendor.cs`
 
 `POST /v1/checkout/sessions` (form-encoded) and `GET` by id, Bearer secret key checked.
@@ -113,3 +127,15 @@ Cut: no tests for request-validation variants already covered by unit tests
    never against public RPC.
 4. Assert responses and rows (`RowsAsync`, typed `SurrealQuery<T>`); add a fixture-contract check
    when a slice consumes the payload.
+
+## §webhook-drain — `Infrastructure/WebhookDrainWebApplicationFactory.cs`, `WebhookOutboxDrainFlowTests.cs`
+
+The flow host plus `Webhooks:Enabled=true`, a one-second poll, no startup delay and
+`MaxAttempts=1` (one receiver failure dead-letters). The class declares
+`IClassFixture<WebhookDrainWebApplicationFactory>` on top of the base's fixture; xUnit builds
+both, but the unused base factory never starts a host. Each test owns a tenant and a unique
+`receiver-<guid>.flow.test` host registered on the edge, so the shared worker cannot cross
+tests. The event is produced by a real transition (tenant provisions a child → participation
+grant → consent notification); the only arranged state is the crashed-worker lease in the
+abandoned-attempt test, which no public route can create. Signature verification re-implements
+the documented length-prefixed HMAC (`Core/Webhooks/WebhookHmacSigner.cs`) independently.

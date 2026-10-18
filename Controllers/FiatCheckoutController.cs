@@ -116,7 +116,7 @@ public sealed class FiatCheckoutController : ControllerBase
             {
                 SubjectUserId = userId,
                 TenantId = actingTenantId,
-                AdmissionKey = BuildAdmissionKey(userId, request.RequestKey),
+                AdmissionKey = BuildAdmissionKey(userId, actingTenantId, request.RequestKey),
                 Purpose = request.Purpose,
                 AmountMinorUnits = request.AmountMinorUnits,
                 SuccessUrl = request.SuccessUrl,
@@ -154,11 +154,11 @@ public sealed class FiatCheckoutController : ControllerBase
             return Unauthorized(AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 "Invalid token.", AzoaErrorCodes.Forbidden));
 
-        var (_, authorisation) = await AuthoriseSubjectAsync(userId, callerUserId.Value);
+        var (actingTenantId, authorisation) = await AuthoriseSubjectAsync(userId, callerUserId.Value);
         if (authorisation is not null)
             return authorisation;
 
-        var result = await rail!.GetIntentAsync(userId, intentId, HttpContext.RequestAborted);
+        var result = await rail!.GetIntentAsync(userId, intentId, actingTenantId, HttpContext.RequestAborted);
         if (!result.IsError)
             return Ok(result);
 
@@ -272,14 +272,15 @@ public sealed class FiatCheckoutController : ControllerBase
     }
 
     /// <summary>
-    /// Namespaces the caller's request key by SUBJECT. The admission row is unique on
+    /// Namespaces the caller's request key by SUBJECT and DRIVER (tenant id, or <c>self</c> for a
+    /// first-party login; F-H8). The admission row is unique on
     /// (flow, provider, admission key) across the whole node, so an un-namespaced key would let one
     /// caller's ordinary value — "1", "top-up" — collide with another account's live payment.
     /// A blank key is REFUSED rather than replaced with a fresh one: a generated key makes every
     /// retry a new payment, which is the double-charge the key exists to prevent.
     /// </summary>
-    private static string BuildAdmissionKey(Guid subjectUserId, string requestKey)
-        => $"{subjectUserId:N}:{requestKey.Trim()}";
+    private static string BuildAdmissionKey(Guid subjectUserId, Guid? tenantId, string requestKey)
+        => $"{subjectUserId:N}:{(tenantId is { } tenant ? tenant.ToString("N") : "self")}:{requestKey.Trim()}";
 
     private Guid? GetUserIdFromClaims()
     {

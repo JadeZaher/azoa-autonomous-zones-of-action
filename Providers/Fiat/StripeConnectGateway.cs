@@ -113,6 +113,15 @@ public sealed class StripeTransfer
     public bool Livemode { get; init; }
 }
 
+/// <summary>One page of transfers; <c>HasMore</c> means the page is not complete evidence.</summary>
+public sealed record StripeTransferList(IReadOnlyList<StripeTransfer> Transfers, bool HasMore);
+
+/// <summary>A connected account with the node's own creation metadata (RV-L1-01 operator recovery).</summary>
+public sealed record StripeClaimedAccount(string AccountId, string? ClaimId, string? SubjectUserId);
+
+/// <summary>Connected accounts created in a window; <c>Complete</c> false means it is not evidence of absence.</summary>
+public sealed record StripeClaimedAccountList(IReadOnlyList<StripeClaimedAccount> Accounts, bool Complete);
+
 /// <summary>A connected account's bank payout, fetched in that account's scope.</summary>
 public sealed class StripeBankPayout
 {
@@ -153,6 +162,10 @@ public interface IStripeConnectGateway
     Task<AZOAResult<StripeTransfer>> GetTransferAsync(
         StripeCredentials credentials, string transferId, CancellationToken ct = default);
 
+    /// <summary>Lists one page (100) of the platform's transfers in a transfer group; the operator's no-money evidence.</summary>
+    Task<AZOAResult<StripeTransferList>> ListTransfersByGroupAsync(
+        StripeCredentials credentials, string transferGroup, CancellationToken ct = default);
+
     /// <summary>Sets the platform-controlled account's payout schedule to manual.</summary>
     Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
         StripeCredentials credentials, string accountId, CancellationToken ct = default);
@@ -164,6 +177,13 @@ public interface IStripeConnectGateway
     /// <summary>Fetches a bank payout from its owning connected account.</summary>
     Task<AZOAResult<StripeBankPayout>> GetBankPayoutAsync(
         StripeCredentials credentials, string accountId, string payoutId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Every connected account created in [<paramref name="from"/>, <paramref name="to"/>], with its creation metadata.
+    /// Stripe cannot search accounts by metadata, so the window is paged and filtered by the caller.
+    /// </summary>
+    Task<AZOAResult<StripeClaimedAccountList>> ListConnectedAccountsCreatedAsync(
+        StripeCredentials credentials, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -339,6 +359,24 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
     }
 
     /// <inheritdoc />
+    public Task<AZOAResult<StripeTransferList>> ListTransfersByGroupAsync(
+        StripeCredentials credentials, string transferGroup, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(transferGroup))
+            return Task.FromResult(FiatPayoutErrors.RailUnavailable<StripeTransferList>());
+
+        return SendAsync(
+            credentials,
+            HttpMethod.Get,
+            "/v1/transfers?limit=100&transfer_group=" + Uri.EscapeDataString(transferGroup.Trim()),
+            form: null,
+            idempotencyKey: null,
+            "list cash-out transfers",
+            ParseTransferList,
+            ct);
+    }
+
+    /// <inheritdoc />
     public Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
         StripeCredentials credentials, string accountId, CancellationToken ct = default)
         => SendAsync(credentials, HttpMethod.Post, "/v1/accounts/" + Uri.EscapeDataString(accountId),
@@ -361,6 +399,65 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
         StripeCredentials credentials, string accountId, string payoutId, CancellationToken ct = default)
         => SendAsync(credentials, HttpMethod.Get, "/v1/payouts/" + Uri.EscapeDataString(payoutId),
             null, null, "read a bank payout", ParseBankPayout, ct, accountId);
+
+    /// <summary>Most account pages one window listing reads before it reports itself incomplete.</summary>
+    public const int MaxAccountPages = 100;
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<StripeClaimedAccountList>> ListConnectedAccountsCreatedAsync(
+        StripeCredentials credentials, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+    {
+        var accounts = new List<StripeClaimedAccount>();
+        string? after = null;
+        for (var page = 0; page < MaxAccountPages; page++)
+        {
+            var path = "/v1/accounts?limit=100"
+                + "&created%5Bgte%5D=" + from.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+                + "&created%5Blte%5D=" + to.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+                + (after is null ? string.Empty : "&starting_after=" + Uri.EscapeDataString(after));
+            var read = await SendAsync(credentials, HttpMethod.Get, path, null, null,
+                "list payout accounts", ParseClaimedAccountPage, ct);
+            if (read.IsError || read.Result is not { } listed)
+                return AZOAResult<StripeClaimedAccountList>.FailureWithCode(read.Message, read.Code ?? FiatPayoutErrors.PayoutBusyCode);
+            accounts.AddRange(listed.Accounts);
+            if (listed.Complete)
+                return AZOAResult<StripeClaimedAccountList>.Success(new(accounts, true), "Success");
+            if (listed.Accounts.Count == 0)
+                break;
+            after = listed.Accounts[^1].AccountId;
+        }
+
+        return AZOAResult<StripeClaimedAccountList>.Success(new(accounts, false), "Success");
+    }
+
+    /// <summary>One <c>/v1/accounts</c> page; <c>Complete</c> mirrors <c>has_more == false</c>.</summary>
+    public static StripeClaimedAccountList? ParseClaimedAccountPage(string json)
+    {
+        var root = TryReadObject(json, out var document);
+        if (root is null)
+            return null;
+
+        using (document)
+        {
+            if (!root.Value.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array
+                || !root.Value.TryGetProperty("has_more", out var hasMore)
+                || hasMore.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                return null;
+            var accounts = new List<StripeClaimedAccount>();
+            foreach (var item in data.EnumerateArray())
+            {
+                // An unreadable entry makes the page unusable as evidence of absence.
+                if (ReadString(item, "id") is not { Length: > 0 } id)
+                    return null;
+                var metadata = item.TryGetProperty("metadata", out var meta) && meta.ValueKind == JsonValueKind.Object
+                    ? meta : default;
+                accounts.Add(new StripeClaimedAccount(id,
+                    metadata.ValueKind == JsonValueKind.Object ? ReadString(metadata, "azoa_payout_claim") : null,
+                    metadata.ValueKind == JsonValueKind.Object ? ReadString(metadata, "azoa_user_id") : null));
+            }
+            return new StripeClaimedAccountList(accounts, !hasMore.GetBoolean());
+        }
+    }
 
     private async Task<AZOAResult<T>> SendAsync<T>(
         StripeCredentials credentials,
@@ -415,9 +512,14 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
                     "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId}",
                     attemptedAction, (int)response.StatusCode, correlationId);
 
-                // 429 and 5xx are the rail being busy; anything else is a request this node built
-                // wrongly or an account the provider will not pay, neither of which a retry fixes.
-                return (int)response.StatusCode is 429 or >= 500
+                // 429 and 5xx are the rail being busy. A 409 or an idempotency_error means another
+                // request under the same key is (or was) in flight, so the outcome is UNKNOWN, never a
+                // refusal (D-8 rule 1). Anything else is a request this node built wrongly or an
+                // account the provider will not pay, neither of which a retry fixes.
+                var idempotencyConflict = (int)response.StatusCode == 409
+                    || (error.RootElement.TryGetProperty("error", out var conflict)
+                        && ReadString(conflict, "type") == "idempotency_error");
+                return (int)response.StatusCode is 429 or >= 500 || idempotencyConflict
                     ? FiatPayoutErrors.RailBusy<T>(correlationId)
                     : FiatPayoutErrors.RailRefused<T>(correlationId);
             }
@@ -494,6 +596,27 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
                 Url = url!,
                 ExpiresAt = ReadUnixSeconds(root.Value, "expires_at"),
             };
+        }
+    }
+
+    /// <summary>Reads one page of transfers; null unless both <c>data</c> and <c>has_more</c> are present.</summary>
+    public static StripeTransferList? ParseTransferList(string json)
+    {
+        var root = TryReadObject(json, out var document);
+        if (root is null)
+            return null;
+
+        using (document)
+        {
+            if (!root.Value.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array
+                || !root.Value.TryGetProperty("has_more", out var hasMore)
+                || hasMore.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                return null;
+            var transfers = data.EnumerateArray()
+                .Select(item => ParseTransfer(item.GetRawText()))
+                .OfType<StripeTransfer>()
+                .ToList();
+            return new StripeTransferList(transfers, hasMore.GetBoolean());
         }
     }
 

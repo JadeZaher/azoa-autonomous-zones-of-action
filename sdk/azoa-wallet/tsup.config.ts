@@ -5,7 +5,6 @@ export default defineConfig({
     index: "src/index.ts",
     "algorand/index": "src/algorand/index.ts",
     "solana/index": "src/solana/index.ts",
-    "dex/index": "src/dex/index.ts",
     "api/index": "src/api/index.ts",
     "client/index": "src/client/index.ts",
     "workflow/index": "src/workflow/index.ts",
@@ -16,5 +15,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ["algosdk", "@solana/web3.js", "@solana/spl-token", "@noble/curves", "@tinymanorg/tinyman-js-sdk"],
+  external: ["algosdk", "@solana/web3.js", "@solana/spl-token", "@noble/curves"],
 });

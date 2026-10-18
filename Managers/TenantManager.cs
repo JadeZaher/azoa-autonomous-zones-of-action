@@ -97,7 +97,8 @@ public class TenantManager : ITenantManager
         // hashes for one address, with LoginAsync left to refuse the ambiguity. This writer
         // now applies the SAME rule as UserManager.RegisterAsync, so the index adjudicates.
         var username = string.IsNullOrWhiteSpace(model.Username) ? seed : NormalizeIdentityValue(model.Username);
-        var email = string.IsNullOrWhiteSpace(model.Email) ? $"{seed}@onboard.azoa.local" : NormalizeIdentityValue(model.Email);
+        // A tenant cannot prove a mailbox, so the UNIQUE email column always gets the synthetic address (no squatting).
+        var email = $"{seed}@onboard.azoa.local";
 
         var child = new User
         {
@@ -146,7 +147,7 @@ public class TenantManager : ITenantManager
         SigningConsentWitness authority,
         CancellationToken ct)
     {
-        var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user), Message = message };
+        var result = new AZOAResult<ChildUserResponse> { Result = ToResponse(user, tenantId), Message = message };
 
         if (user.OwnerTenantId != tenantId)
         {
@@ -188,7 +189,7 @@ public class TenantManager : ITenantManager
             children = children.Where(c => string.Equals(c.ExternalUserId, filter, StringComparison.Ordinal));
         }
 
-        result.Result = children.Select(ToResponse).ToList();
+        result.Result = children.Select(child => ToResponse(child, tenantId)).ToList();
         result.Message = "Success";
         return result;
     }
@@ -223,7 +224,7 @@ public class TenantManager : ITenantManager
                 && claimed.Result is not null
                 && MatchesCorrelation(claimed.Result, tenantId, externalUserId, deterministicId))
             {
-                result.Result = ToResponse(claimed.Result);
+                result.Result = ToResponse(claimed.Result, tenantId);
                 result.Message = "Success";
                 return result;
             }
@@ -240,7 +241,7 @@ public class TenantManager : ITenantManager
             return result;
         }
 
-        result.Result = ToResponse(found.Result);
+        result.Result = ToResponse(found.Result, tenantId);
         result.Message = "Success";
         return result;
     }
@@ -250,6 +251,7 @@ public class TenantManager : ITenantManager
         Guid childId,
         IEnumerable<string> requestedScopes,
         IEnumerable<string> tenantScopes,
+        Guid issuingKeyId,
         CancellationToken ct = default)
     {
         var result = new AZOAResult<ChildCredentialResponse>();
@@ -308,7 +310,8 @@ public class TenantManager : ITenantManager
 
         // M3 scope ceiling = (tenant scopes) ∩ (granted scopes) ∩ (requested). An
         // empty requested set delegates the full (tenant ∩ granted) intersection.
-        var ceiling = tenantOwn.Where(liveGrantScopes.Contains);
+        // RV-L4-01: a role-bound dApp scope is delegable only while the user's live role holds it.
+        var ceiling = tenantOwn.Where(liveGrantScopes.Contains).Where(scope => AzoaDappRoles.GrantsScope(user.DappRole, scope));
         var delegated = (requested.Count == 0
                 ? ceiling
                 : ceiling.Where(requested.Contains))
@@ -329,7 +332,7 @@ public class TenantManager : ITenantManager
             ? user.AuthNotBefore.Value
             : now;
         var expiresAt = notBefore.Add(ChildTokenLifetime);
-        var token = GenerateChildJwt(user.Id, tenantId, delegated, notBefore, expiresAt);
+        var token = GenerateChildJwt(user.Id, tenantId, issuingKeyId, delegated, notBefore, expiresAt);
 
         result.Result = new ChildCredentialResponse
         {
@@ -344,14 +347,19 @@ public class TenantManager : ITenantManager
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static ChildUserResponse ToResponse(IUser a) => new()
+    /// <summary>Projects a child for <paramref name="tenantId"/>; a claimed (self-owned) account exposes only its correlation ids (audit-1 M1).</summary>
+    private static ChildUserResponse ToResponse(IUser a, Guid tenantId)
     {
-        UserId = a.Id,
-        ExternalUserId = a.ExternalUserId ?? string.Empty,
-        ExternalRef = a.ExternalRef,
-        Username = a.Username,
-        Email = a.Email,
-    };
+        var owned = a.OwnerTenantId == tenantId;
+        return new()
+        {
+            UserId = a.Id,
+            ExternalUserId = a.ExternalUserId ?? string.Empty,
+            ExternalRef = owned ? a.ExternalRef : null,
+            Username = owned ? a.Username : string.Empty,
+            Email = owned ? a.Email : string.Empty,
+        };
+    }
 
     /// <summary>Trimmed, lower-invariant identity value; mirrors UserManager's rule exactly.</summary>
     /// <remarks>
@@ -402,7 +410,7 @@ public class TenantManager : ITenantManager
     /// </summary>
     public const string ActAsTenantClaim = "act_as_tenant";
 
-    private string GenerateChildJwt(Guid userUserId, Guid tenantId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
+    private string GenerateChildJwt(Guid userUserId, Guid tenantId, Guid issuingKeyId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
         var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
@@ -418,6 +426,7 @@ public class TenantManager : ITenantManager
             // token-type segregation (security-review S5): explicitly classes this as a
             // scoped tenant child credential, not a full-authority user login.
             new(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
+            new(AzoaClaims.IssuingKeyId, issuingKeyId.ToString()),
             new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(DateTime.SpecifyKind(notBefore, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };

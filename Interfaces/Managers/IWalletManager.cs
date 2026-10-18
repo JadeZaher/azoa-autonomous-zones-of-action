@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -31,9 +32,16 @@ public interface IWalletManager
         string externalUserId, SigningConsentWitness authority, CancellationToken ct = default);
 
     /// <summary>
-    /// Connect an external wallet (e.g., MetaMask) by verifying signed message ownership.
+    /// Connect an external wallet (unproven); inline signed proofs are refused, use the ownership-challenge/proof pair.
     /// </summary>
     Task<AZOAResult<IWallet>> ConnectWalletAsync(WalletConnectRequest model, Guid userId, AZOARequest? request = null);
+
+    /// <summary>Issues a purpose-bound ownership challenge naming the caller, the wallet, its chain and address.</summary>
+    Task<AZOAResult<WalletChallengeResponse>> CreateOwnershipChallengeAsync(Guid walletId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>Consumes and verifies the challenge signature for the caller's own external wallet and records the ownership proof.</summary>
+    Task<AZOAResult<WalletOwnershipProof>> ProveOwnershipAsync(Guid walletId, Guid userId, string signature, string? message,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Export a platform-generated wallet's private key and seed phrase.

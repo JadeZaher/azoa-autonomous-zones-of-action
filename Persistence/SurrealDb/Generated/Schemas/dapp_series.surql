@@ -10,7 +10,7 @@
 -- ── Enums ─────────────────────────────────────────────────
 
 -- DappSeries.StatusKind
-DEFINE PARAM IF NOT EXISTS $dapp_series_status VALUE ["Draft", "Building", "Ready", "Deployed", "Archived"];
+DEFINE PARAM IF NOT EXISTS $dapp_series_status VALUE ["Draft", "Building", "Ready", "Deploying", "DeploymentFailed", "Deployed", "Archived"];
 
 DEFINE TABLE IF NOT EXISTS dapp_series SCHEMAFULL;
 
@@ -38,6 +38,7 @@ DEFINE FIELD IF NOT EXISTS shared_config ON TABLE dapp_series TYPE object;
 
 -- Linked ActionGraphBundle.Id, populated by GenerateAsync (null until generation)
 DEFINE FIELD IF NOT EXISTS action_graph_bundle_id ON TABLE dapp_series TYPE option<record<action_graph_bundle>>;
+DEFINE FIELD IF NOT EXISTS deployment_operation_id ON TABLE dapp_series TYPE option<string>;
 
 -- Deployment target chain (e.g. algorand-mainnet) -- nullable until set
 DEFINE FIELD IF NOT EXISTS target_chain ON TABLE dapp_series TYPE option<string>;

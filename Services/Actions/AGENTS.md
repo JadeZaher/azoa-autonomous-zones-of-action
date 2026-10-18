@@ -471,10 +471,12 @@ around what the in-process path enforces.**
 
 **Why each member is here, and what removes it:**
 
-- **Governance cannot be trusted to count.** The tally reads raw child holons, so a
-  ballot created outside the handler is counted without ever taking a uniqueness claim
-  (§governance): one verified user can post N vote holons and all N count. Tracked by
-  `conductor/tracks/governance-vote-of-record_20260906`.
+- **Governance waits for an independent runtime verdict.** The vote of record now lives in
+  `governance_proposal` / `governance_command_receipt` (single-winner receipts, no raw child-holon
+  tally; see `Services/Governance/AGENTS.md` §governance-gate). Round 4 (L1) re-blocks
+  GovernanceProposalCreate/Vote/Tally until real-DB race fixtures are green and
+  `round4-governance-runtime-verdict.md` records `RUNTIME_VERDICT: ACCEPTED`
+  (`NotEnabledActionNodeTypes.cs` is L1's file).
 - **The credential rail cannot authorize.** The only mint path stamps
   `issuer_user_id` = the holder, which makes the "issuer, never the holder" rule in
   §credential-revoke vacuous — the party the credential would be taken from is the
@@ -885,3 +887,33 @@ successful output. Deterministic invalid input records HoldAdmissionRejected by
 execution-version CAS before failure; missing authority/provider/source evidence
 remains recoverable. The quartet is not activated until legacy caller cutover and
 registration are complete. Tests are authored but the integrated sweep is pending.
+
+## wtt-route
+
+Round 4 (L4 seam for L5's WTT helper). A Bridge/Back node whose config carries a `wtt` object runs on
+the durable WTT journal instead of the legacy bridge: `ActionNodeHandlerRegistry.TryGetFor(node)`
+returns a recoverable `ActionWttNodeHandler` (domain `wtt`) when a registered `IActionWttRoute`
+`Applies(node)`; every other node resolves by type exactly as before. The dispatch site
+(`ActionNodeStepHandler`) is the only caller of `TryGetFor`; classification paths (economic manifest)
+keep `TryGet(type)` because both routes are economic. Selection is per node, so legacy Bridge/Back
+nodes never gain an external-operation reference. The route supplies the signing scopes
+(`wtt:source:sign` + `wtt:target:sign`), the settlement rail (source chain) and the reference;
+WTT `Enabled` and module checks stay inside the route (a disabled route fails the node before any
+quote). The output catalog's Bridge/Back shape is the union of the legacy `BridgeTransactionResult`
+and the flat `WttActionOutput` receipt. Inert until L5 makes `WttActionResolver : IActionWttRoute`
+(registered as `IActionWttRoute`) and L1 adds `WttActionConfig? Wtt` to `BridgeNodeConfig` /
+`BackNodeConfig` (strict publish-time config parsing rejects the key until then).
+
+Signing scopes have one source (X-1): `ActionSigningScopes.Required` returns `wtt:source:sign` +
+`wtt:target:sign` for a Bridge/Back node whose config parses as a `wtt` request (the same
+`WttActionResolver.ReadConfig` test `Applies` uses) and `transfer:sign` for a legacy trusted-bridge node.
+The engine handler, the admission fence in `SurrealActionNodeExecutionStore` and participant
+re-authorization (`ActionSigningAuthorizationService`) all read it, so a parked WTT node can be
+re-authorized with exactly the witness `WttLifecycleService` demands. `ActionSigningScopeTests` pins the
+agreement with `TryGetFor(node).ResolveSigningScopes` and `WttSigningAuthorityFence.WorkflowScopes`.
+
+No fallback (X-8): `Applies` is true for any non-null `wtt` property, well-formed or not
+(`WttActionResolver.Selects`), so a malformed body reaches the WTT route, which fails the node. Publish refuses a Bridge/Back
+config whose `wtt` member does not parse as a typed `WttActionConfig` (`ActionNodeConfigRegistry.Validate`), and the legacy
+`BridgeNodeHandler` / `BackNodeHandler` fail any node that names `wtt`, so the trusted bridge never runs a node the author
+meant for WTT even if a registry path or options difference let it through.

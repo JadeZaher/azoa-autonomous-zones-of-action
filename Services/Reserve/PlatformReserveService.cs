@@ -321,7 +321,7 @@ public sealed class PlatformReserveService : IPlatformReserve
 
             var row = current.Result;
 
-            var scopeRefusal = ReservePartitionScope.Refuse(row, authority, row.AssetId, _options);
+            var scopeRefusal = ReservePartitionScope.RefuseDeclaration(row, authority, row.AssetId, _options);
             if (scopeRefusal is not null)
                 return AZOAResult<PlatformReserveLedger>.FailureWithCode(
                     scopeRefusal, AzoaErrorCodes.Forbidden);
@@ -459,6 +459,72 @@ public sealed class PlatformReserveService : IPlatformReserve
         }
 
         return AZOAResult<ReserveDrawOutcome>.Failure("Reserve draw lost every compare-and-swap attempt.");
+    }
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<ReserveDrawOutcome>> ReattributeReturnAsync(
+        ReserveDrawRequest request, string toPartition, CancellationToken ct = default)
+    {
+        if (request is null || request.Kind != ReserveDrawKind.Return || request.Amount <= BigInteger.Zero)
+            return AZOAResult<ReserveDrawOutcome>.Failure("A reattribution is a positive Return draw.");
+        if (string.IsNullOrWhiteSpace(request.OperationKey))
+            return AZOAResult<ReserveDrawOutcome>.Failure("A reattribution needs an operation key.");
+        if (request.Authority is not { IsNodeOperator: true })
+            return AZOAResult<ReserveDrawOutcome>.FailureWithCode(
+                "Only the node's own rails may reattribute returned units.", AzoaErrorCodes.Forbidden);
+
+        var source = ReservePartitionCodec.Normalize(request.Partition);
+        var target = ReservePartitionCodec.Normalize(toPartition);
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target) || source == target)
+            return AZOAResult<ReserveDrawOutcome>.Failure("A reattribution needs two distinct partitions.");
+        var operationKey = request.OperationKey.Trim();
+
+        for (var attempt = 1; attempt <= MaxCasAttempts; attempt++)
+        {
+            var current = await GetLedgerAsync(request.ChainType, request.AssetId, ct);
+            if (current.IsError || current.Result is null)
+                return AZOAResult<ReserveDrawOutcome>.Failure(current.Message);
+            var row = current.Result;
+
+            var scopeRefusal = ReservePartitionScope.Refuse(row, request.Authority, row.AssetId, _options);
+            if (scopeRefusal is not null)
+                return AZOAResult<ReserveDrawOutcome>.Failure(scopeRefusal);
+            var partitions = ReservePartitionCodec.Decode(row.Partitions, out var decodeError);
+            if (partitions is null)
+                return AZOAResult<ReserveDrawOutcome>.Failure(decodeError);
+
+            var window = row.RecentDrawKeys?.ToList() ?? new List<string>();
+            if (window.Contains(operationKey, StringComparer.Ordinal))
+                return AZOAResult<ReserveDrawOutcome>.Success(new ReserveDrawOutcome(row.AssetId, target, request.Kind,
+                    request.Amount, partitions.GetValueOrDefault(target) ?? ReservePartitionCounters.Declaring(BigInteger.Zero),
+                    row.Version, Replayed: true), "Duplicate reattribution: nothing moved.");
+
+            if (!partitions.TryGetValue(source, out var from))
+                return AZOAResult<ReserveDrawOutcome>.Failure($"Partition '{source}' is not declared on asset '{row.AssetId}'.");
+            if (!from.TryApply(ReserveDrawKind.Return, request.Amount, source, out var returned, out var applyError))
+                return AZOAResult<ReserveDrawOutcome>.Failure(applyError);
+            // The source's availability is unchanged (Declared - amount, Returned + amount); its promises stay covered.
+            partitions[source] = returned with { Declared = returned.Declared - request.Amount };
+            var to = partitions.GetValueOrDefault(target) ?? ReservePartitionCounters.Declaring(BigInteger.Zero);
+            partitions[target] = to with { Declared = to.Declared + request.Amount };
+
+            window.Add(operationKey);
+            while (window.Count > DrawReplayWindowSize)
+                window.RemoveAt(0);
+            var expectedVersion = row.Version;
+            row.Partitions = ReservePartitionCodec.Encode(partitions);
+            row.RecentDrawKeys = window;
+            row.Version = expectedVersion + 1;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            var saved = await _ledgerStore.UpdateIfVersionAsync(row, expectedVersion, ct);
+            if (!saved.IsError && saved.Result is not null)
+                return AZOAResult<ReserveDrawOutcome>.Success(new ReserveDrawOutcome(row.AssetId, target, request.Kind,
+                    request.Amount, partitions[target], saved.Result.Version, Replayed: false), "Returned units reattributed.");
+            if (attempt == MaxCasAttempts)
+                return AZOAResult<ReserveDrawOutcome>.Failure(saved.Message);
+        }
+
+        return AZOAResult<ReserveDrawOutcome>.Failure("Reattribution lost every compare-and-swap attempt.");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

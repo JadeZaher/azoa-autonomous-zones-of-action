@@ -1,11 +1,15 @@
+using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Services.Blockchain;
+using AZOA.WebAPI.Services.Blockchain.ClientSigning;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Providers.Blockchain.ClientSigning;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -23,6 +27,8 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
     private readonly IValueRateSource _valueRateSource;
     private readonly ILogger<BlockchainOperationManager>? _logger;
     private readonly IDeploymentService? _deployments;
+    private readonly IWalletStore? _wallets;
+    private readonly IValueAccessService? _valueAccess;
 
     /// <param name="valueRateSource">D16 seam. Optional: a node that has not called
     /// <c>AddValueRateSources</c> (<c>Services/Analytics/AnalyticsRegistration</c>) falls
@@ -31,13 +37,17 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
     /// §value-stamp and <c>Services/Analytics/AGENTS.md</c> §declared-rate-source.</param>
     /// <param name="logger">Optional so the many hand-constructed instances in tests stay
     /// two-line; the container supplies a real one.</param>
+    /// <param name="wallets">D-3: identifies an External source wallet, whose transfer is planned for client signing.</param>
+    /// <param name="valueAccess">RV-X R-3: the risk-hold-wrapped value gate; absent means user value moves are refused.</param>
     public BlockchainOperationManager(
         IBlockchainOperationStore blockchainOperationStore,
         IBlockchainProviderFactory chainFactory,
         IIdempotencyStore idempotencyStore,
         IValueRateSource? valueRateSource = null,
         ILogger<BlockchainOperationManager>? logger = null,
-        IDeploymentService? deployments = null)
+        IDeploymentService? deployments = null,
+        IWalletStore? wallets = null,
+        IValueAccessService? valueAccess = null)
     {
         _blockchainOperationStore = blockchainOperationStore;
         _chainFactory = chainFactory;
@@ -45,6 +55,8 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         _valueRateSource = valueRateSource ?? UnpricedValueRateSource.Instance;
         _logger = logger;
         _deployments = deployments;
+        _wallets = wallets;
+        _valueAccess = valueAccess;
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
@@ -94,6 +106,10 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         operation.Parameters["ChainNetwork"] = network.ToString();
         operation.Parameters.Remove("TxHash");
         operation.Parameters.Remove("Error");
+
+        // RV-X R-3: refused before the idempotency claim, so a cleared account can retry the same logical operation.
+        if (await ValueGateRefusalAsync(operation, chainType) is { } refusal)
+            return AZOAResult<IBlockchainOperation>.FailureWithCode(refusal, AzoaErrorCodes.Forbidden, operation);
 
         // ── Idempotency gate (api-safety-hardening task 11) ──────────────────
         // The on-chain effect for this operation is irreversible. We must NOT
@@ -156,6 +172,11 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
                 operation.CompletedDate = DateTime.UtcNow;
             }
 
+            // D-3: the claim stays InProgress until the client-signed plan reaches a chain-proven terminal state;
+            // persisting the derived key is what lets ClientSignedOperationService settle it then.
+            if (operation.Status == OperationStatus.AwaitingSignature)
+                operation.Parameters[ClientSigningParameters.ExecutionIdempotencyKey] = idempotencyKey;
+
             // D16: freeze the fiat value BEFORE the write that records the outcome, so the
             // rate that was true at settlement is on the row rather than reconstructed later.
             await StampValueAtSettlementAsync(operation, chainType);
@@ -170,13 +191,8 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
                     "Post-broadcast operation persistence returned an error result.");
             }
 
-            // Settle the idempotency record from the terminal operation state.
-            // NOTE: an "AwaitingSignature" op has NOT been broadcast server-side
-            // (it goes to client-side signing) — it is NOT yet irreversible, so we
-            // must NOT mark the idempotency record Completed. Leave it InProgress so
-            // a later server-side submit (if ever added) can still settle it; a
-            // duplicate request meanwhile replays the same "awaiting signature"
-            // instruction without re-running the (harmless, non-broadcasting) path.
+            // Settle the idempotency record from the terminal operation state. An AwaitingSignature op
+            // was not broadcast server-side, so its claim stays InProgress (see the D-3 note above).
             await SettleIdempotencyAsync(idempotencyKey, operation, saved);
 
             return saved;
@@ -437,6 +453,13 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
     {
         var builder = new BlockchainOperationBuilder();
         var operation = build(builder);
+        // M9: this caller-built path (the holon mint/exchange routes) never reaches platform-key ASA creation or an exchange.
+        // User NFT mints go through the NFT lifecycle (mint checks, fee and cost consent, the user's own key); exchanges
+        // through the reserve exchange. See Managers/AGENTS.md §caller-built operations.
+        if (operation.OperationType is "Mint" or "Exchange")
+            return AZOAResult<IBlockchainOperation>.FailureWithCode(operation.OperationType == "Mint"
+                ? "Mint user assets through POST /api/nft/mint, which applies the NFT mint checks and signs with your own key."
+                : "Exchanges run through the reserve exchange routes.", AzoaErrorCodes.OperationNotAllowed, operation);
         return await ExecuteAsync(operation, request);
     }
 
@@ -457,6 +480,35 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
             foreach (var operation in result.Result) await RefreshNativeAsync(operation);
         return result;
     }
+
+    /// <summary>Operation kinds that move a user's own value out of a custodial wallet (Mint/Burn/IssueUnits do not).</summary>
+    private static readonly string[] UserValueMoves = ["Transfer", "Exchange", "Swap"];
+
+    /// <summary>Refusal while the owner's value gate (KYC + reversal pause) is closed; see Managers/AGENTS.md §Custodial value gate.</summary>
+    private async Task<string?> ValueGateRefusalAsync(IBlockchainOperation operation, string chainType)
+    {
+        if (!UserValueMoves.Contains(operation.OperationType, StringComparer.Ordinal)
+            || operation.UserId is not { } owner || owner == Guid.Empty) return null;
+        if (operation is ITransferOperation { RecipientAddress: { Length: > 0 } recipient } && operation.OperationType == "Transfer"
+            && await OwnsAddressAsync(owner, chainType, recipient)) return null;
+        if (_valueAccess is null) return ValueGateUnavailable;
+        var tenant = operation.ActingTenantId is { } acting && acting != Guid.Empty ? acting : (Guid?)null;
+        var gate = await _valueAccess.RequireValueAccessAsync(owner, tenant);
+        return gate.IsError || !gate.Result ? (string.IsNullOrWhiteSpace(gate.Message) ? ValueGateClosed : gate.Message) : null;
+    }
+
+    /// <summary>True when the address is one of the owner's own wallets on the chain (a return to self moves no value away).</summary>
+    private async Task<bool> OwnsAddressAsync(Guid owner, string chainType, string address)
+    {
+        if (_wallets is null) return false;
+        var owned = await _wallets.GetByUserAsync(owner, CancellationToken.None);
+        return owned is { IsError: false, Result: { } wallets } && wallets.Any(wallet => wallet.UserId == owner
+            && string.Equals(wallet.ChainType, chainType, StringComparison.OrdinalIgnoreCase)
+            && ChainAddressIdentity.Equivalent(chainType, wallet.Address, address));
+    }
+
+    private const string ValueGateUnavailable = "The value gate is not available on this node; value cannot move.";
+    private const string ValueGateClosed = "This account cannot move value right now.";
 
     private async Task ExecuteMintAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
     {
@@ -523,10 +575,60 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         // with the USER's key — build a per-user SigningContext from the op row so
         // the custody IDOR guard runs on the real value path. A platform-owned move
         // (no owning wallet/user on the row) signs with the platform key.
+        if (await ExternalSourceWalletAsync(operation, walletAddress, chainProvider.ChainType) is { } external)
+        {
+            await PlanClientSignatureAsync(operation, chainProvider, external, sourceTokenId, walletAddress,
+                transfer.RecipientAddress ?? string.Empty, amount);
+            return;
+        }
         var signingContext = BuildSigningContext(operation, chainProvider.ChainType);
         var result = await chainProvider.TransferAsync(
             sourceTokenId, walletAddress, transfer.RecipientAddress ?? string.Empty, amount, signingContext);
         ApplyChainResult(operation, result, OperationStatus.Transferred);
+    }
+
+    /// <summary>
+    /// D-3: the owner's own External wallet when it is this user-driven transfer's source, else null. A tenant-driven op never
+    /// qualifies (no tenant can sign for the owner's key) and falls through to custody, which refuses an External wallet.
+    /// </summary>
+    private async Task<IWallet?> ExternalSourceWalletAsync(IBlockchainOperation operation, string walletAddress, string chainType)
+    {
+        if (_wallets is null || operation.ActingTenantId is { } tenant && tenant != Guid.Empty
+            || operation.UserId is not { } user || user == Guid.Empty || operation.WalletId is not { } walletId || walletId == Guid.Empty)
+            return null;
+        var wallet = await _wallets.GetByIdAsync(walletId, CancellationToken.None);
+        return wallet is { IsError: false, Result: { WalletType: WalletType.External } found } && found.UserId == user
+            && string.Equals(found.Address, walletAddress, chainType == "Ethereum" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
+            ? found : null;
+    }
+
+    /// <summary>D-3: saves the exact unsigned transfer for the External wallet to sign; nothing is signed or sent here.</summary>
+    private static async Task PlanClientSignatureAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider, IWallet wallet,
+        string sourceTokenId, string walletAddress, string recipient, RailAmount amount)
+    {
+        if (!chainProvider.TryGetModule<IClientSignedTransferModule>(out var module) || module is null)
+        {
+            operation.Status = OperationStatus.Failed;
+            operation.Parameters["Error"] = $"{chainProvider.ChainType} offers no client-signed transfer for External wallets.";
+            return;
+        }
+        var intent = new ValueTransferIntent(chainProvider.ChainType, chainProvider.ActiveNetwork, sourceTokenId, walletAddress, recipient,
+            amount.ToBaseUnitString(), SigningContext.ForUser(wallet.UserId, wallet.Id).ForChain(chainProvider.ChainType), operation.Id.ToString("N"));
+        AZOAResult<ClientSigningPlan> planned;
+        try { planned = await module.PlanClientSignedTransferAsync(intent, CancellationToken.None); }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException)
+        {
+            planned = AZOAResult<ClientSigningPlan>.Failure($"The chain could not plan the transfer: {exception.GetType().Name}.");
+        }
+        if (planned.IsError || planned.Result is null)
+        {
+            operation.Status = OperationStatus.Failed;
+            operation.Parameters["Error"] = planned.Message;
+            return;
+        }
+        operation.Status = OperationStatus.AwaitingSignature;
+        operation.Parameters[ClientSigningParameters.Plan] = JsonSerializer.Serialize(planned.Result);
+        operation.Parameters["Instruction"] = "Sign the saved plan with the source wallet, then submit the signed bytes.";
     }
 
     /// <summary>
@@ -844,6 +946,8 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         }
 
         var message = chainResult.Message ?? "";
+        // D-3: client signing is entered only through a saved, verifiable plan (PlanClientSignatureAsync). A provider that
+        // merely SAYS a client must sign leaves nothing to verify a signature against, so it fails closed.
         var requiresSignature = message.Contains("Requires client-side signing") ||
                                 message.Contains("Requires client-side") ||
                                 message.Contains("Sign and submit");
@@ -858,9 +962,8 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
 
         if (requiresSignature)
         {
-            operation.Status = OperationStatus.AwaitingSignature;
-            operation.Parameters["OperationId"] = chainResult.Result?.ToString() ?? string.Empty;
-            operation.Parameters["Instruction"] = message;
+            operation.Status = OperationStatus.Failed;
+            operation.Parameters["Error"] = "The provider asked for a client signature without a verifiable saved plan.";
         }
         else if (pendingConfirmation)
         {

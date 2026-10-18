@@ -1,26 +1,23 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Providers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Options;
 
 namespace AZOA.WebAPI.Services.Kyc;
 
 /// <summary>
-/// Validates the latest KYC ledger entry against the active operator trust profile,
-/// AND the latest AML screening verdict for the same (user, tenant) pair.
-///
-/// <para>Identity verification and sanctions screening are two independent
-/// questions. Passing identity says the person is who they claim; it says nothing
-/// about whether that person is sanctioned. This gate requires BOTH, and requires
-/// the screening answer to exist: an approval with no screening result is an
-/// unanswered question, not a clean subject.</para>
+/// The KYC decision: current policy-bound identity approval AND a clear AML verdict for the same
+/// attempt lineage. Value paths reach it only through the risk-hold-wrapped <see cref="IRealValueKycGate"/>
+/// (directly or via <see cref="IValueAccessService"/>); see <c>Services/Kyc/AGENTS.md</c> §value gate.
 /// </summary>
-public sealed class KycGateService : IKycGateService
+public sealed class KycGateService : IKycGateService, IRealValueKycGate
 {
     private readonly IKycStore _store;
     private readonly IKycScreeningStore _screeningStore;
@@ -61,25 +58,30 @@ public sealed class KycGateService : IKycGateService
         _environment = environment;
     }
 
+    /// <inheritdoc/>
     public Task<AZOAResult<bool>> RequireVerifiedAsync(Guid userId)
-        => RequireVerifiedCoreAsync(userId, null, CancellationToken.None);
+        => RequireCoreAsync(userId, null, CancellationToken.None);
 
-    public Task<AZOAResult<bool>> RequireVerifiedAsync(
-        Guid userId,
-        Guid tenantId,
-        CancellationToken ct = default)
-        => RequireVerifiedCoreAsync(userId, tenantId, ct);
+    /// <inheritdoc/>
+    public Task<AZOAResult<bool>> RequireVerifiedAsync(Guid userId, Guid tenantId, CancellationToken ct = default)
+        => RequireCoreAsync(userId, tenantId, ct);
 
-    private async Task<AZOAResult<bool>> RequireVerifiedCoreAsync(
-        Guid userId,
-        Guid? tenantId,
-        CancellationToken ct)
+    /// <inheritdoc/>
+    public Task<AZOAResult<bool>> RequireCurrentApprovalAsync(Guid userId, CancellationToken ct = default)
+        => RequireCoreAsync(userId, null, ct);
+
+    /// <inheritdoc/>
+    public Task<AZOAResult<bool>> RequireCurrentApprovalAsync(Guid userId, Guid tenantId, CancellationToken ct = default)
+        => RequireCoreAsync(userId, tenantId, ct);
+
+    private async Task<AZOAResult<bool>> RequireCoreAsync(Guid userId, Guid? tenantId, CancellationToken ct)
     {
-        var latest = tenantId.HasValue || _registry is not null
-            ? await _store.GetLatestSubmissionAsync(userId, tenantId, ct)
-            : await _store.GetLatestSubmissionByUserAsync(userId, ct);
+        if (userId == Guid.Empty)
+            return Denied();
+
+        var latest = await LatestAsync(userId, tenantId, ct);
         if (latest.IsError)
-            return new AZOAResult<bool> { IsError = true, Result = false, Message = latest.Message, Exception = latest.Exception };
+            return Denied(latest.Exception);
 
         var authority = await ResolveAuthorityAsync(tenantId, ct);
         if (latest.Result is not null
@@ -94,24 +96,13 @@ public sealed class KycGateService : IKycGateService
                 out _)
             && profile.Provider != KycProvider.MANUAL
             && MatchesAuthority(latest.Result, authority.Result, profile)
-            && KycApprovalTrust.IsCurrentApproval(
-                latest.Result,
-                profile,
-                DateTimeOffset.UtcNow,
-                out _))
+            && KycApprovalTrust.IsCurrentApproval(latest.Result, profile, DateTimeOffset.UtcNow, out _)
+            && await IsAmlClearAsync(userId, tenantId, latest.Result.AmlLineageKey, ct))
         {
-            // Identity holds. The AML answer is a separate question and is required.
-            if (await IsAmlClearAsync(userId, tenantId, latest.Result.AmlLineageKey, ct))
-                return new AZOAResult<bool> { Result = true, Message = "Success" };
+            return AZOAResult<bool>.Success(true);
         }
 
-        // No submission, the latest is not APPROVED, or AML is not clear — gate closed.
-        return new AZOAResult<bool>
-        {
-            IsError = true,
-            Result  = false,
-            Message = $"{KycAuthorizationError.Forbidden}{KycAuthorizationError.VerificationRequiredMessage}"
-        };
+        return Denied();
     }
 
     // See Services/Kyc/AGENTS.md: AML attempt lineage.
@@ -126,23 +117,17 @@ public sealed class KycGateService : IKycGateService
             && KycAmlClearance.IsClear(screening.Result);
     }
 
+    /// <inheritdoc/>
     public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid userId)
         => GetKycStatusCoreAsync(userId, null, CancellationToken.None);
 
-    public Task<AZOAResult<KycStatus>> GetKycStatusAsync(
-        Guid userId,
-        Guid tenantId,
-        CancellationToken ct = default)
+    /// <inheritdoc/>
+    public Task<AZOAResult<KycStatus>> GetKycStatusAsync(Guid userId, Guid tenantId, CancellationToken ct = default)
         => GetKycStatusCoreAsync(userId, tenantId, ct);
 
-    private async Task<AZOAResult<KycStatus>> GetKycStatusCoreAsync(
-        Guid userId,
-        Guid? tenantId,
-        CancellationToken ct)
+    private async Task<AZOAResult<KycStatus>> GetKycStatusCoreAsync(Guid userId, Guid? tenantId, CancellationToken ct)
     {
-        var latest = tenantId.HasValue || _registry is not null
-            ? await _store.GetLatestSubmissionAsync(userId, tenantId, ct)
-            : await _store.GetLatestSubmissionByUserAsync(userId, ct);
+        var latest = await LatestAsync(userId, tenantId, ct);
         if (latest.IsError)
             return new AZOAResult<KycStatus> { IsError = true, Message = latest.Message, Exception = latest.Exception };
 
@@ -181,9 +166,12 @@ public sealed class KycGateService : IKycGateService
         return new AZOAResult<KycStatus> { Result = status, Message = "Success" };
     }
 
-    private async Task<AZOAResult<KycProviderResolution>> ResolveAuthorityAsync(
-        Guid? tenantId,
-        CancellationToken ct)
+    private Task<AZOAResult<KycSubmission>> LatestAsync(Guid userId, Guid? tenantId, CancellationToken ct)
+        => tenantId.HasValue || _registry is not null
+            ? _store.GetLatestSubmissionAsync(userId, tenantId, ct)
+            : _store.GetLatestSubmissionByUserAsync(userId, ct);
+
+    private async Task<AZOAResult<KycProviderResolution>> ResolveAuthorityAsync(Guid? tenantId, CancellationToken ct)
     {
         if (tenantId.HasValue)
             return _registry is null
@@ -194,12 +182,17 @@ public sealed class KycGateService : IKycGateService
                 _provider, _settings, null, 0, 0, _provider.ProviderKey));
     }
 
-    private static bool MatchesAuthority(
-        AZOA.WebAPI.Persistence.SurrealDb.Models.KycSubmission submission,
-        KycProviderResolution resolution,
-        KycApprovalProfile profile)
+    private static bool MatchesAuthority(KycSubmission submission, KycProviderResolution resolution, KycApprovalProfile profile)
         => string.Equals(submission.ProviderKey, resolution.Provider.ProviderKey, StringComparison.Ordinal)
             && submission.ProviderSelectionVersion == resolution.SelectionVersion
             && submission.ProviderTrustRevision == resolution.TrustRevision
             && KycApprovalTrust.MatchesCurrentAttempt(submission, profile, out _);
+
+    private static AZOAResult<bool> Denied(Exception? exception = null) => new()
+    {
+        IsError = true,
+        Result = false,
+        Message = KycAuthorizationError.Forbidden + KycAuthorizationError.VerificationRequiredMessage,
+        Exception = exception,
+    };
 }

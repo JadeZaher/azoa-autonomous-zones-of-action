@@ -189,10 +189,11 @@ public partial class EthereumProvider : IWttNonceReservationModule
     {
         var id = await WttPreparationRowIdAsync(intent, phase, stage, generation, ct);
         if (id is null) return WttNonceHold.Held;
-        return (await WithPreparationStoreAsync(store => store.GetAsync(id, ct))) switch
+        var row = await WithPreparationStoreAsync(store => store.GetAsync(id, ct));
+        return row switch
         {
             null => WttNonceHold.None,
-            { SignedTransactionBase64: null, TransactionId: null, State: "Released" or "ReleasedConsumedExternally" or "ReleasedRefilled" } => WttNonceHold.None,
+            { SignedTransactionBase64: null, TransactionId: null } when ReleasedReservation(row.State) => WttNonceHold.None,
             { SignedTransactionBase64: null, TransactionId: null, State: "Reserved" } => WttNonceHold.Unsigned,
             _ => WttNonceHold.Held,
         };

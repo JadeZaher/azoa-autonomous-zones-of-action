@@ -30,6 +30,8 @@ internal sealed class NftLifecycleHarness
     internal Mock<INftTransactionModule> Module { get; } = new();
     internal Mock<IBlockchainProviderFactory> Factory { get; } = new();
     internal Mock<IValueAccessService> Access { get; } = new();
+    /// <summary>Signature-verified External wallet proofs; none unless a test records one.</summary>
+    internal Mock<IWalletOwnershipProofStore> OwnershipProofs { get; } = new();
     internal ConcurrentQueue<PreparedNftTransaction> Submitted { get; } = new();
     internal ConcurrentQueue<NftTransactionIntent> Prepared { get; } = new();
     internal bool Confirm { get; set; } = true;
@@ -107,7 +109,7 @@ internal sealed class NftLifecycleHarness
             if (!Store.Ownership.TryGetValue(id.ToString("N"), out var row)) return AZOAResult<IUserNFT>.Failure("Not found");
             var nft = new Mock<IUserNFT>();
             nft.SetupGet(item => item.Id).Returns(id);
-            nft.SetupGet(item => item.UserId).Returns(Guid.Parse(row.UserId));
+            nft.SetupGet(item => item.UserId).Returns(Guid.Parse(SurrealForge.Client.SurrealLink.FromLink(row.UserId)!)); // mirrors SurrealNftStore's link read
             nft.SetupGet(item => item.ChainType).Returns(row.ChainType);
             nft.SetupGet(item => item.TokenId).Returns(row.TokenId);
             nft.SetupGet(item => item.CurrentOwner).Returns(row.CurrentOwner);
@@ -128,7 +130,13 @@ internal sealed class NftLifecycleHarness
         governance.Setup(item => item.EnsureAllowedAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(NodeGovernanceDecision.Allowed);
         var authorities = new AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), Wallets.Object,
             Mock.Of<SurrealForge.Client.Query.ISurrealExecutor>());
-        Service = new(Store, Wallets.Object, Nfts.Object, Factory.Object, Access.Object, governance.Object, Configuration, Clock, ProtocolCosts.Object, WorkflowCosts.Object, authorities, ActionExecutions.Object);
+        // Mirrors the durable store's exact indexed probes over every stored spelling.
+        Store.CustodialWallets = (chain, address) => NftRecipientLookupForms.For(chain, address)
+            .SelectMany(form => _wallets.Where(item => item.WalletType == WalletType.Platform
+                && item.ChainType == form.Chain && item.Address == form.Address))
+            .Select(item => item.Id).Distinct().ToArray();
+        Service = new(Store, Wallets.Object, Nfts.Object, Factory.Object, Access.Object, governance.Object, Configuration, Clock, ProtocolCosts.Object, WorkflowCosts.Object, authorities, ActionExecutions.Object,
+            OwnershipProofs.Object);
     }
 
     internal ActionNodeExecution AuthorizeWorkflow(string frozen, ActionExternalOperationReference reference)
@@ -155,9 +163,11 @@ internal sealed class NftLifecycleHarness
         return new(Guid.NewGuid(), row.Version, row.State, row.Stage, row.PreparationGeneration);
     }
 
-    internal IWallet AddWallet(Guid owner)
+    /// <summary>Registers a custodial (Platform) wallet; pass <paramref name="external"/> for an unproven connected wallet.</summary>
+    internal IWallet AddWallet(Guid owner, string? address = null, bool external = false, string? storedChain = null)
     {
-        var wallet = Mock.Of<IWallet>(item => item.Id == Guid.NewGuid() && item.UserId == owner && item.ChainType == ChainType && item.Address == owner.ToString("N"));
+        var wallet = Mock.Of<IWallet>(item => item.Id == Guid.NewGuid() && item.UserId == owner && item.ChainType == (storedChain ?? ChainType)
+            && item.Address == (address ?? owner.ToString("N")) && item.WalletType == (external ? WalletType.External : WalletType.Platform));
         _wallets.Add(wallet);
         return wallet;
     }

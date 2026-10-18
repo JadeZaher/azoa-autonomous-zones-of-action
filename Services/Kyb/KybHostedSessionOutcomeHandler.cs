@@ -44,4 +44,16 @@ public sealed class KybHostedSessionOutcomeHandler(IKybVerificationStore store, 
         return saved is null ? AZOAResult<string?>.Failure("Business verification changed concurrently.")
             : AZOAResult<string?>.Success(saved.AttemptId);
     }
+
+    /// <summary>Live only while this session's attempt is the tenant's current, unexpired PENDING verification.</summary>
+    public async Task<HostedOutcomeRelevance> ProbeAsync(HostedSession session, DateTimeOffset now, CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(session.TenantId, out var tenantId) || tenantId == Guid.Empty)
+            return HostedOutcomeRelevance.Unknown;
+        var current = await store.GetAsync(tenantId, ct);
+        return current is { Status: "PENDING" } && current.AdmissionKey == session.AdmissionKey
+            && current.ExpiresAt > now && current.AuthorityRevision == provider.AuthorityRevision
+                ? HostedOutcomeRelevance.Live
+                : HostedOutcomeRelevance.Dead;
+    }
 }

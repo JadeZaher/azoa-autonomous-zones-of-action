@@ -121,7 +121,7 @@ public class TokenUseClaimTests
         var result = await manager.IssueChildCredentialAsync(
             tenantId, userId,
             requestedScopes: new[] { AzoaScopes.WalletManage },
-            tenantScopes: new[] { AzoaScopes.WalletManage });
+            tenantScopes: new[] { AzoaScopes.WalletManage }, issuingKeyId: Guid.NewGuid());
 
         result.IsError.Should().BeFalse();
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(result.Result!.Token);

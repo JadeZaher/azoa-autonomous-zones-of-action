@@ -211,6 +211,17 @@ public class ReversalTests
     // ── Correlation: no issuance, nothing to unwind ──
 
     [Fact]
+    public async Task A_reversal_of_a_credited_lot_links_the_lot_as_a_record_not_a_bare_id()
+    {
+        var harness = new Harness();
+
+        await harness.ApplyRefundAsync();
+
+        // lot_id is record<on_ramp_lot>: a bare id is rejected by the schema, so every such reversal failed to record.
+        harness.Reversals.Single().LotId.Should().Be($"{OnRampLot.SchemaNameConst}:{harness.Lot.Id}");
+    }
+
+    [Fact]
     public async Task A_reversal_with_no_matching_issuance_is_recorded_and_unwinds_nothing()
     {
         var harness = new Harness { HasLot = false };
@@ -347,6 +358,26 @@ public class ReversalTests
         row.Status.Should().Be(FiatReversalStatuses.NeedsOperator);
         row.AccountFlagged.Should().BeTrue();
         row.RecoveredQuantityBaseUnits.Should().Be("0");
+    }
+
+    [Fact]
+    public async Task An_unacknowledged_clawback_broadcast_parks_and_is_never_clawed_again_under_a_new_attempt()
+    {
+        // H1: the POST to algod threw after the node may have accepted the clawback. The payer still holds
+        // more than is owed, so a blind attempt-suffixed retry WOULD find units to take a second time.
+        var harness = new Harness { Holding = (BigInteger.Parse(IssuedBaseUnits) * 2).ToString(), ClawbackBroadcastUnacknowledged = true };
+        await harness.ApplyRefundAsync();
+        var id = harness.Reversals.Single().Id;
+
+        await harness.Compensation.RecoverAsync(id);
+        await harness.Compensation.RecoverAsync(id);
+
+        harness.ClawedBack.Should().ContainSingle("an outcome-unknown broadcast is ambiguous, not a definitive failure");
+        var row = harness.Reversals.Single();
+        row.Status.Should().Be(FiatReversalStatuses.NeedsOperator);
+        row.PendingMoveKey.Should().NotBeNull();
+        (await harness.Idempotency.GetAsync(row.PendingMoveKey!, default))!.Error
+            .Should().Contain(ReversalCompensationService.AmbiguousRecoveryReason).And.Contain("tx=CLAWBACKTX");
     }
 
     [Fact]
@@ -784,6 +815,9 @@ public class ReversalTests
 
         public bool ClawbackConfirms { get; init; } = true;
 
+        /// <summary>The clawback reached algod and the POST failed: the provider's outcome-unknown error.</summary>
+        public bool ClawbackBroadcastUnacknowledged { get; init; }
+
         public ReversalOptions Options { get; } = new();
 
         public OnRampOptions OnRamp { get; } = new();
@@ -933,6 +967,9 @@ public class ReversalTests
                     SigningContext _, string? __, CancellationToken ___) =>
                 {
                     ClawedBack.Add(new ClawbackCall(assetId, holder, recipient, amount.BaseUnits));
+                    if (ClawbackBroadcastUnacknowledged)
+                        return AZOAResult<string>.Failure(
+                            "Broadcast failed to revoke ASA (tx CLAWBACKTX); reconcile against chain truth before re-sending: timeout");
                     return ClawbackConfirms
                         ? AZOAResult<string>.Success("CLAWBACKTX", "confirmed in round 42")
                         : AZOAResult<string>.Success(
@@ -1088,50 +1125,9 @@ public class ReversalTests
             return Task.FromResult(AZOAResult<bool>.Success(flagged));
         }
 
-        private static FiatReversal Clone(FiatReversal row) => new()
-        {
-            Id = row.Id,
-            Provider = row.Provider,
-            ProviderObjectId = row.ProviderObjectId,
-            Kind = row.Kind,
-            LastEventType = row.LastEventType,
-            ProviderEventId = row.ProviderEventId,
-            ChargeId = row.ChargeId,
-            PaymentIntentId = row.PaymentIntentId,
-            CheckoutSessionId = row.CheckoutSessionId,
-            IntentId = row.IntentId,
-            LotId = row.LotId,
-            SubjectUserId = row.SubjectUserId,
-            TenantId = row.TenantId,
-            FlowPurpose = row.FlowPurpose,
-            AmountMinorUnits = row.AmountMinorUnits,
-            CurrencyCode = row.CurrencyCode,
-            SourceAmountMinorUnits = row.SourceAmountMinorUnits,
-            IsPartial = row.IsPartial,
-            FundsWithdrawn = row.FundsWithdrawn,
-            ChainType = row.ChainType,
-            AssetId = row.AssetId,
-            TargetQuantityBaseUnits = row.TargetQuantityBaseUnits,
-            RecoveredQuantityBaseUnits = row.RecoveredQuantityBaseUnits,
-            AbsorbedQuantityBaseUnits = row.AbsorbedQuantityBaseUnits,
-            ReinstatementOwedBaseUnits = row.ReinstatementOwedBaseUnits,
-            RecoveryPath = row.RecoveryPath,
-            RecoveryTransactionId = row.RecoveryTransactionId,
-            OperationId = row.OperationId,
-            Status = row.Status,
-            StatusReason = row.StatusReason,
-            AttemptCount = row.AttemptCount,
-            OpenedAt = row.OpenedAt,
-            ResolvedAt = row.ResolvedAt,
-            ReinstatedAt = row.ReinstatedAt,
-            AccountFlagged = row.AccountFlagged,
-            FlagReason = row.FlagReason,
-            FlagClearedAt = row.FlagClearedAt,
-            FlagClearedBy = row.FlagClearedBy,
-            Version = row.Version,
-            CreatedAt = row.CreatedAt,
-            UpdatedAt = row.UpdatedAt,
-        };
+        // A JSON round-trip, like the lot ledger: a hand-listed copy silently drops new columns.
+        private static FiatReversal Clone(FiatReversal row)
+            => System.Text.Json.JsonSerializer.Deserialize<FiatReversal>(System.Text.Json.JsonSerializer.Serialize(row))!;
     }
 
     /// <summary>In-memory on-ramp lot ledger; only the reads the reversal pipeline uses matter.</summary>
@@ -1176,6 +1172,9 @@ public class ReversalTests
             Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
                 _rows.Values.Where(r => r.Status == OnRampLotStatuses.Issued).ToList()));
+
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(Array.Empty<OnRampLot>()));
 
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
             int limit, CancellationToken ct = default)

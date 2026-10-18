@@ -15,7 +15,7 @@ public sealed partial class SwapOperationService
         var operation = await ReadOwnedAsync(operationId, credential, false, ct);
         if (operation is null || operation.Version != expectedVersion || !SameWorkflow(operation, workflow)) return Changed();
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for this network.");
         var authority = await BindAsync(credential, intent.Terms, workflow, ct);
         if (authority.IsError || authority.Result is null) return Fail(authority.Message);
@@ -30,8 +30,9 @@ public sealed partial class SwapOperationService
         var selected = await CommandAsync(operationId, command, credential, ct);
         if (selected is null) return Changed();
         var (operation, stage) = selected.Value;
+        if (await ValueRefusalAsync(credential, stage, workflow, ct) is { } refused) return refused;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for this network.");
         var authority = await StageAuthorityAsync(operation, stage, credential, workflow, ct);
         if (authority.IsError || authority.Result is null) return Fail(authority.Message);
@@ -46,8 +47,9 @@ public sealed partial class SwapOperationService
         var selected = await CommandAsync(operationId, command, credential, ct);
         if (selected is null) return Changed();
         var (operation, stage) = selected.Value;
+        if (await ValueRefusalAsync(credential, stage, workflow, ct) is { } refused) return refused;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for this network.");
         var authority = await StageAuthorityAsync(operation, stage, credential, workflow, ct);
         if (authority.IsError || authority.Result is null) return Fail(authority.Message);
@@ -64,7 +66,7 @@ public sealed partial class SwapOperationService
         var operation = await ReadOwnedAsync(operationId, credential, true, ct);
         if (operation is null) return Changed();
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for reconciliation.");
         await recovery.ReconcileAsync(operationId, ct);
         return await GetAsync(operationId, credential, ct);
@@ -103,7 +105,7 @@ public sealed partial class SwapOperationService
     {
         if (operation.CurrentStageId is not { } stageId) return;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        if (modules.Resolve(intent.Terms.Network) is { } module)
+        if (modules.ResolveForExisting(intent.Terms.Network) is { } module)
             await stages.ReleaseUnsentStageAsync(operationId, stageId, module, ct);
     }
 

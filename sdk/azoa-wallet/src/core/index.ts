@@ -1,6 +1,6 @@
 export { ok, err, isOk, isErr, unwrap, map, mapErr } from "./result.js";
 export type { Result } from "./result.js";
-export { SdkError, SdkErrorCode, isActionConflict } from "./errors.js";
+export { SdkError, SdkErrorCode, isActionConflict, isKybRequired, KYB_REQUIRED, isNftStageCostsChanged, NFT_STAGE_COSTS_CHANGED } from "./errors.js";
 export type { SdkErrorDetail, SdkErrorOptions } from "./errors.js";
 export { toHex, fromHex, concatBytes, equalsBytes } from "./bytes.js";
 export { withRetry } from "./retry.js";
@@ -26,9 +26,5 @@ export type {
   TransferParams,
   MintParams,
   BurnParams,
-  SwapQuote,
-  SwapRouteStep,
-  SwapParams,
-  DexAdapter,
   ChainProviderRegistration,
 } from "./types.js";

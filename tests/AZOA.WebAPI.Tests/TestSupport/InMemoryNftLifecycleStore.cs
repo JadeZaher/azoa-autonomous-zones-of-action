@@ -34,13 +34,16 @@ internal sealed class InMemoryNftLifecycleStore : INftLifecycleStore
     {
         lock (_sync) return Task.FromResult(_rows.TryGetValue(id, out var row) ? Copy(row) : null);
     }
-    public async Task<NftLifecycle?> UpdateAsync(NftLifecycle row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false)
+    public async Task<NftLifecycle?> UpdateAsync(NftLifecycle row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false,
+        bool workflowAuthority = false)
     {
         if (BeforeUpdate is { } pause) await pause(row);
         lock (_sync)
         {
             if (!_rows.TryGetValue(row.Id, out var existing) || existing.Version != expectedVersion
                 || existing.RequestHash != row.RequestHash || existing.RequestJson != row.RequestJson) return null;
+            if (workflowAuthority && NftActorContinuationIdentity.TakenOver(existing,
+                JsonSerializer.Deserialize<AZOA.WebAPI.Models.Blockchain.NftLifecycleCommand>(existing.RequestJson)!)) return null;
             // Mirrors SurrealNftLifecycleStore preconditions and fenced witness selection, including direct-credential expiry.
             var participantRenewal = existing.StageConsentsJson != row.StageConsentsJson && NftStageConsentIdentity.CanRenew(existing, row);
             if (existing.StageConsentsJson != row.StageConsentsJson
@@ -51,11 +54,17 @@ internal sealed class InMemoryNftLifecycleStore : INftLifecycleStore
                 && !NftReplacementCostContract.CanRetire(existing, row)) return null;
             if (existing.ActorContinuationsJson != row.ActorContinuationsJson
                 && (!requireActionAuthority || !NftActorContinuationIdentity.CanAppend(existing, row))) return null;
+            var stageCostsAdded = existing.StageCostConsentsJson != row.StageCostConsentsJson;
+            if (stageCostsAdded && (!requireActionAuthority || !NftStageCostContract.CanAppend(existing, row))) return null;
+            if (requireActionAuthority && !NftStageCostContract.AdmitsWrite(existing, row)) return null;
+            // Mirrors the receipt's database-time expiry fenced in the same transaction as the stage cost acceptance.
+            if (stageCostsAdded && NftStageCostContract.Current(row)!.Quote.ExpiresAt <= Now()) return null;
             if (existing.ReplacementCostRetirementsJson != row.ReplacementCostRetirementsJson
                 && NftEffectAuthorities.Lapsed(NftReplacementCostContract.Retirements(row).Last().Authority, Now())) return null;
             var write = existing.ActorContinuationsJson != row.ActorContinuationsJson ? NftLifecycleWrite.RequesterRenewal
                 : participantRenewal ? NftLifecycleWrite.ParticipantRenewal
-                : existing.ReplacementCostConsentsJson != row.ReplacementCostConsentsJson ? NftLifecycleWrite.CostAcceptance : NftLifecycleWrite.Effect;
+                : existing.ReplacementCostConsentsJson != row.ReplacementCostConsentsJson ? NftLifecycleWrite.CostAcceptance
+                : stageCostsAdded ? NftLifecycleWrite.StageCostAcceptance : NftLifecycleWrite.Effect;
             if (requireActionAuthority && !Authorized(row, write)) return null;
             // Mirrors the superseded-consent guard for expiry only; revocation is a database fact this double does not model.
             if (write == NftLifecycleWrite.ParticipantRenewal && (NftStageConsentIdentity.Superseded(row) is not { } superseded
@@ -77,8 +86,20 @@ internal sealed class InMemoryNftLifecycleStore : INftLifecycleStore
         lock (_sync) return Task.FromResult<IReadOnlyList<NftLifecycle>>(_rows.Values.Where(row => (row.ActorUserId == participant.ToString("N") || row.RecipientUserId == participant.ToString("N")) && row.CreatedAt <= snapshot)
             .OrderByDescending(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.Ordinal).Skip(offset).Take(limit).Select(Copy).ToArray());
     }
+    /// <summary>Stands in for the wallet table's chain/address index; the harness wires it to its registered wallets.</summary>
+    internal Func<string, string, IReadOnlyList<Guid>> CustodialWallets { get; set; } = (_, _) => [];
+    public Task<IReadOnlyList<Guid>> FindCustodialWalletIdsAsync(string chainType, string address, CancellationToken ct = default)
+        => Task.FromResult(CustodialWallets(chainType, address));
+    /// <summary>Raised by every authority read when set, standing in for a store outage.</summary>
+    internal Exception? AuthorityLookupFault { get; set; }
+    /// <summary>Rewrites a stored asset authority, standing in for a legacy or partially recorded row.</summary>
+    internal void MutateAuthority(string nftId, Action<NftAssetAuthority> mutate)
+    {
+        lock (_sync) mutate(_assets[nftId]);
+    }
     public Task<NftAssetAuthority?> GetAuthorityAsync(string nftId, CancellationToken ct = default)
     {
+        if (AuthorityLookupFault is { } fault) throw fault;
         lock (_sync) return Task.FromResult(_assets.TryGetValue(nftId, out var row) ? Copy(row) : null);
     }
     public Task<bool> ReserveAuthorityAsync(NftAssetAuthority authority, NftLifecycle lifecycle, CancellationToken ct = default)
@@ -96,7 +117,8 @@ internal sealed class InMemoryNftLifecycleStore : INftLifecycleStore
         AZOA.WebAPI.Models.Signing.SigningConsentWitness consent, CancellationToken ct = default)
     {
         var command = JsonSerializer.Deserialize<AZOA.WebAPI.Models.Blockchain.NftLifecycleCommand>(expected.RequestJson)!;
-        if (consent.Credential.ActorUserId != command.Actor || (consent.Credential.TenantId ?? Guid.Empty) != command.ActingTenantId
+        var expectedTenant = NftActorContinuationIdentity.TakenOver(expected, command) ? Guid.Empty : command.ActingTenantId;
+        if (consent.Credential.ActorUserId != command.Actor || (consent.Credential.TenantId ?? Guid.Empty) != expectedTenant
             || consent.Credential.ExpiresAt is { } expires && expires <= Now()) return Task.FromResult(false);
         lock (_sync)
         {
@@ -126,6 +148,7 @@ internal sealed class InMemoryNftLifecycleStore : INftLifecycleStore
     }
     public Task<CredentialOwnershipRecord?> FindCredentialAsync(string chain, string network, string assetId, string? contractAddress, CancellationToken ct = default)
     {
+        if (AuthorityLookupFault is { } fault) throw fault;
         lock (_sync)
         {
             var candidates = _assets.Values.Where(row => row.ChainType == chain && row.Network == network && row.AssetId == assetId

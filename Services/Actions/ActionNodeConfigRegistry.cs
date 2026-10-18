@@ -156,9 +156,12 @@ public static class ActionNodeConfigRegistry
                 configType,
                 ActionNodeConfig.StrictOptions);
 
-            return result == null
-                ? $"[{nodeType}] config deserialized to null."
-                : null;
+            if (result == null) return $"[{nodeType}] config deserialized to null.";
+            // X-8: a Bridge/Back node that names the wtt route must carry a well-formed typed request at publish time.
+            if (nodeType is ActionNodeType.Bridge or ActionNodeType.Back && WttActionResolver.Selects(shadowJson)
+                && WttActionResolver.ReadConfig(shadowJson) is null)
+                return $"[{nodeType}] the wtt route config is malformed.";
+            return null;
         }
         catch (JsonException ex)
         {

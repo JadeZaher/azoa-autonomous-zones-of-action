@@ -66,6 +66,18 @@ not-found. A replayed external-signing disclosure re-binds live `swap:sign`
 consent (`BindConsentAsync`) before returning the stored unsigned wire, so an
 earlier exposure record alone never re-discloses it.
 
+## Value gate and pin scope (round 4 fix batch)
+
+`SwapOperationService` consults the value gate at admission (`StartAsync`) and before any custody signature, first send
+or external-signing disclosure of the first value-sending stage (X-2, narrowed by RV-X R-2). A direct caller passes the
+risk-hold-wrapped `IRealValueKycGate` (KYC + reversal pause); a workflow caller passes only the reversal pause
+(`ValueRailCapabilityGate.AccountStandingAsync`), matching the workflow capability gate. Residual-return cleanup stays
+open, and so does any effect stage that follows a confirmed, differently named effect stage of the same swap
+(`EarlierEffectConfirmedAsync` walks `PreviousStageId`): value already left, and the remaining effect returns the output
+to the owner, so refusing it would strand the swap half-way. A retry generation of the first stage is still gated. New quotes (`DexQuoteService`) and the swap node's admission check resolve
+modules through the D-7 pin (`DexModuleResolver.Resolve`); every command on an already-admitted swap and the recovery
+sweep use `ResolveForExisting`, which ignores the pin so a pin flip never strands in-flight work (RV-L5-11).
+
 ## Retained provider resources
 
 Providers may implement the optional `IDexRetainedResourceModule`. After each

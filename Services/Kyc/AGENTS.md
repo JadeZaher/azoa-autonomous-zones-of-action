@@ -33,14 +33,35 @@ until signed provider outcome handling is implemented.
 ## Value-access decision
 
 `IValueAccessService` is the single server-side participant-readiness decision
-for value-bearing consumer actions. It delegates to `IKycGateService`, which in
-turn resolves the current provider through `IKycProviderService` and the
-provider registry. This keeps consumer policy out of AZOA while ensuring a
-manual, unavailable, stale, or untrusted provider approval never opens a value
-path. Projects and non-value collaboration must not use this gate.
+for value-bearing consumer actions. It delegates to the host's `IRealValueKycGate`, which
+is `RiskHoldValueGate` (reversal account pause) wrapping `KycGateService`; the KYC decision
+resolves the current provider through `IKycProviderService` and the provider registry. This
+keeps consumer policy out of AZOA while ensuring a manual, unavailable, stale, or untrusted
+provider approval never opens a value path. Projects and non-value collaboration must not use
+this gate.
 
-**Both value gates require TWO independent facts.** `KycGateService` (consumer) and
-`Services/Bridge/RealValueKycGate` (bridge / real value) each read a current
+**Value paths never see the bare KYC gate (round-4 fix batch, RV-L2 L2-8 / RV-X X-2).** F-M12
+merged the gates, but `IKycGateService` stayed registered bare while only `IRealValueKycGate` is
+wrapped by `AddReversalRiskValueGate`, so allocation, exchange, hold, fungible creation, NFT
+lifecycle, deployments and consumer governance (all via `IValueAccessService`) ignored the
+chargeback pause: buy by card, dispute, move the units out before clawback.
+`ValueAccessService` now takes `IRealValueKycGate`, so every caller inherits the pause with no
+per-call-site change and no `Program.cs` edit. `IKycGateService` remains registered for status
+reads only; `Architecture/ValueGateCoverageTests` fails if any production type takes it as a
+dependency. **Seam for other lanes:** a value-moving path checks
+`IValueAccessService.RequireValueAccessAsync` (user/tenant readiness) or `IRealValueKycGate`
+directly — never `IKycGateService`. Call-site decisions (all value-moving, all keep the pause):
+`AllocationManager` (allocation), `ReserveExchangeManager` (exchange + preview),
+`HoldCommandService*`/`HoldReleaseMandateService` (holds), `FungibleTokenManager`/
+`FungibleCreationService` (token creation), `NftLifecycleService` (mint), `DeploymentService*`
+(native deployment), `ConsumerGovernanceService` (value-weighted votes). The risk-hold refusal
+message is `RiskHoldValueGate.RiskHoldMessage` (no `KYC_FORBIDDEN:` prefix); callers already
+treat any error as a refusal.
+
+**The value gate requires TWO independent facts.** `KycGateService` is the node's one
+KYC decision: it implements both `IKycGateService` (status) and `IRealValueKycGate`
+(the inner gate the risk hold wraps) — round-4 F-M12 deleted the near-verbatim fork
+`Services/Bridge/RealValueKycGate`. It reads a current
 policy-bound approval AND the latest AML screening verdict for the same
 `(user, tenant, approved attempt lineage)` tuple. Identity verification says who a person is; it says nothing
 about whether that person is sanctioned. Only `NO_HIT` on a non-truncated result
@@ -354,3 +375,53 @@ projects EXPIRED, allowing the existing SDK/UI renewal contract without exposing
 AML evidence. Manual Development simulation retains its existing behavior.
 Callbacks before legacy domain attachment remain retryable. Approval requires both
 screening and durable monitor evidence with the same verified-subject lineage.
+
+## First-party verification and refresh (round 4, F-C3/F-H1)
+
+`POST /api/kyc/session` (`FirstPartyLogin`, no acting tenant) calls `KycManager.BeginAsync`
+for the caller's own tenant-less attempt; before it, only tenants could start hosted KYC, so
+every first-party value gate stayed closed. `POST /api/kyc/refresh` re-fetches `/result/`
+for the caller's open hosted attempt through the shared flow (lost or failed callback) and
+returns the status. `GET /api/kyc/status/summary` from an acting-tenant credential reads that
+tenant's attempt, never the person's first-party one. Lost callbacks also recover without
+anyone asking: see `Services/HostedSessions/AGENTS.md` §recovery.
+
+## Manual review (MANUAL_CHECK)
+
+`MANUAL_CHECK` is non-terminal, so it never opens a gate. But a hosted attempt expires after
+`SessionExpiryMinutes` (30), and a terminal verdict that lands after expiry terminalizes the
+session with no identity effect — a vendor human review would always lose. When the
+authoritative re-fetch reports a genuine vendor manual review, the flow calls the
+`IHostedSessionProgressHandler` hook; `KycHostedSessionOutcomeHandler.ObserveProgressAsync`
+moves the matching live attempt to `IN_REVIEW` and extends its expiry to
+`SubmissionExpiryDays` through `IKycHostedProgressStore` (CAS on the observed row, inside the
+evidence fence). A stale or mismatched attempt is a silent no-op.
+
+**Only `MANUAL_CHECK` is manual review (fix batch, RV-L2 L2-1).** The hook first fired on any
+non-terminal outcome with `SessionExists`, and Veriff (`verification: null`, i.e. not yet
+submitted; `RESUBMISSION_REQUESTED`) and generic hosted (`pending`/`review`) report exactly that.
+One callback or `POST /api/kyc/refresh` on a fresh start then flipped it to IN_REVIEW for
+30-365 days, so an abandoned start could still be approved late. `HostedSessionOutcome.IsManualReview`
+is now the sole trigger and only `IdentomatKycProviderService.MapOutcome` sets it (for
+`MANUAL_CHECK`). An undecided Identomat session (no `result`) and
+`ADDITIONAL_INFORMATION_REQUESTED` stay PENDING with their short expiry. The extended IN_REVIEW
+attempt is what the outcome poll's relevance probe keys on (`ProbeAsync`: live while the attempt
+bound to the session is PENDING/IN_REVIEW and unexpired), so the poll keeps fetching until a late
+human decision lands or the extended attempt expires (L2-6). The extension is applied once, on the
+PENDING -> IN_REVIEW move; later `MANUAL_CHECK` reads do not push it again, so a review that never
+ends cannot keep the attempt (and its hourly poll) alive indefinitely.
+
+**The admin manual-review queue lists MANUAL submissions only (L2-9).** `GetPendingAsync` skips
+hosted IN_REVIEW attempts: `ApproveAsync`/`RejectAsync` refuse every non-MANUAL row, so showing
+them gave admins rows they could not act on.
+
+A hosted outcome whose open attempt belongs to a different session (the session's own attempt
+was retired or superseded) now terminalizes that session quietly instead of retrying forever.
+
+## Monitor polling and lineage (round 4)
+
+`Kyc:Identomat:Screening:MonitorPollEnabled` is now `bool?`: unset means the AML monitor cold
+poll runs wherever an Identomat `ConfigId` is set (plan A-4); `false` still turns it off.
+`IdentomatScreeningService.RegisterMonitorAsync` takes a required `lineageKey`: a NONE
+`lineage_key` escapes the UNIQUE `kyc_screening_monitor_query` index (W1 probe), so a
+lineage-less monitor would not be single-winner.

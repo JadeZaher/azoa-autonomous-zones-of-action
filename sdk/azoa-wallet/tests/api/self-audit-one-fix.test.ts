@@ -1,7 +1,7 @@
 /**
  * Tests for self-audit-one-fix findings.
- * Covers: Jupiter (F1), listNfts (F6), getComposite path (F8),
- * getApiUrl (F4), updateActionGraphBundle PUT (F7); F2 legacy swap routes are retired.
+ * Covers: listNfts (F6), getComposite path (F8),
+ * getApiUrl (F4), updateActionGraphBundle PUT (F7); F1/F2 client DEX adapters and legacy swap routes are retired.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -22,79 +22,6 @@ function azoaResponse<T>(result: T) {
     json: () => Promise.resolve({ isError: false, message: "Success", result }),
   });
 }
-
-describe("Finding 1 — Jupiter: no Buffer, no requiresSigning", () => {
-  it("JupiterAdapter source does not reference Buffer", async () => {
-    // Dynamic import to get the module source path — we just verify
-    // the class can be imported and does not blow up on load (Buffer absent).
-    const { JupiterAdapter } = await import("../../src/dex/jupiter.js");
-    const adapter = new JupiterAdapter();
-    expect(adapter.chainId).toBe("solana");
-    expect(adapter.dexName).toBe("jupiter");
-  });
-
-  it("buildSwapTransaction result has no requiresSigning field", async () => {
-    const { JupiterAdapter } = await import("../../src/dex/jupiter.js");
-    const adapter = new JupiterAdapter({ apiUrl: "http://fake-jupiter" });
-
-    // Mock the /swap response
-    mockFetch
-      // first call: /quote
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            inAmount: "1000000",
-            outAmount: "998500",
-            priceImpactPct: "0.15",
-            routePlan: [],
-          }),
-      })
-      // second call: /swap
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            swapTransaction: "AAAA", // valid base64
-            lastValidBlockHeight: 99999,
-          }),
-      });
-
-    const quoteResult = await adapter.getQuote({
-      tokenIn: "So11111111111111111111111111111111111111112",
-      tokenOut: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-      amountIn: "1000000",
-      slippageBps: 50,
-      sender: "SENDER",
-    });
-    expect(isOk(quoteResult)).toBe(true);
-    if (!quoteResult.ok) return;
-
-    mockFetch.mockClear();
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: () =>
-        Promise.resolve({
-          swapTransaction: "AAAA",
-          lastValidBlockHeight: 99999,
-        }),
-    });
-
-    const txResult = await adapter.buildSwapTransaction(quoteResult.value, "SENDER");
-    expect(isOk(txResult)).toBe(true);
-    if (!txResult.ok) return;
-
-    const tx = txResult.value;
-    // requiresSigning must NOT be a key on UnsignedTransaction
-    expect(Object.prototype.hasOwnProperty.call(tx, "requiresSigning")).toBe(false);
-    // bytes must be a Uint8Array (base64Decode, not Buffer)
-    expect(tx.bytes).toBeInstanceOf(Uint8Array);
-    expect(tx.format).toBe("base64");
-  });
-});
 
 describe("Finding 6 — listNfts() on AzoaApiClient", () => {
   let client: AzoaApiClient;

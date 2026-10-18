@@ -181,23 +181,23 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         /// <summary>Advances only after a definitive insufficient-funds refusal.</summary>
         [Column(Order = 34)]
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long BankPayoutAttempt { get; set; }
 
         [Column(Order = 35)]
-        [Default("\"unbound\"")]
+        [Default("ALWAYS \"unbound\"")]
         public string Environment { get; set; } = "unbound";
 
         [Column(Order = 36)]
-        [Default("\"unbound\"")]
+        [Default("ALWAYS \"unbound\"")]
         public string ChainNetwork { get; set; } = "unbound";
 
         [Column(Order = 37)]
-        [Default("false")]
+        [Default("ALWAYS false")]
         public bool RecoveryRequested { get; set; }
 
         [Column(Order = 38)]
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long RecoveryReversalAmount { get; set; }
 
         [Column(Order = 39)]
@@ -207,18 +207,18 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? ProviderTransferReversalId { get; set; }
 
         [Column(Order = 41)]
-        [Default("\"0\"")]
+        [Default("ALWAYS \"0\"")]
         public string RestoredQuantityBaseUnits { get; set; } = "0";
 
         [Column(Order = 42)]
         public string? RestitutionKey { get; set; }
 
         [Column(Order = 43)]
-        [Default("\"0\"")]
+        [Default("ALWAYS \"0\"")]
         public string RestitutionTargetBaseUnits { get; set; } = "0";
 
         [Column(Order = 44)]
-        [Default("\"[]\"")]
+        [Default("ALWAYS \"[]\"")]
         public string RecoveryAuditJson { get; set; } = "[]";
 
         [Column(Order = 45)]
@@ -228,8 +228,17 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public string? ReturnPendingIdempotencyKey { get; set; }
 
         [Column(Order = 47)]
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long RecoveryReversalAttempt { get; set; }
+
+        /// <summary>D-8: the tenant whose schedule priced this cash-out and whose payout float funds it; absent = node-funded.</summary>
+        [Column(Order = 48)]
+        [References(typeof(User), Optional = true)]
+        public string? FundingTenantId { get; set; }
+
+        /// <summary>The reserve partition the collected units were credited to; returns draw from the same one.</summary>
+        [Column(Order = 49)]
+        public string? CollectPartition { get; set; }
 
         /// <summary>
         /// Deterministic record id for the one cash-out a request key may settle into: a compact

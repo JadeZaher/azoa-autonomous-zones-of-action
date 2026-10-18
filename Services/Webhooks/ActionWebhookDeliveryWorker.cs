@@ -33,7 +33,7 @@ public sealed class ActionWebhookDeliveryWorker(IServiceScopeFactory scopeFactor
     {
         using var scope = scopeFactory.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IActionWebhookDeliveryStore>();
-        var maximumAttempts = Math.Clamp(_options.MaxAttempts, 1, 100);
+        var maximumAttempts = _options.BoundedMaxAttempts;
         var timeout = TimeSpan.FromSeconds(Math.Clamp(_options.HttpTimeoutSeconds, 1, 120));
         var candidates = await store.ListCandidatesAsync(_options.BatchSize, ct);
         foreach (var candidate in candidates)

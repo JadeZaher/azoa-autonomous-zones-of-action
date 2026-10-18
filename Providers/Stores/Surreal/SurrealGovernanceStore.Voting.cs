@@ -32,6 +32,7 @@ public sealed partial class SurrealGovernanceStore
                 IF $_voter = NONE OR ($_voter_id != $_tenant AND $_voter.owner_tenant_id != type::record('user', $_tenant)
                 AND array::len($_participation) = 0) { THROW 'GOVERNANCE_CONCURRENT_OR_UNAUTHORIZED' }
                 """),
+            // lock: KycEvidenceFence (first statement) serializes KYC approval, identity and AML writes for this voter and tenant.
             SurrealQuery.Of("""
                 LET $_approval = (SELECT * FROM kyc_submission WHERE user_id = type::record('user', $_voter_id)
                 AND tenant_id = type::record('user', $_tenant) ORDER BY submitted_at DESC LIMIT 1)
@@ -75,6 +76,7 @@ public sealed partial class SurrealGovernanceStore
                 IF array::len($_aml) != 1 OR $_aml[0].decision != 'NO_HIT' OR $_aml[0].results_truncated
                 { THROW 'GOVERNANCE_CONCURRENT_OR_UNAUTHORIZED' }
                 """),
+            // lock: the claim row read here is upserted in this batch.
             SurrealQuery.Of("""
                 LET $_prior = (SELECT * FROM ONLY type::record('person_operation_claim', $_claim_id))
                 """),

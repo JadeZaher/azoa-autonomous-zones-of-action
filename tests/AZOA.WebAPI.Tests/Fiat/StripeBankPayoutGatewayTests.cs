@@ -1,4 +1,5 @@
 using System.Net;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -25,7 +26,7 @@ public sealed class StripeBankPayoutGatewayTests
         options.Checkout.AllowedReturnOrigins.Add("https://example.test");
         var sessions = new Mock<IHostedSessionStore>();
         sessions.Setup(x => x.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-                PayoutAccountFlow.AdmissionKeyFor(subject), It.IsAny<CancellationToken>()))
+                PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Live), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<HostedSession>.Success(new HostedSession
             { SubjectUserId = subject.ToString("N"), ProviderSessionId = "acct_owner" }));
         var gateway = new Mock<IStripeConnectGateway>(MockBehavior.Strict);
@@ -86,6 +87,36 @@ public sealed class StripeBankPayoutGatewayTests
         envelope!.ProviderAccountId.Should().Be("acct_owner");
         envelope.ObjectId.Should().Be("po_bank");
         envelope.IntentId.Should().Be(Guid.Parse(id));
+    }
+
+    [Theory]
+    [InlineData(409, """{"error":{"type":"idempotency_error"}}""", FiatPayoutErrors.PayoutBusyCode)]
+    [InlineData(400, """{"error":{"type":"idempotency_error","message":"Keys for idempotent requests can only be used with the same parameters"}}""", FiatPayoutErrors.PayoutBusyCode)]
+    [InlineData(400, """{"error":{"type":"invalid_request_error","code":"account_invalid"}}""", FiatPayoutErrors.PayoutRefusedCode)]
+    public async Task An_idempotency_conflict_on_a_transfer_is_ambiguous_never_a_refusal(int status, string body, string expectedCode)
+    {
+        // D-8 rule 1: only a genuine refusal may lead to returning units and releasing a tenant debit.
+        using var client = new HttpClient(new FixedResponse((HttpStatusCode)status, body));
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(x => x.CreateClient(StripeGateway.HttpClientName)).Returns(client);
+        var gateway = new StripeConnectGateway(factory.Object, NullLogger<StripeConnectGateway>.Instance);
+
+        var result = await gateway.CreatePayoutTransferAsync(
+            new StripeCredentials("https://api.stripe.test", "sk_test_fixture", TimeSpan.FromSeconds(5)),
+            new StripeTransferRequest
+            {
+                PayoutId = Guid.NewGuid().ToString("N"), SubjectUserId = Guid.NewGuid().ToString("N"),
+                ConnectedAccountId = "acct_owner", AmountMinorUnits = 500, Currency = "usd", IdempotencyKey = "azoa-payout-x",
+            });
+
+        result.IsError.Should().BeTrue();
+        result.Code.Should().Be(expectedCode);
+    }
+
+    private sealed class FixedResponse(HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
     }
 
     private sealed record Call(string Path, string? Account, string? Idempotency, string Body);

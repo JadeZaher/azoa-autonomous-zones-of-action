@@ -59,6 +59,22 @@ jobs:
       - name: Unit tests
         run: dotnet test tests/AZOA.WebAPI.Tests/AZOA.WebAPI.Tests.csproj --configuration Release --no-build
 
+      # The Ethereum protocol fixtures (Fixtures/Ethereum/*.mjs) spawn a loopback
+      # Hardhat chain from contracts/ethereum and deploy its compiled artifacts;
+      # without these steps EthereumProtocolTests/EthereumDexProtocolTests fail
+      # at chain setup. The contract unit tests run on the same pinned chain.
+      - name: Setup Node (Ethereum contracts)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.x"
+
+      - name: "Ethereum contracts: install, build, unit tests"
+        working-directory: contracts/ethereum
+        run: |
+          npm ci
+          npm run build
+          npm test
+
       - name: Start SurrealDB
         run: |
           docker run --detach \
@@ -87,7 +103,21 @@ jobs:
           # probes a podman container that cannot exist and fails hard under CI.
           AZOA_CONTAINER_RUNTIME: docker
           AZOA_SURREALDB_CONTAINER_NAME: azoa-ci-surrealdb
-        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf"
+        # Gate=WttSixRoute needs the three local chains from
+        # Fixtures/Wtt/run-wtt-fixtures.ps1 -Up and fails closed without them;
+        # it runs in the integrated sweep, not here (Fixtures/Wtt/AGENTS.md).
+        # A hung host (e.g. a DI cycle behind a factory registration, Hosting/AGENTS.md) aborts with a dump
+        # artifact after 10 idle minutes instead of silently eating the job's 60-minute budget.
+        run: dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "Category!=Chaos&Category!=Perf&Gate!=WttSixRoute" --blame-hang-timeout 10m --blame-hang-dump-type mini --results-directory "${{ runner.temp }}/integration-results"
+
+      - name: Upload integration hang dumps
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: integration-hang-${{ github.sha }}
+          path: ${{ runner.temp }}/integration-results/**/*.dmp
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Conformance gate evidence
         env:
@@ -227,9 +257,9 @@ jobs:
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       # docker-entrypoint.sh's schema mode applies Generated/Schemas PLUS
-      # CompatibilityBaselines from one directory. Composing the same set here
-      # is what makes this job test the deploy path rather than a subset of it:
-      # the two produce different reconcile plans.
+      # CompatibilityBaselines from one directory with --no-reconcile. Composing
+      # the same set here is what makes this job test the deploy path rather
+      # than a subset of it (Persistence/SurrealDb/AGENTS.md §deploy-path).
       - name: Compose the schema set the deploy path applies
         run: |
           mkdir -p "$RUNNER_TEMP/azoa-schemas"
@@ -248,13 +278,12 @@ jobs:
             --namespace azoa --database azoa \
             --schemas-dir "$SCHEMAS_DIR" \
             --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile \
             --applied-by "ci/${{ github.sha }}" \
             | tee apply.log
 
       # The migration path has to be re-runnable: a second `up` against an
-      # already-current database must change nothing. Phase 3 reconcile
-      # previously re-evolved 144 fields on every run because it read SurrealDB's
-      # own spelling of a definition back as drift, so this never settled.
+      # already-current database must change nothing.
       - name: Re-run must be a no-op
         run: |
           surrealforge up \
@@ -263,6 +292,7 @@ jobs:
             --namespace azoa --database azoa \
             --schemas-dir "$SCHEMAS_DIR" \
             --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile \
             --applied-by "ci/${{ github.sha }}-rerun" \
             | tee rerun.log
 
@@ -276,6 +306,56 @@ jobs:
             echo "::error::Schema job is not idempotent: re-run applied=$applied evolved=$evolved (both must be 0)."
             exit 1
           fi
+
+      # The deploy path (baselines + forward migrations) must land on exactly the
+      # schema the POCOs generate. Apply Generated/Schemas alone to a reference
+      # database and require identical INFO FOR TABLE output for every table.
+      - name: Deploy path converges to the generated model
+        run: |
+          surrealforge up \
+            --connection http://127.0.0.1:8030 \
+            --user root --pass root \
+            --namespace azoa --database azoa_reference \
+            --schemas-dir Persistence/SurrealDb/Generated/Schemas \
+            --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile \
+            --applied-by "ci/${{ github.sha }}-reference" > reference.log
+
+          python3 .github/scripts/schema_snapshot_diff.py azoa azoa_reference "the deploy path"
+
+      # RV-L1-02: every CI database starts fresh, so an edit to an EXISTING definition (IF NOT EXISTS goldens,
+      # --no-reconcile) would surface first as a checksum abort in the Railway schema job. Apply main's schema
+      # set, then this tree's, and require convergence -- unless this change declares a generation reset (D-9:
+      # Persistence/SurrealDb/SCHEMA_GENERATION bumped; the owner resets the SurrealDB volume at deploy).
+      - name: Upgrade from main converges (or a generation reset is declared)
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          main_generation=$(git show origin/main:Persistence/SurrealDb/SCHEMA_GENERATION 2>/dev/null || echo 1)
+          branch_generation=$(cat Persistence/SurrealDb/SCHEMA_GENERATION)
+          if [ "$main_generation" != "$branch_generation" ]; then
+            echo "::notice::Schema generation $main_generation -> $branch_generation: a reset is declared (D-9); deploy needs a fresh SurrealDB volume, so the in-place upgrade check is skipped."
+            exit 0
+          fi
+          main_tree="$RUNNER_TEMP/azoa-main"
+          mkdir -p "$main_tree/schemas"
+          git archive origin/main Persistence/SurrealDb | tar -x -C "$main_tree"
+          cp "$main_tree"/Persistence/SurrealDb/Generated/Schemas/*.surql "$main_tree/schemas/"
+          if [ -d "$main_tree/Persistence/SurrealDb/CompatibilityBaselines" ]; then
+            cp "$main_tree"/Persistence/SurrealDb/CompatibilityBaselines/*.surql "$main_tree/schemas/"
+          fi
+          surrealforge up --connection http://127.0.0.1:8030 --user root --pass root \
+            --namespace azoa --database azoa_upgrade \
+            --schemas-dir "$main_tree/schemas" --migrations-dir "$main_tree/Persistence/SurrealDb/Migrations" \
+            --no-reconcile --applied-by "ci/main" > upgrade-main.log
+          if ! surrealforge up --connection http://127.0.0.1:8030 --user root --pass root \
+            --namespace azoa --database azoa_upgrade \
+            --schemas-dir "$SCHEMAS_DIR" --migrations-dir Persistence/SurrealDb/Migrations \
+            --no-reconcile --applied-by "ci/${{ github.sha }}-upgrade" > upgrade-branch.log; then
+            cat upgrade-branch.log
+            echo "::error::Upgrading main's schema to this tree aborts (checksum or apply error). Add a forward DEFINE ... OVERWRITE migration, or declare a generation reset by bumping Persistence/SurrealDb/SCHEMA_GENERATION."
+            exit 1
+          fi
+          python3 .github/scripts/schema_snapshot_diff.py azoa_upgrade azoa_reference "main upgraded to this tree"
 
       # Mirrors docker-entrypoint.sh's schema mode: the schema owner defines the
       # runtime identity the API later authenticates as.
@@ -401,8 +481,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=low
+      # Split gate: everything that ships (`--omit=dev`) fails on any advisory; the
+      # full tree fails only on critical. Reason: GHSA-vfj7 (`braces`, every version
+      # affected, no fix) reaches the tree only through dev tooling (tailwindcss@3,
+      # eslint-config-next's fast-glob). Removal trigger: the Tailwind 4 migration --
+      # then restore a single `npm audit --audit-level=low`.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Audit the full dependency tree (critical only)
+        run: npm audit --audit-level=critical
 
       - name: Lint
         run: npm run lint
@@ -630,6 +718,8 @@ jobs:
           # the default shallow clone would hide precisely those.
           fetch-depth: 0
 
+      # Allowlist: .gitleaks.toml -- exact reviewed values only, default rules kept
+      # (review notes: .github/AGENTS.md §gitleaks).
       # Two passes, because they answer different questions. `detect` walks the
       # commit graph (was a secret ever committed?); `detect --no-git` reads the
       # working tree (is one sitting in the checkout right now, e.g. arriving
@@ -646,6 +736,7 @@ jobs:
             "$GITLEAKS_IMAGE" \
             detect \
               --source /repo \
+              --config /repo/.gitleaks.toml \
               --redact \
               --no-banner \
               --exit-code 1 \
@@ -661,6 +752,7 @@ jobs:
             "$GITLEAKS_IMAGE" \
             detect \
               --source /repo \
+              --config /repo/.gitleaks.toml \
               --no-git \
               --redact \
               --no-banner \

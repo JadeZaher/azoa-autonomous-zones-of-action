@@ -160,23 +160,23 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public DateTimeOffset? RefundStartedAt { get; set; }
 
         [Column(Order = 30)]
-        [Default("\"[]\"")]
+        [Default("ALWAYS \"[]\"")]
         public string RecoveryAuditJson { get; set; } = "[]";
 
         [Column(Order = 31)]
-        [Default("\"unbound\"")]
+        [Default("ALWAYS \"unbound\"")]
         public string Environment { get; set; } = "unbound";
 
         [Column(Order = 32)]
-        [Default("\"unbound\"")]
+        [Default("ALWAYS \"unbound\"")]
         public string ChainNetwork { get; set; } = "unbound";
 
         [Column(Order = 33)]
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long RefundAttempt { get; set; }
 
         [Column(Order = 34)]
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long RefundedMinorUnits { get; set; }
 
         [Column(Order = 35)]
@@ -184,13 +184,17 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
 
         /// <summary>The part of <see cref="ConsumedBaseUnits"/> a partial reversal took back; it never shrinks purchase attribution.</summary>
         [Column(Order = 36)]
-        [Default("\"0\"")]
+        [Default("ALWAYS \"0\"")]
         public string ReversedBaseUnits { get; set; } = "0";
 
         /// <summary>Each reversal's cumulative target already marked here, by reversal id, so a repeat adds only the difference.</summary>
         [Column(Order = 37)]
-        [Default("\"{}\"")]
+        [Default("ALWAYS \"{}\"")]
         public string ReversalMarksJson { get; set; } = "{}";
+
+        /// <summary>Scope key of the schedule that priced this lot (tenant compact id or <c>node</c>); caps node-funded exits.</summary>
+        [Column(Order = 38)]
+        public string? PricingScopeKey { get; set; }
 
         /// <summary>Deterministic record id for the one lot a funding intent may settle into.</summary>
         public static string RecordIdFor(string intentId)

@@ -18,6 +18,8 @@ using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Core.Blockchain.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using AZOA.WebAPI.Tests.Fakes;
+
 namespace AZOA.WebAPI.Tests.Services;
 
 /// <summary>
@@ -272,7 +274,8 @@ public sealed class BridgeExactlyOnceReplaySweepTests
                     StaleClaimTakeoverSeconds = _staleSeconds
                 }),
                 new ConfigurationBuilder().Build(),
-                new ApprovedRealValueKycGate());
+                new ApprovedRealValueKycGate(),
+            wallets: new BridgeOwnerWalletStore());
         }
 
         public ReconciliationService Recon() => new(

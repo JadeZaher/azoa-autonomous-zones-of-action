@@ -69,3 +69,46 @@ Complete for that deterministic head and its immutable intent/predecessor; the
 completed digest is part of the quoted predecessor witness. Each new head has its
 own audit. Withdrawal compares the same frozen witness when its parent version is
 still current; existing advanced-version nonadmission proofs remain valid.
+
+## Signing authority (audit-1 H1)
+
+The client-supplied `SigningContext` in a native intent is only a claim. The service runs
+`ValidAuthority` (actor, acting tenant, wallet and the kind scope from `ActionSigningScopes.ForNativeIntent`)
+and the legacy custodial-wallet and consent checks. Then, before preparing a stage and again before
+setting `SubmissionAuthorized`, it binds every signer to the caller's captured credential:
+`SigningAdmissionAuthorityFactory.BindDirectAsync(credential, wallet, chain, address, [scope])`.
+The bound authorities go to `IDeploymentStore.UpdateAsync(..., signing)`. `SurrealDeploymentStore.Fenced`
+adds `SigningAuthorityFence.Create` guards (prefix `deployment_signing_{i}`) to the same transaction as the
+Preparing or Submitted CAS. A revoked key, an expired JWT, a withdrawn grant or a moved wallet aborts the
+CAS, and the caller sees "signing authority changed". The bind runs after the budget-park checks, so a
+stage that cannot be afforded parks before any custody.
+
+The controller passes the credential on start, continue, original-budget recovery and recovery start.
+`IDeploymentService.StartAsync` without a credential still admits the request, but native signing fails
+closed. This matters for `ActionGraphBundleManager` and `BlockchainOperationManager.Native` until they call
+`StartWithCredentialAsync`. Action-admitted rows reached by the worker or the action handler keep using
+their frozen workflow authority, which was selected at node admission; recovery never grants a first
+submission.
+
+## Operator resolution (ADV F-H12)
+
+`NeedsOperator` rows used to have no exit: the worker re-observed and cancel refused. Now
+`POST /api/operator/deployments/{id}/resolve` (`RecentNodeOperatorSession`) takes `ExpectedVersion` and an
+action:
+
+- `Reobserve` runs one observation now.
+- `CloseUnresolvable` also re-observes first. A definitive chain verdict always wins: confirmed, failed or
+  expired resolve normally, and pending resubmits the saved wire. Only when the observation is still
+  unresolvable, and the operator gives a bounded reason plus `AcknowledgeNoFurtherEffect`, does the row
+  become terminal `Failed` with stage `OperatorClosed`. The unresolved preparation and the operator id go
+  into `EvidenceJson`.
+
+`CloseUnresolvable` is refused for action-linked rows (`ActionRunId` set, RV-L4-05): a terminal `Failed`
+would hand the owning action node its failure or compensation edge (for example a Refund) while the closed
+wire may still land, a double effect for a `Call`. Those rows stay `NeedsOperator`; the operator can only
+`Reobserve`, and the action's own reconciliation owns the outcome.
+
+A terminal row never authorizes another stage. Its resolved history stays recoverable through the
+linked-recovery flow. Residual risk: if the closed wire lands later, its resource exists unreferenced. The
+operator accepts this explicitly, and it is never a double authorization. `GET /api/operator/deployments`
+lists parked rows oldest first.

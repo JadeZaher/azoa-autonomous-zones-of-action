@@ -36,14 +36,14 @@ public sealed class HostedSessionReconciliationFlowTests(HttpFlowWebApplicationF
             ConfirmedProviderAbsence = false,
             Reason = EvidenceReason,
             ProviderSessionId = vendorSession.Id,
-            RedirectUrl = $"https://widget.identomat.com/?session_token={vendorSession.SessionToken}",
+            RedirectUrl = $"https://{IdentomatVendor.WidgetHost}/?session_token={vendorSession.SessionToken}",
         };
 
         // A creation that may still be in flight is never reconciled out from under itself.
         using var tooEarly = await Operator.PostAsJsonAsync(reconcileRoute, recovery, JsonOptions);
         await ShouldReturnAsync(tooEarly, HttpStatusCode.Conflict);
 
-        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(admission.Id)
+        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(admission.Id).Where(seed => true)
             .Set(row => row.CreationClaimedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-6)).Build());
         (await StatusAsync(tenant)).Status.Should().Be("NEEDS_OPERATOR");
 

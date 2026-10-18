@@ -27,7 +27,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         public const string SchemaNameConst = "action_run";
         public string SchemaName => SchemaNameConst;
 
-        [Default("0")]
+        [Default("ALWAYS 0")]
         public long Version { get; set; }
         public string? DefinitionSnapshotJson { get; set; }
         public string? DefinitionSnapshotHash { get; set; }

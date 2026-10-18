@@ -268,7 +268,9 @@ export async function operatorUpstreamFetch(
 ): Promise<Response> {
     const platformGenesis = path === "platform-token" || path === "platform-token/genesis"
         || /^platform-token\/creation\/[0-9a-f]{32}(?:\/(?:quote|accept-quote|continue|replace|refresh))?$/i.test(path);
-    return fetch(new URL(`/api/${platformGenesis ? "admin" : "operator"}/${path}`, resolveServerApiUrl()), {
+    // Round-4 console routes arrive as an exact upstream `/api/...` path from `operator-routes.ts`.
+    const upstreamPath = path.startsWith("/api/") ? path : `/api/${platformGenesis ? "admin" : "operator"}/${path}`;
+    return fetch(new URL(upstreamPath, resolveServerApiUrl()), {
         method: init?.method ?? "GET",
         cache: "no-store",
         redirect: "error",
@@ -284,6 +286,7 @@ export async function operatorUpstreamFetch(
 
 export async function sanitizedOperatorResponse(
     response: Response,
+    options?: { bare?: boolean },
 ): Promise<NextResponse> {
     if (!response.ok) {
         const authRequirement = response.headers.get("x-azoa-auth-requirement");
@@ -310,8 +313,11 @@ export async function sanitizedOperatorResponse(
         return result;
     }
 
-    const envelope = await readUpstreamEnvelope<unknown>(response);
-    if (!envelope || envelope.isError) {
+    const parsed = await readUpstreamEnvelope<unknown>(response);
+    // A bare upstream body (routes marked `bare` in operator-routes.ts) is wrapped so the console sees one envelope shape.
+    const envelope = options?.bare && parsed !== null ? { isError: false, result: parsed as unknown } : parsed;
+    // Anything that is not a real `AZOAResult` (e.g. a bare body on a route not marked `bare`) is refused, never read as empty.
+    if (!isAzoaEnvelope(envelope) || envelope.isError) {
         return NextResponse.json(
             { message: "The node returned an invalid operator response." },
             { status: 502, headers: NO_STORE_HEADERS },
@@ -321,4 +327,10 @@ export async function sanitizedOperatorResponse(
         { result: envelope.result ?? null },
         { headers: NO_STORE_HEADERS },
     );
+}
+
+/** True for a serialized `AZOAResult`: an object whose `isError` is a boolean (ASP.NET always writes it). */
+function isAzoaEnvelope(value: unknown): value is AzoaEnvelope<unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+        && typeof (value as { isError?: unknown }).isError === "boolean";
 }

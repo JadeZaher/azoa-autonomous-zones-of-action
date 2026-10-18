@@ -82,7 +82,8 @@ public class HolonManagerExtendedTests
             Description = "Old",
             Metadata = new Dictionary<string, string> { ["key"] = "val" },
             PeerHolonIds = new List<Guid>(),
-            IsActive = true
+            IsActive = true,
+            UserId = Owner
         };
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
@@ -93,7 +94,7 @@ public class HolonManagerExtendedTests
         {
             Name = "New",
             Metadata = new Dictionary<string, string> { ["extra"] = "data" }
-        });
+        }, Owner);
 
         result.IsError.Should().BeFalse();
         result.Result!.Name.Should().Be("New");
@@ -106,11 +107,11 @@ public class HolonManagerExtendedTests
     public async Task DeleteAsync_ReturnsProviderResult()
     {
         _store.Setup(p => p.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-                 .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = Guid.NewGuid() } });
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = Guid.NewGuid(), UserId = Owner } });
         _store.Setup(p => p.DeleteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<bool> { Result = true });
 
-        var result = await _manager.DeleteAsync(Guid.NewGuid());
+        var result = await _manager.DeleteAsync(Guid.NewGuid(), Owner);
 
         result.Result.Should().BeTrue();
     }
@@ -133,6 +134,8 @@ public class HolonManagerExtendedTests
         var newParent = Guid.NewGuid();
         _store.Setup(p => p.GetByIdAsync(holon.Id, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IHolon> { Result = holon });
+        _store.Setup(p => p.GetByIdAsync(newParent, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IHolon> { Result = new Holon { Id = newParent, UserId = Owner } });
         // Cycle-guard BFS: holon has no children so newParent cannot be a descendant.
         _store.Setup(p => p.QueryAsync(
                 It.Is<HolonQueryRequest>(q => q.ParentHolonId == holon.Id),

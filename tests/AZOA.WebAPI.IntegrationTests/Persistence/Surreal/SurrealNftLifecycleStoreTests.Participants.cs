@@ -23,11 +23,11 @@ public sealed partial class SurrealNftLifecycleStoreTests
         if (change.EndsWith("cutoff", StringComparison.Ordinal))
         {
             var user = change == "issuer-cutoff" ? before.ActorUserId : before.RecipientUserId;
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(user)
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(user).Where(seed => true)
                 .Set(item => item.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         }
         if (change == "participant-wallet")
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(consent.Authority.Wallet.Id.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(consent.Authority.Wallet.Id.ToString("N")).Where(seed => true)
                 .Set(item => item.Address, "changed-address").Build())).EnsureAllOk();
 
         var saved = await _store.UpdateAsync(accepted, before.Version, requireActionAuthority: true);
@@ -50,7 +50,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         saved.PreparedTransactionJson = JsonSerializer.Serialize(new PreparedNftTransaction("exact", "signed", intent, "genesis", "ASA"));
         saved.State = "Prepared";
         saved = (await _store.UpdateAsync(saved, saved.Version))!;
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(before.RecipientUserId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(before.RecipientUserId).Where(seed => true)
             .Set(item => item.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         saved.State = "Submitted";
         (await _store.UpdateAsync(saved, saved.Version, requireActionAuthority: true)).Should().BeNull();

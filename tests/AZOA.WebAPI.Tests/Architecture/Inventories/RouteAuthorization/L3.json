@@ -1,0 +1,630 @@
+[
+  {
+    "route": "GET api/fiat/checkout/capabilities",
+    "controller": "FiatCheckoutController",
+    "action": "Capabilities",
+    "class": "non-value",
+    "scope": "authenticated",
+    "enforcement": "[Authorize]; configuration readout only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fiat/checkout/{userId}",
+    "controller": "FiatCheckoutController",
+    "action": "Start",
+    "class": "value-moving",
+    "scope": "first-party self | ApiKey tenant:provision + live consent(transfer:sign)",
+    "enforcement": "AuthoriseSubjectAsync; admission key {subject}:{tenant|self}:{key}; KYC gate in rail; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fiat/checkout/{userId}/{intentId}",
+    "controller": "FiatCheckoutController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "first-party self | ApiKey tenant + consent",
+    "enforcement": "AuthoriseSubjectAsync; rail OwnedBy(subject) && DrivenBy(tenant); one NotFound for every refusal",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fiat/payouts/{userId}/availability",
+    "controller": "FiatPayoutController",
+    "action": "Availability",
+    "class": "non-value",
+    "scope": "first-party self | ApiKey tenant + consent",
+    "enforcement": "AuthoriseAsync",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fiat/payouts/{userId}/account",
+    "controller": "FiatPayoutController",
+    "action": "Account",
+    "class": "non-value",
+    "scope": "first-party self | ApiKey tenant + consent",
+    "enforcement": "AuthoriseAsync; read-only admission lookup",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fiat/payouts/{userId}/account",
+    "controller": "FiatPayoutController",
+    "action": "BeginAccountSetup",
+    "class": "value-moving",
+    "scope": "first-party self only",
+    "enforcement": "AuthoriseAsync then tenant refused 403 (F-H8); creation fence; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fiat/payouts/{userId}",
+    "controller": "FiatPayoutController",
+    "action": "Start",
+    "class": "value-moving",
+    "scope": "first-party self | ApiKey tenant:provision + live consent(transfer:sign)",
+    "enforcement": "AuthoriseAsync; KYC+risk gate; replay honoured only for the same driver (F-H8); financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fiat/payouts/{userId}",
+    "controller": "FiatPayoutController",
+    "action": "History",
+    "class": "non-value",
+    "scope": "first-party self | ApiKey tenant + consent",
+    "enforcement": "AuthoriseAsync; tenant sees only cash-outs it drove (F-H8)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fiat/webhook/stripe",
+    "controller": "StripeWebhookController",
+    "action": "Stripe",
+    "class": "value-moving",
+    "scope": "anonymous (provider)",
+    "enforcement": "Stripe-Signature over platform secret, or Connect secret bound to account-bearing events (F-M2); livemode match; body digested",
+    "policies": [
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST api/fiat/price-schedule",
+    "controller": "TenantPriceScheduleController",
+    "action": "Register",
+    "class": "value-moving",
+    "scope": "caller's own scope (tenant API key) | node scope (operator)",
+    "enforcement": "controller scope resolution; financial limiter; D-6 KYB gate owed by L2 contract",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fiat/price-schedule/{chainType}/{assetId}",
+    "controller": "TenantPriceScheduleController",
+    "action": "GetCurrent",
+    "class": "non-value",
+    "scope": "caller's own scope",
+    "enforcement": "[Authorize]",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fiat/price-schedule/{chainType}/{assetId}/versions",
+    "controller": "TenantPriceScheduleController",
+    "action": "GetVersions",
+    "class": "non-value",
+    "scope": "caller's own scope",
+    "enforcement": "[Authorize]",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/allocation/receipt",
+    "controller": "AllocationReceiptController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "API key bound to Idempotency-Key",
+    "enforcement": "receipt keyed by (api key, idempotency key); financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/allocation/receipt/reconcile",
+    "controller": "AllocationReceiptController",
+    "action": "Reconcile",
+    "class": "non-value",
+    "scope": "API key bound to Idempotency-Key",
+    "enforcement": "observes chain truth only, never resubmits; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fungible-creation",
+    "controller": "FungibleCreationController",
+    "action": "List",
+    "class": "non-value",
+    "scope": "actor + acting tenant",
+    "enforcement": "store filters by actor/tenant",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fungible-creation/{id}",
+    "controller": "FungibleCreationController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "actor + acting tenant",
+    "enforcement": "store filters by actor/tenant",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/fungible-creation/{id}/attachment",
+    "controller": "FungibleCreationController",
+    "action": "Attachment",
+    "class": "non-value",
+    "scope": "dapp:develop consent",
+    "enforcement": "CaptureCredential + BindConsent(dapp:develop)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/attachment",
+    "controller": "FungibleCreationController",
+    "action": "Attach",
+    "class": "value-moving",
+    "scope": "dapp:develop consent",
+    "enforcement": "CaptureCredential; service BindConsent(dapp:develop); financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/quote",
+    "controller": "FungibleCreationController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": "token:create:sign",
+    "enforcement": "HasSigningScope; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/accept-quote",
+    "controller": "FungibleCreationController",
+    "action": "Accept",
+    "class": "value-moving",
+    "scope": "token:create:sign",
+    "enforcement": "HasSigningScope; actor/tenant match; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/continue",
+    "controller": "FungibleCreationController",
+    "action": "Continue",
+    "class": "value-moving",
+    "scope": "token:create:sign",
+    "enforcement": "HasSigningScope + CaptureCredential; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/replace",
+    "controller": "FungibleCreationController",
+    "action": "Replace",
+    "class": "value-moving",
+    "scope": "token:create:sign",
+    "enforcement": "CaptureCredential; service BindDirectAsync(token:create:sign); financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/cancel",
+    "controller": "FungibleCreationController",
+    "action": "Cancel",
+    "class": "non-value",
+    "scope": "original actor/tenant",
+    "enforcement": "store CAS: same credential actor/tenant, no authorized chain effect; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fungible-creation/{id}/refresh",
+    "controller": "FungibleCreationController",
+    "action": "Refresh",
+    "class": "non-value",
+    "scope": "actor + acting tenant",
+    "enforcement": "observation only",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-events",
+    "controller": "FiatEventOperatorController",
+    "action": "ListNeedingOperator",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "[Authorize(Policy=Operator)]",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-events/{id}/replay",
+    "controller": "FiatEventOperatorController",
+    "action": "Replay",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "Operator policy; idempotent handlers; financial limiter",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-payouts",
+    "controller": "FiatPayoutOperatorController",
+    "action": "ListBoard",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-payouts/{id}",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-payouts/accounts/{userId}",
+    "controller": "FiatPayoutOperatorController",
+    "action": "ListForAccount",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/{id}/advance",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Advance",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; next leg chosen by the row; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/{id}/return",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Return",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; AbandonAsync parks when money may have left; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/{id}/recover",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Recover",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal; server-fetched failed bank payout + transfer evidence; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/accounts/{userId}/setup/resolve",
+    "controller": "FiatPayoutOperatorController",
+    "action": "ResolveAccountSetup",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; reason 20-1000; Stripe accounts listed over the claim window (complete page) — attach the one account whose azoa_payout_claim+azoa_user_id match, or release the claim only when none exists and the replay window has passed; audited; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/{id}/resolve",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Resolve",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal + reason; Stripe transfer-group / bank payout / chain evidence; audit appended; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/{id}/park",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Park",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/{id}/restart",
+    "controller": "FiatPayoutOperatorController",
+    "action": "Restart",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; idempotent saga per payout; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-reversals",
+    "controller": "FiatReversalOperatorController",
+    "action": "ListOpen",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-reversals/{id}",
+    "controller": "FiatReversalOperatorController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/fiat-reversals/accounts/{userId}",
+    "controller": "FiatReversalOperatorController",
+    "action": "ListForAccount",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-reversals/{id}/recover",
+    "controller": "FiatReversalOperatorController",
+    "action": "Recover",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; attempt-keyed idempotent moves; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-reversals/{id}/settle",
+    "controller": "FiatReversalOperatorController",
+    "action": "Settle",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-reversals/{id}/resolve",
+    "controller": "FiatReversalOperatorController",
+    "action": "Resolve",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal + reason; chain confirmation of the recorded move; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-reversals/{id}/restart",
+    "controller": "FiatReversalOperatorController",
+    "action": "Restart",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; idempotent saga per reversal; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-reversals/{id}/clear-flag",
+    "controller": "FiatReversalOperatorController",
+    "action": "ClearFlag",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal recorded as record link; version CAS; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/on-ramp-lots/intents/{intentId}/resume",
+    "controller": "OnRampLotOperatorController",
+    "action": "Resume",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "Operator principal + reason; issuance claim vs refund reservation; financial limiter",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST api/admin/on-ramp-lots/intents/{intentId}/refund",
+    "controller": "OnRampLotOperatorController",
+    "action": "Refund",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "Operator principal + reason; no-effect proof; provider evidence; financial limiter",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/on-ramp-lots",
+    "controller": "OnRampLotOperatorController",
+    "action": "ListNeedingOperator",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/on-ramp-lots/intents/{intentId}",
+    "controller": "OnRampLotOperatorController",
+    "action": "GetByIntent",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/admin/on-ramp-lots/accounts/{userId}/issued",
+    "controller": "OnRampLotOperatorController",
+    "action": "ListIssuedForAccount",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "GET api/fiat/tenant-payout-balance",
+    "controller": "TenantPayoutBalanceController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "tenant principal (self) | ApiKey tenant:provision",
+    "enforcement": "caller is the tenant; delegated acting-tenant refused",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/fiat/tenant-payout-balance/top-up",
+    "controller": "TenantPayoutBalanceController",
+    "action": "TopUp",
+    "class": "value-moving",
+    "scope": "tenant principal (self) | ApiKey tenant:provision; KYB PayoutPriceSchedule",
+    "enforcement": "server-built payout-float admission key; rail KYB gate; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "GET api/admin/tenant-payout-floats/{tenantId}",
+    "controller": "TenantPayoutOperatorController",
+    "action": "Get",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "Operator policy",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST /api/allocation/{userId}",
+    "controller": "AllocationController",
+    "action": "Allocate",
+    "class": "value-moving",
+    "scope": "units:issue or nft:mint (API-key scope by allocation kind) + the target user's live consent",
+    "enforcement": "[Authorize]; API-key principals only; key scope per kind; acting tenant resolved from the key; ITenantConsentGate live consent before the manager; target is the route userId only; idempotent per key; financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/operator/fiat-events/{id}/replay",
+    "controller": "FiatEventOperatorController",
+    "action": "Replay",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "Operator policy; idempotent handlers; financial limiter (api/operator alias of the same action)",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST api/operator/on-ramp-lots/intents/{intentId}/resume",
+    "controller": "OnRampLotOperatorController",
+    "action": "Resume",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "Operator principal + reason; issuance claim vs refund reservation; financial limiter (api/operator alias of the same action)",
+    "policies": [
+      "Operator"
+    ]
+  },
+  {
+    "route": "POST api/operator/on-ramp-lots/intents/{intentId}/refund",
+    "controller": "OnRampLotOperatorController",
+    "action": "Refund",
+    "class": "value-moving",
+    "scope": "Operator",
+    "enforcement": "Operator principal + reason; no-effect proof; provider evidence; financial limiter (api/operator alias of the same action)",
+    "policies": [
+      "Operator"
+    ]
+  }
+]

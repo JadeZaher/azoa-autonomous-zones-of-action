@@ -18,6 +18,7 @@ public sealed partial class SurrealHoldCommandTests
     [InlineData(false, "Replace")]
     [InlineData(false, "WithdrawRace")]
     [InlineData(false, "Chain")]
+    [InlineData(false, "TenantedRun")]
     public async Task WorkflowOpeningConsentCommitsLiabilityAndMandateTogetherAndCancelledSourceCannotRelease(bool cancelBeforeConsent, string recovery)
     {
         var open = Open(); var direct = Authority(); var now = DateTimeOffset.UtcNow;
@@ -27,7 +28,7 @@ public sealed partial class SurrealHoldCommandTests
         var witness = new WorkflowSigningWitness(1, direct.Direct!.Credential,
             new(runId, nodeId, _actor, null, CanonicalJson.HashCanonical(frozen)), [AzoaScopes.ActionExecute, AzoaScopes.TransferSign], []);
         var authority = new HoldCommandAuthority(1, Workflow: witness);
-        await Save(new ActionRun { Id = runId.ToString("N"), ActionId = "action_definition:" + Guid.NewGuid().ToString("N"),
+        await Save(new ActionRun { Id = runId.ToString("N"), ActionId = "action:" + Guid.NewGuid().ToString("N"),
             UserId = "user:" + _actor.ToString("N"), Status = ActionRun.ActionRunStatusKind.Running, StartedAt = now });
         await Save(new ActionNodeExecution { Id = executionId.ToString("N"), RunId = "action_run:" + runId.ToString("N"),
             NodeId = "action_node:" + nodeId.ToString("N"), State = ActionNodeExecution.ActionNodeState.Running,
@@ -54,7 +55,7 @@ public sealed partial class SurrealHoldCommandTests
             expired = expired with { QuoteId = ValueCustodyIdentity.QuoteId(expired) };
             var expiredDraft = draft with { Quote = expired };
             pending.WorkflowMandateDraftJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(expiredDraft));
-            await Execute(SurrealWriter.UpdateOnly<HoldCommand>(pending.Id)
+            await Execute(SurrealWriter.UpdateOnly<HoldCommand>(pending.Id).Where(seed => true)
                 .Set(row => row.WorkflowMandateDraftJson, pending.WorkflowMandateDraftJson).Build());
             var renewal = new HoldRecoveryRequest(Guid.NewGuid(), pending.Version, "Refresh expired unaccepted disclosure.");
             var replaced = (await _store.ReplaceWorkflowOpeningAsync(pending, draft, renewal, direct.Direct))!;
@@ -85,7 +86,7 @@ public sealed partial class SurrealHoldCommandTests
             return;
         }
         if (cancelBeforeConsent)
-            await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Set(row => row.Status, ActionRun.ActionRunStatusKind.Cancelled).Build());
+            await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Where(seed => true).Set(row => row.Status, ActionRun.ActionRunStatusKind.Cancelled).Build());
         var completed = await _store.CommitWorkflowOpeningAsync(pending, acceptance, direct.Direct);
         if (cancelBeforeConsent)
         {
@@ -132,11 +133,19 @@ public sealed partial class SurrealHoldCommandTests
             SigningContext.PlatformFor("Algorand") with { Scope = AzoaScopes.TransferSign });
         var releaseAuthority = new HoldCommandAuthority(1, ReleaseMandateId: mandate.Id);
         (await _store.ClaimRailAsync(release, plan, releaseAuthority)).Should().BeNull();
-        await Execute(SurrealWriter.UpdateOnly<ActionNodeExecution>(executionId.ToString("N")).Set(row => row.State, ActionNodeExecution.ActionNodeState.Succeeded).Build());
-        await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Set(row => row.Status, ActionRun.ActionRunStatusKind.Succeeded).Build());
+        await Execute(SurrealWriter.UpdateOnly<ActionNodeExecution>(executionId.ToString("N")).Where(seed => true).Set(row => row.State, ActionNodeExecution.ActionNodeState.Succeeded).Build());
+        await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Where(seed => true).Set(row => row.Status, ActionRun.ActionRunStatusKind.Succeeded).Build());
+        if (recovery == "TenantedRun")
+        {
+            // Captured-null negative (HoldReleaseWorkflowFence run guard): a tenant-less mandate never matches a tenant-driven run.
+            await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Where(seed => true)
+                .Set(row => row.ActingTenantId, "user:" + Guid.NewGuid().ToString("N")).Build());
+            (await _store.ClaimRailAsync(release, plan, releaseAuthority)).Should().BeNull();
+            await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Where(seed => true).Unset(row => row.ActingTenantId).Build());
+        }
         var releaseCommand = (await _store.ClaimRailAsync(release, plan, releaseAuthority))!;
         releaseCommand.State.Should().Be("Admitted");
-        await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Set(row => row.Status, ActionRun.ActionRunStatusKind.Cancelled).Build());
+        await Execute(SurrealWriter.UpdateOnly<ActionRun>(runId.ToString("N")).Where(seed => true).Set(row => row.Status, ActionRun.ActionRunStatusKind.Cancelled).Build());
         (await _store.BeginPreparationAsync(releaseCommand)).Should().BeNull();
         (await _store.CommitWorkflowOpeningAsync(pending, acceptance, direct.Direct))!.OutcomeJson.Should().Be(completed!.OutcomeJson);
     }

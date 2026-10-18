@@ -356,15 +356,8 @@ public class BlockchainProviderFactory : IBlockchainProviderFactory
     }
 
     public bool TryGetModule<T>(IBlockchainProvider provider, out T? module) where T : class, IBlockchainProviderModule
-    {
-        if (provider is T t)
-        {
-            module = t;
-            return true;
-        }
-        module = null;
-        return false;
-    }
+        // Through the provider's own discovery so per-network activation pins (ChainModuleActivation) apply here too.
+        => provider.TryGetModule(out module);
 
     /// <summary>
     /// Whether a requested rail id denotes a chain, for the simulated-mode redirect.

@@ -10,6 +10,7 @@ using SurrealForge.Client.Query;
 using RunRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionRun;
 using ExecutionRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ActionNodeExecution;
 using DomainWallet = AZOA.WebAPI.Models.Wallet;
+using DomainHolon = AZOA.WebAPI.Models.Holon;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
@@ -107,6 +108,33 @@ public sealed class SurrealActionLocalMutationTests : IAsyncLifetime
         replay.IsError.Should().BeFalse();
         replay.Result!.IsError.Should().BeTrue();
         (await new SurrealWalletStore(_executor).GetByIdAsync(wallet.Id)).IsError.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task OwnerDeletesWitnessedWalletAndHolonInOneLocalCommand()
+    {
+        await Save(Grant(AzoaScopes.ActionExecute));
+        await Save(Grant(AzoaScopes.WalletManage));
+        var wallets = new SurrealWalletStore(_executor);
+        var holons = new SurrealHolonStore(_executor);
+        var wallet = NewWallet();
+        (await wallets.UpsertAsync(wallet)).IsError.Should().BeFalse();
+        var holon = new DomainHolon { Id = Guid.NewGuid(), Name = "fixture", Description = "", UserId = _actor, ProviderName = "Local",
+            CreatedDate = DateTime.UtcNow };
+        (await holons.UpsertAsync(holon)).IsError.Should().BeFalse();
+        var receipt = await Command();
+        var plan = new ActionLocalMutationPlan();
+        plan.WalletReads[wallet.Id] = (DomainWallet)(await wallets.GetByIdAsync(wallet.Id)).Result!;
+        plan.WalletWrites[wallet.Id] = null;
+        plan.HolonReads[holon.Id] = (DomainHolon)(await holons.GetByIdAsync(holon.Id)).Result!;
+        plan.HolonWrites[holon.Id] = null;
+
+        var result = await _store.CommitAsync(plan, receipt, null, true);
+
+        result.IsError.Should().BeFalse(result.Message);
+        (await wallets.GetByIdAsync(wallet.Id)).IsError.Should().BeTrue("the guarded delete removed the witnessed wallet");
+        (await holons.GetByIdAsync(holon.Id)).Result.Should().BeNull("the guarded delete removed the witnessed holon");
+        (await _store.GetReceiptAsync(receipt.Id)).Should().NotBeNull();
     }
 
     private ConsentGrant Grant(string scope) => new() { Id = Guid.NewGuid().ToString("N"),

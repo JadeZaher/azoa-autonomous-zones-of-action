@@ -27,7 +27,7 @@ public interface IHostedSessionStore
     /// <summary>Fences the sole creator before any provider request can be sent.</summary>
     Task<AZOAResult<HostedSession>> TryBeginCreationAsync(Guid id, string creationToken, DateTimeOffset now, CancellationToken ct = default);
 
-    /// <summary>Lists aged unattached admissions for operator reconciliation without exposing provider credentials.</summary>
+    /// <summary>Lists aged unattached KYC/KYB admissions for operator reconciliation without exposing provider credentials.</summary>
     Task<IReadOnlyList<HostedSession>> ListReconciliationAsync(DateTimeOffset before, int limit, CancellationToken ct = default);
 
     /// <summary>Audits verified attachment or absence; only provably unsent admissions release, uncertain sends quarantine; stale versions return no row.</summary>

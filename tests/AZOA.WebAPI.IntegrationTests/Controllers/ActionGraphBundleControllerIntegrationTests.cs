@@ -211,7 +211,7 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task Update_DifferentUser_Returns403()
+    public async Task Update_DifferentUser_PrivateRecord_Returns404()
     {
         // User A creates a record via the default authenticated client.
         var userA_record = await SeedActionGraphBundleAsync(o => o.WithName("A's secret"));
@@ -223,8 +223,8 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
 
         var response = await clientB.PutAsJsonAsync($"api/actiongraphbundle/{userA_record.Id}", hijack);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
-            "PUT IDOR must be closed -- a different user cannot overwrite A's record by route id");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "PUT IDOR must be closed -- a different user cannot overwrite (or even confirm) A's private record by route id");
 
         // And the underlying record is untouched.
         var verify = await Client.GetAsync($"api/actiongraphbundle/{userA_record.Id}");

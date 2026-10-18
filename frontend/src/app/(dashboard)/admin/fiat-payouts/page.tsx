@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
 import { toast } from 'sonner'
+import { describePayoutResolution } from '@/lib/operator-honesty'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,7 +24,7 @@ import { AlertTriangle, PlayCircle, RefreshCw, Undo2 } from 'lucide-react'
 
 const PAYOUTS_PATH = '/api/admin/fiat-payouts'
 
-import type { FiatPayoutView } from 'azoa-sdk'
+import type { FiatPayoutResolution, FiatPayoutView } from 'azoa-sdk'
 
 /**
  * Operator-facing words for each durable status. The server's vocabulary is the ledger's; this is
@@ -109,6 +110,29 @@ export default function FiatPayoutsConsolePage() {
 
   useEffect(() => { fetchBoard() }, [fetchBoard])
 
+  /** Audited exit for a parked or reversed cash-out; the node honours it only when re-read Stripe/chain evidence agrees. */
+  const resolve = useCallback(async (row: FiatPayoutView, resolution: FiatPayoutResolution) => {
+    const question = resolution === 'record-paid'
+      ? 'What evidence shows the money reached their bank? (the node re-reads Stripe before recording it)'
+      : 'Why should the balance be returned? (the node re-reads Stripe before returning anything)'
+    const reason = window.prompt(question)?.trim()
+    if (!reason) return
+    setBusyId(row.id)
+    try {
+      const res = await azoa.api.resolveFiatPayout(row.id, { resolution, reason })
+      if (isOk(res)) {
+        const verdict = describePayoutResolution(res.value)
+        if (verdict.tone === 'ok') toast.success(verdict.title, { description: verdict.detail })
+        else toast.warning(verdict.title, { description: verdict.detail })
+        await fetchBoard()
+      } else {
+        toast.error(res.error.message)
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }, [fetchBoard])
+
   const act = useCallback(async (
     id: string,
     verb: 'advance' | 'return' | 'park' | 'restart' | 'recover',
@@ -125,7 +149,7 @@ export default function FiatPayoutsConsolePage() {
           : undefined,
       )
       if (isOk(res)) {
-        toast.success(successMessage)
+        toast.success(successMessage, res.value?.status ? { description: `The node reports the cash-out as ${res.value.status}.` } : undefined)
         await fetchBoard()
       } else {
         toast.error(res.error.message)
@@ -351,11 +375,19 @@ export default function FiatPayoutsConsolePage() {
                                 {nextStep}
                               </Button>
                             )}
-                            {(row.status === 'NeedsOperator' || row.status === 'Reversed') && row.providerPayoutId && (
-                              <Button size="sm" variant="outline" disabled={busy}
-                                onClick={() => act(row.id, 'recover', 'Recovery reconciled')}>
-                                Recover failed bank payout
-                              </Button>
+                            {(row.status === 'NeedsOperator' || row.status === 'Reversed') && (
+                              <>
+                                <Button size="sm" variant="outline" disabled={busy}
+                                  onClick={() => resolve(row, 'record-paid')}
+                                  title="Record it paid — only if Stripe shows the transfer and bank payout landed">
+                                  Record paid
+                                </Button>
+                                <Button size="sm" variant="outline" disabled={busy}
+                                  onClick={() => resolve(row, 'return-units')}
+                                  title="Return the balance — only if Stripe shows no money left the platform">
+                                  Return balance
+                                </Button>
+                              </>
                             )}
                             {(row.status === 'Requested' || row.status === 'UnitsCollected') && (
                               <Button

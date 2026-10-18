@@ -35,7 +35,6 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
     // never been applied to any deployment - the D31 wipe is still pending.
     [InlineData("kyc_submission.surql", "fba8793aa7f23506b3e02a502147a86a5e631a8ece759ee472e5d49e6aa7edbe")]
     [InlineData("operation_log.surql", "fff794131ab3b093b7c6c93ce9edfa3b994433992678024f332a2af59c39744f")]
-    [InlineData("swap_state.surql", "06fa0b1ec7ce82bdf60f05e1763c487a3bd4aa626b2d5f492c61204570c7735c")]
     public void CompatibilityBaseline_RetainsTheShippedChecksum(string fileName, string expectedChecksum)
     {
         var path = Path.Combine(
@@ -70,8 +69,7 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
             .And.NotContain("OVERWRITE");
         confirmation.Should().Contain("DEFINE PARAM OVERWRITE $operation_log_status")
             .And.Contain("DEFINE FIELD OVERWRITE status ON TABLE operation_log")
-            .And.Contain("DEFINE PARAM OVERWRITE $swap_state_status")
-            .And.Contain("DEFINE FIELD OVERWRITE status ON TABLE swap_state")
+            .And.NotContain("swap_state", "swap_state was pruned at the round-4 generation reset")
             .And.Contain("PendingConfirmation");
     }
 
@@ -104,7 +102,9 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
             .And.Contain("DEFINE USER OVERWRITE")
             .And.Contain("ROLES EDITOR")
             .And.Contain("setpriv --reuid")
-            .And.NotContain("--force");
+            .And.Contain("--no-reconcile")
+            .And.NotContain("--force")
+            .And.NotContain("--allow-destructive");
     }
 
     [Fact]

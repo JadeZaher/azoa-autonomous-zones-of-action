@@ -2,6 +2,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat.OffRamp;
 
@@ -58,7 +59,7 @@ public sealed class BankPayoutProcessor(
 
         var created = await gateway.CreateBankPayoutAsync(credentials, new StripeTransferRequest
         {
-            PayoutId = row.Id, SubjectUserId = row.SubjectUserId,
+            PayoutId = row.Id, SubjectUserId = SurrealLink.FromLink(row.SubjectUserId)!,
             ConnectedAccountId = row.ConnectedAccountId!, AmountMinorUnits = row.AmountMinorUnits,
             Currency = row.CurrencyCode,
             IdempotencyKey = $"azoa-bank-payout-{row.Id}-{row.BankPayoutAttempt}",

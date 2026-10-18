@@ -15,6 +15,8 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Reserve;
+using SurrealForge.Client;
+using UserRecord = AZOA.WebAPI.Persistence.SurrealDb.Models.User;
 
 namespace AZOA.WebAPI.Services.Fiat.OnRamp;
 
@@ -228,7 +230,9 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         var intent = intentRead.Result;
         if (intent is null
             || !string.Equals(intent.FlowKind, HostedSessionFlowKinds.FiatCheckout, StringComparison.Ordinal)
-            || !string.Equals(intent.ProviderKey, FiatRailIds.StripeProviderKey, StringComparison.Ordinal))
+            || !string.Equals(intent.ProviderKey, FiatRailIds.StripeProviderKey, StringComparison.Ordinal)
+            // D-8: a tenant payout top-up credits the tenant's float, never units.
+            || OffRamp.TenantPayoutTopUp.IsTopUpAdmission(intent.AdmissionKey))
         {
             return FiatEventOutcome.Ignored;
         }
@@ -349,8 +353,9 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
             return await ParkAsync(lot, OnRampLotStatuses.Refused, conversionError, ct);
         }
 
-        lot.PriceScheduleId = schedule.RecordId;
+        lot.PriceScheduleId = SurrealLink.ToLink(TenantPriceSchedule.SchemaNameConst, schedule.RecordId);
         lot.PriceScheduleVersion = schedule.Version;
+        lot.PricingScopeKey = schedule.ScopeKey;
         lot.UnitsPerMinorUnit = PriceScheduleMath.FormatRate(schedule.UnitsPerMinorUnit);
         lot.GrossQuantityBaseUnits = PriceScheduleMath.FormatBaseUnits(grossBaseUnits);
 
@@ -433,7 +438,8 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         lot.NodeFeeBaseUnits = string.IsNullOrWhiteSpace(result.NodeFeeAmount) ? "0" : result.NodeFeeAmount;
         // operation_log record ids are the compact Guid form (SurrealBlockchainOperationStore
         // writes SurrealId.ToSurrealId); a dashed id would reference a row that does not exist.
-        lot.OperationId = result.OperationId == Guid.Empty ? null : result.OperationId.ToString("N");
+        lot.OperationId = result.OperationId == Guid.Empty
+            ? null : SurrealLink.ToLink(OperationLog.SchemaNameConst, result.OperationId.ToString("N"));
         var operation = _operations is null || result.OperationId == Guid.Empty
             ? null : await _operations.GetByIdAsync(result.OperationId, ct);
         if (operation is null || operation.IsError || operation.Result is not { } confirmed
@@ -542,9 +548,9 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
         var candidate = new OnRampLot
         {
             Id = OnRampLot.RecordIdFor(intentKey),
-            IntentId = intentKey,
-            SubjectUserId = subjectUserId.ToString("N"),
-            TenantId = tenantId?.ToString("N"),
+            IntentId = SurrealLink.ToLink(HostedSession.SchemaNameConst, intentKey)!,
+            SubjectUserId = SurrealLink.ToLink(UserRecord.SchemaNameConst, subjectUserId.ToString("N"))!,
+            TenantId = tenantId is { } tenant ? SurrealLink.ToLink(UserRecord.SchemaNameConst, tenant.ToString("N")) : null,
             ChainType = definition.ChainType,
             AssetId = definition.AssetId,
             FiatMinorUnits = amountMinorUnits,

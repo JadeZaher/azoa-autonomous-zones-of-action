@@ -13,6 +13,12 @@ import {
     RefreshCw,
     ShieldCheck,
     Wallet,
+    Link2,
+    Rocket,
+    ArrowLeftRight,
+    Fingerprint,
+    GitMerge,
+    Percent,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,6 +34,12 @@ const OPERATOR_LINKS = [
     { href: "/operator/money", label: "Money", icon: Wallet },
     { href: "/operator/genesis", label: "Platform genesis", icon: Wallet },
     { href: "/operator/actions", label: "Action recovery", icon: RefreshCw },
+    { href: "/operator/chains", label: "Chains", icon: Link2 },
+    { href: "/operator/deployments", label: "Deployments", icon: Rocket },
+    { href: "/operator/exchange", label: "Exchange", icon: ArrowLeftRight },
+    { href: "/operator/wallet-identities", label: "Wallet identities", icon: Fingerprint },
+    { href: "/operator/sagas", label: "Sagas", icon: GitMerge },
+    { href: "/operator/fees", label: "Fees", icon: Percent },
     { href: "/operator/audit", label: "Audit", icon: History },
 ];
 

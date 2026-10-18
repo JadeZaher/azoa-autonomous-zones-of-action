@@ -36,3 +36,20 @@ public sealed class ActionReconciliationResult
     /// <summary>Nodes still indeterminate (Pending/Unknown) — left parked for the next sweep.</summary>
     public int StillIndeterminate { get; set; }
 }
+
+/// <summary>Response of <c>POST /api/action/runs/reconcile-sweep</c>: <c>{ scanned, results }</c>
+/// plus failure counts. See Managers/AGENTS.md §parked-run-sweep.</summary>
+public sealed class ActionReconciliationSweepResult
+{
+    /// <summary>Runs parked in AwaitingReconciliation that this pass examined (after the batch cap).</summary>
+    public int Scanned { get; set; }
+
+    /// <summary>One re-probe outcome per run that re-probed without faulting, in sweep order.</summary>
+    public IReadOnlyList<ActionReconciliationResult> Results { get; set; } = Array.Empty<ActionReconciliationResult>();
+
+    /// <summary>Scanned runs whose re-probe faulted; they stay parked for the next pass.</summary>
+    public int Errors { get; set; }
+
+    /// <summary>Runs still parked after this pass and older than the hard-stuck threshold.</summary>
+    public int HardStuck { get; set; }
+}

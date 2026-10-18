@@ -1,7 +1,7 @@
 {
   "name": "azoa-sdk",
-  "version": "0.4.0",
-  "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, DEX, holons, and durable workflow runs",
+  "version": "0.5.0",
+  "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, holons, durable DEX swaps and workflow runs",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -21,11 +21,6 @@
       "types": "./dist/solana/index.d.ts",
       "import": "./dist/solana/index.js",
       "require": "./dist/solana/index.cjs"
-    },
-    "./dex": {
-      "types": "./dist/dex/index.d.ts",
-      "import": "./dist/dex/index.js",
-      "require": "./dist/dex/index.cjs"
     },
     "./api": {
       "types": "./dist/api/index.d.ts",
@@ -64,7 +59,6 @@
     "@noble/curves": "^1.4.0",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.90.0",
-    "@tinymanorg/tinyman-js-sdk": "^2.0.0",
     "algosdk": "^3.0.0",
     "react-native-get-random-values": "^1.11.0"
   },
@@ -79,9 +73,6 @@
       "optional": true
     },
     "@noble/curves": {
-      "optional": true
-    },
-    "@tinymanorg/tinyman-js-sdk": {
       "optional": true
     },
     "react-native-get-random-values": {

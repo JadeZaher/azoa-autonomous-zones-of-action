@@ -23,7 +23,8 @@ public sealed partial class SwapOperationService
         if (credential.ActorUserId != intent.Terms.ActorUserId || credential.TenantId != tenant) return Refused();
         if (stage.ExternalExposedAt is null)
         {
-            var module = modules.Resolve(intent.Terms.Network);
+            if (await ValueRefusalAsync(credential, stage, workflow, ct) is not null) return Refused();
+            var module = modules.ResolveForExisting(intent.Terms.Network);
             if (module is null) return Refused();
             var authority = await StageAuthorityAsync(operation, stage, credential, workflow, ct);
             if (authority.IsError || authority.Result is null) return Refused();
@@ -53,7 +54,7 @@ public sealed partial class SwapOperationService
         if (selected is null) return Changed();
         var (operation, stage) = selected.Value;
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null || stage.ExternalExposedAt is null) return Changed();
         var authority = await StageAuthorityAsync(operation, stage, credential, workflow, ct);
         if (authority.IsError || authority.Result is null) return Fail(authority.Message);

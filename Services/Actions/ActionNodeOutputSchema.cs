@@ -259,7 +259,14 @@ public static class ActionNodeOutputSchema
         ("VaaBytes", OutputFieldType.String),
         ("VaaSignatureCount", OutputFieldType.Number),
         ("RedemptionTxHash", OutputFieldType.String),
-        ("Network", OutputFieldType.Number));           // ChainNetwork enum → int
+        ("Network", OutputFieldType.Number),            // ChainNetwork enum → int
+        // WTT route (config carries `wtt`): the flat WttActionOutput receipt.
+        ("OperationId", OutputFieldType.String),
+        ("RecipientAddress", OutputFieldType.String),
+        ("RecipientAmount", OutputFieldType.String),
+        ("TargetTransactionId", OutputFieldType.String),
+        ("BodyDigest", OutputFieldType.String),
+        ("ReturnOfOperationId", OutputFieldType.String));
 
     /// <summary>
     /// The flat <c>CredentialRevokeResult</c> shape (D19) — the handler serializes
@@ -280,6 +287,8 @@ public static class ActionNodeOutputSchema
         ("IsConfirmed", OutputFieldType.Boolean),
         ("TxHash", OutputFieldType.String),
         ("OperationId", OutputFieldType.String),         // Guid → JSON string
+        ("LifecycleId", OutputFieldType.String),         // durable NFT lifecycle id
+        ("LifecycleState", OutputFieldType.String),
         ("Replayed", OutputFieldType.Boolean));
 
     /// <summary>

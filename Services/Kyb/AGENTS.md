@@ -36,6 +36,41 @@ of the linked session IDs. Beneficiary names, birth dates, contact data, documen
 URLs have no persistence fields; public status exposes only a participant count. Server-only
 business evidence retains minimal registration identifiers and beneficiary session linkage.
 
+## KYB gate (D-6)
+
+Owner decision D-6 (round 4): KYB gates three tenant capabilities. `IKybGate`
+(`KybGate.cs`) is the single check — the tenant's `kyb_verification` row must be `APPROVED`,
+carry business evidence, be unexpired and match the node's current `AuthorityRevision` (a
+config/policy change re-verifies every tenant). Approval already requires at least one
+beneficiary, so the row is the proof. Refusal is `KYB_REQUIRED` with a generic message; store
+faults bubble to the HTTP boundary rather than being caught (fail closed either way).
+
+| Capability | Enforced at |
+|---|---|
+| `TenantOnBehalfValue` | `Services/Consent/TenantConsentGate.cs`, after the grant check, for every tenant-driven decision — so every `KeyCustodyService` decrypt and the controller consent probes (fiat checkout/payout, exchange, allocation). Denial is audited `TenantSignDenied`. |
+| `CustodialAccess` | `Managers/TenantCustodialAccountManager.cs` `EnsureAsync`, `BeginKycAsync`, `SubmitKycAsync` (403 `TENANT_FORBIDDEN: KYB_REQUIRED`). |
+| `PayoutPriceSchedule` | Contract published for the money lane (L3): schedule registration and tenant-priced payout admission. |
+
+The check is a typed read before the operation, not an in-batch fence: a KYB row changes only
+when the tenant starts a new verification, and the custody/consent fences that follow already
+linearize the operation itself. Test fixtures seed an approved row with
+`TestDataBuilders.KybApprovedTenant(tenantId).SeedAsync(services)`.
+
+## §renewal — early renewals keep the current approval (fix batch, RV-L2 L2-7)
+
+`kyb_verification` is one row per tenant. An APPROVED tenant that begins again with a new
+Idempotency-Key (renewing early) used to overwrite the row with PENDING, and the gate denied all
+three D-6 capabilities at once — every consent-gated custody decrypt and tenant payout stopped
+until the new review finished. `KybService.CarryEffectiveApproval` now copies a still-effective
+approval (unexpired, current authority revision, with evidence) into
+`effective_approval_{expires_at,evidence_json,authority_revision}` on the replacement attempt
+(also across an orphan supersede of that renewal). `KybGate` allows a PENDING row whose carried
+approval is unexpired and on the current authority revision. The renewal's own decision clears
+the carried fields in the same CAS (`TryDecideAsync`): an approval replaces it, a rejection ends
+it. A renewal that is abandoned leaves the carried approval effective until its original expiry.
+The single-row design was kept on purpose: a second attempt table would duplicate the admission,
+supersede and decide CAS paths for a capability that only needs "previous approval still counts".
+
 ## Operator setup
 
 1. In Identomat Manage, create separate saved KYC and KYB configurations. KYB must collect

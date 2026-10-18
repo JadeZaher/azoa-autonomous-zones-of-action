@@ -324,9 +324,10 @@ silently loses precision past 2^53 and the backend `RailAmount` rejects it.
 
 `NodeTypeMeta.status` (`'stable'` | `'preview'`, default stable) exists because
 mirroring the enum and endorsing a node are different promises. Two primitives
-are wired but **not enabled**: governance has a live Sybil hole (the tally counts
-raw holons; fix tracked as `governance-vote-of-record_20260906`) and credential
-revocation is inert until `credential-third-party-issuance_20260906`. Hiding
+are wired but **not enabled**: governance stays server-gated until a runtime
+verdict is recorded after its race fixtures (`Services/Governance/AGENTS.md`
+§governance-gate, `NotEnabledActionNodeTypes.cs`) and credential revocation is
+inert until `credential-third-party-issuance_20260906`. Hiding
 those four would break the mirror, so they stay in the palette with
 `status: 'preview'`, which the palette renders as a dashed, muted row with a
 `preview` badge and a tooltip that opens with `PREVIEW_NOT_ENABLED_LABEL`, and

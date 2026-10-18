@@ -29,4 +29,13 @@ public sealed partial class KybVerification : ISurrealRecord
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? ReviewedAt { get; set; }
+
+    /// <summary>Prior approval kept effective while a renewal attempt is PENDING; cleared by the renewal's decision.</summary>
+    public DateTimeOffset? EffectiveApprovalExpiresAt { get; set; }
+
+    /// <summary>Business evidence of the carried prior approval.</summary>
+    public string? EffectiveApprovalEvidenceJson { get; set; }
+
+    /// <summary>KYB authority revision the carried prior approval was decided under.</summary>
+    public string? EffectiveApprovalAuthorityRevision { get; set; }
 }

@@ -64,3 +64,66 @@ A participant's stage consent credential can lapse between acceptance and prepar
 ### NFT tenant scope
 
 A requester sees, refreshes and cancels only lifecycles admitted under the same tenant context (`RequesterOwns`), mirroring `FungibleCreationService.Matches`; a refund and a refund fee quote must name a source transfer the requester owns under that same tenant. A counterparty (recipient, holder or creator) sees an incoming lifecycle until its first stage consent; afterwards only under the tenant that consent bound. Cancelling admitted work requires the requester's current credential and its operation signing scope, fenced with `SigningAuthorityFence.ForConsent` in the cancellation transaction. Only the exact never-admitted cancellation marker is written without authority.
+
+### NFT owner takeover (F-H12, round 4)
+
+A lifecycle admitted by a tenant (child credential) or by a workflow run cannot be continued once the tenant grant is
+revoked or the run stops, and past a confirmed stage it cannot be cancelled either, stranding paid rent. The owner's own
+direct credential (no tenant) may renew it through `RenewActorAuthorityAsync` at any continuable state
+(`NftActorContinuationIdentity.Continuable`: Preparing, Prepared or awaiting a participant), not only past a confirmed
+stage (RV-L5-09 decision: allowed, the asset is the owner's). The renewal is recorded as an owner takeover
+(`NftActorContinuationIdentity.IsOwnerTakeover`). From then on `RequesterOwns` admits only the owner outside any tenant,
+the tenant can neither see, cancel nor renew back in, the store stops fencing the original workflow run, and later effects
+fence the owner's renewal. `RequestJson` and the original intent never change.
+
+Because the run's fence is dropped, the run itself is locked out explicitly (RV-L5-09): a service call carrying the run's
+`ActionAuthority` is refused at the `AdvanceAsync` seam once the lifecycle is taken over, and its authority-bearing writes
+are passed to the store with `workflowAuthority`, which refuses them against the stored row inside the same version CAS.
+A cancelled run's in-flight handler therefore can neither sign nor report success; its node stays pending on the
+lifecycle observation.
+
+### NFT recipient-stage costs (F-M11, round 4)
+
+Solana stages whose message can create the destination holding (`Accept`, `Transfer`, `ReturnForBurn`;
+`NftStageCostContract.Required`) spend associated-token-account rent and network fees. The fee payer is the accepting
+recipient on a non-refund `Accept` and the requester otherwise (`Payer`). That payer, and only that payer, quotes
+(`QuoteStageCostsAsync`, route `POST /api/nft-stage-costs/{id}/quote`) and accepts (`AcceptStageCostsAsync`, `/accept`)
+an immutable five-minute offer bound to the exact reviewed version/state/stage/generation, lifecycle draft, payer wallet,
+physical network and stage intent. The payer acts under its own stage consent's tenant when it signs the stage, otherwise
+under the requester's effective tenant (`PayerTenant`), so issuer or tenant authority is never reconstructed as recipient
+consent. Acceptance is append-only in `StageCostConsentsJson` (`option<string>`, null on rows that never accepted one);
+the store commits it with the payer's credential fence and the receipt's database-time expiry in one batch, and records
+permission only.
+
+Without a binding acceptance the stage stays `Preparing`, unsigned, with `NeedsStageCosts` in the view; the store also
+refuses preparation and first-send writes (`AdmitsWrite`). Before preparing, the service re-quotes read-only; if current
+costs exceed the accepted limits or the physical network or standard moved, it refuses with `NFT_STAGE_COSTS_CHANGED` and
+the payer quotes and accepts again (a later acceptance for the same stage and generation supersedes the earlier one, only
+while no wire exists). The accepted receipt rides in the intent (`ProtocolCostQuote`), and the Solana provider enforces
+it before custody and again before send. The stage consent hash excludes the cost receipt, so accepting costs after the
+stage consent never invalidates it. A new generation needs a new acceptance. The accepted limits and the payer are in the
+lifecycle view (owner-visible); there is no NFT operator console surface yet.
+
+### NFT recipient resolution (RV-L4-02, round 4)
+
+Wallet rows are no longer unique per (chain, address) for unproven External wallets (audit-1 M2), so a transfer resolves
+the recipient only from Platform (custodial) wallets (`INftLifecycleStore.FindCustodialWalletIdsAsync`, indexed) and the
+signature-proven External wallet named by `IWalletOwnershipProofStore`. An unproven row neither blocks nor captures a
+transfer. Two different owners for one address refuse with `NFT_RECIPIENT_AMBIGUOUS`; no candidate refuses before
+admission. Hosts without the proof store accept custodial recipients only.
+
+### Ownership rows are record links (SQL-05, round 4)
+
+`nft_ownership.user_id` / `issuer_user_id` are `record<user>`; `CommitAsync` writes `SurrealLink.ToLink("user", …)`.
+A bare id was refused by the schema, so every confirmed lifecycle failed to finalize.
+
+### Bindings across a transfer (audit-2 M7, round 4)
+
+A holon/wallet binding outlives an NFT transfer. It grants nothing, and cannot be edited, unless the binding's target is
+owned by the current NFT holder; the target's owner may remove a binding left behind.
+
+### Revocation refusals (round 4)
+
+The lifecycle revoke path refuses before any clawback or admission when the issuer is unrecorded, the asset is not
+soulbound, the holder address is unrecorded, or the issuer has no wallet on the chain; a lookup failure propagates
+(fails closed). Covered by `Credentials/CredentialRevokeRefusalTests`.

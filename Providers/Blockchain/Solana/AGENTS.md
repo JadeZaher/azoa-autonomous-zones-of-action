@@ -105,6 +105,17 @@ mint, immutable metadata/verified creator, normal master-edition authorities or
 credential freeze/mint-authority constraints, and the actual ATA balance/state.
 Application authority additionally enforces immutable logical issuer and revocation.
 
+## Recipient-stage NFT costs (F-M11)
+
+`Accept`, `Transfer` and `ReturnForBurn` quotes (`QuoteNftProtocolCostsAsync`) run the same asset and holding checks as
+preparation (`InspectNftMovementAsync`), reserve the token-account rent (`getMinimumBalanceForRentExemption(165)`) even
+when the destination holding already exists, and price the worst-case message (holding creation included); the levy is
+zero. Preparation requires the accepted receipt to name this stage, generation, lifecycle, physical network and the
+message's actual fee payer (signer for Accept/ReturnForBurn, the requester otherwise), then refuses before custody when
+the actual fee plus the rent actually needed exceeds the accepted limits. Submission re-checks the same limits. Unlike
+Create there is no execution-time Rent guard: the ATA program charges the token-account minimum at execution, and the
+quoted rent is a conservative cap. A prepared wire without a receipt still recovers (observation only).
+
 ## Codec provenance
 
 `SolanaNftMetadata` independently encodes the Borsh wire fields documented by the official Metaplex generated
@@ -365,7 +376,7 @@ Cleanup preparation uses a fresh direct original-wallet WttCleanupSign context a
 
 Native-output quotation reobserves exact original Redeem finality and binds its receipt hash, mint, net recipient amount and persistent ATA. It requires original UnwrapNative intent, native mint origin, fresh recipient funding, exact Rent and the independently pinned immutable guard. Actual unsigned simulation and fee RPC price the whole closed instruction sequence. A distinct domain-separated seeded token account receives only the accepted net amount and is atomically closed to the recipient; the original ATA remains open. The shared SolanaSeededNativeAccount preserves Jupiter's original fixed domain through its thin wrapper.
 
-Recipient preparation persists one canonical unsigned winner without custody and accepts only its real recipient signature. Original-token redemption does not grant target-payer authority over this wallet. The journal records exposure before disclosing the message, requires fresh recipient cost ceilings, allows no competing generation while exposure is unresolved, and separately authorizes first egress. Submitted recovery validates exact saved bytes, finality, persistent ATA token/native debit, recipient net SOL credit and complete temporary-rent return; missing expired history remains unresolved. Only an originally requested native-output operation waits for this stage; settlement then records both the redemption and the native output.
+An exposed, never-authorized recipient message is observed by `ObserveExposedWttNativeOutputAsync`: once a finalized block past the message's `LastValidBlockHeight` exists, it walks finalized parent links back to the message's context slot (the reviewed Jupiter ancestry scan, reusing `ReadJupiterHistoryBlockAsync`/`JupiterBlockHeader`, eight blocks per pass with a resumable `wtt-solana-message-scan/1` cursor) comparing exact message bytes. A match is the recipient's own signed wire and re-enters acceptance (`Landed`); a complete scan is the `wtt-solana-message-absence/1` proof (`ExpiredNoEffect`); missing block history keeps it pending. Recipient preparation persists one canonical unsigned winner without custody and accepts only its real recipient signature. Original-token redemption does not grant target-payer authority over this wallet. The journal records exposure before disclosing the message, requires fresh recipient cost ceilings, allows no competing generation while exposure is unresolved, and separately authorizes first egress. Submitted recovery validates exact saved bytes, finality, persistent ATA token/native debit, recipient net SOL credit and complete temporary-rent return; missing expired history remains unresolved. Only an originally requested native-output operation waits for this stage; settlement then records both the redemption and the native output.
 
 ## Address roles
 

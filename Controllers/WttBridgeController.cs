@@ -94,6 +94,12 @@ public sealed class WttBridgeController(WttLifecycleService lifecycle, SigningAd
     public Task<IActionResult> Cleanup(string id, [FromBody] WttCleanupRequest request, CancellationToken ct)
         => RunAsync(credential => lifecycle.StartCleanupAsync(id, request, credential, ct), ct);
 
+    /// <summary>Direct owner continues a tenant-started target phase under their own authority (tenant-revoke exit).</summary>
+    [HttpPost("operations/{id}/owner-takeover")]
+    [EnableRateLimiting("financial")]
+    public Task<IActionResult> OwnerTakeover(string id, [FromBody] WttOwnerTakeoverCommand command, CancellationToken ct)
+        => RunAsync(credential => lifecycle.TakeOverAsync(id, command, credential, ct), ct);
+
     private async Task<IActionResult> RunAsync<T>(Func<SigningCredentialWitness, Task<AZOAResult<T>>> work, CancellationToken ct,
         bool read = false)
     {

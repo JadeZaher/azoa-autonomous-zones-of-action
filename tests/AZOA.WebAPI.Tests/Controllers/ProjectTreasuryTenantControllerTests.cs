@@ -325,7 +325,7 @@ public sealed class ProjectTreasuryTenantControllerTests
             Chain, ChainNetwork.Devnet.ToString(), TenantOne.ToString("N"), ProjectAlpha),
         Chain = Chain,
         Network = ChainNetwork.Devnet.ToString(),
-        TenantId = tenantId.ToString("N"),
+        TenantId = $"user:{tenantId:N}",
         ProjectReference = ProjectAlpha,
         TreasuryAddress = DerivedAddress,
         DerivationVersion = ProjectTreasuryKeyDerivation.Version,

@@ -1,0 +1,267 @@
+[
+  {
+    "store": "IBlockchainOperationStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "caller-checked: manager/controller compare row UserId to the actor and ActingTenantId to the claim tenant (InCallerTenant)"
+  },
+  {
+    "store": "IBlockchainOperationStore",
+    "method": "GetByIdempotencyKeyAsync",
+    "tenantCheck": "caller-checked: manager/controller compare row UserId to the actor and ActingTenantId to the claim tenant (InCallerTenant)"
+  },
+  {
+    "store": "IBlockchainOperationStore",
+    "method": "GetByUserAsync",
+    "tenantCheck": "caller-checked: manager/controller compare row UserId to the actor and ActingTenantId to the claim tenant (InCallerTenant)"
+  },
+  {
+    "store": "IBlockchainOperationStore",
+    "method": "QueryAsync",
+    "tenantCheck": "caller-checked: manager/controller compare row UserId to the actor and ActingTenantId to the claim tenant (InCallerTenant)"
+  },
+  {
+    "store": "IBlockchainOperationStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "caller-checked: manager/controller compare row UserId to the actor and ActingTenantId to the claim tenant (InCallerTenant)"
+  },
+  {
+    "store": "IDexQuoteStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "row keyed and filtered by actor_user_id + tenant_id from the captured credential"
+  },
+  {
+    "store": "IDexQuoteStore",
+    "method": "GetAsync",
+    "tenantCheck": "row keyed and filtered by actor_user_id + tenant_id from the captured credential"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "ClaimCheckpointAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "GetAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "GetCheckpointAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "GetHighestNonceAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "ListAuthorizedAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "ListReleasedAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "TryClaimAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "TryClaimReleasedAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "UpdateAsync",
+    "tenantCheck": "internal allocator/recovery: no caller scope; recovery routes re-check the original signer authority"
+  },
+  {
+    "store": "IEthereumPreparationStore",
+    "method": "ListOwnerAsync",
+    "tenantCheck": "filtered by owner_user_id = authenticated actor"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "CancelUnsentAsync",
+    "tenantCheck": "caller-checked: NftLifecycleService RequesterOwns/Visible (actor + admitted tenant; owner alone after takeover) and authority fences in-batch"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "caller-checked: NftLifecycleService RequesterOwns/Visible (actor + admitted tenant; owner alone after takeover) and authority fences in-batch"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "CommitAsync",
+    "tenantCheck": "caller-checked: NftLifecycleService RequesterOwns/Visible (actor + admitted tenant; owner alone after takeover) and authority fences in-batch"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: NftLifecycleService RequesterOwns/Visible (actor + admitted tenant; owner alone after takeover) and authority fences in-batch"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "ReserveAuthorityAsync",
+    "tenantCheck": "caller-checked: NftLifecycleService RequesterOwns/Visible (actor + admitted tenant; owner alone after takeover) and authority fences in-batch"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "UpdateAsync",
+    "tenantCheck": "caller-checked: NftLifecycleService RequesterOwns/Visible (actor + admitted tenant; owner alone after takeover) and authority fences in-batch"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "ListParticipantSnapshotAsync",
+    "tenantCheck": "filtered by actor/recipient = authenticated participant; service applies Visible per tenant"
+  },
+  {
+    "store": "INftLifecycleStore",
+    "method": "ListPendingAsync",
+    "tenantCheck": "recovery-only, no caller scope"
+  },
+  {
+    "store": "INftProtocolCostQuoteStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "quote bound to payer user + tenant; service compares to captured credential"
+  },
+  {
+    "store": "INftProtocolCostQuoteStore",
+    "method": "GetAsync",
+    "tenantCheck": "quote bound to payer user + tenant; service compares to captured credential"
+  },
+  {
+    "store": "INftStore",
+    "method": "GetUserNFTByIdAsync",
+    "tenantCheck": "caller-checked: UserNFTService/NftManager require current lifecycle ownership of the caller"
+  },
+  {
+    "store": "INftStore",
+    "method": "GetUserNFTByTokenIdAsync",
+    "tenantCheck": "caller-checked: UserNFTService/NftManager require current lifecycle ownership of the caller"
+  },
+  {
+    "store": "INftStore",
+    "method": "GetUserNFTsByUserAsync",
+    "tenantCheck": "caller-checked: UserNFTService/NftManager require current lifecycle ownership of the caller"
+  },
+  {
+    "store": "INftStore",
+    "method": "UpsertUserNFTAsync",
+    "tenantCheck": "caller-checked: UserNFTService/NftManager require current lifecycle ownership of the caller"
+  },
+  {
+    "store": "INftWorkflowCostAcceptanceStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "bound to workflow execution actor/tenant; service compares to captured credential"
+  },
+  {
+    "store": "INftWorkflowCostAcceptanceStore",
+    "method": "GetAsync",
+    "tenantCheck": "bound to workflow execution actor/tenant; service compares to captured credential"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "AdmitAsync",
+    "tenantCheck": "caller-checked: SwapOperationService InScope (actor + tenant; direct owner) and DexSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "BeginCleanupAsync",
+    "tenantCheck": "caller-checked: SwapOperationService InScope (actor + tenant; direct owner) and DexSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "CancelBeforePreparationAsync",
+    "tenantCheck": "caller-checked: SwapOperationService InScope (actor + tenant; direct owner) and DexSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "CompleteAsync",
+    "tenantCheck": "caller-checked: SwapOperationService InScope (actor + tenant; direct owner) and DexSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "CompleteCleanupAsync",
+    "tenantCheck": "caller-checked: SwapOperationService InScope (actor + tenant; direct owner) and DexSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: SwapOperationService InScope (actor + tenant; direct owner) and DexSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "ClaimRecoveryAsync",
+    "tenantCheck": "recovery-only, no caller scope"
+  },
+  {
+    "store": "ISwapOperationStore",
+    "method": "ReadRecoveryDueAsync",
+    "tenantCheck": "recovery-only, no caller scope"
+  },
+  {
+    "store": "IWttBodyClaimStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "protocol body identity; recovery/lifecycle internal, no caller rows disclosed"
+  },
+  {
+    "store": "IWttBodyClaimStore",
+    "method": "GetAsync",
+    "tenantCheck": "protocol body identity; recovery/lifecycle internal, no caller rows disclosed"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "AdmitAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "CancelAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "CreateOfferAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "GetOfferAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "ListAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "ReplaceProofAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "UpdateAsync",
+    "tenantCheck": "caller-checked: WttLifecycleService InScope(actor, tenant) and WttSigningAuthorityFence in-batch"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "TakeOverAsync",
+    "tenantCheck": "operation.TenantId non-empty + owner direct fence; service InScope(actor)"
+  },
+  {
+    "store": "IWttOperationStore",
+    "method": "ReadDueAsync",
+    "tenantCheck": "recovery-only, no caller scope"
+  }
+]

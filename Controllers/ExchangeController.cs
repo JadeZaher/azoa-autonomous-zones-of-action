@@ -41,6 +41,7 @@ public sealed class ExchangeController : ControllerBase
     private readonly IReserveExchangeManager _exchange;
     private readonly ITenantConsentGate? _consentGate;
     private readonly SigningAdmissionAuthorityFactory? _signing;
+    private readonly ExchangeRetiredRowService? _retiredRows;
 
     /// <param name="consentGate">
     /// The live consent check (registered in <c>Program.cs</c>). Optional only so the type still
@@ -48,12 +49,52 @@ public sealed class ExchangeController : ControllerBase
     /// REFUSED, never waved through.
     /// </param>
     /// <param name="signing">Captures the authenticated API-key credential an effectful exchange is journaled under.</param>
+    /// <param name="retiredRows">Operator resolution of retired exchange rows; absent, those routes answer 503.</param>
     public ExchangeController(IReserveExchangeManager exchange, ITenantConsentGate? consentGate = null,
-        SigningAdmissionAuthorityFactory? signing = null)
+        SigningAdmissionAuthorityFactory? signing = null, ExchangeRetiredRowService? retiredRows = null)
     {
         _exchange = exchange ?? throw new ArgumentNullException(nameof(exchange));
         _consentGate = consentGate;
         _signing = signing;
+        _retiredRows = retiredRows;
+    }
+
+    /// <summary>Operator list of retired exchange rows that reconciliation will not close from the row alone.</summary>
+    [HttpGet("operator/retired-rows")]
+    [Authorize(Policy = "Operator")]
+    public async Task<ActionResult<AZOAResult<IReadOnlyList<RetiredExchangeRowView>>>> ListRetiredRows(
+        [FromQuery] int limit = 50, CancellationToken ct = default)
+    {
+        if (_retiredRows is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, AZOAResult<IReadOnlyList<RetiredExchangeRowView>>.FailureWithCode(
+                "Retired exchange resolution is not wired on this node.", AzoaErrorCodes.DependencyUnavailable));
+        return Ok(await _retiredRows.ListAsync(limit, ct));
+    }
+
+    /// <summary>
+    /// Records an operator's audited resolution of one retired exchange row. It moves no value and no counter:
+    /// reconciliation closes the row only when the observed chain outcome agrees.
+    /// </summary>
+    [HttpPost("operator/retired-rows/{operationId:guid}/resolve")]
+    [Authorize(Policy = "Operator")]
+    [Authorize(Policy = "RecentNodeOperatorSession")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<RetiredExchangeRowView>>> ResolveRetiredRow(
+        Guid operationId, [FromBody] RetiredExchangeResolutionRequest request, CancellationToken ct)
+    {
+        if (_retiredRows is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, AZOAResult<RetiredExchangeRowView>.FailureWithCode(
+                "Retired exchange resolution is not wired on this node.", AzoaErrorCodes.DependencyUnavailable));
+        if (!TryGetUserId(out var operatorUserId))
+            return Unauthorized(AZOAResult<RetiredExchangeRowView>.FailureWithCode("Invalid token.", AzoaErrorCodes.Forbidden));
+        var result = await _retiredRows.ResolveAsync(operationId, request, operatorUserId, ct);
+        if (!result.IsError) return Ok(result);
+        return result.Code switch
+        {
+            AzoaErrorCodes.NotFound => NotFound(result),
+            AzoaErrorCodes.Conflict => Conflict(result),
+            _ => BadRequest(result),
+        };
     }
 
     /// <summary>
@@ -81,14 +122,11 @@ public sealed class ExchangeController : ControllerBase
 
         var caller = identity.Caller!;
 
-        // A plain preview claims nothing and moves nothing, so it is exempt from the consent check.
-        // A preview carrying a release mandate discloses the participant's wallet and readiness, so it is gated.
-        if (!request.PreviewOnly || request.ReleaseMandate is not null)
-        {
-            var consentRefusal = await RequireLiveConsentAsync(userId, caller.ActingTenantId, ct);
-            if (consentRefusal is not null)
-                return consentRefusal;
-        }
+        // Every preview is gated too: it reads the participant's identity readiness (and, with a
+        // release mandate, their wallet), so an ungated quote is a per-person status oracle.
+        var consentRefusal = await RequireLiveConsentAsync(userId, caller.ActingTenantId, ct);
+        if (consentRefusal is not null)
+            return consentRefusal;
 
         if (!request.PreviewOnly)
         {

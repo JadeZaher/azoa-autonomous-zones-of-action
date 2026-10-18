@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Fiat.OffRamp;
@@ -88,6 +89,104 @@ public sealed class PayoutAccountCreationFenceTests
     }
 
     [Fact]
+    public async Task An_operator_attaches_the_account_a_lost_create_opened_and_setup_then_continues_on_it()
+    {
+        // RV-L1-01: crash after Stripe opened the account, person returns a day later, operator resolves.
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.LoseNextResponse = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+        (await harness.Service.BeginSetupAsync(subject, tenantId: null)).Code.Should().Be(AzoaErrorCodes.Conflict);
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+        var setup = await harness.Service.BeginSetupAsync(subject, tenantId: null);
+
+        resolved.IsError.Should().BeFalse(resolved.Message);
+        resolved.Result!.Outcome.Should().Be("attached");
+        setup.IsError.Should().BeFalse(setup.Message);
+        harness.Stripe.AccountsOpened.Should().ContainSingle("the operator path never opens a second account");
+        (await harness.AttachedAccountAsync(subject)).Should().Be(harness.Stripe.AccountsOpened.Single());
+    }
+
+    [Fact]
+    public async Task An_operator_releases_a_claim_Stripe_proves_absent_and_the_next_setup_opens_one_fresh_account()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.DropNextCreate = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+        var setup = await harness.Service.BeginSetupAsync(subject, tenantId: null);
+
+        resolved.Result!.Outcome.Should().Be("released");
+        setup.IsError.Should().BeFalse(setup.Message);
+        harness.Stripe.AccountsOpened.Should().ContainSingle();
+        harness.Stripe.CreateKeys.Distinct().Should().HaveCount(2, "the fresh claim carries a fresh Stripe idempotency key");
+        (await harness.AttachedAccountAsync(subject)).Should().Be(harness.Stripe.AccountsOpened.Single());
+    }
+
+    [Fact]
+    public async Task A_setup_still_inside_its_replay_window_is_not_operator_work()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.DropNextCreate = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(1));
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+
+        resolved.Code.Should().Be(AzoaErrorCodes.Conflict);
+        harness.Stripe.ListCalls.Should().Be(0);
+        (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result!.CreationQuarantinedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_incomplete_Stripe_listing_is_never_taken_as_proof_of_absence()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.DropNextCreate = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+        harness.Stripe.ListingIncomplete = true;
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+
+        resolved.Code.Should().Be(AzoaErrorCodes.Conflict);
+        (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result.Should().NotBeNull("the claim is not released");
+    }
+
+    [Fact]
+    public async Task A_test_to_live_switch_never_releases_a_claim_whose_account_lives_in_the_other_environment()
+    {
+        // RV-L1 R-1: the account the lost test-mode create opened is invisible to live credentials.
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.LoseNextResponse = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+        var live = harness.ServiceIn(RailEnvironmentNames.Live);
+
+        var resolved = await live.ResolveStuckSetupAsync(subject, Operator, Evidence);
+
+        resolved.Code.Should().Be(AzoaErrorCodes.NotFound, "live mode has no setup of its own to resolve");
+        harness.Stripe.ListCalls.Should().Be(0);
+        var testClaim = (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result;
+        testClaim.Should().NotBeNull("the test-mode claim is neither released nor quarantined from live mode");
+        testClaim!.CreationQuarantinedAt.Should().BeNull();
+    }
+
+    private static readonly Guid Operator = Guid.NewGuid();
+    private const string Evidence = "Stripe dashboard reviewed for the claim window; ticket OPS-1234.";
+
+    [Fact]
     public async Task Reading_status_first_claims_nothing_and_setup_still_opens_the_account()
     {
         var harness = new Harness();
@@ -95,7 +194,7 @@ public sealed class PayoutAccountCreationFenceTests
 
         var status = await harness.Service.GetStatusAsync(subject);
         var claimAfterRead = await harness.Store.GetByAdmissionAsync(
-            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subject));
+            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test));
         var setup = await harness.Service.BeginSetupAsync(subject, tenantId: null);
 
         status.Result!.AccountOpened.Should().BeFalse();
@@ -111,12 +210,18 @@ public sealed class PayoutAccountCreationFenceTests
         public MutableClock Clock { get; } = new(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero));
         public PayoutAccountService Service { get; }
 
-        public Harness()
+        public Harness() => Service = ServiceIn(RailEnvironmentNames.Test);
+
+        /// <summary>A service over the same store and Stripe fake, configured for <paramref name="environment"/>.</summary>
+        public PayoutAccountService ServiceIn(string environment)
         {
-            var fiat = new FiatOptions { Enabled = true, Environment = RailEnvironmentNames.Test, ApiBaseUrl = "https://api.example" };
+            var fiat = new FiatOptions { Enabled = true, Environment = environment, ApiBaseUrl = "https://api.example" };
             fiat.Test.IsEnabled = true;
             fiat.Test.SecretKey = "sk_test_fence_fixture";
             fiat.Test.WebhookSecret = "whsec_fence_fixture";
+            fiat.Live.IsEnabled = true;
+            fiat.Live.SecretKey = "sk_live_fence_fixture";
+            fiat.Live.WebhookSecret = "whsec_live_fence_fixture";
             fiat.Checkout.AllowedReturnOrigins.Add(ReturnOrigin);
             var offRamp = new OffRampOptions
             {
@@ -124,12 +229,12 @@ public sealed class PayoutAccountCreationFenceTests
                 OnboardingReturnUrl = ReturnOrigin + "/payout/return",
                 OnboardingRefreshUrl = ReturnOrigin + "/payout/refresh",
             };
-            Service = new PayoutAccountService(fiat, offRamp, Stripe, Store, NullLogger<PayoutAccountService>.Instance, Clock);
+            return new PayoutAccountService(fiat, offRamp, Stripe, Store, NullLogger<PayoutAccountService>.Instance, Clock);
         }
 
         public async Task<string?> AttachedAccountAsync(Guid subject)
             => (await Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-                PayoutAccountFlow.AdmissionKeyFor(subject))).Result?.ProviderSessionId;
+                PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Test))).Result?.ProviderSessionId;
     }
 
     /// <summary>Models Stripe idempotency: a key replays its account, a concurrent same-key request is refused, a new key opens a new account.</summary>
@@ -145,6 +250,11 @@ public sealed class PayoutAccountCreationFenceTests
         private TaskCompletionSource? _holdFirst;
 
         public bool LoseNextResponse { get; set; }
+        /// <summary>The next create never reaches Stripe (timeout before send): nothing is opened.</summary>
+        public bool DropNextCreate { get; set; }
+        public bool ListingIncomplete { get; set; }
+        public int ListCalls { get; private set; }
+        private readonly List<StripeClaimedAccount> _claimed = [];
         public Task FirstCreateEntered => _firstEntered.Task;
         public IReadOnlyList<string> AccountsOpened { get { lock (_gate) return _opened.ToArray(); } }
         public IReadOnlyList<string> CreateKeys { get { lock (_gate) return _keys.ToArray(); } }
@@ -160,6 +270,11 @@ public sealed class PayoutAccountCreationFenceTests
             lock (_gate)
             {
                 _keys.Add(request.IdempotencyKey);
+                if (DropNextCreate)
+                {
+                    DropNextCreate = false;
+                    return FiatPayoutErrors.RailBusy<StripeConnectedAccount>();
+                }
                 if (!_inFlight.Add(request.IdempotencyKey))
                     return FiatPayoutErrors.RailBusy<StripeConnectedAccount>();
                 if (_firstEntered.TrySetResult()) hold = _holdFirst?.Task;
@@ -176,6 +291,7 @@ public sealed class PayoutAccountCreationFenceTests
                     account = "acct_" + Guid.NewGuid().ToString("N")[..16];
                     _accountsByKey[request.IdempotencyKey] = account;
                     _opened.Add(account);
+                    _claimed.Add(new StripeClaimedAccount(account, request.ClaimId, request.SubjectUserId));
                 }
 
                 if (LoseNextResponse)
@@ -212,6 +328,10 @@ public sealed class PayoutAccountCreationFenceTests
             StripeCredentials credentials, string transferId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<AZOAResult<StripeTransferList>> ListTransfersByGroupAsync(
+            StripeCredentials credentials, string transferGroup, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<AZOAResult<StripeConnectedAccount>> ConfigureManualPayoutsAsync(
             StripeCredentials credentials, string accountId, CancellationToken ct = default)
             => throw new NotSupportedException();
@@ -223,6 +343,17 @@ public sealed class PayoutAccountCreationFenceTests
         public Task<AZOAResult<StripeBankPayout>> GetBankPayoutAsync(
             StripeCredentials credentials, string accountId, string payoutId, CancellationToken ct = default)
             => throw new NotSupportedException();
+
+        public Task<AZOAResult<StripeClaimedAccountList>> ListConnectedAccountsCreatedAsync(
+            StripeCredentials credentials, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        {
+            lock (_gate)
+            {
+                ListCalls++;
+                return Task.FromResult(AZOAResult<StripeClaimedAccountList>.Success(
+                    new StripeClaimedAccountList(_claimed.ToList(), !ListingIncomplete)));
+            }
+        }
     }
 
     private sealed class MutableClock(DateTimeOffset start) : TimeProvider

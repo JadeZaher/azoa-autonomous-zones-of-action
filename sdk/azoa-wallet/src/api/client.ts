@@ -1,15 +1,19 @@
 import type { WebhookRegistrationCommand, WebhookRegistrationStatus, WebhookRegistrationMutationResult, WebhookRegistrationWithdrawal, WebhookEventStatus, WebhookEventRetryCommand, WebhookEventRetryReceipt, ConsentWebhookEventStatus } from "./webhooks.js";
 import type { ConsentGrantCommand, ConsentGrantView, ConsentGrantReceipt, ConsentRevocationReceipt, ConsentOffboardReceipt, ConsentCommandWithdrawal } from "./consent.js";
 import type { Result } from "../core/result.js";
-import type { HoldStartCommand, HoldCommandView, HoldCommandPage, HoldConsentCommand, HoldRecoveryCommand, HoldOpeningAcceptance, HoldRequestLookup, HoldRequestResolution, HoldOpeningRecoveryLookup, HoldMandateOfferRequest, HoldMandateOffer, HoldMandateAcceptance, HoldMandateView, HoldMandatePage, HoldMandateResolution, ExchangeReleaseMandateRequest, ExchangeReleaseAcceptance, ExchangeReleaseDisclosure } from "./hold-commands.js";
+import type { HoldLiabilityPage, HoldLiabilityView, HoldReserveAssetView, HoldStartCommand, HoldCommandView, HoldCommandPage, HoldConsentCommand, HoldRecoveryCommand, HoldOpeningAcceptance, HoldRequestLookup, HoldRequestResolution, HoldOpeningRecoveryLookup, HoldMandateOfferRequest, HoldMandateOffer, HoldMandateAcceptance, HoldMandateView, HoldMandatePage, HoldMandateResolution, ExchangeReleaseMandateRequest, ExchangeReleaseAcceptance, ExchangeReleaseDisclosure } from "./hold-commands.js";
 import type { DexCapabilityView, NodeFeeScheduleUpdateRequest, DexQuoteRequest, DexQuoteAvailability, DexQuoteView, SwapAdmissionRequest, SwapOperationView, SwapVersionCommand, SwapStageCommand, SwapExposureCommand, SwapExternalSigningView, SwapBrowserStageCommand, SwapCleanupRequest, SwapCleanupStageCommand } from "./dex.js";
 import type { WttQuoteRequest, WttOfferView, WttStartRequest, WttCancelRequest, WttOperationView, WttOperationPage, WttContinueCommand, WttStageCommand, WttParticipantSigningView, WttParticipantSignatureCommand, WttNativeOutputOffer, WttNativeOutputRequest, WttCleanupOffer, WttCleanupRequest } from "./wtt.js";
+import type { KycSessionStart, KycSubmission, HostedSessionRefreshReceipt, WalletOwnershipChallenge, WalletOwnershipProof } from "./identity.js";
+import type { FiatPayoutResolveRequest, FiatReversalResolveRequest, TenantPayoutTopUpParams, TenantPayoutTopUp, TenantPayoutFloatView } from "./money.js";
+import type { ClientSigningPlanView, ClientSignedSubmission, StuckClientSignedOperationView, ClientSigningResolution } from "./operations.js";
+import type { DeploymentOperatorResolution, ParkedDeployment, RetiredExchangeRowView, RetiredExchangeResolution, WalletIdentityMigrationView, WalletIdentityConflictRepair, SwapOperatorSettlementRequest, WttStageKeyReadinessReport, WttStageKeyRewrapReport } from "./operator.js";
 import { ok, err } from "../core/result.js";
 import { SdkError, SdkErrorCode } from "../core/errors.js";
 import type { SdkErrorDetail } from "../core/errors.js";
 import { API_PATHS } from "./api-version.js";
 import type { ContractQueryRequest, DappCompositionManifest, DappCompositionValidation, DeploymentArtifactView, DeploymentEcosystemAttachment, DeploymentEcosystemTree, DeploymentGenerateRequest, DeploymentInvokeRequest, DeploymentPage, DeploymentQuoteRequest, DeploymentReceipt, DeploymentStartRequest, NativeOperationIntent, DeploymentOriginalBudgetRecoveryRequest, DeploymentRecoveryQuoteRequest, DeploymentRecoveryQuote, DeploymentRecoveryStartRequest, DeploymentRecoveryAncestry } from "./deployments.js";
-import type { WorkflowRunStatus, WorkflowNodeExecution, WorkflowExecutionState, StartWorkflowOptions } from "../workflow/types.js";
+import type { WorkflowRunStatus, WorkflowNodeExecution, WorkflowExecutionState, StartWorkflowOptions, WorkflowReconciliationSweep } from "../workflow/types.js";
 import { workflowStartQuery } from "../workflow/start-options.js";
 
 export interface AzoaApiConfig {
@@ -77,6 +81,7 @@ interface AZOAResponse<T> {
   error?: string;
   result?: T;
   detail?: SdkErrorDetail;
+  code?: string;
 }
 
 // ─── Response types matching .NET DTOs ───
@@ -840,6 +845,12 @@ export interface NftLifecycleView {
   needsStageAcceptance?: boolean;
   needsReplacementCosts?: boolean;
   replacementCostsAccepted?: boolean;
+  /** F-M11: a cost-bearing Solana stage is parked unsigned until its paying participant accepts an exact cost quote. */
+  needsStageCosts?: boolean;
+  /** The only user who may quote and accept this stage's costs (present on cost-bearing stages). */
+  stageCostPayerUserId?: string | null;
+  /** Limits of the binding acceptance for the current stage and generation, once accepted. */
+  acceptedStageCostLimits?: NftProtocolCostLimits | null;
   /** Display hint: the original requester's direct authority lapsed and must be renewed before the next new signature. */
   needsActorContinuation?: boolean;
   /** Display hint: the accepting participant's stage credential lapsed; that participant re-accepts the same stage. */
@@ -868,6 +879,12 @@ export interface NftStageAcceptance {
 }
 
 export interface NftReplacementCostAcceptance {
+  stage: NftStageAcceptance;
+  costs: NftProtocolCostAuthorization;
+}
+
+/** `POST /api/nft-stage-costs/{id}/accept`: the payer's acceptance of one offer for the exact reviewed stage. */
+export interface NftStageCostAcceptance {
   stage: NftStageAcceptance;
   costs: NftProtocolCostAuthorization;
 }
@@ -2019,6 +2036,8 @@ export interface FiatReversalView {
   openedAt: string;
   resolvedAt: string | null;
   reinstatedAt: string | null;
+  /** Attempt-suffixed key of a move whose outcome is ambiguous; set while the reversal is parked on it. */
+  pendingMoveKey?: string | null;
 }
 
 // ─── DappSeries types matching .NET DTOs (DappSeriesController) ───
@@ -2080,39 +2099,26 @@ export interface DappSeriesAddActionParams {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ULONG_MAX = 18_446_744_073_709_551_615n;
 
-const NFT_LIFECYCLE_ID_RE = /^[0-9a-f]{32}$/;
-
-/** Validates a server-issued NFT lifecycle reference (32 lowercase hex) before URL interpolation. */
-function assertLifecycleId(id: string, paramName: string): void {
-  if (typeof id !== "string" || !NFT_LIFECYCLE_ID_RE.test(id)) {
-    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 32-character lowercase hex NFT lifecycle reference`);
-  }
-}
-
-const SWAP_OPERATION_ID_RE = /^[0-9a-f]{64}$/;
-const DEX_QUOTE_ID_RE = /^[0-9a-f]{32}$/;
-
-/** Validates a server-issued swap operation id (64 lowercase hex) before URL interpolation. */
-function assertSwapOperationId(id: string, paramName: string): void {
-  if (typeof id !== "string" || !SWAP_OPERATION_ID_RE.test(id)) {
-    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex swap operation id`);
-  }
-}
-
-/** Validates a server-issued DEX quote id (32 lowercase hex) before URL interpolation. */
-function assertDexQuoteId(id: string, paramName: string): void {
-  if (typeof id !== "string" || !DEX_QUOTE_ID_RE.test(id)) {
-    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 32-character lowercase hex DEX quote id`);
-  }
-}
-
+const HEX32_ID_RE = /^[0-9a-f]{32}$/;
 const HEX64_ID_RE = /^[0-9a-f]{64}$/;
 
-/** Validates a server-issued hold command or release mandate id (64 lowercase hex) before URL interpolation. */
-function assertHex64(id: string, paramName: string): void {
-  if (typeof id !== "string" || !HEX64_ID_RE.test(id)) {
-    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex id`);
+/** Validates a server-issued 32-lowercase-hex id (NFT lifecycle reference, DEX quote) before URL interpolation. */
+function assertHex32(id: string, paramName: string, noun = "id"): void {
+  if (typeof id !== "string" || !HEX32_ID_RE.test(id)) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 32-character lowercase hex ${noun}`);
   }
+}
+
+/** Validates a server-issued 64-lowercase-hex id (swap/WTT/hold operation, stage, mandate) before URL interpolation. */
+function assertHex64(id: string, paramName: string, noun = "id"): void {
+  if (typeof id !== "string" || !HEX64_ID_RE.test(id)) {
+    throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex ${noun}`);
+  }
+}
+
+/** Clamps a list limit to [1, max] as an integer. */
+function clampLimit(limit: number, max: number): number {
+  return Math.max(1, Math.min(max, Math.trunc(limit)));
 }
 
 /** Validates that an ID is a UUID before URL interpolation. Prevents path traversal. */
@@ -2235,8 +2241,9 @@ export class AzoaApiClient {
     return this.request<FiatPayoutView>("POST", `/api/admin/fiat-payouts/${encodeURIComponent(payoutId)}/recover`, { reason });
   }
 
+  /** Both recovery controllers answer a bare list (not an `AZOAResult`). */
   async listEthereumPreparations(network: "Devnet" | "Testnet" | "Mainnet", operator = false): Promise<Result<EthereumPreparationView[], SdkError>> {
-    return this.request("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
+    return this.requestBare("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
   }
 
   async activateEthereumSigner(network: "Devnet" | "Testnet" | "Mainnet", walletId: string): Promise<Result<boolean, SdkError>> {
@@ -2299,11 +2306,14 @@ export class AzoaApiClient {
     return this.request("GET", `/api/operator/hosted-sessions/reconciliation?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`);
   }
 
-  async refreshHostedSession(sessionId: string): Promise<Result<{ sessionId: string; status: string; providerKey: string }, SdkError>> {
-    return this.request("POST", `/api/operator/hosted-sessions/${encodeURIComponent(sessionId)}/refresh`, {});
+  /** Operator: re-reads the provider for one hosted session (Identomat KYC/KYB included); audited server-side. */
+  async refreshHostedSession(sessionId: string): Promise<Result<HostedSessionRefreshReceipt, SdkError>> {
+    assertUuid(sessionId, "sessionId");
+    return this.request("POST", API_PATHS.HOSTED_SESSION_REFRESH(sessionId), {});
   }
 
   async reconcileHostedSession(sessionId: string, request: HostedSessionRecoveryRequest): Promise<Result<{ sessionId: string; status: string; reconciledAt?: string }, SdkError>> {
+    assertUuid(sessionId, "sessionId");
     return this.request("POST", `/api/operator/hosted-sessions/${encodeURIComponent(sessionId)}/reconcile`, request);
   }
 
@@ -3448,7 +3458,7 @@ export class AzoaApiClient {
   }
 
   async getDexQuote(id: string): Promise<Result<DexQuoteView, SdkError>> {
-    assertDexQuoteId(id, "id");
+    assertHex32(id, "id", "DEX quote id");
     return this.request("GET", `/api/dex/quotes/${encodeURIComponent(id)}`);
   }
 
@@ -3458,59 +3468,59 @@ export class AzoaApiClient {
   }
 
   async getDexSwap(id: string): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("GET", `/api/dex/operations/${encodeURIComponent(id)}`);
   }
 
   async prepareDexSwap(id: string, command: SwapVersionCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/prepare`, command);
   }
 
   async signDexSwap(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/sign`, command);
   }
 
   /** Disclosure is potential egress and requires explicit persisted participant consent. */
   async exposeDexSwap(id: string, command: SwapExposureCommand): Promise<Result<SwapExternalSigningView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/external-signing`, command);
   }
 
   async acceptDexSwapSignature(id: string, command: SwapBrowserStageCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/external-signature`, command);
   }
 
   async submitDexSwap(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/submit`, command);
   }
 
   async refreshDexSwap(id: string): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/refresh`);
   }
 
   async cancelDexSwap(id: string, command: SwapVersionCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cancel`, command);
   }
 
   /** Stops future server submission without recalling a send or releasing reserved accounting. */
   async withdrawDexSwapSubmission(id: string, command: SwapStageCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/withdraw-submission`, command);
   }
 
   async beginDexSwapCleanup(id: string, command: SwapCleanupRequest): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cleanup`, command);
   }
 
   async prepareDexSwapCleanup(id: string, command: SwapCleanupStageCommand): Promise<Result<SwapOperationView, SdkError>> {
-    assertSwapOperationId(id, "id");
+    assertHex64(id, "id", "swap operation id");
     return this.request("POST", `/api/dex/operations/${encodeURIComponent(id)}/cleanup/prepare`, command);
   }
 
@@ -3557,18 +3567,18 @@ export class AzoaApiClient {
   }
 
   async submitWtt(id: string, command: WttStageCommand): Promise<Result<WttOperationView, SdkError>> {
-    this.requireWttId(command.stageId, "stageId");
+    assertHex64(command.stageId, "stageId", "identity");
     return this.request("POST", this.wttOperationPath(id, "/submit"), command);
   }
 
   /** Records exposure, then returns the exact unsigned participant message; replays the same message after response loss. */
   async exposeWttParticipant(id: string, command: WttStageCommand): Promise<Result<WttParticipantSigningView, SdkError>> {
-    this.requireWttId(command.stageId, "stageId");
+    assertHex64(command.stageId, "stageId", "identity");
     return this.request("POST", this.wttOperationPath(id, "/participant"), command);
   }
 
   async acceptWttParticipantSignature(id: string, command: WttParticipantSignatureCommand): Promise<Result<WttOperationView, SdkError>> {
-    this.requireWttId(command.stageId, "stageId");
+    assertHex64(command.stageId, "stageId", "identity");
     return this.request("POST", this.wttOperationPath(id, "/participant-signature"), command);
   }
 
@@ -3586,52 +3596,58 @@ export class AzoaApiClient {
   }
 
   async quoteWttCleanup(id: string, stageId: string): Promise<Result<WttCleanupOffer, SdkError>> {
-    this.requireWttId(stageId, "stageId");
+    assertHex64(stageId, "stageId", "identity");
     return this.request("GET", this.wttOperationPath(id, `/cleanup/${stageId}/quote`));
   }
 
   /** Fresh direct-owner residual return; never revives the original transfer's authority. */
   async startWttCleanup(id: string, request: WttCleanupRequest): Promise<Result<WttOperationView, SdkError>> {
-    this.requireWttId(request.stageId, "stageId");
+    assertHex64(request.stageId, "stageId", "identity");
     return this.request("POST", this.wttOperationPath(id, "/cleanup"), request);
   }
 
   /** WTT operation and stage identities are server-issued 64-character lowercase hex digests. */
   private wttOperationPath(id: string, suffix = ""): string {
-    this.requireWttId(id, "operationId");
+    assertHex64(id, "operationId", "identity");
     return `/api/bridge/wtt/operations/${id}${suffix}`;
-  }
-
-  private requireWttId(value: string, paramName: string): void {
-    if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
-      throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid ${paramName}: expected a 64-character lowercase hex identity`);
-    }
   }
 
   // ─── UserNFT ───
 
   /** Discloses costs for the caller-reviewed replacement generation without signing. */
   async quoteNftReplacementCosts(operationId: string, stage: NftStageAcceptance): Promise<Result<NftProtocolCostOffer, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/quote`, stage);
   }
 
   /** Accepts the exact saved replacement cost request without signing. */
   async acceptNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/accept`, request);
   }
 
   /** Reads the saved request outcome before any fresh offer replaces it. */
   async reconcileNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/reconcile`, request);
   }
 
   /** Atomically retires an unanswered acceptance version, preserving a winning acceptance. */
   async retireNftReplacementCosts(operationId: string, request: NftReplacementCostAcceptance): Promise<Result<NftReplacementCostReconciliation, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/retire`, request);
+  }
+
+  /** F-M11: the stage's paying participant requests an immutable five-minute cost offer for the exact reviewed stage. */
+  async quoteNftStageCosts(operationId: string, stage: NftStageAcceptance): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
+    return this.request("POST", `/api/nft-stage-costs/${encodeURIComponent(operationId)}/quote`, stage);
+  }
+
+  /** F-M11: records the payer's acceptance (idempotent per stage request id); continue the lifecycle afterwards. */
+  async acceptNftStageCosts(operationId: string, request: NftStageCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
+    return this.request("POST", `/api/nft-stage-costs/${encodeURIComponent(operationId)}/accept`, request);
   }
 
   /** Discloses costs for the original frozen execution without accepting them. */
@@ -3718,12 +3734,12 @@ export class AzoaApiClient {
   }
 
   async refundNftTransfer(operationId: string, idempotencyKey: string, feeAuthorization?: NftFeeAuthorization): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/refund`, { feeAuthorization }, false, { "Idempotency-Key": idempotencyKey });
   }
 
   async getNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("GET", `/api/UserNFT/lifecycle/${encodeURIComponent(operationId)}`);
   }
 
@@ -3734,27 +3750,28 @@ export class AzoaApiClient {
   }
 
   async issueCredential(recipientId: string, params: UserNFTMintParams, idempotencyKey: string): Promise<Result<NftLifecycleView, SdkError>> {
+    assertUuid(recipientId, "recipientId");
     return this.request("POST", `/api/Credential/issue/${encodeURIComponent(recipientId)}`, params, false, { "Idempotency-Key": idempotencyKey });
   }
 
   async refreshNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/refresh`);
   }
 
   async acceptNftLifecycle(operationId: string, acceptance: NftStageAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/accept`, acceptance);
   }
 
   /** Records the original requester's fresh authority for the exact reviewed stage; it never signs or prepares. */
   async renewNftLifecycleAuthority(operationId: string, request: NftStageAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/renew-authority`, request);
   }
 
   async cancelNftLifecycle(operationId: string): Promise<Result<NftLifecycleView, SdkError>> {
-    assertLifecycleId(operationId, "operationId");
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
     return this.request("POST", `/api/usernft/lifecycle/${encodeURIComponent(operationId)}/cancel`);
   }
 
@@ -4157,6 +4174,176 @@ export class AzoaApiClient {
    * headers (e.g., `Idempotency-Key`) on top of the auth + content-type
    * headers the client builds for every request.
    */
+  // ─── Round 4 contracts (plan §4.9): KYC, wallet proof, client signing, operator exits ───
+
+  /** Begins or resumes the caller's own hosted identity verification (first-party login only). */
+  async startKycSession(): Promise<Result<KycSessionStart, SdkError>> {
+    return this.request("POST", API_PATHS.KYC_SESSION, {});
+  }
+
+  /** The caller's current verification; absent before the first session. */
+  async getKycStatus(): Promise<Result<KycSubmission, SdkError>> {
+    return this.request("GET", API_PATHS.KYC_STATUS);
+  }
+
+  /** Re-fetches the provider's authoritative result for the caller's open attempt, then returns status. */
+  async refreshKyc(): Promise<Result<KycSubmission, SdkError>> {
+    return this.request("POST", API_PATHS.KYC_REFRESH, {});
+  }
+
+  /** Issues the exact message the caller's external wallet signs to prove it controls `walletId`. */
+  async createWalletOwnershipChallenge(walletId: string): Promise<Result<WalletOwnershipChallenge, SdkError>> {
+    assertUuid(walletId, "walletId");
+    return this.request("POST", API_PATHS.WALLET_OWNERSHIP_CHALLENGE(walletId), {});
+  }
+
+  /** Submits the signature over the challenge message, verbatim; the server records the proof flag. */
+  async proveWalletOwnership(walletId: string, signature: string, message?: string): Promise<Result<WalletOwnershipProof, SdkError>> {
+    assertUuid(walletId, "walletId");
+    assertNonEmpty(signature, "signature");
+    return this.request("POST", API_PATHS.WALLET_OWNERSHIP_PROOF(walletId), { signature, message });
+  }
+
+  /** D-3: the exact unsigned bytes the external wallet must sign for an `AwaitingSignature` operation. */
+  async getOperationSigningPlan(operationId: string): Promise<Result<ClientSigningPlanView, SdkError>> {
+    assertUuid(operationId, "operationId");
+    return this.request("GET", API_PATHS.BLOCKCHAIN_OPERATION_SIGNING_PLAN(operationId));
+  }
+
+  /** D-3: submits the signed plan; the node verifies the exact bytes, broadcasts and reconciles. Re-read status, never assume success. */
+  async submitSignedOperation(operationId: string, submission: ClientSignedSubmission): Promise<Result<BlockchainOperationResult, SdkError>> {
+    assertUuid(operationId, "operationId");
+    assertNonEmpty(submission.signedTransactionBase64, "signedTransactionBase64");
+    return this.request("POST", API_PATHS.BLOCKCHAIN_OPERATION_SUBMIT_SIGNED(operationId), submission);
+  }
+
+  /** Operator: client-signed operations unsigned past the TTL or parked as `NeedsOperator`. */
+  async listStuckClientSignedOperations(limit = 50): Promise<Result<StuckClientSignedOperationView[], SdkError>> {
+    return this.request("GET", `${API_PATHS.OPERATOR_STUCK_OPERATIONS}?limit=${clampLimit(limit, 200)}`);
+  }
+
+  /** Operator: resolves a stuck client-signed operation; the outcome is re-proven from chain state. */
+  async resolveStuckClientSignedOperation(operationId: string, resolution: ClientSigningResolution): Promise<Result<BlockchainOperationResult, SdkError>> {
+    assertUuid(operationId, "operationId");
+    assertNonEmpty(resolution.reason, "reason");
+    return this.request("POST", API_PATHS.OPERATOR_OPERATION_RESOLVE(operationId), resolution);
+  }
+
+  /** Operator: parked deployment operations, oldest first. */
+  async listParkedDeployments(limit = 50): Promise<Result<ParkedDeployment[], SdkError>> {
+    return this.request("GET", `${API_PATHS.OPERATOR_DEPLOYMENTS}?limit=${clampLimit(limit, 100)}`);
+  }
+
+  /** Operator: re-observe or close a parked deployment at its exact version (409 on refusal). */
+  async resolveParkedDeployment(operationId: string, resolution: DeploymentOperatorResolution): Promise<Result<DeploymentReceipt, SdkError>> {
+    assertHex32(operationId, "operationId", "deployment operation id");
+    return this.request("POST", API_PATHS.OPERATOR_DEPLOYMENT_RESOLVE(operationId), resolution);
+  }
+
+  /** Operator: audited record-paid / return-units exit for a parked or reversed cash-out. */
+  async resolveFiatPayout(payoutId: string, request: FiatPayoutResolveRequest): Promise<Result<FiatPayoutView, SdkError>> {
+    assertNonEmpty(payoutId, "payoutId");
+    assertNonEmpty(request.reason, "reason");
+    return this.request("POST", API_PATHS.FIAT_PAYOUT_RESOLVE(payoutId), request);
+  }
+
+  /** Operator: settles a reversal parked on an ambiguous move from chain evidence and re-queues the unwind. */
+  async resolveFiatReversal(reversalId: string, request: FiatReversalResolveRequest): Promise<Result<FiatReversalView, SdkError>> {
+    assertNonEmpty(reversalId, "reversalId");
+    assertNonEmpty(request.reason, "reason");
+    return this.request("POST", API_PATHS.FIAT_REVERSAL_RESOLVE(reversalId), request);
+  }
+
+  /** Tenant: every payout float (one per currency/environment) tenant-priced cash-outs draw on (D-8). */
+  async getTenantPayoutBalance(): Promise<Result<TenantPayoutFloatView[], SdkError>> {
+    return this.request("GET", API_PATHS.TENANT_PAYOUT_BALANCE);
+  }
+
+  /** Tenant: starts a top-up payment; it credits the float only after settlement and aging. */
+  async startTenantPayoutTopUp(params: TenantPayoutTopUpParams): Promise<Result<TenantPayoutTopUp, SdkError>> {
+    assertNonEmpty(params.requestKey, "requestKey");
+    return this.request("POST", API_PATHS.TENANT_PAYOUT_TOP_UP, params);
+  }
+
+  /** Operator: one tenant's floats with the entry-vs-counter consistency check. */
+  async getTenantPayoutFloats(tenantId: string): Promise<Result<TenantPayoutFloatView[], SdkError>> {
+    assertUuid(tenantId, "tenantId");
+    return this.request("GET", API_PATHS.TENANT_PAYOUT_FLOAT(tenantId));
+  }
+
+  /** Custody liabilities visible to the caller. */
+  async listHoldLiabilities(offset = 0, limit = 25): Promise<Result<HoldLiabilityPage, SdkError>> {
+    return this.request("GET", `${API_PATHS.HOLD_LIABILITIES}?offset=${Math.max(0, Math.trunc(offset))}&limit=${clampLimit(limit, 100)}`);
+  }
+
+  /** One liability; not-found and not-visible are indistinguishable. */
+  async getHoldLiability(holdRecordId: string): Promise<Result<HoldLiabilityView, SdkError>> {
+    assertHex64(holdRecordId, "holdRecordId", "hold record id");
+    return this.request("GET", API_PATHS.HOLD_LIABILITY(holdRecordId));
+  }
+
+  /** Reserve assets the caller may open a hold against, with the exact identity the intent must name. */
+  async listHoldReserveAssets(): Promise<Result<HoldReserveAssetView[], SdkError>> {
+    return this.request("GET", API_PATHS.HOLD_RESERVE_ASSETS);
+  }
+
+  /** Operator: retired exchange rows awaiting an audited ledger attestation. */
+  async listRetiredExchangeRows(limit = 50): Promise<Result<RetiredExchangeRowView[], SdkError>> {
+    return this.request("GET", `${API_PATHS.EXCHANGE_RETIRED_ROWS}?limit=${clampLimit(limit, 100)}`);
+  }
+
+  /** Operator: attests a retired row chain outcome; applied only when reconciliation agrees. */
+  async resolveRetiredExchangeRow(operationId: string, resolution: RetiredExchangeResolution): Promise<Result<RetiredExchangeRowView, SdkError>> {
+    assertUuid(operationId, "operationId");
+    assertNonEmpty(resolution.reason, "reason");
+    return this.request("POST", API_PATHS.EXCHANGE_RETIRED_ROW_RESOLVE(operationId), resolution);
+  }
+
+  /** Operator: wallet-identity migration status and conflicts (the controller answers a bare view). */
+  async getWalletIdentityMigration(): Promise<Result<WalletIdentityMigrationView, SdkError>> {
+    return this.requestBare("GET", API_PATHS.OPERATOR_WALLET_IDENTITIES);
+  }
+
+  /** Operator: clears one conflicting wallet binding at the observed migration version; re-read the view afterwards. */
+  async clearWalletIdentityConflict(repair: WalletIdentityConflictRepair): Promise<Result<boolean, SdkError>> {
+    assertNonEmpty(repair.reason, "reason");
+    return this.request("POST", API_PATHS.OPERATOR_WALLET_IDENTITY_CLEAR, repair);
+  }
+
+  /** Operator: settles a swap parked for review at its exact version. */
+  async settleDexOperatorReview(operationId: string, request: SwapOperatorSettlementRequest): Promise<Result<SwapOperationView, SdkError>> {
+    assertHex64(operationId, "operationId", "swap operation id");
+    assertNonEmpty(request.reason, "reason");
+    return this.request("POST", API_PATHS.OPERATOR_DEX_SETTLE_REVIEW(operationId), request);
+  }
+
+  /** Operator: inspects one WTT operation. */
+  async inspectWttOperation(operationId: string): Promise<Result<WttOperationView, SdkError>> {
+    assertHex64(operationId, "operationId", "identity");
+    return this.request("GET", API_PATHS.OPERATOR_WTT_OPERATION(operationId));
+  }
+
+  /** Operator: reconcile, re-fetch the guardian proof, or resume proof verification (each re-proven server-side). */
+  async runWttOperatorAction(operationId: string, action: "reconcile" | "refetch-proof" | "resume-proof"): Promise<Result<WttOperationView, SdkError>> {
+    assertHex64(operationId, "operationId", "identity");
+    return this.request("POST", API_PATHS.OPERATOR_WTT_ACTION(operationId, action), {});
+  }
+
+  /** Operator: live WTT stage-key keyring readiness. */
+  async getWttStageKeyReadiness(): Promise<Result<WttStageKeyReadinessReport, SdkError>> {
+    return this.request("GET", API_PATHS.OPERATOR_WTT_STAGE_KEY_READINESS);
+  }
+
+  /** Operator: one bounded rewrap pass onto the active stage key. */
+  async rewrapWttStageKeys(): Promise<Result<WttStageKeyRewrapReport, SdkError>> {
+    return this.request("POST", API_PATHS.OPERATOR_WTT_STAGE_KEY_REWRAP, {});
+  }
+
+  /** Operator: re-probes every parked run. Read `scanned`; zero scanned or any `errors` is not a success. */
+  async reconcileParkedRuns(): Promise<Result<WorkflowReconciliationSweep, SdkError>> {
+    return this.request("POST", API_PATHS.ACTION_RUN_RECONCILE_SWEEP);
+  }
+
   async request<T>(
     method: string,
     path: string,
@@ -4195,6 +4382,7 @@ export class AzoaApiClient {
         return this.fail(this.apiError(method, path, resp.status, {
           message: data.message ?? data.error,
           detail: data.detail,
+          code: data.code,
         }));
       }
 
@@ -4254,14 +4442,15 @@ export class AzoaApiClient {
    */
   private async parseErrorBody(
     resp: Response
-  ): Promise<{ message?: string; detail?: SdkErrorDetail }> {
+  ): Promise<{ message?: string; detail?: SdkErrorDetail; code?: string }> {
     try {
       const body = (await resp.json()) as {
         message?: string;
         error?: string;
         detail?: SdkErrorDetail;
+        code?: string;
       };
-      return { message: body.message ?? body.error, detail: body.detail };
+      return { message: body.message ?? body.error, detail: body.detail, code: typeof body.code === "string" ? body.code : undefined };
     } catch {
       return {}; // non-JSON / empty body (e.g. a bare 500 with no body)
     }
@@ -4271,7 +4460,7 @@ export class AzoaApiClient {
     method: string,
     path: string,
     status: number,
-    parsed: { message?: string; detail?: SdkErrorDetail }
+    parsed: { message?: string; detail?: SdkErrorDetail; code?: string }
   ): SdkError {
     const message = parsed.message
       ? `${method} ${path}: ${parsed.message}`
@@ -4281,6 +4470,7 @@ export class AzoaApiClient {
       method,
       path,
       detail: parsed.detail,
+      serverCode: parsed.code,
     });
   }
 

@@ -154,11 +154,11 @@ public sealed class SurrealHolonStore : IHolonStore
         if (existing == null)
             return AZOAResult<bool>.Failure("Holon not found.", false);
 
-        var q = SurrealWriter.DeleteOnly<HolonPoco>(SurrealId.ToSurrealId(id)).Build();
+        var owner = existing.UserId;
+        var q = SurrealWriter.DeleteOnly<HolonPoco>(SurrealId.ToSurrealId(id)).Where(row => row.UserId == owner).Build();
         var response = await ExecuteMutationAsync(q, ct);
-        response.EnsureAllOk();
-
-        return AZOAResult<bool>.Success(true, "Deleted.");
+        return response[2].AffectedCount() == 1 ? AZOAResult<bool>.Success(true, "Deleted.")
+            : AZOAResult<bool>.Failure("Holon changed before it could be deleted.", false);
     }
 
     // ── Mapping ───────────────────────────────────────────────────────────────
@@ -397,12 +397,12 @@ public sealed class SurrealHolonStore : IHolonStore
 
         [Column(Type = "option<record<holon>>")]
         [JsonPropertyName("parent_holon_id")]
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Holon))]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Holon), Optional = true)]
         public string? ParentHolonId { get; set; }
 
         [Column(Type = "option<record<user>>")]
         [JsonPropertyName("user_id")]
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User), Optional = true)]
         public string? UserId { get; set; }
 
         [Column(Type = "string")]
@@ -443,12 +443,12 @@ public sealed class SurrealHolonStore : IHolonStore
 
         [Column(Type = "option<record<holon>>")]
         [JsonPropertyName("source_holon_id")]
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Holon))]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.Holon), Optional = true)]
         public string? SourceHolonId { get; set; }
 
         [Column(Type = "option<record<user>>")]
         [JsonPropertyName("origin_user_id")]
-        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User))]
+        [References(typeof(AZOA.WebAPI.Persistence.SurrealDb.Models.User), Optional = true)]
         public string? OriginUserId { get; set; }
 
         [Column(Type = "bool")]

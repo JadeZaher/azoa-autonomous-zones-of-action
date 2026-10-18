@@ -13,7 +13,7 @@
 
 -- ── Enums ─────────────────────────────────────────────────
 
-DEFINE PARAM IF NOT EXISTS $on_ramp_lot_status VALUE ["Pending", "Issued", "Refused", "Stuck", "Reversed"];
+DEFINE PARAM IF NOT EXISTS $on_ramp_lot_status VALUE ["Pending", "Issued", "Refused", "Stuck", "Reversed", "RefundPending", "Refunded"];
 
 DEFINE TABLE IF NOT EXISTS on_ramp_lot SCHEMAFULL;
 
@@ -72,6 +72,24 @@ DEFINE FIELD IF NOT EXISTS created_at ON TABLE on_ramp_lot TYPE datetime
     DEFAULT time::now()
     READONLY;
 DEFINE FIELD IF NOT EXISTS updated_at ON TABLE on_ramp_lot TYPE datetime;
+DEFINE FIELD IF NOT EXISTS provider_refund_id ON TABLE on_ramp_lot TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS refund_started_at ON TABLE on_ramp_lot TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS recovery_audit_json ON TABLE on_ramp_lot TYPE string
+    DEFAULT ALWAYS "[]";
+DEFINE FIELD IF NOT EXISTS environment ON TABLE on_ramp_lot TYPE string
+    DEFAULT ALWAYS "unbound";
+DEFINE FIELD IF NOT EXISTS chain_network ON TABLE on_ramp_lot TYPE string
+    DEFAULT ALWAYS "unbound";
+DEFINE FIELD IF NOT EXISTS refund_attempt ON TABLE on_ramp_lot TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS refunded_minor_units ON TABLE on_ramp_lot TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS provider_refund_status ON TABLE on_ramp_lot TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS reversed_base_units ON TABLE on_ramp_lot TYPE string
+    DEFAULT ALWAYS "0";
+DEFINE FIELD IF NOT EXISTS reversal_marks_json ON TABLE on_ramp_lot TYPE string
+    DEFAULT ALWAYS "{}";
+DEFINE FIELD IF NOT EXISTS pricing_scope_key ON TABLE on_ramp_lot TYPE option<string>;
 
 -- ── Indexes ──────────────────────────────────────────────────
 

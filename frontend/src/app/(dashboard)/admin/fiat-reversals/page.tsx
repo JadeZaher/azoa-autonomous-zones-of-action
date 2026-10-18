@@ -102,6 +102,24 @@ export default function FiatReversalsConsolePage() {
 
   useEffect(() => { fetchOpen() }, [fetchOpen])
 
+  /** Settles a reversal parked on an ambiguous move: the node re-reads the move on chain, then re-queues the unwind. */
+  const resolveParked = useCallback(async (row: FiatReversalView) => {
+    const reason = window.prompt('What did you check about the pending move? (the node re-reads it on chain before deciding)')?.trim()
+    if (!reason) return
+    setBusyId(row.id)
+    try {
+      const res = await azoa.api.resolveFiatReversal(row.id, { reason })
+      if (isOk(res)) {
+        toast.success('The move was resolved from chain evidence and the unwind was queued')
+        await fetchOpen()
+      } else {
+        toast.error(res.error.message)
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }, [fetchOpen])
+
   const act = useCallback(async (
     id: string,
     verb: 'recover' | 'settle' | 'restart' | 'clear-flag',
@@ -299,9 +317,25 @@ export default function FiatReversalsConsolePage() {
                               {row.statusReason}
                             </div>
                           )}
+                          {row.pendingMoveKey && (
+                            <div className="mt-1 max-w-xs truncate font-mono text-[11px]" title={row.pendingMoveKey}>
+                              pending move {row.pendingMoveKey}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex flex-wrap justify-end gap-1.5">
+                            {needsPerson && row.pendingMoveKey && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() => resolveParked(row)}
+                                title="Settle the parked move from chain evidence, then re-queue the unwind"
+                              >
+                                Resolve from chain
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"

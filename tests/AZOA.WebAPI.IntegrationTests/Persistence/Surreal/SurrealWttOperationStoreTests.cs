@@ -56,10 +56,10 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
     {
         var seed = await SeedAsync(change, expired: change == "expired-offer");
         if (change == "wallet-owner")
-            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(seed.SourceWallet.ToString("N"))
+            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(seed.SourceWallet.ToString("N")).Where(seed => true)
                 .Set(row => row.UserId, SurrealLink.ToLink("user", Guid.NewGuid().ToString("N"))!).Build())).EnsureAllOk();
         if (change == "logout")
-            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(seed.Intent.ActorUserId.ToString("N"))
+            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(seed.Intent.ActorUserId.ToString("N")).Where(seed => true)
                 .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         Assert.Null(await store.AdmitAsync(seed.Candidate, seed.Source));
         Assert.Null(await store.GetAsync(seed.Candidate.Id));
@@ -190,16 +190,19 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
         var stage = Stage(seed, "Transfer", 0, null);
         var claimed = (await store.ClaimStageAsync(seed.Candidate.Id, operation.Version, stage, seed.Source))!;
         operation = (await store.GetAsync(seed.Candidate.Id))!;
-        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel));
+        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, durableNonce: true));
         var probed = operation.Version;
         var preparing = (await store.BeginPreparationAsync(seed.Candidate.Id, operation.Version, stage.Id, claimed.Version))!;
         Assert.Equal("Preparing", preparing.State);
         Assert.Null(await store.BeginPreparationAsync(seed.Candidate.Id, operation.Version, stage.Id, claimed.Version));
-        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, probed));
+        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, probed, durableNonce: true));
         operation = (await store.GetAsync(seed.Candidate.Id))!;
-        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, operation.Version));
+        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, operation.Version, durableNonce: true));
 
-        Assert.Equal("Retired", (await store.RetireStageAsync(seed.Candidate.Id, operation.Version, stage.Id, preparing.Version, "no reservation"))!.State);
+        // A Preparing stage may hold a reserved nonce: retiring it needs a probe that read none.
+        Assert.Null(await store.RetireStageAsync(seed.Candidate.Id, operation.Version, stage.Id, preparing.Version, "unprobed"));
+        Assert.Equal("Retired", (await store.RetireStageAsync(seed.Candidate.Id, operation.Version, stage.Id, preparing.Version, "no reservation",
+            reservationProbedFree: true))!.State);
         operation = (await store.GetAsync(seed.Candidate.Id))!;
         var next = Stage(seed, "Transfer", 1, stage.Id);
         var nextClaim = (await store.ClaimStageAsync(seed.Candidate.Id, operation.Version, next, seed.Source))!;
@@ -208,14 +211,88 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
         operation = (await store.GetAsync(seed.Candidate.Id))!;
         Assert.Equal("Prepared", (await store.SavePreparedAsync(seed.Candidate.Id, operation.Version, next.Id, signing.Version, Prepared("Transfer")))!.State);
         operation = (await store.GetAsync(seed.Candidate.Id))!;
-        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, operation.Version));
+        Assert.Null(await store.CancelAsync(seed.Candidate, seed.Cancel, operation.Version, durableNonce: true));
         Assert.Equal("Active", (await store.GetAsync(seed.Candidate.Id))!.State);
 
         var planned = await SeedAsync("evm-planned", chain: "Ethereum");
         operation = (await store.AdmitAsync(planned.Candidate, planned.Source))!;
         Assert.NotNull(await store.ClaimStageAsync(planned.Candidate.Id, operation.Version, Stage(planned, "Transfer", 0, null), planned.Source));
         operation = (await store.GetAsync(planned.Candidate.Id))!;
-        Assert.Equal("Cancelled", (await store.CancelAsync(planned.Candidate, planned.Cancel, operation.Version))!.State);
+        Assert.Equal("Cancelled", (await store.CancelAsync(planned.Candidate, planned.Cancel, operation.Version, durableNonce: true))!.State);
+    }
+
+    [Fact]
+    public async Task TheDatabaseClockGovernsOfferExpiryEvenWhenTheHostClockLags()
+    {
+        var seed = await SeedAsync("db-clock", expired: true);
+        var lagging = new SurrealWttOperationStore(executor, new LaggingClock(TimeSpan.FromMinutes(10)));
+        Assert.Null(await lagging.AdmitAsync(seed.Candidate, seed.Source));
+        Assert.Null((await store.GetOfferAsync(seed.Offer.Id))!.ConsumedByOperationId);
+    }
+
+    [Fact]
+    public async Task OwnerTakeoverNeedsTheOwnersDirectTargetAuthorityAndHappensOnce()
+    {
+        var seed = await SeedAsync("takeover", tenantDriven: true, separateTargetWallet: true);
+        var operation = (await store.AdmitAsync(seed.Candidate, seed.Source))!;
+        operation = (await store.UpdateAsync(seed.Candidate.Id, operation.Version, new(State: "Ready", Phase: "Target", ProofsJson: "{}")))!;
+        var owner = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(WttOwnerIntent.From(seed.Intent)));
+        var now = DateTimeOffset.UtcNow;
+        var direct = new SigningCredentialWitness(1, "Jwt", seed.Intent.ActorUserId, null, null, now.AddMinutes(-1), now.AddMinutes(10), null, null,
+            [AzoaScopes.WttTargetSign], true, TokenUse: AzoaClaims.TokenUseLogin);
+        var target = seed.Intent.TargetAuthority;
+        var ownerAuthority = new WttStageAuthority(AzoaScopes.WttTargetSign, new SigningAdmissionAuthority(1, "DirectJwt", direct,
+            new(target.Context.WalletId, seed.Intent.ActorUserId, target.Address, "Solana"), [AzoaScopes.WttTargetSign], []), null);
+        var tenantAuthority = ownerAuthority with { Signing = ownerAuthority.Signing! with { Credential = seed.Source.Signing!.Credential } };
+
+        Assert.Null(await store.TakeOverAsync(seed.Candidate.Id, operation.Version, owner, tenantAuthority));
+        Assert.Null(await store.TakeOverAsync(seed.Candidate.Id, operation.Version, seed.Candidate.IntentJson, ownerAuthority));
+        var taken = (await store.TakeOverAsync(seed.Candidate.Id, operation.Version, owner, ownerAuthority))!;
+        Assert.Equal(owner, taken.OwnerIntentJson);
+        Assert.Null(taken.TargetQuoteJson);
+        Assert.Null(await store.TakeOverAsync(seed.Candidate.Id, taken.Version, owner, ownerAuthority));
+    }
+
+    [Fact]
+    public async Task AnExposedParticipantStageResolvesOnlyFromExpiryOrItsOwnLandedSignature()
+    {
+        var expiry = await ExposedAsync("exposed-expiry");
+        var operation = (await store.GetAsync(expiry.Seed.Candidate.Id))!;
+        var scanned = (await store.ResolveExposedAsync(expiry.Seed.Candidate.Id, operation.Version, expiry.Stage.Id, expiry.Stage.Version,
+            "{\"scanned\":8}", "Pending"))!;
+        Assert.Equal("Exposed", scanned.State);
+        Assert.Equal(operation.Version, (await store.GetAsync(expiry.Seed.Candidate.Id))!.Version);
+        var expired = (await store.ResolveExposedAsync(expiry.Seed.Candidate.Id, operation.Version, expiry.Stage.Id, scanned.Version,
+            "{\"absent\":true}", "ExpiredNoEffect"))!;
+        Assert.Equal("ExpiredNoEffect", expired.State);
+        Assert.Equal("Ready", (await store.GetAsync(expiry.Seed.Candidate.Id))!.State);
+
+        var landed = await ExposedAsync("exposed-landed");
+        operation = (await store.GetAsync(landed.Seed.Candidate.Id))!;
+        Assert.Null(await store.ResolveExposedAsync(landed.Seed.Candidate.Id, operation.Version, landed.Stage.Id, landed.Stage.Version,
+            "{\"landed\":true}", "Landed"));
+        var authorized = (await store.ResolveExposedAsync(landed.Seed.Candidate.Id, operation.Version, landed.Stage.Id, landed.Stage.Version,
+            "{\"landed\":true}", "Landed", Prepared("RecipientOptIn")))!;
+        Assert.Equal("SubmissionAuthorized", authorized.State);
+        Assert.NotNull(authorized.AuthorizedAt);
+        Assert.Equal(Prepared("RecipientOptIn"), authorized.PreparedJson);
+    }
+
+    private async Task<(Seed Seed, WttOperationStage Stage)> ExposedAsync(string key)
+    {
+        var seed = await SeedAsync(key);
+        var operation = (await store.AdmitAsync(seed.Candidate, seed.Source))!;
+        var stage = Stage(seed, "RecipientOptIn", 0, null, participant: "RECIPIENTALGORAND");
+        var claimed = (await store.ClaimStageAsync(seed.Candidate.Id, operation.Version, stage, seed.Participant))!;
+        operation = (await store.GetAsync(seed.Candidate.Id))!;
+        var message = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(new { unsigned = "opt-in" }));
+        return (seed, (await store.ExposeAsync(seed.Candidate.Id, operation.Version, stage.Id, claimed.Version, message, seed.Participant))!);
+    }
+
+    /// <summary>Host clock running behind the database, so only the database's own time can refuse an expired offer.</summary>
+    private sealed class LaggingClock(TimeSpan lag) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => base.GetUtcNow() - lag;
     }
 
     [Fact]
@@ -252,10 +329,12 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
     private sealed record Seed(WttOffer Offer, WttOperation Candidate, WttOperationIntent Intent, Guid SourceWallet,
         WttStageAuthority Source, WttStageAuthority Participant, WttStageAuthority Cancel);
 
-    private async Task<Seed> SeedAsync(string key, bool expired = false, string chain = "Algorand", bool tenantDriven = false)
+    private async Task<Seed> SeedAsync(string key, bool expired = false, string chain = "Algorand", bool tenantDriven = false,
+        bool separateTargetWallet = false)
     {
         var actor = Guid.NewGuid();
         var wallet = Guid.NewGuid();
+        var targetWallet = separateTargetWallet ? Guid.NewGuid() : wallet;
         Guid? tenant = tenantDriven ? Guid.NewGuid() : null;
         var address = chain == "Ethereum" ? "0x1111111111111111111111111111111111111111" : "SOURCEALGORAND";
         foreach (var user in tenant is { } tenantId ? new[] { actor, tenantId } : new[] { actor })
@@ -269,7 +348,13 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
             Id = wallet.ToString("N"), UserId = SurrealLink.ToLink("user", actor.ToString("N"))!, Address = address,
             ChainType = chain, WalletType = Wallet.WalletTypeKind.Platform,
         }))).EnsureAllOk();
-        var intent = Intent(actor, tenant, wallet, address, chain, Operation(actor, tenant, key));
+        if (separateTargetWallet)
+            (await executor.ExecuteAsync(SurrealWriter.Create(new Wallet
+            {
+                Id = targetWallet.ToString("N"), UserId = SurrealLink.ToLink("user", actor.ToString("N"))!, Address = "TARGETSOLANA",
+                ChainType = "Solana", WalletType = Wallet.WalletTypeKind.Platform,
+            }))).EnsureAllOk();
+        var intent = Intent(actor, tenant, wallet, address, chain, Operation(actor, tenant, key), targetWallet);
         var now = DateTimeOffset.UtcNow;
         var quote = new WttStageQuote(new string('q', 64), CanonicalJson.Hash(intent), intent.Source.ProtocolIdentity, "Source",
             [new("Transfer", "100", "0", "0", intent.SourceAuthority.Address)], "{}", now.AddSeconds(30));
@@ -321,7 +406,8 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
         };
     }
 
-    private static WttOperationIntent Intent(Guid actor, Guid? tenant, Guid wallet, string address, string chain, string operationId)
+    private static WttOperationIntent Intent(Guid actor, Guid? tenant, Guid wallet, string address, string chain, string operationId,
+        Guid? targetWallet = null)
     {
         var protocolChain = chain == "Ethereum" ? (ushort)2 : (ushort)8;
         var source = new WttNetworkDescriptor(chain, ChainNetwork.Devnet, chain.ToLowerInvariant() + ":local", "Devnet", protocolChain, "1", "2",
@@ -332,7 +418,8 @@ public sealed class SurrealWttOperationStoreTests : IAsyncLifetime
             AzoaScopes.WttSourceSign, chain);
         return new(1, operationId, actor, tenant, source, target,
             new("31566704", false, 6, protocolChain, new string('9', 64), 6, new string('0', 64), new string('0', 64), "asa"),
-            new(address, context), new("TARGETSOLANA", context with { Scope = AzoaScopes.WttTargetSign, ChainType = "Solana" }),
+            new(address, context), new("TARGETSOLANA", context with { WalletId = targetWallet ?? wallet, Scope = AzoaScopes.WttTargetSign,
+                ChainType = "Solana" }),
             "RECIPIENTSOLANA", new string('e', 64), "wrapped", 6, new("1000", "1000", "0", "1000", "0", "1000"), 7, 32, false, false,
             new("1000", "0", "0"), new("1000", "0", "0"));
     }

@@ -48,6 +48,7 @@ public sealed partial class SurrealFungibleCreationStore(ISurrealExecutor execut
         statements.Add(SurrealQuery.Of("IF $_fungible_renewal_row = NONE { THROW 'FUNGIBLE_CREATION_CHANGED' }"));
         var index = statements.Count;
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<FungibleCreationOperation>(expected.Id)
+            .Where(row => row.Version == expected.Version)
             .Set(row => row.Version, expected.Version + 1).Set(row => row.CurrentAuthorityId, authorization.Id)
             .Set(row => row.CurrentAuthorityJson, authorization.AuthorityJson).Set(row => row.UpdatedAt, authorization.CreatedAt).Build(), "fungible_authority_pointer"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(authorization), "fungible_authority_audit"));
@@ -176,7 +177,7 @@ public sealed partial class SurrealFungibleCreationStore(ISurrealExecutor execut
         var index = statements.Count;
         statements.Add(SurrealGeneratedStatementScope.Apply(mutation.Build(), "fungible_progress"));
         if (authorizeEffect) statements.Add(SurrealQuery.Of("COMMIT"));
-        var transaction = SurrealQuery.Combine(statements.ToArray());
+        var transaction = statements.Count == 1 ? statements[0] : SurrealQuery.Combine(statements.ToArray());
         try
         {
             var result = await SurrealTransientConflict.RetryOnConflictAsync(async () =>

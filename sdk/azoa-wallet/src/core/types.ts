@@ -20,7 +20,7 @@ export interface UnsignedTransaction {
    * Format of the bytes field:
    * - "json-descriptor": JSON-encoded tx params (needs wallet adapter to re-encode as native bytes)
    * - "native": chain-native binary format (ready for direct signing)
-   * - "base64": base64-encoded native bytes (from DEX APIs like Jupiter)
+   * - "base64": base64-encoded native bytes 
    */
   format: "json-descriptor" | "native" | "base64";
   /** Human-readable description for wallet approval UIs */
@@ -70,7 +70,7 @@ export interface ChainProvider {
   readonly chainId: string;
   /** Display name */
   readonly displayName: string;
-  /** Whether this provider supports DEX swaps */
+  /** Whether the node's durable DEX swap lifecycle (`startDexSwap`) can serve this chain; the SDK builds no swaps itself. */
   readonly supportsDex: boolean;
   /**
    * Whether this provider IMPLEMENTS chain-specific bridge transaction
@@ -141,68 +141,9 @@ export interface BurnParams {
   owner: string;
 }
 
-// ─── DEX Adapter Interface ───
-// Each chain that supports swaps provides one. Mirrors the pattern of
-// hooking DEX adapters to providers.
-
-export interface SwapQuote {
-  chain: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: string;
-  expectedAmountOut: string;
-  priceImpact: number;
-  fee: string;
-  route?: SwapRouteStep[];
-  raw?: unknown;
-  /** Slippage tolerance carried from the quote request, in basis points. */
-  slippageBps?: number;
-  /** Optional decimal metadata carried from the quote (echoed from SwapParams). */
-  assetInDecimals?: number;
-  assetOutDecimals?: number;
-}
-
-export interface SwapRouteStep {
-  dex: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: string;
-  amountOut: string;
-}
-
-export interface SwapParams {
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: string;
-  slippageBps: number;
-  sender: string;
-  /**
-   * Optional decimal metadata for the input/output tokens. Adapters that need
-   * decimals to compute amounts (e.g. Tinyman v2) will use these when present;
-   * if absent the adapter must resolve decimals from its own data source
-   * (e.g. an indexer) or default sensibly. Caller-provided decimals always win.
-   */
-  assetInDecimals?: number;
-  assetOutDecimals?: number;
-}
-
-export interface DexAdapter {
-  /** Which chain this DEX adapter serves */
-  readonly chainId: string;
-  /** DEX name, e.g. "tinyman", "jupiter" */
-  readonly dexName: string;
-
-  getQuote(params: SwapParams): Promise<Result<SwapQuote, SdkError>>;
-  buildSwapTransaction(
-    quote: SwapQuote,
-    sender: string
-  ): Promise<Result<UnsignedTransaction, SdkError>>;
-}
-
 // ─── Provider Registry ───
 // Used by AzoaWallet to discover registered chain providers.
 
 export interface ChainProviderRegistration {
   provider: ChainProvider;
-  dex?: DexAdapter;
 }

@@ -438,6 +438,7 @@ public sealed class TenantCustodialScreeningProjectionTests
             new ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
             Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == environmentName),
             ConsentFixture.Access().Object,
+            new ApprovedKybGate(),
             registerScreeningStore ? _screening : null);
     }
 }

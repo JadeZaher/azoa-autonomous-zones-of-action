@@ -132,7 +132,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
                 KeyPrefix = "fixture", IsActive = true, Scopes = [AzoaScopes.NftMint], CreatedDate = now }));
             fresh = new(1, "DirectApiKey", new(1, "ApiKey", actor, null, null, null, null, key, hash, [AzoaScopes.NftMint], false, [AzoaScopes.NftMint]),
                 new(wallet, actor, "owner", "Algorand"), [AzoaScopes.NftMint], []);
-            revoke = () => Execute(SurrealWriter.UpdateOnly<KeyRow>(key.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+            revoke = () => Execute(SurrealWriter.UpdateOnly<KeyRow>(key.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         }
         else if (kind == "tenant-grant")
         {
@@ -146,12 +146,12 @@ public sealed partial class SurrealNftLifecycleStoreTests
                 [AzoaScopes.NftMint], [new(grant, AzoaScopes.NftMint, AzoaScopes.NftMint, now, null)]);
             original = Child(now.AddMinutes(-1));
             fresh = Child(now.AddSeconds(-5));
-            revoke = () => Execute(SurrealWriter.UpdateOnly<GrantRow>(grant.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+            revoke = () => Execute(SurrealWriter.UpdateOnly<GrantRow>(grant.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         }
         else
         {
             fresh = DirectAuthority(actor, wallet, "owner", "Algorand", "Mint", issuedAt: now.AddSeconds(-5));
-            revoke = () => Execute(SurrealWriter.UpdateOnly<User>(actor.ToString("N")).Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build());
+            revoke = () => Execute(SurrealWriter.UpdateOnly<User>(actor.ToString("N")).Where(seed => true).Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build());
         }
         var command = new NftLifecycleCommand(actor, actor, wallet, wallet, "owner", "owner",
             new UserNFTMintModel { ChainType = "Algorand", MetadataURI = "ipfs://asset", Name = "Renewable" }, -1, tenant,

@@ -12,6 +12,7 @@ using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Dex;
+using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -218,7 +219,8 @@ public sealed class SwapActionResolverTests
             var stages = new SwapStageCoordinator(Operations.Object);
             var quotes = new DexQuoteService(Quotes.Object, wallets.Object, new Mock<INodeFeeScheduleManager>(MockBehavior.Strict).Object,
                 authority, modules, new ConfigurationBuilder().Build());
-            var swaps = new SwapOperationService(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages));
+            var swaps = new SwapOperationService(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages),
+                new ApprovedRealValueKycGate());
             Resolver = new(quotes, swaps, Operations.Object, Executions.Object, modules);
         }
 
@@ -254,12 +256,13 @@ public sealed class SwapActionResolverTests
 
         internal void Admit(string state, bool settled, bool cleanupStarted = false)
         {
-            var intent = JsonSerializer.Deserialize<SwapIntent>(IntentJson())!;
+            var intentJson = IntentJson(); // once: the terms carry a timestamp, so two calls would not hash alike
+            var intent = JsonSerializer.Deserialize<SwapIntent>(intentJson)!;
             Operation = new SwapOperationRecord
             {
                 Id = Reference.OperationId!, ActorUserId = _actor.ToString("N"), TenantId = "", State = state, CleanupStarted = cleanupStarted,
                 ActionRunId = _run.ToString("N"), ActionNodeId = _node.ToString("N"), ActionIntentHash = Reference.IntentHash,
-                IntentJson = IntentJson(), IntentHash = CanonicalJson.HashCanonical(IntentJson()), QuoteHash = intent.QuoteHash,
+                IntentJson = intentJson, IntentHash = CanonicalJson.HashCanonical(intentJson), QuoteHash = intent.QuoteHash,
                 SettlementReceiptJson = settled ? CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(new SwapSettlementReceipt(
                     Reference.OperationId!, intent.QuoteHash, "stage", intent.Terms.Network, ["0xoriginal-lost", "0xwinner"], "1010", "1995", "10", []))) : null,
             };

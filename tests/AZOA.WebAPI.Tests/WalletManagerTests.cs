@@ -65,7 +65,7 @@ public class WalletManagerTests
     [Fact]
     public async Task CreateAsync_ShouldSetUserIdAndSave()
     {
-        _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
+        _walletStore.Setup(p => p.GetByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
@@ -83,12 +83,13 @@ public class WalletManagerTests
     [Fact]
     public async Task CreateAsync_DuplicateAddressPerChain_ReturnsError()
     {
-        var existing = new Wallet { Id = Guid.NewGuid(), ChainType = "Solana", Address = "addr1" };
-        _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
+        var owner = Guid.NewGuid();
+        var existing = new Wallet { Id = Guid.NewGuid(), UserId = owner, ChainType = "Solana", Address = "addr1" };
+        _walletStore.Setup(p => p.GetByUserAsync(owner, It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { existing } });
 
         var model = new WalletCreateModel { ChainType = "Solana", Address = "addr1" };
-        var result = await _manager.CreateAsync(model, Guid.NewGuid());
+        var result = await _manager.CreateAsync(model, owner);
 
         result.IsError.Should().BeTrue();
         result.Message.Should().Contain("already exists");
@@ -100,6 +101,8 @@ public class WalletManagerTests
         var prev = new Wallet { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), ChainType = "Solana", Address = "old", IsDefault = true };
         _walletStore.Setup(p => p.GetAllAsync(It.IsAny<CancellationToken>()))
                  .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { prev } });
+        _walletStore.Setup(p => p.GetByUserAsync(prev.UserId, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = new[] { prev } });
         _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
                  .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
 
@@ -108,6 +111,29 @@ public class WalletManagerTests
 
         result.IsError.Should().BeFalse();
         _walletStore.Verify(p => p.UpsertAsync(It.Is<IWallet>(w => w.Id == prev.Id && !w.IsDefault), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Audit-1 M2 / RV-L4-09: registering an address proves nothing, so only another user's STILL-VALID proof blocks a create
+    /// (the store answers validity; a stale proof whose holder removed the wallet leaves the address addable by the new key holder).</summary>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task CreateAsync_IsBlockedOnlyByAnotherUsersOwnershipProof(bool provenElsewhere, bool refused)
+    {
+        var caller = Guid.NewGuid();
+        _walletStore.Setup(p => p.GetByUserAsync(caller, It.IsAny<CancellationToken>()))
+                 .ReturnsAsync(new AZOAResult<IEnumerable<IWallet>> { Result = Array.Empty<IWallet>() });
+        _walletStore.Setup(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
+                 .ReturnsAsync((IWallet w, CancellationToken _) => new AZOAResult<IWallet> { Result = w });
+        var proofs = new Mock<IWalletOwnershipProofStore>();
+        proofs.Setup(p => p.IsHeldByAnotherUserAsync("Solana", "addr1", caller, It.IsAny<CancellationToken>())).ReturnsAsync(provenElsewhere);
+        var manager = new WalletManager(_walletStore.Object, _holonStore.Object, _chainFactory.Object, _keyService, _config,
+            ownershipProofs: proofs.Object);
+
+        var result = await manager.CreateAsync(new WalletCreateModel { ChainType = "Solana", Address = "addr1" }, caller);
+
+        result.IsError.Should().Be(refused, result.Message);
+        _walletStore.Verify(p => p.UpsertAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), refused ? Times.Never() : Times.Once());
     }
 
     [Fact]

@@ -17,3 +17,23 @@ Follow-up authoring: policy absent-to-present and changed-version refusal, recei
 Still pending: complete positive service journey, two-transaction cancellation/evidence append races, concurrent finalizers, subtree planner coverage and independent final reread. All added cases remain unrun.
 
 The positive service journey now exercises provisioned-principal creation through the real handler and exact frozen resolver replay after cancellation. Unprovisioned principal/child denial and concurrent finalizers are authored. Failed frozen validation now commits an immutable failed governance command receipt under the same action fence; recovery returns Failed without allowing a competing success after rejection. The real-store failed-receipt replay fixture is authored. Independent review requested. No tests have executed.
+
+## Round 4 closeout (W2 platform lane, 2026-10-17)
+
+Status: **authored, runtime pending**. The gate is re-blocked and bound to
+`round4-governance-runtime-verdict.md` (`RUNTIME_VERDICT: PENDING`); see
+`Services/Governance/AGENTS.md` §governance-gate.
+
+Mapping of the items listed as still pending above:
+
+| Item | Where it now stands |
+|---|---|
+| two-transaction cancellation races | authored: `Concurrent_cancellation_and_vote_commit_in_one_serial_order`, `Concurrent_cancellation_and_creation_commit_in_one_serial_order` |
+| evidence append races | AML append existed; authored participation revocation vs vote (`Concurrent_participation_revocation_and_vote_commit_in_one_serial_order`) and membership change vs creation snapshot (`Membership_change_during_creation_refuses_a_stale_electorate`) |
+| concurrent finalizers | existed (`Concurrent_finalizers_publish_one_immutable_snapshot`); authored vote vs finalization across the cutoff (`Vote_and_finalization_racing_after_cutoff_leave_the_tally_equal_to_the_ledger`) |
+| complete positive service journey | existed (`Provisioned_principal_handler_creates_exact_election_and_resolver_replays_after_cancel`) |
+| subtree planner coverage | unit only (`ActionLocalOverlayTests`, `GovernanceProposalRewriteTests`); creation and finalization take `LocalEntityMutationFence.Holons()`, so a real-DB local-graph-mutation-vs-finalization fixture is the one remaining authoring gap; the runtime reviewer decides whether it blocks the lift |
+| independent final reread | step 2 of the verdict lift procedure |
+
+Nothing has executed on this tree. The sweep runs `SurrealGovernanceTests`; any failure reopens
+source acceptance as stated above.

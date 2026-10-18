@@ -10,6 +10,8 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Fiat;
+using AZOA.WebAPI.Services.Fiat.OffRamp;
+using AZOA.WebAPI.Services.Kyb;
 
 // The credit-capability probe reads the reserve ledger and the on-ramp's own options.
 // Aliased rather than imported wholesale so this file's type names stay unambiguous.
@@ -93,6 +95,9 @@ public sealed class FiatEnvironmentOptions
 
     /// <summary>Stripe webhook signing secret. Without it every delivery fails closed.</summary>
     public string WebhookSecret { get; set; } = string.Empty;
+
+    /// <summary>Signing secret of the separate Connect endpoint (connected-account events); optional.</summary>
+    public string ConnectWebhookSecret { get; set; } = string.Empty;
 }
 
 /// <summary>Server-side policy for what a checkout request may ask for.</summary>
@@ -157,6 +162,13 @@ public sealed class FiatOptions
 
     public int RequestTimeoutSeconds { get; set; } = 30;
 
+    /// <summary>Upper bound on one Stripe request; release margins downstream assume it (OffRamp AGENTS.md §account-recovery R-2).</summary>
+    public const int MaxRequestTimeoutSeconds = 120;
+
+    /// <summary>The configured request timeout, defaulted to 30 s and clamped to 1..<see cref="MaxRequestTimeoutSeconds"/>.</summary>
+    public TimeSpan EffectiveRequestTimeout =>
+        TimeSpan.FromSeconds(RequestTimeoutSeconds <= 0 ? 30 : Math.Min(RequestTimeoutSeconds, MaxRequestTimeoutSeconds));
+
     /// <summary>Replay tolerance on the webhook signature timestamp.</summary>
     public int WebhookToleranceSeconds { get; set; } = 300;
 
@@ -192,7 +204,7 @@ public sealed class FiatOptions
     public StripeCredentials CredentialsFor(RailEnvironment environment) => new(
         ApiBaseUrl,
         ForEnvironment(environment).SecretKey,
-        TimeSpan.FromSeconds(RequestTimeoutSeconds <= 0 ? 30 : RequestTimeoutSeconds));
+        EffectiveRequestTimeout);
 
     /// <summary>
     /// The rail's own environment → endpoint mapping, handed to the factory. A null result means
@@ -216,7 +228,7 @@ public sealed class FiatOptions
         return new BlockchainNetworkConfig
         {
             NodeUrl = ApiBaseUrl,
-            TimeoutMs = (RequestTimeoutSeconds <= 0 ? 30 : RequestTimeoutSeconds) * 1000,
+            TimeoutMs = (int)EffectiveRequestTimeout.TotalMilliseconds,
             RetryCount = 0,
             IsEnabled = true,
         };
@@ -322,11 +334,11 @@ public interface IFiatOnRampRail
         FiatCheckoutRequest request, CancellationToken ct = default);
 
     /// <summary>
-    /// Reads one intent for the person who owns it. Scoped by subject, never by intent id alone,
-    /// so a guessed id reads nothing.
+    /// Reads one intent for the person who owns it, as the same driver (tenant or first-party)
+    /// that started it. Scoped by subject and driver, never by intent id alone.
     /// </summary>
     Task<AZOAResult<FiatCheckoutIntent>> GetIntentAsync(
-        Guid subjectUserId, Guid intentId, CancellationToken ct = default);
+        Guid subjectUserId, Guid intentId, Guid? tenantId = null, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -344,6 +356,16 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
 {
     /// <summary>Prefix of the claim-bound Stripe idempotency key for a checkout session create.</summary>
     public const string CheckoutIdempotencyKeyPrefix = "azoa-fiat-checkout-";
+
+    /// <summary>Stripe's minimum Checkout Session lifetime (30 min) plus one minute of clock skew.</summary>
+    public static readonly TimeSpan StripeMinimumCheckoutLifetime = TimeSpan.FromMinutes(31);
+
+    /// <summary>Lifetime floor: Stripe's minimum plus a replay margin for a lost create response.</summary>
+    private const int MinimumPinnedLifetimeMinutes = 35;
+
+    /// <summary>The claim's fixed <c>expires_at</c>: creation start + configured lifetime, clamped to Stripe's 35 min..24 h.</summary>
+    public static DateTimeOffset PinnedCheckoutExpiry(DateTimeOffset creationStartedAt, int configuredMinutes)
+        => creationStartedAt.AddMinutes(Math.Clamp(configuredMinutes, MinimumPinnedLifetimeMinutes, 24 * 60));
 
     private readonly FiatOptions _options;
     private readonly IStripeGateway _gateway;
@@ -475,19 +497,43 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         // D46: every value action needs a current identity approval, and buying funds is a value
         // action. The check runs here — inside the rail — rather than only in the controller, so
         // a second caller of this seam cannot inherit the surface without the gate.
-        var kycGate = scope.ServiceProvider.GetService<IRealValueKycGate>();
-        if (kycGate is null)
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "Identity verification cannot be checked; adding funds was refused.",
-                AzoaErrorCodes.DependencyUnavailable);
+        var topUp = string.Equals(request.Purpose?.Trim(), TenantPayoutTopUp.Purpose, StringComparison.OrdinalIgnoreCase);
+        if (topUp)
+        {
+            // D-8: a tenant float top-up is the tenant's own business money. It needs the tenant's KYB
+            // approval for payout pricing (D-6), a server-built top-up admission key and no acting tenant.
+            var kyb = scope.ServiceProvider.GetService<IKybGate>();
+            if (kyb is null)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "Business verification cannot be checked; the top-up was refused.", AzoaErrorCodes.DependencyUnavailable);
+            if (request.TenantId is not null
+                || !TenantPayoutTopUp.TryReadTenant(request.AdmissionKey, out var keyTenant) || keyTenant != request.SubjectUserId)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "That kind of payment is not offered here.", AzoaErrorCodes.InvalidRequest);
+            var verified = await kyb.RequireVerifiedTenantAsync(request.SubjectUserId, KybCapability.PayoutPriceSchedule, ct);
+            if (verified.IsError)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(verified.Message, AzoaErrorCodes.Forbidden);
+        }
+        else
+        {
+            if (TenantPayoutTopUp.IsTopUpAdmission(request.AdmissionKey))
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "That request key is not allowed.", AzoaErrorCodes.InvalidRequest);
 
-        var approval = request.TenantId is { } tenantId
-            ? await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, tenantId, ct)
-            : await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, ct);
-        if (approval.IsError)
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This account has to finish identity verification before adding funds.",
-                AzoaErrorCodes.Forbidden);
+            var kycGate = scope.ServiceProvider.GetService<IRealValueKycGate>();
+            if (kycGate is null)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "Identity verification cannot be checked; adding funds was refused.",
+                    AzoaErrorCodes.DependencyUnavailable);
+
+            var approval = request.TenantId is { } tenantId
+                ? await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, tenantId, ct)
+                : await kycGate.RequireCurrentApprovalAsync(request.SubjectUserId, ct);
+            if (approval.IsError)
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "This account has to finish identity verification before adding funds.",
+                    AzoaErrorCodes.Forbidden);
+        }
 
         // OI-29: a registered IFiatSettlementHandler proves a TYPE is in the container, not that
         // this node can credit anything. The two facts that decide creditability live in data --
@@ -547,7 +593,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         // The admission row is keyed on (flow, provider, admission key) alone, so a second person
         // reusing another person's key would otherwise resume THEIR intent. Ownership is checked
         // against the claim that already exists, not against the request that just arrived.
-        if (!OwnedBy(session, request.SubjectUserId))
+        if (!OwnedBy(session, request.SubjectUserId) || !DrivenBy(session, request.TenantId))
         {
             _logger.LogWarning(
                 "A funding intent was requested with an admission key already claimed by another account.");
@@ -588,7 +634,12 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         }
 
         session = turn.Session!;
-        var expiresAt = now.AddMinutes(checkout.SessionExpiryMinutes <= 0 ? 30 : checkout.SessionExpiryMinutes);
+        // D8: expires_at is pinned to the claim's durable creation start so every replay of the
+        // claim-keyed create sends identical parameters; see Providers/Fiat/AGENTS.md §expiry-pin.
+        var expiresAt = PinnedCheckoutExpiry(session.CreationStartedAt ?? now, checkout.SessionExpiryMinutes);
+        if (expiresAt - now < StripeMinimumCheckoutLifetime)
+            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                "This payment page has expired. Start a new payment.", AzoaErrorCodes.Conflict);
         var created = await _gateway.CreateCheckoutSessionAsync(
             _options.CredentialsFor(_environment),
             new StripeCheckoutSessionRequest
@@ -656,7 +707,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
 
     /// <inheritdoc />
     public async Task<AZOAResult<FiatCheckoutIntent>> GetIntentAsync(
-        Guid subjectUserId, Guid intentId, CancellationToken ct = default)
+        Guid subjectUserId, Guid intentId, Guid? tenantId = null, CancellationToken ct = default)
     {
         if (subjectUserId == Guid.Empty || intentId == Guid.Empty)
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
@@ -674,7 +725,8 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             || found.Result is null
             || !string.Equals(found.Result.FlowKind, HostedSessionFlowKinds.FiatCheckout, StringComparison.Ordinal)
             || !string.Equals(found.Result.ProviderKey, FiatRailIds.StripeProviderKey, StringComparison.Ordinal)
-            || !OwnedBy(found.Result, subjectUserId))
+            || !OwnedBy(found.Result, subjectUserId)
+            || !DrivenBy(found.Result, tenantId))
         {
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 "That payment could not be found.", AzoaErrorCodes.NotFound);
@@ -819,6 +871,10 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
 
     private static bool OwnedBy(HostedSession session, Guid subjectUserId) =>
         string.Equals(session.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>F-H8: the intent was started by <paramref name="tenantId"/> (null = the person themself).</summary>
+    private static bool DrivenBy(HostedSession session, Guid? tenantId) =>
+        SurrealRecordGuid.ParseOptional(session.TenantId) == tenantId;
 
     private static string FormatAmountBounds(FiatCheckoutOptions checkout) => string.Format(
         CultureInfo.InvariantCulture,

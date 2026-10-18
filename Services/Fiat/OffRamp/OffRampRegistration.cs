@@ -66,6 +66,9 @@ public static class OffRampRegistration
         Require(services, Caller, typeof(IRealValueKycGate),
             "cashing out is a value action: D46 gates it, and the reversal risk pause wraps that "
             + "same gate (AddReversalRiskValueGate)");
+        Require(services, Caller, typeof(IReversalFactSource),
+            "tenant top-ups are credited net of fees and reversed from the provider's own charge and dispute "
+            + "facts (AddFiatReversalPipeline)");
         Require(services, Caller, typeof(IHttpClientFactory),
             "every payout figure is read and written over the named Stripe client");
 
@@ -81,6 +84,16 @@ public static class OffRampRegistration
         services.AddScoped<IFiatPayoutLedger, SurrealFiatPayoutLedger>();
         services.AddScoped<IPayoutAccountService, PayoutAccountService>();
         services.AddScoped<IOffRamp, OffRampService>();
+
+        // D-8 tenant-funded payouts (Services/Fiat/OffRamp/AGENTS.md §tenant-funded): the float ledger,
+        // its domain service, top-up credit/reversal handlers (bookkeeping, never settlement handlers),
+        // the operator/tenant views, and the sweep that repairs stranded reservations.
+        services.AddScoped<ITenantPayoutLedger, SurrealTenantPayoutLedger>();
+        services.AddScoped<ITenantPayoutFunding, TenantPayoutFunding>();
+        services.AddScoped<IFiatEventHandler, TenantPayoutTopUpHandler>();
+        services.AddScoped<IFiatEventHandler, TenantPayoutTopUpReversalHandler>();
+        services.AddScoped<TenantPayoutSweep>();
+        services.AddHostedService<TenantPayoutSweepWorker>();
         services.AddScoped<IFiatEventHandler, BankPayoutEventHandler>();
         services.AddHostedService<BankPayoutReconciliationWorker>();
 

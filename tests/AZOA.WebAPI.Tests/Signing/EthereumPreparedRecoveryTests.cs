@@ -251,7 +251,7 @@ public sealed class EthereumPreparedRecoveryTests
                     var tx = Transaction1559Encoder.Current.Decode(Convert.FromHexString(raw[2..]));
                     result = new { hash = Hash(raw), from = TransactionVerificationAndRecovery.GetSenderAddress(tx), to = tx.ReceiverAddress,
                         nonce = EthereumHex.Quantity(tx.Nonce ?? 0), value = EthereumHex.Quantity(tx.Amount ?? 0),
-                        input = CorruptInput ? "0x1234" : tx.Data.StartsWith("0x", StringComparison.Ordinal) ? tx.Data : "0x" + tx.Data,
+                        input = CorruptInput ? "0x1234" : string.IsNullOrEmpty(tx.Data) ? "0x" : tx.Data.StartsWith("0x", StringComparison.Ordinal) ? tx.Data : "0x" + tx.Data,
                         chainId = EthereumHex.Quantity(tx.ChainId) };
                     break;
                 default: throw new InvalidOperationException("Unexpected RPC method: " + method);

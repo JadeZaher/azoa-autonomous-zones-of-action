@@ -27,7 +27,8 @@ namespace AZOA.WebAPI.Providers.Blockchain.Algorand;
 /// Avoids SDK versioning issues while providing full devnet/testnet/mainnet connectivity.
 /// </summary>
 public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModule, IAtomicTransferGroupModule,
-    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule, INftTransactionModule
+    IAtomicTransferGroupObservationModule, IBridgeSourceLeg, IRecipientPreparationModule, INftTransactionModule,
+    IDexTransactionModule, IExchangeTransactionModule
 {
     // Assigned in BuildClients() during the provider's one-time network binding; the
     // null-forgiving initializer documents that and clears CS8618 without a
@@ -35,6 +36,7 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
     private HttpClient _algodHttpClient = null!;
     private HttpClient? _indexerHttpClient;
     private readonly HttpMessageHandler? _httpMessageHandler;
+    private readonly IHttpClientFactory? _httpClientFactory;
     private readonly BlockchainConfigurationManager _configManager;
 
     // Signing seam (signing-core-keystone). The provider builds canonical
@@ -319,7 +321,8 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
         IKeyCustodyService? custodyService,
         IServiceScopeFactory? custodyScopeFactory,
         IAlgorandFaucet? faucet = null,
-        HttpMessageHandler? httpMessageHandler = null)
+        HttpMessageHandler? httpMessageHandler = null,
+        IHttpClientFactory? httpClientFactory = null)
         : base(config, logger)
     {
         _configManager = new BlockchainConfigurationManager(config);
@@ -329,7 +332,7 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
         _custodyScopeFactory = custodyScopeFactory;
         _faucet = faucet;
         _httpMessageHandler = httpMessageHandler;
-
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <inheritdoc/>
@@ -370,9 +373,7 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
 
     private HttpClient CreateHttpClient(string baseUrl, string? apiToken, int? timeoutMs)
     {
-        var client = _httpMessageHandler is null
-            ? new HttpClient()
-            : new HttpClient(_httpMessageHandler, disposeHandler: false);
+        var client = ChainRpcHttp.Create(ChainType, _httpMessageHandler, _httpClientFactory);
         client.BaseAddress = new Uri(baseUrl);
         client.Timeout = TimeSpan.FromMilliseconds(timeoutMs ?? 30000);
         if (!string.IsNullOrWhiteSpace(apiToken))
@@ -1901,6 +1902,9 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
         var txId = txn.TxID();
 
         // 4. Submit (BROADCAST — never auto-retry post-send: double-spend guard).
+        //    Only an Algod 4xx answer proves the pool refused this txid; any other failure is
+        //    outcome-unknown and is settled from chain truth below (see Providers/Blockchain/AGENTS.md §broadcast-outcome).
+        HttpStatusCode? refusedWith = null;
         try
         {
             await ExecuteWithRetryAsync(
@@ -1909,15 +1913,23 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
                     using var content = new ByteArrayContent(signResult.Result);
                     content.Headers.ContentType = new MediaTypeHeaderValue("application/x-binary");
                     var resp = await AlgodHttpClient.PostAsync("/v2/transactions", content, ct);
+                    if (IsDefinitiveBroadcastRefusal(resp.StatusCode))
+                        refusedWith = resp.StatusCode;
                     resp.EnsureSuccessStatusCode();
                 },
                 ct: ct,
                 safety: RetrySafety.Broadcast);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (refusedWith is not null)
         {
             return ErrorT<ConfirmedTxn>(
-                $"Broadcast failed to {opLabel} (tx {txId}); reconcile against chain truth before re-sending: {ex.Message}", ex);
+                $"Algod refused the transaction to {opLabel} (tx {txId}, HTTP {(int)refusedWith.Value}); nothing entered the pool: {ex.Message}", ex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Broadcast outcome unknown for Algorand {OpLabel} (tx {TxId}); settling from chain truth.", opLabel, txId);
+            if (ct.IsCancellationRequested)
+                return OutcomeUnknown(txId, opLabel);
         }
 
         // 5. Poll to confirmation (idempotent reads).
@@ -1939,6 +1951,19 @@ public partial class AlgorandProvider : BaseBlockchainProvider, IAlgorandASAModu
         var fee = (ulong)Math.Max(p.Fee, p.MinFee);
         txn.SetFee(fee == 0 ? 1000UL : fee);
     }
+
+    /// <summary>An Algod 4xx (other than 408) is a pool refusal of this exact txid: nothing was accepted.</summary>
+    internal static bool IsDefinitiveBroadcastRefusal(HttpStatusCode status)
+        => (int)status is >= 400 and < 500 && status != HttpStatusCode.RequestTimeout;
+
+    /// <summary>A broadcast whose acceptance is unknown: reported as pending with its txid, never as a failure.</summary>
+    private static AZOAResult<ConfirmedTxn> OutcomeUnknown(string txId, string opLabel)
+        => new()
+        {
+            IsError = false,
+            Result = new ConfirmedTxn(txId, ConfirmedRound: 0, AssetIndex: null, PendingConfirmation: true),
+            Message = $"Broadcast of {txId} to {opLabel} was not acknowledged; recorded pending — reconcile via GetTransactionStatusAsync.",
+        };
 
     private async Task<AZOAResult<ConfirmedTxn>> WaitForConfirmationAsync(
         string txId, string opLabel, CancellationToken ct)

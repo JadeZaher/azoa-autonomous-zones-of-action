@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.Interfaces.Managers;
@@ -45,13 +46,18 @@ public sealed class FirstPartyCredentialBoundaryTests
             .Should().Contain("FirstPartyLogin");
 
     [Fact]
-    public void ChildCredentialEndpoint_IsExplicitlyUnavailable()
+    public async Task ChildCredentialEndpoint_IsUnavailable_WhileTheNodeSwitchIsOff()
     {
+        var manager = new Mock<ITenantManager>(MockBehavior.Strict);
         var controller = new TenantController(
-            Mock.Of<ITenantManager>(),
+            manager.Object,
             Mock.Of<ITenantCustodialAccountManager>(), ConsentFixture.Factory(Guid.NewGuid()));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate.EnabledKey] = "false",
+        }).Build();
 
-        var result = controller.IssueChildCredential(Guid.NewGuid(), null);
+        var result = await controller.IssueChildCredential(Guid.NewGuid(), null, configuration);
 
         result.Result.Should().BeOfType<ObjectResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);

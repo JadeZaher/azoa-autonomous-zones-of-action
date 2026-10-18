@@ -8,7 +8,11 @@ namespace AZOA.WebAPI.IntegrationTests.Http.Infrastructure;
 /// <summary>The verdict the fake vendor reports from its authoritative result endpoints.</summary>
 public enum IdentomatVerdict
 {
+    /// <summary>Not decided (e.g. not yet submitted): no documented verdict value, so no <c>result</c> is reported.</summary>
     Pending,
+
+    /// <summary>Submitted and held for a human decision: the documented <c>MANUAL_CHECK</c>.</summary>
+    ManualCheck,
     Approved,
     Rejected,
 }
@@ -43,6 +47,9 @@ public sealed class IdentomatSession
     public required string ClientUserId { get; init; }
     public required bool IsBusiness { get; init; }
     public IdentomatVerdict Verdict { get; set; } = IdentomatVerdict.Pending;
+
+    /// <summary>Set by <c>POST /external-api/delete/</c>; a deleted session no longer answers the result endpoints.</summary>
+    public bool Deleted { get; set; }
 }
 
 /// <summary>
@@ -210,10 +217,22 @@ public sealed class IdentomatVendor
             new JsonObject { ["result"] = new JsonObject { ["stepsResults"] = steps } }.ToJsonString());
     }
 
+    /// <summary>Legacy <c>/external-api/result/</c> calls received so far (budget assertions).</summary>
+    public int IdentityResultRequests => Volatile.Read(ref _identityResultRequests);
+
+    private int _identityResultRequests;
+
+    /// <summary>Session tokens the node asked the vendor to delete, in request order.</summary>
+    public IReadOnlyList<string> DeleteRequests => _deleteRequests.ToArray();
+
+    private readonly ConcurrentQueue<string> _deleteRequests = new();
+
     private HttpResponseMessage RespondFromWidgetHost(VendorRequest request)
     {
-        if (request.Method != HttpMethod.Post || request.Path != "/external-api/result/")
+        if (request.Method != HttpMethod.Post || request.Path is not ("/external-api/result/" or "/external-api/delete/"))
             return new HttpResponseMessage(HttpStatusCode.NotFound);
+        if (request.Path == "/external-api/result/")
+            Interlocked.Increment(ref _identityResultRequests);
         using var document = JsonDocument.Parse(request.Body);
         var root = document.RootElement;
         if (!root.TryGetProperty("company_key", out var key) || key.GetString() != CompanyKey)
@@ -221,7 +240,9 @@ public sealed class IdentomatVendor
 
         // Keyed by the session token the applicant URL carries: in standard mode that is the id.
         var token = root.TryGetProperty("session_token", out var tokenElement) ? tokenElement.GetString() : null;
-        var session = Sessions.FirstOrDefault(candidate => !candidate.IsBusiness && candidate.SessionToken == token);
+        var session = Sessions.FirstOrDefault(candidate => !candidate.IsBusiness && candidate.SessionToken == token && !candidate.Deleted);
+        if (request.Path == "/external-api/delete/")
+            return Delete(token, session);
         if (session is null)
             return VendorEdge.Json(HttpStatusCode.OK, """{"result":null}""");
 
@@ -241,7 +262,19 @@ public sealed class IdentomatVendor
                 },
             }.ToJsonString(),
             IdentomatVerdict.Rejected => """{"result":"rejected","reject_reason":{"value":"DOCUMENT_EXPIRED","description":"Document expired"}}""",
-            _ => """{"result":"MANUAL_CHECK"}""",
+            IdentomatVerdict.ManualCheck => """{"result":"MANUAL_CHECK"}""",
+            // The docs define no undecided shape; the fake reports no verdict (see Http/AGENTS.md §identomat-fake).
+            _ => """{"result":null}""",
         });
+    }
+
+    // Documented answers: `true` when deleted, `{"argumentError":"session-not-found"}` otherwise (IdentomatSessionDeletion).
+    private HttpResponseMessage Delete(string? token, IdentomatSession? session)
+    {
+        _deleteRequests.Enqueue(token ?? string.Empty);
+        if (session is null)
+            return VendorEdge.Json(HttpStatusCode.OK, """{"argumentError":"session-not-found"}""");
+        session.Deleted = true;
+        return VendorEdge.Json(HttpStatusCode.OK, "true");
     }
 }

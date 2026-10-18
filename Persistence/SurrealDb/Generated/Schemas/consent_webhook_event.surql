@@ -17,6 +17,23 @@ DEFINE PARAM IF NOT EXISTS $consent_webhook_event_status VALUE ["Pending", "Deli
 
 DEFINE TABLE IF NOT EXISTS consent_webhook_event SCHEMAFULL;
 
+DEFINE FIELD IF NOT EXISTS transition_id ON TABLE consent_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS body_json ON TABLE consent_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS body_hash ON TABLE consent_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS registration_id ON TABLE consent_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS destination_revision ON TABLE consent_webhook_event TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS destination_url ON TABLE consent_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS version ON TABLE consent_webhook_event TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS retry_generation ON TABLE consent_webhook_event TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS cycle_attempt_count ON TABLE consent_webhook_event TYPE int
+    DEFAULT ALWAYS 0;
+DEFINE FIELD IF NOT EXISTS lease_id ON TABLE consent_webhook_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS lease_expires_at ON TABLE consent_webhook_event TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS attempt_secret_revision ON TABLE consent_webhook_event TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS attempt_encrypted_secret ON TABLE consent_webhook_event TYPE option<string>;
+
 -- Core identity
 DEFINE FIELD IF NOT EXISTS id ON TABLE consent_webhook_event TYPE string
     ASSERT $value != NONE AND $value != "";
