@@ -9,6 +9,20 @@ dedicated `token_use=node_operator` JWT is stored only in an HttpOnly,
 SameSite=Strict cookie scoped to `/api/operator`; it is never copied into the
 Azoa SDK or browser storage.
 
+### Same-origin check behind a proxy
+
+`requireSameOriginMutation` (`lib/operator-bff.ts`) compares the browser `Origin` exactly with the
+public origin. Behind Railway's proxy `request.url` is the container's internal address, which
+refused every operator write in production (QA C1). The public origin is, in order:
+1. `PUBLIC_ORIGIN` when set (e.g. `https://azoa-frontend-production.up.railway.app`): the only accepted
+   origin; a malformed value refuses every mutation rather than falling back to headers.
+2. Otherwise `X-Forwarded-Proto` + `X-Forwarded-Host` (or `Host`), each required to be single-valued;
+   a comma-joined chain, a host carrying a path or credentials, or a non-HTTP(S) scheme refuses.
+3. With no host header at all (tests), the request URL's origin.
+Trusting the forwarded headers is safe for this check: it is a CSRF defence, and a cross-site page can
+neither set `X-Forwarded-*` nor send `x-azoa-operator-request` without a CORS preflight this app
+never grants. Set `PUBLIC_ORIGIN` on a deployed host anyway; it removes the dependency on proxy headers.
+
 Every console request goes through the explicit allowlist in
 `app/api/operator/[...path]/route.ts`. Mutations require a same-origin `Origin`
 and `x-azoa-operator-request: 1`. Request bodies are rebuilt from permitted
@@ -126,3 +140,16 @@ table is untouched; `route.ts` consults the round-4 table first and falls throug
   `src/test/slices/operator-console.slice.test.tsx` mounts console pages with their fetch routed
   through the real `[...path]/route.ts` to an MSW upstream that answers each controller's real body
   shape, so a wrong `bare` flag fails a test.
+
+## §money-boards
+
+Cash-outs (`/operator/payouts`), returned payments (`/operator/reversals`) and runs waiting on
+settlement (`/operator/parked-runs`) moved here from `/admin/*` (QA M1): their APIs are `Operator`
+policy, which only the operator token passes. They call the BFF through `lib/operator-result.ts`
+`operatorResult`, which returns an SDK-shaped `Result` so the boards keep their `isOk` and
+`isRecentOperatorLoginRequired` handling; a step-up refusal is routed to `/operator/login` by the
+shell's `azoa:operator-step-up-required` listener. Allowlist entries: `admin/fiat-payouts…`,
+`admin/fiat-reversals…` (ids pinned to the ledger's hex32 / hex64 record ids) and
+`action/runs/reconcile-sweep`. Bodies are rebuilt: actions with no input require `{}`. A board whose
+read failed renders no totals and no empty-state sentence, only the error (the old page showed
+"0.00 USD" beside a 403).

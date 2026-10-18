@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import type { ApiKeyCreateResult, ApiKeyInfo, SelfIssuableApiKeyScopeInfo } from 'azoa-sdk'
+import { userFacingMessage } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -25,39 +27,9 @@ import {
 } from '@/components/ui/dialog'
 import { Copy, Check } from 'lucide-react'
 
-// ─── Types ───
-
-interface CreateApiKeyResponse {
-  id: string
-  key: string
-  name: string
-  prefix: string
-  scopes: string[]
-  expiresAt: string | null
-  createdAt: string
-}
-
-interface ApiKeyInfo {
-  id: string
-  name: string
-  prefix: string
-  scopes: string[]
-  createdAt: string
-  lastUsedAt: string | null
-  expiresAt: string | null
-  isRevoked: boolean
-}
-
-/** One self-issuable scope with its description (from GET /api/apikey/scopes). */
-interface SelfIssuableApiKeyScopeInfo {
-  scope: string
-  description: string
-  isSelfIssuable: boolean
-}
-
 // ─── Helpers ───
 
-function formatDate(dateStr: string | null): string {
+function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   return new Date(dateStr).toLocaleDateString(undefined, {
     year: 'numeric',
@@ -67,7 +39,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 function getKeyStatus(key: ApiKeyInfo): 'active' | 'revoked' | 'expired' {
-  if (key.isRevoked) return 'revoked'
+  if (!key.isActive || key.revokedAt) return 'revoked'
   if (key.expiresAt && new Date(key.expiresAt) < new Date()) return 'expired'
   return 'active'
 }
@@ -104,7 +76,7 @@ function CopyButton({ text }: { text: string }) {
 
 // ─── Create Key Form ───
 
-function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) => void }) {
+function CreateKeyForm({ onCreated }: { onCreated: (key: ApiKeyCreateResult) => void }) {
   const [name, setName] = useState('')
   const [expiresInDays, setExpiresInDays] = useState('')
   const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
@@ -146,13 +118,11 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
     setLoading(true)
     setError(null)
 
-    const scopeList = Array.from(selectedScopes)
-
-    const body: Record<string, unknown> = { name }
-    if (expiresInDays.trim()) body.expiresInDays = parseInt(expiresInDays, 10)
-    body.scopes = scopeList.join(',')
-
-    const res = await azoa.api.request<CreateApiKeyResponse>('POST', '/api/apikey', body)
+    const res = await azoa.api.createApiKey({
+      name,
+      scopes: Array.from(selectedScopes),
+      ...(expiresInDays.trim() ? { expiresInDays: parseInt(expiresInDays, 10) } : {}),
+    })
 
     if (isOk(res)) {
       onCreated(res.value)
@@ -160,7 +130,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
       setExpiresInDays('')
       setSelectedScopes(new Set())
     } else {
-      setError(res.error.message)
+      setError(userFacingMessage(res.error))
     }
     setLoading(false)
   }
@@ -240,7 +210,7 @@ function CreateKeyForm({ onCreated }: { onCreated: (key: CreateApiKeyResponse) =
 
 // ─── Newly Created Key Display ───
 
-function NewKeyDisplay({ apiKey, onDismiss }: { apiKey: CreateApiKeyResponse; onDismiss: () => void }) {
+function NewKeyDisplay({ apiKey, onDismiss }: { apiKey: ApiKeyCreateResult; onDismiss: () => void }) {
   return (
     <Card className="border-primary/50 bg-primary/5">
       <CardHeader className="pb-2">
@@ -322,17 +292,17 @@ function KeyList({
   keys: ApiKeyInfo[]
   loading: boolean
   onRefresh: () => void
-  onRotated: (key: CreateApiKeyResponse) => void
+  onRotated: (key: ApiKeyCreateResult) => void
 }) {
   const [error, setError] = useState<string | null>(null)
 
   const handleRevoke = async (id: string) => {
     setError(null)
-    const res = await azoa.api.request('POST', `/api/apikey/${id}/revoke`)
+    const res = await azoa.api.revokeApiKey(id)
     if (isOk(res)) {
       onRefresh()
     } else {
-      setError(res.error.message)
+      setError(userFacingMessage(res.error))
     }
   }
 
@@ -340,20 +310,20 @@ function KeyList({
     setError(null)
     const res = await azoa.api.rotateApiKey(id)
     if (isOk(res)) {
-      onRotated(res.value as unknown as CreateApiKeyResponse)
+      onRotated(res.value)
       onRefresh()
     } else {
-      setError(res.error.message)
+      setError(userFacingMessage(res.error))
     }
   }
 
   const handleDelete = async (id: string) => {
     setError(null)
-    const res = await azoa.api.request('DELETE', `/api/apikey/${id}`)
+    const res = await azoa.api.deleteApiKey(id)
     if (isOk(res)) {
       onRefresh()
     } else {
-      setError(res.error.message)
+      setError(userFacingMessage(res.error))
     }
   }
 
@@ -393,11 +363,11 @@ function KeyList({
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell>
                       <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
-                        {key.prefix}...
+                        {key.keyPrefix}...
                       </code>
                     </TableCell>
                     <TableCell>
-                      {key.scopes && key.scopes.length > 0 ? (
+                      {key.scopes.length > 0 ? (
                         <div className="flex gap-1 flex-wrap">
                           {key.scopes.map((s) => (
                             <Badge key={s} variant="outline" className="text-xs">
@@ -409,7 +379,7 @@ function KeyList({
                         <span className="text-xs text-muted-foreground">full access</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs">{formatDate(key.createdAt)}</TableCell>
+                    <TableCell className="text-xs">{formatDate(key.createdDate)}</TableCell>
                     <TableCell className="text-xs">{formatDate(key.lastUsedAt)}</TableCell>
                     <TableCell className="text-xs">{formatDate(key.expiresAt)}</TableCell>
                     <TableCell>
@@ -466,16 +436,16 @@ export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKeyInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [newKey, setNewKey] = useState<CreateApiKeyResponse | null>(null)
+  const [newKey, setNewKey] = useState<ApiKeyCreateResult | null>(null)
 
   const fetchKeys = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const res = await azoa.api.request<ApiKeyInfo[]>('GET', '/api/apikey')
+    const res = await azoa.api.listApiKeys()
     if (isOk(res)) {
       setKeys(res.value)
     } else {
-      setError(res.error.message)
+      setError(userFacingMessage(res.error))
     }
     setLoading(false)
   }, [])
@@ -484,7 +454,7 @@ export default function ApiKeysPage() {
     fetchKeys()
   }, [fetchKeys])
 
-  const handleKeyCreated = (key: CreateApiKeyResponse) => {
+  const handleKeyCreated = (key: ApiKeyCreateResult) => {
     setNewKey(key)
     fetchKeys()
   }

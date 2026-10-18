@@ -3,7 +3,7 @@ export type * from "./hold-commands.js";
 export type * from "./dex.js";
 export type * from "./wtt.js";
 export type * from "./consent.js";
-export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./client.js";
+export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending, normalizeApiKeyScopes } from "./client.js";
 export type * from "./deployments.js";
 export type * from "./identity.js";
 export type * from "./money.js";

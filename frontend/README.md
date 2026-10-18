@@ -95,6 +95,12 @@ public HTTPS API origin. The Railway health probe is `GET /api/health`, which
 returns 503 when that runtime contract is invalid. The local compose stack uses
 `AZOA_ALLOW_INSECURE_LOCAL_API=true`; never deploy that override.
 
+`PUBLIC_ORIGIN` (recommended on every deployed host, e.g.
+`https://azoa-frontend-production.up.railway.app`) is the exact origin browsers use to reach this
+frontend. The operator console accepts mutations only from that origin. Without it the origin is
+derived from the proxy's single-valued `X-Forwarded-Proto` / `X-Forwarded-Host` (or `Host`); see
+`src/app/operator/AGENTS.md` §Same-origin check behind a proxy.
+
 ## 🔧 Development
 
 ### Available Scripts

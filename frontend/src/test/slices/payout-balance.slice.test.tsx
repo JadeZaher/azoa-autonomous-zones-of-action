@@ -54,4 +54,20 @@ describe('payout balance slice', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('2 reservations for a cash-out')
     expect(screen.getByRole('alert')).toHaveTextContent(/held since \d+\/\d+\/2026/)
   })
+
+  it('says payments are not configured when the node has no payment rail, and keeps no resumable top-up (M3)', async () => {
+    const api = tenantPayoutApi([], { railUnavailable: true })
+    const { user } = await renderSliceWithAuth(<PayoutBalancePage />, { apis: [api] })
+
+    await user.type(await screen.findByLabelText('Amount'), '25.00')
+    const pay = screen.getByRole('button', { name: 'Continue to payment' })
+    await waitFor(() => expect(pay).toBeEnabled())
+    await user.click(pay)
+
+    expect(await screen.findByText(/Payments are not configured on this node/)).toBeInTheDocument()
+    expect(screen.queryByText(/Try again shortly/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Resume that top-up/ })).not.toBeInTheDocument()
+    expect(pay).toBeDisabled()
+    expect(api.topUps.size).toBe(0)
+  })
 })

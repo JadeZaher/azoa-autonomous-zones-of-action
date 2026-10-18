@@ -83,13 +83,74 @@ export function clearOperatorCookie(response: NextResponse): void {
     });
 }
 
+/** Normalizes `PUBLIC_ORIGIN` to an exact `scheme://host[:port]` origin, or null when it is not one. */
+function configuredPublicOrigin(value: string | undefined): string | null {
+    if (!value) return null;
+    try {
+        const url = new URL(value.trim());
+        if (
+            !["http:", "https:"].includes(url.protocol) ||
+            url.username ||
+            url.password ||
+            url.search ||
+            url.hash ||
+            url.pathname !== "/"
+        )
+            return null;
+        return url.origin;
+    } catch {
+        return null;
+    }
+}
+
+/** A single-valued forwarded header; a comma-joined chain is ambiguous and yields `undefined`. */
+function singleHeader(request: NextRequest, name: string): string | null | undefined {
+    const value = request.headers.get(name);
+    if (value === null) return null;
+    const trimmed = value.trim();
+    return !trimmed || trimmed.includes(",") ? undefined : trimmed;
+}
+
+/**
+ * The public origin the browser is talking to, or null when it cannot be determined unambiguously.
+ * See `app/operator/AGENTS.md` §Same-origin check behind a proxy.
+ */
+export function expectedPublicOrigin(request: NextRequest): string | null {
+    if (process.env.PUBLIC_ORIGIN !== undefined && process.env.PUBLIC_ORIGIN !== "")
+        return configuredPublicOrigin(process.env.PUBLIC_ORIGIN);
+    const internal = new URL(request.url);
+    const forwardedHost = singleHeader(request, "x-forwarded-host");
+    const forwardedProto = singleHeader(request, "x-forwarded-proto");
+    const host = singleHeader(request, "host");
+    if (forwardedHost === undefined || forwardedProto === undefined || host === undefined)
+        return null;
+    const publicHost = forwardedHost ?? host;
+    if (!publicHost) return internal.origin;
+    const proto = (forwardedProto ?? internal.protocol.replace(/:$/, "")).toLowerCase();
+    if (proto !== "http" && proto !== "https") return null;
+    try {
+        const url = new URL(`${proto}://${publicHost}`);
+        const defaultPort = proto === "https" ? 443 : 80;
+        const lowered = publicHost.toLowerCase();
+        if (
+            (url.host !== lowered && `${url.host}:${defaultPort}` !== lowered) ||
+            url.username ||
+            url.password
+        )
+            return null;
+        return url.origin;
+    } catch {
+        return null;
+    }
+}
+
 export function requireSameOriginMutation(
     request: NextRequest,
 ): NextResponse | null {
     const origin = request.headers.get("origin");
-    const expectedOrigin = new URL(request.url).origin;
+    const expectedOrigin = expectedPublicOrigin(request);
     const intent = request.headers.get(OPERATOR_REQUEST_HEADER);
-    if (origin !== expectedOrigin || intent !== "1") {
+    if (!expectedOrigin || origin !== expectedOrigin || intent !== "1") {
         return NextResponse.json(
             { message: "The operator request could not be verified." },
             { status: 403, headers: NO_STORE_HEADERS },

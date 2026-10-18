@@ -19,6 +19,9 @@ import {
     Fingerprint,
     GitMerge,
     Percent,
+    Banknote,
+    Undo2,
+    Clock,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -32,6 +35,9 @@ const OPERATOR_LINKS = [
     // OI-27 / OI-65. Without this link the two money boards are reachable only with a JWT and a
     // curl, which is the same "nobody reads it" the durable rows were written to end.
     { href: "/operator/money", label: "Money", icon: Wallet },
+    { href: "/operator/payouts", label: "Cash-outs", icon: Banknote },
+    { href: "/operator/reversals", label: "Returned payments", icon: Undo2 },
+    { href: "/operator/parked-runs", label: "Waiting on settlement", icon: Clock },
     { href: "/operator/genesis", label: "Platform genesis", icon: Wallet },
     { href: "/operator/actions", label: "Action recovery", icon: RefreshCw },
     { href: "/operator/chains", label: "Chains", icon: Link2 },

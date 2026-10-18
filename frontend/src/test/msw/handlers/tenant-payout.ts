@@ -17,9 +17,10 @@ export const TENANT_PAYOUT_SLICE_PAYMENT_URL = 'https://checkout.stripe.test/c/p
 /**
  * Follows `Services/Fiat/OffRamp/TenantPayoutBalanceController.cs`: the request key is the admission
  * key, so the same key resumes the same Checkout intent (`resumed: true`) and a different amount under
- * that key is a 409 (`FiatRailProvider` admission mismatch); a blank key is a 400.
+ * that key is a 409 (`FiatRailProvider` admission mismatch); a blank key is a 400; `railUnavailable`
+ * models a node with no Stripe rail (503 `RAIL_UNAVAILABLE`).
  */
-export function tenantPayoutApi(floats: TenantPayoutFloatView[] = []): TenantPayoutApi {
+export function tenantPayoutApi(floats: TenantPayoutFloatView[] = [], options: { railUnavailable?: boolean } = {}): TenantPayoutApi {
   let current = floats
   const topUps = new Map<string, { amountMinorUnits: number; intent: TenantPayoutTopUp }>()
   const handlers = [
@@ -27,6 +28,9 @@ export function tenantPayoutApi(floats: TenantPayoutFloatView[] = []): TenantPay
     http.post(apiUrl('/api/fiat/tenant-payout-balance/top-up'), async ({ request }) => {
       const denied = requireBearer(request)
       if (denied) return denied
+      // No Stripe rail registered: the controller refuses before any Checkout intent exists.
+      if (options.railUnavailable)
+        return HttpResponse.json(azoaError('Adding funds is not available on this node right now.', 'RAIL_UNAVAILABLE'), { status: 503 })
       const body = (await request.json()) as { requestKey?: string; amountMinorUnits?: number }
       const key = body.requestKey?.trim() ?? ''
       if (!key || key.length > 128)

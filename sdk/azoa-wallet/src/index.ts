@@ -22,6 +22,7 @@ export {
   SdkErrorCode,
   isActionConflict,
   isKybRequired,
+  userFacingMessage,
   isNftStageCostsChanged,
   isRecentOperatorLoginRequired,
   NFT_STAGE_COSTS_CHANGED,
@@ -68,7 +69,7 @@ export { SolanaProvider } from "./solana/index.js";
 export type { SolanaProviderConfig } from "./solana/index.js";
 
 // API client
-export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending } from "./api/index.js";
+export { AzoaApiClient, DAPP_ROLES, isCredentialRevocationPending, normalizeApiKeyScopes } from "./api/index.js";
 export type {
   AzoaApiConfig,
   NftLifecycleView,
@@ -149,6 +150,9 @@ export type {
   // ApiKey scope discovery (dapp-developer-experience audit)
   SelfIssuableApiKeyScope,
   SelfIssuableApiKeyScopeInfo,
+  ApiKeyCreateParams,
+  ApiKeyCreateResult,
+  ApiKeyInfo,
   ApiKeyScope,
   ApiKeyScopeInfo,
   // DappSeries CRUD (DappSeriesController)

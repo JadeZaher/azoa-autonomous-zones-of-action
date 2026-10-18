@@ -151,10 +151,11 @@ const navGroups: NavGroup[] = [
     audience: 'all',
     items: [
       { href: '/admin/key-rotation', label: 'Key Rotation', icon: ShieldAlert },
-      { href: '/admin/sagas', label: 'Saga Console', icon: GitMerge },
-      { href: '/admin/parked-runs', label: 'Waiting on Settlement', icon: Clock },
-      { href: '/admin/fiat-reversals', label: 'Returned Payments', icon: Undo2 },
-      { href: '/admin/fiat-payouts', label: 'Cash-outs', icon: Banknote },
+      // Operator-policy boards live in the operator console (QA M1); these open its sign-in.
+      { href: '/operator/sagas', label: 'Saga Console', icon: GitMerge },
+      { href: '/operator/parked-runs', label: 'Waiting on Settlement', icon: Clock },
+      { href: '/operator/reversals', label: 'Returned Payments', icon: Undo2 },
+      { href: '/operator/payouts', label: 'Cash-outs', icon: Banknote },
       { href: '/node-transparency', label: 'Node Economic Rules', icon: Scale },
     ],
   },
