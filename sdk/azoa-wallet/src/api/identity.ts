@@ -40,8 +40,12 @@ export interface KycSubmission {
 /** `POST /api/operator/hosted-sessions/{id}/refresh` (Identomat KYC/KYB included). */
 export interface HostedSessionRefreshReceipt { sessionId: string; status: string; providerKey: string }
 
-/** `POST /api/wallet/{id}/ownership-challenge`: the exact message the external wallet signs. */
+/**
+ * `POST /api/wallet/{id}/ownership-challenge`: the purpose-bound `AZOA-WALLET-OWNERSHIP-v1` text the
+ * external wallet signs (RV-L4-03). `message` names this exact user+wallet, so it is never satisfied
+ * by a login signature; echo it verbatim back to `proveWalletOwnership`.
+ */
 export interface WalletOwnershipChallenge { address: string; chainType: string; nonce: string; message: string; expiresAt: string }
 
-/** `POST /api/wallet/{id}/ownership-proof` result. */
+/** `POST /api/wallet/{id}/ownership-proof` result: the signature verified against the named challenge. */
 export interface WalletOwnershipProof { userId: string; walletId: string; chainType: string; address: string; provenAt: string }

@@ -5,7 +5,7 @@ import type { HoldLiabilityPage, HoldLiabilityView, HoldReserveAssetView, HoldSt
 import type { DexCapabilityView, NodeFeeScheduleUpdateRequest, DexQuoteRequest, DexQuoteAvailability, DexQuoteView, SwapAdmissionRequest, SwapOperationView, SwapVersionCommand, SwapStageCommand, SwapExposureCommand, SwapExternalSigningView, SwapBrowserStageCommand, SwapCleanupRequest, SwapCleanupStageCommand } from "./dex.js";
 import type { WttQuoteRequest, WttOfferView, WttStartRequest, WttCancelRequest, WttOperationView, WttOperationPage, WttContinueCommand, WttStageCommand, WttParticipantSigningView, WttParticipantSignatureCommand, WttNativeOutputOffer, WttNativeOutputRequest, WttCleanupOffer, WttCleanupRequest } from "./wtt.js";
 import type { KycSessionStart, KycSubmission, HostedSessionRefreshReceipt, WalletOwnershipChallenge, WalletOwnershipProof } from "./identity.js";
-import type { FiatPayoutResolveRequest, FiatReversalResolveRequest, TenantPayoutTopUpParams, TenantPayoutTopUp, TenantPayoutFloatView } from "./money.js";
+import type { FiatPayoutResolveRequest, FiatReversalResolveRequest, TenantPayoutTopUpParams, TenantPayoutTopUp, TenantPayoutFloatView, PayoutAccountSetupResolution } from "./money.js";
 import type { ClientSigningPlanView, ClientSignedSubmission, StuckClientSignedOperationView, ClientSigningResolution } from "./operations.js";
 import type { DeploymentOperatorResolution, ParkedDeployment, RetiredExchangeRowView, RetiredExchangeResolution, WalletIdentityMigrationView, WalletIdentityConflictRepair, SwapOperatorSettlementRequest, WttStageKeyReadinessReport, WttStageKeyRewrapReport } from "./operator.js";
 import { ok, err } from "../core/result.js";
@@ -4191,16 +4191,25 @@ export class AzoaApiClient {
     return this.request("POST", API_PATHS.KYC_REFRESH, {});
   }
 
-  /** Issues the exact message the caller's external wallet signs to prove it controls `walletId`. */
+  /**
+   * Issues the purpose-bound `AZOA-WALLET-OWNERSHIP-v1` text the caller's external wallet signs to
+   * prove it controls `walletId` (RV-L4-03). Distinct from the login challenge's domain prefix, so a
+   * login signature can never be relayed as an ownership proof.
+   */
   async createWalletOwnershipChallenge(walletId: string): Promise<Result<WalletOwnershipChallenge, SdkError>> {
     assertUuid(walletId, "walletId");
     return this.request("POST", API_PATHS.WALLET_OWNERSHIP_CHALLENGE(walletId), {});
   }
 
-  /** Submits the signature over the challenge message, verbatim; the server records the proof flag. */
-  async proveWalletOwnership(walletId: string, signature: string, message?: string): Promise<Result<WalletOwnershipProof, SdkError>> {
+  /**
+   * Submits the signature over `challenge.message`, echoed verbatim: the server resolves the exact
+   * challenge named by its nonce rather than guessing the caller's latest live one (up to 5 can be
+   * live per address at once). The server records the proof only when the signer matches `address`.
+   */
+  async proveWalletOwnership(walletId: string, signature: string, message: string): Promise<Result<WalletOwnershipProof, SdkError>> {
     assertUuid(walletId, "walletId");
     assertNonEmpty(signature, "signature");
+    assertNonEmpty(message, "message");
     return this.request("POST", API_PATHS.WALLET_OWNERSHIP_PROOF(walletId), { signature, message });
   }
 
@@ -4252,6 +4261,13 @@ export class AzoaApiClient {
     assertNonEmpty(reversalId, "reversalId");
     assertNonEmpty(request.reason, "reason");
     return this.request("POST", API_PATHS.FIAT_REVERSAL_RESOLVE(reversalId), request);
+  }
+
+  /** Operator (RV-L1-01, step-up required): attaches or releases a payout-account setup stuck past its Stripe replay window. */
+  async resolvePayoutAccountSetup(userId: string, reason: string): Promise<Result<PayoutAccountSetupResolution, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(reason, "reason");
+    return this.request("POST", API_PATHS.FIAT_PAYOUT_ACCOUNT_SETUP_RESOLVE(userId), { reason });
   }
 
   /** Tenant: every payout float (one per currency/environment) tenant-priced cash-outs draw on (D-8). */
