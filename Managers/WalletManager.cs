@@ -608,10 +608,11 @@ public class WalletManager : IWalletManager
             : AZOAResult<IWallet>.Failure("Platform wallets are custodial; ownership proofs apply to external wallets.");
     }
 
-    private const string ProvenElsewhere = "This address is proven by another account; connect it with a signed ownership proof.";
+    private const string ProvenElsewhere = "This address is proven by another account whose wallet still holds it; that account must remove the wallet first.";
 
+    /// <summary>RV-L4-09: only a still-valid foreign proof blocks; a stale one is superseded by the new holder's ownership proof.</summary>
     private async Task<bool> ProvenByAnotherUserAsync(string chainType, string address, Guid userId)
-        => _ownershipProofs is not null && await _ownershipProofs.GetAsync(chainType, address) is { } proof && proof.UserId != userId;
+        => _ownershipProofs is not null && await _ownershipProofs.IsHeldByAnotherUserAsync(chainType, address, userId);
 
     // ─── New: Export wallet private key ───
 

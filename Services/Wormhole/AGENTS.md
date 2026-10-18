@@ -125,9 +125,20 @@ acknowledgement, see `Providers/Blockchain/AGENTS.md` §module activation). It g
 start, and workflow admission in `WttActionResolver` (a disabled switch fails the node before any quote). Admitted
 operations keep continuing and reconciling. It flips on per round-4 plan §8 gate 5.
 
-Every value-moving entry (start, continue, native output) consults the risk-hold-wrapped `IRealValueKycGate` for the
-credential's actor (tenant overload under a tenant credential): an unverified or reversal-paused account is refused before
-any admission, claim or send (X-2). Residual-return cleanup and cancellation stay open (they return value to the owner).
+The value gate runs at admission (`StartCoreAsync`) and at the first-send authorization of a value-sending stage
+(`AuthorizeCurrentAsync` -> `StageValueRefusalAsync`, the single chokepoint every continue/submit/participant path
+reaches), not on every continue (X-2, narrowed by RV-X R-2):
+
+- **Who.** A direct caller passes the risk-hold-wrapped `IRealValueKycGate` (KYC + reversal pause; tenant overload under a
+  tenant credential). A workflow node passes only the reversal pause (`ValueRailCapabilityGate.AccountStandingAsync`, the
+  same predicate as `AdmitValueNodeAsync`), so identity verification never becomes a workflow precondition.
+- **Which stages.** Source stages (`Approve`/`Attest`/`Transfer`) are gated: nothing has left the source wallet before the
+  `Transfer` is authorized. `Cleanup:*` source stages and `Cleanup` phase residual returns are never gated. Target,
+  participant and native-output stages are exempt when the recipient is the actor's own wallet (custodial or
+  signature-proven, `OwnRecipientAsync`); once the source leg may have left, refusing them would only strand the value in
+  bridge custody. A delivery to anybody else stays gated, because it is a value move out.
+- Claim and preparation of an unsent source stage stay open: they move nothing, and cancel releases the reservation.
+  Cancellation stays open too.
 
 ## Recipient rule
 

@@ -162,6 +162,13 @@ public sealed class FiatOptions
 
     public int RequestTimeoutSeconds { get; set; } = 30;
 
+    /// <summary>Upper bound on one Stripe request; release margins downstream assume it (OffRamp AGENTS.md §account-recovery R-2).</summary>
+    public const int MaxRequestTimeoutSeconds = 120;
+
+    /// <summary>The configured request timeout, defaulted to 30 s and clamped to 1..<see cref="MaxRequestTimeoutSeconds"/>.</summary>
+    public TimeSpan EffectiveRequestTimeout =>
+        TimeSpan.FromSeconds(RequestTimeoutSeconds <= 0 ? 30 : Math.Min(RequestTimeoutSeconds, MaxRequestTimeoutSeconds));
+
     /// <summary>Replay tolerance on the webhook signature timestamp.</summary>
     public int WebhookToleranceSeconds { get; set; } = 300;
 
@@ -197,7 +204,7 @@ public sealed class FiatOptions
     public StripeCredentials CredentialsFor(RailEnvironment environment) => new(
         ApiBaseUrl,
         ForEnvironment(environment).SecretKey,
-        TimeSpan.FromSeconds(RequestTimeoutSeconds <= 0 ? 30 : RequestTimeoutSeconds));
+        EffectiveRequestTimeout);
 
     /// <summary>
     /// The rail's own environment → endpoint mapping, handed to the factory. A null result means
@@ -221,7 +228,7 @@ public sealed class FiatOptions
         return new BlockchainNetworkConfig
         {
             NodeUrl = ApiBaseUrl,
-            TimeoutMs = (RequestTimeoutSeconds <= 0 ? 30 : RequestTimeoutSeconds) * 1000,
+            TimeoutMs = (int)EffectiveRequestTimeout.TotalMilliseconds,
             RetryCount = 0,
             IsEnabled = true,
         };

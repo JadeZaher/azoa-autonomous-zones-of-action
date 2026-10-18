@@ -31,6 +31,16 @@ public sealed class SurrealWalletOwnershipProofStore(ISurrealExecutor executor) 
     }
 
     /// <inheritdoc/>
+    public async Task<bool> IsHeldByAnotherUserAsync(string chainType, string address, Guid userId, CancellationToken ct = default)
+    {
+        if (!WalletAuthIdentity.TryCreate(address, chainType, out var canonicalAddress, out var canonicalChain)) return false;
+        var current = await executor.QuerySingleAsync<Row>(SurrealQuery<Row>.Key(RecordId(canonicalChain, canonicalAddress)), ct);
+        if (current is null || current.ChainType != canonicalChain || current.Address != canonicalAddress) return false;
+        var holder = SurrealRecordGuid.Parse(current.UserId);
+        return holder != userId && await HolderProofIsValidAsync(current, holder, ct);
+    }
+
+    /// <inheritdoc/>
     public async Task<AZOAResult<WalletOwnershipProofWrite>> RecordAsync(WalletOwnershipProof proof, CancellationToken ct = default)
     {
         if (proof.UserId == Guid.Empty || proof.WalletId == Guid.Empty

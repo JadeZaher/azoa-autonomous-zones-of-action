@@ -30,7 +30,6 @@ public sealed partial class WttLifecycleService
         var operation = await ReadOwnedAsync(operationId, principal.Credential, false, ct);
         if (operation is null || operation.Version != command.ExpectedVersion) return Changed<WttOperationView>();
         if (AuthorityMismatch(operation, principal) is { } mismatch) return Forbidden<WttOperationView>(mismatch);
-        if (await ValueRefusalAsync(principal.Credential, ct) is { } refused) return Forbidden<WttOperationView>(refused);
         var intent = Intent(operation);
         if (operation.State is not ("Admitted" or "Ready" or "Active"))
             return Conflict<WttOperationView>("No participant step is available while the operation is " + operation.State + "; refresh its state.");
@@ -310,6 +309,7 @@ public sealed partial class WttLifecycleService
             originalPhase = stage.OriginalStageId is { } originalId ? (await store.GetStageAsync(originalId, ct))?.Phase : null;
         var authority = await StageAuthorityAsync(intent, stage.Phase, stage.ParticipantAddress is not null, originalPhase, principal, ct);
         if (authority.IsError || authority.Result is null) return Forbidden<WttOperationStage>(authority.Message);
+        if (await StageValueRefusalAsync(intent, stage.Phase, stage.Stage, principal, ct) is { } refused) return Forbidden<WttOperationStage>(refused);
         var authorized = await store.AuthorizeAsync(operationId, operation.Version, BareId(stage.Id), stage.Version, authority.Result, ct);
         if (authorized is null) return Changed<WttOperationStage>();
         await recovery.ReconcileAsync(operationId, ct);

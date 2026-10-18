@@ -49,7 +49,7 @@ public class BlockchainOperationManagerExtendedTests
             new BlockchainProviderRegistration("Solana", () => _solProvider.Object),
         ], config);
         _idempotency = new FakeIdempotencyStore();
-        _manager = new BlockchainOperationManager(_store.Object, _chainFactory, _idempotency);
+        _manager = new BlockchainOperationManager(_store.Object, _chainFactory, _idempotency, valueAccess: new AZOA.WebAPI.Services.Kyc.ValueAccessService(new ApprovedRealValueKycGate()));
     }
 
     [Fact]

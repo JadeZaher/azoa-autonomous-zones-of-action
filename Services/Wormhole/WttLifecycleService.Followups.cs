@@ -36,7 +36,8 @@ public sealed partial class WttLifecycleService
             return Invalid<WttOperationView>("Explicit native-output acceptance, a request key and both cost ceilings are required.");
         var operation = await ReadOwnedAsync(operationId, credential, false, ct);
         if (operation is null || operation.Version != request.ExpectedVersion || SigningActionOf(operation) is not null) return Changed<WttOperationView>();
-        if (await ValueRefusalAsync(credential, ct) is { } refused) return Forbidden<WttOperationView>(refused);
+        if (await StageValueRefusalAsync(Intent(operation), "NativeOutput", "Unwrap", new(credential, null), ct) is { } refused)
+            return Forbidden<WttOperationView>(refused);
         var quoted = await NativeQuoteAsync(operationId, operation, ct);
         if (quoted.IsError || quoted.Result is not { } quote)
             return AZOAResult<WttOperationView>.FailureWithCode(quoted.Message, quoted.Code ?? AzoaErrorCodes.Conflict);
