@@ -4,7 +4,7 @@ using FluentAssertions;
 
 namespace AZOA.WebAPI.Tests.Architecture;
 
-/// <summary>Every operator-policy route has exactly one node-admin grant whose step-up flag mirrors the legacy policy (plan §4, M7);
+/// <summary>Every operator-policy route has exactly one node-admin grant whose step-up is never weaker than the legacy policy (plan §4, M7, D-M1);
 /// see Services/NodeAdmin/AGENTS.md §route-permission-map.</summary>
 public sealed class NodeAdminRoutePermissionGateTests
 {
@@ -23,7 +23,7 @@ public sealed class NodeAdminRoutePermissionGateTests
     }
 
     [Fact]
-    public void Grants_name_catalog_permissions_and_step_up_mirrors_the_recent_operator_policies()
+    public void Grants_name_catalog_permissions_and_node_admin_step_up_is_never_weaker_than_legacy()
     {
         var problems = new List<string>();
         foreach (var (key, policies) in OperatorRoutes())
@@ -31,10 +31,32 @@ public sealed class NodeAdminRoutePermissionGateTests
             if (!NodeAdminRoutePermissions.Map.TryGetValue(key, out var grant)) continue;
             if (grant.Permission is not null && !NodeAdminPermissions.IsKnown(grant.Permission))
                 problems.Add($"{key}: unknown permission '{grant.Permission}'");
-            var recent = policies.Overlaps(NodeAdminRoutePermissions.RecentOperatorPolicies);
-            if (grant.RequireRecent != recent)
-                problems.Add($"{key}: RequireRecent={grant.RequireRecent} but the route's policies [{string.Join(", ", policies)}] say {recent}");
+            // D-M1: node-admin step-up ⊇ legacy step-up; stricter than legacy is allowed.
+            if (policies.Overlaps(NodeAdminRoutePermissions.RecentOperatorPolicies) && !grant.RequireRecent)
+                problems.Add($"{key}: the legacy policy [{string.Join(", ", policies)}] requires a recent login but the node-admin grant does not");
         }
+        string.Join(Environment.NewLine, problems).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Every_node_admin_write_requires_step_up_and_never_maps_to_a_read_permission()
+    {
+        var problems = new List<string>();
+        foreach (var (key, grant) in NodeAdminRoutePermissions.Map)
+        {
+            if (key.StartsWith("GET ", StringComparison.Ordinal) || grant.Permission is null) continue;
+            var readOnly = NodeAdminRoutePermissions.ReadOnlyWriteVerbRoutes.Contains(key);
+            var readPermission = grant.Permission.EndsWith(".read", StringComparison.Ordinal);
+            // L-1: a write verb on a *.read grant is only legal for an allow-listed body-carried query.
+            if (readPermission && !readOnly)
+                problems.Add($"{key}: a write verb maps to '{grant.Permission}'; map the domain permission or add it to ReadOnlyWriteVerbRoutes with a reason");
+            if (readOnly && !readPermission)
+                problems.Add($"{key}: allow-listed as read-only but maps to the write permission '{grant.Permission}'");
+            // D-M1: every node-admin write (money, recovery, genesis, keys, catalog, governance, KYC, roles, tenant keys) is step-up.
+            if (!readOnly && !grant.RequireRecent)
+                problems.Add($"{key}: node-admin writes require step-up (auth_time <= 10 min)");
+        }
+        NodeAdminRoutePermissions.ReadOnlyWriteVerbRoutes.Should().OnlyContain(key => NodeAdminRoutePermissions.Map.ContainsKey(key));
         string.Join(Environment.NewLine, problems).Should().BeEmpty();
     }
 

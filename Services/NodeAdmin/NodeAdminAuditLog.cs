@@ -30,6 +30,10 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
     public const string OutcomeOk = "ok";
     public const string OutcomeDenied = "denied";
     public const string OutcomeFailed = "failed";
+
+    /// <summary>A node-admin read of personal or financial data (D-M2); never preceded by an intent row.</summary>
+    public const string OutcomeRead = "read";
+
     public const string GenesisHash = "0000000000000000000000000000000000000000000000000000000000000000";
     private const string HeadMarker = "NODE_ADMIN_AUDIT_HEAD_MOVED";
     private const int MaxAppendAttempts = 16;

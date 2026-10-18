@@ -144,7 +144,7 @@ public static class SigningAuthorityFence
     }
 
     // raw: mirrors NodeAdminSessionValidator inside the owning transaction: the live session row for the principal, then the admin row
-    // (active + both revisions) or the root watermark (key + session revisions); see Services/NodeAdmin/AGENTS.md §operator-actor.
+    // (active + both revisions). Root witnesses never get here (IsNodeAdminEvidence); see Services/NodeAdmin/AGENTS.md §operator-actor.
     private static IEnumerable<SurrealQuery> NodeAdminSession(NodeAdminAuthorityWitness evidence, string prefix)
     {
         yield return Sql("""
@@ -152,25 +152,13 @@ public static class SigningAuthorityFence
                 WHERE principal = $_sa_na_principal AND revoked_at = NONE AND expires_at > time::now() RETURN AFTER)
             """, prefix).WithParam(prefix + "_na_sid", evidence.SessionRecordId).WithParam(prefix + "_na_principal", evidence.Principal);
         yield return Sql("IF $_sa_na_session = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
-        if (evidence.AdminRevision is { } adminRevision)
-        {
-            yield return Sql("""
-                LET $_sa_na_admin = (UPDATE ONLY type::record('node_admin', $_sa_na_admin_id) SET admin_revision = admin_revision
-                    WHERE status = $_sa_na_active AND admin_revision = $_sa_na_revision AND session_revision = $_sa_na_session_revision RETURN AFTER)
-                """, prefix).WithParam(prefix + "_na_admin_id", Guid.ParseExact(evidence.Principal[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D").ToString("N"))
-                    .WithParam(prefix + "_na_active", NodeAdminAccount.StatusActive)
-                    .WithParam(prefix + "_na_revision", adminRevision).WithParam(prefix + "_na_session_revision", evidence.SessionRevision!.Value);
-            yield return Sql("IF $_sa_na_admin = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
-        }
-        else
-        {
-            yield return Sql("""
-                LET $_sa_na_root = (UPDATE ONLY type::record('node_admin_root_state', $_sa_na_root_id) SET root_session_revision = root_session_revision
-                    WHERE root_key_revision = $_sa_na_key_revision AND root_session_revision = $_sa_na_root_session RETURN AFTER)
-                """, prefix).WithParam(prefix + "_na_root_id", NodeAdminRootState.SingletonId)
-                    .WithParam(prefix + "_na_key_revision", evidence.RootKeyRevision!.Value).WithParam(prefix + "_na_root_session", evidence.RootSessionRevision!.Value);
-            yield return Sql("IF $_sa_na_root = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
-        }
+        yield return Sql("""
+            LET $_sa_na_admin = (UPDATE ONLY type::record('node_admin', $_sa_na_admin_id) SET admin_revision = admin_revision
+                WHERE status = $_sa_na_active AND admin_revision = $_sa_na_revision AND session_revision = $_sa_na_session_revision RETURN AFTER)
+            """, prefix).WithParam(prefix + "_na_admin_id", Guid.ParseExact(evidence.Principal[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D").ToString("N"))
+                .WithParam(prefix + "_na_active", NodeAdminAccount.StatusActive)
+                .WithParam(prefix + "_na_revision", evidence.AdminRevision!.Value).WithParam(prefix + "_na_session_revision", evidence.SessionRevision!.Value);
+        yield return Sql("IF $_sa_na_admin = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
     }
 
     private static bool IsNodeAdminEvidence(SigningCredentialWitness value)
@@ -179,11 +167,10 @@ public static class SigningAuthorityFence
         if (value.Kind != "Jwt" || value.TenantId is not null || value.OwnerAuthority
             || value.ActorUserId != OperatorActor.Legacy.SubjectUserId || evidence.SessionRecordId is not { Length: 64 } sessionId
             || !sessionId.All(char.IsAsciiHexDigitLower)) return false;
-        if (evidence.Principal.StartsWith(NodeAdminClaims.AdminPrincipalPrefix, StringComparison.Ordinal))
-            return Guid.TryParseExact(evidence.Principal[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out _)
-                && evidence.AdminRevision is >= 0 && evidence.SessionRevision is >= 0 && evidence.RootKeyRevision is null && evidence.RootSessionRevision is null;
-        return evidence.Principal.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal)
-            && evidence.RootKeyRevision is >= 0 && evidence.RootSessionRevision is >= 0 && evidence.AdminRevision is null && evidence.SessionRevision is null;
+        // Root holds no operator grant (M3): a root witness is refused here as well as by the route map (L-4).
+        return evidence.Principal.StartsWith(NodeAdminClaims.AdminPrincipalPrefix, StringComparison.Ordinal)
+            && Guid.TryParseExact(evidence.Principal[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out _)
+            && evidence.AdminRevision is >= 0 && evidence.SessionRevision is >= 0 && evidence.RootKeyRevision is null && evidence.RootSessionRevision is null;
     }
 
     internal static bool Grants(List<SurrealQuery> result, SigningCredentialWitness credential, IReadOnlyList<string> scopes,

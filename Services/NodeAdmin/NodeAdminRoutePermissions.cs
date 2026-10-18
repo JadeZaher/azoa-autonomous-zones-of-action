@@ -18,8 +18,18 @@ public static partial class NodeAdminRoutePermissions
     public static readonly IReadOnlySet<string> RecentOperatorPolicies = new HashSet<string>(
         ["RecentNodeOperatorSession", "DappRoleAssignment"], StringComparer.Ordinal);
 
+    /// <summary>Non-GET routes that only read (body-carried query): the one place a write verb may map to a <c>*.read</c> grant
+    /// without step-up, and the filter audits them as reads (L-1, D-M2).</summary>
+    public static readonly IReadOnlySet<string> ReadOnlyWriteVerbRoutes = new HashSet<string>(
+        ["POST api/search/operator"], StringComparer.Ordinal);
+
+    /// <summary>Read permissions over personal or financial data whose node-admin reads are chained as <c>read</c> audit rows (D-M2).</summary>
+    public static readonly IReadOnlySet<string> AuditedReadPermissions = new HashSet<string>(
+        [NodeAdminPermissions.KycRead, NodeAdminPermissions.UsersRead, NodeAdminPermissions.MoneyRead], StringComparer.Ordinal);
+
     private static NodeAdminRouteGrant Read(string permission) => new(permission, false);
-    private static NodeAdminRouteGrant Write(string permission) => new(permission, false);
+
+    /// <summary>Every node-admin write needs step-up (D-M1), even where the legacy policy does not.</summary>
     private static NodeAdminRouteGrant Recent(string permission) => new(permission, true);
 
     /// <summary>Key = <c>VERB normalized-template</c> (lowercase, no route constraints).</summary>
@@ -27,11 +37,11 @@ public static partial class NodeAdminRoutePermissions
     {
         // Governance (NodeGovernanceController)
         ["GET api/node-governance/parameters"] = Read(NodeAdminPermissions.GovernanceRead),
-        ["PUT api/node-governance/parameters"] = Write(NodeAdminPermissions.GovernanceWrite),
+        ["PUT api/node-governance/parameters"] = Recent(NodeAdminPermissions.GovernanceWrite),
         ["GET api/node-governance/fee-schedule"] = Read(NodeAdminPermissions.GovernanceRead),
-        ["PUT api/node-governance/fee-schedule"] = Write(NodeAdminPermissions.GovernanceWrite),
+        ["PUT api/node-governance/fee-schedule"] = Recent(NodeAdminPermissions.GovernanceWrite),
         ["GET api/node-governance/treasury/{chain}/{network}"] = Read(NodeAdminPermissions.GovernanceRead),
-        ["PUT api/node-governance/treasury"] = Write(NodeAdminPermissions.GovernanceWrite),
+        ["PUT api/node-governance/treasury"] = Recent(NodeAdminPermissions.GovernanceWrite),
         ["GET api/node-governance/audit"] = Read(NodeAdminPermissions.AuditRead),
         ["GET api/node-governance/fee-audit"] = Read(NodeAdminPermissions.AuditRead),
         ["GET api/node-governance/treasury-audit"] = Read(NodeAdminPermissions.AuditRead),
@@ -57,9 +67,9 @@ public static partial class NodeAdminRoutePermissions
         // Tenant keys, key rotation, catalog
         ["POST api/apikey/tenant"] = Recent(NodeAdminPermissions.TenantsKeysMint),
         ["POST api/admin/key-rotation/rotate"] = Recent(NodeAdminPermissions.KeysRotate),
-        ["POST api/holon-types"] = Write(NodeAdminPermissions.CatalogManage),
-        ["POST api/holon-types/{assettype}/deactivate"] = Write(NodeAdminPermissions.CatalogManage),
-        ["DELETE api/holon-types/{assettype}"] = Write(NodeAdminPermissions.CatalogManage),
+        ["POST api/holon-types"] = Recent(NodeAdminPermissions.CatalogManage),
+        ["POST api/holon-types/{assettype}/deactivate"] = Recent(NodeAdminPermissions.CatalogManage),
+        ["DELETE api/holon-types/{assettype}"] = Recent(NodeAdminPermissions.CatalogManage),
         ["GET api/operator/tenants/{tenantid}/webhook-registration"] = Recent(NodeAdminPermissions.CatalogManage),
         ["PUT api/operator/tenants/{tenantid}/webhook-registration"] = Recent(NodeAdminPermissions.CatalogManage),
         ["POST api/operator/tenants/{tenantid}/webhook-registration/withdraw"] = Recent(NodeAdminPermissions.CatalogManage),
@@ -67,12 +77,12 @@ public static partial class NodeAdminRoutePermissions
         // Money (fiat events/payouts/reversals/on-ramp lots/floats, project treasuries, platform-token reads)
         ["GET api/admin/project-treasuries"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/project-treasuries/tenant/{tenantid}"] = Read(NodeAdminPermissions.MoneyRead),
-        ["POST api/admin/project-treasuries/resolve"] = Write(NodeAdminPermissions.MoneyOperate),
-        ["POST api/admin/project-treasuries/close"] = Write(NodeAdminPermissions.MoneyOperate),
+        ["POST api/admin/project-treasuries/resolve"] = Recent(NodeAdminPermissions.MoneyOperate),
+        ["POST api/admin/project-treasuries/close"] = Recent(NodeAdminPermissions.MoneyOperate),
         ["GET api/admin/fiat-events"] = Read(NodeAdminPermissions.MoneyRead),
-        ["POST api/admin/fiat-events/{id}/replay"] = Write(NodeAdminPermissions.MoneyOperate),
+        ["POST api/admin/fiat-events/{id}/replay"] = Recent(NodeAdminPermissions.MoneyOperate),
         ["GET api/operator/fiat-events"] = Read(NodeAdminPermissions.MoneyRead),
-        ["POST api/operator/fiat-events/{id}/replay"] = Write(NodeAdminPermissions.MoneyOperate),
+        ["POST api/operator/fiat-events/{id}/replay"] = Recent(NodeAdminPermissions.MoneyOperate),
         ["GET api/admin/fiat-payouts"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/fiat-payouts/{id}"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/fiat-payouts/accounts/{userid}"] = Read(NodeAdminPermissions.MoneyRead),
@@ -94,20 +104,20 @@ public static partial class NodeAdminRoutePermissions
         ["GET api/admin/on-ramp-lots"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/on-ramp-lots/intents/{intentid}"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/on-ramp-lots/accounts/{userid}/issued"] = Read(NodeAdminPermissions.MoneyRead),
-        ["POST api/admin/on-ramp-lots/intents/{intentid}/resume"] = Write(NodeAdminPermissions.MoneyOperate),
-        ["POST api/admin/on-ramp-lots/intents/{intentid}/refund"] = Write(NodeAdminPermissions.MoneyOperate),
+        ["POST api/admin/on-ramp-lots/intents/{intentid}/resume"] = Recent(NodeAdminPermissions.MoneyOperate),
+        ["POST api/admin/on-ramp-lots/intents/{intentid}/refund"] = Recent(NodeAdminPermissions.MoneyOperate),
         ["GET api/operator/on-ramp-lots"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/operator/on-ramp-lots/intents/{intentid}"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/operator/on-ramp-lots/accounts/{userid}/issued"] = Read(NodeAdminPermissions.MoneyRead),
-        ["POST api/operator/on-ramp-lots/intents/{intentid}/resume"] = Write(NodeAdminPermissions.MoneyOperate),
-        ["POST api/operator/on-ramp-lots/intents/{intentid}/refund"] = Write(NodeAdminPermissions.MoneyOperate),
+        ["POST api/operator/on-ramp-lots/intents/{intentid}/resume"] = Recent(NodeAdminPermissions.MoneyOperate),
+        ["POST api/operator/on-ramp-lots/intents/{intentid}/refund"] = Recent(NodeAdminPermissions.MoneyOperate),
         ["GET api/admin/tenant-payout-floats/{tenantid}"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/platform-token"] = Read(NodeAdminPermissions.MoneyRead),
         ["GET api/admin/platform-token/creation/{id}"] = Read(NodeAdminPermissions.MoneyRead),
 
         // Platform genesis
         ["POST api/admin/platform-token/genesis"] = Recent(NodeAdminPermissions.PlatformGenesis),
-        ["POST api/admin/platform-token/creation/{id}/refresh"] = Write(NodeAdminPermissions.PlatformGenesis),
+        ["POST api/admin/platform-token/creation/{id}/refresh"] = Recent(NodeAdminPermissions.PlatformGenesis),
         ["POST api/admin/platform-token/creation/{id}/quote"] = Recent(NodeAdminPermissions.PlatformGenesis),
         ["POST api/admin/platform-token/creation/{id}/accept-quote"] = Recent(NodeAdminPermissions.PlatformGenesis),
         ["POST api/admin/platform-token/creation/{id}/continue"] = Recent(NodeAdminPermissions.PlatformGenesis),
@@ -115,13 +125,13 @@ public static partial class NodeAdminRoutePermissions
 
         // Recovery (sagas, action/deployment/blockchain-op/dex/wtt/ethereum/hosted-session, sweeps, backfill,
         // retired rows, wallet-identity conflicts, webhook event retries)
-        ["POST api/action/runs/reconcile-sweep"] = Write(NodeAdminPermissions.RecoveryOperate),
+        ["POST api/action/runs/reconcile-sweep"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/action-recovery"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/action-recovery/{id}"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/action-recovery/{id}/history"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["POST api/operator/action-recovery/{id}/retry"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/admin/backfill/list"] = Read(NodeAdminPermissions.RecoveryOperate),
-        ["POST api/admin/backfill/apply"] = Write(NodeAdminPermissions.RecoveryOperate),
+        ["POST api/admin/backfill/apply"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/blockchain-operations/stuck"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["POST api/operator/blockchain-operations/{id}/resolve"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/deployments"] = Recent(NodeAdminPermissions.RecoveryOperate),
@@ -136,8 +146,8 @@ public static partial class NodeAdminRoutePermissions
         ["POST api/operator/hosted-sessions/{sessionid}/reconcile"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["POST api/operator/hosted-sessions/{sessionid}/refresh"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/admin/sagas/dead-letters"] = Read(NodeAdminPermissions.RecoveryOperate),
-        ["POST api/admin/sagas/{id}/requeue"] = Write(NodeAdminPermissions.RecoveryOperate),
-        ["POST api/admin/sagas/{id}/cancel"] = Write(NodeAdminPermissions.RecoveryOperate),
+        ["POST api/admin/sagas/{id}/requeue"] = Recent(NodeAdminPermissions.RecoveryOperate),
+        ["POST api/admin/sagas/{id}/cancel"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/wallet-identities"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["POST api/operator/wallet-identities/clear-conflicting-binding"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/tenants/{tenantid}/webhook-events"] = Recent(NodeAdminPermissions.RecoveryOperate),
@@ -178,6 +188,11 @@ public static partial class NodeAdminRoutePermissions
         grant = found;
         return true;
     }
+
+    /// <summary>GET/HEAD/OPTIONS, or a write verb on a <see cref="ReadOnlyWriteVerbRoutes"/> route.</summary>
+    public static bool IsReadRequest(Endpoint? endpoint, string method)
+        => HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method)
+            || (endpoint is RouteEndpoint route && ReadOnlyWriteVerbRoutes.Contains(Key(method, route.RoutePattern.RawText)));
 
     [GeneratedRegex(@"\{([A-Za-z0-9_]+)(:[^}]*)?\??\}")]
     private static partial Regex Constraint();

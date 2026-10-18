@@ -129,7 +129,12 @@ public sealed partial class NodeAdminManager(
                     .Set(row => row.UpdatedAt, now)
                     .Build(),
             ], ct);
-            if (commit == NodeAdminCommit.Committed) return await ReloadAsync(target.Id, ct);
+            if (commit != NodeAdminCommit.Committed) continue;
+            // D-L5: root alone may mint an owner (four-eyes deferred); make that event loud beyond the audit chain.
+            if (caller.IsRoot && NodeAdminPermissions.IsOwnerCapable(roles.PermissionsOf(target.RoleIds)))
+                logger.LogCritical("NodeAdminRootCreatedOwner admin={AdminId} username={Username} activatedBy={Actor} createdBy={CreatedBy}",
+                    id, target.Username, caller.Principal, target.CreatedBy);
+            return await ReloadAsync(target.Id, ct);
         }
         return ConflictResult<NodeAdminView>();
     }

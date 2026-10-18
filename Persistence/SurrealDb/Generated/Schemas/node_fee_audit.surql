@@ -24,7 +24,8 @@ DEFINE FIELD IF NOT EXISTS schedule_json ON TABLE node_fee_audit TYPE string
 DEFINE FIELD IF NOT EXISTS detail ON TABLE node_fee_audit TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS occurred_at ON TABLE node_fee_audit TYPE datetime
     READONLY;
-DEFINE FIELD IF NOT EXISTS actor ON TABLE node_fee_audit TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS actor ON TABLE node_fee_audit TYPE option<string>
+    READONLY;
 
 -- ── Indexes ──────────────────────────────────────────────────
 
