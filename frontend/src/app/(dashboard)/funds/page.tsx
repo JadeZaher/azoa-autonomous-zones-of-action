@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
-import { refusalMessage } from '@/lib/refusal-messages'
+import { isPaymentsNotConfigured, refusalMessage } from '@/lib/refusal-messages'
 import { PendingRequestNotice } from '@/components/shared/pending-request-notice'
 import {
   type SavedRequest, claimRequestKey, clearSavedRequest, formatMinorUnits, isDefiniteRefusal, isFinishedCheckout,
@@ -109,7 +109,8 @@ export default function FundsPage() {
         } else {
           rememberServerId(SCOPE, userId, request.requestKey, result.value.intentId)
         }
-      } else if (isDefiniteRefusal(result.error.status)) {
+      } else if (isDefiniteRefusal(result.error.status) || isPaymentsNotConfigured(result.error)) {
+        // PAYMENTS_NOT_CONFIGURED is refused before any payment page exists, so there is nothing to resume.
         clearSavedRequest(SCOPE, userId)
         setPending(null)
         setError(refusalMessage(result.error, 'The payment was refused. Nothing was charged.'))

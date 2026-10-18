@@ -2,6 +2,26 @@
 
 `azoa-sdk` follows semver; while the major version is 0, a breaking change bumps the minor version.
 
+## Unreleased
+
+### Breaking
+- `ApiKeyInfo.scopes` and `ApiKeyCreateResult.scopes` are now `string[]`, normalized from the
+  comma-separated string the API stores (`normalizeApiKeyScopes`). An empty list means legacy full
+  access. `createApiKey({ scopes })` accepts a list or the CSV and sends the CSV.
+
+### Fixed
+- `login()` / `register()` and the wallet challenge/verify/claim calls never run the token refresh:
+  a 401 there is the server's refusal ("Invalid credentials."), not an expired session. Before this
+  fix a wrong password surfaced as `NETWORK_ERROR` "network request failed".
+- `listFungibleCreations()` reads the bare array `GET /api/fungible-creation` returns; it resolved to
+  `undefined` before. A body that is not a list is an error, never an empty list.
+- Error bodies in ASP.NET `ValidationProblemDetails` shape (`errors: { Field: [..] }`) now reach
+  `SdkError.message` instead of "failed with HTTP 400".
+
+### Added
+- `SdkError.serverMessage` (the server's message without the `METHOD /path:` prefix) and
+  `userFacingMessage(error)` for copy shown to people.
+
 ## 0.5.0
 
 ### Breaking

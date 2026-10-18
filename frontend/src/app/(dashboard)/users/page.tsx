@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,22 +10,26 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { useAzoa } from '@/lib/azoa-context'
+import { userFacingMessage } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { ResultDisplay } from '@/components/shared/result-display'
 import { JsonViewer } from '@/components/shared/json-viewer'
 
 type ProfileFields = { username: string; email: string; firstName: string; lastName: string; title: string }
 
+function profileFields(user: unknown): ProfileFields {
+  const fields = (user ?? {}) as Partial<Record<keyof ProfileFields, unknown>>
+  const text = (value: unknown) => (typeof value === 'string' ? value : '')
+  return { username: text(fields.username), email: text(fields.email), firstName: text(fields.firstName), lastName: text(fields.lastName), title: text(fields.title) }
+}
+
 export default function UsersPage() {
   const { user, userId, logout, refreshProfile } = useAzoa()
 
-  const [form, setForm] = useState<ProfileFields>({
-    username: user?.username ?? '',
-    email: user?.email ?? '',
-    firstName: (user as Record<string, unknown> | null)?.firstName as string ?? '',
-    lastName: (user as Record<string, unknown> | null)?.lastName as string ?? '',
-    title: (user as Record<string, unknown> | null)?.title as string ?? '',
-  })
+  // The form is the server profile plus the person's edits, so a profile that arrives after mount is shown as-is.
+  const saved = useMemo(() => profileFields(user), [user])
+  const [edits, setEdits] = useState<Partial<ProfileFields>>({})
+  const form: ProfileFields = { ...saved, ...edits }
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: boolean; data?: unknown; message?: string } | null>(null)
@@ -34,7 +38,7 @@ export default function UsersPage() {
   const [jsonOpen, setJsonOpen] = useState(false)
 
   const handleChange = (field: keyof ProfileFields) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm(prev => ({ ...prev, [field]: e.target.value }))
+    setEdits(prev => ({ ...prev, [field]: e.target.value }))
   }
 
   const handleSave = async () => {
@@ -42,12 +46,22 @@ export default function UsersPage() {
     setSaving(true)
     setSaveResult(null)
     try {
-      const result = await azoa.api.updateUser(userId, form)
+      // UserUpdateModel treats an absent field as "unchanged": send only what was edited, so an untouched
+      // wallet handle or blank email is never re-validated.
+      const changes = Object.fromEntries(
+        (Object.keys(form) as (keyof ProfileFields)[]).filter(field => form[field] !== saved[field]).map(field => [field, form[field]]),
+      ) as Partial<ProfileFields>
+      if (Object.keys(changes).length === 0) {
+        setSaveResult({ ok: true, message: 'Nothing to save.' })
+        return
+      }
+      const result = await azoa.api.updateUser(userId, changes)
       if (isOk(result)) {
         await refreshProfile()
+        setEdits({})
         setSaveResult({ ok: true, data: result.value, message: 'Profile updated.' })
       } else {
-        setSaveResult({ ok: false, message: result.error.message })
+        setSaveResult({ ok: false, message: userFacingMessage(result.error) })
       }
     } catch (err) {
       setSaveResult({ ok: false, message: err instanceof Error ? err.message : 'Unknown error' })

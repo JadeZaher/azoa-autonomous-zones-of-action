@@ -125,6 +125,9 @@ export default function KeyRotationPage() {
         setReport(result.value)
         setConfirmOpen(false)
         setForm(DEFAULT_FORM)
+      } else if (result.error.status === 401 || result.error.status === 403) {
+        // Operator policy: an account sign-in can never pass it, and the console BFF does not proxy key material (QA M1).
+        setError('Key rotation needs the node operator session, which this account dashboard does not carry. Nothing was rotated.')
       } else {
         setError(result.error.message)
       }

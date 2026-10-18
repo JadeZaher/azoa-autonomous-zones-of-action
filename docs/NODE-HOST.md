@@ -139,8 +139,8 @@ family so schema-owner authority cannot enter the API process.
 | `NodeOperator__CredentialRevision` | yes on first boot | Positive monotonic integer. Increment for every username/password rotation; rollback is refused. |
 | `NodeOperator__SessionMinutes` | optional | Dedicated operator-session lifetime, 5–30 minutes (default 20). |
 | `AZOA__WalletEncryptionKey` | yes (**SECRET**) | At-rest key for platform wallet generation. No default — `WalletKeyService` throws without it. |
-| `Registration__Enabled` | yes (prod) | Node-wide switch for the anonymous `POST /api/user/register`. `false` refuses it on any host. |
-| `Registration__AllowPublicSelfServiceInProduction` | yes (prod) | Production-only acknowledgement. Absent or `false` refuses anonymous registration in Production **even when `Registration__Enabled` is true** — see §8.10. |
+| `Registration__Enabled` | yes (prod) | Node-wide switch for anonymous account creation: `POST /api/user/register`, a first wallet sign-in (`POST /api/user/auth/verify` for an unbound wallet) and a first federated (OAuth) sign-in. `false` refuses all three on any host; an already-linked wallet or provider account always signs in. |
+| `Registration__AllowPublicSelfServiceInProduction` | yes (prod) | Production-only acknowledgement. Absent or `false` refuses anonymous account creation in Production **even when `Registration__Enabled` is true** — see §8.10. Setting it `true` is a deliberate open-node decision (the 2026-10-18 Railway QA node runs with it `true`; a node that custodies another product's users should not). |
 | `Kyc__Provider` | yes (prod) | Node identity provider. Base ships `identomat`. A Production host **refuses to boot** on `manual`/`mock`/`unavailable`/unknown (`KycRuntimeSafety.GuardProductionProviderIsReal`). |
 | `Kyc__ApprovalValidityDays` | optional | How long a granted approval stays current; default `365`, clamped 1–3650. Distinct from `Kyc__SubmissionExpiryDays` (how long an unfinished attempt may sit). |
 | `CustodialAccounts__CustodyMode` | yes for wallets | `Disabled`, `DevelopmentOnly`, or the production mode the node recognises — see §8.2. |
@@ -520,7 +520,11 @@ empty list from `GET /api/tenant/kyc/providers`.
 The provisioning surface (`api/tenant`) and the step-by-step onboarding runbook
 already exist. As the operator you actually execute them for your first tenant:
 
-- Register the first tenant user.
+- Register the first tenant user. On a closed node (§8.10) neither email registration nor a
+  first wallet or OAuth sign-in can create it: open the registration window
+  (`Registration__AllowPublicSelfServiceInProduction=true`), have the tenant principal sign
+  up once, then close it again. Its wallet or provider link keeps working after the window
+  closes, because only NEW account creation is gated.
 - Mint its **tenant-scoped API key** with `tenant:provision`, `wallet:manage`,
   `kyc:read`, and `kyc:submit` by calling JWT-Operator-only
   `POST /api/apikey/tenant` with the existing tenant user id, a name, and a
@@ -651,6 +655,21 @@ Registration__Enabled=true
 Registration__AllowPublicSelfServiceInProduction=false
 ```
 
+The same switch (`SelfRegistrationPolicy.IsAllowed`) governs every anonymous
+path that can create an account, because each of them is account creation:
+
+| Path | Creates an account when | Already-linked identity |
+|---|---|---|
+| `POST /api/user/register` | the switch allows it | n/a |
+| `POST /api/user/auth/verify` (wallet sign-in) | the wallet is unbound **and** the switch allows it (`WalletAuthManager.VerifyAsync`) | always signs in |
+| OAuth callback (federated sign-in) | no binding exists **and** the switch allows it (`ExternalLoginService.CreateUserForIdentityAsync`) | always signs in |
+
+A refused wallet sign-in returns `403` with code `SELF_REGISTRATION_DISABLED` — only after
+the signature proof verified, so it cannot be used to probe anything a caller does not
+already control; every proof failure stays a generic `401`. A refused OAuth sign-in
+redirects to the frontend with `error=registration_closed`. Owner decision 2026-10-18
+(QA finding H-A): before this, a closed node still minted wallet accounts anonymously.
+
 Resolution order, enforced identically at the controller and at
 `UserManager.RegisterAsync` so a non-HTTP caller inherits the same answer:
 
@@ -662,9 +681,14 @@ Resolution order, enforced identically at the controller and at
   that inherits the file verbatim never opens anonymous account creation by
   accident.
 
-Refusal is `403` with a message that states a NODE fact
+Refusal is `403` with code `SELF_REGISTRATION_DISABLED` and a message that states a NODE fact
 ("Public self-registration is disabled on this node") and never a user fact, so
 the endpoint cannot be used to probe whether an account exists.
+
+**QA node exception.** The Railway node used for live QA (`ardanova` project, `azoa-api`)
+runs with `Registration__AllowPublicSelfServiceInProduction=true` by owner decision
+(2026-10-18) so email registration can be exercised. That is a QA-node setting, not a
+template default: a node that custodies real people leaves it `false`.
 
 Accounts on a closed node arrive the operator's way instead: register the tenant
 principal yourself (§8.6), mint its tenant-scoped key, and let the tenant
@@ -699,7 +723,9 @@ address is registered. If you want the field-level message back, the fix is a
 targeted indexed lookup on `IUserStore`, not a scan.
 
 **Verify:** with `ASPNETCORE_ENVIRONMENT=Production` and the acknowledgement
-absent, `POST /api/user/register` returns `403` and creates no row; setting
+absent, `POST /api/user/register` returns `403` and creates no row; a wallet
+sign-in from a wallet no account is linked to returns `403`
+`SELF_REGISTRATION_DISABLED` and creates no row, while a linked wallet still signs in; setting
 `Registration__Enabled=false` returns the same `403` in every environment; a
 profile update to `Alice@Example.COM` reads back as `alice@example.com`; and a
 refused registration returns the single message above without the node reading

@@ -100,7 +100,7 @@ public sealed class FiatCheckoutController : ControllerBase
 
         if (!TryResolveRail(out var rail, out _))
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
-                FiatConsumerErrors.RailUnavailable<FiatCheckoutIntent>());
+                FiatConsumerErrors.Unresolved<FiatCheckoutIntent>(_options));
 
         var callerUserId = GetUserIdFromClaims();
         if (callerUserId is null)
@@ -133,6 +133,7 @@ public sealed class FiatCheckoutController : ControllerBase
             AzoaErrorCodes.Conflict => Conflict(result),
             AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             FiatConsumerErrors.RailUnavailableCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+            FiatConsumerErrors.PaymentsNotConfiguredCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             FiatConsumerErrors.RailBusyCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             _ => BadRequest(result),
         };
@@ -147,7 +148,7 @@ public sealed class FiatCheckoutController : ControllerBase
     {
         if (!TryResolveRail(out var rail, out _))
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
-                FiatConsumerErrors.RailUnavailable<FiatCheckoutIntent>());
+                FiatConsumerErrors.Unresolved<FiatCheckoutIntent>(_options));
 
         var callerUserId = GetUserIdFromClaims();
         if (callerUserId is null)

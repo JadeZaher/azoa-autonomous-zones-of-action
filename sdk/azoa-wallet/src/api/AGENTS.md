@@ -65,3 +65,13 @@ scanned or any error is never a success.
 return one `TenantPayoutFloatView` per currency/environment, mirroring the D-8 implementation;
 `startTenantPayoutTopUp` returns the Checkout intent. `deficitMinorUnits > 0` means a charged-back
 top-up is uncovered and every tenant-priced cash-out is refused until it is.
+
+## Errors and credential exchanges (live QA 2026-10-18)
+
+A 401 from a credential exchange (`/api/user/login`, `/register`, `/auth/challenge`, `/auth/verify`,
+`/claim`) is a refusal and never triggers `onTokenRefresh`; login and register are also sent
+anonymously, so a stale token never rides along. Only an authenticated route's 401 refreshes once.
+`parseErrorBody` reads `message`, then `error`, then ASP.NET `ValidationProblemDetails.errors`, then
+a string `detail`; the server text is kept on `SdkError.serverMessage`, and `userFacingMessage()`
+is the copy for people (no method/path prefix). API key `scopes` cross the wire as a CSV string and
+are normalized to a list at this boundary. `GET /api/fungible-creation` is a bare array.

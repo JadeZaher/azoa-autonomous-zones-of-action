@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Core;
-using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
@@ -35,16 +34,16 @@ public class UserController : ControllerBase
     /// </summary>
     [HttpPost("register")]
     [AllowAnonymous]
-    public async Task<ActionResult<AZOAResult<IUser>>> Register([FromBody] UserRegisterModel model, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<UserProfileResponse>>> Register([FromBody] UserRegisterModel model, [FromQuery] AZOARequest? request)
     {
         if (!SelfRegistrationPolicy.IsAllowed(_configuration, _environment))
         {
             return StatusCode(
                 StatusCodes.Status403Forbidden,
-                new AZOAResult<IUser> { IsError = true, Message = SelfRegistrationPolicy.DisabledMessage });
+                AZOAResult<UserProfileResponse>.FailureWithCode(SelfRegistrationPolicy.DisabledMessage, SelfRegistrationPolicy.DisabledCode));
         }
 
-        var result = await _manager.RegisterAsync(model, request);
+        var result = UserProfileResponse.From(await _manager.RegisterAsync(model, request));
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -70,15 +69,14 @@ public class UserController : ControllerBase
 
         var callerId = GetUserIdFromClaims();
         var isSelf = callerId.HasValue && callerId.Value == id;
-        var projected = isSelf ? (object)result.Result : PublicUserInfo.From(result.Result);
+        var projected = isSelf ? (object)UserProfileResponse.From(result.Result) : PublicUserInfo.From(result.Result);
 
         return Ok(new AZOAResult<object> { IsError = false, Message = result.Message, Result = projected });
     }
 
-    // Marketplace directory: public projections only (no PII). Full records are
-    // only ever available via self-get above.
+    /// <summary>Node-wide user directory: operator only (QA M5), public projections only.</summary>
     [HttpGet]
-    [Authorize]
+    [Authorize(Policy = "Operator")]
     public async Task<ActionResult<AZOAResult<IEnumerable<PublicUserInfo>>>> GetAll([FromQuery] AZOARequest? request)
     {
         var result = await _manager.GetAllAsync(request);
@@ -93,12 +91,15 @@ public class UserController : ControllerBase
 
     [HttpPut("{id:guid}")]
     [Authorize(Policy = "FirstPartyLogin")]
-    public async Task<ActionResult<AZOAResult<IUser>>> Update(Guid id, [FromBody] UserUpdateModel model, [FromQuery] AZOARequest? request)
+    public async Task<ActionResult<AZOAResult<UserProfileResponse>>> Update(Guid id, [FromBody] UserUpdateModel model, [FromQuery] AZOARequest? request)
     {
         var userId = GetUserIdFromClaims();
         if (userId == null) return Unauthorized();
+        // Same answer as DELETE on a foreign id (QA L6): never a validation-shaped 400.
+        if (id != userId.Value)
+            return NotFound(AZOAResult<UserProfileResponse>.FailureWithCode("User not found.", AzoaErrorCodes.NotFound));
 
-        var result = await _manager.UpdateAsync(id, model, userId.Value, request);
+        var result = UserProfileResponse.From(await _manager.UpdateAsync(id, model, userId.Value, request));
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -142,12 +143,12 @@ public class UserController : ControllerBase
     /// </summary>
     [HttpPut("{id:guid}/dapp-role")]
     [Authorize(Policy = "DappRoleAssignment")]
-    public async Task<ActionResult<AZOAResult<IUser>>> AssignDappRole(
+    public async Task<ActionResult<AZOAResult<UserProfileResponse>>> AssignDappRole(
         Guid id, [FromBody] UserRoleAssignmentModel model)
     {
         // Manager authority = current dapp_role AND (first-party login or an explicit dapp:manage key).
-        var result = await _manager.AssignDappRoleAsync(
-            id, model.Role, ActingIsOperator(), User.CanAssignDappRoles(), HttpContext.RequestAborted);
+        var result = UserProfileResponse.From(await _manager.AssignDappRoleAsync(
+            id, model.Role, ActingIsOperator(), User.CanAssignDappRoles(), HttpContext.RequestAborted));
 
         if (result.IsError)
             return result.Message?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true

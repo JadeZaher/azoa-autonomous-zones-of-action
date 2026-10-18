@@ -27,19 +27,22 @@ public sealed class WalletAuthManager : IWalletAuthManager
     private readonly IUserStore _userStore;
     private readonly IWalletSignatureVerifier _signatureVerifier;
     private readonly IConfiguration _config;
+    private readonly IHostEnvironment? _environment;
 
     public WalletAuthManager(
         IWalletAuthChallengeStore challenges,
         IWalletAuthClaimTokenStore claimTokens,
         IUserStore userStore,
         IWalletSignatureVerifier signatureVerifier,
-        IConfiguration config)
+        IConfiguration config,
+        IHostEnvironment? environment = null)
     {
         _challenges = challenges ?? throw new ArgumentNullException(nameof(challenges));
         _claimTokens = claimTokens ?? throw new ArgumentNullException(nameof(claimTokens));
         _userStore = userStore ?? throw new ArgumentNullException(nameof(userStore));
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         _config = config ?? throw new ArgumentNullException(nameof(config));
+        _environment = environment;
     }
 
 
@@ -169,6 +172,12 @@ public sealed class WalletAuthManager : IWalletAuthManager
         }
         else
         {
+            // H-A: a first wallet sign-in IS account creation, so it asks the node's
+            // self-registration switch; an already-bound wallet above always signs in.
+            if (!SelfRegistrationPolicy.IsAllowed(_config, _environment))
+                return AZOAResult<WalletAuthTokenResponse>.FailureWithCode(
+                    SelfRegistrationPolicy.DisabledMessage, SelfRegistrationPolicy.DisabledCode);
+
             var createdUser = await CreateSelfOwnedWalletUserAsync(addr, chain, ct);
             if (createdUser.IsError || createdUser.Result is null)
             {

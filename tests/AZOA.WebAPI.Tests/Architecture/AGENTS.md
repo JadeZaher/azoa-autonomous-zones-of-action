@@ -147,3 +147,14 @@ every batch family that decides carries a THROW guard (`THROW`, `RequireResult`,
 listed with a reason); egress writes (`AuthorizedAt`/`ExternalExposedAt`) happen only in members that call the
 family's operation-row committer (swap `CommitStageAsync`, WTT `CommitAsync`); and ratcheted files carry a
 `// lock: <row>` comment before every in-batch read in the same member.
+
+## Response credential gate
+
+`ResponseCredentialGateTests` walks the declared return type of every controller action (through
+`Task`, `ActionResult<T>`, `AZOAResult<T>`, collections, interfaces and nested API types) and fails on
+any property whose name is credential-shaped (`PasswordHash`, `*Secret`, `Encrypted*`, `PrivateKey`,
+`SeedPhrase`, `*KeyHash`, `*TokenHash`, …) unless it is `[JsonIgnore]`. Added after QA H5, where
+`GET api/user/{self}` returned the bcrypt hash. Its blind spot is `object`/`IActionResult` responses;
+`UserController.Get` is one, so `Controllers/UserResponseCredentialTests` serializes those responses
+with the API's JSON options instead. `OneTimeReveals` lists the deliberate reveals (wallet export) by
+`Type.Property`; add to it only for an endpoint whose purpose is the reveal.

@@ -56,7 +56,7 @@ public sealed class TenantPayoutBalanceController(
                 "A stable request key (1-128 characters) is required.", AzoaErrorCodes.InvalidRequest));
         if (!rails.TryGetRailProvider(FiatRailIds.UsdRail, fiat.ActiveEnvironment, out var provider)
             || provider is not IFiatOnRampRail rail)
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, FiatConsumerErrors.RailUnavailable<FiatCheckoutIntent>());
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, FiatConsumerErrors.Unresolved<FiatCheckoutIntent>(fiat));
 
         var result = await rail.BeginCheckoutAsync(new FiatCheckoutRequest
         {
@@ -74,7 +74,8 @@ public sealed class TenantPayoutBalanceController(
         {
             AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
             AzoaErrorCodes.Conflict => Conflict(result),
-            AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+            AzoaErrorCodes.DependencyUnavailable or FiatConsumerErrors.RailUnavailableCode or FiatConsumerErrors.RailBusyCode
+                or FiatConsumerErrors.PaymentsNotConfiguredCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             _ => BadRequest(result),
         };
     }

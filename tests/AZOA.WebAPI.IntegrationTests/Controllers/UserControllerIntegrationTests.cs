@@ -91,18 +91,28 @@ public class UserControllerIntegrationTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task GetAll_ShouldReturnList()
+    public async Task GetAll_AsOperator_ShouldReturnList()
     {
         // Username must be 3-50 chars (UserRegisterValidator); "a1"/"a2" were
         // 2 chars and rejected at seed time.
         await SeedUserAsync(a => a.WithUsername("auser1"));
         await SeedUserAsync(a => a.WithUsername("auser2"));
+        using var operatorClient = Factory.CreateOperatorClient();
 
-        var response = await Client.GetAsync("api/user");
+        var response = await operatorClient.GetAsync("api/user");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await ReadResultAsync<IEnumerable<User>>(response);
         result!.Result.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetAll_AsOrdinaryUser_IsForbidden()
+    {
+        // QA M5: the directory used to enumerate every user to any signed-in caller.
+        var response = await Client.GetAsync("api/user");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     // ═══════════════════════════════════════════════════════════════

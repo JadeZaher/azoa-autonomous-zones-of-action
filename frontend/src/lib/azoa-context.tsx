@@ -10,6 +10,7 @@ import React, {
   ReactNode,
 } from 'react'
 import { azoa, isOk } from './azoa'
+import { userFacingMessage } from 'azoa-sdk'
 import type { AuthProfile } from './azoa'
 
 // ─── Types ───
@@ -143,7 +144,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
       if (isOk(profileResult)) setUser(profileResult.value)
       return { success: true }
     }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [])
 
   /**
@@ -160,7 +161,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
       if (isOk(profileResult)) setUser(profileResult.value)
       return { success: true }
     }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [])
 
   const logout = useCallback(async () => {
@@ -176,7 +177,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
     const result = await azoa.auth.logoutEverywhere()
     setUser(null); setWallets([]); setWalletsError(null)
     if (isOk(result)) return { success: true }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [])
 
   const setDefaultWallet = useCallback(async (walletId: string) => {
@@ -192,13 +193,13 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
       walletType: 'External',
     })
     if (isOk(result)) { await refreshWallets(); return { success: true } }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [userId, refreshWallets])
 
   const removeWallet = useCallback(async (walletId: string) => {
     const result = await azoa.api.request('DELETE', `/api/wallet/${walletId}`)
     if (isOk(result)) { await refreshWallets(); return { success: true } }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [refreshWallets])
 
   // ─── New: Generate wallet on-platform ───
@@ -211,7 +212,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
       isDefault: params.isDefault ?? false,
     })
     if (isOk(result)) { await refreshWallets(); return { success: true } }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [userId, refreshWallets])
 
   // ─── New: Connect external wallet ───
@@ -226,7 +227,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
       isDefault: params.isDefault ?? false,
     })
     if (isOk(result)) { await refreshWallets(); return { success: true } }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [userId, refreshWallets])
 
   // ─── New: Export wallet private key ───
@@ -234,7 +235,7 @@ export function AzoaProvider({ children }: { children: ReactNode }) {
   const exportWallet = useCallback(async (walletId: string): Promise<{ success: boolean; data?: WalletExportData; error?: string }> => {
     const result = await azoa.api.request<WalletExportData>('POST', `/api/wallet/${walletId}/export`)
     if (isOk(result)) return { success: true, data: result.value }
-    return { success: false, error: result.error.message }
+    return { success: false, error: userFacingMessage(result.error) }
   }, [])
 
   // ─── Browser wallet detection & connection ───
