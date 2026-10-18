@@ -50,8 +50,11 @@ public sealed class IdentomatKycProviderServiceTests
         missing.Should().BeEquivalentTo(
             IdentomatKycSettings.CompanyKeyName,
             IdentomatKycSettings.CallbackApiKeyName);
-        capabilities.UnavailableReason.Should().Contain(IdentomatKycSettings.CompanyKeyName);
-        capabilities.UnavailableReason.Should().Contain(IdentomatKycSettings.CallbackApiKeyName);
+        // QA L2: the reason is end-user copy; key names reach only the operator via MissingConfigurationKeys.
+        capabilities.UnavailableReason.Should().NotBeNullOrWhiteSpace();
+        capabilities.UnavailableReason.Should().NotContain(IdentomatKycSettings.CompanyKeyName);
+        capabilities.UnavailableReason.Should().NotContain(IdentomatKycSettings.CallbackApiKeyName);
+        provider.GetHostedCapabilities().MissingConfigurationKeys.Should().Contain(IdentomatKycSettings.CompanyKeyName);
     }
 
     [Theory]
@@ -111,7 +114,7 @@ public sealed class IdentomatKycProviderServiceTests
         reason.Should().NotBeNull();
         reason.Should().NotContain(settings.CompanyKey!);
         reason.Should().NotContain(settings.CallbackApiKey!);
-        reason.Should().Contain(IdentomatKycSettings.ConfigIdName);
+        reason.Should().NotContain(IdentomatKycSettings.ConfigIdName);
     }
 
     [Fact]

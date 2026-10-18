@@ -135,8 +135,6 @@ public sealed class SurrealQlSourceRulesTests
     /// <summary>Ratchet of reviewed residue: (rule, file) → exact count + owning fix. A new site fails; a fixed site must be removed here.</summary>
     private static readonly Dictionary<(string Rule, string File), (int Count, string Owner)> KnownViolations = new()
     {
-        // Fail-closed residue found by these rules after every W2 lane merged: W3 fix batch, round4-lane-L6-verification.md §Needs other lane.
-        [("bare-id", "Services/Fiat/Reversal/FiatReversalEventHandler.cs")] = (1, "W3 fix batch (L3): LotId = lot?.Id is the stripped [Id]"),
         // Convention residue (not fail-closed today): SQL-13 class.
         [("non-literal", "Helpers/HostedSessionAliasFence.cs")] = (2, "W3 fix batch (L2/L1): per-index alias names via SurrealIdentifierTemplate"),
         [("non-literal", "Mcp/Tools/VectorSearchTool.cs")] = (1, "W3 fix batch (L1): ternary of two consts inline"),

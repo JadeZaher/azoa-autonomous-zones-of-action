@@ -42,7 +42,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     private const string ResultPath = "/external-api/result/";
 
     private const string UnconfiguredMessage =
-        "The Identomat KYC adapter is not fully configured.";
+        "Identity verification is not available on this node yet.";
 
     /// <summary>
     /// Where the widget sends the applicant when they are finished. Optional: the
@@ -89,8 +89,9 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     // ── Capabilities ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Available only when every key is configured over HTTPS. Unavailability
-    /// reports the missing configuration key NAMES; a value never appears here.
+    /// Available only when every key is configured over HTTPS. The reason is end-user copy
+    /// (QA L2); missing key NAMES travel only in <see cref="HostedSessionCapabilities.MissingConfigurationKeys"/>
+    /// for the operator console.
     /// </summary>
     public KycProviderCapabilitiesModel GetCapabilities()
     {
@@ -104,7 +105,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             AcceptsDocumentReferences = false,
             UnavailableReason = missing.Count == 0
                 ? null
-                : $"{UnconfiguredMessage} Missing configuration: {string.Join(", ", missing)}.",
+                : UnconfiguredMessage,
         };
     }
 
@@ -119,7 +120,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             MissingConfigurationKeys = missing,
             UnavailableReason = missing.Count == 0
                 ? null
-                : $"{UnconfiguredMessage} Missing configuration: {string.Join(", ", missing)}.",
+                : UnconfiguredMessage,
         };
     }
 

@@ -153,3 +153,13 @@ NftWorkflowCostAcceptanceIdentity partitions client acceptance keys by actor/ten
 
 `AzoaDappRoles.GrantsScope` is the single role-to-scope rule; API-key self-issuance, child-credential
 issuance and the gate all use it.
+
+## Username rules
+
+`UsernameRules` is the single username alphabet: 3-50 characters of letters, digits, `_` and `-`.
+Node-generated handles (`wallet-…`, `oauth-…`, `onboard-…`) always used hyphens while the validators
+allowed only `[a-zA-Z0-9_]`, so a wallet user could never save a profile (QA H4). Widening the alphabet
+would have let anyone register a generated handle ahead of its owner — the wallet and OAuth handles are
+deterministic from public inputs — and break that person's first sign-in at the `user_username` UNIQUE
+index. So the generated prefixes are reserved: registration, tenant provisioning and a profile RENAME
+refuse them, while a user who already holds a generated handle may keep resending it.

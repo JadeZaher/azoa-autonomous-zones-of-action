@@ -8,6 +8,7 @@ public class ActionGraphBundle : IActionGraphBundle
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string? PublicKey { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public string? PrivateKeyHash { get; set; }
     public Guid? UserId { get; set; }
     public List<Guid> BoundHolonIds { get; set; } = new();

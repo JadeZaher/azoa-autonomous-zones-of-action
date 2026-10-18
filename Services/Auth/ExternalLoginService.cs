@@ -3,6 +3,7 @@
 using System.Security.Cryptography;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Auth;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -46,17 +47,23 @@ public sealed class ExternalLoginService : IExternalLoginService
     private readonly IUserExternalLoginStore _loginStore;
     private readonly ILogger<ExternalLoginService> _logger;
     private readonly TimeProvider _clock;
+    private readonly IConfiguration? _configuration;
+    private readonly IHostEnvironment? _environment;
 
     public ExternalLoginService(
         IUserStore userStore,
         IUserExternalLoginStore loginStore,
         ILogger<ExternalLoginService> logger,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        IConfiguration? configuration = null,
+        IHostEnvironment? environment = null)
     {
         _userStore = userStore ?? throw new ArgumentNullException(nameof(userStore));
         _loginStore = loginStore ?? throw new ArgumentNullException(nameof(loginStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _clock = clock ?? TimeProvider.System;
+        _configuration = configuration;
+        _environment = environment;
     }
 
     /// <inheritdoc />
@@ -240,6 +247,13 @@ public sealed class ExternalLoginService : IExternalLoginService
         string scope,
         CancellationToken ct)
     {
+        // A first federated sign-in creates an account, so it asks the same switch as
+        // password registration and first wallet sign-in (QA H-A).
+        if (!SelfRegistrationPolicy.IsAllowed(_configuration, _environment))
+            return AZOAResult<IUser>.FailureWithCode(
+                SelfRegistrationPolicy.DisabledMessage,
+                SelfRegistrationPolicy.DisabledCode);
+
         var seed = DeterministicSeed(scope, identity.Provider, identity.Subject);
         var userId = DeterministicUserId(seed);
         // 96 bits of the digest is ample to keep synthetic handles distinct without

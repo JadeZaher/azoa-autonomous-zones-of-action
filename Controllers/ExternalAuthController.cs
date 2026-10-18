@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
+using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Auth;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Auth;
@@ -316,6 +317,8 @@ public sealed class ExternalAuthController : ControllerBase
         string? returnTo)
     {
         var user = await _externalLogins.ResolveOrCreateAsync(identity, tenantId, HttpContext.RequestAborted);
+        if (user.IsError && user.Code == SelfRegistrationPolicy.DisabledCode)
+            return RedirectToFrontend(error: "registration_closed", returnTo: returnTo);
         if (user.IsError || user.Result is null)
             return RedirectToFrontend(error: "sign_in_failed", returnTo: returnTo);
 
