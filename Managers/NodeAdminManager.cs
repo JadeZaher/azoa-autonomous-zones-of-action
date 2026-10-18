@@ -52,7 +52,7 @@ public sealed partial class NodeAdminManager(
     public async Task<AZOAResult<NodeAdminCreatedView>> CreateAdminAsync(NodeAdminCaller caller, NodeAdminCreateRequest request, CancellationToken ct)
     {
         var username = (request.Username ?? string.Empty).Trim();
-        var displayName = Clean(request.DisplayName);
+        var displayName = NodeAdminViews.CleanText(request.DisplayName, 129);
         var roleIds = (request.RoleIds ?? []).Distinct(StringComparer.Ordinal).ToArray();
         if (!UsernamePattern().IsMatch(username) || displayName.Length is < 1 or > 128 || roleIds.Length > MaxRolesPerAdmin)
             return Fail<NodeAdminCreatedView>(NodeAdminErrorCodes.ValidationFailed,
@@ -233,8 +233,7 @@ public sealed partial class NodeAdminManager(
             return Fail<NodeAdminKeyView>(NodeAdminErrorCodes.ValidationFailed, "That key is already registered.");
 
         var now = clock.GetUtcNow();
-        var label = Clean(request.Label);
-        label = label.Length > 64 ? label[..64] : label;
+        var label = NodeAdminViews.CleanText(request.Label, 64);
         var credential = existing is null
             ? SurrealWriter.Create(new NodeAdminCredential
             {
@@ -451,6 +450,12 @@ public sealed partial class NodeAdminManager(
                     return Fail<NodeAdminRoleView>(NodeAdminErrorCodes.EscalationRefused, "You cannot grant permissions you do not hold.");
             }
             var admins = await store.ListAdminsAsync(ct);
+            // Removing permissions demotes every holder, so C1 dominance extends to each of them.
+            if (!caller.IsRoot && role.Permissions.Except(permissions).Any()
+                && admins.Any(admin => admin.Status != NodeAdminAccount.StatusRevoked && admin.RoleIds.Contains(role.Id)
+                    && !NodeAdminInvariants.Dominates(caller.Permissions, roles.PermissionsOf(admin.RoleIds))))
+                return Fail<NodeAdminRoleView>(NodeAdminErrorCodes.DominanceRequired,
+                    "Removing permissions from this role would demote an admin you do not dominate.");
             var proposed = NodeAdminInvariants.WithRole(roles, role.Id, permissions);
             if (caller.Admin is not null && caller.Permissions.Contains(NodeAdminPermissions.AdminsManage)
                 && admins.FirstOrDefault(admin => admin.Id == caller.Admin.Id) is { } self
@@ -597,9 +602,6 @@ public sealed partial class NodeAdminManager(
                 && Guid.TryParseExact(value[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out _))
             || (value.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal)
                 && NodeAdminCrypto.IsFingerprint(value[NodeAdminClaims.RootPrincipalPrefix.Length..]));
-
-    private static string Clean(string? value)
-        => new string((value ?? string.Empty).Where(character => !char.IsControl(character)).ToArray()).Trim();
 
     private static AZOAResult<T> Fail<T>(string code, string message) => NodeAdminResults.Fail<T>(code, message);
 

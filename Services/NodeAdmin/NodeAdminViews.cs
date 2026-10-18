@@ -45,6 +45,13 @@ public static class NodeAdminViews
         => new(NodeAdminCrypto.SidFromRecordId(session.Id), session.Principal, session.AuthTime, session.Amr, session.ExpiresAt,
             session.RevokedAt, session.Ip, current);
 
+    /// <summary>Strips control characters, trims and truncates caller-supplied display text.</summary>
+    public static string CleanText(string? value, int maxLength)
+    {
+        var clean = new string((value ?? string.Empty).Where(character => !char.IsControl(character)).ToArray()).Trim();
+        return clean.Length > maxLength ? clean[..maxLength] : clean;
+    }
+
     public static NodeAdminAuditRowView AuditRow(NodeAdminAudit row)
         => new(row.Seq, row.At, row.Actor, row.Amr, row.Action, row.Target, row.Outcome, row.Detail, row.RequestId, row.PrevHash, row.Hash);
 }

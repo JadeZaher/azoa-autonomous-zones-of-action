@@ -137,6 +137,7 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
     public async Task<NodeAdminCommit> CommitAsync(long? expectedDirectoryRevision, IReadOnlyList<SurrealQuery> mutations, CancellationToken ct,
         IReadOnlyList<SurrealQuery>? deletes = null)
     {
+        // raw: BEGIN/COMMIT only; the directory CAS and the typed mutations must commit or roll back together (M1).
         var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
         if (expectedDirectoryRevision is { } revision)
         {

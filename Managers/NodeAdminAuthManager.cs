@@ -126,7 +126,7 @@ public sealed class NodeAdminAuthManager(
             return AuditUnavailable<NodeAdminEnrollStartView>();
         var secret = Totp.NewSecret();
         var protectedSecret = totpProtector.Protect(admin.Id, secret);
-        var label = Sanitize(request.Label, 64);
+        var label = NodeAdminViews.CleanText(request.Label, 64);
         var bind = SurrealWriter.UpdateOnly<NodeAdminEnrollment>(enrollment.Id)
             .Where(row => row.StartedAt == null && row.ConsumedAt == null && row.ExpiresAt > now)
             .Set(row => row.StartedAt, now)
@@ -403,12 +403,6 @@ public sealed class NodeAdminAuthManager(
         => new(actor, amr, action, target, outcome, detail, info.Ip, info.RequestId);
 
     private static string Reason(string reason) => JsonSerializer.Serialize(new { reason });
-
-    private static string Sanitize(string? value, int maxLength)
-    {
-        var clean = new string((value ?? string.Empty).Where(character => !char.IsControl(character)).ToArray()).Trim();
-        return clean.Length > maxLength ? clean[..maxLength] : clean;
-    }
 
     private static AZOAResult<T> Unavailable<T>()
         => NodeAdminResults.Fail<T>(NodeAdminErrorCodes.Unavailable, "Node-admin sign-in is not configured on this node.");
