@@ -182,6 +182,7 @@ Thumbs.db
 package-lock.json
 !frontend/package-lock.json
 !sdk/azoa-wallet/package-lock.json
+!tools/azoa-node-cli/package-lock.json
 !contracts/ethereum/package-lock.json
 !contracts/ethereum/test/*.test.mjs
 appsettings.EthereumLocal.json
@@ -201,6 +202,10 @@ pnpm-lock.yaml
 # silently untrackable, which is exactly how the mirrors lagged the backend enum
 # by seven node types unnoticed.
 !frontend/src/**/*.test.ts
+# The azoa-node CLI's vitest suite (golden Ed25519 vectors, audit-chain
+# recompute, the fake-node e2e flows, the root-env injection regression tests)
+# is the primary evidence this package works — not scratch either.
+!tools/azoa-node-cli/test/**/*.test.ts
 
 # Build artifacts
 dist/
