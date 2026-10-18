@@ -100,13 +100,18 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
                 await TryRevokeSessionAsync(session.Id, now, ct);
     }
 
-    /// <summary>Deletes expired challenges, enrollments and sessions in batches until a short batch, at most <paramref name="maxBatches"/> per table.</summary>
+    /// <summary>Consumed challenge markers outlive their expiry by this clock-skew margin before the sweep may delete them.</summary>
+    public static readonly TimeSpan ConsumedMarkerSkewMargin = TimeSpan.FromMinutes(5);
+
+    /// <summary>Deletes expired challenges (after <see cref="ConsumedMarkerSkewMargin"/>), enrollments and sessions in batches until a short batch,
+    /// at most <paramref name="maxBatches"/> per table.</summary>
     public async Task<int> SweepExpiredAsync(DateTimeOffset cutoff, CancellationToken ct, int batchSize = 500, int maxBatches = 50)
     {
         var removed = 0;
+        var markerCutoff = cutoff - ConsumedMarkerSkewMargin;
         removed += await SweepAsync(async () => (await executor.QueryAsync<NodeAdminChallenge>(SurrealQuery<NodeAdminChallenge>.From()
-                .Where(row => row.ExpiresAt < cutoff).Limit(batchSize), ct)).Select(row => row.Id).ToArray(),
-            id => SurrealWriter.DeleteOnly<NodeAdminChallenge>(id).Where(item => item.ExpiresAt < cutoff).Build(), batchSize, maxBatches, ct);
+                .Where(row => row.ExpiresAt < markerCutoff).Limit(batchSize), ct)).Select(row => row.Id).ToArray(),
+            id => SurrealWriter.DeleteOnly<NodeAdminChallenge>(id).Where(item => item.ExpiresAt < markerCutoff).Build(), batchSize, maxBatches, ct);
         removed += await SweepAsync(async () => (await executor.QueryAsync<NodeAdminEnrollment>(SurrealQuery<NodeAdminEnrollment>.From()
                 .Where(row => row.ExpiresAt < cutoff).Limit(batchSize), ct)).Select(row => row.Id).ToArray(),
             id => SurrealWriter.DeleteOnly<NodeAdminEnrollment>(id).Where(item => item.ExpiresAt < cutoff).Build(), batchSize, maxBatches, ct);

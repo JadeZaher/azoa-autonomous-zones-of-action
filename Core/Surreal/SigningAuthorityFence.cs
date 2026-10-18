@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Models.Signing;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Core.Surreal;
@@ -73,7 +74,7 @@ public static class SigningAuthorityFence
             || value.Kind is not ("Jwt" or "ApiKey") || value.Scopes is null || value.Scopes.Any(string.IsNullOrWhiteSpace)) return null;
         if (value.Kind == "Jwt" && (value.IssuedAt is null || value.ExpiresAt is null || value.IssuedAt >= value.ExpiresAt
             || value.ApiKeyId is not null || value.ApiKeyIdentityHash is not null || value.StoredApiKeyScopes is not null
-            || value.TokenUse is not (AzoaClaims.TokenUseLogin or AzoaClaims.TokenUseChild or AzoaClaims.TokenUseNodeOperator)
+            || value.TokenUse is not (AzoaClaims.TokenUseLogin or AzoaClaims.TokenUseChild or AzoaClaims.TokenUseNodeOperator or NodeAdminClaims.TokenUseNodeAdmin)
             || (value.TokenUse == AzoaClaims.TokenUseChild) != (value.TenantId is not null)
             || value.OwnerAuthority != (value.TokenUse == AzoaClaims.TokenUseLogin))) return null;
         if (value.Kind == "ApiKey" && (value.ApiKeyId is null || value.ApiKeyId == Guid.Empty
@@ -87,6 +88,8 @@ public static class SigningAuthorityFence
         if (value.TokenUse == AzoaClaims.TokenUseNodeOperator
             && (value.ActorUserId != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId || value.OperatorCredentialRevision is null or < 0
                 || value.OperatorSessionRevision is null or < 0)) return null;
+        var nodeAdmin = value.TokenUse == NodeAdminClaims.TokenUseNodeAdmin;
+        if (nodeAdmin != (value.NodeAdmin is not null) || (nodeAdmin && !IsNodeAdminEvidence(value))) return null;
         var result = new List<SurrealQuery>
         {
             Sql("""
@@ -104,7 +107,8 @@ public static class SigningAuthorityFence
                 IF $_sa_issued > time::now() OR ($_sa_direct AND $_sa_expires <= time::now())
                     OR ($_sa_watermark_present AND $_sa_issued < $_sa_cutoff) { THROW 'SIGNING_AUTHORITY_CHANGED' }
                 """, prefix).WithParam(prefix + "_issued", value.IssuedAt!.Value).WithParam(prefix + "_expires", value.ExpiresAt!.Value)
-                    .WithParam(prefix + "_direct", direct).WithParam(prefix + "_watermark_present", value.AuthNotBefore.HasValue)
+                    // A node-admin session is revoked through its own rows, never the reserved user's login watermark.
+                    .WithParam(prefix + "_direct", direct).WithParam(prefix + "_watermark_present", value.AuthNotBefore.HasValue && !nodeAdmin)
                     .WithParam(prefix + "_cutoff", value.AuthNotBefore?.AddSeconds(-1) ?? DateTimeOffset.UnixEpoch));
             if (value.TokenUse == AzoaClaims.TokenUseNodeOperator)
             {
@@ -117,6 +121,7 @@ public static class SigningAuthorityFence
                         .WithParam(prefix + "_operator_session", value.OperatorSessionRevision!.Value));
                 result.Add(Sql("IF $_sa_operator = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix));
             }
+            if (nodeAdmin) result.AddRange(NodeAdminSession(value.NodeAdmin!, prefix));
         }
         else
         {
@@ -135,6 +140,49 @@ public static class SigningAuthorityFence
             result.Add(Sql("IF $_sa_key = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix));
         }
         return result;
+    }
+
+    // Mirrors NodeAdminSessionValidator inside the transaction: the live session row for the principal, then the admin row
+    // (active + both revisions) or the root watermark (key + session revisions); see Services/NodeAdmin/AGENTS.md §operator-actor.
+    private static IEnumerable<SurrealQuery> NodeAdminSession(NodeAdminAuthorityWitness evidence, string prefix)
+    {
+        yield return Sql("""
+            LET $_sa_na_session = (UPDATE ONLY type::record('node_admin_session', $_sa_na_sid) SET expires_at = expires_at
+                WHERE principal = $_sa_na_principal AND revoked_at = NONE AND expires_at > time::now() RETURN AFTER)
+            """, prefix).WithParam(prefix + "_na_sid", evidence.SessionRecordId).WithParam(prefix + "_na_principal", evidence.Principal);
+        yield return Sql("IF $_sa_na_session = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
+        if (evidence.AdminRevision is { } adminRevision)
+        {
+            yield return Sql("""
+                LET $_sa_na_admin = (UPDATE ONLY type::record('node_admin', $_sa_na_admin_id) SET admin_revision = admin_revision
+                    WHERE status = $_sa_na_active AND admin_revision = $_sa_na_revision AND session_revision = $_sa_na_session_revision RETURN AFTER)
+                """, prefix).WithParam(prefix + "_na_admin_id", Guid.ParseExact(evidence.Principal[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D").ToString("N"))
+                    .WithParam(prefix + "_na_active", NodeAdminAccount.StatusActive)
+                    .WithParam(prefix + "_na_revision", adminRevision).WithParam(prefix + "_na_session_revision", evidence.SessionRevision!.Value);
+            yield return Sql("IF $_sa_na_admin = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
+        }
+        else
+        {
+            yield return Sql("""
+                LET $_sa_na_root = (UPDATE ONLY type::record('node_admin_root_state', $_sa_na_root_id) SET root_session_revision = root_session_revision
+                    WHERE root_key_revision = $_sa_na_key_revision AND root_session_revision = $_sa_na_root_session RETURN AFTER)
+                """, prefix).WithParam(prefix + "_na_root_id", NodeAdminRootState.SingletonId)
+                    .WithParam(prefix + "_na_key_revision", evidence.RootKeyRevision!.Value).WithParam(prefix + "_na_root_session", evidence.RootSessionRevision!.Value);
+            yield return Sql("IF $_sa_na_root = NONE { THROW 'SIGNING_AUTHORITY_CHANGED' }", prefix);
+        }
+    }
+
+    private static bool IsNodeAdminEvidence(SigningCredentialWitness value)
+    {
+        var evidence = value.NodeAdmin!;
+        if (value.Kind != "Jwt" || value.TenantId is not null || value.OwnerAuthority
+            || value.ActorUserId != OperatorActor.Legacy.SubjectUserId || evidence.SessionRecordId is not { Length: 64 } sessionId
+            || !sessionId.All(char.IsAsciiHexDigitLower)) return false;
+        if (evidence.Principal.StartsWith(NodeAdminClaims.AdminPrincipalPrefix, StringComparison.Ordinal))
+            return Guid.TryParseExact(evidence.Principal[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out _)
+                && evidence.AdminRevision is >= 0 && evidence.SessionRevision is >= 0 && evidence.RootKeyRevision is null && evidence.RootSessionRevision is null;
+        return evidence.Principal.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal)
+            && evidence.RootKeyRevision is >= 0 && evidence.RootSessionRevision is >= 0 && evidence.AdminRevision is null && evidence.SessionRevision is null;
     }
 
     internal static bool Grants(List<SurrealQuery> result, SigningCredentialWitness credential, IReadOnlyList<string> scopes,

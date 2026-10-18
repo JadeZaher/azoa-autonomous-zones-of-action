@@ -26,6 +26,8 @@ public sealed class NodeTreasuryAuditResponse
     public string Action { get; set; } = string.Empty;
 
     public Guid ActorUserId { get; set; }
+    /// <summary>Real operator actor (<c>legacy-operator</c> | <c>admin:&lt;id&gt;</c> | <c>root:&lt;fingerprint&gt;</c>); null on older rows.</summary>
+    public string? Actor { get; set; }
 
     public string Chain { get; set; } = string.Empty;
 

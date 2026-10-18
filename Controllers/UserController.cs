@@ -6,6 +6,7 @@ using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -174,6 +175,10 @@ public class UserController : ControllerBase
     {
         if (string.Equals(User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase))
             return false;
+
+        // A node admin reached this route only through DappRoleAssignment holding users.roles.assign (§route-permission-map).
+        if (NodeAdminClaims.IsNodeAdmin(User))
+            return HttpContext.TryGetOperatorActor(out _);
 
         return AzoaClaims.IsNodeOperator(User)
             && User.HasScope(AzoaScopes.Operator)

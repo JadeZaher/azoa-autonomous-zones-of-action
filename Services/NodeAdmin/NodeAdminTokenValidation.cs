@@ -28,10 +28,15 @@ public static class NodeAdminTokenValidation
         context.HttpContext.Items[NodeAdminCaller.ItemKey] = caller;
     }
 
-    /// <summary>True only when the routed endpoint carries a <c>NodeAdmin:*</c> policy (fail closed everywhere else).</summary>
+    /// <summary>True only on a <c>NodeAdmin:*</c> endpoint or an operator route mapped to a permission (fail closed everywhere else).</summary>
     public static bool EndpointAcceptsNodeAdmin(HttpContext context)
-        => context.GetEndpoint()?.Metadata.GetOrderedMetadata<IAuthorizeData>()
-            .Any(data => data.Policy?.StartsWith(NodeAdminPolicies.Prefix, StringComparison.Ordinal) == true) == true;
+    {
+        var endpoint = context.GetEndpoint();
+        if (endpoint?.Metadata.GetOrderedMetadata<IAuthorizeData>()
+                .Any(data => data.Policy?.StartsWith(NodeAdminPolicies.Prefix, StringComparison.Ordinal) == true) == true)
+            return true;
+        return NodeAdminRoutePermissions.TryResolve(endpoint, context.Request.Method, out var grant) && grant.Permission is not null;
+    }
 }
 
 /// <summary>Checks a node-admin principal against durable state on every request (C2).</summary>

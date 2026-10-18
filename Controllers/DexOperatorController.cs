@@ -1,9 +1,9 @@
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Dex;
 using AZOA.WebAPI.Services.Dex;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -17,12 +17,13 @@ public sealed class DexOperatorController(SwapOperationService swaps, ILogger<De
     [HttpPost("operations/{id}/settle-review")]
     public async Task<IActionResult> SettleReview(string id, [FromBody] SwapOperatorSettlementRequest request, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actor = operatorActor.SubjectUserId;
         var settled = await swaps.SettleOperatorReviewAsync(id, request.ExpectedVersion, actor, request.Reason, ct);
         if (settled.IsError)
-            logger.LogWarning("Operator {OperatorId} settle-review of swap {OperationId} was refused: {Reason}", actor, id, settled.Message);
+            logger.LogWarning("Operator {OperatorId} settle-review of swap {OperationId} was refused: {Reason}", operatorActor.AuditActor, id, settled.Message);
         else
-            logger.LogWarning("Operator {OperatorId} settled the parked review of swap {OperationId}", actor, id);
+            logger.LogWarning("Operator {OperatorId} settled the parked review of swap {OperationId}", operatorActor.AuditActor, id);
         Response.Headers.CacheControl = "no-store";
         return settled.IsError ? Conflict(settled) : Ok(settled);
     }

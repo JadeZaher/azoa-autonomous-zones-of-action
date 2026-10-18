@@ -18,7 +18,7 @@ public static class PlatformGenesisIdentity
             && command.HolonId is null && command.WalletId == Guid.Empty && !command.WalletProvisioned
             && command.ActorUserId == NodeOperatorIdentity.UserId && command.TenantId is null && command.MintTarget == "PlatformReserve"
             && purpose.Credential.ActorUserId == command.ActorUserId && purpose.Credential.TenantId is null
-            && purpose.Credential.TokenUse == AzoaClaims.TokenUseNodeOperator && !purpose.Credential.OwnerAuthority
+            && OperatorActor.IsOperatorCredential(purpose.Credential) && !purpose.Credential.OwnerAuthority
             && purpose.PlatformTokenId == PlatformToken.RecordIdFor(command.Intent.ChainType, command.Intent.Network.ToString())
             && purpose.GenesisOperationKey == command.RequestKey && purpose.DefinitionHash == DefinitionHash(command.Intent, command.RequestKey)
             && !string.IsNullOrWhiteSpace(purpose.ProtocolIdentity) && command.WalletAddress == command.Intent.CreatorAddress

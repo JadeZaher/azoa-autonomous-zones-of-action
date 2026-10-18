@@ -37,3 +37,19 @@ migration `../Migrations/20261018_090000__add_user_discoverable.surql` adds `dis
 `SurrealDeploymentLeastPrivilegeContractTests.CompatibilityBaseline_RetainsTheShippedChecksum`
 (SHA-256 `c29e9122d4888795249030376909e7ab0702d2a138030bca3a5fae468312af87`) alongside the five
 tables baselined at the round-4 W1 re-base.
+
+## Operator-actor audits (2026-10-18, node-admin-rbac-cli lane A2)
+
+`kyc_control_audit`, `node_governance_audit`, `node_fee_audit`, `node_treasury_audit` and `action_recovery_audit`
+gained an optional `actor` field (`legacy-operator` | `admin:<id>` | `root:<fingerprint>`). Each file here is the exact
+pre-change generated golden; `../Migrations/20261018_120000__add_operator_actor_to_domain_audits.surql` adds the field
+with `DEFINE FIELD OVERWRITE … TYPE option<string>`. Pinned by
+`SurrealDeploymentLeastPrivilegeContractTests.CompatibilityBaseline_RetainsTheShippedChecksum`.
+
+| File | SHA-256 |
+|---|---|
+| `kyc_control_audit.surql` | `d51c8459601a8afae92b9b6d5ed6c414881ee504100fdbe49f9a28d99f238aa9` |
+| `node_governance_audit.surql` | `b2aa8a48bc44ec1fa86d26c795e7128a34abca7108966282ae00912308fe9cfe` |
+| `node_fee_audit.surql` | `24c2f0854f76d024477b412768ca7cd90ff73e1678095a3cf60e2fc8e85c2913` |
+| `node_treasury_audit.surql` | `ca09cda1ee4c9dca9fd3477a936c719ec7e568c5b671be920dedc65dac69e9da` |
+| `action_recovery_audit.surql` | `2c338a817a619e3b04255c3b23d75a2b0331fdf2bb1027e787f97517e9e632bb` |

@@ -14,7 +14,7 @@ public static class ValidatedTokenTime
         var kind = principal?.FindFirst(AzoaClaims.TokenUse)?.Value;
         var timestamp = kind switch
         {
-            AzoaClaims.TokenUseLogin or AzoaClaims.TokenUseNodeOperator => AzoaClaims.AuthTime,
+            AzoaClaims.TokenUseLogin or AzoaClaims.TokenUseNodeOperator or NodeAdminClaims.TokenUseNodeAdmin => AzoaClaims.AuthTime,
             AzoaClaims.TokenUseChild => "nbf",
             _ => null,
         };

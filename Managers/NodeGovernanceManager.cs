@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Governance;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -42,6 +43,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
     public async Task<AZOAResult<NodeGovernanceParametersResponse>> UpdateParametersAsync(
         NodeGovernanceParametersUpdateRequest request,
         Guid actorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default)
     {
         if (request is null)
@@ -97,6 +99,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
             AllowedAssetTypes = allowedAssetTypes,
             Detail = "Node governance parameters updated.",
             OccurredAt = now,
+            Actor = actor?.AuditActor,
         };
 
         var saved = await _store.UpdateParametersWithAuditAsync(parameters, audit, previous?.Version, ct);
@@ -189,6 +192,7 @@ public sealed class NodeGovernanceManager : INodeGovernanceManager
         Id = SurrealRecordGuid.Parse(row.Id),
         Action = row.Action,
         ActorUserId = SurrealRecordGuid.ParseOptional(row.ActorUserId) ?? Guid.Empty,
+        Actor = row.Actor,
         PreviousVersion = row.PreviousVersion,
         NewVersion = row.NewVersion,
         PreviousAllowedChains = row.PreviousAllowedChains,

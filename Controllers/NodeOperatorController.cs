@@ -1,10 +1,10 @@
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -57,9 +57,10 @@ public sealed class NodeOperatorController : ControllerBase
         [FromBody] UpdateKycProviderProfileRequest request,
         CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var operatorId))
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
-        return Translate(await _manager.UpdateProfileAsync(providerKey, request, operatorId, ct));
+        var operatorId = operatorActor.SubjectUserId;
+        return Translate(await _manager.UpdateProfileAsync(providerKey, request, operatorId, operatorActor, ct));
     }
 
     [HttpGet("tenants")]
@@ -79,10 +80,11 @@ public sealed class NodeOperatorController : ControllerBase
         [FromBody] SelectTenantKycProviderRequest request,
         CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var operatorId))
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
+        var operatorId = operatorActor.SubjectUserId;
         return Translate(await _manager.SelectTenantProviderAsync(
-            tenantId, request, operatorId, false, ct));
+            tenantId, request, operatorId, false, operatorActor, ct));
     }
 
     [HttpGet("kyc/submissions")]
@@ -113,8 +115,9 @@ public sealed class NodeOperatorController : ControllerBase
         [FromBody] OperatorKycDecisionRequest request,
         CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var operatorId))
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized();
+        var operatorId = operatorActor.SubjectUserId;
         return Translate(await _manager.DecideAsync(id, request, operatorId, ct));
     }
 

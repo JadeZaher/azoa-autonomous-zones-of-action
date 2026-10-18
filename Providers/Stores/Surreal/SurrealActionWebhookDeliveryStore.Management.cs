@@ -41,7 +41,7 @@ public sealed partial class SurrealActionWebhookDeliveryStore
             || command.ExpectedVersion is < 0 or long.MaxValue || string.IsNullOrWhiteSpace(command.Reason)
             || command.Reason.Trim().Length is < 10 or > 1000) return null;
         var credential = authority.Credential;
-        var isOperator = credential.TokenUse == AzoaClaims.TokenUseNodeOperator;
+        var isOperator = OperatorActor.IsOperatorCredential(credential);
         if (credential.TenantId is not null || (!isOperator && credential.ActorUserId != tenantId)) return null;
         var guards = SigningAuthorityFence.ForConsent(authority,
             [isOperator ? AzoaScopes.Operator : AzoaScopes.TenantProvision], "webhook_retry");

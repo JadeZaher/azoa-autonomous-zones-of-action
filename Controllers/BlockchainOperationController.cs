@@ -8,6 +8,7 @@ using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Blockchain.ClientSigning;
 using AZOA.WebAPI.Services.Blockchain.ClientSigning;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -117,7 +118,8 @@ public class BlockchainOperationController : ControllerBase
     [EnableRateLimiting("financial")]
     public async Task<IActionResult> Resolve(Guid id, [FromBody] ClientSigningResolution resolution, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var operatorId)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var operatorId = operatorActor.SubjectUserId;
         var resolved = await _clientSigned.ResolveAsync(id, operatorId, resolution, ct);
         Response.Headers.CacheControl = "no-store";
         return resolved.IsError ? Refusal(BlockchainOperationResponse.Project(resolved)) : Ok(BlockchainOperationResponse.Project(resolved));

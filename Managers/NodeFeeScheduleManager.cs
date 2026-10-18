@@ -8,6 +8,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Governance;
 using SurrealForge.Client;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -42,6 +43,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
     public async Task<AZOAResult<NodeFeeScheduleResponse>> UpdateScheduleAsync(
         NodeFeeScheduleUpdateRequest request,
         Guid actorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default)
     {
         if (request is null)
@@ -108,6 +110,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = "ScheduleUpdated",
             ActorUserId = actorLink,
+            Actor = actor?.AuditActor,
             PreviousVersion = previous?.Version ?? 0,
             NewVersion = next.Version,
             PreviousScheduleJson = previous is null ? null : JsonSerializer.Serialize(ToResponse(previous), JsonOptions),
@@ -310,6 +313,7 @@ public sealed class NodeFeeScheduleManager : INodeFeeScheduleManager
         Id = SurrealRecordGuid.Parse(row.Id),
         Action = row.Action,
         ActorUserId = SurrealRecordGuid.ParseOptional(row.ActorUserId) ?? Guid.Empty,
+        Actor = row.Actor,
         PreviousVersion = row.PreviousVersion,
         NewVersion = row.NewVersion,
         PreviousScheduleJson = row.PreviousScheduleJson,
