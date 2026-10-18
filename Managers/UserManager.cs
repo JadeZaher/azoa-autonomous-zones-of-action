@@ -34,7 +34,7 @@ public class UserManager : IUserManager
         // Second of the two seams. The controller refuses first; this one is what a
         // future non-HTTP caller inherits, so the gate cannot be routed around.
         if (!SelfRegistrationPolicy.IsAllowed(_config, _environment))
-            return new AZOAResult<IUser> { IsError = true, Message = SelfRegistrationPolicy.DisabledMessage };
+            return AZOAResult<IUser>.FailureWithCode(SelfRegistrationPolicy.DisabledMessage, SelfRegistrationPolicy.DisabledCode);
 
         var email = NormalizeIdentityValue(model.Email);
         var username = NormalizeIdentityValue(model.Username);
@@ -42,6 +42,8 @@ public class UserManager : IUserManager
             return new AZOAResult<IUser> { IsError = true, Message = "This account identity is reserved." };
         if (email.Length == 0 || username.Length == 0)
             return new AZOAResult<IUser> { IsError = true, Message = "A username and email are required." };
+        if (UsernameRules.IsReservedGeneratedHandle(username))
+            return AZOAResult<IUser>.FailureWithCode(UsernameRules.ReservedPrefixMessage, AzoaErrorCodes.InvalidRequest);
 
         var user = new User
         {
@@ -342,6 +344,11 @@ public class UserManager : IUserManager
         var normalized = NormalizeIdentityValue(requestedUsername);
         if (string.IsNullOrWhiteSpace(normalized))
             return new AZOAResult<bool> { IsError = true, Message = "Username cannot be empty." };
+        // Keeping a generated handle is fine; adopting someone else's would squat the
+        // deterministic name their first wallet/OAuth sign-in is about to mint.
+        if (!string.Equals(normalized, user.Username, StringComparison.OrdinalIgnoreCase)
+            && UsernameRules.IsReservedGeneratedHandle(normalized))
+            return new AZOAResult<bool> { IsError = true, Message = UsernameRules.ReservedPrefixMessage };
 
         var all = await _userStore.GetAllAsync();
         if (all.IsError)
@@ -372,7 +379,8 @@ public class UserManager : IUserManager
 }
 
 /// <summary>
-/// Whether <c>POST /api/user/register</c> may create an account on this node.
+/// Whether an anonymous caller may create an account on this node: password registration,
+/// first wallet sign-in and first federated sign-in all ask this one switch.
 /// </summary>
 /// <remarks>
 /// The endpoint is <c>[AllowAnonymous]</c> and the same node custodies another
@@ -394,6 +402,9 @@ public static class SelfRegistrationPolicy
     /// <summary>Refusal surfaced to an anonymous caller; states a node fact, never a user fact.</summary>
     public const string DisabledMessage =
         "Public self-registration is disabled on this node. Accounts are provisioned by the operator.";
+
+    /// <summary>Wire code for the refusal, shared by password, wallet and federated sign-up.</summary>
+    public const string DisabledCode = "SELF_REGISTRATION_DISABLED";
 
     /// <summary>True only when the node allows anonymous account creation right now.</summary>
     public static bool IsAllowed(IConfiguration? configuration, IHostEnvironment? environment)

@@ -202,8 +202,8 @@ public sealed class NodeIdentityPolicyGateTests
 
         var status = response.Result.Should().BeOfType<ObjectResult>().Subject;
         status.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        status.Value.Should().BeOfType<AZOAResult<IUser>>()
-            .Which.Message.Should().Be(SelfRegistrationPolicy.DisabledMessage);
+        status.Value.Should().BeOfType<AZOAResult<UserProfileResponse>>()
+            .Which.Code.Should().Be(SelfRegistrationPolicy.DisabledCode);
         manager.VerifyNoOtherCalls();
     }
 

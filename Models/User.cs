@@ -8,6 +8,7 @@ public class User : IUser
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore]
     public string PasswordHash { get; set; } = string.Empty;
     public string? Title { get; set; }
     public string? FirstName { get; set; }

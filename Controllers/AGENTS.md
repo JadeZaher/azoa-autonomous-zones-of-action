@@ -301,3 +301,33 @@ current ownership proof (`CrossChainBridgeService.OwnsReversalRecipientAsync`).
 - Tenant child projections expose only correlation ids once the user has claimed the
   account (audit-1 M1); tenant provisioning never writes a tenant-supplied email into the
   unique email column (a tenant cannot prove a mailbox).
+
+## User responses (QA 2026-10-18: H5, M5, L6)
+
+- Every user-returning action projects to a DTO: the caller's own record is `UserProfileResponse`
+  (explicit allowlist, no `PasswordHash` / `AuthNotBefore`), anyone else is `PublicUserInfo`. Never
+  return `IUser`/`User` directly: `Get` returns `AZOAResult<object>`, so the runtime `User` type was
+  serialized and the interface's `[JsonIgnore]` did not apply (the H5 leak). `Models.User.PasswordHash`
+  is now `[JsonIgnore]` as a second line; `tests/.../Architecture/ResponseCredentialGateTests.cs` fails
+  any statically typed response that exposes a credential-named property.
+- `GET api/user` (the node-wide directory) is `Operator`-policy only. `POST api/search` still returns
+  public user hits (`Username`, `Title`) to any signed-in caller by its own design; scoping it is an
+  owner decision recorded in `round4-lane-qa-api.md` §Deferred.
+- `PUT api/user/{id}` on a foreign id answers `404` before the manager runs, the same as `DELETE`.
+
+## Account-creating sign-ins follow the registration switch (QA H-A)
+
+`WalletAuthController.Verify` and the OAuth callback create an account only when
+`SelfRegistrationPolicy.IsAllowed` (docs/NODE-HOST.md §8.10). The wallet refusal is `403`
+`SELF_REGISTRATION_DISABLED`, issued only after the proof verified; all proof failures stay a
+generic `401`. The OAuth refusal redirects with `error=registration_closed`.
+
+## Unconfigured rails are named refusals (QA M2, M3)
+
+- Ethereum recovery (`EthereumRecoveryController`, `EthereumOperatorRecoveryController`) resolves through
+  `EthereumRecoveryResolution.TryResolveEthereumRecovery`, a non-throwing probe. A disabled network used
+  to throw `InvalidOperationException` from the factory (only `BlockchainProviderNotFoundException` was
+  caught) and surface as a 500; it is now `409 ETHEREUM_RECOVERY_UNAVAILABLE`.
+- Fiat checkout and tenant payout top-up answer `503 PAYMENTS_NOT_CONFIGURED` when the node has no payment
+  provider keys (`FiatConsumerErrors.Unresolved`), distinct from the transient `RAIL_UNAVAILABLE` /
+  `RAIL_BUSY`, so a client can say "not configured" instead of "try again shortly".

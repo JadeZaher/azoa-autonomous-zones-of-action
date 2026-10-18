@@ -466,6 +466,12 @@ public static class FiatConsumerErrors
     /// <summary>Wire code for a request the rail rejected outright.</summary>
     public const string RailRefusedCode = "RAIL_REFUSED";
 
+    /// <summary>Wire code for a node that has no payment provider configured at all (QA M3): not transient, nothing to retry.</summary>
+    public const string PaymentsNotConfiguredCode = "PAYMENTS_NOT_CONFIGURED";
+
+    private const string NotConfiguredMessage =
+        "Adding funds is not configured on this node.";
+
     private const string UnavailableMessage =
         "Adding funds is not available on this node right now.";
 
@@ -477,6 +483,13 @@ public static class FiatConsumerErrors
 
     public static AZOAResult<T> RailUnavailable<T>() =>
         AZOAResult<T>.FailureWithCode(UnavailableMessage, RailUnavailableCode);
+
+    public static AZOAResult<T> PaymentsNotConfigured<T>() =>
+        AZOAResult<T>.FailureWithCode(NotConfiguredMessage, PaymentsNotConfiguredCode);
+
+    /// <summary>The refusal for a rail that did not resolve: unconfigured when keys are missing, otherwise unavailable.</summary>
+    public static AZOAResult<T> Unresolved<T>(FiatOptions options) =>
+        options.MissingKeysFor(options.ActiveEnvironment).Count > 0 ? PaymentsNotConfigured<T>() : RailUnavailable<T>();
 
     public static AZOAResult<T> RailBusy<T>(string? correlationId = null) =>
         AZOAResult<T>.FailureWithCode(WithReference(BusyMessage, correlationId), RailBusyCode);
