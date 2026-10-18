@@ -32,6 +32,37 @@ public sealed class NftRecipientResolutionTests
     }
 
     [Fact]
+    public async Task A_custodial_wallet_stored_with_a_lowercase_chain_name_still_receives_the_transfer()
+    {
+        var (h, holder, nftId) = await HeldNftAsync();
+        var alice = Guid.NewGuid();
+        h.AddWallet(alice, Address, storedChain: "algorand");
+
+        var moved = await h.Service.MoveAsync(holder, nftId, Address, false, "lowercase-chain", credential: NftLifecycleHarness.Credential(holder));
+
+        moved.IsError.Should().BeFalse(moved.Message);
+        moved.Result!.RecipientUserId.Should().Be(alice);
+    }
+
+    [Theory]
+    [InlineData("algorand", "Algorand", "algorand")]
+    [InlineData("Solana", "Solana", "solana")]
+    [InlineData("ETHEREUM", "Ethereum", "ethereum")]
+    public void Lookup_probes_the_given_canonical_and_lowercase_chain_spellings(string given, string canonical, string lower)
+        => NftRecipientLookupForms.For(given, Address).Select(form => form.Chain).Distinct()
+            .Should().BeEquivalentTo(new[] { given, canonical, lower }.Distinct());
+
+    [Fact]
+    public void Case_sensitive_addresses_are_never_folded_and_ethereum_adds_its_canonical_forms()
+    {
+        const string solana = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
+        NftRecipientLookupForms.For("Solana", solana).Select(form => form.Address).Distinct().Should().Equal(solana);
+        var ethereum = NftRecipientLookupForms.For("Ethereum", "0x52908400098527886E0F7030069857D2E4169EE7")
+            .Select(form => form.Address).Distinct().ToArray();
+        ethereum.Should().Contain("0x52908400098527886e0f7030069857d2e4169ee7").And.Contain("0x52908400098527886E0F7030069857D2E4169EE7");
+    }
+
+    [Fact]
     public async Task An_attacker_who_registered_the_address_first_without_proof_is_refused_and_never_recorded_as_owner()
     {
         var (h, holder, nftId) = await HeldNftAsync();

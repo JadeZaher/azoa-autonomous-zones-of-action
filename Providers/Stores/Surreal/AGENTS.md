@@ -1075,3 +1075,5 @@ SELECT, deleted with the head. Before this, dependencies round-tripped as empty,
 dependency enforcement (`ActionManager.EnforceDependenciesAsync`) only bit in-memory. The store
 is still a non-transactional multi-request fan-out (pre-existing shape; a partial write is
 visible on failure) — moving the whole aggregate into one `BEGIN…COMMIT` is a follow-up.
+
+- **Custodial NFT recipient lookup (RV-L4-08):** probe the canonical chain/address spellings from `Helpers/NftRecipientLookupForms` through the `wallet_chain_address` index; never case-fold Solana/Algorand addresses.

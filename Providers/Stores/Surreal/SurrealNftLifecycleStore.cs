@@ -9,7 +9,6 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
-using AZOA.WebAPI.Providers.Blockchain.Ethereum;
 
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
@@ -263,18 +262,12 @@ public sealed class SurrealNftLifecycleStore(ISurrealExecutor executor) : INftLi
     /// <inheritdoc/>
     public async Task<IReadOnlyList<Guid>> FindCustodialWalletIdsAsync(string chainType, string address, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(chainType) || string.IsNullOrWhiteSpace(address)) return [];
-        var forms = new HashSet<string>(StringComparer.Ordinal) { address };
-        if (chainType.Equals("Ethereum", StringComparison.OrdinalIgnoreCase) && EthereumAddress.TryParse(address, out var checksummed))
-        {
-            forms.Add(checksummed);
-            forms.Add(checksummed.ToLowerInvariant());
-        }
         var ids = new List<Guid>();
-        foreach (var form in forms)
+        // RV-L4-08: wallet rows keep the chain/address spelling they were written with, so probe each canonical spelling exactly.
+        foreach (var (chain, form) in NftRecipientLookupForms.For(chainType, address))
         {
             var rows = await executor.QueryAsync<Wallet>(SurrealQuery<Wallet>.From()
-                .Where(row => row.ChainType == chainType && row.Address == form && row.WalletType == Wallet.WalletTypeKind.Platform)
+                .Where(row => row.ChainType == chain && row.Address == form && row.WalletType == Wallet.WalletTypeKind.Platform)
                 .Limit(16), ct);
             ids.AddRange(rows.Select(row => SurrealRecordGuid.Parse(row.Id)));
         }

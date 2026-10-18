@@ -113,3 +113,14 @@ has no NFT asset accounts; a refusal there would pass for the wrong reason).
   `NftStageAcceptance` / `NftStageCostAcceptance`) and the lifecycle UI step; view fields above.
 - **r4/fix-chains (Providers/Blockchain):** I edited only `Providers/Blockchain/Solana/SolanaProvider.Nft.cs`,
   `SolanaProvider.NftCosts.cs` and an inserted section in `Providers/Blockchain/Solana/AGENTS.md` (before "Codec provenance").
+
+## RV-L4-08 (re-check follow-up)
+
+Custodial recipient lookup no longer compares chain/address case-sensitively: `Helpers/NftRecipientLookupForms.For(chain, address)`
+enumerates the exact spellings to probe (as given, canonical chain display name, lowercase chain; address as given plus the
+per-chain canonical form, Ethereum checksum form). Solana/Algorand addresses are never case-folded. `FindCustodialWalletIdsAsync`
+queries each form through the `wallet_chain_address` index. Tests: `NftRecipientResolutionTests` (lowercase chain still resolves;
+spelling table; Solana never folded). Build 0 errors / 17 warnings; Nft|Credential|Solana filter 490/490. RV-L4 + RV-L5 re-checks:
+RV-L4-02 CLOSED, RV-L5-09 CLOSED, F-M11 CLOSED. The optional provider-side tenant/intent binding (RV-L5 re-check LOW) was not taken:
+the provider cannot recompute the quoted intent hash, and a tenant check would refuse valid owner takeovers; the store enforces both.
+Commit + merge were run by the orchestrator (agent git was denied by the permission classifier; owner chose orchestrator-run merges).

@@ -130,8 +130,11 @@ internal sealed class NftLifecycleHarness
         governance.Setup(item => item.EnsureAllowedAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(NodeGovernanceDecision.Allowed);
         var authorities = new AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), Wallets.Object,
             Mock.Of<SurrealForge.Client.Query.ISurrealExecutor>());
-        Store.CustodialWallets = (chain, address) => _wallets.Where(item => item.WalletType == WalletType.Platform
-            && item.ChainType == chain && ChainAddressIdentity.Equivalent(chain, item.Address, address)).Select(item => item.Id).ToArray();
+        // Mirrors the durable store's exact indexed probes over every stored spelling.
+        Store.CustodialWallets = (chain, address) => NftRecipientLookupForms.For(chain, address)
+            .SelectMany(form => _wallets.Where(item => item.WalletType == WalletType.Platform
+                && item.ChainType == form.Chain && item.Address == form.Address))
+            .Select(item => item.Id).Distinct().ToArray();
         Service = new(Store, Wallets.Object, Nfts.Object, Factory.Object, Access.Object, governance.Object, Configuration, Clock, ProtocolCosts.Object, WorkflowCosts.Object, authorities, ActionExecutions.Object,
             OwnershipProofs.Object);
     }
@@ -161,9 +164,9 @@ internal sealed class NftLifecycleHarness
     }
 
     /// <summary>Registers a custodial (Platform) wallet; pass <paramref name="external"/> for an unproven connected wallet.</summary>
-    internal IWallet AddWallet(Guid owner, string? address = null, bool external = false)
+    internal IWallet AddWallet(Guid owner, string? address = null, bool external = false, string? storedChain = null)
     {
-        var wallet = Mock.Of<IWallet>(item => item.Id == Guid.NewGuid() && item.UserId == owner && item.ChainType == ChainType
+        var wallet = Mock.Of<IWallet>(item => item.Id == Guid.NewGuid() && item.UserId == owner && item.ChainType == (storedChain ?? ChainType)
             && item.Address == (address ?? owner.ToString("N")) && item.WalletType == (external ? WalletType.External : WalletType.Platform));
         _wallets.Add(wallet);
         return wallet;
