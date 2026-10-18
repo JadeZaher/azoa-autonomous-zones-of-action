@@ -211,6 +211,17 @@ public class ReversalTests
     // ── Correlation: no issuance, nothing to unwind ──
 
     [Fact]
+    public async Task A_reversal_of_a_credited_lot_links_the_lot_as_a_record_not_a_bare_id()
+    {
+        var harness = new Harness();
+
+        await harness.ApplyRefundAsync();
+
+        // lot_id is record<on_ramp_lot>: a bare id is rejected by the schema, so every such reversal failed to record.
+        harness.Reversals.Single().LotId.Should().Be($"{OnRampLot.SchemaNameConst}:{harness.Lot.Id}");
+    }
+
+    [Fact]
     public async Task A_reversal_with_no_matching_issuance_is_recorded_and_unwinds_nothing()
     {
         var harness = new Harness { HasLot = false };

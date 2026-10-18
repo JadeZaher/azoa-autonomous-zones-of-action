@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
@@ -19,8 +20,9 @@ public static class PayoutAccountFlow
     /// </summary>
     public const string FlowKind = "fiat-connect-onboarding";
 
-    /// <summary>One payout account per person: the admission key is derived, never caller-chosen.</summary>
-    public static string AdmissionKeyFor(Guid subjectUserId) => $"{subjectUserId:N}:payout-account";
+    /// <summary>One payout account per person per payment environment; derived, never caller-chosen (§account-recovery R-1).</summary>
+    public static string AdmissionKeyFor(Guid subjectUserId, RailEnvironment environment)
+        => $"{subjectUserId:N}:payout-account:{(environment.Kind == RailEnvironmentKind.Live ? RailEnvironmentNames.Live : RailEnvironmentNames.Test)}";
 }
 
 /// <summary>
@@ -196,7 +198,7 @@ public sealed class PayoutAccountService : IPayoutAccountService
                 Id = Guid.NewGuid().ToString("N"),
                 FlowKind = PayoutAccountFlow.FlowKind,
                 ProviderKey = FiatRailIds.StripeProviderKey,
-                AdmissionKey = PayoutAccountFlow.AdmissionKeyFor(subjectUserId),
+                AdmissionKey = PayoutAccountFlow.AdmissionKeyFor(subjectUserId, _fiat.ActiveEnvironment),
                 CreationToken = Guid.NewGuid().ToString("N"),
                 CreationClaimedAt = now,
                 SubjectUserId = subjectUserId.ToString("N"),
@@ -301,7 +303,7 @@ public sealed class PayoutAccountService : IPayoutAccountService
             return SetupConflict(UnavailableMessage, AzoaErrorCodes.Conflict);
 
         var found = await _sessions.GetByAdmissionAsync(
-            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subjectUserId), ct);
+            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subjectUserId, _fiat.ActiveEnvironment), ct);
         if (found.IsError)
             return SetupConflict("The payout-account setup could not be read. Nothing was changed.", AzoaErrorCodes.Conflict);
         if (found.Result is not { } row || !string.Equals(row.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase))
@@ -344,7 +346,7 @@ public sealed class PayoutAccountService : IPayoutAccountService
         }
 
         // Absence is evidence only once no create (original or replay) can still be in flight.
-        if (started > now - FiatHostedCreation.ReplayWindow - TimeSpan.FromMinutes(5))
+        if (started > now - FiatHostedCreation.ReplayWindow - AbsenceMargin(_fiat.EffectiveRequestTimeout))
             return SetupConflict("Stripe holds no account for this claim yet, but its create may still be replayed. Try again after the replay window.", AzoaErrorCodes.Conflict);
 
         // Proven absent and past the window: quarantine with the audit entry, then release the claim (both CAS) so the
@@ -358,6 +360,13 @@ public sealed class PayoutAccountService : IPayoutAccountService
         return AZOAResult<PayoutAccountSetupResolution>.Success(new("released", null), "Resolved.");
     }
 
+    /// <summary>How long past the replay window an in-flight create could still land: five minutes, or more under a long request timeout.</summary>
+    internal static TimeSpan AbsenceMargin(TimeSpan requestTimeout)
+    {
+        var derived = requestTimeout + requestTimeout + TimeSpan.FromMinutes(1);
+        return derived > TimeSpan.FromMinutes(5) ? derived : TimeSpan.FromMinutes(5);
+    }
+
     private static AZOAResult<PayoutAccountSetupResolution> SetupConflict(string message, string code)
         => AZOAResult<PayoutAccountSetupResolution>.FailureWithCode(message, code);
 
@@ -369,7 +378,7 @@ public sealed class PayoutAccountService : IPayoutAccountService
 
         var found = await _sessions.GetByAdmissionAsync(
             PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-            PayoutAccountFlow.AdmissionKeyFor(subjectUserId), ct);
+            PayoutAccountFlow.AdmissionKeyFor(subjectUserId, _fiat.ActiveEnvironment), ct);
 
         if (found.IsError)
             return AZOAResult<string?>.Failure(found.Message);

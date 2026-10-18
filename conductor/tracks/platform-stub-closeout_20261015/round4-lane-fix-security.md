@@ -1,10 +1,11 @@
 ---
+merged: 53c6473c
 type: lane-checkpoint
 lane: fix-security
 wave: fix-batch
 branch: r4/fix-security
 base: 21da6183
-status: ready
+status: merged
 ---
 
 # Round 4 · fix batch · `r4/fix-security`

@@ -1,4 +1,5 @@
 using System.Net;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
@@ -25,7 +26,7 @@ public sealed class StripeBankPayoutGatewayTests
         options.Checkout.AllowedReturnOrigins.Add("https://example.test");
         var sessions = new Mock<IHostedSessionStore>();
         sessions.Setup(x => x.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
-                PayoutAccountFlow.AdmissionKeyFor(subject), It.IsAny<CancellationToken>()))
+                PayoutAccountFlow.AdmissionKeyFor(subject, RailEnvironment.Live), It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<HostedSession>.Success(new HostedSession
             { SubjectUserId = subject.ToString("N"), ProviderSessionId = "acct_owner" }));
         var gateway = new Mock<IStripeConnectGateway>(MockBehavior.Strict);
