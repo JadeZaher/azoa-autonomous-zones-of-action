@@ -16,6 +16,7 @@ Closing vocabulary: *Built* = compiled + unit-covered; *Authored* = compiles, ne
 | Item | Why | Closure check |
 |---|---|---|
 | **Enable Railway "Wait for CI"** on every AZOA service | It was found OFF (`checkSuites: false`) on 2026-10-18 — earlier deploy stalls were an expired Railway trial, not the CI gate. While off, any push to `main` deploys unreviewed code | Railway service settings show wait-for-CI on |
+| **Decide public self-registration for launch** — QA node has `Registration__AllowPublicSelfServiceInProduction=true` (D-12) | Opened for QA account creation; an open production node lets anonymous strangers create identities | Railway variable reviewed/removed before launch |
 | **Integrated sweep, once** (plan §8: P-1…P5, ranked gates KYC/KYB → Stripe → exactly-once → rest, ≤3 failure batches) | Most round-4 tests are *Authored* only; last full CI (`e0deb11`) had 204 unit failures before the fixes | CI green on `main` |
 | **CI green on `main`** (dotnet tests, integration on SurrealDB, HTTP flows, SDK, frontend incl. browser slices, E2E, schema job + upgrade step, perf budgets, gitleaks) | Railway gate and the plan's definition of done | GitHub Actions all green |
 | Live **Identomat drill** with owner configs (`Kyc__Identomat__ConfigId`, `Kyb__ConfigId`, new `Kyc__Identity__PersonKeySecret`, callback URL registered) | KYC/KYB are *Built* on vendor-doc fakes only; Identomat's undecided `/result/` shape is unconfirmed | approve/abandon/reject/replay KYC, approve/reject KYB, one lost-response recovered by poll |
