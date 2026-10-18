@@ -365,9 +365,19 @@ generic `401`. The OAuth refusal redirects with `error=registration_closed`.
 - Every controller carries a class-level `NodeAdmin:session` policy; actions add `NodeAdmin:<permission>`
   or `NodeAdmin:<permission>:recent` (step-up). Anonymous actions (`auth/challenge`, `auth/session`,
   `enroll/*`) are `[AllowAnonymous]` + `[CredentialFreePublicEndpoint]` + `operator-login` rate limit.
-- Only these policies admit a node-admin token; every other endpoint fails it in `OnTokenValidated`.
+- Only these policies and the mapped operator routes admit a node-admin token; every other endpoint fails it in
+  `OnTokenValidated`.
 - `NodeAdminControllerBase.Respond` maps `result.code` to the contract status (`NodeAdminResults.StatusFor`),
   sets `no-store`, `Retry-After` for `ADMIN_LOCKED` and the step-up header.
 - Controllers stay thin: invariants are enforced in `Managers/NodeAdminManager` and
   `Managers/NodeAdminAuthManager`, writes are audited structurally by `NodeAdminAuditActionFilter`.
 - Mutating routes are inventoried in `tests/AZOA.WebAPI.Tests/Architecture/Inventories/RouteAuthorization/node-admin.json`.
+
+### Operator routes for named admins (lane A2)
+
+Every route carrying `Operator`, `NodeGovern`, `NodeOperatorSession`, `RecentNodeOperatorSession` or
+`DappRoleAssignment` is mapped to one node-admin permission in `Services/NodeAdmin/NodeAdminRoutePermissions.cs`
+(gate: `Architecture/NodeAdminRoutePermissionGateTests`; a new operator route without a row fails CI and denies node
+admins at runtime). Operator controllers resolve the caller with `HttpContext.TryGetOperatorActor(out var actor)` and
+pass `actor.SubjectUserId` (always the reserved operator subject) plus `actor` to audit writers — never parse `sub` on an
+operator route. Design: `Services/NodeAdmin/AGENTS.md` §operator-actor, §route-permission-map, §reserved-id-inventory.

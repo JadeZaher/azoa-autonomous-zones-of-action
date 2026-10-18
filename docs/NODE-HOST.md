@@ -795,6 +795,96 @@ Two consequences worth knowing before you operate this:
 it matches `Reserve__ExpectedAddresses__<Chain>`; with the mnemonic blank, the
 same read fails with an error naming the chain and no address is returned.
 
+### 8.12 Named node admins and the azoa-node CLI
+
+The reserved operator (§8.9) is one shared password. Named node admins give each person
+their own Ed25519 key, an authenticator (TOTP) and a role, and every action is recorded in a
+hash-chained audit log. They work from the `azoa-node` CLI (`tools/azoa-node-cli`, README
+there). The legacy operator and its web console keep working unchanged beside them. Design:
+`Services/NodeAdmin/AGENTS.md`.
+
+**Configuration (API service):**
+
+```text
+NodeAdmin__RootPublicKeys=<comma list of base64url Ed25519 public keys>   # break-glass root keys
+NodeAdmin__RootKeyRevision=1                                              # monotonic; raise it to end every root session
+NodeAdmin__Audience=https://api.your-node.example                         # optional; defaults to PUBLIC_ORIGIN
+NodeAdmin__SessionMinutes=15                                              # optional; 5-30
+NodeAdmin__ChallengeKey=<random secret>                                   # optional; default derives from Jwt__Key
+```
+
+The audience is the node's one canonical public origin (`https://host[:port]`, no path, no
+trailing slash). Clients sign it into every login, and the CLI refuses a challenge for any
+other origin. It is the **API's** public origin, the one the CLI connects to. On Railway the
+frontend's `PUBLIC_ORIGIN` names the frontend, so set `NodeAdmin__Audience` explicitly on
+`azoa-api`. If it is missing or invalid, node-admin login answers 503 `NODE_ADMIN_UNAVAILABLE`. The node
+still boots and the legacy operator still works. A malformed root key, a missing revision, or
+an env revision lower than the one the database last saw disables **root** login only, with a
+critical log line. Boot is never refused for these.
+
+**Bootstrap, in order:**
+
+1. `azoa-node keygen --name root --kind root`. The passphrase is mandatory for root keys. The
+   command prints the public key and its fingerprint; the private key never leaves the machine.
+2. `azoa-node root env ...` renders `NodeAdmin__RootPublicKeys` / `NodeAdmin__RootKeyRevision`.
+   With `--railway ... --yes` it sets them after showing a diff. Redeploy the API.
+3. `azoa-node login --root`. This is an Ed25519 challenge with no TOTP. Root holds only
+   `admins.*`, `roles.*` and `audit.read`. It bootstraps people and reads audits. It can never
+   move money, decide KYC, govern, run genesis or operate recovery.
+4. `azoa-node admins create --username alice --role node-owner`. The enrollment token (≤ 4 h) is
+   printed once; hand it to Alice out of band.
+5. Alice, on her own machine, runs `azoa-node enroll --origin https://api.your-node.example`.
+   She pastes the token at the hidden prompt, scans the QR code into her authenticator, and the
+   CLI signs a proof with her new key. She is now `pending_activation`.
+6. `azoa-node admins activate <id> --fingerprint <fp>`. Root, or an admin who dominates Alice,
+   confirms the fingerprint Alice read out over a separate channel. Alice can then
+   `azoa-node login` (key + TOTP) and call operator routes with `azoa-node api <METHOD> /api/...`.
+
+**Roles** (built in, immutable): `node-owner` (everything), `governance` (governance params,
+fee schedule, treasury, plus every read), `compliance` (KYC read/decide/configure, user
+directory, audits), `operations` (money and recovery, plus every read), `auditor` (every read
+plus audits). Custom roles are any subset of the catalog. No one can create or assign a role
+with more than they hold. The last owner-capable admin cannot be removed. Admins cannot
+suspend, revoke or MFA-reset themselves. Every existing operator route maps to exactly one
+permission (`Services/NodeAdmin/NodeAdminRoutePermissions.cs`). Routes that need a recent
+operator login also need a node-admin login from the last 10 minutes. The answer otherwise is
+403 `STEP_UP_REQUIRED` with `x-azoa-auth-requirement: recent-node-admin-login`, and the CLI
+re-logs in and retries.
+
+**MFA and keys:** TOTP is SHA-1, 6 digits, 30 s. Five wrong codes lock the admin, starting at
+15 minutes and doubling per repeat up to 24 h. `azoa-node mfa reset <id>` returns an admin to
+enrollment and revokes their keys and sessions; only root receives the new token.
+`azoa-node keys add` (step-up, the new key proves possession) adds a second key.
+`keys revoke` removes one.
+
+**Revocation:**
+
+- One session: `azoa-node sessions revoke <handle>`, or `logout` for your own.
+- One admin: `admins suspend|revoke <id>` or `admins revoke-sessions <id>`. A role or status
+  change ends that admin's sessions immediately.
+- Root sessions: `azoa-node root revoke-sessions` is root-only. Admins cannot sign root out.
+- To cut a root **key** off (lost laptop, or an owner who must end root access), remove it
+  from `NodeAdmin__RootPublicKeys`, raise `NodeAdmin__RootKeyRevision`, and redeploy. Every
+  root session ends; rolling the revision back disables root login.
+
+**Audit:** every node-admin write is chained in `node_admin_audit` (an intent row before the
+action, the outcome after) with `admin:<id>` / `root:<fp>`. So is every denial. The domain
+audits (KYC control, governance, fee, treasury, action recovery) also name the real actor:
+`legacy-operator`, `admin:<id>` or `root:<fp>`. Run `azoa-node audit verify` periodically. It
+recomputes the chain and pins the last verified `(seq, hash)` locally, and alerts if the head
+ever regresses. A database root can still rewrite the whole chain; the chain detects edits,
+it does not prevent them. External signed checkpoints are deferred.
+
+**Legacy coexistence:** the reserved operator's password session (§8.9) keeps every route it
+had, and its behaviour is unchanged. The operator web console still uses it, and named admins
+have no web console yet. Both principals can be active at once. Prefer named admins for
+day-to-day work, and keep the legacy password in the owner's vault for the console.
+
+**Verify:** `azoa-node whoami` shows your principal and permissions. A `compliance` admin
+gets 403 `PERMISSION_DENIED` on `PUT /api/node-governance/fee-schedule`. A root session gets
+the same 403 there. `GET /api/node-governance/fee-audit` names `admin:<id>` for a governance
+admin's change. `azoa-node audit verify` exits 0.
+
 ---
 
 ## 9. Cross-links

@@ -232,12 +232,27 @@ names, sources, and the `${{service.VAR}}` references must match).
    `/app/data`, repair the mounted volume to `APP_UID=1654`, and then uses the
    image-bundled `setpriv` to drop both UID and GID before `dotnet` starts. The
    WebAPI therefore does not run as root. Generate a public domain.
+   **Named node admins** (`docs/NODE-HOST.md` §8.12; optional, coexists with the
+   legacy operator): `NodeAdmin__RootPublicKeys` (comma list of base64url
+   Ed25519 public keys from `azoa-node keygen --kind root`; `azoa-node root env
+   --railway ... --yes` sets it after showing a diff), `NodeAdmin__RootKeyRevision`
+   (≥ 1, monotonic — raise it with any key removal to end every root session),
+   `NodeAdmin__Audience` (this service's public origin, e.g.
+   `https://azoa-api-production.up.railway.app` — set it explicitly, because
+   `PUBLIC_ORIGIN` on `azoa-frontend` names the frontend, not the API the CLI
+   signs for; the API falls back to its own `PUBLIC_ORIGIN` only when this is
+   unset), optional `NodeAdmin__SessionMinutes` (default 15, 5–30) and optional
+   `NodeAdmin__ChallengeKey` (secret; default derives from `Jwt__Key`). A bad
+   value never blocks boot: it disables root or node-admin login with a critical
+   log line.
 
 5. **azoa-frontend** — create from the promoted frontend digest emitted by the
    same workflow run. Set `API_URL` to the
    backend's **public** domain (resolved at request time into
    `window.__RUNTIME_CONFIG__`, so the browser calls the right host). Generate a
-   public domain. Production rejects a missing, non-HTTPS, localhost, private-IP,
+   public domain and set `PUBLIC_ORIGIN` to it (exact origin; the operator BFF's
+   same-origin check pins to it instead of trusting proxy headers, see
+   `frontend/README.md`). Production rejects a missing, non-HTTPS, localhost, private-IP,
    or `.internal` API URL. `/api/health` performs a three-second, no-store probe
    of the resolved API `/health`; invalid config, timeout, redirect, network
    failure, or non-2xx returns a generic 503 without leaking the upstream URL,

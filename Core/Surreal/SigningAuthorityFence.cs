@@ -143,7 +143,7 @@ public static class SigningAuthorityFence
         return result;
     }
 
-    // Mirrors NodeAdminSessionValidator inside the transaction: the live session row for the principal, then the admin row
+    // raw: mirrors NodeAdminSessionValidator inside the owning transaction: the live session row for the principal, then the admin row
     // (active + both revisions) or the root watermark (key + session revisions); see Services/NodeAdmin/AGENTS.md §operator-actor.
     private static IEnumerable<SurrealQuery> NodeAdminSession(NodeAdminAuthorityWitness evidence, string prefix)
     {
