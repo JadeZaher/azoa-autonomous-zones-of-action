@@ -300,7 +300,7 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 1. **Verify state.** `git status`, `git log -5 --oneline` on `feat/platform-stub-closeout` and `main`;
    `git worktree list` (round-4 worktrees `../oasis-sleek-r4-*` can be removed once their branches are merged).
    Check whether `main` was pushed (`git rev-list --count upstream/main..main` = 0) and which Railway deployment is live.
-2. **Pushed 2026-10-17 as `5dc1b239`** (fix-core2/gates2/money2 merged; fix-frontend2 not yet — ship it as a follow-up push). If redoing: the gate is fix-core2 (API startup DI deadlock broken + host proven to start;
+2. **Pushed 2026-10-17 as `5dc1b239`** (fix-core2/gates2/money2 merged; fix-frontend2 merged as `ce1a8450` and shipped in a follow-up push). If redoing: the gate is fix-core2 (API startup DI deadlock broken + host proven to start;
    9 `UpdateOnly`/`DeleteOnly`-without-`Where` write paths fixed). Merge each finished final-round branch with
    `scratchpad/merge-lane.ps1` (recreate from §5 if the scratchpad is gone: base merge in worktree → build →
    merge-check → secret-scan → `--no-ff` into the main checkout → identical-tree check). Then `git switch main`,
