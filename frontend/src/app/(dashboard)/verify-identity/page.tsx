@@ -48,8 +48,12 @@ export default function VerifyIdentityPage() {
     try {
       const started = await azoa.api.startKycSession()
       if (isOk(started)) {
-        setSession(started.value)
+        // Commit session+status together (no await between them): a lone `setSession` here would
+        // paint the "Refresh result" button enabled (busy still true from the prior render) before
+        // its own status re-read lands, racy in a real browser where the two requests don't resolve
+        // in the same microtask the way they do under jsdom.
         const current = await azoa.api.getKycStatus()
+        setSession(started.value)
         if (isOk(current)) setStatus(current.value)
       } else setError(refusalMessage(started.error, 'Verification could not start.'))
     } finally { setBusy(false) }

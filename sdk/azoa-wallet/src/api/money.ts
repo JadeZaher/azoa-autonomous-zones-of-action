@@ -29,6 +29,21 @@ export interface TenantPayoutFloatView {
   recomputedReservedMinorUnits: number;
   recomputedFinalizedMinorUnits: number;
   consistent: boolean;
+  /** Reserved debits older than `TenantPayoutFunding.StrandedReservedAfter` (7d); `consistent` is false while this is nonzero. */
+  strandedReservedCount: number;
+  /** `requestedAt` of the oldest stranded debit, or null when none is stranded. */
+  oldestReservedAt: string | null;
+}
+
+/**
+ * `POST /api/admin/fiat-payouts/accounts/{userId}/setup/resolve` (RV-L1-01): the operator's exit for a
+ * payout-account setup stuck past its Stripe replay window. `attached` means Stripe's own listing named
+ * the account that was adopted; `released` means Stripe proved none exists and the claim was freed for a
+ * fresh setup (`accountId` is then null).
+ */
+export interface PayoutAccountSetupResolution {
+  outcome: "attached" | "released";
+  accountId: string | null;
 }
 
 /** `POST /api/fiat/tenant-payout-balance/top-up`: a Checkout payment that credits the float, net of fees, once it matures. */

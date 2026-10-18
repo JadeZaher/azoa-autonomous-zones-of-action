@@ -138,6 +138,13 @@ export default function PayoutBalancePage() {
                     A top-up was charged back: {formatMinorUnits(float.deficitMinorUnits, float.currencyCode)} is uncovered, and every cash-out priced by you is refused until it is topped up.
                   </p>
                 )}
+                {!float.consistent && float.strandedReservedCount > 0 && (
+                  <p className="text-destructive" role="alert">
+                    {float.strandedReservedCount} reservation{float.strandedReservedCount === 1 ? '' : 's'} for a cash-out
+                    {float.oldestReservedAt && <> have been held since {new Date(float.oldestReservedAt).toLocaleDateString()}</>} longer
+                    than a bank payout should take. This balance does not agree with its own ledger while they stay open.
+                  </p>
+                )}
               </div>
             ))}
         </CardContent>

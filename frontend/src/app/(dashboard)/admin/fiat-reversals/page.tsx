@@ -2,7 +2,7 @@
 
 // Operator reversal ledger; amounts are formatted from server-supplied minor/base units.
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { FiatReversalView } from 'azoa-sdk'
+import { isRecentOperatorLoginRequired, type FiatReversalView } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { toast } from 'sonner'
 import { useAzoaAuth } from '@/lib/azoa-auth'
@@ -16,9 +16,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { ErrorBanner } from '@/components/shared/error-banner'
+import { StepUpBanner } from '@/components/shared/step-up-banner'
 import { AlertTriangle, RefreshCw, ShieldCheck, Undo2 } from 'lucide-react'
 
 const REVERSALS_PATH = '/api/admin/fiat-reversals'
+const PAGE_PATH = '/admin/fiat-reversals'
 
 /** Display labels for durable reversal statuses. */
 const STATUS_COPY: Record<string, { label: string; tone: 'open' | 'working' | 'done' | 'bad' }> = {
@@ -83,7 +85,14 @@ export default function FiatReversalsConsolePage() {
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [reauthRequired, setReauthRequired] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+
+  /** X-7: every mutating action below is Operator + `RecentNodeOperatorSession`; surface the step-up prompt instead of a bare toast. */
+  const reportActionError = useCallback((sdkError: { message: string }) => {
+    if (isRecentOperatorLoginRequired(sdkError)) setReauthRequired(true)
+    else toast.error(sdkError.message)
+  }, [])
 
   const fetchOpen = useCallback(async () => {
     setLoading(true); setError(null)
@@ -106,26 +115,26 @@ export default function FiatReversalsConsolePage() {
   const resolveParked = useCallback(async (row: FiatReversalView) => {
     const reason = window.prompt('What did you check about the pending move? (the node re-reads it on chain before deciding)')?.trim()
     if (!reason) return
-    setBusyId(row.id)
+    setBusyId(row.id); setReauthRequired(false)
     try {
       const res = await azoa.api.resolveFiatReversal(row.id, { reason })
       if (isOk(res)) {
         toast.success('The move was resolved from chain evidence and the unwind was queued')
         await fetchOpen()
       } else {
-        toast.error(res.error.message)
+        reportActionError(res.error)
       }
     } finally {
       setBusyId(null)
     }
-  }, [fetchOpen])
+  }, [fetchOpen, reportActionError])
 
   const act = useCallback(async (
     id: string,
     verb: 'recover' | 'settle' | 'restart' | 'clear-flag',
     successMessage: string,
   ) => {
-    setBusyId(id)
+    setBusyId(id); setReauthRequired(false)
     try {
       const res = await azoa.api.request<FiatReversalView>(
         'POST', `${REVERSALS_PATH}/${encodeURIComponent(id)}/${verb}`,
@@ -135,14 +144,14 @@ export default function FiatReversalsConsolePage() {
         toast.success(successMessage)
         await fetchOpen()
       } else {
-        toast.error(res.error.message)
+        reportActionError(res.error)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'The action failed')
     } finally {
       setBusyId(null)
     }
-  }, [fetchOpen])
+  }, [fetchOpen, reportActionError])
 
   const totals = useMemo(() => rows.reduce(
     (acc, row) => ({
@@ -237,6 +246,7 @@ export default function FiatReversalsConsolePage() {
       </Card>
 
       {error && <ErrorBanner message={error} onRetry={fetchOpen} />}
+      {reauthRequired && <StepUpBanner returnTo={PAGE_PATH} />}
 
       <Card>
         <CardHeader className="pb-3">

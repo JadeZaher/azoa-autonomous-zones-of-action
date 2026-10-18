@@ -10,6 +10,15 @@ const charged: TenantPayoutFloatView = {
   creditedMinorUnits: 50000, reservedMinorUnits: 0, finalizedMinorUnits: 0, availableMinorUnits: 0,
   deficitMinorUnits: 12500, pendingCreditMinorUnits: 0, recomputedCreditedMinorUnits: 50000,
   recomputedReservedMinorUnits: 0, recomputedFinalizedMinorUnits: 0, consistent: true,
+  strandedReservedCount: 0, oldestReservedAt: null,
+}
+
+const stranded: TenantPayoutFloatView = {
+  floatId: 'float-2', tenantId: SLICE_TENANT_ID, currencyCode: 'usd', environment: 'test',
+  creditedMinorUnits: 50000, reservedMinorUnits: 20000, finalizedMinorUnits: 0, availableMinorUnits: 30000,
+  deficitMinorUnits: 0, pendingCreditMinorUnits: 0, recomputedCreditedMinorUnits: 50000,
+  recomputedReservedMinorUnits: 20000, recomputedFinalizedMinorUnits: 0, consistent: false,
+  strandedReservedCount: 2, oldestReservedAt: '2026-10-01T00:00:00Z',
 }
 
 /** Tenant payout balance (D-8) inside the real auth provider; see `src/test/AGENTS.md` §slices. */
@@ -36,5 +45,13 @@ describe('payout balance slice', () => {
     await renderSliceWithAuth(<PayoutBalancePage />, { apis: [api] })
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/every cash-out priced by you is refused until it is topped up/)
+  })
+
+  it('surfaces stranded reservations once the float disagrees with its own ledger (M4)', async () => {
+    const api = tenantPayoutApi([stranded])
+    await renderSliceWithAuth(<PayoutBalancePage />, { apis: [api] })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('2 reservations for a cash-out')
+    expect(screen.getByRole('alert')).toHaveTextContent(/held since \d+\/\d+\/2026/)
   })
 })

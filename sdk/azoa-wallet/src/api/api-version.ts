@@ -282,6 +282,8 @@ export const API_PATHS = {
   // Fiat operator resolutions (Operator policy).
   FIAT_PAYOUT_RESOLVE: (payoutId: string) => `/api/admin/fiat-payouts/${encodeURIComponent(payoutId)}/resolve`,
   FIAT_REVERSAL_RESOLVE: (reversalId: string) => `/api/admin/fiat-reversals/${encodeURIComponent(reversalId)}/resolve`,
+  // RV-L1-01: operator exit for a payout-account setup stuck past its Stripe replay window.
+  FIAT_PAYOUT_ACCOUNT_SETUP_RESOLVE: (userId: string) => `/api/admin/fiat-payouts/accounts/${encodeURIComponent(userId)}/setup/resolve`,
 
   // D-8 tenant payout float.
   TENANT_PAYOUT_BALANCE: "/api/fiat/tenant-payout-balance",
