@@ -295,7 +295,38 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 
 ## 7. Continuation plan
 
-### ▶ RESUME HERE (2026-10-17 evening — live QA on Railway; loops deferred until after QA)
+### ▶ RESUME HERE (2026-10-18 — node-admin RBAC + `azoa-node` CLI; wound down for usage)
+
+Track: `conductor/tracks/node-admin-rbac-cli_20261018/` (spec, plan §8 binding, metadata review ledger,
+join-report). Owner decisions: A-1..A-4 (spec) + D-L5 accept root→owner audit-flagged, D-M1 step-up on ALL
+node-admin writes, D-M2 audit node-admin PII reads, ship = fix batch then push.
+
+- **Merged on `feat/platform-stub-closeout` (NOT on main, NOT deployed):** A1 backend `b3f7aeb8`, CLI
+  `8fb69665`, A2 operator-route mapping `e8abe932`, metadata `6810cabd`. Security reviews: A1 MERGE (after 2
+  fix rounds), CLI fixed after code review, A2 MERGE. Join + smoke re-run on the real stack PASS.
+- **In flight, PARTIAL + UNTESTED:** branch `feat/node-admin-fix` @ `649d501c`, worktree
+  `../oasis-sleek-node-admin-fix` (agent stopped mid-batch). Scope: D-M1, D-M2, L-1 write→read gate, L-2 live
+  endpoint-key host test, L-4 fence refuses root witnesses (was mid-edit), L-5 `actor` ReadOnly (amend
+  migration `20261018_120000` — not deployed yet), D-L5 `NodeAdminRootCreatedOwner` log, CLI unknown-flag
+  exit 2 + README scripting notes. Full brief = this list + plan §8.
+
+1. In the fix worktree: `git diff 6810cabd..649d501c --stat`, finish the batch (one `oh-my-claudecode:executor-high`
+   opus agent, same brief), build 0 errors, unit+architecture, node-admin integration on a throwaway SurrealDB
+   3.1.4 (`--user 0:0`, set `AZOA__WalletEncryptionKey`, create `azoa` ns), CLI tsc/build/vitest.
+2. Quick security re-check of the fix diff → merge per protocol (merge-check, secret-scan, `--no-ff`) → merge
+   feat into `main` (`--no-ff`; remote is **`upstream`**, not origin) → gitleaks range → push → Railway deploys
+   3 services (watch with the Railway MCP `list-deployments`; CLI `railway api` breaks under PowerShell quoting).
+3. Verify live: schema job applied the migrations; `POST /api/node-admin/auth/challenge` → 503
+   `NODE_ADMIN_UNAVAILABLE` until root key + audience are set (expected).
+4. Owner live drill: owner runs `azoa-node keygen --kind root` locally (owner's passphrase; private key never
+   leaves their machine) → `azoa-node root env --railway --project … --environment … --service azoa-api --yes`
+   (+ set `NodeAdmin__Audience=https://azoa-api-production.up.railway.app`) → redeploy → `login --root` →
+   `admins create` → enroll on the admin's machine → `admins activate --fingerprint`.
+5. Still open elsewhere: Identomat configs blocked on vendor trial (company on trial; Identomat must create
+   KYC+KYB configs or lift trial); Stripe drill; release blockers in `round4-post-qa-deferrals.md`
+   (92 pre-existing integration failures = the integrated sweep blocker).
+
+### (previous) RESUME HERE (2026-10-17 evening — live QA on Railway; loops deferred until after QA)
 
 1. **Verify state.** `git status`, `git log -5 --oneline` on `feat/platform-stub-closeout` and `main`;
    `git worktree list` (round-4 worktrees `../oasis-sleek-r4-*` can be removed once their branches are merged).
