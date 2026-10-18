@@ -20,6 +20,9 @@ public sealed class NodeAdminOptions
     /// <summary>Enrollment token lifetime in minutes, clamped to 10..240.</summary>
     public int EnrollmentMinutes { get; set; } = 240;
 
+    /// <summary>Node-wide cap on live (unconsumed, unexpired) login challenges; reaching it refuses new challenges (M-3).</summary>
+    public int MaxOutstandingChallenges { get; set; } = 10_000;
+
     public TimeSpan SessionLifetime => TimeSpan.FromMinutes(Math.Clamp(SessionMinutes, 5, 30));
 
     public TimeSpan EnrollmentLifetime => TimeSpan.FromMinutes(Math.Clamp(EnrollmentMinutes, 10, 240));

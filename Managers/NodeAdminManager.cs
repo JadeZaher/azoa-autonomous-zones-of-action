@@ -14,7 +14,8 @@ public sealed partial class NodeAdminManager(
     NodeAdminAuditLog audit,
     NodeAdminRuntime runtime,
     NodeAdminPermissionResolver resolver,
-    TimeProvider clock)
+    TimeProvider clock,
+    ILogger<NodeAdminManager> logger)
 {
     private const int MaxAttempts = 5;
     private const int MaxRolesPerAdmin = 32;
@@ -133,51 +134,80 @@ public sealed partial class NodeAdminManager(
         return ConflictResult<NodeAdminView>();
     }
 
-    /// <summary>Replaces an admin's roles: dominance over the current roles, no escalation, no self-strip, last owner (M1).</summary>
-    public async Task<AZOAResult<NodeAdminView>> AssignRolesAsync(NodeAdminCaller caller, Guid id, NodeAdminAssignRolesRequest request, CancellationToken ct)
+    /// <summary>
+    /// Replaces an admin's roles: dominance over the current roles, no escalation, no self-strip, last owner (M1). A pending admin
+    /// must re-enroll (M-2): open enrollments are consumed and any bound key revoked, so a token issued under the old roles is dead;
+    /// only root receives the fresh token.
+    /// </summary>
+    public async Task<AZOAResult<NodeAdminReenrollmentView>> AssignRolesAsync(NodeAdminCaller caller, Guid id, NodeAdminAssignRolesRequest request, CancellationToken ct)
     {
         var roleIds = (request.RoleIds ?? []).Distinct(StringComparer.Ordinal).ToArray();
         if (roleIds.Length > MaxRolesPerAdmin)
-            return Fail<NodeAdminView>(NodeAdminErrorCodes.ValidationFailed, $"At most {MaxRolesPerAdmin} roles.");
+            return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.ValidationFailed, $"At most {MaxRolesPerAdmin} roles.");
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
             var roles = await resolver.SnapshotAsync(store, ct);
             var admins = await store.ListAdminsAsync(ct);
             var target = admins.FirstOrDefault(admin => admin.Id == id.ToString("N"));
-            if (target is null) return Fail<NodeAdminView>(NodeAdminErrorCodes.NotFound, "Node admin not found.");
+            if (target is null) return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.NotFound, "Node admin not found.");
             if (target.Status == NodeAdminAccount.StatusRevoked)
-                return Fail<NodeAdminView>(NodeAdminErrorCodes.ValidationFailed, "A revoked admin cannot be given roles.");
+                return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.ValidationFailed, "A revoked admin cannot be given roles.");
             if (roleIds.Any(roleId => !roles.Roles.ContainsKey(roleId)))
-                return Fail<NodeAdminView>(NodeAdminErrorCodes.ValidationFailed, "One or more role ids do not exist.");
+                return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.ValidationFailed, "One or more role ids do not exist.");
             var granted = roles.PermissionsOf(roleIds);
             if (!caller.IsRoot)
             {
                 if (!NodeAdminInvariants.Dominates(caller.Permissions, roles.PermissionsOf(target.RoleIds)))
-                    return Fail<NodeAdminView>(NodeAdminErrorCodes.DominanceRequired, "You must hold every permission of the admin you change.");
+                    return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.DominanceRequired, "You must hold every permission of the admin you change.");
                 if (NodeAdminInvariants.Escalates(caller.Permissions, granted))
-                    return Fail<NodeAdminView>(NodeAdminErrorCodes.EscalationRefused, "You cannot grant permissions you do not hold.");
+                    return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.EscalationRefused, "You cannot grant permissions you do not hold.");
             }
             if (IsSelf(caller, target) && caller.Permissions.Contains(NodeAdminPermissions.AdminsManage)
                 && !granted.Contains(NodeAdminPermissions.AdminsManage))
-                return Fail<NodeAdminView>(NodeAdminErrorCodes.SelfActionRefused, "You cannot remove your own admins.manage permission.");
+                return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.SelfActionRefused, "You cannot remove your own admins.manage permission.");
             if (NodeAdminInvariants.BreaksLastOwner(NodeAdminInvariants.OwnerCount(admins, roles),
                     NodeAdminInvariants.OwnerCount(NodeAdminInvariants.With(admins, NodeAdminInvariants.Proposed(target, roleIds: roleIds)), roles)))
-                return LastOwner<NodeAdminView>();
+                return LastOwner<NodeAdminReenrollmentView>();
             var now = clock.GetUtcNow();
-            var commit = await store.CommitAsync(roles.DirectoryRevision,
-            [
-                SurrealWriter.UpdateOnly<NodeAdminAccount>(target.Id)
-                    .Where(row => row.AdminRevision == target.AdminRevision)
-                    .Set(row => row.RoleIds, (IReadOnlyList<string>)roleIds)
-                    .Set(row => row.AdminRevision, target.AdminRevision + 1)
-                    .Set(row => row.UpdatedAt, now)
-                    .Build(),
-            ], ct);
-            if (commit != NodeAdminCommit.Committed) continue;
+            var pending = target.Status is NodeAdminAccount.StatusPendingEnrollment or NodeAdminAccount.StatusPendingActivation;
+            var update = SurrealWriter.UpdateOnly<NodeAdminAccount>(target.Id)
+                .Where(row => row.AdminRevision == target.AdminRevision && row.Status == target.Status)
+                .Set(row => row.RoleIds, (IReadOnlyList<string>)roleIds)
+                .Set(row => row.AdminRevision, target.AdminRevision + 1)
+                .Set(row => row.UpdatedAt, now);
+            var mutations = new List<SurrealQuery>();
+            string? token = null;
+            DateTimeOffset? expiresAt = null;
+            if (pending)
+            {
+                mutations.Add(update.Set(row => row.Status, NodeAdminAccount.StatusPendingEnrollment)
+                    .Unset(row => row.TotpSecretProtected).Set(row => row.TotpLastStep, 0L).Build());
+                mutations.AddRange(await InvalidateEnrollmentMaterialAsync(target.Id, now, ct));
+                if (caller.IsRoot)
+                {
+                    var (issued, enrollment) = NewEnrollment(target.Id, caller.Principal, now);
+                    mutations.Add(SurrealWriter.Create(enrollment));
+                    token = issued;
+                    expiresAt = enrollment.ExpiresAt;
+                }
+            }
+            else
+            {
+                mutations.Add(update.Build());
+            }
+            if (await store.CommitAsync(roles.DirectoryRevision, mutations, ct) != NodeAdminCommit.Committed) continue;
             await store.RevokeSessionsOfAsync(NodeAdminViews.Principal(target), now, ct);
-            return await ReloadAsync(target.Id, ct);
+            if (pending)
+                await AuditBestEffortAsync(new NodeAdminAuditEntry(caller.Principal, caller.Amr, "admin.reenrollment_required",
+                    "id=" + NodeAdminViews.WireId(target), NodeAdminAuditLog.OutcomeOk,
+                    System.Text.Json.JsonSerializer.Serialize(new { reason = "roles_changed_while_pending", tokenIssued = token is not null }),
+                    string.Empty, string.Empty), ct);
+            var view = await ViewAsync((await store.GetAdminAsync(target.Id, ct))!, ct);
+            return AZOAResult<NodeAdminReenrollmentView>.Success(new NodeAdminReenrollmentView(view, token, expiresAt), pending
+                ? "Roles changed; the pending admin must re-enroll. Only root receives the new enrollment token."
+                : "Roles changed.");
         }
-        return ConflictResult<NodeAdminView>();
+        return ConflictResult<NodeAdminReenrollmentView>();
     }
 
     /// <summary>Ends every session of an admin (session_revision bump plus row revocation).</summary>
@@ -306,26 +336,26 @@ public sealed partial class NodeAdminManager(
     /// Resets MFA: back to pending_enrollment with every key and session revoked. Root or a dominating owner-equivalent may reset;
     /// only root receives the new enrollment token (C1), so a peer cannot take over another admin's identity.
     /// </summary>
-    public async Task<AZOAResult<NodeAdminMfaResetView>> ResetMfaAsync(NodeAdminCaller caller, Guid id, CancellationToken ct)
+    public async Task<AZOAResult<NodeAdminReenrollmentView>> ResetMfaAsync(NodeAdminCaller caller, Guid id, CancellationToken ct)
     {
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
             var roles = await resolver.SnapshotAsync(store, ct);
             var admins = await store.ListAdminsAsync(ct);
             var target = admins.FirstOrDefault(admin => admin.Id == id.ToString("N"));
-            if (target is null) return Fail<NodeAdminMfaResetView>(NodeAdminErrorCodes.NotFound, "Node admin not found.");
+            if (target is null) return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.NotFound, "Node admin not found.");
             if (IsSelf(caller, target))
-                return Fail<NodeAdminMfaResetView>(NodeAdminErrorCodes.SelfActionRefused, "You cannot reset your own MFA.");
+                return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.SelfActionRefused, "You cannot reset your own MFA.");
             if (target.Status == NodeAdminAccount.StatusRevoked)
-                return Fail<NodeAdminMfaResetView>(NodeAdminErrorCodes.ValidationFailed, "A revoked admin cannot be re-enrolled.");
+                return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.ValidationFailed, "A revoked admin cannot be re-enrolled.");
             if (!caller.IsRoot && !(NodeAdminPermissions.IsOwnerEquivalent(caller.Permissions)
                     && NodeAdminInvariants.Dominates(caller.Permissions, roles.PermissionsOf(target.RoleIds))))
-                return Fail<NodeAdminMfaResetView>(NodeAdminErrorCodes.DominanceRequired,
+                return Fail<NodeAdminReenrollmentView>(NodeAdminErrorCodes.DominanceRequired,
                     "Resetting another admin's MFA requires root or a node-owner-equivalent administrator.");
             if (NodeAdminInvariants.BreaksLastOwner(NodeAdminInvariants.OwnerCount(admins, roles),
                     NodeAdminInvariants.OwnerCount(NodeAdminInvariants.With(admins,
                         NodeAdminInvariants.Proposed(target, status: NodeAdminAccount.StatusPendingEnrollment)), roles)))
-                return LastOwner<NodeAdminMfaResetView>();
+                return LastOwner<NodeAdminReenrollmentView>();
 
             var now = clock.GetUtcNow();
             var mutations = new List<SurrealQuery>
@@ -342,12 +372,7 @@ public sealed partial class NodeAdminManager(
                     .Set(row => row.UpdatedAt, now)
                     .Build(),
             };
-            foreach (var credential in (await store.ListCredentialsAsync(target.Id, ct)).Where(item => item.RevokedAt is null))
-                mutations.Add(SurrealWriter.UpdateOnly<NodeAdminCredential>(credential.Id)
-                    .Where(row => row.AdminId == target.Id && row.RevokedAt == null).Set(row => row.RevokedAt, now).Build());
-            foreach (var open in await store.ListOpenEnrollmentsAsync(target.Id, ct))
-                mutations.Add(SurrealWriter.UpdateOnly<NodeAdminEnrollment>(open.Id)
-                    .Where(row => row.ConsumedAt == null).Set(row => row.ConsumedAt, now).Build());
+            mutations.AddRange(await InvalidateEnrollmentMaterialAsync(target.Id, now, ct));
             string? token = null;
             DateTimeOffset? expiresAt = null;
             if (caller.IsRoot)
@@ -360,11 +385,11 @@ public sealed partial class NodeAdminManager(
             if (await store.CommitAsync(roles.DirectoryRevision, mutations, ct) != NodeAdminCommit.Committed) continue;
             await store.RevokeSessionsOfAsync(NodeAdminViews.Principal(target), now, ct);
             var view = await ViewAsync((await store.GetAdminAsync(target.Id, ct))!, ct);
-            return AZOAResult<NodeAdminMfaResetView>.Success(new NodeAdminMfaResetView(view, token, expiresAt), token is null
+            return AZOAResult<NodeAdminReenrollmentView>.Success(new NodeAdminReenrollmentView(view, token, expiresAt), token is null
                 ? "MFA reset. Only root can issue the new enrollment token."
                 : "MFA reset. Deliver the enrollment token out of band; it is shown once.");
         }
-        return ConflictResult<NodeAdminMfaResetView>();
+        return ConflictResult<NodeAdminReenrollmentView>();
     }
 
     /// <summary>Own sessions, or another principal's with admins.read.</summary>
@@ -380,10 +405,10 @@ public sealed partial class NodeAdminManager(
         return AZOAResult<IReadOnlyList<NodeAdminSessionView>>.Success(views);
     }
 
-    /// <summary>Revokes one session: own freely; another principal's with admins.manage and dominance.</summary>
-    public async Task<AZOAResult<bool>> RevokeSessionAsync(NodeAdminCaller caller, string sid, CancellationToken ct)
+    /// <summary>Revokes one session by its opaque handle: own freely; another principal's with admins.manage and dominance.</summary>
+    public async Task<AZOAResult<bool>> RevokeSessionAsync(NodeAdminCaller caller, string handle, CancellationToken ct)
     {
-        if (!NodeAdminCrypto.TrySessionRecordId(sid, out var recordId) || await store.GetSessionAsync(recordId, ct) is not { } session)
+        if (!NodeAdminCrypto.IsSessionHandle(handle) || await store.GetSessionByHandleAsync(handle, ct) is not { } session)
             return Fail<bool>(NodeAdminErrorCodes.NotFound, "Session not found.");
         if (session.Principal != caller.Principal && !caller.IsRoot)
         {
@@ -392,8 +417,30 @@ public sealed partial class NodeAdminManager(
             if (!NodeAdminInvariants.Dominates(caller.Permissions, await PermissionsOfPrincipalAsync(session.Principal, ct)))
                 return Fail<bool>(NodeAdminErrorCodes.DominanceRequired, "You must hold every permission of the session's principal.");
         }
-        await store.TryRevokeSessionAsync(recordId, clock.GetUtcNow(), ct);
+        await store.TryRevokeSessionAsync(session.Id, clock.GetUtcNow(), ct);
         return AZOAResult<bool>.Success(true, "Session revoked.");
+    }
+
+    /// <summary>Ends every root session by bumping root_session_revision (L-2): root, or an admin holding admins.manage and roles.manage.</summary>
+    public async Task<AZOAResult<bool>> RevokeRootSessionsAsync(NodeAdminCaller caller, CancellationToken ct)
+    {
+        if (!caller.IsRoot && !NodeAdminPermissions.IsOwnerCapable(caller.Permissions))
+            return Fail<bool>(NodeAdminErrorCodes.PermissionDenied, "Revoking root sessions requires admins.manage and roles.manage.");
+        for (var attempt = 0; attempt < MaxAttempts; attempt++)
+        {
+            var state = await store.GetRootStateAsync(ct);
+            if (state is null) return Fail<bool>(NodeAdminErrorCodes.Unavailable, "Root state is not initialized.");
+            var commit = await store.CommitAsync(null,
+            [
+                SurrealWriter.UpdateOnly<NodeAdminRootState>(NodeAdminRootState.SingletonId)
+                    .Where(row => row.RootSessionRevision == state.RootSessionRevision && row.RootKeyRevision == state.RootKeyRevision)
+                    .Set(row => row.RootSessionRevision, state.RootSessionRevision + 1)
+                    .Set(row => row.UpdatedAt, clock.GetUtcNow())
+                    .Build(),
+            ], ct);
+            if (commit == NodeAdminCommit.Committed) return AZOAResult<bool>.Success(true, "Every root session was ended.");
+        }
+        return ConflictResult<bool>();
     }
 
     public async Task<AZOAResult<IReadOnlyList<NodeAdminRoleView>>> ListRolesAsync(CancellationToken ct)
@@ -510,11 +557,25 @@ public sealed partial class NodeAdminManager(
             new NodeAdminAuditHeadView(head?.Seq ?? 0, head?.Hash ?? NodeAdminAuditLog.GenesisHash)));
     }
 
-    public async Task<AZOAResult<NodeAdminAuditVerifyView>> VerifyAuditAsync(CancellationToken ct)
+    /// <summary>Verifies <paramref name="fromSeq"/>..head (default: the last 10k rows); <paramref name="full"/> rescans from genesis, throttled node-wide.</summary>
+    public async Task<AZOAResult<NodeAdminAuditVerifyView>> VerifyAuditAsync(long? fromSeq, bool full, CancellationToken ct)
     {
-        var result = await audit.VerifyAsync(ct);
+        long start;
+        if (full)
+        {
+            if (!NodeAdminAuditLog.TryBeginFullVerify(clock.GetUtcNow()))
+                return Fail<NodeAdminAuditVerifyView>(NodeAdminErrorCodes.RateLimited,
+                    "A full audit verification ran recently on this node; retry in a minute or verify a window with fromSeq.");
+            start = 1;
+        }
+        else
+        {
+            var head = await audit.GetHeadAsync(ct);
+            start = Math.Max(1, fromSeq ?? (head?.Seq ?? 0) - NodeAdminAuditLog.DefaultVerifyWindow + 1);
+        }
+        var result = await audit.VerifyAsync(start, ct);
         return AZOAResult<NodeAdminAuditVerifyView>.Success(
-            new NodeAdminAuditVerifyView(result.Ok, result.VerifiedThroughSeq, result.HeadHash, result.FirstBrokenSeq));
+            new NodeAdminAuditVerifyView(result.Ok, start, result.VerifiedThroughSeq, result.HeadHash, result.FirstBrokenSeq));
     }
 
     private async Task<AZOAResult<NodeAdminView>> TransitionAsync(
@@ -550,6 +611,32 @@ public sealed partial class NodeAdminManager(
             return await ReloadAsync(target.Id, ct);
         }
         return ConflictResult<NodeAdminView>();
+    }
+
+    /// <summary>Mutations that revoke every active key and consume every open enrollment of an admin (MFA reset, pending role change).</summary>
+    private async Task<IReadOnlyList<SurrealQuery>> InvalidateEnrollmentMaterialAsync(string adminRecordId, DateTimeOffset now, CancellationToken ct)
+    {
+        var mutations = new List<SurrealQuery>();
+        foreach (var credential in (await store.ListCredentialsAsync(adminRecordId, ct)).Where(item => item.RevokedAt is null))
+            mutations.Add(SurrealWriter.UpdateOnly<NodeAdminCredential>(credential.Id)
+                .Where(row => row.AdminId == adminRecordId && row.RevokedAt == null).Set(row => row.RevokedAt, now).Build());
+        foreach (var open in await store.ListOpenEnrollmentsAsync(adminRecordId, ct))
+            mutations.Add(SurrealWriter.UpdateOnly<NodeAdminEnrollment>(open.Id)
+                .Where(row => row.ConsumedAt == null).Set(row => row.ConsumedAt, now).Build());
+        return mutations;
+    }
+
+    /// <summary>Inline audit row after a committed change; a failure is logged (the filter's outcome row still records the call).</summary>
+    private async Task AuditBestEffortAsync(NodeAdminAuditEntry entry, CancellationToken ct)
+    {
+        try
+        {
+            await audit.AppendAsync(entry, ct);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Node-admin audit write failed for {Action}", entry.Action);
+        }
     }
 
     private async Task<IReadOnlySet<string>> PermissionsOfPrincipalAsync(string principal, CancellationToken ct)

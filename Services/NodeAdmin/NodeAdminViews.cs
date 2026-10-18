@@ -42,7 +42,7 @@ public static class NodeAdminViews
             admin.TotpSecretProtected is not null);
 
     public static NodeAdminSessionView Session(NodeAdminSession session, bool current)
-        => new(NodeAdminCrypto.SidFromRecordId(session.Id), session.Principal, session.AuthTime, session.Amr, session.ExpiresAt,
+        => new(session.Handle, session.Principal, session.AuthTime, session.Amr, session.ExpiresAt,
             session.RevokedAt, session.Ip, current);
 
     /// <summary>Strips control characters, trims and truncates caller-supplied display text.</summary>

@@ -63,7 +63,7 @@ public sealed class NodeAdminSessionValidator(
                 || admin.AdminRevision != adminRevision || admin.SessionRevision != sessionRevision)
                 return null;
             var roles = await resolver.SnapshotAsync(store, ct);
-            return new NodeAdminCaller(subject, admin, null, sid!, sessionRecordId, session.AuthTime, session.Amr, roles.EffectivePermissions(admin));
+            return new NodeAdminCaller(subject, admin, null, sessionRecordId, session.AuthTime, session.Amr, roles.EffectivePermissions(admin));
         }
 
         if (subject.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal))
@@ -77,7 +77,7 @@ public sealed class NodeAdminSessionValidator(
             if (state is null || state.RootKeyRevision != keyRevision || runtime.RootKeyRevision != keyRevision
                 || state.RootSessionRevision != rootSessionRevision)
                 return null;
-            return new NodeAdminCaller(subject, null, fingerprint, sid!, sessionRecordId, session.AuthTime, session.Amr, NodeAdminPermissions.Root);
+            return new NodeAdminCaller(subject, null, fingerprint, sessionRecordId, session.AuthTime, session.Amr, NodeAdminPermissions.Root);
         }
 
         return null;

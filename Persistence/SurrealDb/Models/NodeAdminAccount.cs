@@ -12,7 +12,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
     Aggregate = "NodeAdminAccount (Persistence/SurrealDb/Models/NodeAdminAccount.cs)",
     Guardrail = "G6 SCHEMAFULL; named node administrator, never a platform user")]
 [SurrealNote("A named node administrator. Separate from user: a node admin cannot act as a user and vice versa. admin_revision is the CAS token for every status/role/credential change and is carried in session tokens, so a bump ends every session of the admin.")]
-[SurrealNote("totp_secret_protected is a DataProtection ciphertext bound to the admin id; totp_last_step is the RFC 6238 replay guard advanced by CAS. See Services/NodeAdmin/AGENTS.md.")]
+[SurrealNote("totp_secret_protected is a DataProtection ciphertext bound to the admin id; totp_last_step is the RFC 6238 replay guard advanced by CAS. failed_attempts counts second-factor failures (CAS retry until it lands); lock_count doubles the lock duration and resets on a successful login. See Services/NodeAdmin/AGENTS.md.")]
 [Slice("identity")]
 [Index("node_admin_username", Fields = new[] { "username" }, Unique = true)]
 public partial class NodeAdminAccount : ISurrealRecord
@@ -78,4 +78,8 @@ public partial class NodeAdminAccount : ISurrealRecord
 
     [Column(Order = 14)]
     public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column(Order = 15)]
+    [Default("0")]
+    public long LockCount { get; set; }
 }

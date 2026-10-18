@@ -93,6 +93,16 @@ public sealed class NodeAdminRbacTests
         NodeAdminInvariants.Escalates(actor.ToHashSet(), target).Should().Be(!dominates);
     }
 
+    [Theory]
+    [InlineData(1, 15)]
+    [InlineData(2, 30)]
+    [InlineData(3, 60)]
+    [InlineData(7, 960)]
+    [InlineData(8, 1440)]
+    [InlineData(40, 1440)]
+    public void Lock_duration_doubles_per_consecutive_lock_and_caps_at_a_day(long lockCount, int expectedMinutes)
+        => AZOA.WebAPI.Managers.NodeAdminAuthManager.LockDuration(lockCount).Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+
     private static NodeAdminRoleSnapshot Snapshot(params (string Id, IReadOnlyList<string> Permissions)[] roles)
         => new(1, roles.ToDictionary(role => role.Id, role => new NodeAdminRole { Id = role.Id, Name = role.Id, Permissions = role.Permissions },
             StringComparer.Ordinal));

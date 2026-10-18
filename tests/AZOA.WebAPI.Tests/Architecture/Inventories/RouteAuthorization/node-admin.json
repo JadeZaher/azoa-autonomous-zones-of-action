@@ -35,13 +35,25 @@
     ]
   },
   {
-    "route": "POST /api/node-admin/sessions/{sid}/revoke",
+    "route": "POST /api/node-admin/sessions/{handle}/revoke",
     "controller": "NodeAdminAuthController",
     "action": "RevokeSession",
     "class": "non-value",
     "scope": null,
-    "enforcement": "NodeAdmin:session; own session freely, another principal's requires admins.manage and dominance (C1); audited",
+    "enforcement": "NodeAdmin:session; addressed by an opaque handle that is never the token sid (M-1); own session freely, another principal's requires admins.manage and dominance (C1); audited",
     "policies": [
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/root/revoke-sessions",
+    "controller": "NodeAdminAuthController",
+    "action": "RevokeRootSessions",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; additionally requires roles.manage (or root); root_session_revision CAS ends every root session (L-2); audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
       "NodeAdmin:session"
     ]
   },
@@ -135,7 +147,7 @@
     "action": "AssignRoles",
     "class": "non-value",
     "scope": null,
-    "enforcement": "NodeAdmin:roles.manage:recent; dominance over current roles, no escalation, no self-strip of admins.manage, last owner via directory CAS (M1); audited",
+    "enforcement": "NodeAdmin:roles.manage:recent; dominance over current roles, no escalation, no self-strip of admins.manage, last owner via directory CAS (M1); audited; a pending admin must re-enroll (open enrollments consumed, bound key revoked, fresh token only to root, M-2)",
     "policies": [
       "NodeAdmin:roles.manage:recent",
       "NodeAdmin:session"

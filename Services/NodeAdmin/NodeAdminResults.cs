@@ -19,6 +19,7 @@ public static class NodeAdminResults
         NodeAdminErrorCodes.LastOwner or NodeAdminErrorCodes.UsernameTaken or NodeAdminErrorCodes.RoleInUse
             or NodeAdminErrorCodes.RoleBuiltIn or NodeAdminErrorCodes.EnrollmentAlreadyStarted
             or NodeAdminErrorCodes.FingerprintMismatch or NodeAdminErrorCodes.Conflict => StatusCodes.Status409Conflict,
+        NodeAdminErrorCodes.RateLimited => StatusCodes.Status429TooManyRequests,
         NodeAdminErrorCodes.AuditUnavailable or NodeAdminErrorCodes.Unavailable => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status400BadRequest,
     };

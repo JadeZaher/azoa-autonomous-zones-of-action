@@ -93,13 +93,16 @@ public sealed class NodeAdminWireContractTests
     }
 
     [Fact]
-    public void Session_ids_round_trip_between_wire_and_record_forms()
+    public void Stored_session_ids_and_handles_never_reveal_the_token_sid()
     {
-        var (sid, recordId) = NodeAdminCrypto.NewSessionId();
+        var (sid, recordId, handle) = NodeAdminCrypto.NewSession();
 
         NodeAdminCrypto.TrySessionRecordId(sid, out var parsed).Should().BeTrue();
-        parsed.Should().Be(recordId);
-        NodeAdminCrypto.SidFromRecordId(recordId).Should().Be(sid);
-        NodeAdminCrypto.TrySessionRecordId(recordId, out _).Should().BeFalse("the hex record id is not a wire sid");
+        parsed.Should().Be(recordId, "the validator finds the row by hashing the token's sid");
+        recordId.Should().HaveLength(64).And.NotContain(sid);
+        NodeAdminCrypto.IsSessionHandle(handle).Should().BeTrue();
+        NodeAdminCrypto.TrySessionRecordId(handle, out var fromHandle).Should().BeFalse("a listed handle used as a sid must not resolve");
+        fromHandle.Should().BeEmpty();
+        NodeAdminCrypto.TrySessionRecordId(recordId, out _).Should().BeFalse("a leaked record id is not a usable sid");
     }
 }

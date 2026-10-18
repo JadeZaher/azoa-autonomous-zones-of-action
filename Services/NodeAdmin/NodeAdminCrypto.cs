@@ -76,23 +76,24 @@ public static class NodeAdminCrypto
     public static bool FixedTimeEquals(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
         => CryptographicOperations.FixedTimeEquals(left, right);
 
-    /// <summary>Converts a base64url sid to its storage record id (lowercase hex); false unless it decodes to 16 bytes.</summary>
+    /// <summary>Storage record id of a wire sid: sha256 hex of its 16 raw bytes; false unless the sid decodes to exactly 16 bytes.</summary>
     public static bool TrySessionRecordId(string? sid, out string recordId)
     {
         recordId = string.Empty;
         if (!TryDecodeExact(sid, 16, out var bytes)) return false;
-        recordId = Convert.ToHexStringLower(bytes);
+        recordId = Convert.ToHexStringLower(SHA256.HashData(bytes));
         return true;
     }
 
-    /// <summary>The base64url wire sid of a session record id.</summary>
-    public static string SidFromRecordId(string recordId) => Base64Url(Convert.FromHexString(recordId));
+    /// <summary>True for a well-formed session handle (32 lowercase hex characters).</summary>
+    public static bool IsSessionHandle(string? value)
+        => value is { Length: 32 } && value.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
-    /// <summary>New 128-bit session id as (base64url wire form, hex record id).</summary>
-    public static (string Sid, string RecordId) NewSessionId()
+    /// <summary>New session as (base64url sid for the token only, hashed record id, independent random handle).</summary>
+    public static (string Sid, string RecordId, string Handle) NewSession()
     {
         var bytes = RandomNumberGenerator.GetBytes(16);
-        return (Base64Url(bytes), Convert.ToHexStringLower(bytes));
+        return (Base64Url(bytes), Convert.ToHexStringLower(SHA256.HashData(bytes)), Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)));
     }
 
     private static bool TryDecodeExact(string? value, int length, out byte[] bytes)

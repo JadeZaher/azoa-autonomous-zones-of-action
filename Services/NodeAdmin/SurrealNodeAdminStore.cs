@@ -113,21 +113,29 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
                 await TryRevokeSessionAsync(session.Id, now, ct);
     }
 
-    /// <summary>Deletes up to 500 challenges, enrollments and sessions per table that expired before <paramref name="cutoff"/>.</summary>
-    public async Task<int> SweepExpiredAsync(DateTimeOffset cutoff, CancellationToken ct)
+    /// <summary>Deletes expired challenges, enrollments and sessions in batches until a short batch, at most <paramref name="maxBatches"/> per table.</summary>
+    public async Task<int> SweepExpiredAsync(DateTimeOffset cutoff, CancellationToken ct, int batchSize = 500, int maxBatches = 50)
     {
         var removed = 0;
-        foreach (var row in await executor.QueryAsync<NodeAdminChallenge>(SurrealQuery<NodeAdminChallenge>.From()
-                     .Where(row => row.ExpiresAt < cutoff).Limit(500), ct))
-            removed += await DeleteAsync(SurrealWriter.DeleteOnly<NodeAdminChallenge>(row.Id).Where(item => item.ExpiresAt < cutoff).Build(), ct);
-        foreach (var row in await executor.QueryAsync<NodeAdminEnrollment>(SurrealQuery<NodeAdminEnrollment>.From()
-                     .Where(row => row.ExpiresAt < cutoff).Limit(500), ct))
-            removed += await DeleteAsync(SurrealWriter.DeleteOnly<NodeAdminEnrollment>(row.Id).Where(item => item.ExpiresAt < cutoff).Build(), ct);
-        foreach (var row in await executor.QueryAsync<NodeAdminSession>(SurrealQuery<NodeAdminSession>.From()
-                     .Where(row => row.ExpiresAt < cutoff).Limit(500), ct))
-            removed += await DeleteAsync(SurrealWriter.DeleteOnly<NodeAdminSession>(row.Id).Where(item => item.ExpiresAt < cutoff).Build(), ct);
+        removed += await SweepAsync(async () => (await executor.QueryAsync<NodeAdminChallenge>(SurrealQuery<NodeAdminChallenge>.From()
+                .Where(row => row.ExpiresAt < cutoff).Limit(batchSize), ct)).Select(row => row.Id).ToArray(),
+            id => SurrealWriter.DeleteOnly<NodeAdminChallenge>(id).Where(item => item.ExpiresAt < cutoff).Build(), batchSize, maxBatches, ct);
+        removed += await SweepAsync(async () => (await executor.QueryAsync<NodeAdminEnrollment>(SurrealQuery<NodeAdminEnrollment>.From()
+                .Where(row => row.ExpiresAt < cutoff).Limit(batchSize), ct)).Select(row => row.Id).ToArray(),
+            id => SurrealWriter.DeleteOnly<NodeAdminEnrollment>(id).Where(item => item.ExpiresAt < cutoff).Build(), batchSize, maxBatches, ct);
+        removed += await SweepAsync(async () => (await executor.QueryAsync<NodeAdminSession>(SurrealQuery<NodeAdminSession>.From()
+                .Where(row => row.ExpiresAt < cutoff).Limit(batchSize), ct)).Select(row => row.Id).ToArray(),
+            id => SurrealWriter.DeleteOnly<NodeAdminSession>(id).Where(item => item.ExpiresAt < cutoff).Build(), batchSize, maxBatches, ct);
         return removed;
     }
+
+    /// <summary>True when at least <paramref name="cap"/> challenges are live (unconsumed, unexpired); reads at most one row.</summary>
+    public async Task<bool> OutstandingChallengesReachedAsync(int cap, DateTimeOffset now, CancellationToken ct)
+        => await executor.QuerySingleAsync<NodeAdminChallenge>(SurrealQuery<NodeAdminChallenge>.From()
+            .Where(row => row.ConsumedAt == null && row.ExpiresAt > now).Start(Math.Max(0, cap - 1)).Limit(1), ct) is not null;
+
+    public Task<NodeAdminSession?> GetSessionByHandleAsync(string handle, CancellationToken ct)
+        => executor.QuerySingleAsync<NodeAdminSession>(SurrealQuery<NodeAdminSession>.From().Where(row => row.Handle == handle).Limit(1), ct);
 
     /// <summary>
     /// Commits typed conditional mutations atomically. With <paramref name="expectedDirectoryRevision"/> the
@@ -177,10 +185,20 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
         }
     }
 
-    private async Task<int> DeleteAsync(SurrealQuery delete, CancellationToken ct)
+    private async Task<int> SweepAsync(Func<Task<string[]>> nextBatch, Func<string, SurrealQuery> delete, int batchSize, int maxBatches,
+        CancellationToken ct)
     {
-        var response = await executor.ExecuteAsync(delete, ct);
-        response.EnsureAllOk();
-        return 1;
+        var removed = 0;
+        for (var batch = 0; batch < maxBatches; batch++)
+        {
+            var ids = await nextBatch();
+            foreach (var id in ids)
+            {
+                (await executor.ExecuteAsync(delete(id), ct)).EnsureAllOk();
+                removed++;
+            }
+            if (ids.Length < batchSize) break;
+        }
+        return removed;
     }
 }

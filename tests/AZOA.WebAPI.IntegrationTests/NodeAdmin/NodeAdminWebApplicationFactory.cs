@@ -12,7 +12,7 @@ public sealed class NodeAdminWebApplicationFactory : WebApplicationFactory<Progr
 
     private static readonly string[] Tables =
     [
-        "admin_bootstrap_state", "saga_steps", "node_admin", "node_admin_audit", "node_admin_audit_head", "node_admin_challenge",
+        "admin_bootstrap_state", "saga_steps", "user", "api_key", "node_admin", "node_admin_audit", "node_admin_audit_head", "node_admin_challenge",
         "node_admin_credential", "node_admin_directory", "node_admin_enrollment", "node_admin_role", "node_admin_root_state",
         "node_admin_session",
     ];

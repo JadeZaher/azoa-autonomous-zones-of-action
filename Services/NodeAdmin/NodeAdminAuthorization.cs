@@ -12,7 +12,6 @@ public sealed record NodeAdminCaller(
     string Principal,
     NodeAdminAccount? Admin,
     string? RootFingerprint,
-    string Sid,
     string SessionRecordId,
     DateTimeOffset AuthTime,
     IReadOnlyList<string> Amr,

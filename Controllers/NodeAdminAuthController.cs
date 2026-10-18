@@ -39,9 +39,14 @@ public sealed class NodeAdminAuthController(NodeAdminAuthManager auth, NodeAdmin
     public async Task<ActionResult<AZOAResult<IReadOnlyList<NodeAdminSessionView>>>> Sessions([FromQuery] string? principal, CancellationToken ct)
         => Respond(await manager.ListSessionsAsync(Caller, principal, ct));
 
-    [HttpPost("sessions/{sid}/revoke")]
-    public async Task<ActionResult<AZOAResult<bool>>> RevokeSession(string sid, CancellationToken ct)
-        => Respond(await manager.RevokeSessionAsync(Caller, sid, ct));
+    [HttpPost("sessions/{handle}/revoke")]
+    public async Task<ActionResult<AZOAResult<bool>>> RevokeSession(string handle, CancellationToken ct)
+        => Respond(await manager.RevokeSessionAsync(Caller, handle, ct));
+
+    [HttpPost("root/revoke-sessions")]
+    [Authorize(Policy = NodeAdminPolicies.AdminsManageRecent)]
+    public async Task<ActionResult<AZOAResult<bool>>> RevokeRootSessions(CancellationToken ct)
+        => Respond(await manager.RevokeRootSessionsAsync(Caller, ct));
 
     [HttpGet("me")]
     public async Task<ActionResult<AZOAResult<NodeAdminMeView>>> Me(CancellationToken ct)

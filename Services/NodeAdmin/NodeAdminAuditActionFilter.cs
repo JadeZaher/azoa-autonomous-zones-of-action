@@ -23,6 +23,9 @@ public sealed record NodeAdminRequestInfo(string Ip, string UserAgent, string Re
 /// <summary>Global MVC filter: an <c>intent</c> row before every node-admin write (503 AUDIT_UNAVAILABLE if it fails) and an outcome row after (H4).</summary>
 public sealed class NodeAdminAuditActionFilter(NodeAdminAuditLog audit, ILogger<NodeAdminAuditActionFilter> logger) : IAsyncActionFilter
 {
+    /// <summary>Runs before <c>ModelStateInvalidFilter</c> (order -2000), so invalid-model 400s get an outcome row.</summary>
+    public const int FilterOrder = -3000;
+
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var http = context.HttpContext;

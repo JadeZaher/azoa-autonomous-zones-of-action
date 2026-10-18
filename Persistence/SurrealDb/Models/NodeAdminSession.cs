@@ -11,9 +11,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
 [SurrealTable("node_admin_session",
     Aggregate = "NodeAdminSession (Persistence/SurrealDb/Models/NodeAdminSession.cs)",
     Guardrail = "G6 SCHEMAFULL; server-side node-admin session")]
-[SurrealNote("Record id = hex of the 128-bit sid (the token carries the base64url form). Every node-admin request requires an unrevoked, unexpired row whose principal equals the token subject (C2).")]
+[SurrealNote("Record id = sha256 hex of the raw 128-bit sid; only the token carries the sid itself, so a database read never yields a usable session id. handle is an independent random id used to list and revoke sessions. Every node-admin request requires an unrevoked, unexpired row whose principal equals the token subject (C2).")]
 [Slice("identity")]
 [Index("node_admin_session_principal", Fields = new[] { "principal" })]
+[Index("node_admin_session_handle", Fields = new[] { "handle" }, Unique = true)]
 [Index("node_admin_session_expires", Fields = new[] { "expires_at" })]
 public partial class NodeAdminSession : ISurrealRecord
 {
@@ -48,4 +49,8 @@ public partial class NodeAdminSession : ISurrealRecord
 
     [Column(Order = 9)]
     public string CredentialFingerprint { get; set; } = string.Empty;
+
+    [Column(Order = 10)]
+    [Required(NotEmpty = true)]
+    public string Handle { get; set; } = string.Empty;
 }

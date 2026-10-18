@@ -17,6 +17,7 @@ public sealed class NodeAdminAuditController(NodeAdminManager manager) : NodeAdm
         => Respond(await manager.ListAuditAsync(afterSeq, limit, ct));
 
     [HttpGet("verify")]
-    public async Task<ActionResult<AZOAResult<NodeAdminAuditVerifyView>>> Verify(CancellationToken ct)
-        => Respond(await manager.VerifyAuditAsync(ct));
+    public async Task<ActionResult<AZOAResult<NodeAdminAuditVerifyView>>> Verify([FromQuery] long? fromSeq = null, [FromQuery] bool full = false,
+        CancellationToken ct = default)
+        => Respond(await manager.VerifyAuditAsync(fromSeq, full, ct));
 }

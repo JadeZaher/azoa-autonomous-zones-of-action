@@ -14,6 +14,7 @@ public static class NodeAdminServiceCollectionExtensions
         services.AddSingleton<NodeAdminPermissionResolver>();
         services.AddSingleton<NodeAdminTokenIssuer>();
         services.AddSingleton<NodeAdminTotpProtector>();
+        services.AddSingleton<NodeAdminAnonymousFailures>();
         services.AddScoped<SurrealNodeAdminStore>();
         services.AddScoped<NodeAdminAuditLog>();
         services.AddScoped<NodeAdminSessionValidator>();
@@ -22,9 +23,11 @@ public static class NodeAdminServiceCollectionExtensions
         services.AddScoped<NodeAdminAuditActionFilter>();
         services.AddSingleton<IAuthorizationHandler, NodeAdminPermissionHandler>();
         services.AddSingleton<IAuthorizationPolicyProvider, NodeAdminAuthorizationPolicyProvider>();
-        services.Configure<MvcOptions>(options => options.Filters.AddService<NodeAdminAuditActionFilter>());
+        // Order before ModelStateInvalidFilter (-2000) so automatic 400s on node-admin writes are audited too (L-3).
+        services.Configure<MvcOptions>(options => options.Filters.AddService<NodeAdminAuditActionFilter>(NodeAdminAuditActionFilter.FilterOrder));
         services.AddHostedService<NodeAdminBootstrapService>();
         services.AddHostedService<NodeAdminSweepWorker>();
+        services.AddHostedService<NodeAdminAnonymousFailureFlusher>();
         return services;
     }
 }

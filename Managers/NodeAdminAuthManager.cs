@@ -18,13 +18,17 @@ public sealed class NodeAdminAuthManager(
     NodeAdminTotpProtector totpProtector,
     NodeAdminTokenIssuer issuer,
     NodeAdminPermissionResolver resolver,
+    NodeAdminAnonymousFailures anonymousFailures,
     TimeProvider clock,
     ILogger<NodeAdminAuthManager> logger)
 {
     private const int LockThreshold = 5;
     private const int MaxEnrollmentFailures = 5;
     private const string Anonymous = "anonymous";
-    private static readonly TimeSpan LockDuration = TimeSpan.FromMinutes(15);
+    private const string EnrollmentInvalidMessage = "The enrollment is invalid, expired or already used.";
+    private const int MaxCasAttempts = 32;
+    private static readonly TimeSpan BaseLockDuration = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan MaxLockDuration = TimeSpan.FromHours(24);
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromSeconds(60);
     private static readonly string[] RootAmr = ["ed25519", "root"];
     private static readonly string[] AdminAmr = ["ed25519", "totp"];
@@ -38,6 +42,13 @@ public sealed class NodeAdminAuthManager(
             return NodeAdminResults.Fail<NodeAdminChallengeResponse>(NodeAdminErrorCodes.ValidationFailed,
                 "purpose must be root_login or admin_login and fingerprint must be 16 lowercase hex characters.");
         var now = clock.GetUtcNow();
+        if (await store.OutstandingChallengesReachedAsync(runtime.Options.MaxOutstandingChallenges, now, ct))
+        {
+            logger.LogCritical("Node-admin challenge issuance refused: {Cap} live challenges outstanding (possible flood).",
+                runtime.Options.MaxOutstandingChallenges);
+            return NodeAdminResults.Fail<NodeAdminChallengeResponse>(NodeAdminErrorCodes.Unavailable,
+                "Node-admin sign-in is temporarily unavailable. Try again shortly.");
+        }
         var expiresAt = now + ChallengeLifetime;
         var id = Guid.NewGuid();
         var challenge = new NodeAdminChallenge
@@ -65,13 +76,13 @@ public sealed class NodeAdminAuthManager(
         if (!Guid.TryParseExact(request.ChallengeId, "D", out var challengeId)
             || !NodeAdminCrypto.TryDecodePublicKey(request.PublicKey, out var publicKey)
             || !NodeAdminCrypto.TryDecodeSignature(request.Signature, out var signature))
-            return await AuthFailedAsync(Anonymous, string.Empty, "malformed_request", info, ct);
+            return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "malformed_request", info);
 
         var fingerprint = NodeAdminCrypto.Fingerprint(publicKey);
         var target = "fp=" + fingerprint;
         var challenge = await store.GetChallengeAsync(challengeId.ToString("N"), ct);
         if (challenge is null || challenge.Purpose is not (NodeAdminChallenge.PurposeRootLogin or NodeAdminChallenge.PurposeAdminLogin))
-            return await AuthFailedAsync(Anonymous, target, "unknown_challenge", info, ct);
+            return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "unknown_challenge", info);
         if (!await store.TryConsumeChallengeAsync(challenge.Id, now, ct))
             return await AuthFailedAsync(Anonymous, target, "challenge_consumed_or_expired", info, ct);
         if (!NodeAdminCrypto.FixedTimeEquals(Encoding.ASCII.GetBytes(challenge.Subject), Encoding.ASCII.GetBytes(fingerprint)))
@@ -104,12 +115,15 @@ public sealed class NodeAdminAuthManager(
         var now = clock.GetUtcNow();
         if (string.IsNullOrEmpty(request.EnrollmentToken) || request.EnrollmentToken.Length > 128
             || !NodeAdminCrypto.TryDecodePublicKey(request.PublicKey, out var publicKey))
-            return await EnrollmentInvalidAsync<NodeAdminEnrollStartView>(action, Anonymous, string.Empty, "malformed_request", info, ct);
+            return AnonymousFailure<NodeAdminEnrollStartView>(action, "malformed_request", info);
         var fingerprint = NodeAdminCrypto.Fingerprint(publicKey);
         var target = "fp=" + fingerprint;
         var enrollment = await store.GetEnrollmentByTokenHashAsync(NodeAdminCrypto.HashSecret(request.EnrollmentToken), ct);
-        if (enrollment is null || enrollment.ConsumedAt is not null || enrollment.ExpiresAt <= now)
-            return await EnrollmentInvalidAsync<NodeAdminEnrollStartView>(action, Anonymous, target, "unknown_or_expired_token", info, ct);
+        if (enrollment is null)
+            return AnonymousFailure<NodeAdminEnrollStartView>(action, "unknown_token", info);
+        if (enrollment.ConsumedAt is not null || enrollment.ExpiresAt <= now)
+            return await EnrollmentInvalidAsync<NodeAdminEnrollStartView>(action, Anonymous, "enrollment=" + EnrollmentWireId(enrollment),
+                "consumed_or_expired_token", info, ct);
         var admin = await store.GetAdminAsync(enrollment.AdminId, ct);
         if (admin is null || admin.Status != NodeAdminAccount.StatusPendingEnrollment)
             return await EnrollmentInvalidAsync<NodeAdminEnrollStartView>(action, Anonymous, target, "admin_not_pending", info, ct);
@@ -158,13 +172,15 @@ public sealed class NodeAdminAuthManager(
         var now = clock.GetUtcNow();
         if (!Guid.TryParseExact(request.EnrollmentId, "D", out var enrollmentId)
             || !NodeAdminCrypto.TryDecodeSignature(request.Signature, out var signature))
-            return await EnrollmentInvalidAsync<NodeAdminEnrollCompleteView>(action, Anonymous, string.Empty, "malformed_request", info, ct);
+            return AnonymousFailure<NodeAdminEnrollCompleteView>(action, "malformed_request", info);
         var enrollment = await store.GetEnrollmentAsync(enrollmentId.ToString("N"), ct);
-        if (enrollment is null || enrollment.ConsumedAt is not null || enrollment.ExpiresAt <= now || enrollment.StartedAt is null
+        if (enrollment is null)
+            return AnonymousFailure<NodeAdminEnrollCompleteView>(action, "unknown_enrollment", info);
+        if (enrollment.ConsumedAt is not null || enrollment.ExpiresAt <= now || enrollment.StartedAt is null
             || enrollment.FailedAttempts >= MaxEnrollmentFailures
             || !NodeAdminCrypto.TryDecodePublicKey(enrollment.PendingPublicKey, out var publicKey)
             || enrollment.PendingFingerprint is null || enrollment.TotpSecretPendingProtected is null)
-            return await EnrollmentInvalidAsync<NodeAdminEnrollCompleteView>(action, Anonymous, "enrollment=" + enrollmentId.ToString("D"), "unknown_expired_or_unstarted", info, ct);
+            return await EnrollmentInvalidAsync<NodeAdminEnrollCompleteView>(action, Anonymous, "enrollment=" + enrollmentId.ToString("D"), "consumed_expired_or_unstarted", info, ct);
         var target = "fp=" + enrollment.PendingFingerprint;
         var admin = await store.GetAdminAsync(enrollment.AdminId, ct);
         if (admin is null || admin.Status != NodeAdminAccount.StatusPendingEnrollment)
@@ -176,18 +192,16 @@ public sealed class NodeAdminAuthManager(
         {
             secret = totpProtector.Unprotect(admin.Id, enrollment.TotpSecretPendingProtected);
         }
-        catch (CryptographicException exception)
+        catch (Exception exception) when (exception is CryptographicException or FormatException)
         {
-            logger.LogError(exception, "Pending TOTP secret for node admin {AdminId} could not be decrypted", admin.Id);
-            return await EnrollmentInvalidAsync<NodeAdminEnrollCompleteView>(action, actor, target, "pending_secret_unreadable", info, ct);
+            await SecretUnreadableAsync(exception, admin, actor, target, info, ct);
+            return NodeAdminResults.Fail<NodeAdminEnrollCompleteView>(NodeAdminErrorCodes.EnrollmentInvalid, EnrollmentInvalidMessage);
         }
         var signed = NodeAdminCrypto.Verify(publicKey, NodeAdminCrypto.EnrollMessage(audience, enrollmentId.ToString("D")), signature);
         var totpValid = Totp.TryVerify(secret, request.Totp, now, 0, out var step);
         if (!signed || !totpValid)
         {
-            await store.CommitAsync(null, [SurrealWriter.UpdateOnly<NodeAdminEnrollment>(enrollment.Id)
-                .Where(row => row.FailedAttempts == enrollment.FailedAttempts && row.ConsumedAt == null)
-                .Set(row => row.FailedAttempts, enrollment.FailedAttempts + 1).Build()], ct);
+            await RecordEnrollmentFailureAsync(enrollment.Id, ct);
             return await EnrollmentInvalidAsync<NodeAdminEnrollCompleteView>(action, actor, target, signed ? "bad_totp" : "bad_signature", info, ct);
         }
 
@@ -285,23 +299,25 @@ public sealed class NodeAdminAuthManager(
         {
             secret = totpProtector.Unprotect(admin.Id, admin.TotpSecretProtected);
         }
-        catch (CryptographicException exception)
+        catch (Exception exception) when (exception is CryptographicException or FormatException)
         {
-            logger.LogError(exception, "TOTP secret for node admin {AdminId} could not be decrypted", admin.Id);
-            return await AuthFailedAsync(actor, target, "mfa_secret_unreadable", info, ct);
+            await SecretUnreadableAsync(exception, admin, actor, target, info, ct);
+            return NodeAdminResults.Fail<NodeAdminSessionResponse>(NodeAdminErrorCodes.AuthFailed, "Authentication failed.");
         }
         if (!Totp.TryVerify(secret, code, now, admin.TotpLastStep, out var step))
         {
-            await RecordSecondFactorFailureAsync(admin, actor, target, info, now, ct);
+            await RecordSecondFactorFailureAsync(admin.Id, actor, target, info, now, ct);
             return await AuthFailedAsync(actor, target, "bad_or_replayed_totp", info, ct);
         }
         var advanced = await store.CommitAsync(null,
         [
             SurrealWriter.UpdateOnly<NodeAdminAccount>(admin.Id)
+                // lock_count in the predicate: a lock set after our read bumps it, so this write never clears a fresh lock (H-1).
                 .Where(row => row.AdminRevision == admin.AdminRevision && row.TotpLastStep == admin.TotpLastStep
-                    && row.Status == NodeAdminAccount.StatusActive)
+                    && row.LockCount == admin.LockCount && row.Status == NodeAdminAccount.StatusActive)
                 .Set(row => row.TotpLastStep, step)
                 .Set(row => row.FailedAttempts, 0L)
+                .Set(row => row.LockCount, 0L)
                 .Unset(row => row.LockedUntil)
                 .Build(),
         ], ct);
@@ -314,19 +330,66 @@ public sealed class NodeAdminAuthManager(
             fingerprint, roles.EffectivePermissions(admin), admin, roles, info, now, ct);
     }
 
-    private async Task RecordSecondFactorFailureAsync(NodeAdminAccount admin, string actor, string target, NodeAdminRequestInfo info,
+    /// <summary>
+    /// Counts one second-factor failure by CAS retry until it lands (H-1), locking at the threshold with exponential backoff
+    /// (L-4). A row that is already locked stops counting.
+    /// </summary>
+    private async Task RecordSecondFactorFailureAsync(string adminRecordId, string actor, string target, NodeAdminRequestInfo info,
         DateTimeOffset now, CancellationToken ct)
     {
-        var attempts = admin.FailedAttempts + 1;
-        var update = SurrealWriter.UpdateOnly<NodeAdminAccount>(admin.Id)
-            .Where(row => row.AdminRevision == admin.AdminRevision && row.FailedAttempts == admin.FailedAttempts);
-        var locks = attempts >= LockThreshold;
-        var mutation = locks
-            ? update.Set(row => row.FailedAttempts, 0L).Set(row => row.LockedUntil, (DateTimeOffset?)(now + LockDuration)).Build()
-            : update.Set(row => row.FailedAttempts, attempts).Build();
-        if (await store.CommitAsync(null, [mutation], ct) == NodeAdminCommit.Committed && locks)
-            await AuditBestEffortAsync(Entry(actor, [], "auth.lock", target, NodeAdminAuditLog.OutcomeOk,
-                Reason("second_factor_failures"), info), ct);
+        for (var attempt = 0; attempt < MaxCasAttempts; attempt++)
+        {
+            var current = await store.GetAdminAsync(adminRecordId, ct);
+            if (current is null || current.Status != NodeAdminAccount.StatusActive || current.LockedUntil > now) return;
+            var attempts = current.FailedAttempts + 1;
+            var update = SurrealWriter.UpdateOnly<NodeAdminAccount>(current.Id)
+                .Where(row => row.AdminRevision == current.AdminRevision && row.TotpLastStep == current.TotpLastStep
+                    && row.FailedAttempts == current.FailedAttempts && row.LockCount == current.LockCount);
+            var lockCount = current.LockCount + 1;
+            var lockFor = LockDuration(lockCount);
+            var locks = attempts >= LockThreshold;
+            var mutation = locks
+                ? update.Set(row => row.FailedAttempts, 0L).Set(row => row.LockCount, lockCount)
+                    .Set(row => row.LockedUntil, (DateTimeOffset?)(now + lockFor)).Build()
+                : update.Set(row => row.FailedAttempts, attempts).Build();
+            if (await store.CommitAsync(null, [mutation], ct) != NodeAdminCommit.Committed) continue;
+            if (locks)
+                await AuditBestEffortAsync(Entry(actor, [], "auth.lock", target, NodeAdminAuditLog.OutcomeOk,
+                    JsonSerializer.Serialize(new { reason = "second_factor_failures", lockCount, lockedForSeconds = (long)lockFor.TotalSeconds }), info), ct);
+            return;
+        }
+        logger.LogError("Second-factor failure for node admin {AdminId} could not be counted after {Attempts} attempts.", adminRecordId, MaxCasAttempts);
+    }
+
+    /// <summary>15 minutes doubled per consecutive lock, capped at 24 hours (L-4).</summary>
+    public static TimeSpan LockDuration(long lockCount)
+    {
+        var doublings = (int)Math.Clamp(lockCount - 1, 0, 10);
+        var duration = TimeSpan.FromTicks(BaseLockDuration.Ticks << doublings);
+        return duration > MaxLockDuration ? MaxLockDuration : duration;
+    }
+
+    /// <summary>Counts one failed enrollment completion by CAS retry until it lands (H-1).</summary>
+    private async Task RecordEnrollmentFailureAsync(string enrollmentRecordId, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < MaxCasAttempts; attempt++)
+        {
+            var current = await store.GetEnrollmentAsync(enrollmentRecordId, ct);
+            if (current is null || current.ConsumedAt is not null || current.FailedAttempts >= MaxEnrollmentFailures) return;
+            var commit = await store.CommitAsync(null, [SurrealWriter.UpdateOnly<NodeAdminEnrollment>(current.Id)
+                .Where(row => row.FailedAttempts == current.FailedAttempts && row.ConsumedAt == null)
+                .Set(row => row.FailedAttempts, current.FailedAttempts + 1).Build()], ct);
+            if (commit == NodeAdminCommit.Committed) return;
+        }
+        logger.LogError("Enrollment failure for {EnrollmentId} could not be counted after {Attempts} attempts.", enrollmentRecordId, MaxCasAttempts);
+    }
+
+    private async Task SecretUnreadableAsync(Exception exception, NodeAdminAccount admin, string actor, string target,
+        NodeAdminRequestInfo info, CancellationToken ct)
+    {
+        logger.LogError(exception, "TOTP secret for node admin {AdminId} could not be decrypted or decoded", admin.Id);
+        await AuditBestEffortAsync(Entry(actor, [], "totp.secret_unreadable", target, NodeAdminAuditLog.OutcomeFailed,
+            Reason(exception.GetType().Name), info), ct);
     }
 
     private async Task<AZOAResult<NodeAdminSessionResponse>> IssueAsync(
@@ -336,7 +399,7 @@ public sealed class NodeAdminAuthManager(
     {
         if (!await TryAuditAsync(Entry(principal, amr, "auth.session", "fp=" + fingerprint, NodeAdminAuditLog.OutcomeOk, string.Empty, info), ct))
             return AuditUnavailable<NodeAdminSessionResponse>();
-        var (sid, recordId) = NodeAdminCrypto.NewSessionId();
+        var (sid, recordId, handle) = NodeAdminCrypto.NewSession();
         var expiresAt = now + runtime.Options.SessionLifetime;
         await store.CreateSessionAsync(new NodeAdminSession
         {
@@ -348,13 +411,14 @@ public sealed class NodeAdminAuthManager(
             Ip = info.Ip,
             UserAgent = info.UserAgent,
             CredentialFingerprint = fingerprint,
+            Handle = handle,
         }, ct);
         var token = issuer.Issue(principal, sid, now, amr, revisions, expiresAt);
         NodeAdminView? view = null;
         if (admin is not null && roles is not null)
             view = NodeAdminViews.Admin(admin, roles, await store.ListCredentialsAsync(admin.Id, ct));
         return AZOAResult<NodeAdminSessionResponse>.Success(new NodeAdminSessionResponse(
-            token, NodeAdminCrypto.FormatTimestamp(expiresAt), sid, principal, NodeAdminPermissions.Normalize(permissions), view),
+            token, NodeAdminCrypto.FormatTimestamp(expiresAt), handle, principal, NodeAdminPermissions.Normalize(permissions), view),
             "Node admin authenticated.");
     }
 
@@ -369,8 +433,19 @@ public sealed class NodeAdminAuthManager(
         string action, string actor, string target, string reason, NodeAdminRequestInfo info, CancellationToken ct)
     {
         await AuditBestEffortAsync(Entry(actor, [], action, target, NodeAdminAuditLog.OutcomeFailed, Reason(reason), info), ct);
-        return NodeAdminResults.Fail<T>(NodeAdminErrorCodes.EnrollmentInvalid, "The enrollment is invalid, expired or already used.");
+        return NodeAdminResults.Fail<T>(NodeAdminErrorCodes.EnrollmentInvalid, EnrollmentInvalidMessage);
     }
+
+    /// <summary>A failure tied to no real challenge, enrollment or admin: counted and logged, never chained (M-3).</summary>
+    private AZOAResult<T> AnonymousFailure<T>(string action, string reason, NodeAdminRequestInfo info)
+    {
+        anonymousFailures.Record(action, reason, info);
+        return action == "auth.session"
+            ? NodeAdminResults.Fail<T>(NodeAdminErrorCodes.AuthFailed, "Authentication failed.")
+            : NodeAdminResults.Fail<T>(NodeAdminErrorCodes.EnrollmentInvalid, EnrollmentInvalidMessage);
+    }
+
+    private static string EnrollmentWireId(NodeAdminEnrollment enrollment) => Guid.ParseExact(enrollment.Id, "N").ToString("D");
 
     private async Task<AZOAResult<NodeAdminEnrollStartView>> AlreadyStartedAsync(
         string actor, string target, NodeAdminRequestInfo info, CancellationToken ct)

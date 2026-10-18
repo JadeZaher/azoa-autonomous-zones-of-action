@@ -53,7 +53,7 @@ public sealed class NodeAdminAdminsController(NodeAdminManager manager) : NodeAd
     [HttpPut("{id:guid}/roles")]
     [Authorize(Policy = NodeAdminPolicies.RolesManageRecent)]
     [RequestSizeLimit(8192)]
-    public async Task<ActionResult<AZOAResult<NodeAdminView>>> AssignRoles(Guid id, [FromBody] NodeAdminAssignRolesRequest request, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<NodeAdminReenrollmentView>>> AssignRoles(Guid id, [FromBody] NodeAdminAssignRolesRequest request, CancellationToken ct)
         => Respond(await manager.AssignRolesAsync(Caller, id, request, ct));
 
     [HttpPost("{id:guid}/revoke-sessions")]
@@ -74,6 +74,6 @@ public sealed class NodeAdminAdminsController(NodeAdminManager manager) : NodeAd
 
     [HttpPost("{id:guid}/mfa/reset")]
     [Authorize(Policy = NodeAdminPolicies.AdminsManageRecent)]
-    public async Task<ActionResult<AZOAResult<NodeAdminMfaResetView>>> ResetMfa(Guid id, CancellationToken ct)
+    public async Task<ActionResult<AZOAResult<NodeAdminReenrollmentView>>> ResetMfa(Guid id, CancellationToken ct)
         => Respond(await manager.ResetMfaAsync(Caller, id, ct));
 }

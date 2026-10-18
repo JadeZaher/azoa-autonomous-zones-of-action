@@ -5,7 +5,7 @@ public sealed record NodeAdminChallengeResponse(string ChallengeId, string Nonce
 
 /// <summary>An issued node-admin session.</summary>
 public sealed record NodeAdminSessionResponse(
-    string AccessToken, string ExpiresAt, string Sid, string Principal, IReadOnlyList<string> Permissions, NodeAdminView? Admin);
+    string AccessToken, string ExpiresAt, string Handle, string Principal, IReadOnlyList<string> Permissions, NodeAdminView? Admin);
 
 /// <summary>Contract schema <c>Admin</c>.</summary>
 public sealed record NodeAdminView(
@@ -27,9 +27,9 @@ public sealed record NodeAdminKeyView(string Fingerprint, string Label, DateTime
 /// <summary>Contract schema <c>Role</c>.</summary>
 public sealed record NodeAdminRoleView(string Id, string Name, bool BuiltIn, IReadOnlyList<string> Permissions, long Revision);
 
-/// <summary>Contract schema <c>Session</c>.</summary>
+/// <summary>Contract schema <c>Session</c>; <c>handle</c> is an opaque id that is never the token's sid (M-1).</summary>
 public sealed record NodeAdminSessionView(
-    string Sid, string Principal, DateTimeOffset AuthTime, IReadOnlyList<string> Amr, DateTimeOffset ExpiresAt,
+    string Handle, string Principal, DateTimeOffset AuthTime, IReadOnlyList<string> Amr, DateTimeOffset ExpiresAt,
     DateTimeOffset? RevokedAt, string Ip, bool Current);
 
 /// <summary>Contract schema <c>AuditRow</c>.</summary>
@@ -43,8 +43,8 @@ public sealed record NodeAdminAuditHeadView(long Seq, string Hash);
 /// <summary><c>GET /audit</c> page.</summary>
 public sealed record NodeAdminAuditPageView(IReadOnlyList<NodeAdminAuditRowView> Rows, NodeAdminAuditHeadView Head);
 
-/// <summary><c>GET /audit/verify</c>.</summary>
-public sealed record NodeAdminAuditVerifyView(bool Ok, long VerifiedThroughSeq, string HeadHash, long? FirstBrokenSeq);
+/// <summary><c>GET /audit/verify</c>: the window verified is <c>fromSeq..verifiedThroughSeq</c>.</summary>
+public sealed record NodeAdminAuditVerifyView(bool Ok, long FromSeq, long VerifiedThroughSeq, string HeadHash, long? FirstBrokenSeq);
 
 /// <summary>Root identity in <c>GET /me</c>.</summary>
 public sealed record NodeAdminRootView(string Fingerprint);
@@ -53,8 +53,11 @@ public sealed record NodeAdminRootView(string Fingerprint);
 public sealed record NodeAdminMeView(
     string Principal, NodeAdminView? Admin, NodeAdminRootView? Root, IReadOnlyList<string> Permissions, NodeAdminSessionView Session);
 
-/// <summary><c>POST /admins/{id}/mfa/reset</c>: the token is returned only to root (C1); null for any other caller.</summary>
-public sealed record NodeAdminMfaResetView(NodeAdminView Admin, string? EnrollmentToken, DateTimeOffset? EnrollmentExpiresAt);
+/// <summary>
+/// <c>POST /admins/{id}/mfa/reset</c> and <c>PUT /admins/{id}/roles</c>: the admin after the change and, when it had to
+/// re-enroll, a fresh enrollment token returned only to root (C1); null otherwise.
+/// </summary>
+public sealed record NodeAdminReenrollmentView(NodeAdminView Admin, string? EnrollmentToken, DateTimeOffset? EnrollmentExpiresAt);
 
 /// <summary><c>POST /admins</c>.</summary>
 public sealed record NodeAdminCreatedView(NodeAdminView Admin, string EnrollmentToken, DateTimeOffset EnrollmentExpiresAt);

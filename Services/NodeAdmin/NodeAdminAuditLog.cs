@@ -34,6 +34,19 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
     private const string HeadMarker = "NODE_ADMIN_AUDIT_HEAD_MOVED";
     private const int MaxAppendAttempts = 16;
 
+    /// <summary>Rows verified by default (M-3): the tail window, not a full rescan per call.</summary>
+    public const long DefaultVerifyWindow = 10_000;
+    private static readonly TimeSpan FullVerifyInterval = TimeSpan.FromMinutes(1);
+    private static long _lastFullVerifyTicks;
+
+    /// <summary>Node-process throttle for full-chain verification: at most one per minute.</summary>
+    public static bool TryBeginFullVerify(DateTimeOffset now)
+    {
+        var last = Interlocked.Read(ref _lastFullVerifyTicks);
+        if (now.UtcTicks - last < FullVerifyInterval.Ticks) return false;
+        return Interlocked.CompareExchange(ref _lastFullVerifyTicks, now.UtcTicks, last) == last;
+    }
+
     /// <summary>Canonical row hash: hex(sha256(utf8(prevHash LF seq LF at LF actor LF action LF target LF outcome LF detail))).</summary>
     public static string ComputeHash(string prevHash, long seq, string at, string actor, string action, string target, string outcome, string detail)
     {
@@ -89,12 +102,23 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
     public Task<NodeAdminAuditHead?> GetHeadAsync(CancellationToken ct)
         => executor.QuerySingleAsync<NodeAdminAuditHead>(SurrealQuery<NodeAdminAuditHead>.Key(NodeAdminAuditHead.SingletonId), ct);
 
-    /// <summary>Recomputes every hash and link from genesis and checks the head matches the last row.</summary>
-    public async Task<NodeAdminAuditVerification> VerifyAsync(CancellationToken ct)
+    /// <summary>
+    /// Recomputes hashes and links from <paramref name="fromSeq"/> to the head and checks the head matches the last row. A window
+    /// anchors on row fromSeq-1, whose own hash is recomputed first.
+    /// </summary>
+    public async Task<NodeAdminAuditVerification> VerifyAsync(long fromSeq, CancellationToken ct)
     {
         var head = await GetHeadAsync(ct);
         var expectedPrev = GenesisHash;
-        var expectedSeq = 1L;
+        var expectedSeq = Math.Max(1, fromSeq);
+        if (expectedSeq > 1)
+        {
+            var anchor = (await ListAsync(expectedSeq - 2, 1, ct)).SingleOrDefault();
+            if (anchor is null || anchor.Seq != expectedSeq - 1
+                || anchor.Hash != ComputeHash(anchor.PrevHash, anchor.Seq, anchor.At, anchor.Actor, anchor.Action, anchor.Target, anchor.Outcome, anchor.Detail))
+                return new NodeAdminAuditVerification(false, expectedSeq - 1, head?.Hash ?? GenesisHash, expectedSeq - 1);
+            expectedPrev = anchor.Hash;
+        }
         while (true)
         {
             var page = await ListAsync(expectedSeq - 1, 500, ct);

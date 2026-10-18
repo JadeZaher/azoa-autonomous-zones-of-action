@@ -101,6 +101,7 @@ public static class NodeAdminErrorCodes
     public const string NotFound = "NOT_FOUND";
     public const string Conflict = "CONFLICT";
     public const string Unavailable = "NODE_ADMIN_UNAVAILABLE";
+    public const string RateLimited = "RATE_LIMITED";
 
     /// <summary>Header naming the step-up requirement on a 403.</summary>
     public const string AuthRequirementHeader = "x-azoa-auth-requirement";

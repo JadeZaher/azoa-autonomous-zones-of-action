@@ -42,7 +42,10 @@ literals, which the per-file raw-query ceiling there would otherwise have to be 
   invariant checks computed from a snapshot at revision *r* commit only if nothing changed (M1). Callers
   retry up to 5 times on `Conflict` and then return `CONFLICT`.
 - Record ids: admin = Guid `N` (wire `D`); credential = fingerprint (a key belongs to one admin forever;
-  a revoked key is only reactivated for the same admin); session = hex of the 16-byte sid (wire base64url);
+  a revoked key is only reactivated for the same admin); session = **sha256 hex of the raw 16-byte sid** (M-1:
+  only the token carries the sid, so a database read, a backup or an auditor's listing never yields a usable
+  session id); sessions are listed and revoked by `handle`, an independent random 128-bit hex id that cannot be
+  turned into a sid;
   audit = seq zero-padded to 20 digits; singletons `local`/`head`.
 - FK-like columns (`admin_id`) are plain strings, not `record<>` links: the tables are self-contained and the
   bare-id rule therefore does not apply.
@@ -66,17 +69,25 @@ every role write and every status/role assignment bumps that revision.
 `Managers/NodeAdminAuthManager`.
 
 - `POST auth/challenge` always issues a 60 s challenge for a well-formed fingerprint (no key-existence
-  oracle). `expires_at_text` and `audience` are stored verbatim; the server rebuilds the signed message from
+  oracle), unless `NodeAdmin:MaxOutstandingChallenges` (default 10 000) live challenges exist node-wide, which
+  refuses with 503 `NODE_ADMIN_UNAVAILABLE` and logs critically (M-3; probed with a one-row `START cap-1` read). `expires_at_text` and `audience` are stored verbatim; the server rebuilds the signed message from
   stored strings, the client signs returned strings byte-for-byte (H2).
 - `POST auth/session` consumes the challenge by CAS **before** verifying anything, so a challenge is single
   use even on failure (M6), then checks fingerprint binding, audience, the Ed25519 signature, and either root
   membership (full 32-byte fixed-time compare against configured keys + root watermark) or the admin
   credential (full key compare) + active status + TOTP. Every failure is the uniform `AUTH_FAILED`; the
   reason is only in the audit row (M4).
-- Lockout: 5 consecutive **second-factor** failures lock the admin for 15 min (`ADMIN_LOCKED`, only
-  reported after a valid signature). Signature failures are not counted: anyone can name a fingerprint, so
-  counting them would let an attacker lock any admin out; signature guessing is infeasible and IP-limited by
-  the `operator-login` limiter instead.
+- Lockout (H-1, L-4): 5 consecutive **second-factor** failures lock the admin (`ADMIN_LOCKED` + `Retry-After`,
+  only reported after a valid signature). Each failure is counted by a CAS retry loop that re-reads the row
+  until its increment lands, so concurrent bad codes cannot lose counts; a racer that re-reads a locked row
+  stops counting. The lock lasts 15 min, doubling per consecutive lock (`lock_count`), capped at 24 h; a
+  successful login resets `lock_count`. The success write CASes on `(admin_revision, totp_last_step,
+  lock_count)`, so a lock set after its read (which bumps `lock_count`) can never be cleared by it. `auth.lock`
+  rows carry `lockCount` and `lockedForSeconds`. Signature failures are not counted: anyone can name a
+  fingerprint, so counting them would let an attacker lock any admin out; signature guessing is infeasible and
+  IP-limited by the `operator-login` limiter instead. The enrollment-completion counter uses the same loop.
+- A TOTP ciphertext that cannot be decrypted **or decoded** (L-1) fails the login/enrollment uniformly and is
+  audited as `totp.secret_unreadable`.
 - TOTP: RFC 6238 SHA1/6/30, ±1 step, step must exceed `totp_last_step`, then a CAS advances it (replay
   guard; a concurrent second use of the same code loses the CAS). Secrets are DataProtection-encrypted with a
   purpose bound to the admin id (`NodeAdminTotpProtector`), so a ciphertext cannot be moved between admins.
@@ -121,6 +132,12 @@ escalation (it can always mint a node-owner) but **not** from last-owner or self
   write CASes.
 - **Self-protection**: no self suspend/revoke/MFA reset, no stripping your own `admins.manage` (by
   assignment or role edit), no revoking your only key.
+- **Pending role change (M-2)**: changing the roles of a `pending_enrollment`/`pending_activation` admin
+  sends it back to `pending_enrollment`, consumes every open enrollment and revokes any bound-but-unactivated
+  key (audited `admin.reenrollment_required`), so a token issued under the old roles cannot enroll the raised
+  admin; only a root caller receives the fresh token.
+- **Root revocation (L-2)**: `POST /root/revoke-sessions` (root, or an admin holding `admins.manage` and
+  `roles.manage`, step-up) bumps `root_session_revision`.
 - **MFA reset** returns the admin to `pending_enrollment`, revokes every key, session and open enrollment;
   only a **root** caller receives the new enrollment token (C1), so a peer owner cannot re-enroll someone
   else's identity with their own key.
@@ -143,8 +160,18 @@ Coverage:
   route values.
 - `NodeAdminDenial` (from `ActionableAuthorizationResultHandler`): every 403 for a node-admin principal is
   an `authz.denied` row.
-- Inline: `auth.session` (ok/failed + reason), `auth.lock`, `enroll.start`/`enroll.complete`
-  (intent/ok/failed/denied), `root.revision_advanced`.
+- The filter is ordered at -3000, before `ModelStateInvalidFilter` (-2000), so automatic invalid-body 400s on
+  node-admin writes also get intent + `failed` rows (L-3).
+- Inline: `auth.session` (ok/failed + reason), `auth.lock`, `totp.secret_unreadable`, `enroll.start`/
+  `enroll.complete` (intent/ok/failed/denied), `admin.reenrollment_required`, `root.revision_advanced`.
+- Flood control (M-3): failures tied to **no** real challenge, enrollment or admin (malformed bodies, unknown
+  challenge ids, unknown enrollment tokens/ids) are not chained. `NodeAdminAnonymousFailures` logs a
+  `NodeAdminAnonymousFailure` line and counts them; `NodeAdminAnonymousFailureFlusher` writes one
+  `auth.anonymous_failures {count, reasons}` row per 5-minute window (and on shutdown), restoring the counts if
+  the write fails. Failures against a real challenge/enrollment/admin are still chained individually.
+- `GET /audit/verify` verifies `fromSeq..head` (default the last 10 000 rows), anchored on row `fromSeq-1`
+  whose own hash is recomputed; `?full=true` rescans from genesis and is throttled to once per minute per
+  process (`RATE_LIMITED`, 429). The hourly sweep loops 500-row batches until a short batch (≤ 50 per table).
 - Never logged or audited: signatures, TOTP codes or secrets, tokens, enrollment tokens.
 
 Exception boundaries: audit writes are the only place this module catches broad exceptions, and each catch
@@ -197,3 +224,14 @@ Owed by lane A2 (plan §8 C3): list every `NodeOperatorIdentity.UserId` / `IsNod
 9. `PUT /admins/{id}/roles` is gated by `roles.manage` (plan §2 "role CRUD + assignment").
 10. MFA reset also revokes the admin's keys (re-enrollment re-proves key and authenticator; the same key may
     be re-bound).
+11. **Sessions use `handle`, never `sid` (M-1, security review 2026-10-18).** `GET /sessions` returns
+    `Session { handle, principal, authTime, amr, expiresAt, revokedAt?, ip, current }`; revoke is
+    `POST /sessions/{handle}/revoke`; `POST /auth/session` returns `handle` instead of `sid`; `GET /me` returns
+    the session with its `handle`. The raw sid exists only inside the access token.
+12. `PUT /admins/{id}/roles` now returns `{ admin, enrollmentToken, enrollmentExpiresAt }` (the same shape as
+    MFA reset); the token is non-null only when root changed the roles of a pending admin (M-2).
+13. New `POST /root/revoke-sessions` (L-2) → `bool`.
+14. `GET /audit/verify?fromSeq=&full=` returns `{ ok, fromSeq, verifiedThroughSeq, headHash, firstBrokenSeq? }`;
+    `full=true` can answer 429 `RATE_LIMITED`.
+15. Unknown-challenge / malformed / unknown-enrollment failures are not individual audit rows; they appear in
+    `auth.anonymous_failures` roll-ups (actor `anonymous`, target `node`).
