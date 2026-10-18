@@ -1,0 +1,7 @@
+[
+  {
+    "store": "INftLifecycleStore",
+    "method": "FindCustodialWalletIdsAsync",
+    "tenantCheck": "not tenant-scoped by design: recipient directory for one exact (chain, address), Platform rows only; NftLifecycleService refuses ambiguity across owners and never exposes the ids"
+  }
+]

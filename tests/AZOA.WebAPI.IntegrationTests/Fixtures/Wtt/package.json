@@ -1,0 +1,18 @@
+{
+  "name": "azoa-wtt-six-route-fixtures",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "pins:verify": "node lib/verify-pins.mjs",
+    "evm": "node evm/chain.mjs",
+    "solana:programs": "node solana/dump-programs.mjs"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "4.3.1",
+    "@solana/web3.js": "1.98.4",
+    "ethers": "6.15.0",
+    "hardhat": "2.26.3",
+    "solc": "0.8.4"
+  }
+}

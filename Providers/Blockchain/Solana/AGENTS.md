@@ -105,6 +105,17 @@ mint, immutable metadata/verified creator, normal master-edition authorities or
 credential freeze/mint-authority constraints, and the actual ATA balance/state.
 Application authority additionally enforces immutable logical issuer and revocation.
 
+## Recipient-stage NFT costs (F-M11)
+
+`Accept`, `Transfer` and `ReturnForBurn` quotes (`QuoteNftProtocolCostsAsync`) run the same asset and holding checks as
+preparation (`InspectNftMovementAsync`), reserve the token-account rent (`getMinimumBalanceForRentExemption(165)`) even
+when the destination holding already exists, and price the worst-case message (holding creation included); the levy is
+zero. Preparation requires the accepted receipt to name this stage, generation, lifecycle, physical network and the
+message's actual fee payer (signer for Accept/ReturnForBurn, the requester otherwise), then refuses before custody when
+the actual fee plus the rent actually needed exceeds the accepted limits. Submission re-checks the same limits. Unlike
+Create there is no execution-time Rent guard: the ATA program charges the token-account minimum at execution, and the
+quoted rent is a conservative cap. A prepared wire without a receipt still recovers (observation only).
+
 ## Codec provenance
 
 `SolanaNftMetadata` independently encodes the Borsh wire fields documented by the official Metaplex generated

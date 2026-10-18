@@ -42,6 +42,27 @@ public sealed class CredentialRevokeRefusalTests
         await AssertNothingHappenedAsync(nftId, before!);
     }
 
+    [Theory]
+    [InlineData("third-party", false)]
+    [InlineData("holder-of-unrecorded-issuer", true)]
+    public async Task A_caller_other_than_the_recorded_issuer_is_refused_and_issuance_is_never_inferred(string caller, bool eraseIssuer)
+    {
+        var nftId = await IssuedNftIdAsync();
+        if (eraseIssuer) _rail.Rail.Store.MutateAuthority(nftId, authority => authority.IssuerUserId = string.Empty);
+        var before = await _rail.Rail.Store.GetAuthorityAsync(nftId);
+        var callerId = caller == "third-party" ? Guid.NewGuid() : _rail.RecipientB;
+
+        var result = await _rail.RevokeAsync(TokenId, callerId, RequestKey);
+
+        result.IsError.Should().BeTrue(caller);
+        _rail.VerifyNoClawback();
+        (await _rail.Rail.Store.GetAsync(NftLifecycleIdentity.ForRequest(callerId, "Revoke", RequestKey)))
+            .Should().BeNull("a refused revocation admits no lifecycle");
+        var after = await _rail.Rail.Store.GetAuthorityAsync(nftId);
+        after!.Version.Should().Be(before!.Version);
+        after.HolderUserId.Should().Be(_rail.RecipientB.ToString("N"));
+    }
+
     [Fact]
     public async Task An_issuer_without_a_wallet_on_the_credential_chain_is_refused_before_any_effect()
     {

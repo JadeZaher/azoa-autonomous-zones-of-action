@@ -40,7 +40,7 @@ public sealed partial class SurrealHoldCommandTests
         (await _store.AuthorizeRailAsync(row, new HoldCommandAuthorization { Id = "stale", OperationId = row.Id,
             ActorUserId = row.ActorUserId, ExpectedVersion = row.Version, RequestHash = "stale", QuoteId = quote.QuoteId,
             MaximumNetworkFeeBaseUnits = "1000", AuthorityJson = row.AuthorityJson, CreatedAt = now })).Should().BeNull();
-        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Set(value => value.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true).Set(value => value.IsActive, false).Build());
         (await _store.CancelRailAsync(row.Id, request, authority.Direct.Credential))!.Version.Should().Be(cancelled.Version);
         (await _store.CancelRailAsync(row.Id, request with { Reason = "different" }, authority.Direct.Credential)).Should().BeNull();
     }
@@ -77,7 +77,7 @@ public sealed partial class SurrealHoldCommandTests
         row = (await _store.SavePreparedAsync(row, wire))!;
         row = (await _store.AuthorizeSendAsync(row))!;
         row.State.Should().Be("Submitted");
-        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Set(value => value.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true).Set(value => value.IsActive, false).Build());
         var evidence = new HoldTransferEvidence(1, CanonicalJson.HashCanonical(row.PreparedJson!), wire.TransactionId,
             wire.ProtocolIdentity, ChainConfirmation.Confirmed, DateTimeOffset.UtcNow);
         (await _store.CompleteRailAsync(row, evidence with { TransactionId = "other" })).Should().BeNull();

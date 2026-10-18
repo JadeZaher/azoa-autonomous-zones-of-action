@@ -49,7 +49,7 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
         notification.Status.Should().Be(Event.DeliveryStatus.DeadLettered);
         notification.LastError.Should().Be("DESTINATION_UNAVAILABLE_AT_TRANSITION");
         notification.BodyJson.Should().NotBeNullOrWhiteSpace();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Grant>(results[0]!.GrantId.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Grant>(results[0]!.GrantId.ToString("N")).Where(seed => true)
             .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         (await _store.AdmitUserExplicitAsync(command, authority))!.GrantedAt.Should().Be(results[0]!.GrantedAt);
         (await _executor.QueryAsync<Grant>(SurrealQuery<Grant>.From())).Should().ContainSingle().Which.RevokedAt.Should().NotBeNull();
@@ -60,7 +60,7 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
     public async Task Revoked_actor_authority_leaves_no_partial_lifecycle_records()
     {
         var authority = Authority();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         var command = new ConsentLifecycleCommand(Guid.NewGuid(), _tenant, [AzoaScopes.ActionExecute], GrantOrigin.UserExplicit, null, null);
         (await _store.AdmitUserExplicitAsync(command, authority)).Should().BeNull();
@@ -97,7 +97,7 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
         var command = new ConsentLifecycleCommand(Guid.NewGuid(), _tenant, [AzoaScopes.ActionExecute], GrantOrigin.UserExplicit, null, null);
         var admission = (await _store.AdmitUserExplicitAsync(command, authority))!;
         (await _store.RevokeUserExplicitAsync(admission.GrantId, authority with { ActorUserId = _tenant })).Should().BeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_tenant.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_tenant.ToString("N")).Where(seed => true)
             .Set(row => row.IsActive, false).Build())).EnsureAllOk();
         var revoked = await _store.RevokeUserExplicitAsync(admission.GrantId, authority);
         revoked.Should().NotBeNull();
@@ -141,7 +141,7 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
         var membershipId = ConsentLifecycleIdentity.ParticipationId(_tenant, command.ParticipationRef!);
         var membership = (await _executor.QuerySingleAsync<ConsentParticipationBoundary>(SurrealQuery<ConsentParticipationBoundary>.Key(membershipId)))!;
         membership.Version.Should().Be(1);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ConsentParticipationBoundary>(membershipId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ConsentParticipationBoundary>(membershipId).Where(seed => true)
             .Set(row => row.ClosedAt, DateTimeOffset.UtcNow).Set(row => row.Version, 2L).Build())).EnsureAllOk();
         (await _store.AdmitParticipationAsync(command with { RequestId = Guid.NewGuid() }, Authority())).Should().BeNull();
         (await _store.AdmitParticipationAsync(command, Authority()))!.GrantId.Should().Be(receipt.GrantId);
@@ -213,14 +213,14 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
     {
         var authority = new SigningConsentWitness(1, Authority() with { ActorUserId = _tenant }, [AzoaScopes.TenantProvision], []);
         (await _store.AdmitProvisionedAsync(_actor, "child", authority)).Should().BeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(row => row.OwnerTenantId, "user:" + _tenant.ToString("N")).Set(row => row.ExternalUserId, "child").Build())).EnsureAllOk();
         var result = await _store.AdmitProvisionedAsync(_actor, "child", authority);
         result.Should().NotBeNull();
         result!.GrantorUserId.Should().Be(_actor);
         (await _executor.QueryAsync<ConsentParticipationApproval>(SurrealQuery<ConsentParticipationApproval>.From()))
             .Should().ContainSingle().Which.GrantorId.Should().Be(_actor.ToString("N"));
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Unset(row => row.OwnerTenantId).Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
         (await _store.AdmitProvisionedAsync(_actor, "child", authority))!.GrantId.Should().Be(result.GrantId);
         (await _store.AdmitProvisionedAsync(_actor, "another-child", authority)).Should().BeNull();
@@ -230,7 +230,7 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
     [Fact]
     public async Task Provisioning_issuer_concurrency_commits_one_original_grant_and_never_regrants_after_revocation()
     {
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(_actor.ToString("N")).Where(seed => true)
             .Set(row => row.OwnerTenantId, "user:" + _tenant.ToString("N")).Set(row => row.ExternalUserId, "child").Build())).EnsureAllOk();
         var issuer = new AZOA.WebAPI.Services.Consent.TenantProvisionedGrantIssuer(_store);
         var authority = new SigningConsentWitness(1, Authority() with { ActorUserId = _tenant }, [AzoaScopes.TenantProvision], []);

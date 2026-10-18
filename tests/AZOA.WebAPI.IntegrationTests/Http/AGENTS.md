@@ -63,6 +63,12 @@ examples") and `Providers/Kyb/IdentomatKybResultParser.cs`. `IdentomatSessionMod
 KYB `/result` and callbacks are keyed by the session `id` (docs: "Use this to … receive
 callbacks"). Tests flip `IdentomatSession.Verdict` to play the vendor's review and post callbacks
 with `IdentomatVendor.CallbackBody`.
+
+The widget host also answers the documented `POST /external-api/delete/` (`company_key`, `session_token`):
+`true` when it deletes, `{"argumentError":"session-not-found"}` otherwise (`Providers/Kyc/IdentomatSessionDeletion.cs`
+treats both as gone). A deleted session stops answering `/external-api/result/`; `DeleteRequests` lets an orphan or
+late-response flow assert the node actually asked (IDENTOMAT-RECOVERY, L2).
+
 ## §stripe-fake — `Infrastructure/StripeVendor.cs`
 
 `POST /v1/checkout/sessions` (form-encoded) and `GET` by id, Bearer secret key checked.

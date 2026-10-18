@@ -22,7 +22,7 @@ public sealed partial class SurrealSwapAdmissionTests
         (await _store.RecordObservationAsync(operation.Id, 3, stageId, 2, observation)).Should().NotBeNull();
         var completed = (await _store.CompleteAsync(operation.Id, 4, stageId, 3, []))!;
         // The original workflow is historical; this new command must not seek its execution fence.
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>(operation.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>(operation.Id).Where(seed => true)
             .Set(row => row.ActionRunId, Guid.NewGuid().ToString("N"))
             .Set(row => row.ActionNodeId, Guid.NewGuid().ToString("N"))
             .Set(row => row.ActionIntentHash, new string('a', 64)).Build())).EnsureAllOk();

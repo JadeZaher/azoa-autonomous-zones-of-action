@@ -6,7 +6,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 namespace AZOA.WebAPI.Helpers;
 
 /// <summary>Kinds of authority-bearing NFT lifecycle writes; see Providers/Stores/Surreal/AGENTS.md §NFT effect authorities.</summary>
-public enum NftLifecycleWrite { FreshAdmission, Effect, CostAcceptance, RequesterRenewal, ParticipantRenewal }
+public enum NftLifecycleWrite { FreshAdmission, Effect, CostAcceptance, RequesterRenewal, ParticipantRenewal, StageCostAcceptance }
 
 /// <summary>One credential witness a lifecycle write must fence in its transaction.</summary>
 public sealed record NftAuthorityRequirement(SigningAdmissionAuthority Authority, string Scope, string Prefix);
@@ -24,6 +24,9 @@ public static class NftEffectAuthorities
         if (write == NftLifecycleWrite.ParticipantRenewal)
             return NftStageConsentIdentity.Current(row) is { } renewed && NftStageConsentIdentity.Matches(row, command, renewed)
                 ? new[] { new NftAuthorityRequirement(renewed.Authority, scope, "nft_stage_participant") } : null;
+        if (write == NftLifecycleWrite.StageCostAcceptance)
+            return NftStageCostContract.Current(row) is { } accepted && NftStageCostContract.Matches(row, command, accepted)
+                ? new[] { new NftAuthorityRequirement(accepted.Authority, scope, "nft_stage_cost") } : null;
         if (write == NftLifecycleWrite.FreshAdmission
             && (NftCancellationTombstone.Matches(row, command) || NftCancellationTombstone.MatchesWorkflowRejection(row, command))) return Array.Empty<NftAuthorityRequirement>();
         var original = command.ActorAuthority;

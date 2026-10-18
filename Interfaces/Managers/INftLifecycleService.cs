@@ -19,6 +19,12 @@ public interface INftLifecycleService
     /// <summary>Fences an unanswered exact acceptance version before its offer can be discarded.</summary>
     Task<AZOAResult<NftReplacementCostReconciliation>> RetireReplacementCostsAsync(string operationId, NftReplacementCostAcceptance request,
         AZOA.WebAPI.Models.Signing.SigningCredentialWitness credential, CancellationToken ct = default);
+    /// <summary>Quotes the exact unsigned recipient-stage costs for that stage's paying participant without signing (F-M11).</summary>
+    Task<AZOAResult<NftProtocolCostQuote>> QuoteStageCostsAsync(string operationId, NftStageAcceptance stage,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness credential, CancellationToken ct = default);
+    /// <summary>Records the paying participant's acceptance of one stage offer, fenced with its database-time expiry; never signs.</summary>
+    Task<AZOAResult<NftLifecycleView>> AcceptStageCostsAsync(string operationId, NftStageCostAcceptance request,
+        AZOA.WebAPI.Models.Signing.SigningCredentialWitness credential, CancellationToken ct = default);
     /// <summary>Records the original requester's fresh direct authority for the reviewed stage without signing or changing the command.</summary>
     Task<AZOAResult<NftLifecycleView>> RenewActorAuthorityAsync(string operationId, NftStageAcceptance request,
         AZOA.WebAPI.Models.Signing.SigningCredentialWitness credential, CancellationToken ct = default);

@@ -148,7 +148,7 @@ public sealed class SurrealHostedSessionRecoveryTests : IAsyncLifetime
         await _store.ClaimAdmissionAsync(candidate);
         var id = Guid.ParseExact(candidate.Id, "N");
         (await _store.TryBeginCreationAsync(id, candidate.CreationToken!, DateTimeOffset.UtcNow)).Result.Should().BeNull();
-        await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<TenantKycProviderSelection>(tenant).Set(row => row.SelectionVersion, 1L).Build());
+        await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<TenantKycProviderSelection>(tenant).Where(seed => true).Set(row => row.SelectionVersion, 1L).Build());
         profile.Enabled = false;
         await _executor.ExecuteAsync(SurrealWriter.Upsert(profile));
         (await _store.TryBeginCreationAsync(id, candidate.CreationToken!, DateTimeOffset.UtcNow)).Result.Should().BeNull();

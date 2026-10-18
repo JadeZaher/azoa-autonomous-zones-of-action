@@ -38,6 +38,7 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
         if (parameters.Id != NodeGovernanceParameters.LocalId)
             return AZOAResult<NodeGovernanceParameters>.Failure("Node governance policy must use the local singleton identity.");
         // raw: governance CAS and immutable audit append share one transaction.
+        // lock: the policy row read here is upserted below in this batch, and NodeGovernancePolicyFence.Lock() writes the policy lock row first.
         var readVersion = SurrealQuery
             .Of("LET $_versions = SELECT VALUE version FROM type::record($_pt, $_pid)")
             .WithParam("_pt", ParametersTable)
@@ -55,9 +56,11 @@ public sealed class SurrealNodeGovernanceStore : INodeGovernanceStore
         };
         if (parameters.AllowedChains is null)
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NodeGovernanceParameters>(NodeGovernanceParameters.LocalId)
+                .Where(row => row.Version == parameters.Version)
                 .Unset(row => row.AllowedChains).Build(), "policy_chains"));
         if (parameters.AllowedAssetTypes is null)
             statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.UpdateOnly<NodeGovernanceParameters>(NodeGovernanceParameters.LocalId)
+                .Where(row => row.Version == parameters.Version)
                 .Unset(row => row.AllowedAssetTypes).Build(), "policy_assets"));
         statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(audit), "policy_audit"));
         var resultIndex = statements.Count;

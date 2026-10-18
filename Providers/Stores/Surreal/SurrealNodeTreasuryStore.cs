@@ -44,6 +44,7 @@ public sealed class SurrealNodeTreasuryStore : INodeTreasuryStore
         CancellationToken ct = default)
     {
         // raw: destination CAS and immutable audit append share one transaction.
+        // lock: the destination row read here is upserted below in this batch (deterministic id), so a concurrent update or first create conflicts.
         var readVersion = SurrealQuery
             .Of("LET $_versions = SELECT VALUE version FROM type::record($_dt, $_did)")
             .WithParam("_dt", DestinationTable)

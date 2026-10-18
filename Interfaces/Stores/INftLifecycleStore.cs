@@ -18,7 +18,11 @@ public interface INftLifecycleStore
     /// <summary>Creates or replays the original request; null means its selected cost receipt cannot admit fresh work.</summary>
     Task<NftLifecycle?> ClaimAsync(NftLifecycle candidate, CancellationToken ct = default);
     Task<NftLifecycle?> GetAsync(string id, CancellationToken ct = default);
-    Task<NftLifecycle?> UpdateAsync(NftLifecycle row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false);
+    /// <summary>Version CAS; <paramref name="workflowAuthority"/> marks a workflow-run caller, refused once the owner took the lifecycle over.</summary>
+    Task<NftLifecycle?> UpdateAsync(NftLifecycle row, long expectedVersion, CancellationToken ct = default, bool requireActionAuthority = false,
+        bool workflowAuthority = false);
+    /// <summary>Platform (custodial) wallet ids for the exact chain and address via the chain/address index (RV-L4-02).</summary>
+    Task<IReadOnlyList<Guid>> FindCustodialWalletIdsAsync(string chainType, string address, CancellationToken ct = default);
     /// <summary>Lists oldest submitted/unknown/confirmed operations eligible for signature-free reconciliation.</summary>
     Task<IReadOnlyList<NftLifecycle>> ListPendingAsync(int limit, CancellationToken ct = default);
     Task<NftAssetAuthority?> GetAuthorityAsync(string nftId, CancellationToken ct = default);
