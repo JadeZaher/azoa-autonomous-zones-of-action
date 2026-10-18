@@ -133,6 +133,19 @@ public sealed class SolanaNftProtocolTests
                     estimate.PhysicalNetworkIdentity, intent.Authorization!.LifecycleId, CanonicalJson.Hash(intent), "Create", 0,
                     estimate.TokenStandard, estimate.PolicyEvidenceJson, estimate.Limits, now, now.AddMinutes(5)) };
             }
+            else if (intent.Kind == NftTransactionKinds.Accept)
+            {
+                (await Provider.PrepareNftTransactionAsync(intent)).IsError.Should().BeTrue("a recipient stage needs its payer's accepted cost receipt");
+                var quoted = await Provider.QuoteNftProtocolCostsAsync(intent);
+                quoted.IsError.Should().BeFalse(quoted.Message);
+                var estimate = quoted.Result!;
+                var now = DateTimeOffset.UtcNow;
+                intent = intent with { ProtocolCostQuote = new(Guid.NewGuid().ToString("N"), intent.SigningContext.UserId,
+                    Guid.Empty, intent.SigningContext.WalletId, intent.SignerAddress, "Solana", ChainNetwork.Devnet,
+                    estimate.PhysicalNetworkIdentity, intent.Authorization!.LifecycleId, CanonicalJson.Hash(intent), intent.Kind,
+                    intent.Authorization.PreparationGeneration, estimate.TokenStandard, estimate.PolicyEvidenceJson, estimate.Limits,
+                    now, now.AddMinutes(5)) };
+            }
             var result = await Provider.PrepareNftTransactionAsync(intent);
             result.IsError.Should().BeFalse(result.Message);
             await Provider.SubmitNftTransactionAsync(result.Result!);

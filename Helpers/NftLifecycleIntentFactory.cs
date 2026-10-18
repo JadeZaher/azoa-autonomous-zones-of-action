@@ -43,6 +43,7 @@ public static class NftLifecycleIntentFactory
             command.Metadata.IsSoulbound, context, command.SourceAddress, $"{row.Id}:{row.Stage}:{row.PreparationGeneration}", fee, authorization,
             row.ContractAddress ?? string.Empty,
             ProtocolCostQuote: row.Stage == NftTransactionKinds.Create
-                ? row.PreparationGeneration == 0 ? command.ProtocolCostQuote : NftReplacementCostContract.Current(row)?.Quote : null);
+                ? row.PreparationGeneration == 0 ? command.ProtocolCostQuote : NftReplacementCostContract.Current(row)?.Quote
+                : NftStageCostContract.Required(row) ? NftStageCostContract.Current(row)?.Quote : null);
     }
 }
