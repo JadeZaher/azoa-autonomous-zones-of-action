@@ -1,11 +1,12 @@
 ---
+merged: 3d1cac67
 type: lane-checkpoint
 round: 4
 wave: fix-batch
 lane: fix-money
 branch: r4/fix-money
 base: feat/platform-stub-closeout@21da6183
-status: ready
+status: merged
 inputs: [".omc/research/round4-review/RV-L3.md (H1,H2,M1-M5,L1-L3)", "RV-L1.md RV-L1-01", "RV-X.md X-7, X-10, X-11"]
 ---
 

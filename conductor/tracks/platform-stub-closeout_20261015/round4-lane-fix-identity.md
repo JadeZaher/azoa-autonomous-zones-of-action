@@ -1,10 +1,11 @@
 ---
+merged: 75b23986
 type: lane-checkpoint
 round: 4
 wave: fix-batch
 lane: fix-identity
 branch: r4/fix-identity
-status: ready
+status: merged
 ---
 
 # Round 4 · fix batch · identity (`r4/fix-identity`)

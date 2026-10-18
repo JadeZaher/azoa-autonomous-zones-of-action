@@ -48,3 +48,24 @@ reports (local, gitignored): `.omc/research/round4-review/<id>.md`.
 "Unknown treated as absent": RV-L3-H1/M2, RV-L5-02 and D-8 critic rule 1 all concluded "no money moved"
 from an ambiguous failure. Rule for every rail: ambiguous is its own state and parks until chain/Stripe
 evidence settles it.
+
+## Fix batch merged (2026-10-17) and bounded re-checks
+
+Merged by the orchestrator (agent git was denied by the permission classifier mid-session; owner chose
+orchestrator-run merges with per-command approval): L6 `ab6c600d`, fix-fm11 `afaa46dc`, fix-money `3d1cac67`,
+fix-chains `6352da84`, fix-frontend `c94f9945`, fix-security `53c6473c`, fix-identity `75b23986`.
+Inventory merge losses RV-X M-1..M-4 restored at merge; gates green on the merged lane trees.
+
+| HIGH | Re-check |
+|---|---|
+| RV-L1-01 | CLOSED (LOW R-1..R-3 → fix-money2) |
+| RV-L3-H1 / M1 / M2 | CLOSED |
+| RV-L3-H2 | PARTIAL → owner D-10 (provenance on transfer) → fix-money2 |
+| RV-L4-01 / -02 / -03 / -04 | CLOSED (new MEDIUM RV-L4-09 → fix-gates2; LOW RV-L4-08 fixed in fm11) |
+| RV-L5-01 / -02 / -06 / -07 / -09, F-M11 | CLOSED (MEDIUM R1 nonce pinning → fix-gates2) |
+| RV-L7-1 / -2 / -3 / -4 | CLOSED |
+| RV-X X-1..X-5 | CLOSED (new MEDIUM R-2, R-3, LOW R-4 → fix-gates2) |
+
+New from L6 (not in the original review): CRITICAL host-startup DI deadlock, HIGH SurrealForge 1.3.0
+`UpdateOnly`/`DeleteOnly` without `Where` (9 prod sites), HIGH reversal lot link, 2 MEDIUM → fix-core2 /
+fix-money2. Browser-slice regression (2 files) → fix-frontend2.
