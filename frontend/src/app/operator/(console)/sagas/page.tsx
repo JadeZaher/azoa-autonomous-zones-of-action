@@ -2,6 +2,7 @@
 
 // Generic saga dead letters. Action-workflow steps are refused upstream and recovered under /operator/actions.
 import { useState } from 'react'
+import Link from 'next/link'
 import type { SagaStepView } from 'azoa-sdk'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,13 +12,18 @@ import { useOperatorMutation, useOperatorResource } from '@/lib/use-operator-res
 
 type Filter = 'DeadLettered' | 'Parked'
 
+/** The server's maximum page (`sagaQuery` in operator-routes.ts); it has no saga-name filter, so workflow steps share the page. */
+const PAGE_LIMIT = 500
+
 export default function OperatorSagasPage() {
   const [filter, setFilter] = useState<Filter>('DeadLettered')
-  const { data, error, loading, reload } = useOperatorResource<SagaStepView[]>(`sagas/dead-letters?status=${filter}&limit=100`, 'Saga steps could not be read.')
+  const { data, error, loading, reload } = useOperatorResource<SagaStepView[]>(`sagas/dead-letters?status=${filter}&limit=${PAGE_LIMIT}`, 'Saga steps could not be read.')
   const mutation = useOperatorMutation()
   const [reason, setReason] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const rows = (data ?? []).filter(step => step.sagaName !== 'action-workflow')
+  const hiddenWorkflowSteps = (data?.length ?? 0) - rows.length
+  const pageFull = (data?.length ?? 0) >= PAGE_LIMIT
 
   async function act(step: SagaStepView, verb: 'requeue' | 'cancel') {
     setNotice(null)
@@ -40,8 +46,16 @@ export default function OperatorSagasPage() {
       {(error || mutation.error) && <OperatorError message={(mutation.error ?? error)!} onRetry={() => void reload()} />}
       {notice && <p role="status" className="text-sm">{notice}</p>}
       <Input aria-label="Cancellation reason" className="max-w-xl" value={reason} maxLength={1000} onChange={event => setReason(event.target.value)} placeholder="Reason for cancelling (at least 10 characters)" />
+      {!loading && data && (hiddenWorkflowSteps > 0 || pageFull) && (
+        <p role="note" className="text-sm">
+          {hiddenWorkflowSteps > 0 && <>{hiddenWorkflowSteps} workflow step(s) on this page are hidden here; recover them under <Link className="underline underline-offset-4" href="/operator/actions">Actions</Link>. </>}
+          {pageFull && <>The node returned a full page of {PAGE_LIMIT}, so older steps may not be shown. Resolve these, then refresh.</>}
+        </p>
+      )}
       {loading ? <OperatorLoading label="Reading saga steps" /> : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No {filter === 'DeadLettered' ? 'dead-lettered' : 'parked'} saga steps.</p>
+        <p className="text-sm text-muted-foreground">
+          {pageFull ? 'No generic saga steps on this page.' : `No ${filter === 'DeadLettered' ? 'dead-lettered' : 'parked'} saga steps.`}
+        </p>
       ) : rows.map(step => (
         <FlatCard key={step.id}>
           <CardContent className="space-y-2 pt-6 text-sm">

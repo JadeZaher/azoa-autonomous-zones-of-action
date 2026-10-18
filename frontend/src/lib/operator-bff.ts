@@ -314,9 +314,10 @@ export async function sanitizedOperatorResponse(
     }
 
     const parsed = await readUpstreamEnvelope<unknown>(response);
-    // A bare upstream body (saga operator routes) is wrapped so the console sees one envelope shape.
+    // A bare upstream body (routes marked `bare` in operator-routes.ts) is wrapped so the console sees one envelope shape.
     const envelope = options?.bare && parsed !== null ? { isError: false, result: parsed as unknown } : parsed;
-    if (!envelope || envelope.isError) {
+    // Anything that is not a real `AZOAResult` (e.g. a bare body on a route not marked `bare`) is refused, never read as empty.
+    if (!isAzoaEnvelope(envelope) || envelope.isError) {
         return NextResponse.json(
             { message: "The node returned an invalid operator response." },
             { status: 502, headers: NO_STORE_HEADERS },
@@ -326,4 +327,10 @@ export async function sanitizedOperatorResponse(
         { result: envelope.result ?? null },
         { headers: NO_STORE_HEADERS },
     );
+}
+
+/** True for a serialized `AZOAResult`: an object whose `isError` is a boolean (ASP.NET always writes it). */
+function isAzoaEnvelope(value: unknown): value is AzoaEnvelope<unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+        && typeof (value as { isError?: unknown }).isError === "boolean";
 }

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { azoa, isOk } from '@/lib/azoa'
 import { toast } from 'sonner'
+import { describePayoutResolution } from '@/lib/operator-honesty'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -120,7 +121,9 @@ export default function FiatPayoutsConsolePage() {
     try {
       const res = await azoa.api.resolveFiatPayout(row.id, { resolution, reason })
       if (isOk(res)) {
-        toast.success(resolution === 'record-paid' ? 'Recorded as paid' : 'The balance was returned')
+        const verdict = describePayoutResolution(res.value)
+        if (verdict.tone === 'ok') toast.success(verdict.title, { description: verdict.detail })
+        else toast.warning(verdict.title, { description: verdict.detail })
         await fetchBoard()
       } else {
         toast.error(res.error.message)
@@ -146,7 +149,7 @@ export default function FiatPayoutsConsolePage() {
           : undefined,
       )
       if (isOk(res)) {
-        toast.success(successMessage)
+        toast.success(successMessage, res.value?.status ? { description: `The node reports the cash-out as ${res.value.status}.` } : undefined)
         await fetchBoard()
       } else {
         toast.error(res.error.message)

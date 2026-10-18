@@ -14,7 +14,10 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { refusalMessage } from '@/lib/refusal-messages'
-import { clearSavedRequest, formatMinorUnits, requestKeyFor, toMinorUnits } from '@/lib/persisted-request-key'
+import { PendingRequestNotice } from '@/components/shared/pending-request-notice'
+import {
+  type SavedRequest, claimRequestKey, clearSavedRequest, formatMinorUnits, isDefiniteRefusal, readSavedRequest, toMinorUnits,
+} from '@/lib/persisted-request-key'
 
 const SCOPE = 'cash-out'
 
@@ -27,6 +30,7 @@ export default function CashOutPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [pending, setPending] = useState<SavedRequest | null>(null)
 
   const load = useCallback(async () => {
     if (!userId) return
@@ -44,6 +48,7 @@ export default function CashOutPage() {
   }, [userId])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => { if (userId) setPending(readSavedRequest(SCOPE, userId)) }, [userId])
 
   async function setUpAccount() {
     if (!userId) return
@@ -63,21 +68,48 @@ export default function CashOutPage() {
       setError(`Enter an amount between ${formatMinorUnits(quote.minimumAmountMinorUnits, quote.currencyCode)} and ${formatMinorUnits(Math.min(quote.maximumAmountMinorUnits, quote.cashableMinorUnits), quote.currencyCode)}.`)
       return
     }
+    const claim = claimRequestKey(SCOPE, userId, minorUnits)
+    if (claim.kind === 'pending') {
+      setError(null)
+      setPending(claim.pending)
+      return
+    }
+    await send(claim.request)
+  }
+
+  /** Sends one saved request; the history is re-read whatever the outcome, so a lost answer is visible. */
+  async function send(request: SavedRequest) {
+    if (!userId) return
     setBusy(true)
     setError(null)
     setNotice(null)
-    try {
-      const saved = requestKeyFor(SCOPE, userId, minorUnits)
-      const result = await azoa.api.startCashOut(userId, { requestKey: saved.requestKey, amountMinorUnits: minorUnits })
-      if (isOk(result)) {
-        clearSavedRequest(SCOPE, userId)
-        setNotice(result.value.statusMessage)
-        setAmount('')
-        await load()
-      } else {
-        setError(refusalMessage(result.error, 'The cash-out was not confirmed. Trying again resumes the same request and cannot pay twice.'))
-      }
-    } finally { setBusy(false) }
+    let failure: string | null = null
+    let success: string | null = null
+    const result = await azoa.api.startCashOut(userId, { requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits })
+    if (isOk(result)) {
+      clearSavedRequest(SCOPE, userId)
+      setPending(null)
+      setAmount('')
+      success = result.value.statusMessage
+    } else if (isDefiniteRefusal(result.error.status)) {
+      clearSavedRequest(SCOPE, userId)
+      setPending(null)
+      failure = refusalMessage(result.error, 'The cash-out was refused. Nothing was sent.')
+    } else {
+      setPending(request)
+      failure = refusalMessage(result.error, 'The cash-out was not confirmed. Check the history below; resuming the saved request cannot pay twice.')
+    }
+    await load()
+    setBusy(false)
+    setError(failure)
+    setNotice(success)
+  }
+
+  function discardPending() {
+    if (!userId) return
+    clearSavedRequest(SCOPE, userId)
+    setPending(null)
+    setNotice('The unconfirmed request was discarded. Enter an amount to start a new one.')
   }
 
   const ready = quote?.available && account?.readyToReceive
@@ -90,6 +122,16 @@ export default function CashOutPage() {
       </div>
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
       {notice && <p role="status" className="text-sm">{notice}</p>}
+      {pending && (
+        <PendingRequestNotice
+          summary={`A cash-out of ${formatMinorUnits(pending.amountMinorUnits, quote?.currencyCode ?? '')}`}
+          detail="Resuming sends the same request again, and the node pays it at most once. If it is already in the history below, it was received. Discard it only if you want a separate cash-out."
+          resumeLabel="Resume that cash-out"
+          busy={busy}
+          onResume={() => void send(pending)}
+          onDiscard={discardPending}
+        />
+      )}
 
       <Card>
         <CardHeader>

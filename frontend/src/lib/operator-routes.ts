@@ -131,7 +131,8 @@ export const CONSOLE_ROUTES: ConsoleRoute[] = [
     },
   },
   // Wallet identity migration conflicts.
-  { method: 'GET', pattern: /^wallet-identities$/, upstream: () => '/api/operator/wallet-identities' },
+  // GET answers a bare `WalletAuthIdentityMigrationService.View`; the clear answers `AZOAResult<bool>`.
+  { method: 'GET', pattern: /^wallet-identities$/, upstream: () => '/api/operator/wallet-identities', bare: true },
   {
     method: 'POST', pattern: /^wallet-identities\/clear-conflicting-binding$/, upstream: () => '/api/operator/wallet-identities/clear-conflicting-binding',
     body: body => {
@@ -162,7 +163,8 @@ export const CONSOLE_ROUTES: ConsoleRoute[] = [
   { method: 'GET', pattern: /^wtt\/stage-keys\/readiness$/, upstream: () => '/api/operator/wtt/stage-keys/readiness' },
   { method: 'POST', pattern: /^wtt\/stage-keys\/rewrap$/, upstream: () => '/api/operator/wtt/stage-keys/rewrap', body: emptyBody },
   // Ethereum prepared-transaction recovery (platform signer).
-  { method: 'GET', pattern: new RegExp(`^ethereum/recovery/${NETWORK}$`), upstream: (_path, match) => `/api/operator/ethereum/recovery/${match[1]}` },
+  // GET answers a bare `IReadOnlyList<EthereumPreparationView>`; activate/recover answer `AZOAResult`.
+  { method: 'GET', pattern: new RegExp(`^ethereum/recovery/${NETWORK}$`), upstream: (_path, match) => `/api/operator/ethereum/recovery/${match[1]}`, bare: true },
   {
     method: 'POST', pattern: new RegExp(`^ethereum/recovery/${NETWORK}/activate$`),
     upstream: (_path, match) => `/api/operator/ethereum/recovery/${match[1]}/activate`,

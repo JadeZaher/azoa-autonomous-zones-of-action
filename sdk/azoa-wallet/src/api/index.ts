@@ -137,6 +137,7 @@ export type {
   NftOperation,
   NftStageAcceptance,
   NftReplacementCostAcceptance,
+  NftStageCostAcceptance,
   NftReplacementCostReconciliation,
   NftProtocolCostLimits,
   NftProtocolCostAuthorization,
