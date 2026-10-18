@@ -182,3 +182,142 @@ suite (60/60 green).
 - Temp `AZOA_HOME` directories under the scratchpad (`join-azoa-home/{root,alice,bob}`) deleted
   — throwaway Ed25519 keys only, nothing else.
 - No other worktree, container, or process was touched.
+
+## Re-run on merged tree (088c0329)
+
+Smoke re-verification of the fully-merged `feat/platform-stub-closeout` tree (backend lane A1 +
+the reviewed CLI, commit `3277259c`: global `--node` removed, cross-origin bearer guard, FIFO
+stdin reader, passphrase helper with min length, no key overwrite without `--force`, audit pin
+hash cross-check). Run from a **detached, read-only worktree** (`../oasis-sleek-node-admin-smoke`,
+`git worktree add --detach 088c0329`), separate from the original `join/node-admin` integration
+worktree — nothing in this section touched that worktree or any other.
+
+### Build
+
+- `dotnet build AZOA.WebAPI.csproj -c Debug` — **0 errors**, 2 pre-existing nullable warnings
+  (`Providers/Fiat/FiatRailProvider.cs:651`, `Services/Fiat/OffRamp/TenantPayoutLedger.cs:162`),
+  unrelated to this track, no new warnings.
+- `tools/azoa-node-cli`: `npm ci && npm run build` — tsup ESM build succeeded (`dist/cli.js`,
+  69.9 KB).
+- `tools/azoa-node-cli`: `npm test -- --run` — **109 passed, 2 skipped** (14 files), confirming
+  the three P5 fixes (FIFO stdin reader, un-enveloped-4xx mapping, `root env` revision-0
+  bootstrap) are still covered and green on the merged tree.
+- `npm audit`: 6 vulnerabilities (3 moderate, 1 high, 2 critical), all inside the `vitest`/`vite`/
+  `esbuild`/`tinypool` **devDependency** toolchain (`prod: 3, dev: 160`) — none reachable from the
+  3 production dependencies tsup bundles into `dist/cli.js`. Pre-existing dev-tooling noise, not a
+  regression introduced here.
+
+### Environment
+
+- SurrealDB 3.1.4 podman container `azoa-smoke-surrealdb`, memory storage, `--user 0:0`, bound to
+  host port **8044**. Schema: namespace `smokens` / database `smokedb`, all 145
+  `Persistence/SurrealDb/Generated/Schemas/*.surql` files applied as one batch via `/sql` (same
+  mechanism as the original join run). All 14 `node_admin*` tables confirmed present via
+  `INFO FOR DB`.
+- API: `dotnet run --project AZOA.WebAPI.csproj -c Debug --no-build --no-launch-profile`,
+  `ASPNETCORE_ENVIRONMENT=Development`, `ASPNETCORE_URLS=http://localhost:5091`.
+  `NodeAdmin__RootPublicKeys`/`NodeAdmin__RootKeyRevision=1`/`NodeAdmin__Audience=http://localhost:5091`
+  rendered directly by `root env` (see table row 4). `SurrealRuntime__Endpoint/Namespace/Database/
+  User/Password` pointed at the throwaway container; two throwaway `Fiat__Test__SecretKey`/
+  `Fiat__Test__WebhookSecret` values supplied at boot (pre-existing `FiatRailStartup.Validate`
+  guard, unrelated to this track). The repo's own `.env` was never read or printed — every value
+  above was passed as an explicit process-env var for this throwaway process only.
+- CLI: per-identity `AZOA_HOME` under the scratchpad (`smoke-azoa-home/{root,alice,bob}`).
+- `enroll`'s TOTP secret is server-generated per invocation and is only known once `/enroll/start`
+  returns — piping a precomputed code (as a static stdin script) doesn't work for this command.
+  Drove it with a small Node orchestrator (`enroll-drive.mjs`) that spawns the real built CLI,
+  writes the enrollment token immediately, watches stdout for the emitted `totpSecretBase32` JSON
+  field, computes a real RFC 6238 (SHA1/6/30) code locally (same algorithm as the CLI's own
+  `test/fixtures/totp.ts`), and writes it back to the child's stdin the moment it appears — then
+  closes the child's stdin so it sees EOF, same as a real shell pipe closing once its writer exits.
+  `login --totp <code>` (an explicit non-interactive escape hatch per the CLI's own contract notes)
+  needed no such orchestration — just a freshly-computed code from the secret already known.
+
+### Command table
+
+| # | Actor | Command | Exit | Outcome |
+|---|---|---|---|---|
+| 1 | root | `keygen --name smokeroot --kind root` (passphrase+confirm via stdin) | 0 | fp `2fcd4dd7271ae206` |
+| 2 | root | `keygen --name smokeroot --kind root` again, no `--force` | **2** | refused: "Pass --force to overwrite, or choose a different name." (new check) |
+| 3 | root | `profile add rootp --origin http://localhost:5091 --kind root --key-name smokeroot --use` | 0 | profile created |
+| 4 | root | `root env --profile-keys rootp --current "" --current-revision 0` | 0 | rendered `RootPublicKeys`/`RootKeyRevision=1` — the exact pair the API booted with |
+| 5 | root | `login --root --profile rootp` (passphrase via stdin) | 0 | `root:2fcd4dd7271ae206`, 5 perms |
+| 6 | root | `whoami --profile rootp` | 0 | session + root fingerprint shown |
+| 7 | root | `admins create --username alice --role node-owner --profile rootp` | 0 | admin `30824aa1-…`, token captured |
+| 8 | alice | `enroll --origin … --profile-name alice --key-name alice-key --no-passphrase --json` (spawned, real-time TOTP) | 0 | `pending_activation`, fp `6c8d39091d615517` |
+| 9 | root | `admins activate 30824aa1-… --fingerprint 6c8d39091d615517 --profile rootp` | 0 | activated |
+| 10 | alice | `login --profile alice --totp <code>` | 0 | `admin:30824aa1-…`, 18 perms (node-owner) |
+| 11 | alice | `whoami --profile alice` | 0 | full admin record, `mfaEnrolled: true` |
+| 12 | alice | `roles list --profile alice` | 0 | 5 built-in roles |
+| 13 | alice | `admins create --username bob --role auditor --profile alice` | 0 | admin `fecc23f3-…`, token captured |
+| 14 | bob | `enroll --origin … --profile-name bob --key-name bob-key --no-passphrase --json` (spawned, real-time TOTP) | 0 | `pending_activation`, fp `a342a89a228e26b7` |
+| 15 | alice | `admins activate fecc23f3-… --fingerprint a342a89a228e26b7 --profile alice` | 0 | activated |
+| 16 | bob | `login --profile bob --totp <code>` | 0 | `admin:fecc23f3-…`, 7 perms (auditor) |
+| 17 | bob | `admins suspend 30824aa1-… --profile bob` | **4** | `PERMISSION_DENIED` — auditor outright lacks `admins.manage` |
+| 18 | alice | `api GET /api/node-admin/me --profile alice` | 0 | `/me` passthrough returns alice's own record |
+| 19 | alice | `api GET https://evil/x --profile alice` | **2** | rejected pre-network: "path must start with '/api/'" |
+| 20 | alice | `whoami --node https://evil.example --profile alice` | **1** | Commander: `error: unknown option '--node'` — no global override exists to collide with; API request-finished count unchanged (20→20) confirming **no request left the process** (new check) |
+| 21 | alice | `sessions list --profile alice --json` | 0 | one row, **`handle` only**, no raw `sid` (M-1); output independently confirmed to parse as **exactly one JSON document** (new check, verified against `whoami --json` too — both step-up-free commands) |
+| 22 | alice | `sessions revoke 72d8fdd2… --profile alice` (own handle) | 0 | revoked |
+| 23 | alice | `whoami --profile alice` (session now revoked) | **3** | `AUTH_FAILED` — bug #2 fix (bare 401 → exit 3) holds |
+| 24 | alice | `login --profile alice --totp <code>` (fresh session) | 0 | re-authenticated |
+| 25 | alice | `audit tail --limit 10 --profile alice` | 0 | hash-chained rows from seq 1, genesis `prevHash` = 64 zeros |
+| 26 | alice | `audit verify --profile alice` (incremental) | 0 | `{ok:true, pin:{seq:23, hash:"c1cd…35ef2"}}` |
+| 27 | alice | `audit verify --full --profile alice` | 0 | same pin, full-chain reverify ok |
+| — | — | pin file `~/.azoa/audit-pins/alice.json` | — | matches the printed pin exactly |
+| 28 | alice | `audit verify --profile alice` **again, no new rows since #26/27** | 0 | **same** `{seq:23, hash:"c1cd…35ef2"}` — confirms the local recompute still re-derives and cross-checks against the pinned hash even when nothing new exists to verify (new check) |
+| 29 | alice | `root revoke-sessions --yes --profile alice` | **4** | local refusal before any network call: "Only a root session can end root sessions." |
+| 30 | root | `root revoke-sessions --yes --profile rootp` | 0 | `{ok:true}` — every root session ended |
+| 31 | root | `whoami --profile rootp` (session now revoked) | **3** | `AUTH_FAILED` |
+
+Rows 1, 3–16, 18, 21–22, 24–28, 30 are the "happy path"; rows 2, 17, 19, 20, 23 (pre-refresh),
+29, 31 are negative/refusal checks; rows 2, 20, 21 (the JSON-single-document assertion), and 28
+are the **new** checks this re-run added beyond the original P5 table.
+
+### What was NOT found broken (re-confirmed on the merged tree)
+
+- Ed25519 challenge/sign/verify round trip (root and admin logins), audience pinning (H1), RBAC
+  dominance (auditor refused outright on `admins suspend`), server-side session revocation
+  (M-1, handle-only), the audit hash chain (clean incrementally, from genesis, and on a
+  no-new-rows re-verify), and root-only session revocation (NEW-2) — all identical behavior to the
+  original P5 drive, now exercised a second time against the exact merged commit.
+- All three P5 CLI-side fixes (piped-stdin FIFO reader, un-enveloped-4xx exit mapping, `root env`
+  revision-0 bootstrap) held under real re-exercise (rows 1/8/14, 23, 4 respectively).
+
+### New findings from this re-run
+
+1. **Not a CLI/backend bug — a test-harness artifact.** A hand-rolled Node spawn orchestrator
+   written for this re-run (to drive `enroll`'s real-time TOTP secret) initially hung
+   indefinitely: it never closed the spawned CLI's stdin after writing the last expected answer,
+   so the CLI's own non-TTY stdin reader (`src/io/input.ts`, by design keeps a persistent `data`
+   listener so it can serve several sequential prompts from one piped script) never saw EOF and
+   the process never exited — exactly as it should behave for a genuinely open pipe. A real shell
+   pipe (`printf ... | azoa-node ...`) always closes its write end on its own, so this never
+   surfaces outside a bespoke harness that forgets to call `stdin.end()`. Confirmed by killing the
+   stuck process and finding the enrollment had already completed successfully server-side (HTTP
+   200, correct state) — the CLI was simply still running normally, not misbehaving. Fixed in the
+   harness (`enroll-drive.mjs`, scratchpad-only, not part of the repo) by closing the child's
+   stdin immediately after writing the TOTP code; the re-driven bob enrollment then exited 0
+   cleanly.
+2. **Not a CLI bug — a Git-Bash/MSYS artifact.** Running `api GET /api/node-admin/me` from this
+   session's Git-Bash shell initially failed with `path must start with '/api/', got 'C:/Program
+   Files/Git/api/node-admin/me'` — MSYS's automatic POSIX-path-to-Windows-path conversion rewrote
+   the literal argument before Node ever saw it. Setting `MSYS_NO_PATHCONV=1` fixed it; the CLI's
+   own path validation was correct throughout (it was handed a mangled argument, not a bug in how
+   it checks one). Same root cause briefly affected `/surreal isready --conn ...` against the
+   throwaway container during environment setup.
+3. **Minor observation, not a regression.** An unrecognized global flag (`--node`, deliberately
+   removed by the H1 fix) is rejected by Commander's own argument parser *before* the CLI's own
+   `cli.ts` error-mapping logic ever runs, so it exits **1**, not the documented usage exit **2**.
+   This is consistent — Commander-level parse failures were never in scope of the CLI's own
+   `src/errors.ts` exit-code table — but worth flagging since it's a different code than every
+   other "usage" failure in this table (e.g. row 19's rejected absolute URL, which *does* go
+   through the CLI's own validation and exits 2).
+
+### Reap
+
+- API process (PID bound to port 5091) stopped.
+- SurrealDB container `azoa-smoke-surrealdb` stopped and removed (`podman rm -f`).
+- Scratchpad `AZOA_HOME` directories (`smoke-azoa-home/{root,alice,bob}`) and the scratch
+  orchestrator/helper scripts deleted.
+- No other worktree, container, or process was touched. Nothing was pushed.
