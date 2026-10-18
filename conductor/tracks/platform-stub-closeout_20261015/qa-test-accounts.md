@@ -37,3 +37,10 @@ session scratch `qa/lib.cjs` (`walletLogin`, `sessionPage`).
 - To retire the tenant key: `POST /api/apikey/{id}/revoke` as TENANT, or let it expire 30 days after 2026-10-18.
 - No real money moved. The tenant payout top-up attempt (25.00) was refused with 503 before reaching a payment page, but the UI kept a pending "Resume that top-up" record in the browser.
 - A future DB reset deletes all of these. The `.env` keys stay valid for a fresh reset because wallet sign-in re-creates the same deterministic user id from the same key. Roles, tenant key and emails would then have to be granted again.
+
+
+## Added 2026-10-18 (post-QA fix deploy `0de1b99d`)
+
+| Name | User id | Email | Role | Created via | `.env` keys |
+|---|---|---|---|---|---|
+| SMOKE | `5d228a37-b869-4d9c-9768-0c689930a4a8` | qa.smoke+r4@azoa.test | dapp:user | email registration (`POST /api/user/register`, open on the QA node per D-12) — orchestrator smoke check | `QA_ACCOUNT_SMOKE_EMAIL`, `QA_ACCOUNT_SMOKE_PASSWORD` |
