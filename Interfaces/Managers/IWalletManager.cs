@@ -32,11 +32,11 @@ public interface IWalletManager
         string externalUserId, SigningConsentWitness authority, CancellationToken ct = default);
 
     /// <summary>
-    /// Connect an external wallet; an inline signed challenge also records the ownership proof.
+    /// Connect an external wallet (unproven); inline signed proofs are refused, use the ownership-challenge/proof pair.
     /// </summary>
     Task<AZOAResult<IWallet>> ConnectWalletAsync(WalletConnectRequest model, Guid userId, AZOARequest? request = null);
 
-    /// <summary>Issues a wallet-auth challenge for the caller's own external wallet (signed by that wallet to prove control).</summary>
+    /// <summary>Issues a purpose-bound ownership challenge naming the caller, the wallet, its chain and address.</summary>
     Task<AZOAResult<WalletChallengeResponse>> CreateOwnershipChallengeAsync(Guid walletId, Guid userId, CancellationToken ct = default);
 
     /// <summary>Consumes and verifies the challenge signature for the caller's own external wallet and records the ownership proof.</summary>

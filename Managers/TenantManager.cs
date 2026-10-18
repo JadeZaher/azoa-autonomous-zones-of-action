@@ -251,6 +251,7 @@ public class TenantManager : ITenantManager
         Guid childId,
         IEnumerable<string> requestedScopes,
         IEnumerable<string> tenantScopes,
+        Guid issuingKeyId,
         CancellationToken ct = default)
     {
         var result = new AZOAResult<ChildCredentialResponse>();
@@ -309,7 +310,8 @@ public class TenantManager : ITenantManager
 
         // M3 scope ceiling = (tenant scopes) ∩ (granted scopes) ∩ (requested). An
         // empty requested set delegates the full (tenant ∩ granted) intersection.
-        var ceiling = tenantOwn.Where(liveGrantScopes.Contains);
+        // RV-L4-01: a role-bound dApp scope is delegable only while the user's live role holds it.
+        var ceiling = tenantOwn.Where(liveGrantScopes.Contains).Where(scope => AzoaDappRoles.GrantsScope(user.DappRole, scope));
         var delegated = (requested.Count == 0
                 ? ceiling
                 : ceiling.Where(requested.Contains))
@@ -330,7 +332,7 @@ public class TenantManager : ITenantManager
             ? user.AuthNotBefore.Value
             : now;
         var expiresAt = notBefore.Add(ChildTokenLifetime);
-        var token = GenerateChildJwt(user.Id, tenantId, delegated, notBefore, expiresAt);
+        var token = GenerateChildJwt(user.Id, tenantId, issuingKeyId, delegated, notBefore, expiresAt);
 
         result.Result = new ChildCredentialResponse
         {
@@ -408,7 +410,7 @@ public class TenantManager : ITenantManager
     /// </summary>
     public const string ActAsTenantClaim = "act_as_tenant";
 
-    private string GenerateChildJwt(Guid userUserId, Guid tenantId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
+    private string GenerateChildJwt(Guid userUserId, Guid tenantId, Guid issuingKeyId, IEnumerable<string> scopes, DateTime notBefore, DateTime expiresAt)
     {
         var key = _config.GetValue<string>("Jwt:Key") ?? throw new InvalidOperationException("JWT Key missing.");
         var securityKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key));
@@ -424,6 +426,7 @@ public class TenantManager : ITenantManager
             // token-type segregation (security-review S5): explicitly classes this as a
             // scoped tenant child credential, not a full-authority user login.
             new(AzoaClaims.TokenUse, AzoaClaims.TokenUseChild),
+            new(AzoaClaims.IssuingKeyId, issuingKeyId.ToString()),
             new(JwtRegisteredClaimNames.Iat, new DateTimeOffset(DateTime.SpecifyKind(notBefore, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };

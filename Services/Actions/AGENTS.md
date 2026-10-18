@@ -904,6 +904,14 @@ and the flat `WttActionOutput` receipt. Inert until L5 makes `WttActionResolver 
 (registered as `IActionWttRoute`) and L1 adds `WttActionConfig? Wtt` to `BridgeNodeConfig` /
 `BackNodeConfig` (strict publish-time config parsing rejects the key until then).
 
+Signing scopes have one source (X-1): `ActionSigningScopes.Required` returns `wtt:source:sign` +
+`wtt:target:sign` for a Bridge/Back node whose config parses as a `wtt` request (the same
+`WttActionResolver.ReadConfig` test `Applies` uses) and `transfer:sign` for a legacy trusted-bridge node.
+The engine handler, the admission fence in `SurrealActionNodeExecutionStore` and participant
+re-authorization (`ActionSigningAuthorizationService`) all read it, so a parked WTT node can be
+re-authorized with exactly the witness `WttLifecycleService` demands. `ActionSigningScopeTests` pins the
+agreement with `TryGetFor(node).ResolveSigningScopes` and `WttSigningAuthorityFence.WorkflowScopes`.
+
 No fallback (X-8): `Applies` is true for any non-null `wtt` property, well-formed or not
 (`WttActionResolver.Selects`), so a malformed body reaches the WTT route, which fails the node. Publish refuses a Bridge/Back
 config whose `wtt` member does not parse as a typed `WttActionConfig` (`ActionNodeConfigRegistry.Validate`), and the legacy

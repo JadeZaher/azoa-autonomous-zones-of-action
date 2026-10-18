@@ -103,6 +103,11 @@ action:
   become terminal `Failed` with stage `OperatorClosed`. The unresolved preparation and the operator id go
   into `EvidenceJson`.
 
+`CloseUnresolvable` is refused for action-linked rows (`ActionRunId` set, RV-L4-05): a terminal `Failed`
+would hand the owning action node its failure or compensation edge (for example a Refund) while the closed
+wire may still land, a double effect for a `Call`. Those rows stay `NeedsOperator`; the operator can only
+`Reobserve`, and the action's own reconciliation owns the outcome.
+
 A terminal row never authorizes another stage. Its resolved history stays recoverable through the
 linked-recovery flow. Residual risk: if the closed wire lands later, its resource exists unreferenced. The
 operator accepts this explicitly, and it is never a double authorization. `GET /api/operator/deployments`

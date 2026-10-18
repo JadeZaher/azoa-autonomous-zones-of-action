@@ -5,7 +5,10 @@
     "action": "Start",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope)"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope)",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/refresh",
@@ -13,7 +16,10 @@
     "action": "Refresh",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; actor + acting tenant from claims; service scopes the row to its original actor/tenant or saved recipient (HoldCommandService.Visible); observes/rebroadcasts only already-authorized saved bytes"
+    "enforcement": "[Authorize]; actor + acting tenant from claims; service scopes the row to its original actor/tenant or saved recipient (HoldCommandService.Visible); observes/rebroadcasts only already-authorized saved bytes",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/reconcile-request",
@@ -21,7 +27,10 @@
     "action": "ReconcileRequest",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; actor + acting tenant from claims; service scopes the row to its original actor/tenant or saved recipient (HoldCommandService.Visible); read-only request replay"
+    "enforcement": "[Authorize]; actor + acting tenant from claims; service scopes the row to its original actor/tenant or saved recipient (HoldCommandService.Visible); read-only request replay",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/continue",
@@ -29,7 +38,10 @@
     "action": "Continue",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); BindConsentAsync/BindDirectAsync [transfer:sign]"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); BindConsentAsync/BindDirectAsync [transfer:sign]",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/accept",
@@ -37,7 +49,10 @@
     "action": "Accept",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); only the saved recipient wallet owner; BindDirectAsync [transfer:sign]"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); only the saved recipient wallet owner; BindDirectAsync [transfer:sign]",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/accept-opening",
@@ -45,7 +60,10 @@
     "action": "AcceptOpening",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); exact draft hash and command version"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); exact draft hash and command version",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/reconcile-opening",
@@ -53,7 +71,10 @@
     "action": "ReconcileOpening",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; actor + acting tenant from claims; service scopes the row to its original actor/tenant or saved recipient (HoldCommandService.Visible); read-only acceptance replay"
+    "enforcement": "[Authorize]; actor + acting tenant from claims; service scopes the row to its original actor/tenant or saved recipient (HoldCommandService.Visible); read-only acceptance replay",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/replace-opening",
@@ -61,7 +82,10 @@
     "action": "ReplaceOpening",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); replaces only an expired unaccepted disclosure"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); replaces only an expired unaccepted disclosure",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/reconcile-opening-recovery",
@@ -69,7 +93,10 @@
     "action": "ReconcileOpeningRecovery",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); read-only recovery replay"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); read-only recovery replay",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/withdraw-opening",
@@ -77,7 +104,10 @@
     "action": "WithdrawOpening",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); withdraws before any reserve draw; moves no value"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); withdraws before any reserve draw; moves no value",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/replace",
@@ -85,7 +115,10 @@
     "action": "Replace",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); new generation only after proven no-effect"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); new generation only after proven no-effect",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-commands/{id}/cancel",
@@ -93,7 +126,10 @@
     "action": "Cancel",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); original actor, no ambiguous value movement"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); original actor, no ambiguous value movement",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-release-mandates/offers",
@@ -101,7 +137,10 @@
     "action": "Offer",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); server-produced disclosure only"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); server-produced disclosure only",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-release-mandates/accept",
@@ -109,7 +148,10 @@
     "action": "Accept",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); owner accepts the exact persisted disclosure (HoldReleaseMandateFence)"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); owner accepts the exact persisted disclosure (HoldReleaseMandateFence)",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-release-mandates/{id}/reauthorize",
@@ -117,7 +159,10 @@
     "action": "Reauthorize",
     "class": "value-moving",
     "scope": "transfer:sign",
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); owner replaces mandate authority (ChangeAuthorityAsync)"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); owner replaces mandate authority (ChangeAuthorityAsync)",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-release-mandates/{id}/revoke",
@@ -125,7 +170,10 @@
     "action": "Revoke",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); owner revokes; stops future releases only"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); owner revokes; stops future releases only",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/hold-release-mandates/{id}/reconcile-request",
@@ -133,7 +181,10 @@
     "action": "ReconcileRequest",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); read-only recovery replay"
+    "enforcement": "[Authorize]; SigningAdmissionAuthorityFactory.CaptureCredentialAsync; actor/tenant from the captured credential, re-fenced in the store transaction (SigningAuthorityFence + HoldCustodyScope); read-only recovery replay",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/exchange/{userid}",
@@ -141,7 +192,10 @@
     "action": "Exchange",
     "class": "value-moving",
     "scope": "swap:sign",
-    "enforcement": "[Authorize]; API-key principal with swap:sign; live ITenantConsentGate check on every request (previews included); captured credential journaled and re-fenced by ExchangeAuthorityFence; participant is the route value"
+    "enforcement": "[Authorize]; API-key principal with swap:sign; live ITenantConsentGate check on every request (previews included); captured credential journaled and re-fenced by ExchangeAuthorityFence; participant is the route value",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/exchange/operator/retired-rows/{operationid}/resolve",
@@ -149,7 +203,12 @@
     "action": "ResolveRetiredRow",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize(Policy=Operator)] + RecentNodeOperatorSession step-up (X-7); records an attestation only; reconciliation closes the row when chain truth agrees"
+    "enforcement": "[Authorize(Policy=Operator)] + [Authorize(Policy=RecentNodeOperatorSession)] step-up (X-7); records an attestation only; reconciliation closes the row when chain truth agrees",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession",
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/reserve/{assetid}/partitions",
@@ -157,7 +216,10 @@
     "action": "Declare",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize]; node operator JWT or registering tenant API key with token:create:sign; ReservePartitionScope.RefuseDeclaration (platform unit is operator-only)"
+    "enforcement": "[Authorize]; node operator JWT or registering tenant API key with token:create:sign; ReservePartitionScope.RefuseDeclaration (platform unit is operator-only)",
+    "policies": [
+      "authenticated"
+    ]
   },
   {
     "route": "POST /api/projects/treasury/resolve",
@@ -165,6 +227,9 @@
     "action": "Resolve",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize(Policy=TenantScope)] + tenant:provision; tenant from the principal; GuardRowOwnership at the read"
+    "enforcement": "[Authorize(Policy=TenantScope)] + tenant:provision; tenant from the principal; GuardRowOwnership at the read",
+    "policies": [
+      "TenantScope"
+    ]
   }
 ]

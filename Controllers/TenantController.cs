@@ -201,14 +201,15 @@ public class TenantController : ControllerBase
                 StatusCodes.Status503ServiceUnavailable,
                 AZOAResult<ChildCredentialResponse>.Failure("Delegated child credentials are disabled on this node."));
         var tenantId = GetTenantIdFromClaims();
-        if (tenantId is null || User.GetActingTenantId() is not null || AzoaClaims.IsChildCredential(User)) return Unauthorized();
+        if (tenantId is null || User.GetActingTenantId() is not null || AzoaClaims.IsChildCredential(User)
+            || !User.IsApiKey() || !Guid.TryParse(User.FindFirst("ApiKeyId")?.Value, out var issuingKeyId)) return Unauthorized();
 
         var ceiling = User.GetScopes().Where(DelegatedChildCredentialCatalog.Scopes.Contains).ToList();
         if (ceiling.Count == 0)
             return MissingScope<ChildCredentialResponse>("a scope accepted by a child-credential endpoint");
 
         var result = await _manager.IssueChildCredentialAsync(
-            tenantId.Value, id, model?.Scopes ?? [], ceiling, HttpContext.RequestAborted);
+            tenantId.Value, id, model?.Scopes ?? [], ceiling, issuingKeyId, HttpContext.RequestAborted);
         if (!result.IsError) Response.Headers.CacheControl = "no-store";
         return TranslateResult(result);
     }

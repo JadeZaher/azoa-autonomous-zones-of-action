@@ -103,18 +103,18 @@ public class NetworkController : ControllerBase
         };
     }
 
-    /// <summary>An endpoint safe for an anonymous response: no credentials, query or fragment, and no key-shaped path segment (else null).</summary>
+    /// <summary>An endpoint safe for an anonymous response: scheme, host and port only. A configured path (where keys hide in any
+    /// encoding) or a key-shaped host label withholds it (null), and the frontend keeps its own default (RV-L4-07).</summary>
     internal static string? PublicEndpoint(string? url)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || uri.Scheme is not ("http" or "https" or "ws" or "wss"))
             return null;
-        if (uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Any(LooksLikeSecret))
+        if (uri.AbsolutePath is not ("" or "/") || uri.Host.Split('.').Any(LooksLikeSecret))
             return null;
-        return new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty, Query = string.Empty, Fragment = string.Empty }
-            .Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        return new UriBuilder(uri.Scheme, uri.Host, uri.Port).Uri.GetLeftPart(UriPartial.Authority);
     }
 
-    private static bool LooksLikeSecret(string segment)
-        => segment.Length >= 16 && segment.Any(char.IsDigit) && segment.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+    private static bool LooksLikeSecret(string label)
+        => label.Length >= 16 || (label.Length >= 10 && label.Any(char.IsAsciiDigit));
 }

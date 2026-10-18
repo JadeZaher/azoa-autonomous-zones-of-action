@@ -90,5 +90,6 @@ public interface ITenantManager
         Guid childId,
         IEnumerable<string> requestedScopes,
         IEnumerable<string> tenantScopes,
+        Guid issuingKeyId,
         CancellationToken ct = default);
 }

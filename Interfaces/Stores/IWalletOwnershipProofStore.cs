@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.Interfaces.Stores;
 
@@ -12,6 +13,7 @@ public interface IWalletOwnershipProofStore
     /// whose canonical address that same user currently holds a signature proof for (the WTT recipient seam).</summary>
     Task<bool> IsSignatureProvenAsync(Guid walletId, Guid ownerUserId, CancellationToken ct = default);
 
-    /// <summary>Records (or supersedes) the proof; callers must only pass an address whose challenge signature just verified.</summary>
-    Task<WalletOwnershipProof> RecordAsync(WalletOwnershipProof proof, CancellationToken ct = default);
+    /// <summary>Records the proof (callers pass only an address whose ownership challenge just verified). Refused while another user's
+    /// proof is still valid; a stale one is superseded atomically (see Controllers/AGENTS.md §Wallet ownership proof).</summary>
+    Task<AZOAResult<WalletOwnershipProofWrite>> RecordAsync(WalletOwnershipProof proof, CancellationToken ct = default);
 }

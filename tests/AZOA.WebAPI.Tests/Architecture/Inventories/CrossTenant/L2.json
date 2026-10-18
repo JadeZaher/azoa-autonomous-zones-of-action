@@ -1,10 +1,352 @@
 [
-  { "store": "SurrealKycStore", "method": "GetLatestSubmissionAsync / GetActiveSubmissionAsync", "tenantCheck": "(user, tenant) predicate; tenant NONE for first-party" },
-  { "store": "SurrealKycStore", "method": "TryMarkHostedInReviewAsync", "tenantCheck": "CAS on the attempt bound to the hosted session id; evidence fence scoped to (user, tenant)" },
-  { "store": "SurrealKycStore", "method": "CreateCustodialSubmissionAsync / RetireCustodialAttemptAsync / AttachCustodialDocumentsAsync", "tenantCheck": "TenantCustodialAuthorityFence guards: child owned by tenant, live membership and grant" },
-  { "store": "SurrealHostedSessionStore", "method": "GetByIdAsync (refresh callers)", "tenantCheck": "KycManager.RefreshAsync refreshes only the caller's own first-party attempt; operator routes are node-operator only" },
-  { "store": "SurrealHostedSessionStore", "method": "TryBeginCustodialCreationAsync", "tenantCheck": "subject and tenant must equal the custody witness" },
-  { "store": "SurrealHostedSessionStore", "method": "CountSupersededSinceAsync", "tenantCheck": "keyed by subject user and flow; the supersede budget is per subject" },
-  { "store": "SurrealKybVerificationStore", "method": "GetAsync / TryStartAsync", "tenantCheck": "record id is the tenant id from the authenticated claim" },
-  { "store": "SurrealKycScreeningStore", "method": "GetLatestResultAsync / monitor reads", "tenantCheck": "tenant_scope column; already-exists never returns another tenant's row" }
+  {
+    "store": "IKycStore",
+    "method": "GetLatestSubmissionAsync",
+    "tenantCheck": "(user, tenant) predicate; tenant NONE for first-party"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetActiveSubmissionAsync",
+    "tenantCheck": "(user, tenant) predicate; tenant NONE for first-party"
+  },
+  {
+    "store": "IKycHostedProgressStore",
+    "method": "TryMarkHostedInReviewAsync",
+    "tenantCheck": "CAS on the attempt bound to the hosted session id; evidence fence scoped to (user, tenant)"
+  },
+  {
+    "store": "IKycCustodialAdmissionStore",
+    "method": "CreateCustodialSubmissionAsync",
+    "tenantCheck": "TenantCustodialAuthorityFence guards: child owned by tenant, live membership and grant"
+  },
+  {
+    "store": "IKycCustodialAdmissionStore",
+    "method": "RetireCustodialAttemptAsync",
+    "tenantCheck": "TenantCustodialAuthorityFence guards: child owned by tenant, live membership and grant"
+  },
+  {
+    "store": "IKycCustodialAdmissionStore",
+    "method": "AttachCustodialDocumentsAsync",
+    "tenantCheck": "TenantCustodialAuthorityFence guards: child owned by tenant, live membership and grant"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "KycManager.RefreshAsync refreshes only the caller's own first-party attempt; operator routes are node-operator only; OwnedBy(subject) && DrivenBy(tenant), one NotFound for every refusal"
+  },
+  {
+    "store": "ICustodialHostedSessionStore",
+    "method": "TryBeginCustodialCreationAsync",
+    "tenantCheck": "subject and tenant must equal the custody witness"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "CountSupersededSinceAsync",
+    "tenantCheck": "keyed by subject user and flow; the supersede budget is per subject"
+  },
+  {
+    "store": "IKybVerificationStore",
+    "method": "GetAsync",
+    "tenantCheck": "record id is the tenant id from the authenticated claim"
+  },
+  {
+    "store": "IKybVerificationStore",
+    "method": "TryStartAsync",
+    "tenantCheck": "record id is the tenant id from the authenticated claim"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "GetLatestResultAsync",
+    "tenantCheck": "tenant_scope column; already-exists never returns another tenant's row"
+  },
+  {
+    "store": "IHostedProviderAttemptStore",
+    "method": "EnsureAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id"
+  },
+  {
+    "store": "IHostedProviderAttemptStore",
+    "method": "GetAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id"
+  },
+  {
+    "store": "IHostedProviderAttemptStore",
+    "method": "GetByRemoteAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id; no production caller today"
+  },
+  {
+    "store": "IHostedProviderAttemptStore",
+    "method": "ListDueAsync",
+    "tenantCheck": "worker-only: HostedIdentityRecoveryWorker lists due recovery leases"
+  },
+  {
+    "store": "IHostedProviderAttemptStore",
+    "method": "ClaimAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id"
+  },
+  {
+    "store": "IHostedProviderAttemptStore",
+    "method": "SaveCreationAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "ListPollDueAsync",
+    "tenantCheck": "worker-only: HostedOutcomePollWorker lists attached non-terminal sessions due a poll"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "TryClaimPollAsync",
+    "tenantCheck": "worker-only: HostedOutcomePollWorker CAS on the observed session version"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "ListStalledAsync",
+    "tenantCheck": "operator-only: RecentNodeOperatorSession hosted-session reconciliation route; cross-tenant by design, no provider credentials returned"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "TrySupersedeOrphanAsync",
+    "tenantCheck": "caller-checked: KycManager/KybService pass only the orphan admission they loaded for the caller's own subject (user or claims tenant) admission key"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "AppendAuditAsync",
+    "tenantCheck": "caller-checked: HostedSessionFlow audits the session it already holds; the operator reconciliation route (RecentNodeOperatorSession) audits by id"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "GetByAdmissionAsync",
+    "tenantCheck": "keyed: the admission key is derived server-side from the subject (user id or claims tenant), so a caller can only reach its own admission; KybService re-checks TenantId"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "GetByProviderSessionAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "ListReconciliationAsync",
+    "tenantCheck": "operator-only: RecentNodeOperatorSession hosted-session reconciliation route; cross-tenant by design, no provider credentials returned"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "ReconcileAdmissionAsync",
+    "tenantCheck": "operator-only: RecentNodeOperatorSession hosted-session reconciliation route; cross-tenant by design, no provider credentials returned; version-fenced"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "TryAttachProviderSessionAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id; creation-token fenced"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "TryBeginCreationAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id; only the creation-token holder"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "TryClaimResumeAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id; version CAS"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "TryFinishResumeAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id; lease-token fenced"
+  },
+  {
+    "store": "IHostedSessionStore",
+    "method": "TryTransitionAsync",
+    "tenantCheck": "worker-only: keyed by the server-created hosted session id (or the signature-verified provider session id); reached from HostedSessionFlow, provider adapters and recovery/poll workers, never with a caller-chosen id; version CAS"
+  },
+  {
+    "store": "IKybVerificationStore",
+    "method": "AttachSessionAsync",
+    "tenantCheck": "query-scoped: filters by the claims-derived tenantId and the current attempt id"
+  },
+  {
+    "store": "IKybVerificationStore",
+    "method": "TryDecideAsync",
+    "tenantCheck": "caller-checked: expected row loaded by the claims tenant (GetAsync) and the hosted session matched to that tenant and admission key; version CAS"
+  },
+  {
+    "store": "IKycControlStore",
+    "method": "GetSelectionAsync",
+    "tenantCheck": "query-scoped: filters by tenantId (claims tenant, or the subject's owner tenant in the KYC gate)"
+  },
+  {
+    "store": "IKycControlStore",
+    "method": "SaveSelectionAsync",
+    "tenantCheck": "operator-only: NodeOperatorController (NodeOperatorSession + RecentNodeOperatorSession); audited, version CAS"
+  },
+  {
+    "store": "IKycControlStore",
+    "method": "SaveProfileAsync",
+    "tenantCheck": "operator-only: NodeOperatorController (NodeOperatorSession + RecentNodeOperatorSession); node-wide provider profile, audited"
+  },
+  {
+    "store": "IKycControlStore",
+    "method": "ListSelectionsPageAsync",
+    "tenantCheck": "operator-only: NodeOperatorSession tenant KYC summary; cross-tenant by design"
+  },
+  {
+    "store": "IKycControlStore",
+    "method": "ListAuditPageAsync",
+    "tenantCheck": "operator-only: NodeOperatorSession KYC control audit; cross-tenant by design"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "BindUserAsync",
+    "tenantCheck": "caller-checked: KycManager binds only the subject of the verified attempt it holds; person key derived server-side from provider evidence"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "BindVerifiedUserAsync",
+    "tenantCheck": "fenced: binds only while the exact KYC attempt and hosted lease remain current in the same transaction"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "GetByPersonKeyAsync",
+    "tenantCheck": "keyed: person key derived server-side from provider evidence for the uniqueness check; never caller input, never returned to another user"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "GetByGlobalPersonKeyAsync",
+    "tenantCheck": "keyed: global person key derived server-side for cross-scope uniqueness; operator-facing only"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "GetByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId (the authenticated subject or the gate's subject)"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "GetErasureDueAsync",
+    "tenantCheck": "worker-only: retention erasure sweep"
+  },
+  {
+    "store": "IKycIdentityStore",
+    "method": "EraseAsync",
+    "tenantCheck": "worker-only: retention erasure of an elapsed binding"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "SaveResultAsync",
+    "tenantCheck": "caller-checked: screening service writes the result for the subject it screened (server-side subject)"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "GetResultsForUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "SaveMonitorAsync",
+    "tenantCheck": "worker-only: screening monitor bookkeeping keyed by server query hash and tenant"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "GetMonitorByQueryAsync",
+    "tenantCheck": "worker-only: keyed by server-computed query hash and tenant"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "GetMonitorsByProviderIdAsync",
+    "tenantCheck": "worker-only: AML monitor poll keyed by the provider monitor id"
+  },
+  {
+    "store": "IKycScreeningStore",
+    "method": "EraseSubjectAsync",
+    "tenantCheck": "worker-only: subject erasure (retention or erasure request) for one subject id"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetSubmissionByIdAsync",
+    "tenantCheck": "caller-checked: KycManager user paths require OwnedBy(submission, userId); Approve/Reject are reached only from operator review routes"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetLatestSubmissionByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetActiveSubmissionByUserAsync",
+    "tenantCheck": "query-scoped: filters by userId"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetPendingAsync",
+    "tenantCheck": "internal: only KycManager.GetPendingAsync (admin surface), which no route exposes; operator queues use GetOperatorPageAsync"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetPendingPageAsync",
+    "tenantCheck": "operator-only: operator review queue page"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetOperatorPageAsync",
+    "tenantCheck": "operator-only: NodeOperatorSession submission queue"
+  },
+  {
+    "store": "IKycStore",
+    "method": "GetEffectiveOperatorPageAsync",
+    "tenantCheck": "operator-only: NodeOperatorSession submission queue by effective status"
+  },
+  {
+    "store": "IKycStore",
+    "method": "UpsertSubmissionAsync",
+    "tenantCheck": "caller-checked: submission built server-side for the authenticated subject (UserId and tenant from claims)"
+  },
+  {
+    "store": "IKycStore",
+    "method": "CreateSubmissionAsync",
+    "tenantCheck": "caller-checked: submission built server-side for the authenticated subject; documents bound to it"
+  },
+  {
+    "store": "IKycStore",
+    "method": "AttachDocumentsIfAbsentAsync",
+    "tenantCheck": "caller-checked: only the subject's own active submission (loaded by userId) is passed"
+  },
+  {
+    "store": "IKycStore",
+    "method": "TryRetireAttemptAsync",
+    "tenantCheck": "caller-checked: expected attempt loaded by the subject's userId/tenant tuple; version CAS"
+  },
+  {
+    "store": "IKycStore",
+    "method": "TryAttachHostedRedirectAsync",
+    "tenantCheck": "caller-checked: expected attempt is the subject's own active hosted attempt; CAS"
+  },
+  {
+    "store": "IKycStore",
+    "method": "TryCompleteHostedAsync",
+    "tenantCheck": "fenced: completes only the exact active attempt whose correlation, provenance, version, lease and expiry match"
+  },
+  {
+    "store": "IKycStore",
+    "method": "TryReviewAsync",
+    "tenantCheck": "operator-only: operator review decision with version CAS"
+  },
+  {
+    "store": "IPersonOperationClaimStore",
+    "method": "TryClaimAsync",
+    "tenantCheck": "caller-checked: PersonUniquenessGate claims for the authenticated userId under a server-resolved person key (or a per-user sentinel); DecidedAt from the server clock"
+  },
+  {
+    "store": "IPersonOperationClaimStore",
+    "method": "ListLiveByOperationAsync",
+    "tenantCheck": "caller-checked: PersonUniquenessGate lists one authorized operation domain; returns no consumer person-key lookup"
+  },
+  {
+    "store": "IPersonOperationClaimStore",
+    "method": "GetAsync",
+    "tenantCheck": "keyed: PersonUniquenessGate reads by (scope, operation, server-resolved person key) of the authenticated user"
+  },
+  {
+    "store": "IPersonOperationClaimStore",
+    "method": "ReleaseAsync",
+    "tenantCheck": "fenced: releases only when the passed userId is the current holder; wrong-owner returns false"
+  }
 ]
