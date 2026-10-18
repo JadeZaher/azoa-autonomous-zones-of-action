@@ -11,7 +11,7 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models;
 [SurrealTable("node_admin_challenge",
     Aggregate = "NodeAdminChallenge (Persistence/SurrealDb/Models/NodeAdminChallenge.cs)",
     Guardrail = "G6 SCHEMAFULL; single-use Ed25519 login challenge")]
-[SurrealNote("Single use: consumed by a conditional UPDATE (consumed_at = NONE AND expires_at > now) before the signature is checked. expires_at_text and audience are the exact strings the client signed; the server rebuilds the message from them.")]
+[SurrealNote("Consumed-challenge markers only. Challenges are stateless (HMAC-authenticated ids, nothing written on issue); after a valid signature the server CREATEs a marker whose record id is the challenge id, so a second use collides and is refused as a replay. Rows are swept after expires_at.")]
 [Slice("identity")]
 [Index("node_admin_challenge_nonce", Fields = new[] { "nonce" }, Unique = true)]
 [Index("node_admin_challenge_expires", Fields = new[] { "expires_at" })]

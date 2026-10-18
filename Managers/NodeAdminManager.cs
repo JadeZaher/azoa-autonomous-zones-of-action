@@ -410,6 +410,8 @@ public sealed partial class NodeAdminManager(
     {
         if (!NodeAdminCrypto.IsSessionHandle(handle) || await store.GetSessionByHandleAsync(handle, ct) is not { } session)
             return Fail<bool>(NodeAdminErrorCodes.NotFound, "Session not found.");
+        if (session.Principal.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal) && !caller.IsRoot)
+            return Fail<bool>(NodeAdminErrorCodes.PermissionDenied, "Only a root session can revoke a root session.");
         if (session.Principal != caller.Principal && !caller.IsRoot)
         {
             if (!caller.Permissions.Contains(NodeAdminPermissions.AdminsManage))
@@ -421,11 +423,12 @@ public sealed partial class NodeAdminManager(
         return AZOAResult<bool>.Success(true, "Session revoked.");
     }
 
-    /// <summary>Ends every root session by bumping root_session_revision (L-2): root, or an admin holding admins.manage and roles.manage.</summary>
+    /// <summary>Ends every root session by bumping root_session_revision; root-only (NEW-2): admins cut root off by rotating the env revision.</summary>
     public async Task<AZOAResult<bool>> RevokeRootSessionsAsync(NodeAdminCaller caller, CancellationToken ct)
     {
-        if (!caller.IsRoot && !NodeAdminPermissions.IsOwnerCapable(caller.Permissions))
-            return Fail<bool>(NodeAdminErrorCodes.PermissionDenied, "Revoking root sessions requires admins.manage and roles.manage.");
+        if (!caller.IsRoot)
+            return Fail<bool>(NodeAdminErrorCodes.PermissionDenied,
+                "Only a root session can revoke root sessions. To cut off root, rotate NodeAdmin__RootKeyRevision in the node environment.");
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {
             var state = await store.GetRootStateAsync(ct);
@@ -557,15 +560,15 @@ public sealed partial class NodeAdminManager(
             new NodeAdminAuditHeadView(head?.Seq ?? 0, head?.Hash ?? NodeAdminAuditLog.GenesisHash)));
     }
 
-    /// <summary>Verifies <paramref name="fromSeq"/>..head (default: the last 10k rows); <paramref name="full"/> rescans from genesis, throttled node-wide.</summary>
-    public async Task<AZOAResult<NodeAdminAuditVerifyView>> VerifyAuditAsync(long? fromSeq, bool full, CancellationToken ct)
+    /// <summary>Verifies <paramref name="fromSeq"/>..head (default: the last 10k rows); <paramref name="full"/> rescans from genesis, throttled per principal.</summary>
+    public async Task<AZOAResult<NodeAdminAuditVerifyView>> VerifyAuditAsync(NodeAdminCaller caller, long? fromSeq, bool full, CancellationToken ct)
     {
         long start;
         if (full)
         {
-            if (!NodeAdminAuditLog.TryBeginFullVerify(clock.GetUtcNow()))
+            if (!NodeAdminAuditLog.TryBeginFullVerify(caller.Principal, clock.GetUtcNow()))
                 return Fail<NodeAdminAuditVerifyView>(NodeAdminErrorCodes.RateLimited,
-                    "A full audit verification ran recently on this node; retry in a minute or verify a window with fromSeq.");
+                    "You ran a full audit verification within the last minute; retry in a minute or verify a window with fromSeq.");
             start = 1;
         }
         else

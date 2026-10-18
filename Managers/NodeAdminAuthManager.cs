@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,7 @@ public sealed class NodeAdminAuthManager(
     NodeAdminTokenIssuer issuer,
     NodeAdminPermissionResolver resolver,
     NodeAdminAnonymousFailures anonymousFailures,
+    NodeAdminChallengeCodec challenges,
     TimeProvider clock,
     ILogger<NodeAdminAuthManager> logger)
 {
@@ -33,66 +35,69 @@ public sealed class NodeAdminAuthManager(
     private static readonly string[] RootAmr = ["ed25519", "root"];
     private static readonly string[] AdminAmr = ["ed25519", "totp"];
 
-    /// <summary>Always issues a challenge for a well-formed request: no key-existence oracle.</summary>
-    public async Task<AZOAResult<NodeAdminChallengeResponse>> CreateChallengeAsync(NodeAdminChallengeRequest request, CancellationToken ct)
+    /// <summary>Issues a stateless challenge for any well-formed request (no key-existence oracle); writes nothing (NEW-1).</summary>
+    public Task<AZOAResult<NodeAdminChallengeResponse>> CreateChallengeAsync(NodeAdminChallengeRequest request, CancellationToken ct)
     {
-        if (runtime.Audience is not { } audience) return Unavailable<NodeAdminChallengeResponse>();
+        if (runtime.Audience is not { } audience) return Task.FromResult(Unavailable<NodeAdminChallengeResponse>());
         if (request.Purpose is not (NodeAdminChallenge.PurposeRootLogin or NodeAdminChallenge.PurposeAdminLogin)
             || !NodeAdminCrypto.IsFingerprint(request.Fingerprint))
-            return NodeAdminResults.Fail<NodeAdminChallengeResponse>(NodeAdminErrorCodes.ValidationFailed,
-                "purpose must be root_login or admin_login and fingerprint must be 16 lowercase hex characters.");
-        var now = clock.GetUtcNow();
-        if (await store.OutstandingChallengesReachedAsync(runtime.Options.MaxOutstandingChallenges, now, ct))
-        {
-            logger.LogCritical("Node-admin challenge issuance refused: {Cap} live challenges outstanding (possible flood).",
-                runtime.Options.MaxOutstandingChallenges);
-            return NodeAdminResults.Fail<NodeAdminChallengeResponse>(NodeAdminErrorCodes.Unavailable,
-                "Node-admin sign-in is temporarily unavailable. Try again shortly.");
-        }
-        var expiresAt = now + ChallengeLifetime;
-        var id = Guid.NewGuid();
-        var challenge = new NodeAdminChallenge
-        {
-            Id = id.ToString("N"),
-            Purpose = request.Purpose,
-            Nonce = NodeAdminCrypto.RandomToken(),
-            Subject = request.Fingerprint,
-            Audience = audience,
-            ExpiresAt = expiresAt,
-            ExpiresAtText = NodeAdminCrypto.FormatTimestamp(expiresAt),
-            CreatedAt = now,
-        };
-        await store.CreateChallengeAsync(challenge, ct);
-        return AZOAResult<NodeAdminChallengeResponse>.Success(
-            new NodeAdminChallengeResponse(id.ToString("D"), challenge.Nonce, challenge.ExpiresAtText, audience));
+            return Task.FromResult(NodeAdminResults.Fail<NodeAdminChallengeResponse>(NodeAdminErrorCodes.ValidationFailed,
+                "purpose must be root_login or admin_login and fingerprint must be 16 lowercase hex characters."));
+        var payload = new NodeAdminChallengePayload(NodeAdminChallengeCodec.CurrentVersion, Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16)),
+            request.Purpose, request.Fingerprint, audience, NodeAdminCrypto.RandomToken(),
+            NodeAdminCrypto.FormatTimestamp(clock.GetUtcNow() + ChallengeLifetime));
+        return Task.FromResult(AZOAResult<NodeAdminChallengeResponse>.Success(
+            new NodeAdminChallengeResponse(challenges.Encode(payload), payload.Nonce, payload.ExpiresAt, audience)));
     }
 
-    /// <summary>Consumes the challenge first, then verifies; every failure is the uniform AUTH_FAILED (M4) with the reason only in the audit.</summary>
+    /// <summary>
+    /// Authenticates the stateless challenge, verifies the signature over its exact strings, THEN records single use (a duplicate
+    /// marker is a replay); every failure is the uniform AUTH_FAILED (M4) with the reason only in the audit or the roll-up.
+    /// </summary>
     public async Task<AZOAResult<NodeAdminSessionResponse>> CreateSessionAsync(
         NodeAdminSessionRequest request, NodeAdminRequestInfo info, CancellationToken ct)
     {
         if (runtime.Audience is null) return Unavailable<NodeAdminSessionResponse>();
         var now = clock.GetUtcNow();
-        if (!Guid.TryParseExact(request.ChallengeId, "D", out var challengeId)
-            || !NodeAdminCrypto.TryDecodePublicKey(request.PublicKey, out var publicKey)
+        if (!NodeAdminCrypto.TryDecodePublicKey(request.PublicKey, out var publicKey)
             || !NodeAdminCrypto.TryDecodeSignature(request.Signature, out var signature))
             return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "malformed_request", info);
-
-        var fingerprint = NodeAdminCrypto.Fingerprint(publicKey);
-        var target = "fp=" + fingerprint;
-        var challenge = await store.GetChallengeAsync(challengeId.ToString("N"), ct);
-        if (challenge is null || challenge.Purpose is not (NodeAdminChallenge.PurposeRootLogin or NodeAdminChallenge.PurposeAdminLogin))
+        if (!challenges.TryDecode(request.ChallengeId, out var challenge)
+            || challenge.Purpose is not (NodeAdminChallenge.PurposeRootLogin or NodeAdminChallenge.PurposeAdminLogin))
             return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "unknown_challenge", info);
-        if (!await store.TryConsumeChallengeAsync(challenge.Id, now, ct))
-            return await AuthFailedAsync(Anonymous, target, "challenge_consumed_or_expired", info, ct);
-        if (!NodeAdminCrypto.FixedTimeEquals(Encoding.ASCII.GetBytes(challenge.Subject), Encoding.ASCII.GetBytes(fingerprint)))
-            return await AuthFailedAsync(Anonymous, target, "fingerprint_mismatch", info, ct);
+
+        // Anyone can mint authentic challenges, so pre-signature refusals carry no identity and are rolled up, never chained.
+        var fingerprint = NodeAdminCrypto.Fingerprint(publicKey);
+        if (!DateTimeOffset.TryParseExact(challenge.ExpiresAt, NodeAdminCrypto.TimestampFormat, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var expiresAt) || expiresAt <= now)
+            return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "challenge_expired", info);
         if (!string.Equals(challenge.Audience, runtime.Audience, StringComparison.Ordinal))
-            return await AuthFailedAsync(Anonymous, target, "audience_changed", info, ct);
-        var message = NodeAdminCrypto.LoginMessage(challenge.Purpose, challenge.Audience, challengeId.ToString("D"),
-            challenge.Nonce, challenge.ExpiresAtText);
+            return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "audience_changed", info);
+        if (!NodeAdminCrypto.FixedTimeEquals(Encoding.ASCII.GetBytes(challenge.Fingerprint), Encoding.ASCII.GetBytes(fingerprint)))
+            return AnonymousFailure<NodeAdminSessionResponse>("auth.session", "fingerprint_mismatch", info);
+
+        var target = "fp=" + fingerprint;
+        var message = NodeAdminCrypto.LoginMessage(challenge.Purpose, challenge.Audience, request.ChallengeId, challenge.Nonce, challenge.ExpiresAt);
         if (!NodeAdminCrypto.Verify(publicKey, message, signature))
-            return await AuthFailedAsync(Anonymous, target, "bad_signature", info, ct);
+        {
+            // NEW-3: the identity lookup happens only after verification failed; unknown fingerprints are noise.
+            return runtime.IsRootFingerprint(fingerprint) || await store.GetCredentialAsync(fingerprint, ct) is not null
+                ? await AuthFailedAsync(Anonymous, target, "bad_signature", info, ct)
+                : AnonymousFailure<NodeAdminSessionResponse>("auth.session", "bad_signature_unknown_key", info);
+        }
+        if (await store.RecordChallengeUseAsync(new NodeAdminChallenge
+            {
+                Id = challenge.Id,
+                Purpose = challenge.Purpose,
+                Nonce = challenge.Nonce,
+                Subject = challenge.Fingerprint,
+                Audience = challenge.Audience,
+                ExpiresAt = expiresAt,
+                ExpiresAtText = challenge.ExpiresAt,
+                ConsumedAt = now,
+                CreatedAt = now,
+            }, ct) != NodeAdminCommit.Committed)
+            return await AuthFailedAsync(Anonymous, target, "challenge_replay", info, ct);
 
         return challenge.Purpose == NodeAdminChallenge.PurposeRootLogin
             ? await RootSessionAsync(publicKey, fingerprint, info, now, ct)
@@ -312,9 +317,10 @@ public sealed class NodeAdminAuthManager(
         var advanced = await store.CommitAsync(null,
         [
             SurrealWriter.UpdateOnly<NodeAdminAccount>(admin.Id)
-                // lock_count in the predicate: a lock set after our read bumps it, so this write never clears a fresh lock (H-1).
+                // lock_count + failed_attempts in the predicate: a failure counted or a lock set after our read voids this success (H-1, L-a).
                 .Where(row => row.AdminRevision == admin.AdminRevision && row.TotpLastStep == admin.TotpLastStep
-                    && row.LockCount == admin.LockCount && row.Status == NodeAdminAccount.StatusActive)
+                    && row.LockCount == admin.LockCount && row.FailedAttempts == admin.FailedAttempts
+                    && row.Status == NodeAdminAccount.StatusActive)
                 .Set(row => row.TotpLastStep, step)
                 .Set(row => row.FailedAttempts, 0L)
                 .Set(row => row.LockCount, 0L)
@@ -354,8 +360,15 @@ public sealed class NodeAdminAuthManager(
                 : update.Set(row => row.FailedAttempts, attempts).Build();
             if (await store.CommitAsync(null, [mutation], ct) != NodeAdminCommit.Committed) continue;
             if (locks)
+            {
+                var repeated = lockCount >= 2;
+                if (repeated)
+                    logger.LogCritical("NodeAdminRepeatedLock admin={AdminId} lockCount={LockCount} lockedForSeconds={Seconds}",
+                        adminRecordId, lockCount, (long)lockFor.TotalSeconds);
                 await AuditBestEffortAsync(Entry(actor, [], "auth.lock", target, NodeAdminAuditLog.OutcomeOk,
-                    JsonSerializer.Serialize(new { reason = "second_factor_failures", lockCount, lockedForSeconds = (long)lockFor.TotalSeconds }), info), ct);
+                    JsonSerializer.Serialize(new { reason = "second_factor_failures", lockCount, lockedForSeconds = (long)lockFor.TotalSeconds, repeated }),
+                    info), ct);
+            }
             return;
         }
         logger.LogError("Second-factor failure for node admin {AdminId} could not be counted after {Attempts} attempts.", adminRecordId, MaxCasAttempts);

@@ -23,6 +23,7 @@ operator (`Services/Admin`) is untouched.
 | `NodeAdmin__Audience` | the node's canonical origin (`https://host[:port]`, no path/trailing slash); default `PUBLIC_ORIGIN` |
 | `NodeAdmin__SessionMinutes` | default 15, clamped 5–30 |
 | `NodeAdmin__EnrollmentMinutes` | default 240, clamped 10–240 (H3: ≤ 4 h) |
+| `NodeAdmin__ChallengeKey` | optional dedicated secret for the challenge MAC; unset → key = HKDF-SHA256(`Jwt:Key`, info `azoa-node-admin-challenge-v1`). Rotating either invalidates challenges in flight (≤ 60 s) |
 
 `NodeAdminRuntime` validates once at boot and **never refuses boot** (M5). A malformed key, a missing
 revision, or an env revision lower than the durable `node_admin_root_state.root_key_revision` disables root
@@ -68,15 +69,19 @@ every role write and every status/role assignment bumps that revision.
 
 `Managers/NodeAdminAuthManager`.
 
-- `POST auth/challenge` always issues a 60 s challenge for a well-formed fingerprint (no key-existence
-  oracle), unless `NodeAdmin:MaxOutstandingChallenges` (default 10 000) live challenges exist node-wide, which
-  refuses with 503 `NODE_ADMIN_UNAVAILABLE` and logs critically (M-3; probed with a one-row `START cap-1` read). `expires_at_text` and `audience` are stored verbatim; the server rebuilds the signed message from
-  stored strings, the client signs returned strings byte-for-byte (H2).
-- `POST auth/session` consumes the challenge by CAS **before** verifying anything, so a challenge is single
-  use even on failure (M6), then checks fingerprint binding, audience, the Ed25519 signature, and either root
-  membership (full 32-byte fixed-time compare against configured keys + root watermark) or the admin
-  credential (full key compare) + active status + TOTP. Every failure is the uniform `AUTH_FAILED`; the
-  reason is only in the audit row (M4).
+- `POST auth/challenge` is **stateless** (NEW-1, replacing the 10k outstanding-challenge cap, which was itself
+  a root-login DoS): `challengeId = base64url(payload ‖ HMAC-SHA256(key, payload))`, payload =
+  `{v, id (16 random bytes, hex), p (purpose), fp, aud, n (nonce), exp (exact expiresAt string)}` as JSON
+  (`NodeAdminChallengeCodec`). Nothing is written, so issuance cannot fill the database or be capped into a
+  denial of service; the `operator-login` limiter (IPv6 by /64) still bounds it. Issued for any well-formed
+  fingerprint (no key-existence oracle). The client signs the returned strings byte-for-byte (H2); the server
+  rebuilds the message from the payload's exact strings, `challengeId` included.
+- `POST auth/session`: constant-time MAC check → expiry → audience → fingerprint(publicKey) = payload `fp` →
+  Ed25519 verify → **then** CREATE a consumed marker in `node_admin_challenge` (record id = payload id; a
+  collision is a replay → `AUTH_FAILED`, chained as `challenge_replay`) → root membership (full 32-byte
+  fixed-time compare + root watermark) or credential (full key compare) + active status + TOTP. Recording use
+  only after a valid signature means unauthenticated traffic never writes. Markers are swept after `exp`; a
+  later replay is already refused by the expiry check. Every failure is the uniform `AUTH_FAILED` (M4).
 - Lockout (H-1, L-4): 5 consecutive **second-factor** failures lock the admin (`ADMIN_LOCKED` + `Retry-After`,
   only reported after a valid signature). Each failure is counted by a CAS retry loop that re-reads the row
   until its increment lands, so concurrent bad codes cannot lose counts; a racer that re-reads a locked row
@@ -86,6 +91,14 @@ every role write and every status/role assignment bumps that revision.
   rows carry `lockCount` and `lockedForSeconds`. Signature failures are not counted: anyone can name a
   fingerprint, so counting them would let an attacker lock any admin out; signature guessing is infeasible and
   IP-limited by the `operator-login` limiter instead. The enrollment-completion counter uses the same loop.
+  The success write also requires `failed_attempts` unchanged (L-a): any failure counted between its read
+  and its write voids the success. A second or later consecutive lock (`lock_count ≥ 2`) logs a critical
+  `NodeAdminRepeatedLock` event and sets `repeated: true` on the `auth.lock` row (L-d).
+  Test note: the interleaving these predicates guard (a failure or lock landing between a success's read and
+  write) is not deterministically reachable through HTTP without a test seam inside the manager; the 10-way
+  concurrent lockout flow test exercises it probabilistically, so removing `lock_count ==` or
+  `failed_attempts ==` from the success predicate is not guaranteed to turn a test red. Adding a seam was
+  declined to keep production code free of test hooks.
 - A TOTP ciphertext that cannot be decrypted **or decoded** (L-1) fails the login/enrollment uniformly and is
   audited as `totp.secret_unreadable`.
 - TOTP: RFC 6238 SHA1/6/30, ±1 step, step must exceed `totp_last_step`, then a CAS advances it (replay
@@ -136,8 +149,11 @@ escalation (it can always mint a node-owner) but **not** from last-owner or self
   sends it back to `pending_enrollment`, consumes every open enrollment and revokes any bound-but-unactivated
   key (audited `admin.reenrollment_required`), so a token issued under the old roles cannot enroll the raised
   admin; only a root caller receives the fresh token.
-- **Root revocation (L-2)**: `POST /root/revoke-sessions` (root, or an admin holding `admins.manage` and
-  `roles.manage`, step-up) bumps `root_session_revision`.
+- **Root revocation (L-2, NEW-2)**: `POST /root/revoke-sessions` is **root-only** and bumps
+  `root_session_revision`; an admin revoking any `root:*` session by handle is also `PERMISSION_DENIED`
+  (audited as `denied`). Otherwise a rogue owner could keep break-glass root permanently signed out. Admins who
+  must cut root off do it out of band: remove the key from `NodeAdmin__RootPublicKeys` and/or raise
+  `NodeAdmin__RootKeyRevision` in the node environment and redeploy (every root session ends).
 - **MFA reset** returns the admin to `pending_enrollment`, revokes every key, session and open enrollment;
   only a **root** caller receives the new enrollment token (C1), so a peer owner cannot re-enroll someone
   else's identity with their own key.
@@ -168,10 +184,15 @@ Coverage:
   challenge ids, unknown enrollment tokens/ids) are not chained. `NodeAdminAnonymousFailures` logs a
   `NodeAdminAnonymousFailure` line and counts them; `NodeAdminAnonymousFailureFlusher` writes one
   `auth.anonymous_failures {count, reasons}` row per 5-minute window (and on shutdown), restoring the counts if
-  the write fails. Failures against a real challenge/enrollment/admin are still chained individually.
+  the write fails. With stateless challenges anyone can mint an authentic challenge, so every refusal before the
+  signature check (bad MAC, expired, audience, fingerprint mismatch) is rolled up, and a bad signature is
+  chained only when its fingerprint names a configured root key or a registered credential (NEW-3; looked up
+  only after verification failed). Replays, TOTP failures and enrollment failures on real enrollments stay
+  chained individually.
 - `GET /audit/verify` verifies `fromSeq..head` (default the last 10 000 rows), anchored on row `fromSeq-1`
   whose own hash is recomputed; `?full=true` rescans from genesis and is throttled to once per minute per
-  process (`RATE_LIMITED`, 429). The hourly sweep loops 500-row batches until a short batch (≤ 50 per table).
+  principal (`RATE_LIMITED`, 429; L-b). The CLI is expected to run a periodic full verify and pin the last
+  verified `(seq, hash)` (L-c, H5); the server keeps no schedule of its own. The hourly sweep loops 500-row batches until a short batch (≤ 50 per table).
 - Never logged or audited: signatures, TOTP codes or secrets, tokens, enrollment tokens.
 
 Exception boundaries: audit writes are the only place this module catches broad exceptions, and each catch
@@ -233,5 +254,9 @@ Owed by lane A2 (plan §8 C3): list every `NodeOperatorIdentity.UserId` / `IsNod
 13. New `POST /root/revoke-sessions` (L-2) → `bool`.
 14. `GET /audit/verify?fromSeq=&full=` returns `{ ok, fromSeq, verifiedThroughSeq, headHash, firstBrokenSeq? }`;
     `full=true` can answer 429 `RATE_LIMITED`.
+16. **Challenge ids are opaque, not GUIDs (NEW-1).** Wire shape is unchanged (`challengeId`, `nonce`,
+    `expiresAt`, `audience`), but `challengeId` is now a ~300-character base64url string and it is part of the
+    signed message. Clients must treat it as an opaque string and sign it verbatim (they already must, H2).
+17. `POST /root/revoke-sessions` is root-only; admins get `PERMISSION_DENIED` (NEW-2).
 15. Unknown-challenge / malformed / unknown-enrollment failures are not individual audit rows; they appear in
     `auth.anonymous_failures` roll-ups (actor `anonymous`, target `node`).

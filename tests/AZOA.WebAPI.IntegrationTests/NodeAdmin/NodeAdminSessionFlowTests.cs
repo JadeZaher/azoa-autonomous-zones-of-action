@@ -67,6 +67,14 @@ public sealed class NodeAdminSessionFlowTests(NodeAdminWebApplicationFactory fac
         (await SendAsync(HttpMethod.Post, "/enroll/start", new { enrollmentToken = "unknown", publicKey = key.PublicKey, label = "x" })).Code.Should().Be("ENROLLMENT_INVALID");
         (await SendAsync(HttpMethod.Post, "/enroll/complete", new { enrollmentId = Guid.NewGuid().ToString("D"), totp = "123456", signature = key.Sign("x") }))
             .Code.Should().Be("ENROLLMENT_INVALID");
+        var stranger = NodeAdminTestKey.Generate();
+        var strangerChallenge = await RequestChallengeAsync(stranger, "admin_login");
+        (await SendAsync(HttpMethod.Post, "/auth/session", new
+        {
+            challengeId = strangerChallenge.GetProperty("challengeId").GetString(),
+            publicKey = stranger.PublicKey,
+            signature = stranger.Sign("not the challenge"),
+        })).Code.Should().Be("AUTH_FAILED", "a bad signature from a key nobody registered is rolled-up noise (NEW-3)");
         var headAfter = (await SendAsync(HttpMethod.Get, "/audit?limit=1", token: root)).Result.GetProperty("head").GetProperty("seq").GetInt64();
         headAfter.Should().Be(headBefore, "failures tied to no real challenge or enrollment are rolled up, not chained (M-3)");
     }
@@ -93,20 +101,29 @@ public sealed class NodeAdminSessionFlowTests(NodeAdminWebApplicationFactory fac
     }
 
     [Fact]
-    public async Task An_owner_or_root_can_end_every_root_session_and_an_auditor_cannot()
+    public async Task Only_a_root_session_can_revoke_root_sessions_so_a_rogue_owner_cannot_lock_root_out()
     {
         var first = await RootLoginAsync();
         var second = await RootLoginAsync();
-        var auditor = await CreateActiveAdminAsync(first, first, "ivy", "auditor");
+        var owner = await CreateActiveAdminAsync(first, first, "rhea", "node-owner");
 
-        (await SendAsync(HttpMethod.Post, "/root/revoke-sessions", token: auditor.Token)).Code.Should().Be("PERMISSION_DENIED");
+        (await SendAsync(HttpMethod.Post, "/root/revoke-sessions", token: owner.Token)).Code.Should().Be("PERMISSION_DENIED");
+        var rootSessions = await SendAsync(HttpMethod.Get, $"/sessions?principal=root:{Factory.RootKey.Fingerprint}", token: owner.Token);
+        var rootHandle = rootSessions.Result.EnumerateArray().First().GetProperty("handle").GetString()!;
+        (await SendAsync(HttpMethod.Post, $"/sessions/{rootHandle}/revoke", token: owner.Token)).Code.Should().Be("PERMISSION_DENIED");
+        (await SendAsync(HttpMethod.Get, "/me", token: first)).Status.Should().Be(HttpStatusCode.OK, "refused revocations leave root signed in");
+
         (await SendAsync(HttpMethod.Post, "/root/revoke-sessions", token: second)).Status.Should().Be(HttpStatusCode.OK);
         (await SendAsync(HttpMethod.Get, "/me", token: first)).Status.Should().Be(HttpStatusCode.Unauthorized);
         (await SendAsync(HttpMethod.Get, "/me", token: second)).Status.Should().Be(HttpStatusCode.Unauthorized);
-        (await SendAsync(HttpMethod.Get, "/me", token: auditor.Token)).Status.Should().Be(HttpStatusCode.OK, "admin sessions are unaffected");
-        var fresh = await RootLoginAsync();
-        (await AuditRowsAsync(fresh)).Should().Contain(row => row.GetProperty("action").GetString() == "POST /api/node-admin/root/revoke-sessions"
-            && row.GetProperty("outcome").GetString() == "ok");
+        (await SendAsync(HttpMethod.Get, "/me", token: owner.Token)).Status.Should().Be(HttpStatusCode.OK, "admin sessions are unaffected");
+        var rows = await AuditRowsAsync(owner.Token);
+        rows.Should().Contain(row => row.GetProperty("action").GetString() == "POST /api/node-admin/root/revoke-sessions"
+            && row.GetProperty("actor").GetString() == "admin:" + owner.Id && row.GetProperty("outcome").GetString() == "denied");
+        rows.Should().Contain(row => row.GetProperty("action").GetString() == "POST /api/node-admin/sessions/{handle}/revoke"
+            && row.GetProperty("outcome").GetString() == "denied");
+        rows.Should().Contain(row => row.GetProperty("action").GetString() == "POST /api/node-admin/root/revoke-sessions"
+            && row.GetProperty("actor").GetString()!.StartsWith("root:") && row.GetProperty("outcome").GetString() == "ok");
     }
 
     private static NodeAdminTokenIssuer Issuer() => new(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

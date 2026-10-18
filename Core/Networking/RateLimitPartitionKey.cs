@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
@@ -38,6 +40,17 @@ public static class RateLimitPartitionKey
 
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         return $"ip:{ip}";
+    }
+
+    /// <summary>Client-address partition: IPv4 (incl. IPv4-mapped) by full address, IPv6 by its /64 subscriber prefix.</summary>
+    public static string Address(IPAddress? address)
+    {
+        if (address is null) return "unknown";
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.AddressFamily != AddressFamily.InterNetworkV6) return address.ToString();
+        var bytes = address.GetAddressBytes();
+        Array.Clear(bytes, 8, 8);
+        return new IPAddress(bytes) + "/64";
     }
 
     public static string ResolveTenantSubject(HttpContext context)

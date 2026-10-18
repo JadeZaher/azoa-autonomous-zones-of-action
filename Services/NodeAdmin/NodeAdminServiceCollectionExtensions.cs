@@ -15,6 +15,7 @@ public static class NodeAdminServiceCollectionExtensions
         services.AddSingleton<NodeAdminTokenIssuer>();
         services.AddSingleton<NodeAdminTotpProtector>();
         services.AddSingleton<NodeAdminAnonymousFailures>();
+        services.AddSingleton<NodeAdminChallengeCodec>();
         services.AddScoped<SurrealNodeAdminStore>();
         services.AddScoped<NodeAdminAuditLog>();
         services.AddScoped<NodeAdminSessionValidator>();

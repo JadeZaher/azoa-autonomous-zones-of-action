@@ -59,9 +59,6 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
     public Task<NodeAdminRootState?> GetRootStateAsync(CancellationToken ct)
         => executor.QuerySingleAsync<NodeAdminRootState>(SurrealQuery<NodeAdminRootState>.Key(NodeAdminRootState.SingletonId), ct);
 
-    public Task<NodeAdminChallenge?> GetChallengeAsync(string recordId, CancellationToken ct)
-        => executor.QuerySingleAsync<NodeAdminChallenge>(SurrealQuery<NodeAdminChallenge>.Key(recordId), ct);
-
     public Task<NodeAdminEnrollment?> GetEnrollmentAsync(string recordId, CancellationToken ct)
         => executor.QuerySingleAsync<NodeAdminEnrollment>(SurrealQuery<NodeAdminEnrollment>.Key(recordId), ct);
 
@@ -78,22 +75,12 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
             .Where(row => row.Principal == principal && row.ExpiresAt > now)
             .OrderByDescending(row => row.AuthTime).Limit(200), ct);
 
-    public async Task CreateChallengeAsync(NodeAdminChallenge challenge, CancellationToken ct)
-        => (await executor.ExecuteAsync(SurrealWriter.Create(challenge), ct)).EnsureAllOk();
+    /// <summary>Records single use of a stateless challenge; <see cref="NodeAdminCommit.Duplicate"/> means it was already used (replay).</summary>
+    public Task<NodeAdminCommit> RecordChallengeUseAsync(NodeAdminChallenge marker, CancellationToken ct)
+        => CommitAsync(null, [SurrealWriter.Create(marker)], ct);
 
     public async Task CreateSessionAsync(NodeAdminSession session, CancellationToken ct)
         => (await executor.ExecuteAsync(SurrealWriter.Create(session), ct)).EnsureAllOk();
-
-    /// <summary>Single-use consume (M6): the predicate is re-evaluated on every transient-conflict retry.</summary>
-    public Task<bool> TryConsumeChallengeAsync(string recordId, DateTimeOffset now, CancellationToken ct)
-        => SurrealTransientConflict.RetryOnConflictAsync(async () =>
-        {
-            var response = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<NodeAdminChallenge>(recordId)
-                .Where(row => row.ConsumedAt == null && row.ExpiresAt > now)
-                .Set(row => row.ConsumedAt, now).Build(), ct);
-            response.EnsureAllOk();
-            return response.GetValues<NodeAdminChallenge>(0).Count() == 1;
-        }, ct);
 
     public Task<bool> TryRevokeSessionAsync(string recordId, DateTimeOffset now, CancellationToken ct)
         => SurrealTransientConflict.RetryOnConflictAsync(async () =>
@@ -128,11 +115,6 @@ public sealed class SurrealNodeAdminStore(ISurrealExecutor executor)
             id => SurrealWriter.DeleteOnly<NodeAdminSession>(id).Where(item => item.ExpiresAt < cutoff).Build(), batchSize, maxBatches, ct);
         return removed;
     }
-
-    /// <summary>True when at least <paramref name="cap"/> challenges are live (unconsumed, unexpired); reads at most one row.</summary>
-    public async Task<bool> OutstandingChallengesReachedAsync(int cap, DateTimeOffset now, CancellationToken ct)
-        => await executor.QuerySingleAsync<NodeAdminChallenge>(SurrealQuery<NodeAdminChallenge>.From()
-            .Where(row => row.ConsumedAt == null && row.ExpiresAt > now).Start(Math.Max(0, cap - 1)).Limit(1), ct) is not null;
 
     public Task<NodeAdminSession?> GetSessionByHandleAsync(string handle, CancellationToken ct)
         => executor.QuerySingleAsync<NodeAdminSession>(SurrealQuery<NodeAdminSession>.From().Where(row => row.Handle == handle).Limit(1), ct);

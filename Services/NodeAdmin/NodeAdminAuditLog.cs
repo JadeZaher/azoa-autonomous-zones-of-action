@@ -37,14 +37,21 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
     /// <summary>Rows verified by default (M-3): the tail window, not a full rescan per call.</summary>
     public const long DefaultVerifyWindow = 10_000;
     private static readonly TimeSpan FullVerifyInterval = TimeSpan.FromMinutes(1);
-    private static long _lastFullVerifyTicks;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> LastFullVerify = new(StringComparer.Ordinal);
 
-    /// <summary>Node-process throttle for full-chain verification: at most one per minute.</summary>
-    public static bool TryBeginFullVerify(DateTimeOffset now)
+    /// <summary>Full-chain verification throttle: at most one per minute per principal (L-b).</summary>
+    public static bool TryBeginFullVerify(string principal, DateTimeOffset now)
     {
-        var last = Interlocked.Read(ref _lastFullVerifyTicks);
-        if (now.UtcTicks - last < FullVerifyInterval.Ticks) return false;
-        return Interlocked.CompareExchange(ref _lastFullVerifyTicks, now.UtcTicks, last) == last;
+        while (true)
+        {
+            if (!LastFullVerify.TryGetValue(principal, out var last))
+            {
+                if (LastFullVerify.TryAdd(principal, now.UtcTicks)) return true;
+                continue;
+            }
+            if (now.UtcTicks - last < FullVerifyInterval.Ticks) return false;
+            if (LastFullVerify.TryUpdate(principal, now.UtcTicks, last)) return true;
+        }
     }
 
     /// <summary>Canonical row hash: hex(sha256(utf8(prevHash LF seq LF at LF actor LF action LF target LF outcome LF detail))).</summary>

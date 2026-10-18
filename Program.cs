@@ -804,7 +804,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("operator-login", httpContext =>
     {
-        var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        // IPv6 by /64 so one subscriber cannot rotate addresses within its allocation; see Core/Networking/AGENTS.md.
+        var address = RateLimitPartitionKey.Address(httpContext.Connection.RemoteIpAddress);
         return RateLimitPartition.GetFixedWindowLimiter($"operator-login:{address}", _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = rlOperatorLoginPermit,

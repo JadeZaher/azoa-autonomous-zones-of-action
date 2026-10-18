@@ -5,7 +5,7 @@
     "action": "Challenge",
     "class": "non-value",
     "scope": null,
-    "enforcement": "anonymous; operator-login rate limit; issues a 60 s single-use Ed25519 challenge for any well-formed fingerprint (no key-existence oracle)",
+    "enforcement": "anonymous; operator-login rate limit (IPv6 by /64); stateless HMAC-authenticated 60 s challenge, nothing written (NEW-1); issued for any well-formed fingerprint (no key-existence oracle)",
     "policies": [
       "NodeAdmin:session",
       "anonymous"
@@ -17,7 +17,7 @@
     "action": "Session",
     "class": "non-value",
     "scope": null,
-    "enforcement": "anonymous; operator-login rate limit; challenge consumed by CAS before verification; Ed25519 over the stored canonical string; TOTP replay guard CAS for named admins; uniform AUTH_FAILED; audit row before the session is issued",
+    "enforcement": "anonymous; operator-login rate limit (IPv6 by /64); challenge MAC/expiry/audience/fingerprint checked, Ed25519 over the challenge's exact strings, THEN a consumed marker (replay refused); TOTP replay guard CAS for named admins; uniform AUTH_FAILED; audit row before the session is issued",
     "policies": [
       "NodeAdmin:session",
       "anonymous"
@@ -40,7 +40,7 @@
     "action": "RevokeSession",
     "class": "non-value",
     "scope": null,
-    "enforcement": "NodeAdmin:session; addressed by an opaque handle that is never the token sid (M-1); own session freely, another principal's requires admins.manage and dominance (C1); audited",
+    "enforcement": "NodeAdmin:session; addressed by an opaque handle that is never the token sid (M-1); a root:* session only by root (NEW-2); own session freely, another principal's requires admins.manage and dominance (C1); audited",
     "policies": [
       "NodeAdmin:session"
     ]
@@ -51,7 +51,7 @@
     "action": "RevokeRootSessions",
     "class": "non-value",
     "scope": null,
-    "enforcement": "NodeAdmin:admins.manage:recent; additionally requires roles.manage (or root); root_session_revision CAS ends every root session (L-2); audited",
+    "enforcement": "NodeAdmin:admins.manage:recent; root sessions only (NEW-2: an admin is refused so a rogue owner cannot lock root out; admins cut root off by rotating NodeAdmin__RootKeyRevision); root_session_revision CAS; audited",
     "policies": [
       "NodeAdmin:admins.manage:recent",
       "NodeAdmin:session"
