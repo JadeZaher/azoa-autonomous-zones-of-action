@@ -3,7 +3,7 @@
   "name": "Platform stub closeout and Git consolidation",
   "status": "in_progress",
   "created_at": "2026-10-15",
-  "updated_at": "2026-10-17T15:40:00Z",
+  "updated_at": "2026-10-18T00:49:32.328Z",
   "priority": [
     "git-consolidation",
     "identomat-kyc-kyb",
@@ -17,12 +17,40 @@
       "1": "closed",
       "2": "closed",
       "3": "closed",
-      "4": "executing"
+      "4": "executed-pending-qa"
     },
     "round3_join_commit": "baf1224",
     "merged_with_vocabulary_sweep": "0522fdf",
     "round4_plan_commit": "c854f2c",
-    "round4_wave": "W0"
+    "round4_wave": "live-qa",
+    "round4_merges": {
+      "w0": "4d665ec5",
+      "w1": "1912e865",
+      "l1p": "c56a8cbd",
+      "l2": "5f1aa515",
+      "l3": "f6b9e04a",
+      "l3_d8": "9f484c6b",
+      "l4": "c077389b",
+      "l5": "9c299dfa",
+      "l7": "43be8f25",
+      "l6": "ab6c600d",
+      "fix_batch": [
+        "afaa46dc",
+        "3d1cac67",
+        "6352da84",
+        "c94f9945",
+        "53c6473c",
+        "75b23986"
+      ]
+    },
+    "deferral_ledger": "round4-post-qa-deferrals.md",
+    "owner_decisions_added": [
+      "D-8a",
+      "D-8b",
+      "D-8c",
+      "D-9",
+      "D-10"
+    ]
   },
   "verification": {
     "compiled": false,
