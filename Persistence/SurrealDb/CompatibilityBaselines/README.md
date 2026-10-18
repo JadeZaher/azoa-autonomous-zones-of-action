@@ -27,3 +27,12 @@ prior checksums; their paired forward migrations are `135000` and `136000`.
 |---|---|---|
 | `holon.surql` | `8102f59bfbeaa8aa25ee09161d9c887547bd556a` | `befd3f9dd6e9a15a8f6dcc278153d028c1da1629b836bf2f15621424bfd7605e` |
 | `operation_log.surql` | `9220b3ff8e425b7d7a69fe542e5a9456bcfcbf08` | `f67cb9da11f239416dabb42ab9839f9615bb782aa586688d6ce95c8da7b8994c` |
+
+## user.surql (2026-10-18, user-discoverable)
+
+`user` was not previously baselined — it had no post-generation-reset field changes until this one.
+`user.surql` here is the exact pre-change generated golden (no `discoverable` field); the forward
+migration `../Migrations/20261018_090000__add_user_discoverable.surql` adds `discoverable` via
+`DEFINE FIELD OVERWRITE` plus a one-shot NONE backfill. Not pinned by
+`SurrealDeploymentLeastPrivilegeContractTests` (that theory enumerates the five tables baselined as
+of the round-4 W1 re-base); add a case there if `user.surql` needs re-pinning after a future edit.

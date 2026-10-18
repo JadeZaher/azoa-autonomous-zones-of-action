@@ -37,7 +37,8 @@ public class SearchManagerTests
     [Fact]
     public async Task SearchAsync_ReturnsHitsFromUsers()
     {
-        var user = new User { Id = Guid.NewGuid(), Username = "neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow };
+        // Discoverable (owner decision 2026-10-18): a non-self, non-operator caller only sees opted-in users.
+        var user = new User { Id = Guid.NewGuid(), Username = "neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow, Discoverable = true };
         _userStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { user } });
         _holonStore.Setup(p => p.QueryAsync(null, default))
@@ -53,6 +54,34 @@ public class SearchManagerTests
         result.Result!.Hits.Should().ContainSingle();
         result.Result!.Hits[0].EntityType.Should().Be(SearchableEntityType.User);
         result.Result!.TotalCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task SearchAsync_UserVisibility_GatedByDiscoverableOptIn_SelfAndOperatorAlwaysSee()
+    {
+        // Owner decision 2026-10-18 (user-discoverable): a user search hit requires the target to
+        // have opted in, UNLESS the caller is matching themself or is an operator.
+        var userA = new User { Id = Guid.NewGuid(), Username = "trinity", Email = "trinity@matrix.com", CreatedDate = DateTime.UtcNow, Discoverable = false };
+        var userB = Guid.NewGuid();
+        _userStore.Setup(p => p.GetAllAsync(default))
+            .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { userA } });
+        var request = new SearchRequest { Query = "trinity", EntityTypes = SearchableEntityType.User };
+
+        // A is not discoverable yet: B's search comes back empty.
+        (await _manager.SearchAsync(request, callerUserId: userB)).Result!.Hits.Should().BeEmpty();
+
+        // A always sees themself, opted in or not.
+        (await _manager.SearchAsync(request, callerUserId: userA.Id)).Result!.Hits
+            .Should().ContainSingle(h => h.Id == userA.Id);
+
+        // A node admin sees A regardless of the opt-in.
+        (await _manager.SearchAsync(request, callerUserId: userB, isNodeAdmin: true)).Result!.Hits
+            .Should().ContainSingle(h => h.Id == userA.Id);
+
+        // Once A opts in, B's search finds A too.
+        userA.Discoverable = true;
+        (await _manager.SearchAsync(request, callerUserId: userB)).Result!.Hits
+            .Should().ContainSingle(h => h.Id == userA.Id);
     }
 
     [Fact]
@@ -80,7 +109,7 @@ public class SearchManagerTests
     [Fact]
     public async Task SearchAsync_CaseInsensitiveQuery()
     {
-        var user = new User { Id = Guid.NewGuid(), Username = "Neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow };
+        var user = new User { Id = Guid.NewGuid(), Username = "Neo", Email = "neo@matrix.com", CreatedDate = DateTime.UtcNow, Discoverable = true };
         _userStore.Setup(p => p.GetAllAsync(default))
             .ReturnsAsync(new AZOAResult<IEnumerable<IUser>> { Result = new List<IUser> { user } });
         _holonStore.Setup(p => p.QueryAsync(null, default))
@@ -103,7 +132,8 @@ public class SearchManagerTests
             Id = Guid.NewGuid(),
             Username = $"user{i}",
             Email = $"user{i}@test.com",
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = DateTime.UtcNow,
+            Discoverable = true
         }).Cast<IUser>().ToList();
 
         _userStore.Setup(p => p.GetAllAsync(default))
@@ -128,8 +158,8 @@ public class SearchManagerTests
     {
         var users = new List<IUser>
         {
-            new User { Id = Guid.NewGuid(), Username = "alice", Email = "a@x.com", CreatedDate = DateTime.UtcNow },
-            new User { Id = Guid.NewGuid(), Username = "bob", Email = "b@x.com", CreatedDate = DateTime.UtcNow }
+            new User { Id = Guid.NewGuid(), Username = "alice", Email = "a@x.com", CreatedDate = DateTime.UtcNow, Discoverable = true },
+            new User { Id = Guid.NewGuid(), Username = "bob", Email = "b@x.com", CreatedDate = DateTime.UtcNow, Discoverable = true }
         };
 
         _userStore.Setup(p => p.GetAllAsync(default))

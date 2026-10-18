@@ -66,11 +66,14 @@ Known limits (SurrealForge, owner repo; harmless while nothing reconciles or pas
 
 A baselined table's generated golden is **not** what a deployment applies; only baseline +
 migrations are. Every POCO change to `admin_bootstrap_state`, `bridge_tx`, `holon`,
-`kyc_submission` or `operation_log` (`swap_state` was pruned in round 4) therefore needs a forward migration in the same
+`kyc_submission`, `operation_log` or `user` (`swap_state` was pruned in round 4) therefore needs a forward migration in the same
 change. W1 found `kyc_submission` had drifted (Identomat missing from `$kyc_submission_provider`, so
 every Identomat KYC write failed its ASSERT; `aml_lineage_key` absent) and added
 `Migrations/20261017_121000`. `KycSubmission` gained the `kyc_submission_tenant_id` index that
-`Migrations/20260718_131000` already created, so the golden and the deployed table agree.
+`Migrations/20260718_131000` already created, so the golden and the deployed table agree. `user`
+joined this list on 2026-10-18 (user-discoverable): its first post-generation-reset field addition
+(`discoverable`) froze `CompatibilityBaselines/user.surql` and added
+`Migrations/20261018_090000__add_user_discoverable`.
 
 ## §generation-rebase (W1)
 
@@ -187,6 +190,9 @@ submitted group) — a write of either fails the ASSERT, closed.
   `REMOVE INDEX IF EXISTS`; a no-op on an absent table or index (probed).
 - `20261017_121000__converge_kyc_submission_identomat_and_aml_lineage`: §compatibility-baselines.
 - `20261017_122000__backfill_old_row_counters`: §old-row-rule.
+- `20261017_130000__add_operation_log_needs_operator_status`: D-3 `NeedsOperator` status param overwrite.
+- `20261018_090000__add_user_discoverable`: user-discoverable (§compatibility-baselines below); `user`
+  gains `discoverable` (`DEFAULT ALWAYS false`) plus a one-shot NONE backfill.
 
 ## §ownership
 

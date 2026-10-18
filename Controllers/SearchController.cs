@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -25,7 +26,7 @@ public class SearchController : ControllerBase
         var callerUserId = GetUserIdFromClaims();
         if (callerUserId is null) return Unauthorized();
 
-        var result = await _searchManager.SearchAsync(request, callerUserId, providerRequest);
+        var result = await _searchManager.SearchAsync(request, callerUserId, providerRequest, IsNodeAdmin());
         if (result.IsError) return BadRequest(result);
         return Ok(result);
     }
@@ -45,4 +46,16 @@ public class SearchController : ControllerBase
                  ?? User?.FindFirst("sub")?.Value;
         return Guid.TryParse(sub, out var id) ? id : null;
     }
+
+    /// <summary>
+    /// Owner correction 2026-10-18 (user-discoverable): "node admins will always be able to
+    /// find users." Deliberately NOT the "Operator" authorization policy — that policy also
+    /// requires the step-up <c>operator</c> scope and no acting tenant (Program.cs), which a
+    /// node admin searching from an ordinary dashboard JWT does not carry. This bypass is
+    /// axis-1 only: a dedicated node-operator session (<see cref="AzoaClaims.IsNodeOperator"/>)
+    /// that is not API-key authenticated (<see cref="ClaimsPrincipalExtensions.IsApiKey"/>,
+    /// the same axis-1 rule the "Operator" policy applies first) — scope and acting-tenant
+    /// do not matter here. See Controllers/AGENTS.md §User responses.
+    /// </summary>
+    private bool IsNodeAdmin() => AzoaClaims.IsNodeOperator(User) && !User.IsApiKey();
 }

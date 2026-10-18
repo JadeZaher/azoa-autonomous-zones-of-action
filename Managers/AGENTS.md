@@ -907,3 +907,15 @@ thread that then blocked on the scope lock the first thread held, so the host **
 or is built then, after `DeploymentService` is cached. Same scope, same instance, same authority checks — only the
 construction order changed. Do not "simplify" it back to a factory over `ActionManager`; `Hosting/ProgramCompositionTests`
 pins the bounded host start.
+
+## §user-discoverable (owner decision 2026-10-18, corrected same day)
+
+`SearchManager.SearchAsync`'s User branch filters on `IUser.Discoverable` (opted-in, default `false`) OR the caller
+matching themself OR `isNodeAdmin` (new trailing param, default `false`) — applied before `MatchesUser`/sort/pagination
+so `TotalCount` never counts a row the page can't show. `isNodeAdmin` is deliberately NOT the `Operator`
+authorization policy: "node admins will always be able to find users" regardless of the policy's `operator`-scope
+and no-acting-tenant axes, which an ordinary dashboard JWT held by a node admin does not carry. The caller
+(`SearchController.IsNodeAdmin()`) computes it as `AzoaClaims.IsNodeOperator(User) && !User.IsApiKey()` — axis-1
+only, so an API key belonging to a node admin never qualifies. `GetFacetsAsync`'s global User count is
+intentionally untouched (an aggregate count, not an identity, per its existing "Users are the one public type"
+comment). See `Controllers/AGENTS.md` §User responses for the full rationale.

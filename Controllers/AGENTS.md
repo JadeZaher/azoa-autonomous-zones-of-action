@@ -310,9 +310,20 @@ current ownership proof (`CrossChainBridgeService.OwnsReversalRecipientAsync`).
   serialized and the interface's `[JsonIgnore]` did not apply (the H5 leak). `Models.User.PasswordHash`
   is now `[JsonIgnore]` as a second line; `tests/.../Architecture/ResponseCredentialGateTests.cs` fails
   any statically typed response that exposes a credential-named property.
-- `GET api/user` (the node-wide directory) is `Operator`-policy only. `POST api/search` still returns
-  public user hits (`Username`, `Title`) to any signed-in caller by its own design; scoping it is an
-  owner decision recorded in `round4-lane-qa-api.md` §Deferred.
+- `GET api/user` (the node-wide directory) is `Operator`-policy only. `POST api/search` user hits
+  (owner decision 2026-10-18, user-discoverable; was recorded as deferred in
+  `round4-lane-qa-api.md` §Deferred) are gated by a per-profile `Discoverable` opt-in
+  (`IUser.Discoverable`, default `false`): a user is a hit only if they opted in, the caller is
+  matching themself, or the caller is a **node admin**. The node-admin bypass is deliberately
+  NOT the `Operator` authorization policy (owner correction, same day): that policy also requires
+  the step-up `operator` scope and no acting tenant (Program.cs), which a node admin searching
+  from an ordinary dashboard JWT does not carry. `SearchController.IsNodeAdmin()` is axis-1 only —
+  `AzoaClaims.IsNodeOperator(User) && !User.IsApiKey()` — so scope and acting-tenant don't matter
+  for this bypass; an API key belonging to a node admin never qualifies. The gate runs inside
+  `SearchManager.SearchAsync`'s per-entity filter, before sort/pagination, so `TotalCount`/pages
+  never leak a non-discoverable row. Non-user entity kinds (Holon, ActionGraphBundle, Wallet,
+  BlockchainOperation) are unaffected — they already carry their own owner-or-public / caller-only
+  scoping and never surface a bare user identity.
 - `PUT api/user/{id}` on a foreign id answers `404` before the manager runs, the same as `DELETE`.
 
 ## Account-creating sign-ins follow the registration switch (QA H-A)

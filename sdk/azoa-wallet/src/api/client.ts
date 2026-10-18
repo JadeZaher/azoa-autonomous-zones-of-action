@@ -99,6 +99,8 @@ export interface UserResponse {
   /** `dapp:user` | `dapp:developer` | `dapp:manager`. */
   dappRole?: string;
   createdDate?: string;
+  /** Opt-in: this user appears in another caller's search results only when true. Present only on the caller's own profile. */
+  discoverable?: boolean;
 }
 
 export interface BusinessVerificationCapabilities {
@@ -2446,7 +2448,7 @@ export class AzoaApiClient {
 
   async updateUser(
     userId: string,
-    params: { username?: string; email?: string; title?: string; firstName?: string; lastName?: string; isActive?: boolean }
+    params: { username?: string; email?: string; title?: string; firstName?: string; lastName?: string; isActive?: boolean; discoverable?: boolean }
   ): Promise<Result<UserResponse, SdkError>> {
     assertUuid(userId, "userId");
     return this.request("PUT", `/api/user/${userId}`, params);

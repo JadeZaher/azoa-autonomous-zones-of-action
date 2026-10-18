@@ -25,6 +25,8 @@ public sealed class UserProfileResponse
     public string? ExternalRef { get; init; }
     public string? AuthWalletAddress { get; init; }
     public string? AuthWalletChainType { get; init; }
+    /// Opt-in: this user appears in another caller's search results only when true.
+    public bool Discoverable { get; init; }
 
     public static UserProfileResponse From(IUser user) => new()
     {
@@ -44,6 +46,7 @@ public sealed class UserProfileResponse
         ExternalRef = user.ExternalRef,
         AuthWalletAddress = user.AuthWalletAddress,
         AuthWalletChainType = user.AuthWalletChainType,
+        Discoverable = user.Discoverable,
     };
 
     /// <summary>Projects a manager result onto the wire shape, keeping its error, message and code.</summary>

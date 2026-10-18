@@ -194,6 +194,7 @@ public class UserManager : IUserManager
         if (model.Title != null) user.Title = model.Title;
         if (model.FirstName != null) user.FirstName = model.FirstName;
         if (model.LastName != null) user.LastName = model.LastName;
+        if (model.Discoverable.HasValue) user.Discoverable = model.Discoverable.Value;
         var profile = await _userStore.UpsertAsync(user, default);
         if (profile.IsError || !model.IsActive.HasValue || model.IsActive.Value == user.IsActive) return profile;
         return await _userStore.TrySetActiveAsync(user.Id, user.IsActive, model.IsActive.Value, default);
