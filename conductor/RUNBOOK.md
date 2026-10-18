@@ -5,7 +5,7 @@ type: runbook
 # AZOA — Session Runbook
 
 **Last updated:** 2026-10-17 (evening) · **Branch:** `feat/platform-stub-closeout` ·
-**Last commit:** see `git log -1` — **`main` = `5dc1b239`, pushed 2026-10-17 19:00 MDT for live QA** (214 commits; secret scans clean). Railway deploy waits on the owner turning off Wait-for-CI + the D-9 DB reset.
+**Last commit:** see `git log -1` — **`main` = `d0e9eed1`, LIVE on Railway since 2026-10-18 05:20Z** (D-9 DB reset done; schema/api/frontend deployed by commit SHA). Live QA running → `qa-live-2026-10-18.md`, accounts → `qa-test-accounts.md`.
 
 > **Rewritten from scratch 2026-10-17** at the owner's request. The previous 2,127-line runbook
 > (Aug–Sep 2026 programs: Phases 0–4, the ArdaNova production-readiness waves, launch-readiness L0,
