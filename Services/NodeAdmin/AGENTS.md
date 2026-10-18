@@ -216,8 +216,50 @@ checkpoints are deferred.
 
 ## §reserved-id-inventory
 
-Owed by lane A2 (plan §8 C3): list every `NodeOperatorIdentity.UserId` / `IsNodeOperator` site, tagged
-`actor-aware` or `legacy-only`, and introduce `OperatorActor`. A1 touches none of them.
+Plan §8 C3 (lane A2). Every production line matching `NodeOperatorIdentity.UserId`,
+`NodeOperatorIdentity.ReservedEmail` or `IsNodeOperator` (comment lines excluded; `tests/`, `tools/`,
+`frontend/`, `sdk/` excluded), counted per file and tagged:
+
+- `actor-aware` — the site accepts an `OperatorActor` (legacy operator, named admin or root) or sits in a
+  dual-accepting operator policy; a node admin reaches it only through a mapped route (§route-permission-map).
+- `legacy-only` — the site deliberately keeps the reserved subject out of, or describes, something a node admin
+  never acts through (user API exclusions, legacy login/session, tenant/subject exclusions, routes whose
+  policies are not operator policies so node-admin tokens are refused at token validation).
+
+`tests/AZOA.WebAPI.Tests/Architecture/ReservedIdentityInventoryTests` scans the tree and fails when a file's
+matching-line count differs from the sum of its rows here: a new reserved-id comparison must be added to this
+table with a tag and a reason.
+
+| File | Sites | Tag | Reason |
+|---|---|---|---|
+| Controllers/Admin/PlatformGenesisRecoveryController.cs | 1 | actor-aware | `OwnsGenesisAsync` resolves the operator subject from the `OperatorActor` |
+| Controllers/ApiKeyController.cs | 1 | legacy-only | target guard: the reserved user can never own a tenant key |
+| Controllers/HoldCommandsController.cs | 1 | legacy-only | reserve-asset listing on a plain `[Authorize]` route; node-admin tokens are refused there |
+| Controllers/PlatformReserveController.cs | 1 | legacy-only | mixed operator/tenant declaration lane on a non-operator-policy route |
+| Controllers/TenantPriceScheduleController.cs | 1 | legacy-only | mixed operator/tenant price lane on a non-operator-policy route |
+| Controllers/UserController.cs | 2 | actor-aware | `ActingIsOperator` (dapp-role assignment) accepts any resolved `OperatorActor` |
+| Core/AzoaClaims.cs | 1 | legacy-only | definition of the legacy `node_operator` token predicate |
+| Core/Surreal/PlatformGenesisFence.cs | 1 | actor-aware | operator subject check; the credential may be a legacy or node-admin witness |
+| Core/Surreal/SigningAuthorityFence.cs | 1 | actor-aware | legacy witness branch; node-admin witnesses lock their session/admin rows instead |
+| Helpers/PlatformGenesisIdentity.cs | 1 | actor-aware | genesis acts as the operator subject for any `OperatorActor` |
+| Helpers/TenantAuthority.cs | 1 | legacy-only | tenant exclusion: the reserved user is never a tenant |
+| Managers/KycControlPlaneManager.cs | 4 | actor-aware | `IsNodeOperator(operatorUserId)` guard (definition + AML list/decide) receives `OperatorActor.SubjectUserId` |
+| Managers/KycControlPlaneManager.cs | 4 | legacy-only | tenant/subject exclusions (tenant select, AML subject, audit filter) and the overview of the legacy identity |
+| Managers/NodeOperatorManager.cs | 5 | legacy-only | legacy operator login and session issuance |
+| Managers/UserManager.cs | 11 | legacy-only | keeps the reserved user out of the user API (register, get, list, update, delete, roles, email) |
+| Managers/WalletAuthManager.cs | 3 | legacy-only | the reserved user can never bind or log in with a wallet |
+| Program.cs | 7 | legacy-only | `OnTokenValidated` legacy operator branch (revisions, integrity, reserved-subject guard) |
+| Program.cs | 8 | actor-aware | dual-accepting policies (`FirstPartyLogin` deferral, `NodeOperatorSession`, `RecentNodeOperatorSession`, `DappRoleAssignment`, `Operator`, `NodeGovern`): the node-admin branch runs first, the legacy predicate is unchanged |
+| Providers/Stores/Surreal/SurrealAdminBootstrapStateStore.cs | 2 | legacy-only | legacy credential binding |
+| Providers/Stores/Surreal/SurrealUserStore.cs | 13 | legacy-only | reserved-user write/read exclusions in the user store |
+| Services/Admin/SeedAdminHostedService.cs | 9 | legacy-only | seeds and verifies the legacy reserved operator |
+| Services/Auth/ActionableAuthorizationResultHandler.cs | 1 | legacy-only | legacy step-up response; node-admin denials are written by `NodeAdminDenial` first |
+| Services/Auth/ApiKeyAuthenticationHandler.cs | 1 | legacy-only | the reserved user can never authenticate with an API key |
+| Services/Kyc/KycProviderRegistry.cs | 1 | legacy-only | tenant exclusion |
+| Services/Reserve/PlatformReserveService.cs | 1 | legacy-only | reserve declaration authority from the non-operator-policy reserve route |
+| Services/Reserve/ReserveDrawAuthority.cs | 4 | legacy-only | reserve draw authority flag (non-operator-policy routes) |
+| Services/Reserve/ReserveFungibleTokenMinter.cs | 1 | legacy-only | reserve mint from the non-operator-policy reserve route |
+| Services/Signing/SigningAdmissionAuthorityFactory.cs | 1 | actor-aware | legacy credential capture; node-admin principals take the node-admin witness branch |
 
 ## §deferred
 
