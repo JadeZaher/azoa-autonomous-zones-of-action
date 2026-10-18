@@ -140,6 +140,13 @@ or receive.
   custody as a tenant (`tenant_id = user:<caller>`). A child-credential caller sees only liabilities
   in the acting tenant's custody that it owns or receives. The store query and `Visible` apply the
   same rule; a hidden liability reads exactly like a missing one.
+- **Decided rule (round 4, L6 #5): what is owed to you is yours to see.** A login caller sees a
+  liability it is the beneficiary of *whatever tenant holds custody* — the entitlement belongs to the
+  person, not to the app they received it through (self-sovereignty: one person, many tenants). What
+  stays tenant-confidential is the *sending* side: a liability the caller merely owns (opened, funded)
+  under tenant T's custody is visible only under T's credential, never from the bare login. The earlier
+  integration fixture expected owed-under-a-tenant rows hidden from the login; it was test drift, now
+  aligned. Table: `tests/AZOA.WebAPI.Tests/Hold/HoldLiabilityVisibilityTests.cs`.
 - **Reserve assets** list the exact `HoldAssetIdentity` (including the holding address an `Open`
   must name) and per-partition availability for every reserve row `Open` would let this caller
   draw: the store's own `ReservePartitionScope.Refuse` with the same authority derivation as

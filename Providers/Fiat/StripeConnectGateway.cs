@@ -401,7 +401,7 @@ public sealed class StripeConnectGateway : IStripeConnectGateway
             null, null, "read a bank payout", ParseBankPayout, ct, accountId);
 
     /// <summary>Most account pages one window listing reads before it reports itself incomplete.</summary>
-    public const int MaxAccountPages = 20;
+    public const int MaxAccountPages = 100;
 
     /// <inheritdoc />
     public async Task<AZOAResult<StripeClaimedAccountList>> ListConnectedAccountsCreatedAsync(

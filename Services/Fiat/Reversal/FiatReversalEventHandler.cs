@@ -7,6 +7,7 @@ using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Sagas;
 using AZOA.WebAPI.Services.Fiat.OnRamp;
+using SurrealForge.Client;
 
 namespace AZOA.WebAPI.Services.Fiat.Reversal;
 
@@ -237,7 +238,7 @@ public sealed class FiatReversalEventHandler : IFiatEventHandler
             PaymentIntentId = paymentIntentId,
             CheckoutSessionId = lot?.SourceCheckoutSessionId ?? context.CheckoutSessionId,
             IntentId = lot?.IntentId,
-            LotId = lot?.Id,
+            LotId = lot is null ? null : SurrealLink.ToLink(OnRampLot.SchemaNameConst, lot.Id),
             SubjectUserId = lot?.SubjectUserId,
             TenantId = lot?.TenantId,
             FlowPurpose = lot is null ? null : OnRampSettlementHandler.IssuancePurpose,
