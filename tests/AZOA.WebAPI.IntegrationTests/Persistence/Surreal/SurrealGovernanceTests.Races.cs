@@ -56,13 +56,13 @@ public sealed partial class SurrealGovernanceTests
     public async Task Concurrent_participation_revocation_and_vote_commit_in_one_serial_order()
     {
         await SeedProposal();
-        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Unset(row => row.OwnerTenantId).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Where(seed => true).Unset(row => row.OwnerTenantId).Build());
         await Save(new ConsentGrant { Id = "participation", GrantorUserId = "user:" + _voter, TenantId = "user:" + _tenant,
             Origin = "Participation", ParticipationRef = "project", Scopes = "wallet:read", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) });
         var receipt = await Command(_voter);
 
         var vote = _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, receipt, default);
-        var revoke = Contended(SurrealWriter.UpdateOnly<ConsentGrant>("participation")
+        var revoke = Contended(SurrealWriter.UpdateOnly<ConsentGrant>("participation").Where(seed => true)
             .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         await Task.WhenAll(vote, revoke);
         var refused = (await vote).IsError;
@@ -124,7 +124,7 @@ public sealed partial class SurrealGovernanceTests
         var receipt = await Command(_tenant);
 
         var create = _store.CreateAsync(_proposal, Projection(), receipt, default);
-        var offboard = Contended(SurrealWriter.UpdateOnly<User>(_voter).Unset(row => row.OwnerTenantId).Build());
+        var offboard = Contended(SurrealWriter.UpdateOnly<User>(_voter).Where(seed => true).Unset(row => row.OwnerTenantId).Build());
         await Task.WhenAll(create, offboard);
         var refused = (await create).IsError;
 

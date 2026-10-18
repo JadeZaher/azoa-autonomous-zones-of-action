@@ -63,7 +63,7 @@ public sealed class SurrealHostedProviderAttemptTests : IAsyncLifetime
         var session = new HostedSession { Id = id, SubjectUserId = user, ProviderKey = "trusted", FlowKind = "kyc",
             AdmissionKey = "kyc-attempt:" + id, CreationToken = Guid.NewGuid().ToString("N"), State = HostedSessionStates.Claimed, CreatedDate = now, ModifiedDate = now };
         await _sessions.ClaimAdmissionAsync(session);
-        var submission = new KycSubmission { Id = id, UserId = user, ProviderKey = "trusted", Provider = KycProvider.GENERIC_HOSTED,
+        var submission = new KycSubmission { Id = id, UserId = SurrealLink.ToLink("user", user), ProviderKey = "trusted", Provider = KycProvider.GENERIC_HOSTED,
             ProviderSessionId = id, HostedVerification = true, Status = KycStatus.PENDING, ExpiresAt = now.AddHours(1), CreatedDate = now, ModifiedDate = now };
         (await _executor.ExecuteAsync(SurrealWriter.Create(submission))).EnsureAllOk();
         var attempt = new HostedProviderAttempt { Id = id, SubjectId = user, ProviderKey = "trusted", AdapterKey = "generic-hosted",
@@ -78,7 +78,7 @@ public sealed class SurrealHostedProviderAttemptTests : IAsyncLifetime
         claims.Count(claim => claim is not null).Should().Be(1);
         (await _attempts.ClaimAsync(session, true, now, default)).Should().BeNull();
         var winner = claims.Single(claim => claim is not null)!;
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<HostedProviderAttempt>(id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<HostedProviderAttempt>(id).Where(seed => true)
             .Set(row => row.LeaseExpiresAt, now.AddMinutes(-1)).Build())).EnsureAllOk();
         var resumed = await _attempts.ClaimAsync(session, true, now, default);
         resumed.Should().NotBeNull(); resumed!.RequestJson.Should().Be(attempt.RequestJson);

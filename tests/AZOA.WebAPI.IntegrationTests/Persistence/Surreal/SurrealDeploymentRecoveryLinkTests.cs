@@ -51,7 +51,7 @@ public sealed class SurrealDeploymentRecoveryLinkTests : IAsyncLifetime
         var head = (await _store.ClaimRecoveryChildAsync(parent, await ChildAsync(parent)))!;
         parent = (await _store.GetAsync(parent.Id))!;
         var ids = Enumerable.Range(0, 30).Select(_ => Guid.NewGuid().ToString("N")).ToArray();
-        var link = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DeploymentOperation>(head.Id)
+        var link = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DeploymentOperation>(head.Id).Where(seed => true)
             .Set(row => row.ReplacesOperationId, ids[0]).Build());
         link.EnsureAllOk(); head = (await _store.GetAsync(head.Id))!;
         for (var index = 0; index < ids.Length; index++)
@@ -83,7 +83,7 @@ public sealed class SurrealDeploymentRecoveryLinkTests : IAsyncLifetime
         var parent = (await _store.ClaimAsync(Parent()))!;
         var head = (await _store.ClaimRecoveryChildAsync(parent, await ChildAsync(parent)))!;
         parent = (await _store.GetAsync(parent.Id))!;
-        var link = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DeploymentOperation>(head.Id)
+        var link = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DeploymentOperation>(head.Id).Where(seed => true)
             .Set(row => row.ReplacesOperationId, head.Id).Build());
         link.EnsureAllOk(); head = (await _store.GetAsync(head.Id))!;
         var audits = new SurrealDeploymentRecoveryAuditStore(_executor);
@@ -214,7 +214,7 @@ public sealed class SurrealDeploymentRecoveryLinkTests : IAsyncLifetime
     {
         var parent = (await _store.ClaimAsync(Parent()))!;
         var child = (await _store.ClaimRecoveryChildAsync(parent, await ChildAsync(parent)))!;
-        var change = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DeploymentOperation>(parent.Id)
+        var change = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DeploymentOperation>(parent.Id).Where(seed => true)
             .Set(row => row.RecoveryBindingHash, "different-binding").Build());
         change.EnsureAllOk();
         child.SubmissionAuthorized = true; child.State = "Submitted";

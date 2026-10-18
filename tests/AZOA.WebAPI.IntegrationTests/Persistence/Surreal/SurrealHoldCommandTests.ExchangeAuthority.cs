@@ -84,12 +84,12 @@ public sealed partial class SurrealHoldCommandTests
     private async Task ChangeAuthorityAsync(string change, Guid apiKey, Guid grant, Guid wallet, Guid participant)
     {
         if (change == "tenant-key")
-            await Execute(SurrealWriter.UpdateOnly<ApiKey>(apiKey.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+            await Execute(SurrealWriter.UpdateOnly<ApiKey>(apiKey.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         else if (change == "participant-grant")
-            await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(grant.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+            await Execute(SurrealWriter.UpdateOnly<ConsentGrant>(grant.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
         else if (change == "participant-wallet")
-            await Execute(SurrealWriter.UpdateOnly<Wallet>(wallet.ToString("N")).Set(row => row.Address, "rebound").Build());
+            await Execute(SurrealWriter.UpdateOnly<Wallet>(wallet.ToString("N")).Where(seed => true).Set(row => row.Address, "rebound").Build());
         else
-            await Execute(SurrealWriter.UpdateOnly<User>(participant.ToString("N")).Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build());
+            await Execute(SurrealWriter.UpdateOnly<User>(participant.ToString("N")).Where(seed => true).Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build());
     }
 }

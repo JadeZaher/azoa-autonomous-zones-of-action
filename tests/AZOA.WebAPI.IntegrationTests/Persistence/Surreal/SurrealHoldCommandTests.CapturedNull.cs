@@ -23,7 +23,7 @@ public sealed partial class SurrealHoldCommandTests
         (await Find(_actor, null))!.HoldId.Should().Be(intent.HoldId);
         (await Find(_actor, tenant)).Should().BeNull();
 
-        await Execute(SurrealWriter.UpdateOnly<HoldLedger>(holdRecordId)
+        await Execute(SurrealWriter.UpdateOnly<HoldLedger>(holdRecordId).Where(seed => true)
             .Set(row => row.TenantId, SurrealLink.ToLink("user", tenant.ToString("N"))).Build());
 
         (await Find(_actor, null)).Should().BeNull();

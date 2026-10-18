@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ganache from 'ganache';
+import { localChain } from '../scripts/hardhat-network.mjs';
 import solc from 'solc';
 import { AbiCoder, BrowserProvider, ContractFactory, NonceManager, Wallet, ZeroAddress, id, keccak256 } from 'ethers';
 
@@ -15,9 +15,9 @@ if (receiverBuild.errors?.some(error => error.severity === 'error')) throw new E
 const receiverArtifact = receiverBuild.contracts['AdversarialReceiver.sol'].AdversarialReceiver;
 
 async function fixture() {
-  const rpc = ganache.provider({ logging: { quiet: true }, chain: { chainId: 31337, hardfork: 'shanghai' }, wallet: { totalAccounts: 5 } });
+  const { provider: rpc, keys } = await localChain({ totalAccounts: 5 });
   const provider = new BrowserProvider(rpc);
-  const wallets = Object.values(rpc.getInitialAccounts()).map(account => new Wallet(account.secretKey, provider));
+  const wallets = keys.map(key => new Wallet(key, provider));
   const senders = wallets.map(wallet => new NonceManager(wallet));
   const contract = await new ContractFactory(artifact.abi, artifact.bytecode, senders[0]).deploy(wallets[0].address);
   await contract.waitForDeployment();
@@ -55,7 +55,7 @@ test('mint and fee are atomic, replay cannot charge twice, standard mutations ca
     await assert.rejects(f.contract.connect(f.senders[1])['safeTransferFrom(address,address,uint256)'](f.wallets[1].address, f.wallets[2].address, e.tokenId));
     await assert.rejects(f.contract.connect(f.senders[1]).approve(f.wallets[2].address, e.tokenId));
     await assert.rejects(f.contract.connect(f.senders[1]).setApprovalForAll(f.wallets[2].address, true));
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('owner cannot forge zero policy, treasury, revision, chain or contract domain', async () => {
@@ -72,7 +72,7 @@ test('owner cannot forge zero policy, treasury, revision, chain or contract doma
       await assert.rejects((async () => (await f.contract.connect(f.senders[1]).execute(...args, { value: e.fee, gasLimit: 2_000_000 })).wait())());
     }
     assert.equal(await f.contract.everMinted(e.tokenId), false);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('credential delivery requires exact recipient acceptance and preserves immutable issuer', async () => {
@@ -96,7 +96,7 @@ test('credential delivery requires exact recipient acceptance and preserves immu
       from: f.wallets[2].address, to: ZeroAddress }));
     await assert.rejects(f.contract.ownerOf(101n));
     assert.equal(await f.contract.issuerOf(101n), f.wallets[1].address);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('burned token identity cannot be reminted under a new lifecycle or issuer', async () => {
@@ -106,7 +106,7 @@ test('burned token identity cannot be reminted under a new lifecycle or issuer',
     await f.execute(f.effect({ lifecycle: id('burn'), operation: 2, stage: 5, from: f.wallets[1].address, to: ZeroAddress }));
     await assert.rejects(f.execute(f.effect({ lifecycle: id('remint') })));
     assert.equal(await f.contract.everMinted(101n), true);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });
 
 test('treasury callback cannot reenter and a rejecting receiver rolls back NFT and fee', async () => {
@@ -132,5 +132,5 @@ test('treasury callback cannot reenter and a rejecting receiver rolls back NFT a
     const rejectTreasury = f.effect({ lifecycle: id('rejected-treasury'), tokenId: 103n, treasury: recipient });
     await assert.rejects(f.execute(rejectTreasury));
     assert.equal(await f.contract.everMinted(103n), false);
-  } finally { await f.rpc.disconnect(); }
+  } finally { f.provider.destroy(); }
 });

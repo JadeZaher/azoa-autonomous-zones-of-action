@@ -6,10 +6,18 @@ import type { IdentomatSessionRecord, IdentomatVerdict, StripeCheckoutSessionRec
  * The journeys' handle on the fake vendors: their `/__e2e/*` control planes plus the browser-side
  * interception of the hosted pages the real vendors would serve. See `e2e/AGENTS.md` §hosted-pages.
  */
+export interface WebhookDelivery {
+  path: string
+  headers: Record<string, string>
+  body: string
+  receivedAt: string
+}
+
 export class FakeVendors {
   private constructor(
     private readonly identomat: APIRequestContext,
     private readonly stripe: APIRequestContext,
+    private readonly webhookReceiver: APIRequestContext,
     readonly environment: E2eEnvironment,
   ) {}
 
@@ -23,11 +31,20 @@ export class FakeVendors {
       baseURL: `https://127.0.0.1:${environment.stripePort}`,
       ignoreHTTPSErrors: true,
     })
-    return new FakeVendors(identomat, stripe, environment)
+    const webhookReceiver = await playwright.request.newContext({
+      baseURL: `https://127.0.0.1:${environment.webhookReceiverPort}`,
+      ignoreHTTPSErrors: true,
+    })
+    return new FakeVendors(identomat, stripe, webhookReceiver, environment)
   }
 
   async dispose(): Promise<void> {
-    await Promise.all([this.identomat.dispose(), this.stripe.dispose()])
+    await Promise.all([this.identomat.dispose(), this.stripe.dispose(), this.webhookReceiver.dispose()])
+  }
+
+  /** Every delivery the `webhook-receiver` service accepted, oldest first (headers limited to `x-azoa-*`). */
+  async webhookDeliveries(): Promise<WebhookDelivery[]> {
+    return (await (await this.webhookReceiver.get('/__e2e/deliveries')).json()) as WebhookDelivery[]
   }
 
   async identomatSessionByToken(sessionToken: string): Promise<IdentomatSessionRecord> {
