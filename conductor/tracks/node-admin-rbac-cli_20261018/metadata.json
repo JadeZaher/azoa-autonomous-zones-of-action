@@ -1,0 +1,63 @@
+{
+  "track_id": "node-admin-rbac-cli_20261018",
+  "name": "Node admin identity, RBAC, MFA and azoa-node CLI",
+  "status": "in_progress",
+  "created_at": "2026-10-18",
+  "updated_at": "2026-10-18",
+  "decisions": [
+    "A-1 ed25519 root key",
+    "A-2 named admins + break-glass root",
+    "A-3 full RBAC + TOTP MFA, four-eyes deferred",
+    "A-4 Node.js CLI tools/azoa-node-cli"
+  ],
+  "phases": {
+    "P0": "done",
+    "P1": "pending",
+    "P2": "pending",
+    "P3": "pending",
+    "P4": "pending",
+    "P5": "pending"
+  },
+  "partitions": {
+    "computed_at_commit": "1e68d59d",
+    "confidence": "medium",
+    "lanes": {
+      "A-backend": {
+        "owns": [
+          "Controllers/NodeAdmin*",
+          "Managers/NodeAdmin*",
+          "Services/NodeAdmin/**",
+          "Persistence/SurrealDb/Models/NodeAdmin*",
+          "Persistence/SurrealDb/Generated/**",
+          "Persistence/SurrealDb/Migrations/**",
+          "Core/NodeAdmin*",
+          "Program.cs#auth",
+          "Core/Surreal/SigningAuthorityFence.cs",
+          "Core/Surreal/PlatformGenesisFence.cs",
+          "tests/**/NodeAdmin*",
+          "tests/AZOA.WebAPI.Tests/Architecture/Inventories/RouteAuthorization/**"
+        ]
+      },
+      "B-cli": {
+        "owns": [
+          "tools/azoa-node-cli/**"
+        ]
+      }
+    },
+    "shared_contract": "plan.md §3"
+  },
+  "review_ledger": [
+    {
+      "phase": "P0",
+      "reviewer": "oh-my-claudecode:critic",
+      "date": "2026-10-18",
+      "verdict": "APPROVE WITH EDITS",
+      "note": "C1 dominance, C2 server-side sessions + live perms, C3 reserved-id inventory, H1-H6, M1-M7 folded into plan.md §8 (binding)"
+    }
+  ],
+  "lanes_plan": {
+    "A1": "P1+P3 identity/auth/MFA/audit/admin CRUD (opus)",
+    "A2": "P2 RBAC + operator-policy integration (opus, after A1)",
+    "B": "P4 CLI (sonnet, parallel with A1)"
+  }
+}
