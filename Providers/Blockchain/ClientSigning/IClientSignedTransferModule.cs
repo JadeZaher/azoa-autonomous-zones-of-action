@@ -22,10 +22,11 @@ public interface IClientSignedTransferModule : IBlockchainProviderModule
 
     /// <summary>
     /// Re-observes the plan on chain. <paramref name="transactionId"/> is the submitted (or operator-supplied) id; when it
-    /// is null the chain is searched for the plan's own transaction where the chain allows it.
+    /// is null the chain is searched for the plan's own transaction where the chain allows it. <paramref name="evidenceJson"/> is
+    /// the resumable absence-scan progress a previous observation returned (Solana), or null.
     /// </summary>
     Task<AZOAResult<ClientSigningObservation>> ObserveClientSignedTransferAsync(ClientSigningPlan plan, string? transactionId,
-        CancellationToken ct);
+        string? evidenceJson, CancellationToken ct);
 }
 
 /// <summary>The saved unsigned plan; <see cref="UnsignedPayloadBase64"/> is exactly what the signer signs.</summary>
@@ -38,8 +39,8 @@ public sealed record ClientSigningPlan(int Version, string ChainType, string Net
     string Signer, string UnsignedPayloadBase64, string IntentHash, string? PredictedTransactionId = null,
     long? ValidThroughHeight = null, string? Nonce = null, string? RecoveryJson = null);
 
-/// <summary>One chain re-observation of a client-signed plan.</summary>
-public sealed record ClientSigningObservation(string Verdict, string? TransactionId = null, string? Detail = null);
+/// <summary>One chain re-observation of a client-signed plan; <paramref name="EvidenceJson"/> is resumable scan progress to persist.</summary>
+public sealed record ClientSigningObservation(string Verdict, string? TransactionId = null, string? Detail = null, string? EvidenceJson = null);
 
 /// <summary>Closed set of <see cref="ClientSigningObservation.Verdict"/> values.</summary>
 public static class ClientSigningVerdicts
@@ -55,6 +56,8 @@ public static class ClientSigningVerdicts
     public const string NonceConsumed = "NonceConsumed";
     /// <summary>Nothing terminal is provable yet.</summary>
     public const string Pending = "Pending";
+    /// <summary>The validity window passed but the node cannot prove absence (no ledger history); never settles, parks for an operator.</summary>
+    public const string Unproven = "Unproven";
 }
 
 /// <summary>Plan payload formats.</summary>

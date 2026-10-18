@@ -153,6 +153,6 @@ public sealed class SurrealDeploymentAuthorityTests : IAsyncLifetime
     }
 
     private async Task SetRunStateAsync(DeploymentOperation operation, ActionRun.ActionRunStatusKind state)
-        => (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(operation.ActionRunId!)
+        => (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(operation.ActionRunId!).Where(seed => true)
             .Set(row => row.Status, state).Build())).EnsureAllOk();
 }

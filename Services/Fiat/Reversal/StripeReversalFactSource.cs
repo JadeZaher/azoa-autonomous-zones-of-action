@@ -60,8 +60,12 @@ public sealed record DisputeReversalFacts(
 /// <param name="NetMinorUnits">What reached the platform balance after Stripe's fees (<c>balance_transaction.net</c>).</param>
 /// <param name="Currency">Charge currency; the balance transaction must settle in the same currency.</param>
 /// <param name="Livemode">Whether the charge belongs to the provider's live mode.</param>
+/// <param name="AmountRefundedMinorUnits">Cumulative refunds already on the charge (M3: a refund can precede the credit).</param>
+/// <param name="Disputed">Whether a dispute already stands against the charge.</param>
+/// <param name="CreatedAt">When the charge was created (L3: the maturity clock starts here, not at handler time).</param>
 public sealed record PaymentBalanceFacts(
-    string ChargeId, long AmountMinorUnits, long NetMinorUnits, string Currency, bool Livemode);
+    string ChargeId, long AmountMinorUnits, long NetMinorUnits, string Currency, bool Livemode,
+    long AmountRefundedMinorUnits = 0, bool Disputed = false, DateTimeOffset? CreatedAt = null);
 
 /// <summary>
 /// Re-reads what a reversal event merely announced. Separate from
@@ -193,7 +197,9 @@ public sealed class StripeReversalFactSource : IReversalFactSource
                 || ReadInt64(charge, "amount") is not { } amount || ReadInt64(balance, "net") is not { } net
                 || !string.Equals(ReadString(balance, "currency"), currency, StringComparison.OrdinalIgnoreCase))
                 return null;
-            return new PaymentBalanceFacts(chargeId!, amount, net, currency!, ReadBool(charge, "livemode"));
+            return new PaymentBalanceFacts(chargeId!, amount, net, currency!, ReadBool(charge, "livemode"),
+                ReadInt64(charge, "amount_refunded") ?? 0L, ReadBool(charge, "disputed"),
+                ReadInt64(charge, "created") is { } created ? DateTimeOffset.FromUnixTimeSeconds(created) : null);
         }
         catch (JsonException)
         {

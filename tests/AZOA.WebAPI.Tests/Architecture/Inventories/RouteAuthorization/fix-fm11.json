@@ -1,0 +1,18 @@
+[
+  {
+    "route": "POST /api/nft-stage-costs/{operationid}/accept",
+    "controller": "NftStageCostsController",
+    "action": "Accept",
+    "class": "non-value",
+    "scope": "nft operation signing scope",
+    "enforcement": "captured credential; stage fee payer under its bound tenant; receipt + DB-time expiry fenced with the version CAS; never signs"
+  },
+  {
+    "route": "POST /api/nft-stage-costs/{operationid}/quote",
+    "controller": "NftStageCostsController",
+    "action": "Quote",
+    "class": "non-value",
+    "scope": "nft operation signing scope",
+    "enforcement": "captured credential; stage fee payer under its bound tenant; read-only provider estimate; never signs"
+  }
+]

@@ -98,3 +98,31 @@ Each lane classifies only the routes and stores it owns.
 
 Both "every ... is classified" tests fail until every lane's inventory has merged, which is intended: they
 are the sweep's completeness gate.
+
+## surrealql-source-rules
+
+`SurrealQlSourceRulesTests` scans production C# (`CSharpSource`: comment-free code plus string literals with
+offsets, so raw/verbatim/interpolated SQL is seen) for the round-4 fail-closed classes. Every rule is pinned by a
+pre-fix snippet that must be red and a post-fix snippet that must be green (the mutation check). Rules: no `;` in
+`SurrealQuery.Of` literals; `Of` takes only literal text (or a same-file `const`, or a ternary of literals) outside
+`Core/Surreal/{SurrealIdentifierTemplate,SurrealGeneratedStatementScope,SigningAuthorityFence}.cs`; SRDB0001 is
+suppressed only there (pragma/`SuppressMessage`; project files never silence it); no `Assign(Key(…))`; no ordinal
+enum casts (target resolved by reflection to an app enum); prefer an absolute result index captured before a
+top-level RETURN (RV-L4's 3.1.4 probe: BEGIN and COMMIT keep their slots, so this is robustness, not a live defect);
+nothing between a top-level RETURN and COMMIT (3.1.4 skips it); every typed `UpdateOnly`/`DeleteOnly` carries a
+`Where` (1.3.0 `Build()` throws without one); no bare id into a `[References]` column — POCO initializers and typed
+`Set`, types resolved the way the compiler would (aliases, usings, nested types), locals followed one level; POCOs
+whose store links ids in `ToStorage` are skipped only if that store provably links every reference column; forward
+migrations use `DEFINE … OVERWRITE`; `tenant_payout_*` rows change only through the D-8 ledger commit.
+
+`KnownViolations` is a ratchet of reviewed residue per (rule, file) with an owner: a new site fails, a fixed site
+fails until its entry is lowered. The round-4 entries are W3 fix-batch items (lane L6 record §Needs other lane).
+
+## transaction-scope-gate
+
+`TransactionScopeGateTests` mechanizes `round3-transaction-scope-review.md`: every member that opens `BEGIN` reaches
+a `COMMIT` in itself, a callee or a caller (call-graph fixpoint; delegate-committed openers listed with a reason);
+every batch family that decides carries a THROW guard (`THROW`, `RequireResult`, fence calls; guardless batches
+listed with a reason); egress writes (`AuthorizedAt`/`ExternalExposedAt`) happen only in members that call the
+family's operation-row committer (swap `CommitStageAsync`, WTT `CommitAsync`); and ratcheted files carry a
+`// lock: <row>` comment before every in-batch read in the same member.

@@ -93,6 +93,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// back only what is still outstanding, and a move whose outcome cannot be established parks
     /// the reversal rather than repeating it.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/recover")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -113,6 +114,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// Closes the reversal: whatever is still outstanding becomes a recorded platform loss and,
     /// per the flow's policy, a pause on the account.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/settle")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -130,6 +132,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// Settles a reversal parked on an ambiguous move with chain evidence: the node re-reads the
     /// move's transaction, records it landed or absent, and re-queues the unwind.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/resolve")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -165,6 +168,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// was cancelled. The saga is idempotent per reversal, so a second run replays rather than
     /// recovering twice.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/restart")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]
@@ -193,6 +197,7 @@ public sealed class FiatReversalOperatorController : ControllerBase
     /// Lifts the pause on an account. Stamped with who lifted it and when — this is the one verb
     /// here that gives an account its ability to move value back.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/clear-flag")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatReversalView>), StatusCodes.Status200OK)]

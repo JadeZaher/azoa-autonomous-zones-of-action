@@ -27,7 +27,8 @@ public class BlockchainOperationControllerTests
             Mock.Of<AZOA.WebAPI.Services.Blockchain.ClientSigning.IClientSignedOperationStore>(),
             Mock.Of<AZOA.WebAPI.Providers.Blockchain.IBlockchainProviderFactory>(), Mock.Of<IIdempotencyStore>(),
             Microsoft.Extensions.Options.Options.Create(new AZOA.WebAPI.Services.Reconciliation.ReconciliationOptions()),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<AZOA.WebAPI.Services.Blockchain.ClientSigning.ClientSignedOperationService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AZOA.WebAPI.Services.Blockchain.ClientSigning.ClientSignedOperationService>.Instance,
+            Mock.Of<AZOA.WebAPI.Interfaces.IRealValueKycGate>(MockBehavior.Strict));
         _controller = new BlockchainOperationController(_manager.Object, clientSigned, Mock.Of<IReconciliationService>());
         // Inject a ClaimsPrincipal so GetUserIdFromClaims() resolves.
         _controller.ControllerContext = new ControllerContext

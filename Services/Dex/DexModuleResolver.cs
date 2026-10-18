@@ -46,6 +46,21 @@ public sealed class DexModuleResolver(IBlockchainProviderFactory providers, IMem
         return views;
     }
 
+    /// <summary>
+    /// RV-L5-11: the module serving an already-admitted swap, ignoring the D-7 pin so a pin flip never strands in-flight
+    /// recovery, stage progress or cleanup. New admissions (quotes) always use the pinned <see cref="Resolve(DexNetwork)"/>.
+    /// </summary>
+    public IDexTransactionModule? ResolveForExisting(DexNetwork network)
+    {
+        if (network is null || string.IsNullOrWhiteSpace(network.ChainType) || string.IsNullOrWhiteSpace(network.ProtocolIdentity) ||
+            !Enum.TryParse<ChainNetwork>(network.Network, false, out var concrete) || !Enum.IsDefined(concrete) ||
+            network.Network != concrete.ToString()) return null;
+        return providers.TryGetRailProvider(network.ChainType, RailEnvironment.ForChain(concrete), out var rail) && rail is IBlockchainProvider blockchain &&
+            (providers.TryGetModule<IDexTransactionModule>(blockchain, out var module) && module is not null
+                || ChainModuleActivation.TryGetUngated(blockchain, out module)) && module is not null &&
+            module.ChainType == network.ChainType && module.ActiveNetwork == concrete ? module : null;
+    }
+
     private IDexTransactionModule? Resolve(string chainType, ChainNetwork network)
         => providers.TryGetRailProvider(chainType, RailEnvironment.ForChain(network), out var rail) && rail is IBlockchainProvider blockchain &&
             providers.TryGetModule<IDexTransactionModule>(blockchain, out var module) && module is not null &&

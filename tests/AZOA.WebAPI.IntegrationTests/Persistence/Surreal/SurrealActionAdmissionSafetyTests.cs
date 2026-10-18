@@ -115,7 +115,7 @@ public sealed class SurrealActionAdmissionSafetyTests : IAsyncLifetime
         sent.State = "Submitted";
         sent = (await nfts.UpdateAsync(sent, sent.Version, requireActionAuthority: true))!;
         sent.Should().NotBeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<RunRow>(run.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<RunRow>(run.ToString("N")).Where(seed => true)
             .Set(item => item.Status, RunRow.ActionRunStatusKind.Cancelled).Build())).EnsureAllOk();
         row.State = "Submitted";
         (await nfts.UpdateAsync(row, row.Version, requireActionAuthority: true)).Should().BeNull();
@@ -138,7 +138,7 @@ public sealed class SurrealActionAdmissionSafetyTests : IAsyncLifetime
         var credential = new SigningCredentialWitness(1, "Jwt", action.ActorUserId, null, null, DateTimeOffset.UtcNow.AddMinutes(-1),
             DateTimeOffset.UtcNow.AddHours(1), null, null, [AzoaScopes.ActionExecute, AzoaScopes.NftMint], true, TokenUse: AzoaClaims.TokenUseLogin);
         var witness = new WorkflowSigningWitness(1, credential, action, [AzoaScopes.ActionExecute, AzoaScopes.NftMint], []);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<NodeRow>(execution.Id.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<NodeRow>(execution.Id.ToString("N")).Where(seed => true)
             .Set(row => row.SigningAuthorityJson, CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(witness))).Build())).EnsureAllOk();
         return new(1, "Workflow", credential, new(wallet, action.ActorUserId, "actor", "Algorand"), witness.RequiredScopes, witness.Grants, action);
     }

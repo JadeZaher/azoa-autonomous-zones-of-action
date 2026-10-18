@@ -30,6 +30,7 @@ public sealed partial class WttLifecycleService
         var operation = await ReadOwnedAsync(operationId, principal.Credential, false, ct);
         if (operation is null || operation.Version != command.ExpectedVersion) return Changed<WttOperationView>();
         if (AuthorityMismatch(operation, principal) is { } mismatch) return Forbidden<WttOperationView>(mismatch);
+        if (await ValueRefusalAsync(principal.Credential, ct) is { } refused) return Forbidden<WttOperationView>(refused);
         var intent = Intent(operation);
         if (operation.State is not ("Admitted" or "Ready" or "Active"))
             return Conflict<WttOperationView>("No participant step is available while the operation is " + operation.State + "; refresh its state.");
@@ -350,7 +351,7 @@ public sealed partial class WttLifecycleService
             || !WttOperationIdentity.IsCanonicalId(command.StageId)) return null;
         var operation = await ReadOwnedAsync(operationId, credential, false, ct);
         if (operation is null || operation.CurrentStageId != command.StageId || !allowAnyVersion && operation.Version != command.ExpectedVersion
-            || operation.ActionRunId is not null)
+            || SigningActionOf(operation) is not null)
             return null;
         var stage = await store.GetStageAsync(command.StageId, ct);
         return stage is null || stage.OperationId != operationId || stage.IntentHash != operation.IntentHash
@@ -424,11 +425,11 @@ public sealed partial class WttLifecycleService
 
     /// <summary>Refusal when a direct credential reaches a workflow-owned operation, or a workflow reaches another operation.</summary>
     private static string? AuthorityMismatch(WttOperation operation, WttPrincipal principal)
-        => ActionOf(operation) != principal.Action
-            ? operation.ActionRunId is null ? "A workflow node can only continue the operation it admitted."
-                : "This operation's signing belongs to the workflow node that admitted it."
-            : operation.OwnerIntentJson is not null && principal.Credential.TenantId is not null
-                ? "The owner took over this transfer; only the owner's direct credential can continue it."
+        => operation.OwnerIntentJson is not null && (principal.Credential.TenantId is not null || principal.Workflow is not null)
+            ? "The owner took over this transfer; only the owner's direct credential can continue it."
+            : SigningActionOf(operation) != principal.Action
+                ? operation.ActionRunId is null ? "A workflow node can only continue the operation it admitted."
+                    : "This operation's signing belongs to the workflow node that admitted it."
                 : null;
 
     private static string BareId(string id) => SurrealRecordGuid.BareId(id);

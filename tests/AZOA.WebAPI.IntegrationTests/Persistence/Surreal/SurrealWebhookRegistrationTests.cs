@@ -154,7 +154,7 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
         var command = new WebhookRegistrationCommand(Guid.NewGuid(), Guid.NewGuid(), 0,
             "https://receiver.example/hook", true, false, "Configure the tenant event receiver.");
         (await _store.MutateAsync(Guid.NewGuid(), command, authority)).IsError.Should().BeTrue();
-        var revoked = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.User>(tenant.ToString("N"))
+        var revoked = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.User>(tenant.ToString("N")).Where(seed => true)
             .Set(user => user.IsActive, false).Build());
         revoked.EnsureAllOk();
         (await _store.MutateAsync(tenant, command, authority)).IsError.Should().BeTrue();
@@ -255,7 +255,7 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
     {
         var actor = Guid.NewGuid(); var now = DateTimeOffset.UtcNow.AddSeconds(-5);
         var created = await _executor.ExecuteAsync(SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.User
-        { Id = actor.ToString("N"), Username = actor.ToString("N"), Email = actor.ToString("N") + "@example.test", IsActive = true, CreatedDate = now }));
+        { Id = actor.ToString("N"), Username = actor.ToString("N"), Email = actor.ToString("N") + "@example.test", IsActive = true, CreatedDate = now, PasswordHash = "fixture-no-login" }));
         created.EnsureAllOk();
         return new(1, new SigningCredentialWitness(1, "Jwt", actor, null, null, now, now.AddMinutes(10),
             null, null, [], true, TokenUse: AzoaClaims.TokenUseLogin), [AzoaScopes.TenantProvision], []);

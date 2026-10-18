@@ -11,6 +11,7 @@ using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
@@ -415,18 +416,34 @@ public class AlgorandProviderTransactTests : IDisposable
     }
 
     [Fact]
-    public async Task Broadcast_failure_is_not_retried_double_spend_guard()
+    public async Task Broadcast_failure_is_not_retried_and_is_settled_from_chain_truth()
     {
-        // Stub returns 500 on submit. RetrySafety.Broadcast must NOT retry an
-        // ambiguous post-send 5xx — exactly one submit attempt is made.
+        // Stub returns 500 on submit, but the pending endpoint shows the txid confirmed: algod accepted it.
+        // RetrySafety.Broadcast must NOT retry (exactly one submit), and the 5xx must not be reported as a
+        // failure a caller could re-send over (H1).
         using var stub = RunStub(confirmedRound: 1, assetIndex: 1, poolError: null, failSubmitWith: 500);
 
         var provider = NewProvider(stub);
         var result = await provider.TransferAsync(
             "12345", _platform.Address.EncodeAsString(), _platform.Address.EncodeAsString(), 1);
 
-        result.IsError.Should().BeTrue();
+        result.IsError.Should().BeFalse(result.Message);
+        result.Result.Should().NotBeNullOrWhiteSpace("the submitted txid is reported");
         _submitCount.Should().Be(1, "a broadcast 5xx is ambiguous and must not be auto-retried");
+    }
+
+    [Fact]
+    public async Task A_broadcast_algod_refused_with_a_4xx_is_a_definitive_failure()
+    {
+        using var stub = RunStub(confirmedRound: 1, assetIndex: 1, poolError: null, failSubmitWith: 400);
+
+        var provider = NewProvider(stub);
+        var result = await provider.TransferAsync(
+            "12345", _platform.Address.EncodeAsString(), _platform.Address.EncodeAsString(), 1);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().NotContain(OperationStatus.OutcomeUnknownMarker, "nothing entered the pool");
+        _submitCount.Should().Be(1);
     }
 
     [Fact]

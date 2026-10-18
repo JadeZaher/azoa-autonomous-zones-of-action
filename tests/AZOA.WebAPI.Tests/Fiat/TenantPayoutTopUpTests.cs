@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
@@ -55,7 +56,7 @@ public sealed class TenantPayoutTopUpTests
         var fixture = new Fixture();
         await fixture.Handler.ApplyAsync(fixture.Context());
         var credit = fixture.Ledger.Credits.Single();
-        var reversal = new TenantPayoutTopUpReversalHandler(fixture.Fiat, fixture.Facts.Object, fixture.Ledger, fixture.Funding);
+        var reversal = fixture.ReversalHandler;
         fixture.Facts.Setup(f => f.GetChargeAsync(It.IsAny<StripeCredentials>(), "ch_1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(AZOAResult<ChargeReversalFacts>.Success(
                 new ChargeReversalFacts("ch_1", "pi_1", 1000, 1000, "usd", true, false, false, null, null)));
@@ -70,8 +71,67 @@ public sealed class TenantPayoutTopUpTests
         view.Consistent.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_refund_that_arrives_before_the_credit_stays_pending_and_the_credit_is_written_reversed()
+    {
+        // M3: the refund webhook lands first (the checkout.session.completed delivery kept failing).
+        var fixture = new Fixture { RefundedAtSettlement = 1000 };
+        fixture.Facts.Setup(f => f.GetChargeAsync(It.IsAny<StripeCredentials>(), "ch_1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<ChargeReversalFacts>.Success(
+                new ChargeReversalFacts("ch_1", "pi_1", 1000, 1000, "usd", true, false, false, IntentId, Tenant)));
+        var refund = new FiatEventContext(new FiatEvent(), "charge.refunded", null, "pi_1", "ch_1", null, null, RailEnvironment.Test);
+
+        var early = await fixture.ReversalHandler.ApplyAsync(refund);
+        var credited = await fixture.Handler.ApplyAsync(fixture.Context());
+        var redelivered = await fixture.ReversalHandler.ApplyAsync(refund);
+
+        early.Should().Be(FiatEventOutcome.Failed, "a top-up reversal with no credit yet is kept for redelivery, never dropped");
+        credited.Should().Be(FiatEventOutcome.Applied);
+        redelivered.Should().Be(FiatEventOutcome.Applied);
+        fixture.Ledger.Credits.Single().ReversedMinorUnits.Should().Be(1000, "the credit is written with the refund already on the charge");
+        var view = (await fixture.Funding.DescribeAsync(Tenant)).Single();
+        view.PendingCreditMinorUnits.Should().Be(-30);
+        view.AvailableMinorUnits.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_reversal_of_an_ordinary_payment_with_no_credit_is_not_a_top_up_concern()
+    {
+        var fixture = new Fixture();
+        var other = Guid.NewGuid();
+        fixture.Sessions.Setup(s => s.GetByIdAsync(other, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<HostedSession>.Success(new HostedSession
+            {
+                Id = other.ToString("N"), FlowKind = HostedSessionFlowKinds.FiatCheckout,
+                ProviderKey = FiatRailIds.StripeProviderKey, AdmissionKey = $"{Guid.NewGuid():N}:self:k1",
+            }));
+
+        var outcome = await fixture.ReversalHandler.ApplyAsync(new FiatEventContext(new FiatEvent(), "charge.refunded", null,
+            "pi_other", null, other, null, RailEnvironment.Test));
+
+        outcome.Should().Be(FiatEventOutcome.Ignored);
+    }
+
+    [Fact]
+    public async Task A_late_top_up_delivery_matures_from_the_charge_time_not_the_handler_time()
+    {
+        // L3: the dispute horizon starts when the payer was charged.
+        var chargedAt = DateTimeOffset.UtcNow.AddDays(-3);
+        var fixture = new Fixture { ChargedAt = chargedAt, RailWindow = TimeSpan.FromDays(120) };
+
+        await fixture.Handler.ApplyAsync(fixture.Context());
+
+        fixture.Ledger.Credits.Single().AvailableAt.Should().Be(chargedAt + TimeSpan.FromDays(120));
+    }
+
     private sealed class Fixture
     {
+        public long RefundedAtSettlement { get; init; }
+        public DateTimeOffset? ChargedAt { get; init; }
+        public TimeSpan? RailWindow { get; init; }
+        public Mock<IHostedSessionStore> Sessions { get; } = new();
+        public TenantPayoutTopUpReversalHandler ReversalHandler
+            => new(Fiat, Facts.Object, Ledger, Funding, Sessions.Object);
         public Guid Subject { get; init; } = Tenant;
         public FiatOptions Fiat { get; } = new() { Enabled = true, Test = { IsEnabled = true, SecretKey = "sk_test_x" } };
         public InMemoryTenantPayoutLedger Ledger { get; } = new(TimeProvider.System);
@@ -84,7 +144,15 @@ public sealed class TenantPayoutTopUpTests
             Funding = new TenantPayoutFunding(Ledger, new FakeIdempotencyStore(), Mock.Of<IStripeConnectGateway>(), Fiat,
                 TimeProvider.System, NullLogger<TenantPayoutFunding>.Instance);
             Facts.Setup(f => f.GetPaymentBalanceAsync(It.IsAny<StripeCredentials>(), "pi_1", It.IsAny<CancellationToken>()))
-                .ReturnsAsync(AZOAResult<PaymentBalanceFacts>.Success(new PaymentBalanceFacts("ch_1", 1000, 970, "usd", false)));
+                .ReturnsAsync(() => AZOAResult<PaymentBalanceFacts>.Success(
+                    new PaymentBalanceFacts("ch_1", 1000, 970, "usd", false, RefundedAtSettlement, false, ChargedAt)));
+            Sessions.Setup(s => s.GetByIdAsync(IntentId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => AZOAResult<HostedSession>.Success(new HostedSession
+                {
+                    Id = IntentId.ToString("N"), FlowKind = HostedSessionFlowKinds.FiatCheckout,
+                    ProviderKey = FiatRailIds.StripeProviderKey, AdmissionKey = TenantPayoutTopUp.AdmissionKeyFor(Tenant, "t1"),
+                    SubjectUserId = Subject.ToString("N"), ProviderSessionId = "cs_1",
+                }));
         }
 
         public FiatEventContext Context() => new(new FiatEvent(), "checkout.session.completed", "cs_1", "pi_1", null,
@@ -92,14 +160,6 @@ public sealed class TenantPayoutTopUpTests
 
         private TenantPayoutTopUpHandler BuildHandler()
         {
-            var sessions = new Mock<IHostedSessionStore>();
-            sessions.Setup(s => s.GetByIdAsync(IntentId, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(AZOAResult<HostedSession>.Success(new HostedSession
-                {
-                    Id = IntentId.ToString("N"), FlowKind = HostedSessionFlowKinds.FiatCheckout,
-                    ProviderKey = FiatRailIds.StripeProviderKey, AdmissionKey = TenantPayoutTopUp.AdmissionKeyFor(Tenant, "t1"),
-                    SubjectUserId = Subject.ToString("N"), ProviderSessionId = "cs_1",
-                }));
             var gateway = new Mock<IStripeGateway>();
             gateway.Setup(g => g.GetCheckoutSessionAsync(It.IsAny<StripeCredentials>(), "cs_1", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(AZOAResult<StripeCheckoutSession>.Success(new StripeCheckoutSession
@@ -107,8 +167,14 @@ public sealed class TenantPayoutTopUpTests
                     SessionId = "cs_1", Status = "complete", PaymentStatus = "paid", PaymentIntentId = "pi_1",
                     AmountTotalMinorUnits = 1000, Currency = "usd", ClientReferenceId = IntentId.ToString("N"),
                 }));
-            return new TenantPayoutTopUpHandler(Fiat, sessions.Object, gateway.Object, Facts.Object,
-                Mock.Of<IValueRailProviderFactory>(), Ledger, Funding, TimeProvider.System,
+            var rails = new Mock<IValueRailProviderFactory>();
+            if (RailWindow is { } window)
+            {
+                var rail = Mock.Of<IValueRailProvider>(r => r.SettlementProfile == SettlementProfile.ReversibleFor(window, "test"));
+                rails.Setup(r => r.TryGetRailProvider(FiatRailIds.UsdRail, It.IsAny<RailEnvironment>(), out rail)).Returns(true);
+            }
+            return new TenantPayoutTopUpHandler(Fiat, Sessions.Object, gateway.Object, Facts.Object,
+                rails.Object, Ledger, Funding, TimeProvider.System,
                 NullLogger<TenantPayoutTopUpHandler>.Instance);
         }
     }

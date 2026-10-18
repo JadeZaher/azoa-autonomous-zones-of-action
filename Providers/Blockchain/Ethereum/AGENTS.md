@@ -264,6 +264,23 @@ nonce for that sender. The rule depends on how far the reservation got.
   release) gets a fee-free "release the unused nonce" action, which repeats the
   idempotent cancel.
 
+## Client-signed nonces (RV-L5-01/-05)
+
+An External-wallet plan has no intent binding inside the transaction (Ethereum has no memo), and RFC6979 signing is
+deterministic, so two identical plans at one nonce would be one signed transaction settling two operation rows. Each plan
+therefore claims its own row in `ethereum_preparation` (id = hash of protocol, sender, `client-signed:{operationId}`;
+`State = ClientReserved`; `CallFingerprint` = the plan's intent hash; owner empty so it never lists as a custody
+preparation): nonce = max(chain pending nonce, highest reservation for the signer + 1), claimed through the UNIQUE
+`ethereum_preparation_live_nonce` index with retries. Concurrent plans from one signer get consecutive nonces, so a batch
+lands in order with no operator. `SubmitClientSignedTransferAsync` and every `SamePayload` attribution (including an
+operator-supplied hash) require that reservation to still own the nonce for this plan alone. A hash commits to (signer,
+nonce), so one hash can settle at most one row. A different consumer is attributed only once it is mined in a canonical
+block at or below finalized (RV-L5-08). Custody recovery refuses `ClientReserved` rows.
+
+Trade-off: a plan the user never signs holds its nonce, so later plans from that wallet queue behind it until the wallet
+consumes that nonce (any transaction at it) or the user signs it. No release exists: an Ethereum signature never expires,
+so a disclosed unsigned plan can land at any time and its nonce is not provably free.
+
 ## Prepared NFT and value effects
 
 NFT wire binds the complete immutable lifecycle authorization, final/intermediary

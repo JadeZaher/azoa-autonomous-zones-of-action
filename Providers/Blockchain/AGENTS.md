@@ -220,6 +220,15 @@ so every existing `catch` keeps working.
 `PlanValueMessageAsync` with `PrepareValueTransferAsync`), never signed or sent at plan time, and every module re-derives
 the plan from its recovery fields before trusting it. See `Services/Blockchain/AGENTS.md` §client-signed operations.
 
+- **Ethereum nonces (RV-L5-01/-05).** A plan reserves its own signer nonce in `ethereum_preparation` (see
+  `Ethereum/AGENTS.md` §client-signed nonces); submit and every hash attribution re-prove that reservation.
+- **Solana absence (RV-L5-02).** `Expired` comes only from a complete finalized-ancestry scan (the reviewed WTT
+  `ScanWttMessageHistoryAsync`) that starts at the first finalized block past the blockhash's last valid height and walks
+  parent links to the plan's context slot, 32 blocks per reconcile pass, resuming from the cursor the observation returns
+  (`ClientSigningObservation.EvidenceJson`, persisted by the service). A null signature status or a short
+  `getSignaturesForAddress` page proves nothing. A node without that ledger history yields `Unproven`, which parks the
+  row for an operator and never settles it.
+
 ## §module activation (D-7, round 4)
 
 Algorand declares `IDexTransactionModule` and `IExchangeTransactionModule`; Ethereum and Solana declare
@@ -230,9 +239,41 @@ the provider so the pin applies on every path). `appsettings.Development.json` t
 production stays off until that chain's protocol fixture passes in the sweep; anything still off at the end goes to
 `deferred.md`.
 
+- **Admission only (RV-L5-11).** A pin gates new admissions (DEX quotes, the swap node's admission check, capability
+  discovery). Work already admitted resolves its module through `DexModuleResolver.ResolveForExisting` /
+  `ChainModuleActivation.TryGetUngated`, so turning a pin off never strands in-flight recovery, stage progress or cleanup.
+- **Deployed hosts fail closed.** The Dockerfile pins `ASPNETCORE_ENVIRONMENT=Production`, but a Railway service variable
+  can override it, and a deployment running as Development would inherit the development pins. `HostHonoursPins` therefore
+  ignores every pin (and `Wtt:Enabled`) on a host carrying Railway's injected `RAILWAY_PROJECT_ID`/`RAILWAY_ENVIRONMENT_ID`
+  unless `AZOA:Activation:DeployedHostAcknowledged=true` is also set there explicitly.
+
 ## §rpc-http-clients (D9, round 4)
 
 `ChainRpcHttp.Create` builds every chain RPC client: an explicit handler (unit tests) wins, then the host's
 `IHttpClientFactory` named client `chain-rpc:{chain}` (production constructors take the factory), else a bare client.
 Fake-RPC flows configure the named client instead of reflection. Never put a node URL (it can embed a provider API key)
 into a result, log message or chain-info dictionary — `GetChainInfoAsync` no longer returns `rpcEndpoint`.
+`ChainRpcHttp.AddChainRpcClients` registers every `chain-rpc:{chain}` client with `RemoveAllLoggers()` (the factory's
+default handler logs request URIs at Information, which would print QuickNode-style `/TOKEN/` paths, RV-L5-10), and any
+log line that names a node uses `ChainRpcHttp.LogSafeEndpoint` (scheme, host and port only).
+
+## §broadcast-outcome — a failed broadcast POST is not a failed transaction (RV-L3 H1, round 4)
+
+`AlgorandProvider.BuildSignSubmitCoreAsync` signs, then POSTs `/v2/transactions` once (never retried:
+`RetrySafety.Broadcast`). The POST can fail AFTER algod accepted the bytes (timeout, reset, 5xx), so the
+outcome is classified, not assumed:
+
+- **Algod answered 4xx (not 408)** → the pool refused this exact txid; nothing can land. Definitive error
+  (`IsDefinitiveBroadcastRefusal`). A caller may retry under a new key.
+- **Anything else** (exception, 5xx, 408) → outcome unknown. The provider polls
+  `/v2/transactions/pending/{txid}` like any submit: confirmed → success; pool error → definitive error;
+  not seen in the poll window → the ordinary `PendingConfirmation` success carrying the txid (callers see
+  `OperationStatus.PendingConfirmationMarker` and record "pending + TxHash", reconciled from chain truth).
+  A cancelled request returns the same pending result without polling.
+
+Callers on value-moving paths (fiat collect, reversal clawbacks) treat a provider ERROR as definitive only
+when it lacks `OperationStatus.OutcomeUnknownMarker` ("reconcile against chain truth" — the phrase every
+provider's unacknowledged-broadcast error carries); with it, the move is recorded ambiguous with the txid
+the message names (`OperationStatus.TransactionIdIn`) and parks. Other Algorand broadcast sites (atomic
+groups, recipient preparation) and Solana still return the outcome-unknown error rather than the pending
+result; their callers must keep honouring the marker.
