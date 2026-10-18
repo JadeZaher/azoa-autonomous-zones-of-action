@@ -73,36 +73,62 @@ node dist/cli.js admins list --json
 - **Keys**: `~/.azoa/keys/<name>.key` — a JSON envelope (not literal PEM; see
   `src/AGENTS.md` "Key file envelope" for why) carrying a PKCS8 DER Ed25519 private key,
   optionally encrypted with scrypt (N=2^17, r=8, p=1, 256 MiB) + AES-256-GCM. Root keys require
-  a passphrase; admin keys may opt out with `--no-passphrase`.
-- **File permissions**: every file under `~/.azoa/` is written then locked to the current user
-  only — `chmod 0600` on POSIX, `icacls ... /inheritance:r /grant:r "<user>:F"` (verified by
-  re-reading the ACL) on Windows. A warning is printed if `~/.azoa/keys` resolves under a
-  OneDrive-synced path.
+  a passphrase (min 12 chars, confirmed); admin keys may opt out with `--no-passphrase`.
+  `AZOA_KEY_PASSPHRASE` is the only non-interactive way to supply one — never a CLI argument,
+  where it would land in shell history and process listings.
+- **No overwrite without saying so**: `keygen`/`keys add`/`enroll` all refuse to clobber an
+  existing key file unless `--force`; `--force` on an existing **root** key additionally requires
+  typing the key's name back to confirm (`src/commands/keyGuards.ts`). Every name that becomes a
+  path component — key names, profile names — is restricted to `^[A-Za-z0-9_-]{1,64}$`
+  (`src/validation.ts`), so neither a typo nor a hostile value can escape `~/.azoa/`.
+- **File permissions, written correctly the first time**: every file under `~/.azoa/` is written
+  to a sibling temp file at `{ mode: 0o600, flag: "wx" }` and renamed into place — never a
+  default-mode write followed by a later `chmod`, which would leave a brief window where the data
+  is readable by more than the owner (POSIX). `~/.azoa` subdirectories are created at `0o700`. On
+  Windows, `icacls ... /inheritance:r /grant:r "<user>:F"` is followed by actually parsing the
+  re-read ACL (`src/storage/permissions.ts`'s `parseIcaclsAces`/`verifyAcl`, table-tested against
+  real `icacls` output) to confirm exactly one non-inherited Full Control entry for the current
+  user — not a substring check against the raw `icacls` text, which would also match the file's
+  own path if it happened to contain the username. A warning is printed if `~/.azoa/keys`
+  resolves under a OneDrive-synced path.
 - **Audience pinning (H1)**: the CLI refuses to sign anything if the server's challenge
-  `audience` does not exactly match the profile's configured `--node` origin. This is the one
-  check standing between a real login and a MITM/relay replaying a challenge from a different
-  node.
-- **Canonical signing (H2)**: every signed message is the server's own returned strings,
-  joined verbatim — the CLI never re-serializes a timestamp or id itself. See
-  `src/crypto/canonical.ts`.
+  `audience` does not exactly match the profile's configured node origin. This is the one check
+  standing between a real login and a MITM/relay replaying a challenge from a different node —
+  and it only holds because that origin is **never overridable per-invocation**: there is no
+  global `--node` flag (removed; see `src/context.ts`), so the value being compared against is
+  always exactly what `profile add`/`enroll` pinned in `~/.azoa/config.json`. The HTTP client
+  (`src/http/client.ts`) also asserts the resolved request origin matches its configured origin
+  immediately before attaching the bearer, as a second, independent backstop.
+- **Opaque challenge ids**: the server's `challengeId` is a ~300-character opaque string (a
+  stateless HMAC-authenticated payload, not a GUID) and is itself part of the signed message. The
+  CLI never parses, validates the shape of, or length-limits it — it is signed byte-for-byte like
+  every other server-returned string (H2, `src/crypto/canonical.ts`).
 - **Step-up**: every mutating command that sits behind a `*Recent` (step-up) policy — `keys
   add/revoke`, `admins create/suspend/reactivate/revoke/activate/roles/revoke-sessions`, `roles
   create/update/delete`, `mfa reset`, `root revoke-sessions`, and the generic `api` passthrough —
   goes through one seam (`src/mutate.ts`'s `mutateWithStepUpRetry`): try the call, and on
   `STEP_UP_REQUIRED` transparently re-run the stored profile's login flow once and retry the
-  original request exactly once. Implemented once, not per command, so there's one place to audit.
-- **Audit pins**: `audit verify` recomputes the hash chain locally from `~/.azoa/audit-pins/<profile>.json`
-  and alerts (exit code 6) on any tampered row or a head that regressed behind what was
-  previously pinned — see `src/audit/chain.ts`.
-- **Opaque challenge ids**: the server's `challengeId` is a ~300-character opaque string (a
-  stateless HMAC-authenticated payload, not a GUID) and is itself part of the signed message. The
-  CLI never parses, validates the shape of, or length-limits it — it is signed byte-for-byte like
-  every other server-returned string (H2).
+  original request exactly once. Implemented once, not per command, so there's one place to
+  audit; the transparent re-login's own status line goes to **stderr**, never stdout, so a
+  `--json` caller's stdout still contains exactly one JSON object.
+- **Audit pins**: `audit verify` recomputes the hash chain locally from `~/.azoa/audit-pins/<profile>.json`,
+  cross-checks that recompute against the server's own `/audit/verify`, and alerts (exit code 6)
+  on: a tampered row, a head that regressed behind what was previously pinned, a server head that
+  reports a different hash at the already-pinned seq, or a disagreement between the local
+  recompute and the server's verify — see `src/audit/chain.ts` and `src/commands/audit.ts`. Page
+  fetching refuses to loop if a page ever fails to advance the cursor.
 - **Root sessions can only be ended by root**: `root revoke-sessions` fails locally (exit 4,
   before any network call) if the active profile isn't `kind: root`; the server refuses it too,
   even for an admin holding every permission. To cut root off without a live root session,
   rotate `NodeAdmin__RootKeyRevision`/root keys via `root env --railway --remove <fp>` instead.
   The same rule applies to `sessions revoke` of a `root:*` session's handle.
+- **A wrong key passphrase** fails with `AUTH_FAILED` / exit 3 ("wrong passphrase or corrupted
+  key file"), not a bare AES-GCM auth-tag error collapsed into exit 5.
+- **Un-enveloped 4xx responses** (e.g. the ASP.NET Core JWT bearer middleware's own empty-body
+  401/403 for a revoked/malformed token, emitted before any controller or AZOAResult envelope
+  exists) still map to the right exit-code family — 401→3, 403→4, 404/409→2, 423/429→3/5 with a
+  retry time — rather than collapsing into a generic NETWORK(5) just because there was no `code`
+  to read.
 - `azoa-node` never reads or prints `.env` values, and never forwards its bearer token to any
   origin other than the profile's configured node.
 
@@ -110,26 +136,27 @@ node dist/cli.js admins list --json
 
 | Command | Notes |
 |---|---|
-| `keygen --name <n> [--kind root\|admin] [--no-passphrase]` | Root keys always require a passphrase. |
-| `root env [--profile-keys ...] [--add-public-key ...] [--remove <key>] [--current ...] [--current-revision n] [--railway --project --environment --service --yes]` | Renders `NodeAdmin__RootPublicKeys`/`NodeAdmin__RootKeyRevision`. See CONTRACT ASSUMPTIONS below. |
-| `profile add <name> --origin <origin> --kind root\|admin --key-name <n> [--use]` / `profile list` / `profile use <name>` | Local-only, never touches the network. `--origin` (not `--node`) to avoid colliding with the global `--node` override flag. |
+| `keygen --name <n> [--kind root\|admin] [--no-passphrase] [--force]` | Root keys always require a passphrase. `--force` to overwrite an existing key of the same name; overwriting a root key additionally requires typing its name to confirm. |
+| `root env [--profile-keys ...] [--add-public-key ...] [--remove <key>] [--current ...] [--current-revision n] [--railway --project --environment --service --yes]` | Renders `NodeAdmin__RootPublicKeys`/`NodeAdmin__RootKeyRevision`. `--current-revision 0` is the valid bootstrap state (nothing deployed yet) — the rendered revision is clamped to ≥ 1 whenever the key list being rendered is non-empty. See CONTRACT ASSUMPTIONS below. |
+| `profile add <name> --origin <origin> --kind root\|admin --key-name <n> [--use]` / `profile list` / `profile use <name>` | Local-only, never touches the network. Named `--origin`, not `--node` — see CONTRACT ASSUMPTIONS below. |
 | `login [--root] [--totp <code>]` | Challenge → canonical-sign → session. Prompts for a key passphrase and/or TOTP as needed. |
 | `logout` | Revokes the server-side session, then deletes the local session file regardless of network outcome. |
 | `whoami` | `GET /me`. |
 | `sessions list [--admin <id>]` / `sessions revoke <handle>` | `--admin` filters by the full `principal` (`admin:<id>`/`root:<fp>`); a bare id is auto-prefixed with `admin:`. Sessions are identified by an opaque `handle` — the real sid never leaves the access token (lane A1 M-1). Revoking a `root:*` session's handle requires a root caller. |
 | `admins list\|show\|create\|suspend\|reactivate\|revoke\|activate\|revoke-sessions` | `create` prints a one-time enrollment token; `activate <id> --fingerprint <fp>` completes the H3 state machine. |
 | `admins roles <id> --set <roleIds>` | `PUT /admins/{id}/roles` returns the same reenrollment shape as `mfa reset`: changing a still-*pending* admin's roles resets them to `pending_enrollment` (keys/TOTP invalidated); prints a fresh enrollment token when present (caller was root), otherwise warns that only root can issue one. |
-| `keys add [--admin-id <id>] --key-name <n> [--label <l>] [--no-passphrase]` / `keys revoke <adminId> <fingerprint>` | Step-up gated (auto re-login-and-retry, see below); the proof is always signed by the *new* key. |
+| `keys add [--admin-id <id>] --key-name <n> [--label <l>] [--no-passphrase] [--force]` / `keys revoke <adminId> <fingerprint>` | Step-up gated (auto re-login-and-retry, see below); the proof is always signed by the *new* key. The key file is written to disk BEFORE the server call that depends on it existing, and deleted again if that call fails. |
 | `mfa reset <adminId>` | Revokes the admin's keys/sessions and returns them to `pending_enrollment`. Returns a new enrollment token (shown once) **only when the caller is root** — a peer owner gets confirmation the reset happened, no token. |
-| `enroll --origin <origin> [--profile-name <n>] [--key-name <n>] [--label <l>] [--no-passphrase] [--force]` | Reads the enrollment token from stdin or a hidden prompt — **never** a CLI argument. `--origin`/`--profile-name` (not `--node`/`--profile`) to avoid colliding with the global flags of the same purpose-adjacent name. Aborts (exit 3) if `/enroll/start`'s returned `audience`/`fingerprint` disagree with `--origin`/the local key — the same MITM-shaped check as login's H1. |
+| `enroll --origin <origin> [--profile-name <n>] [--key-name <n>] [--label <l>] [--no-passphrase] [--force]` | Reads the enrollment token from stdin or a hidden prompt — **never** a CLI argument; the token read and every later prompt (passphrase, confirm, TOTP) share one FIFO line queue over real stdin, so a script piping all of them in order works correctly. Named `--origin`/`--profile-name` — see CONTRACT ASSUMPTIONS below. Aborts (exit 3) if `/enroll/start`'s returned `audience`/`fingerprint` disagree with `--origin`/the local key — the same MITM-shaped check as login's H1. The key file is written to disk BEFORE `/enroll/complete`, and deleted again if that call fails. |
 | `roles list\|create` / `roles update <id> --name <n> --permissions <p>` / `roles delete <id>` | `update` is a full replace (`PUT /roles/{id}` takes the same `{name, permissions}` body as `create`) — `--name` is required, not optional, and can rename the role. |
 | `root revoke-sessions [--yes]` | `POST /root/revoke-sessions`, **root-only** — fails locally (exit 4) if the active profile isn't `kind: root`, before any network call. Destructive (ends every root session, including the caller's); prompts for `yes` confirmation unless `--yes`. |
 | `audit tail [--after <seq>] [--limit <n>]` | `--follow` is accepted but errors — cut per plan.md §8. |
 | `audit verify [--full] [--from-seq <n>]` | Recomputes and pins the chain locally, then cross-checks the server's own `GET /audit/verify?fromSeq=&full=`; non-zero exit (6) on any integrity alert. Defaults `fromSeq` to the local pin (incremental); `--full` ignores the pin and re-verifies from genesis, which the server may answer with `RATE_LIMITED` (429, exit 5). |
 | `api <METHOD> <path> [--data <json>\|@file]` | `path` must start with `/api/`; absolute/protocol-relative URLs are rejected before any network call. |
 
-Global flags on every command: `--profile <name>`, `--json`, `--node <origin>` (override the
-profile's configured node for one invocation).
+Global flags on every command: `--profile <name>`, `--json`. There is no global `--node`
+override — see CONTRACT ASSUMPTIONS below for why, and `profile add --origin`/`enroll --origin`
+for the only ways a node origin is ever set.
 
 ## Exit codes
 
@@ -152,7 +179,13 @@ All routes, body field names and response shapes below were cross-checked agains
 `Services/NodeAdmin/AGENTS.md` §contract-deviations in lane A1 (branch `feat/node-admin-a1`,
 through commit `a90f6ab6`) — not guessed. Every `*Recent` (step-up) mutating command auto-retries
 on `STEP_UP_REQUIRED` via the single `mutateWithStepUpRetry` seam (`src/mutate.ts`); this closed
-an earlier-noted gap where only `keys add`/`api` did.
+an earlier-noted gap where only `keys add`/`api` did. Three more bugs — a non-TTY stdin reader
+that starved every prompt after the first in a multi-prompt command, un-enveloped 4xx responses
+collapsing to exit 5, and `root env`'s bootstrap `--current-revision 0` being rejected/silently
+losing the revision line — were found and fixed by an independent live drive against the real
+backend (`conductor/tracks/node-admin-rbac-cli_20261018/join-report.md` on the join branch) and
+folded in here, each with new coverage (`test/cliProcess.test.ts`, `test/httpClient.test.ts`,
+`test/rootEnv.test.ts`).
 
 1. **Key file format** is a small JSON envelope, not literal PKCS8 PEM (plan.md §5 says "PEM").
    The binding CLI security amendments (scrypt N=2^17 r=8 p=1 256 MiB + AES-256-GCM) don't
@@ -174,15 +207,21 @@ an earlier-noted gap where only `keys add`/`api` did.
    process is spawned — see `src/commands/rootEnv.ts` and `test/rootEnv.test.ts`.
 3. **`enroll`'s `--origin` is mandatory** and supplies the audience pin, since there is no local
    profile yet at enrollment time (the admin is enrolling fresh, from their own machine). It
-   (and `profile add --origin`) is named `--origin` rather than `--node` specifically because
-   Commander resolves a subcommand option with the same flag name as a parent/global option
-   against the parent's definition — passing `--node` to `profile add` or `enroll` left the
-   subcommand's own `requiredOption` looking unset even though a value was given. Verified via
-   a minimal Commander repro during implementation; `--profile-name` on `enroll` exists for the
-   same reason, distinct from the global `--profile`.
-4. **`keys add`'s target admin** defaults to the logged-in admin (self); the C1 "dominance"
+   (and `profile add --origin`) is named `--origin` rather than `--node` for two independent
+   reasons: Commander resolves a subcommand option with the same flag name as a parent option
+   against the PARENT's definition (verified via a minimal repro during implementation — a
+   same-named subcommand `requiredOption` looked unset even when a value was given), and — after
+   the H1 fix below — there is no global `--node` at all to collide with anymore anyway.
+   `--profile-name` on `enroll` exists for the analogous reason against the global `--profile`.
+4. **H1 fix removed the global `--node` override entirely** (it previously let an authenticated
+   command be redirected to a different origin while still attaching the real bearer token, and
+   doubled as the audience the H1 check compared itself against — meaning an attacker who
+   controlled the override controlled both sides of that check). `src/context.ts`'s
+   `resolveProfile` now always reads `profile.node` straight from `~/.azoa/config.json`, with no
+   override parameter at all.
+5. **`keys add`'s target admin** defaults to the logged-in admin (self); the C1 "dominance"
    case (root or a node-owner-equivalent adding a key for *another*, e.g. locked-out, admin) is
    wired as an explicit `--admin-id` override — the new keypair is still always generated and
    self-signed on whichever machine runs the command, never derived from an existing key.
-5. **`login --totp <code>`** is an additional non-interactive escape hatch for scripting; H3's
+6. **`login --totp <code>`** is an additional non-interactive escape hatch for scripting; H3's
    "never argv" rule is scoped to the enrollment *token* specifically, not every TOTP code.

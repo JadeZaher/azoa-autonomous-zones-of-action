@@ -39,7 +39,7 @@ export async function writeKeyFile(
   kind: ProfileKind,
   passphrase: string | null,
 ): Promise<void> {
-  mkdirSync(keysDir(), { recursive: true });
+  mkdirSync(keysDir(), { recursive: true, mode: 0o700 });
   const der = exportPkcs8Der(keyPair.privateKey);
   let encryption: EncryptedPayload | null = null;
   let privateKeyField: string;
@@ -95,11 +95,18 @@ export async function readKeyFile(
     if (passphrase === null) {
       throw AzoaCliError.usage("This key is passphrase-protected; a passphrase is required.");
     }
-    der = await decryptWithPassphrase(
-      Buffer.from(file.privateKey, "base64"),
-      passphrase,
-      file.encryption,
-    );
+    try {
+      der = await decryptWithPassphrase(
+        Buffer.from(file.privateKey, "base64"),
+        passphrase,
+        file.encryption,
+      );
+    } catch {
+      // node:crypto's AES-GCM auth-tag check throws a generic Error on any wrong key — map it to
+      // the AUTH exit class (3) with an actionable message instead of a bare crypto error at the
+      // default NETWORK exit class.
+      throw new AzoaCliError(`Wrong passphrase or corrupted key file: ${keyPath(name)}`, 3, "AUTH_FAILED");
+    }
   } else {
     der = Buffer.from(file.privateKey, "base64");
   }

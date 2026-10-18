@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { base32Decode, base32Encode, hotp, totp } from "./fixtures/totp.js";
 
+/**
+ * This validates the TEST FIXTURE's TOTP implementation (`test/fixtures/totp.ts`), not
+ * production code — kept anyway (per coordinator review of 561adf31) because it's checked
+ * against independent, externally-known-correct RFC 6238 vectors, not just internal
+ * self-consistency. That distinction matters: `fakeNodeServer.ts` and every e2e test's code
+ * generation both call this SAME function, so if it were subtly wrong in a way both sides agreed
+ * on, every e2e login/enroll test would still pass while silently proving nothing about real
+ * TOTP compatibility. This file is what actually rules that out.
+ */
 // RFC 6238 Appendix B, SHA1 column (8-digit codes at step=30).
 const RFC6238_SECRET = Buffer.from("12345678901234567890", "ascii");
 const RFC6238_SHA1_VECTORS: Array<[number, string]> = [

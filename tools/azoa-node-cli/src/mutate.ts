@@ -23,7 +23,7 @@ export async function mutateWithStepUpRetry<T>(
     return data;
   } catch (err) {
     if (!(err instanceof StepUpRequiredError)) throw err;
-    await runLogin({ profile: resolved.name, json: false }, input);
+    await runLogin({ profile: resolved.name, json: false, quiet: true }, input);
     const refreshed = resolveProfile(resolved.name);
     const { data } = await httpClientFor(refreshed).call<T>(method, path, body);
     return data;

@@ -55,6 +55,31 @@ export interface AuditVerifyOptions {
   json: boolean;
 }
 
+const MAX_AUDIT_PAGE_SIZE = 500;
+
+/** M2: fetches rows after `afterSeq`, refusing to loop forever on a server that never advances. */
+async function fetchRowsSince(
+  client: { call: <T>(method: string, path: string) => Promise<{ data: T }> },
+  afterSeq: number,
+): Promise<AuditRow[]> {
+  const rows: AuditRow[] = [];
+  let cursor = afterSeq;
+  for (;;) {
+    const { data } = await client.call<AuditPage>("GET", `/api/node-admin/audit?afterSeq=${cursor}&limit=${MAX_AUDIT_PAGE_SIZE}`);
+    if (data.rows.length === 0) break;
+    const lastSeq = data.rows[data.rows.length - 1]!.seq;
+    if (lastSeq <= cursor) {
+      // A well-behaved server always returns rows with seq > afterSeq; a page that doesn't
+      // advance the cursor would otherwise spin this loop forever.
+      throw AzoaCliError.network(`Audit page did not advance past seq ${cursor} — refusing to loop.`);
+    }
+    rows.push(...data.rows);
+    cursor = lastSeq;
+    if (data.rows.length < MAX_AUDIT_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
 /**
  * Recomputes the full chain locally from the last pin (plan.md §8 H5) and
  * cross-checks both the recompute and the server's own `/audit/verify`
@@ -67,15 +92,7 @@ export async function runAuditVerify(options: AuditVerifyOptions): Promise<void>
   const client = httpClientFor(resolved);
   const pin = loadAuditPin(resolved.name);
 
-  const rows: AuditRow[] = [];
-  let afterSeq = pin?.seq ?? 0;
-  for (;;) {
-    const { data } = await client.call<AuditPage>("GET", `/api/node-admin/audit?afterSeq=${afterSeq}&limit=500`);
-    if (data.rows.length === 0) break;
-    rows.push(...data.rows);
-    afterSeq = data.rows[data.rows.length - 1]!.seq;
-    if (data.rows.length < 500) break;
-  }
+  const rows = await fetchRowsSince(client, pin?.seq ?? 0);
 
   const local = verifyChain(rows, pin);
   if (!local.ok) {
@@ -104,6 +121,26 @@ export async function runAuditVerify(options: AuditVerifyOptions): Promise<void>
   }
 
   const serverHead: PinnedState = { seq: serverVerify.verifiedThroughSeq, hash: serverVerify.headHash };
+
+  // M2: the server's own verify endpoint and our independent local recompute must agree on where
+  // the chain actually is — a server that passes its own (possibly compromised) verify check but
+  // disagrees with what we just recomputed from the raw rows is exactly the scenario this guards.
+  if (rows.length > 0 && (local.verifiedThroughSeq !== serverVerify.verifiedThroughSeq || local.headHash !== serverVerify.headHash)) {
+    throw AzoaCliError.auditIntegrity(
+      `AUDIT INTEGRITY ALERT: local recompute (seq ${local.verifiedThroughSeq}, hash ${local.headHash}) disagrees with ` +
+        `the server's /audit/verify (seq ${serverVerify.verifiedThroughSeq}, hash ${serverVerify.headHash}).`,
+    );
+  }
+
+  // M2: the server reporting the SAME seq we already pinned must report the SAME hash for it —
+  // a changed hash at an unchanged seq is tampering that a seq-regression check alone would miss.
+  if (pin && serverHead.seq === pin.seq && serverHead.hash !== pin.hash) {
+    throw AzoaCliError.auditIntegrity(
+      `AUDIT INTEGRITY ALERT: server head at seq ${pin.seq} now has hash '${serverHead.hash}', but the pinned hash ` +
+        `is '${pin.hash}' — this seq's content changed without the chain advancing.`,
+    );
+  }
+
   if (headRegressed(pin, serverHead)) {
     throw AzoaCliError.auditIntegrity(
       `AUDIT INTEGRITY ALERT: audit head regressed — pinned seq ${pin!.seq} but server now reports ${serverHead.seq}.`,

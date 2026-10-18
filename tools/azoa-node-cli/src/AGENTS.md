@@ -38,10 +38,11 @@ keys may opt out only via explicit `--no-passphrase`.
 The CLI never computes TOTP or recency windows itself — those are server-enforced (§3.4, §8 C2).
 The CLI's only responsibility on `STEP_UP_REQUIRED` is: re-run the stored profile's login flow
 once, then retry the original request once. This is implemented exactly once, in
-`mutate.ts`'s `mutateWithStepUpRetry`, and every `*Recent`-gated mutating command goes through it
-— not per-command logic. See `commands/api.ts` for the one caller that needs the raw
-`StepUpRequiredError` directly (it validates the path/method first and wants to report the
-absolute-URL guard before touching the network).
+`mutate.ts`'s `mutateWithStepUpRetry`, and every `*Recent`-gated mutating command — including
+`commands/api.ts`, which used to duplicate this logic inline — goes through it. The re-login
+triggered this way runs `LoginOptions.quiet: true`, which routes its status line to stderr
+instead of stdout, so a `--json` caller's stdout still contains exactly one JSON object (the
+actual command's result).
 
 ## Audit chain recompute (`audit/chain.ts`)
 
@@ -99,3 +100,88 @@ rather than just naming the code.
   "validate it as a UUID" would be caught.
 - **`ADMIN_LOCKED` backoff is exponential**: `formatRetryAfter` in `errors.ts` now renders hours
   (`"1h 30m"`) as well as minutes/seconds, since a repeated lockout can exceed 60 minutes.
+
+## Independent code review batch (H1-H3/M1-M6, commit 561adf31 -> next)
+
+An independent reviewer of `561adf31` found real bugs the e2e-against-a-fake-server suite
+couldn't see because it never exercises a live terminal, a real filesystem race, or a second
+real origin. Load-bearing ones, beyond what's already covered elsewhere in this file:
+
+- **H1**: a global `--node` flag could redirect an *authenticated* command to a different origin
+  while still attaching the real bearer, and simultaneously controlled the audience the H1 check
+  compared itself against. Removed entirely, not patched — `context.ts`'s `resolveProfile` has
+  no override parameter, so there is nothing left to redirect. `http/client.ts` also now asserts
+  origin equality immediately before attaching the bearer as an independent second check.
+- **H2**: the Windows ACL "verify" was `output.includes(username)` against the raw `icacls`
+  text — which also matches the file's own PATH if it happens to contain the username, so it
+  verified nothing. `storage/permissions.ts` now has a pure `parseIcaclsAces`/`verifyAcl` that
+  requires exactly one non-inherited Full Control ACE for an identity resolved via `whoami`/
+  `whoami /user`, table-tested against literal `icacls` output samples (`test/permissions.test.ts`)
+  instead of a live Windows ACL.
+- **H3**: `keygen`/`keys add`/`enroll` now refuse to overwrite an existing key file without
+  `--force` (`commands/keyGuards.ts`), with an extra typed-name confirmation for root keys. Every
+  name that becomes a path segment goes through `validation.ts`'s `assertValidName`.
+- **M1**: `storage/fsutil.ts`'s `writeJsonFileSecure` writes to a sibling temp file at
+  `{ mode: 0o600, flag: "wx" }` and renames atomically, instead of a default-mode write followed
+  by a later `chmod` (a real TOCTOU window on POSIX).
+- **M2**: `audit/chain.ts`'s `verifyChain` now also asserts seq contiguity (`seq === prevSeq+1`),
+  and `commands/audit.ts` cross-checks the local recompute against the server's own
+  `/audit/verify` result, refuses to advance the pin on any disagreement, and requires the
+  server's head to carry the SAME hash at an already-pinned seq (not just a non-regressed seq).
+  The row-paging loop refuses to continue if a page doesn't advance the cursor.
+- **M4**: `keys add` and `enroll` now write the (possibly encrypted) key file to disk BEFORE the
+  network call that depends on it existing, deleting it again if that call fails — so a crash
+  between "server accepted the proof" and "we saved the key" can't lose the only copy of a
+  private key the server now expects to see again.
+- **M5**: `root env`'s railway path sets the revision bump (skip-deploys) before the key-list
+  change that actually deploys, for a removal; it also now refuses a non-integer revision read
+  back from Railway instead of letting `Number(...)`'s `NaN` propagate, and is a true no-op
+  (zero `variable set` calls) when nothing changed.
+- **LOW**: a wrong key passphrase now maps to `AUTH_FAILED`/exit 3 ("wrong passphrase or
+  corrupted key file") instead of a bare AES-GCM auth-tag error at the default exit 5;
+  `io/input.ts`'s hidden-prompt reader restores raw mode on Ctrl-C and processes pasted chunks
+  character-by-character (a paste with its own trailing `\n` used to never match a whole-chunk
+  equality check); `api.ts`'s `--data @file` no longer echoes file contents into a parse error;
+  `api.ts` re-checks the path AFTER `URL` normalization so `/api/../x` can't escape the `/api/`
+  prefix via dot-segments; dead code (`isRecentAuth`, `rootLoginMessage`/`adminLoginMessage`,
+  `createOutputSink`) was deleted.
+
+**Consciously deferred**: `StoredSession.authTime` is still the CLIENT's clock, not a value
+decoded from the server's token (the server doesn't return `auth_time` in the JSON response —
+only as a JWT claim inside `accessToken`, which would need a dedicated no-verify JWT-payload
+decoder to read). Low value given the step-up window is already a forgiving 10 minutes; flagged
+here rather than silently dropped.
+
+## Join-branch fixes folded in (join-report.md, commits ca4d5f97/2df57848/1a117d9a)
+
+A real live drive against the actual backend found and fixed three more bugs no test (not even
+the fake-server e2e suite) could catch, because each needed something the fakes don't have: a
+real non-TTY pipe, a real empty-body 4xx from middleware the fake server doesn't replicate, or
+the real README bootstrap command. Cherry-picked by hand against this round's in-progress edits
+to the same three files (`git cherry-pick` itself refused with a dirty tree; each was re-applied
+manually with the diff as a guide) rather than via a mechanical merge:
+
+- **`io/input.ts`**: `readSecret`/`readPipedStdin` used to slurp the ENTIRE non-TTY stream on
+  their first call, starving every later prompt in the same invocation (`enroll` alone needs 4 in
+  order). Replaced with a hand-rolled FIFO line reader shared by `readSecret`/`readVisible`/
+  `readPipedStdin`. This round's own H2-adjacent `readLineHidden` changes (Ctrl-C raw-mode
+  restore, per-character paste handling) are for the TTY-only path and are untouched by this —
+  the two fixes are orthogonal. Because the FIFO reader now correctly serves sequential piped
+  reads, `io/passphrase.ts`'s `promptNewPassphrase` dropped the `stdinConsumed` pre-check it had
+  grown earlier in this same round: an exhausted pipe now resolves a read with `""` at EOF rather
+  than hanging, which the existing "passphrase cannot be empty" check already turns into a clear,
+  non-hanging error.
+- **`http/client.ts`**: a bare (empty-body) 4xx — the shape the ASP.NET Core JWT bearer
+  middleware itself emits for a rejected token, before any controller or AZOAResult envelope
+  exists — collapsed into `NETWORK`(5) regardless of status. `STATUS_FALLBACK_CODE` now maps
+  401/403/404/409/423/429 to the same code family the envelope path would have used.
+- **`commands/rootEnv.ts`**: the README's own documented bootstrap command,
+  `--current "" --current-revision 0`, was rejected outright (0 looked non-positive) and, even
+  past that, would have rendered `NodeAdmin__RootPublicKeys` with no `NodeAdmin__RootKeyRevision`
+  line at all (nothing bumps `nextRevision` on a pure addition) — which disables root login on
+  boot. `assertValidRevision` now accepts 0 (the legitimate "nothing deployed yet" state), and
+  the render path clamps to `>= 1` whenever the rendered key list is non-empty.
+
+New coverage: `test/cliProcess.test.ts` (spawns the real built CLI with real piped multi-line
+stdin), `test/httpClient.test.ts` (a bare `node:http` server emitting each un-enveloped status),
+`test/rootEnv.test.ts` (the non-railway bootstrap path).

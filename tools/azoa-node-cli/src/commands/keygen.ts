@@ -4,12 +4,16 @@ import { AzoaCliError } from "../errors.js";
 import type { InputSource } from "../io/input.js";
 import { createRealInputSource } from "../io/input.js";
 import { emit } from "../io/output.js";
+import { promptNewPassphrase } from "../io/passphrase.js";
 import type { ProfileKind } from "../storage/config.js";
+import { assertValidName } from "../validation.js";
+import { guardKeyOverwrite } from "./keyGuards.js";
 
 export interface KeygenOptions {
   name: string;
   kind: ProfileKind;
   passphrase: boolean;
+  force: boolean;
   json: boolean;
 }
 
@@ -17,9 +21,12 @@ export async function runKeygen(
   options: KeygenOptions,
   input: InputSource = createRealInputSource(),
 ): Promise<void> {
+  assertValidName(options.name, "--name");
   if (options.kind === "root" && !options.passphrase) {
     throw AzoaCliError.usage("A passphrase is mandatory for root keys (plan.md §8 CLI binding).");
   }
+
+  await guardKeyOverwrite(options.name, options.kind, options.force, input);
 
   const warning = checkKeyFileLocation(options.name);
   if (warning.oneDrive) {
@@ -29,18 +36,7 @@ export async function runKeygen(
     );
   }
 
-  let passphrase: string | null = null;
-  if (options.passphrase) {
-    const first = await input.readSecret("Passphrase: ");
-    const second = await input.readSecret("Confirm passphrase: ");
-    if (first !== second) {
-      throw AzoaCliError.usage("Passphrases did not match.");
-    }
-    if (first.length < 8) {
-      throw AzoaCliError.usage("Passphrase must be at least 8 characters.");
-    }
-    passphrase = first;
-  }
+  const passphrase = options.passphrase ? await promptNewPassphrase(input) : null;
 
   const keyPair = generateEd25519KeyPair();
   await writeKeyFile(options.name, keyPair, options.kind, passphrase);

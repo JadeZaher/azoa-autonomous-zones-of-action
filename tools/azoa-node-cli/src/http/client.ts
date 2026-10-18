@@ -8,6 +8,23 @@ export class StepUpRequiredError extends Error {
   }
 }
 
+/**
+ * Bare-status -> error-code fallback for responses with no parseable AZOAResult body (join-
+ * report.md fix). A revoked/expired/malformed bearer is rejected by the ASP.NET Core JWT bearer
+ * middleware itself, which emits its default challenge with an EMPTY body — before any
+ * controller or AZOAResult envelope exists, for every endpoint, by design. Without this map, any
+ * such response collapsed into NETWORK(5) regardless of status, so e.g. `whoami` after revoking
+ * your own session exited 5 instead of the documented AUTH(3).
+ */
+const STATUS_FALLBACK_CODE: Record<number, string> = {
+  401: "AUTH_FAILED",
+  403: "PERMISSION_DENIED",
+  404: "NOT_FOUND",
+  409: "CONFLICT",
+  423: "ADMIN_LOCKED",
+  429: "RATE_LIMITED",
+};
+
 export interface RawResponse {
   status: number;
   headers: Headers;
@@ -47,7 +64,15 @@ export class AzoaHttpClient {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
     const token = this.bearerProvider?.();
-    if (token && url.origin === this.originUrl.origin) {
+    if (token) {
+      // H1 defense in depth: re-assert the origin equality explicitly at the point the bearer is
+      // attached, rather than relying solely on `resolveUrl`'s earlier throw. `resolveUrl` already
+      // guarantees `url.origin === this.originUrl.origin` by this point (it throws otherwise), so
+      // this can never actually fire today — it exists so a bearer can never leave this origin
+      // even if that guarantee is ever weakened elsewhere.
+      if (url.origin !== this.originUrl.origin) {
+        throw AzoaCliError.usage(`Refusing to attach a bearer token to a cross-origin request: ${url.origin} is not ${this.originUrl.origin}`);
+      }
       headers.authorization = `Bearer ${token}`;
     }
     let response: Response;
@@ -98,6 +123,14 @@ export class AzoaHttpClient {
       );
     }
     if (status >= 400) {
+      // No parseable AZOAResult body to read a `code` from (see STATUS_FALLBACK_CODE's comment) —
+      // map the bare status to the same exit-code family the envelope path would have used
+      // (Services/NodeAdmin/AGENTS.md §contract-deviations #7), rather than collapsing every
+      // un-enveloped error into NETWORK.
+      const fallbackCode = STATUS_FALLBACK_CODE[status];
+      if (fallbackCode) {
+        throw AzoaCliError.fromServerCode(fallbackCode, `HTTP ${status} calling ${method} ${path}`);
+      }
       throw AzoaCliError.network(`HTTP ${status} calling ${method} ${path}`);
     }
     if (!result) {

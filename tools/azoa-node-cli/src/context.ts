@@ -1,5 +1,4 @@
 import { AzoaCliError } from "./errors.js";
-import { getGlobalNodeOverride } from "./globalNodeOverride.js";
 import { AzoaHttpClient } from "./http/client.js";
 import { getProfile, resolveProfileName, type Profile } from "./storage/config.js";
 import { loadSession, type StoredSession } from "./storage/session.js";
@@ -10,12 +9,19 @@ export interface ResolvedProfile {
   session: StoredSession | null;
 }
 
-export function resolveProfile(explicitName: string | undefined, nodeOverride?: string): ResolvedProfile {
+/**
+ * H1 security fix: a profile's `node` origin is never overridable per-invocation once it has a
+ * session. An earlier `--node` global flag let an authenticated command be redirected to an
+ * attacker-controlled origin while still attaching the real bearer token (and defeated the H1
+ * audience pin on login, since the override controlled both sides of that comparison). There is
+ * no override mechanism anymore — `profile.node` is always exactly what `profile add`/`enroll`
+ * pinned, read straight from `~/.azoa/config.json`.
+ */
+export function resolveProfile(explicitName: string | undefined): ResolvedProfile {
   const name = resolveProfileName(explicitName);
   const profile = getProfile(name);
   const session = loadSession(name);
-  const effectiveOverride = nodeOverride ?? getGlobalNodeOverride();
-  return { name, profile: effectiveOverride ? { ...profile, node: effectiveOverride } : profile, session };
+  return { name, profile, session };
 }
 
 export function requireSession(resolved: ResolvedProfile): StoredSession {

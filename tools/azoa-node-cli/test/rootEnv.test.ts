@@ -74,7 +74,7 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
     expect(calls.length).toBe(0);
   });
 
-  it("produces the exact argv arrays for a valid removal — list, then --skip-deploys on the key-list set, no --skip-deploys on the final (revision) set", () => {
+  it("produces the exact argv arrays for a valid removal — list, then --skip-deploys on the REVISION set, then the deploying key-list set (M5: revision lands before the deploy that carries the new key list)", () => {
     const { spawn, calls } = buildFakeSpawn({
       NodeAdmin__RootPublicKeys: `${KEY_A},${KEY_B}`,
       NodeAdmin__RootKeyRevision: "3",
@@ -106,7 +106,7 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
       args: [
         "variable",
         "set",
-        "NodeAdmin__RootPublicKeys",
+        "NodeAdmin__RootKeyRevision",
         "--stdin",
         "--project",
         "proj1",
@@ -116,7 +116,7 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
         "svc1",
         "--skip-deploys",
       ],
-      input: KEY_B, // KEY_A was removed; the value goes over stdin, never argv
+      input: "4",
     });
 
     expect(calls[2]).toEqual({
@@ -124,7 +124,7 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
       args: [
         "variable",
         "set",
-        "NodeAdmin__RootKeyRevision",
+        "NodeAdmin__RootPublicKeys",
         "--stdin",
         "--project",
         "proj1",
@@ -133,7 +133,7 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
         "--service",
         "svc1",
       ],
-      input: "4",
+      input: KEY_B, // KEY_A was removed; the value goes over stdin, never argv — and this is the one call that deploys
     });
 
     // No call ever carries a `shell` key at all — the fake spawn's own type signature has none,
@@ -141,6 +141,53 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
     for (const call of calls) {
       expect(call).not.toHaveProperty("shell");
     }
+  });
+
+  it("makes zero set calls when nothing changed (no addition, no removal, no revision change)", () => {
+    const { spawn, calls } = buildFakeSpawn({
+      NodeAdmin__RootPublicKeys: `${KEY_A},${KEY_B}`,
+      NodeAdmin__RootKeyRevision: "3",
+    });
+
+    runRootEnv(
+      { railway: true, project: "proj1", environment: "env1", service: "svc1", yes: true, json: false },
+      createRealRailwayAdapter(spawn, () => FAKE_EXECUTABLE),
+    );
+
+    expect(calls).toHaveLength(1); // only the `variable list` read — no `variable set` at all
+    expect(calls[0]!.args[1]).toBe("list");
+  });
+
+  it("makes zero set calls without --yes, even when there IS a real change to apply", () => {
+    const { spawn, calls } = buildFakeSpawn({ NodeAdmin__RootPublicKeys: KEY_A, NodeAdmin__RootKeyRevision: "1" });
+
+    runRootEnv(
+      {
+        railway: true,
+        project: "proj1",
+        environment: "env1",
+        service: "svc1",
+        addPublicKey: [KEY_B],
+        yes: false,
+        json: false,
+      },
+      createRealRailwayAdapter(spawn, () => FAKE_EXECUTABLE),
+    );
+
+    expect(calls).toHaveLength(1); // the `variable list` read only
+    expect(calls.some((c) => c.args[1] === "set")).toBe(false);
+  });
+
+  it("refuses a non-integer NodeAdmin__RootKeyRevision read back from Railway instead of propagating NaN", () => {
+    const { spawn, calls } = buildFakeSpawn({ NodeAdmin__RootPublicKeys: KEY_A, NodeAdmin__RootKeyRevision: "not-a-number" });
+
+    expect(() =>
+      runRootEnv(
+        { railway: true, project: "proj1", environment: "env1", service: "svc1", addPublicKey: [KEY_B], yes: true, json: false },
+        createRealRailwayAdapter(spawn, () => FAKE_EXECUTABLE),
+      ),
+    ).toThrow(/invalid NodeAdmin__RootKeyRevision/i);
+    expect(calls.some((c) => c.args[1] === "set")).toBe(false);
   });
 
   it("fails cleanly (and still prints the computed lines) when the railway binary cannot be resolved", () => {
@@ -152,6 +199,56 @@ describe("root env --railway: no shell, strict validation before any spawn", () 
       ),
     ).toThrow(/Could not find the Railway CLI/);
     expect(calls.length).toBe(0);
+  });
+});
+
+describe("root env: non-railway bootstrap (join-report.md fix: revision 0 -> 1, not rejected or silently dropped)", () => {
+  it("accepts --current-revision 0 (the README's own documented bootstrap command) instead of rejecting it as non-positive", () => {
+    expect(() =>
+      runRootEnv({ current: "", currentRevision: 0, addPublicKey: [KEY_A], json: false }),
+    ).not.toThrow();
+  });
+
+  it("renders NodeAdmin__RootKeyRevision=1 when bootstrapping from zero keys to one, not a missing revision line", () => {
+    let printed: { lines: string[] } | undefined;
+    const originalLog = console.log;
+    console.log = (msg: string) => {
+      try {
+        printed = JSON.parse(msg);
+      } catch {
+        /* human-readable line; ignore */
+      }
+    };
+    try {
+      runRootEnv({ current: "", currentRevision: 0, addPublicKey: [KEY_A], json: true });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(printed?.lines).toEqual([`NodeAdmin__RootPublicKeys=${KEY_A}`, "NodeAdmin__RootKeyRevision=1"]);
+  });
+
+  it("still renders no revision line when nothing is being bootstrapped (zero keys stays zero keys)", () => {
+    let printed: { lines: string[] } | undefined;
+    const originalLog = console.log;
+    console.log = (msg: string) => {
+      try {
+        printed = JSON.parse(msg);
+      } catch {
+        /* ignore */
+      }
+    };
+    try {
+      runRootEnv({ current: "", currentRevision: 0, json: true });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(printed?.lines).toEqual(["NodeAdmin__RootPublicKeys="]);
+  });
+
+  it("rejects a genuinely negative --current-revision (only 0 is special-cased as the bootstrap state)", () => {
+    expect(() => runRootEnv({ current: "", currentRevision: -1, addPublicKey: [KEY_A], json: false })).toThrow(
+      /non-negative integer/,
+    );
   });
 });
 

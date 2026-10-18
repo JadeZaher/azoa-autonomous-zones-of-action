@@ -1,33 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { AzoaCliError, EXIT_CODES } from "../src/errors.js";
 
-/** plan.md §8 error-code catalog -> task spec's exit-code classes, table-driven. */
-const CASES: Array<[string, number]> = [
+/**
+ * plan.md §8 error-code catalog -> task spec's exit-code classes. Trimmed per coordinator
+ * review (561adf31): one representative per exit class, not the whole ~17-entry table — each
+ * additional code only re-proves the same `CODE_TO_EXIT[code] ?? NETWORK` lookup, which the
+ * fallback test below already covers structurally.
+ */
+const REPRESENTATIVE_CASES: Array<[string, number]> = [
   ["AUTH_FAILED", EXIT_CODES.AUTH],
-  ["STEP_UP_REQUIRED", EXIT_CODES.AUTH],
   ["PERMISSION_DENIED", EXIT_CODES.PERMISSION],
-  ["DOMINANCE_REQUIRED", EXIT_CODES.PERMISSION],
-  ["ESCALATION_REFUSED", EXIT_CODES.PERMISSION],
-  ["LAST_OWNER", EXIT_CODES.PERMISSION],
-  ["SELF_ACTION_REFUSED", EXIT_CODES.PERMISSION],
-  ["ENROLLMENT_ALREADY_STARTED", EXIT_CODES.USAGE],
-  ["ENROLLMENT_INVALID", EXIT_CODES.AUTH],
-  ["FINGERPRINT_MISMATCH", EXIT_CODES.AUTH],
-  ["ADMIN_LOCKED", EXIT_CODES.AUTH],
-  ["USERNAME_TAKEN", EXIT_CODES.USAGE],
-  ["ROLE_IN_USE", EXIT_CODES.USAGE],
-  ["ROLE_BUILT_IN", EXIT_CODES.USAGE],
-  ["UNKNOWN_PERMISSION", EXIT_CODES.USAGE],
   ["VALIDATION_FAILED", EXIT_CODES.USAGE],
   ["AUDIT_UNAVAILABLE", EXIT_CODES.NETWORK],
+  ["NOT_FOUND", EXIT_CODES.USAGE], // confirmed against the real backend's StatusFor switch, not guessed
+  ["RATE_LIMITED", EXIT_CODES.NETWORK], // newest code (lane A1 08384168) — proves it was wired in, not just assumed
 ];
 
 describe("server error code -> CLI exit code mapping", () => {
-  it.each(CASES)("%s -> exit %i", (code, expectedExit) => {
+  it.each(REPRESENTATIVE_CASES)("%s -> exit %i", (code, expectedExit) => {
     const err = AzoaCliError.fromServerCode(code, "server message");
     expect(err.exitCode).toBe(expectedExit);
     expect(err.code).toBe(code);
     expect(err.message).toContain("server message");
+  });
+
+  it("formats ADMIN_LOCKED's retryAfterSeconds into the message instead of just naming the code", () => {
+    const err = AzoaCliError.fromServerCode("ADMIN_LOCKED", "locked", 5400); // 1h30m — exercises the hours branch
+    expect(err.exitCode).toBe(EXIT_CODES.AUTH);
+    expect(err.message).toMatch(/1h 30m/);
   });
 
   it("falls back to the network exit class for an unrecognized server code", () => {
@@ -35,7 +35,7 @@ describe("server error code -> CLI exit code mapping", () => {
     expect(err.exitCode).toBe(EXIT_CODES.NETWORK);
   });
 
-  it("usage/network/audit-integrity helpers set the documented exit classes", () => {
+  it("usage/network/auditIntegrity helpers set the documented exit classes", () => {
     expect(AzoaCliError.usage("x").exitCode).toBe(EXIT_CODES.USAGE);
     expect(AzoaCliError.network("x").exitCode).toBe(EXIT_CODES.NETWORK);
     expect(AzoaCliError.auditIntegrity("x").exitCode).toBe(EXIT_CODES.AUDIT_INTEGRITY);

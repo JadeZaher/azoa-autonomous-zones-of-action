@@ -1,6 +1,7 @@
 import { AzoaCliError } from "../errors.js";
 import { emit } from "../io/output.js";
 import { loadConfig, upsertProfile, type ProfileKind } from "../storage/config.js";
+import { assertValidName } from "../validation.js";
 
 export interface ProfileAddOptions {
   name: string;
@@ -14,8 +15,10 @@ export interface ProfileAddOptions {
 }
 
 export function runProfileAdd(options: ProfileAddOptions): void {
+  assertValidName(options.name, "profile name");
+  assertValidName(options.keyName, "--key-name");
   if (!/^https?:\/\//i.test(options.node)) {
-    throw AzoaCliError.usage(`--node must be a full origin (https://host[:port]), got '${options.node}'.`);
+    throw AzoaCliError.usage(`--origin must be a full origin (https://host[:port]), got '${options.node}'.`);
   }
   upsertProfile(
     options.name,

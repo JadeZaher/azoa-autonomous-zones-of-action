@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,11 +6,13 @@ import { runAdminsActivate, runAdminsCreate } from "../src/commands/admins.js";
 import { runApi } from "../src/commands/api.js";
 import { runAuditVerify } from "../src/commands/audit.js";
 import { runEnroll } from "../src/commands/enroll.js";
+import { runKeysAdd } from "../src/commands/keysCmd.js";
 import { runKeygen } from "../src/commands/keygen.js";
 import { runLogin } from "../src/commands/login.js";
 import { runRootRevokeSessions } from "../src/commands/rootRevokeSessions.js";
 import { AzoaCliError } from "../src/errors.js";
 import { readKeyFileMeta } from "../src/storage/keyFile.js";
+import { keyPath } from "../src/storage/paths.js";
 import { upsertProfile } from "../src/storage/config.js";
 import { FakeInputSource } from "./fixtures/fakeInput.js";
 import { FakeNodeServer } from "./fixtures/fakeNodeServer.js";
@@ -36,7 +38,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
   });
 
   it("root login: keygen -> profile -> challenge/sign/session round trip", async () => {
-    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "root1", kind: "root", passphrase: true, json: false }, input);
     const meta = readKeyFileMeta("root1");
     server.rootPublicKeys.add(meta.publicKey);
@@ -61,7 +63,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
 
   it("aborts before signing when the challenge audience does not match the pinned profile node (H1)", async () => {
     server.audience = "https://not-the-real-node.example.test"; // server is reachable at `origin`, but claims a different audience
-    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1"] });
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "root2", kind: "root", passphrase: true, json: false }, input);
     const meta = readKeyFileMeta("root2");
     server.rootPublicKeys.add(meta.publicKey);
@@ -75,7 +77,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
   });
 
   it("enroll: aborts before /enroll/complete when /enroll/start's audience disagrees with --origin (H1-style)", async () => {
-    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "rootE1", kind: "root", passphrase: true, json: false }, rootInput);
     const rootMeta = readKeyFileMeta("rootE1");
     server.rootPublicKeys.add(rootMeta.publicKey);
@@ -101,7 +103,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
   });
 
   it("enroll: aborts before /enroll/complete when /enroll/start's returned fingerprint disagrees with the local key", async () => {
-    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "rootE2", kind: "root", passphrase: true, json: false }, rootInput);
     const rootMeta = readKeyFileMeta("rootE2");
     server.rootPublicKeys.add(rootMeta.publicKey);
@@ -126,7 +128,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
   });
 
   it("ADMIN_LOCKED after 5 consecutive bad TOTP attempts: CLI surfaces the retry time, exit class AUTH", async () => {
-    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "rootL1", kind: "root", passphrase: true, json: false }, rootInput);
     const rootMeta = readKeyFileMeta("rootL1");
     server.rootPublicKeys.add(rootMeta.publicKey);
@@ -170,7 +172,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
 
   it("full admin lifecycle: create -> enroll (stdin token) -> activate -> login with TOTP", async () => {
     // Root bootstraps and creates the admin (2 secrets for keygen's passphrase+confirm, 1 for login).
-    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "root3", kind: "root", passphrase: true, json: false }, rootInput);
     const rootMeta = readKeyFileMeta("root3");
     server.rootPublicKeys.add(rootMeta.publicKey);
@@ -219,7 +221,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     server.recentWindowMs = 1000; // force staleness quickly without a real 10-minute wait
     // 2 for keygen (passphrase + confirm), then one passphrase prompt per login: the explicit
     // login below, and the transparent re-login `runApi` triggers on STEP_UP_REQUIRED.
-    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1", "rootpass1"] });
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "root4", kind: "root", passphrase: true, json: false }, input);
     const meta = readKeyFileMeta("root4");
     server.rootPublicKeys.add(meta.publicKey);
@@ -253,7 +255,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
 
   it("root revoke-sessions: succeeds for root, exercising the generic step-up retry on a non-keys/api command", async () => {
     server.recentWindowMs = 1000;
-    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1", "rootpass1"] });
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "root6", kind: "root", passphrase: true, json: false }, input);
     const meta = readKeyFileMeta("root6");
     server.rootPublicKeys.add(meta.publicKey);
@@ -269,7 +271,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
   });
 
   it("audit verify --full surfaces RATE_LIMITED (429) as exit 5 with a retry hint", async () => {
-    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "root7", kind: "root", passphrase: true, json: false }, input);
     const meta = readKeyFileMeta("root7");
     server.rootPublicKeys.add(meta.publicKey);
@@ -297,5 +299,82 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     // Protocol-relative ("//host/...") does start with neither a scheme nor literally "/api/" either, so it is caught the same way.
     await expect(runApi("GET", "//evil.example.test/api/node-admin/me", { profile: "rootp5", json: false })).rejects.toThrow(/must start with '\/api\/'/);
     expect(server.requestLog.length).toBe(0);
+  });
+
+  it("`api` rejects a dot-segment path that resolves outside /api/ even though the raw string starts with /api/", async () => {
+    upsertProfile("rootp5b", { node: origin, keyName: "root5b", kind: "root" }, true);
+    await expect(runApi("GET", "/api/../secret", { profile: "rootp5b", json: false })).rejects.toThrow(/resolves to/);
+    expect(server.requestLog.length).toBe(0);
+  });
+
+  it("enroll (M4): deletes the just-written key file when /enroll/complete fails", async () => {
+    const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
+    await runKeygen({ name: "rootM4a", kind: "root", passphrase: true, json: false }, rootInput);
+    const rootMeta = readKeyFileMeta("rootM4a");
+    server.rootPublicKeys.add(rootMeta.publicKey);
+    upsertProfile("rootpM4a", { node: origin, keyName: "rootM4a", kind: "root" }, true);
+    await runLogin({ profile: "rootpM4a", root: true, json: false }, rootInput);
+    const created = await runAdminsCreate(
+      { username: "erin", displayName: "Erin", roleIds: ["node-owner"] },
+      { profile: "rootpM4a", json: false },
+    );
+
+    // Deliberately wrong TOTP so /enroll/complete fails with ENROLLMENT_INVALID.
+    const enrollInput = new FakeInputSource({ piped: created.enrollmentToken, visibles: ["000000"] });
+    await expect(
+      runEnroll(
+        { node: origin, profile: "erin", keyName: "erin-key", label: "laptop", passphrase: false, force: false, json: false },
+        enrollInput,
+      ),
+    ).rejects.toThrow(AzoaCliError);
+
+    expect(existsSync(keyPath("erin-key"))).toBe(false); // the key the server never registered is not left on disk
+  });
+
+  it("keys add (M4): deletes the just-written key file when the server call fails", async () => {
+    const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
+    await runKeygen({ name: "rootM4b", kind: "root", passphrase: true, json: false }, rootInput);
+    const rootMeta = readKeyFileMeta("rootM4b");
+    server.rootPublicKeys.add(rootMeta.publicKey);
+    upsertProfile("rootpM4b", { node: origin, keyName: "rootM4b", kind: "root" }, true);
+    await runLogin({ profile: "rootpM4b", root: true, json: false }, rootInput);
+
+    // "nonexistent-admin-id" never exists on the fake server -> NOT_FOUND, deterministically, with
+    // no need to exercise signature/step-up machinery first.
+    await expect(
+      runKeysAdd(
+        { profile: "rootpM4b", targetAdminId: "nonexistent-admin-id", keyName: "orphan-key", label: "cli", passphrase: false, force: false, json: false },
+        rootInput,
+      ),
+    ).rejects.toThrow(AzoaCliError);
+
+    expect(existsSync(keyPath("orphan-key"))).toBe(false);
+  });
+
+  it("audit verify (pin flow, e2e over real HTTP against the fake server): a tampered row is caught, and a broken chain is never pinned", async () => {
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
+    await runKeygen({ name: "rootAudit", kind: "root", passphrase: true, json: false }, input);
+    const meta = readKeyFileMeta("rootAudit");
+    server.rootPublicKeys.add(meta.publicKey);
+    upsertProfile("rootpAudit", { node: origin, keyName: "rootAudit", kind: "root" }, true);
+    await runLogin({ profile: "rootpAudit", root: true, json: false }, input); // produces the audit row we're about to tamper
+
+    // Tamper with a row's detail, without touching its stored hash — exactly the shape the
+    // local recompute (fetched fresh over HTTP, not a pre-built fixture) is meant to catch, and
+    // BEFORE any pin exists — once a row falls behind an established pin, neither side re-walks
+    // it on an incremental verify (the documented H5 "detectable, not impossible" scope).
+    const row = server.auditRows[0]!;
+    const originalDetail = row.detail;
+    row.detail = '{"tampered":true}';
+
+    await expect(runAuditVerify({ profile: "rootpAudit", json: false })).rejects.toThrow(/AUDIT INTEGRITY ALERT/);
+
+    // The broken chain must never get pinned — restore the original detail (the stored hash was
+    // always computed over IT, not over the tamper) and confirm verify now succeeds, having
+    // walked from genesis since no pin was written by the failed attempt above.
+    row.detail = originalDetail;
+    await runAuditVerify({ profile: "rootpAudit", json: false });
+    const { loadAuditPin } = await import("../src/storage/auditPin.js");
+    expect(loadAuditPin("rootpAudit")).toEqual({ seq: row.seq, hash: row.hash });
   });
 });

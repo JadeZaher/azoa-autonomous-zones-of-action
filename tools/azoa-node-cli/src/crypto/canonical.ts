@@ -17,26 +17,6 @@ export function signCanonical(privateKey: KeyObject, fields: string[]): string {
   return signMessage(privateKey, buildCanonicalMessage(fields));
 }
 
-export function rootLoginMessage(
-  purpose: "root_login",
-  audience: string,
-  challengeId: string,
-  nonce: string,
-  expiresAt: string,
-): string {
-  return buildCanonicalMessage([purpose, audience, challengeId, nonce, expiresAt]);
-}
-
-export function adminLoginMessage(
-  purpose: "admin_login",
-  audience: string,
-  challengeId: string,
-  nonce: string,
-  expiresAt: string,
-): string {
-  return buildCanonicalMessage([purpose, audience, challengeId, nonce, expiresAt]);
-}
-
 export function enrollMessage(audience: string, enrollmentId: string): string {
   return buildCanonicalMessage(["enroll", audience, enrollmentId]);
 }

@@ -6,10 +6,11 @@ import { AzoaHttpClient } from "../http/client.js";
 import type { InputSource } from "../io/input.js";
 import { createRealInputSource } from "../io/input.js";
 import { emit } from "../io/output.js";
+import { promptNewPassphrase } from "../io/passphrase.js";
 import { upsertProfile } from "../storage/config.js";
-import { keyPath, azoaHome } from "../storage/paths.js";
 import { writeKeyFile } from "../storage/keyFile.js";
-import { existsSync } from "node:fs";
+import { assertValidName } from "../validation.js";
+import { deleteKeyFileQuietly, guardKeyOverwrite } from "./keyGuards.js";
 
 export interface EnrollOptions {
   node: string;
@@ -49,25 +50,22 @@ export async function runEnroll(
   input: InputSource = createRealInputSource(),
 ): Promise<void> {
   if (!/^https?:\/\//i.test(options.node)) {
-    throw AzoaCliError.usage(`--node must be a full origin (https://host[:port]), got '${options.node}'.`);
+    throw AzoaCliError.usage(`--origin must be a full origin (https://host[:port]), got '${options.node}'.`);
   }
-  if (existsSync(keyPath(options.keyName)) && !options.force) {
-    throw AzoaCliError.usage(`Key '${options.keyName}' already exists under ${azoaHome()}/keys. Pass --force to overwrite or choose a different --key-name.`);
-  }
+  assertValidName(options.profile, "--profile-name");
+  assertValidName(options.keyName, "--key-name");
+  await guardKeyOverwrite(options.keyName, "admin", options.force, input);
 
-  // H3: CLI reads the token from a prompt/stdin, never argv.
+  // H3: CLI reads the token from a prompt/stdin, never argv. `readPipedStdin`/`readSecret` share
+  // one FIFO line queue over the real stdin stream (src/io/input.ts), so this token read and the
+  // passphrase prompt right below correctly get separate, in-order lines from the same piped
+  // script instead of the first read draining the whole stream.
   const token = (await input.readPipedStdin()) ?? (await input.readSecret("Enrollment token: "));
   if (!token) {
     throw AzoaCliError.usage("No enrollment token provided.");
   }
 
-  let passphrase: string | null = null;
-  if (options.passphrase) {
-    const first = await input.readSecret("Passphrase for new key: ");
-    const second = await input.readSecret("Confirm passphrase: ");
-    if (first !== second) throw AzoaCliError.usage("Passphrases did not match.");
-    passphrase = first;
-  }
+  const passphrase = options.passphrase ? await promptNewPassphrase(input) : null;
 
   const keyPair = generateEd25519KeyPair();
   const client = new AzoaHttpClient(options.node);
@@ -78,10 +76,9 @@ export async function runEnroll(
     label: options.label,
   });
 
-  // Coordinator-flagged contract deviation (lane A1 f4d5a77e): /enroll/start echoes back the
-  // server's real NodeAdmin__Audience and the fingerprint it derived from our public key. Treat
-  // both like the H1 audience check on login — abort before any further step (QR, prompt,
-  // /enroll/complete) if either disagrees with what we expect.
+  // Lane A1 contract deviation: /enroll/start echoes back the server's real NodeAdmin__Audience
+  // and the fingerprint it derived from our public key. Treat both like the H1 audience check on
+  // login — abort before any further step (QR, prompt, /enroll/complete) if either disagrees.
   if (start.audience !== options.node) {
     throw new AzoaCliError(
       `Audience mismatch: /enroll/start reported audience '${start.audience}' but --origin was ` +
@@ -112,13 +109,24 @@ export async function runEnroll(
   const totp = await input.readVisible("Authenticator code: ");
   const signature = signMessage(keyPair.privateKey, enrollMessage(options.node, start.enrollmentId));
 
-  const { data: complete } = await client.call<EnrollCompleteResponse>("POST", "/api/node-admin/enroll/complete", {
-    enrollmentId: start.enrollmentId,
-    totp,
-    signature,
-  });
-
+  // M4: write the (possibly encrypted) key file BEFORE the call that depends on it existing —
+  // a crash between "server accepted our proof" and "we saved the key" would otherwise lose the
+  // only copy of a private key the server now expects. Delete it again if the call fails, since
+  // an unregistered key file left on disk under this name would only confuse a retry.
   await writeKeyFile(options.keyName, keyPair, "admin", passphrase);
+  let complete: EnrollCompleteResponse;
+  try {
+    const result = await client.call<EnrollCompleteResponse>("POST", "/api/node-admin/enroll/complete", {
+      enrollmentId: start.enrollmentId,
+      totp,
+      signature,
+    });
+    complete = result.data;
+  } catch (err) {
+    deleteKeyFileQuietly(options.keyName);
+    throw err;
+  }
+
   upsertProfile(options.profile, { node: options.node, keyName: options.keyName, kind: "admin" }, true);
 
   emit(

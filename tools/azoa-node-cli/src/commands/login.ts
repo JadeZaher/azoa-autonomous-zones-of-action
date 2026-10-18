@@ -1,6 +1,5 @@
 import { AzoaCliError } from "../errors.js";
 import { signCanonical } from "../crypto/canonical.js";
-import { getGlobalNodeOverride } from "../globalNodeOverride.js";
 import { AzoaHttpClient } from "../http/client.js";
 import type { InputSource } from "../io/input.js";
 import { createRealInputSource } from "../io/input.js";
@@ -14,6 +13,14 @@ export interface LoginOptions {
   root?: boolean;
   totp?: string;
   json: boolean;
+  /**
+   * M6 (--json purity): set by `mutate.ts` when this login is an internal
+   * step-up re-authentication, not the user's own `login` invocation. Status
+   * goes to stderr instead of stdout so a `--json` caller's stdout still
+   * contains exactly one JSON object — the actual command's result, not an
+   * extra blob from the retry machinery.
+   */
+  quiet?: boolean;
 }
 
 interface ChallengeResponse {
@@ -43,9 +50,7 @@ export async function runLogin(
   input: InputSource = createRealInputSource(),
 ): Promise<StoredSession> {
   const name = resolveProfileName(options.profile);
-  const storedProfile = getProfile(name);
-  const nodeOverride = getGlobalNodeOverride();
-  const profile = nodeOverride ? { ...storedProfile, node: nodeOverride } : storedProfile;
+  const profile = getProfile(name);
   if (options.root && profile.kind !== "root") {
     throw AzoaCliError.usage(`Profile '${name}' is kind '${profile.kind}', not root.`);
   }
@@ -107,11 +112,15 @@ export async function runLogin(
   };
   saveSession(name, session);
 
-  emit(
-    options.json,
-    `Logged in as ${session.principal} on profile '${name}' (${session.permissions.length} permissions).`,
-    { profile: name, principal: session.principal, permissions: session.permissions, expiresAt: session.expiresAt },
-  );
+  if (options.quiet) {
+    process.stderr.write(`[azoa-node] Re-authenticated as ${session.principal} on profile '${name}' (step-up).\n`);
+  } else {
+    emit(
+      options.json,
+      `Logged in as ${session.principal} on profile '${name}' (${session.permissions.length} permissions).`,
+      { profile: name, principal: session.principal, permissions: session.permissions, expiresAt: session.expiresAt },
+    );
+  }
 
   return session;
 }

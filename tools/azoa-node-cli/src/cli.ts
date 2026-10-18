@@ -15,19 +15,15 @@ import { runRootRevokeSessions } from "./commands/rootRevokeSessions.js";
 import { runSessionRevoke, runSessionsList } from "./commands/sessions.js";
 import { runWhoami } from "./commands/whoami.js";
 import { AzoaCliError, EXIT_CODES } from "./errors.js";
-import { setGlobalNodeOverride } from "./globalNodeOverride.js";
 
+// H1 security fix: there is no global --node override. A profile's node origin is pinned at
+// `profile add`/`enroll` time and never changeable per-invocation — see src/context.ts.
 const program = new Command();
 program
   .name("azoa-node")
   .description("Azoa node admin identity, RBAC, MFA and break-glass root CLI")
   .option("--profile <name>", "profile to use (defaults to the current profile)")
-  .option("--json", "machine-readable JSON output", false)
-  .option("--node <origin>", "override the profile's configured node origin for this invocation")
-  .hook("preAction", (thisCommand) => {
-    const opts = thisCommand.opts<{ node?: string }>();
-    setGlobalNodeOverride(opts.node);
-  });
+  .option("--json", "machine-readable JSON output", false);
 
 function jsonFlag(cmd: Command): boolean {
   return Boolean(cmd.optsWithGlobals<{ json?: boolean }>().json);
@@ -41,8 +37,8 @@ function profileFlag(cmd: Command): string | undefined {
  * Every command action below is registered through this wrapper. Commander
  * always calls the action with `(...positionalArgs, localOptions, command)`
  * — the last element is always the Command instance, which is what lets us
- * resolve global --profile/--json/--node (declared on `program`, not on the
- * leaf subcommand) via `optsWithGlobals()`.
+ * resolve global --profile/--json (declared on `program`, not on the leaf
+ * subcommand) via `optsWithGlobals()`.
  */
 function action<Args extends unknown[]>(fn: (...args: Args) => Promise<void> | void) {
   return async (...args: Args) => {
@@ -72,8 +68,9 @@ program
   .requiredOption("--name <name>", "local key file name")
   .option("--kind <kind>", "root|admin", "admin")
   .option("--no-passphrase", "skip passphrase encryption (admin keys only)")
-  .action(action(async (opts: { name: string; kind: "root" | "admin"; passphrase: boolean }, cmd: Command) => {
-    await runKeygen({ name: opts.name, kind: opts.kind, passphrase: opts.passphrase !== false, json: jsonFlag(cmd) });
+  .option("--force", "overwrite an existing key file of the same name (root keys require typing the name to confirm)", false)
+  .action(action(async (opts: { name: string; kind: "root" | "admin"; passphrase: boolean; force: boolean }, cmd: Command) => {
+    await runKeygen({ name: opts.name, kind: opts.kind, passphrase: opts.passphrase !== false, force: opts.force, json: jsonFlag(cmd) });
   }));
 
 const rootCmd = program.command("root").description("break-glass root key management");
@@ -116,7 +113,7 @@ rootCmd
 const profileCmd = program.command("profile").description("local CLI profiles");
 profileCmd
   .command("add <name>")
-  .requiredOption("--origin <origin>", "node public origin, e.g. https://node.example.test (collides with the global --node flag, hence --origin here)")
+  .requiredOption("--origin <origin>", "node public origin, e.g. https://node.example.test (named --origin, not --node — there is no global --node override, see src/context.ts)")
   .requiredOption("--kind <kind>", "root|admin")
   .requiredOption("--key-name <name>", "key file name under ~/.azoa/keys/")
   .option("--admin-id <id>")
@@ -142,7 +139,7 @@ profileCmd
 program
   .command("login")
   .option("--root", "log in as root (profile must be kind=root)", false)
-  .option("--totp <code>", "skip the interactive TOTP prompt (scripting)")
+  .option("--totp <code>", "skip the interactive TOTP prompt for scripting — WARNING: the code lands in shell history/process listings; the interactive prompt is preferred")
   .action(action(async (opts: { root: boolean; totp?: string }, cmd: Command) => {
     await runLogin({ profile: profileFlag(cmd), root: opts.root, totp: opts.totp, json: jsonFlag(cmd) });
   }));
@@ -213,13 +210,15 @@ keysCmd
   .requiredOption("--key-name <name>", "local name for the new key file")
   .option("--label <label>", "label shown in `admins show`", "cli")
   .option("--no-passphrase", "skip passphrase encryption for this key")
-  .action(action(async (opts: { adminId?: string; keyName: string; label: string; passphrase: boolean }, cmd: Command) => {
+  .option("--force", "overwrite an existing key file of the same name", false)
+  .action(action(async (opts: { adminId?: string; keyName: string; label: string; passphrase: boolean; force: boolean }, cmd: Command) => {
     await runKeysAdd({
       profile: profileFlag(cmd),
       targetAdminId: opts.adminId,
       keyName: opts.keyName,
       label: opts.label,
       passphrase: opts.passphrase !== false,
+      force: opts.force,
       json: jsonFlag(cmd),
     });
   }));
@@ -235,7 +234,7 @@ mfaCmd
 program
   .command("enroll")
   .description("complete an admin enrollment (reads the token from stdin or a hidden prompt, never argv)")
-  .requiredOption("--origin <origin>", "the node's canonical public origin (collides with the global --node flag, hence --origin here; must match exactly at login time)")
+  .requiredOption("--origin <origin>", "the node's canonical public origin (must match exactly at login time; see src/context.ts for why there is no global --node override)")
   .option("--profile-name <name>", "local profile name to create (distinct from the global --profile, which selects an existing one)", "default")
   .option("--key-name <name>", "local key file name (defaults to the profile name)")
   .option("--label <label>", "label shown in `admins show`", "enroll")

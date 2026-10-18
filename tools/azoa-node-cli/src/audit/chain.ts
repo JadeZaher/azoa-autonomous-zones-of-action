@@ -51,16 +51,24 @@ export interface PinnedState {
 
 /**
  * Recomputes the chain over `rows` (expected contiguous, ascending by seq,
- * starting right after a genesis or a prior pin). Detects: (1) any row whose
- * stored hash does not match the recomputed hash (tampered detail/fields),
- * (2) a head that regressed behind a previously pinned (seq, hash).
+ * starting right after a genesis or a prior pin). Detects: (1) a gap/reorder
+ * in `seq` (M2 — a deleted-then-relinked row can still hash-chain correctly
+ * if the attacker also recomputes everything downstream, but can't fake a
+ * contiguous seq without inserting a real row), (2) any row whose stored
+ * hash does not match the recomputed hash (tampered detail/fields),
+ * (3) a head that regressed behind a previously pinned (seq, hash).
  */
 export function verifyChain(rows: AuditRow[], pin: PinnedState | null): VerifyChainResult {
   let prevHash = pin?.hash ?? GENESIS_PREV_HASH;
   let verifiedThroughSeq = pin?.seq ?? 0;
+  let expectedSeq = (pin?.seq ?? 0) + 1;
   let firstBrokenSeq: number | null = null;
 
   for (const row of rows) {
+    if (row.seq !== expectedSeq) {
+      firstBrokenSeq = row.seq;
+      break;
+    }
     if (row.prevHash !== prevHash) {
       firstBrokenSeq = row.seq;
       break;
@@ -72,6 +80,7 @@ export function verifyChain(rows: AuditRow[], pin: PinnedState | null): VerifyCh
     }
     prevHash = row.hash;
     verifiedThroughSeq = row.seq;
+    expectedSeq = row.seq + 1;
   }
 
   return {

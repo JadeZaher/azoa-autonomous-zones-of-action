@@ -23,10 +23,3 @@ export function saveSession(profile: string, session: StoredSession): void {
 export function clearSession(profile: string): void {
   deleteFileIfExists(sessionPath(profile));
 }
-
-/** Step-up re-auth window mirrors the server's RecentNodeOperatorSession check (plan.md §3.4). */
-export function isRecentAuth(authTime: string, windowMinutes = 10): boolean {
-  const authMs = new Date(authTime).getTime();
-  if (Number.isNaN(authMs)) return false;
-  return Date.now() - authMs <= windowMinutes * 60_000;
-}

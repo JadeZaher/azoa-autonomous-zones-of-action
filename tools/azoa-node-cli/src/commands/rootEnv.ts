@@ -64,10 +64,17 @@ function assertValidRailwayId(label: string, value: string | undefined): asserts
   }
 }
 
+/**
+ * Validates `--current-revision`, which names the ALREADY-DEPLOYED value, not the one about to
+ * be rendered. 0 is the legitimate bootstrap state ("nothing deployed yet" — see README's own
+ * walkthrough: `--current "" --current-revision 0`), so only negative/non-integer input is
+ * rejected here. The server-side rule that a revision must be >= 1 once any key IS configured
+ * (NodeAdminRuntime.cs) is enforced on the OUTPUT instead, below (join-report.md fix).
+ */
 function assertValidRevision(n: number | undefined): void {
   if (n === undefined) return;
-  if (!Number.isInteger(n) || n <= 0) {
-    throw AzoaCliError.usage(`Invalid revision: must be a positive integer, got '${n}'.`);
+  if (!Number.isInteger(n) || n < 0) {
+    throw AzoaCliError.usage(`Invalid revision: must be a non-negative integer, got '${n}'.`);
   }
 }
 
@@ -247,6 +254,13 @@ export function runRootEnv(options: RootEnvOptions, railway: RailwayAdapter = cr
     const vars = railway.listVariables(scope);
     currentKeys = parseKeyList(vars.NodeAdmin__RootPublicKeys);
     currentRevision = Number(vars.NodeAdmin__RootKeyRevision ?? "0");
+    // M5: a garbage/missing env value silently becomes NaN under Number(...) — refuse rather
+    // than let NaN propagate into the revision arithmetic below.
+    if (!Number.isInteger(currentRevision) || currentRevision < 0) {
+      throw AzoaCliError.network(
+        `Read back an invalid NodeAdmin__RootKeyRevision from Railway: ${JSON.stringify(vars.NodeAdmin__RootKeyRevision)}.`,
+      );
+    }
   } else {
     currentKeys = parseKeyList(options.current);
     currentRevision = options.currentRevision ?? 0;
@@ -263,6 +277,16 @@ export function runRootEnv(options: RootEnvOptions, railway: RailwayAdapter = cr
     if (nextKeys.length !== before) nextRevision += 1;
   }
 
+  // Bootstrap (join-report.md fix): going from zero configured keys to one or more must produce
+  // a revision >= 1 — NodeAdminRuntime.cs disables root login outright if keys are configured
+  // with revision 0/unset. Without this, rendering the very first root key (README's own
+  // walkthrough, `--current "" --current-revision 0`) silently emitted NodeAdmin__RootPublicKeys
+  // with no revision line at all, since nextRevision started equal to currentRevision (0) and
+  // nothing else bumps it on a pure addition.
+  if (nextKeys.length > 0 && nextRevision < 1) {
+    nextRevision = 1;
+  }
+
   const added = nextKeys.filter((k) => !currentKeys.includes(k));
   const removed = currentKeys.filter((k) => !nextKeys.includes(k));
 
@@ -271,7 +295,13 @@ export function runRootEnv(options: RootEnvOptions, railway: RailwayAdapter = cr
     lines.push(`NodeAdmin__RootKeyRevision=${nextRevision}`);
   }
 
+  const nothingChanged = added.length === 0 && removed.length === 0 && nextRevision === currentRevision;
+
   if (scope) {
+    if (nothingChanged) {
+      emit(options.json, "Nothing to do — the computed value already matches what's deployed.", { changed: false, lines });
+      return;
+    }
     if (!options.yes) {
       emit(
         options.json,
@@ -280,8 +310,13 @@ export function runRootEnv(options: RootEnvOptions, railway: RailwayAdapter = cr
       );
       return;
     }
-    const toSet: Array<[string, string]> = [["NodeAdmin__RootPublicKeys", nextKeys.join(",")]];
+    // M5: for a removal, the revision bump must land (skip-deploys) BEFORE the key list change
+    // that actually deploys — a deploy carrying the new key list under the OLD revision watermark
+    // would be weaker than either change landing alone. Pure additions have no revision bump, so
+    // the key list is simply the only (and therefore last) call.
+    const toSet: Array<[string, string]> = [];
     if (nextRevision !== currentRevision) toSet.push(["NodeAdmin__RootKeyRevision", String(nextRevision)]);
+    toSet.push(["NodeAdmin__RootPublicKeys", nextKeys.join(",")]);
     toSet.forEach(([key, value], index) => {
       railway.setVariable(key, value, scope!, { skipDeploys: index < toSet.length - 1 });
     });
