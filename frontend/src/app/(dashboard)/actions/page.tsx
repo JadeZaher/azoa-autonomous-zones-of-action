@@ -157,7 +157,8 @@ function ActionList() {
   }, [userId])
 
   // Load on mount so a just-created action is listed without a manual reload (QA L8).
-  useEffect(() => { void loadActions() }, [loadActions])
+  // Deferred one microtask: a one-shot read against the API, not state derived during the effect (react-hooks/set-state-in-effect).
+  useEffect(() => { void Promise.resolve().then(loadActions) }, [loadActions])
 
   const loadAction = async (id: string) => {
     const result = await azoa.api.request<ActionDefinition>('GET', `/api/action/${id}`)

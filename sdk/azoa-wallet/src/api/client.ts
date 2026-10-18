@@ -86,6 +86,7 @@ interface AZOAResponse<T> {
 
 // ─── Response types matching .NET DTOs ───
 
+/** `UserProfileResponse` (own profile / operator view); credential fields such as password hashes never cross the wire. */
 export interface UserResponse {
   id: string;
   username: string;
@@ -94,6 +95,10 @@ export interface UserResponse {
   firstName?: string;
   lastName?: string;
   isActive: boolean;
+  isVerified?: boolean;
+  /** `dapp:user` | `dapp:developer` | `dapp:manager`. */
+  dappRole?: string;
+  createdDate?: string;
 }
 
 export interface BusinessVerificationCapabilities {
@@ -2434,6 +2439,7 @@ export class AzoaApiClient {
     return this.request("GET", `/api/user/${userId}`);
   }
 
+  /** Operator only (`Operator` policy): an account sign-in gets 403. */
   async getAllUsers(): Promise<Result<UserResponse[], SdkError>> {
     return this.request("GET", "/api/user");
   }

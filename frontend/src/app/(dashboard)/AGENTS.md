@@ -81,7 +81,13 @@ plainly that it needs the operator session (the BFF deliberately does not proxy 
 - `users` sends only edited fields (`UserUpdateModel` treats an absent field as unchanged), so an
   untouched wallet handle or blank email is never re-validated, and it re-seeds the form whenever the
   server profile arrives.
-- `payout-balance` treats `RAIL_UNAVAILABLE` (no Stripe rail on the node) as a configuration state:
-  honest copy, no resumable pending top-up, button disabled.
+- `payout-balance` and `funds` treat `503 PAYMENTS_NOT_CONFIGURED` (no payment provider on the node) as
+  a configuration state: honest copy, no resumable pending request (and the top-up button disables).
+  `RAIL_UNAVAILABLE` stays the transient "try again shortly" case.
+- The OAuth callback maps `error=registration_closed` (closed node, D-11) to plain copy; a refused
+  wallet sign-in (`403 SELF_REGISTRATION_DISABLED`) keeps the node message via `userFacingMessage`.
+- Usernames: letters, digits, `_` and `-`; a changed name may not start `wallet-`/`oauth-`/`onboard-`.
+  Both refusals reach the profile page as text (ProblemDetails `errors` or `AZOAResult.message`).
+- `GET /api/user` (the directory) is operator-only; no account page lists users.
 - `actions`: a 403 on authoring explains the DApp developer role; My Actions loads on mount and the
   builder confirms a created draft.

@@ -153,3 +153,11 @@ shell's `azoa:operator-step-up-required` listener. Allowlist entries: `admin/fia
 `action/runs/reconcile-sweep`. Bodies are rebuilt: actions with no input require `{}`. A board whose
 read failed renders no totals and no empty-state sentence, only the error (the old page showed
 "0.00 USD" beside a 403).
+
+## §forwarded-codes
+
+`sanitizedOperatorResponse` never forwards upstream text, but forwards an allowlisted upstream
+refusal `code` with fixed copy (`FORWARDED_UPSTREAM_CODES` in `lib/operator-bff.ts`). Today that is
+`ETHEREUM_RECOVERY_UNAVAILABLE` (409, no Ethereum rail on the node; QA M2): `useOperatorResource`
+exposes it as `errorCode`, and the Ethereum recovery panel shows it as a neutral state and hides the
+signer controls instead of an error with a retry button.

@@ -345,11 +345,24 @@ export async function operatorUpstreamFetch(
     });
 }
 
+/** Upstream refusal codes the console may see, each with fixed copy: upstream text itself is never forwarded. */
+const FORWARDED_UPSTREAM_CODES: Record<string, string> = {
+    ETHEREUM_RECOVERY_UNAVAILABLE:
+        "Ethereum is not enabled on this node, so there are no preparations to recover.",
+};
+
 export async function sanitizedOperatorResponse(
     response: Response,
     options?: { bare?: boolean },
 ): Promise<NextResponse> {
     if (!response.ok) {
+        const upstreamCode = (await readUpstreamEnvelope<unknown>(response.clone()))?.code;
+        if (typeof upstreamCode === "string" && FORWARDED_UPSTREAM_CODES[upstreamCode]) {
+            return NextResponse.json(
+                { code: upstreamCode, message: FORWARDED_UPSTREAM_CODES[upstreamCode] },
+                { status: response.status, headers: NO_STORE_HEADERS },
+            );
+        }
         const authRequirement = response.headers.get("x-azoa-auth-requirement");
         const recentLoginRequired =
             response.status === 403 &&

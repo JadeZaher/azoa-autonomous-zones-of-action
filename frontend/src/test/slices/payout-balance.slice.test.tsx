@@ -55,8 +55,8 @@ describe('payout balance slice', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/held since \d+\/\d+\/2026/)
   })
 
-  it('says payments are not configured when the node has no payment rail, and keeps no resumable top-up (M3)', async () => {
-    const api = tenantPayoutApi([], { railUnavailable: true })
+  it('says payments are not configured when the node has no payment provider, and keeps no resumable top-up (M3)', async () => {
+    const api = tenantPayoutApi([], { paymentsNotConfigured: true })
     const { user } = await renderSliceWithAuth(<PayoutBalancePage />, { apis: [api] })
 
     await user.type(await screen.findByLabelText('Amount'), '25.00')

@@ -145,4 +145,15 @@ describe('operator console slice (real BFF route)', () => {
     expect(screen.queryByText(/0\.00/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Nothing has been taken back/)).not.toBeInTheDocument()
   })
+
+  it('says Ethereum is not enabled instead of a 500 or an empty list (M2)', async () => {
+    // `EthereumOperatorRecoveryController.List` with no Ethereum rail: 409 `{ isError, message, code }`.
+    const handlers = [http.get(apiUrl('/api/operator/ethereum/recovery/Devnet'), () =>
+      HttpResponse.json(azoaError('Ethereum recovery is not available on this node.', 'ETHEREUM_RECOVERY_UNAVAILABLE'), { status: 409 }))]
+    await renderSlice(<EthereumRecovery />, { apis: [{ handlers }], session: 'anonymous' })
+
+    expect(await screen.findByText(/Ethereum is not enabled on this node/)).toBeInTheDocument()
+    expect(screen.queryByText(/No platform preparations need recovery/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Activate platform signer/)).not.toBeInTheDocument()
+  })
 })

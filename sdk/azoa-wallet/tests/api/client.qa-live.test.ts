@@ -27,6 +27,18 @@ describe('credential exchanges never run the session refresh (H1)', () => {
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')).toBeNull();
   });
 
+  it('a closed node refusing a new wallet keeps its code and message (D-11)', async () => {
+    const onTokenRefresh = vi.fn(async () => 'never');
+    const api = new AzoaApiClient({ baseUrl: 'https://azoa.example', onTokenRefresh });
+    fetchMock.mockResolvedValueOnce(reply(403, { isError: true, code: 'SELF_REGISTRATION_DISABLED', message: 'This node is not accepting new accounts.' }));
+    const result = await api.verifyWalletAuthentication({ address: 'addr', chainType: 'solana', signature: 's', message: 'm' });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.serverCode).toBe('SELF_REGISTRATION_DISABLED');
+    expect(userFacingMessage(result.error)).toBe('This node is not accepting new accounts.');
+    expect(onTokenRefresh).not.toHaveBeenCalled();
+  });
+
   it('a stale session token is not attached to a fresh login', async () => {
     const api = new AzoaApiClient({ baseUrl: 'https://azoa.example', token: 'stale' });
     fetchMock.mockResolvedValueOnce(reply(200, { isError: false, result: 'new.jwt.token' }));
@@ -106,12 +118,12 @@ describe('validation problem details reach the caller (H4)', () => {
       type: 'https://tools.ietf.org/html/rfc9110#section-15.5.1',
       title: 'One or more validation errors occurred.',
       status: 400,
-      errors: { Username: ['Username may contain only letters, numbers, and underscores.'] },
+      errors: { Username: ['Username must be 3-50 characters long and contain only letters, numbers, underscores, or hyphens.'] },
     }));
-    const result = await api.request('PUT', '/api/user/11111111-1111-1111-1111-111111111111', { username: 'wallet-solana-x' });
+    const result = await api.request('PUT', '/api/user/11111111-1111-1111-1111-111111111111', { username: 'bad name!' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.status).toBe(400);
-    expect(userFacingMessage(result.error)).toBe('Username may contain only letters, numbers, and underscores.');
+    expect(userFacingMessage(result.error)).toBe('Username must be 3-50 characters long and contain only letters, numbers, underscores, or hyphens.');
   });
 });

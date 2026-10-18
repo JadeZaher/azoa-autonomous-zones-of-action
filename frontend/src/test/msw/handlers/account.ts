@@ -66,7 +66,10 @@ export function fungibleCreationApi(views: unknown[]): { handlers: HttpHandler[]
   }
 }
 
-/** `UserController` PUT `/api/user/{id}` behind FluentValidation: a bad username is a `ValidationProblemDetails` 400. */
+/**
+ * `UserController` PUT `/api/user/{id}`: `UserUpdateValidator` refuses a username outside `UsernameRules.Pattern` with a
+ * `ValidationProblemDetails` 400; `UserManager` refuses a changed name with a reserved generated prefix with an `AZOAResult` 400.
+ */
 export function profileUpdateApi(userId: string): { handlers: HttpHandler[]; readonly received: Record<string, unknown>[] } {
   const received: Record<string, unknown>[] = []
   const handlers = [
@@ -76,14 +79,16 @@ export function profileUpdateApi(userId: string): { handlers: HttpHandler[]; rea
       if (params.id !== userId) return HttpResponse.json(azoaError('User not found.'), { status: 404 })
       const body = (await request.json()) as Record<string, unknown>
       received.push(body)
-      if (typeof body.username === 'string' && !/^[a-zA-Z0-9_]{3,50}$/.test(body.username)) {
+      if (typeof body.username === 'string' && !/^[a-zA-Z0-9_-]{3,50}$/.test(body.username)) {
         return HttpResponse.json({
           type: 'https://tools.ietf.org/html/rfc9110#section-15.5.1',
           title: 'One or more validation errors occurred.',
           status: 400,
-          errors: { Username: ['Username must contain only letters, numbers, and underscores.'] },
+          errors: { Username: ['Username must be 3-50 characters long and contain only letters, numbers, underscores, or hyphens.'] },
         }, { status: 400 })
       }
+      if (typeof body.username === 'string' && /^(wallet|oauth|onboard)-/i.test(body.username))
+        return HttpResponse.json(azoaError("Usernames starting with 'wallet-', 'oauth-' or 'onboard-' are reserved for generated accounts."), { status: 400 })
       return HttpResponse.json(azoaOk({ id: userId, username: body.username ?? 'slice-owner', email: 'slice-owner@example.test', isActive: true }))
     }),
   ]

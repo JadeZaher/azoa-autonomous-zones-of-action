@@ -68,9 +68,14 @@ describe('account surfaces after live QA', () => {
     expect(api.received[0]).toEqual({ title: 'Steward' })
 
     await user.clear(username)
-    await user.type(username, 'wallet-solana-abc')
+    await user.type(username, 'bad name!')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
-    expect(await screen.findByText('Username must contain only letters, numbers, and underscores.')).toBeInTheDocument()
+    expect(await screen.findByText(/contain only letters, numbers, underscores, or hyphens/)).toBeInTheDocument()
     expect(screen.queryByText(/failed with HTTP 400/)).not.toBeInTheDocument()
+
+    await user.clear(username)
+    await user.type(username, 'wallet-mine')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByText(/reserved for generated accounts/)).toBeInTheDocument()
   })
 })

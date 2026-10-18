@@ -136,6 +136,8 @@ export function EthereumRecovery() {
   }
 
   const rows = list.data ?? []
+  // ETHEREUM_RECOVERY_UNAVAILABLE is a configuration state (no Ethereum rail on this node), not a failure to retry (QA M2).
+  const unavailable = list.errorCode === 'ETHEREUM_RECOVERY_UNAVAILABLE'
   return <FlatCard>
     <CardHeader><CardTitle>Ethereum prepared transactions</CardTitle></CardHeader>
     <CardContent className="space-y-4 text-sm">
@@ -144,9 +146,10 @@ export function EthereumRecovery() {
           <Button key={option} size="sm" variant={option === network ? 'default' : 'outline'} onClick={() => setNetwork(option)}>{option}</Button>
         ))}
       </div>
-      {(list.error || mutation.error) && <OperatorError message={(mutation.error ?? list.error)!} onRetry={() => void list.reload()} />}
+      {unavailable && <p role="status" className="text-muted-foreground">{list.error}</p>}
+      {((list.error && !unavailable) || mutation.error) && <OperatorError message={(mutation.error ?? list.error)!} onRetry={() => void list.reload()} />}
       {notice && <p role="status">{notice}</p>}
-      {rows.length === 0 && !list.loading ? <p className="text-muted-foreground">No platform preparations need recovery on {network}.</p> : rows.map(row => (
+      {list.error ? null : rows.length === 0 && !list.loading ? <p className="text-muted-foreground">No platform preparations need recovery on {network}.</p> : rows.map(row => (
         <div key={row.id} className="space-y-1 border border-border p-3">
           <p><strong>{row.state}</strong> · nonce {row.nonce} · sender {row.sender}</p>
           {row.transactionId && <p className="break-all">Transaction {row.transactionId}</p>}
@@ -166,10 +169,10 @@ export function EthereumRecovery() {
           <Button type="button" variant="outline" onClick={() => setSelected(null)}>Close</Button>
         </div>
       </form>}
-      <div className="flex flex-wrap items-end gap-2 border-t pt-3">
+      {!unavailable && <div className="flex flex-wrap items-end gap-2 border-t pt-3">
         <div className="space-y-1.5"><Label htmlFor="eth-sender">Activate platform signer (address)</Label><Input id="eth-sender" className="w-96" value={sender} onChange={event => setSender(event.target.value)} /></div>
         <Button variant="outline" disabled={mutation.busy || !/^0x[0-9a-fA-F]{40}$/.test(sender.trim())} onClick={() => void activate()}>Activate</Button>
-      </div>
+      </div>}
     </CardContent>
   </FlatCard>
 }

@@ -169,6 +169,10 @@ export default function FiatPayoutsConsolePage() {
   const resolveAccountSetup = useCallback(async () => {
     const userId = setupUserId.trim()
     if (!userId) return
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      toast.error('That user id is not a valid account identifier.')
+      return
+    }
     const reason = window.prompt('What should this account setup resolve to? (Stripe is re-read before attaching or releasing anything)')?.trim()
     if (!reason) return
     setSetupBusy(true)

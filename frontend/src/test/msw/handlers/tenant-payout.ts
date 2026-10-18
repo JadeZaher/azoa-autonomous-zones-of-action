@@ -17,10 +17,10 @@ export const TENANT_PAYOUT_SLICE_PAYMENT_URL = 'https://checkout.stripe.test/c/p
 /**
  * Follows `Services/Fiat/OffRamp/TenantPayoutBalanceController.cs`: the request key is the admission
  * key, so the same key resumes the same Checkout intent (`resumed: true`) and a different amount under
- * that key is a 409 (`FiatRailProvider` admission mismatch); a blank key is a 400; `railUnavailable`
- * models a node with no Stripe rail (503 `RAIL_UNAVAILABLE`).
+ * that key is a 409 (`FiatRailProvider` admission mismatch); a blank key is a 400;
+ * `paymentsNotConfigured` models a node with no payment provider (503 `PAYMENTS_NOT_CONFIGURED`).
  */
-export function tenantPayoutApi(floats: TenantPayoutFloatView[] = [], options: { railUnavailable?: boolean } = {}): TenantPayoutApi {
+export function tenantPayoutApi(floats: TenantPayoutFloatView[] = [], options: { paymentsNotConfigured?: boolean } = {}): TenantPayoutApi {
   let current = floats
   const topUps = new Map<string, { amountMinorUnits: number; intent: TenantPayoutTopUp }>()
   const handlers = [
@@ -28,9 +28,9 @@ export function tenantPayoutApi(floats: TenantPayoutFloatView[] = [], options: {
     http.post(apiUrl('/api/fiat/tenant-payout-balance/top-up'), async ({ request }) => {
       const denied = requireBearer(request)
       if (denied) return denied
-      // No Stripe rail registered: the controller refuses before any Checkout intent exists.
-      if (options.railUnavailable)
-        return HttpResponse.json(azoaError('Adding funds is not available on this node right now.', 'RAIL_UNAVAILABLE'), { status: 503 })
+      // No payment provider configured: the controller refuses before any Checkout intent exists.
+      if (options.paymentsNotConfigured)
+        return HttpResponse.json(azoaError('Adding funds is not configured on this node.', 'PAYMENTS_NOT_CONFIGURED'), { status: 503 })
       const body = (await request.json()) as { requestKey?: string; amountMinorUnits?: number }
       const key = body.requestKey?.trim() ?? ''
       if (!key || key.length > 128)

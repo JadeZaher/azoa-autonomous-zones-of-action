@@ -4,13 +4,13 @@ import { isKybRequired, type SdkError } from 'azoa-sdk'
 export const KYB_REQUIRED_MESSAGE =
   'This needs your organization’s business verification. Finish (or renew) it under Business verification, then try again.'
 
-/** Shown when the server refuses with `RAIL_UNAVAILABLE`: the payment rail is not configured on this node. */
-export const RAIL_UNAVAILABLE_MESSAGE =
+/** Shown when the server refuses with `PAYMENTS_NOT_CONFIGURED`: this node has no payment provider at all. */
+export const PAYMENTS_NOT_CONFIGURED_MESSAGE =
   'Payments are not configured on this node, so nothing can be charged here yet. Nothing was charged. Ask the node operator to set up payments.'
 
-/** True for the server's `RAIL_UNAVAILABLE` refusal (`FiatConsumerErrors.RailUnavailableCode`): a configuration state, not a transient outage. */
-export function isRailUnavailable(error: SdkError): boolean {
-  return error.serverCode === 'RAIL_UNAVAILABLE'
+/** True for `FiatConsumerErrors.PaymentsNotConfiguredCode`: a configuration state, not a transient outage, so there is nothing to resume. */
+export function isPaymentsNotConfigured(error: SdkError): boolean {
+  return error.serverCode === 'PAYMENTS_NOT_CONFIGURED'
 }
 
 /**
@@ -19,7 +19,7 @@ export function isRailUnavailable(error: SdkError): boolean {
  */
 export function refusalMessage(error: SdkError, fallback: string): string {
   if (isKybRequired(error)) return KYB_REQUIRED_MESSAGE
-  if (isRailUnavailable(error)) return RAIL_UNAVAILABLE_MESSAGE
+  if (isPaymentsNotConfigured(error)) return PAYMENTS_NOT_CONFIGURED_MESSAGE
   // KycManager prefixes the message (`KYC_POLICY_UNAVAILABLE: …`) rather than setting a code.
   if (error.serverCode === 'KYC_POLICY_UNAVAILABLE' || (error.serverMessage ?? error.message).includes('KYC_POLICY_UNAVAILABLE'))
     return 'Identity verification is not available on this node yet. The node operator still has to finish setting it up.'

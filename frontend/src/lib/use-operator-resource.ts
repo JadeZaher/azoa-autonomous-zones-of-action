@@ -1,12 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { operatorRequest } from '@/lib/operator-client'
+import { OperatorRequestError, operatorRequest } from '@/lib/operator-client'
 
 /** Reads one allowlisted operator path through the BFF; `path === null` reads nothing. */
 export function useOperatorResource<T>(path: string | null, fallbackError: string) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(path !== null)
 
   /** Re-reads the path; resolves to the fresh value, or null after recording the error. */
@@ -14,6 +15,7 @@ export function useOperatorResource<T>(path: string | null, fallbackError: strin
     if (path === null) return null
     setLoading(true)
     setError(null)
+    setErrorCode(null)
     try {
       const value = await operatorRequest<T>(path)
       setData(value)
@@ -21,6 +23,7 @@ export function useOperatorResource<T>(path: string | null, fallbackError: strin
     } catch (cause) {
       setData(null)
       setError(cause instanceof Error ? cause.message : fallbackError)
+      setErrorCode(cause instanceof OperatorRequestError ? cause.code ?? null : null)
       return null
     } finally {
       setLoading(false)
@@ -28,7 +31,7 @@ export function useOperatorResource<T>(path: string | null, fallbackError: strin
   }, [path, fallbackError])
 
   useEffect(() => { void reload() }, [reload])
-  return { data, error, loading, reload }
+  return { data, error, errorCode, loading, reload }
 }
 
 /** Runs one operator mutation; returns the result, or null after recording the refusal. Never reports success itself. */

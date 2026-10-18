@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -26,10 +26,10 @@ function profileFields(user: unknown): ProfileFields {
 export default function UsersPage() {
   const { user, userId, logout, refreshProfile } = useAzoa()
 
+  // The form is the server profile plus the person's edits, so a profile that arrives after mount is shown as-is.
   const saved = useMemo(() => profileFields(user), [user])
-  const [form, setForm] = useState<ProfileFields>(saved)
-  // The profile arrives after mount (and again after a save): start editing from what the server holds.
-  useEffect(() => { setForm(saved) }, [saved])
+  const [edits, setEdits] = useState<Partial<ProfileFields>>({})
+  const form: ProfileFields = { ...saved, ...edits }
 
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: boolean; data?: unknown; message?: string } | null>(null)
@@ -38,7 +38,7 @@ export default function UsersPage() {
   const [jsonOpen, setJsonOpen] = useState(false)
 
   const handleChange = (field: keyof ProfileFields) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm(prev => ({ ...prev, [field]: e.target.value }))
+    setEdits(prev => ({ ...prev, [field]: e.target.value }))
   }
 
   const handleSave = async () => {
@@ -58,6 +58,7 @@ export default function UsersPage() {
       const result = await azoa.api.updateUser(userId, changes)
       if (isOk(result)) {
         await refreshProfile()
+        setEdits({})
         setSaveResult({ ok: true, data: result.value, message: 'Profile updated.' })
       } else {
         setSaveResult({ ok: false, message: userFacingMessage(result.error) })

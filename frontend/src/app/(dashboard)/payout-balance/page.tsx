@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
-import { isRailUnavailable, refusalMessage } from '@/lib/refusal-messages'
+import { isPaymentsNotConfigured, refusalMessage } from '@/lib/refusal-messages'
 import { PendingRequestNotice } from '@/components/shared/pending-request-notice'
 import {
   type SavedRequest, claimRequestKey, clearSavedRequest, formatMinorUnits, isDefiniteRefusal, isFinishedCheckout,
@@ -76,11 +76,11 @@ export default function PayoutBalancePage() {
           clearSavedRequest(SCOPE, userId)
           if (result.value.resumed) setNotice('This matched your earlier top-up, which has already finished. Nothing new was charged. Press "Continue to payment" again to start a new top-up.')
         }
-      } else if (isDefiniteRefusal(result.error.status) || isRailUnavailable(result.error)) {
-        // RAIL_UNAVAILABLE is refused before any payment page exists, so there is nothing to resume.
+      } else if (isDefiniteRefusal(result.error.status) || isPaymentsNotConfigured(result.error)) {
+        // PAYMENTS_NOT_CONFIGURED is refused before any payment page exists, so there is nothing to resume.
         clearSavedRequest(SCOPE, userId)
         setPending(null)
-        setPaymentsUnconfigured(isRailUnavailable(result.error))
+        setPaymentsUnconfigured(isPaymentsNotConfigured(result.error))
         setError(refusalMessage(result.error, 'The top-up was refused. Nothing was charged.'))
       } else {
         setPending(request)
