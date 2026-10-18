@@ -1,4 +1,6 @@
 ---
+status: merged
+merged: 6352da84
 type: lane-checkpoint
 round: 4
 wave: fix-batch
