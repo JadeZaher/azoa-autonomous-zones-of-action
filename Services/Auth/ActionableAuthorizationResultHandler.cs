@@ -1,4 +1,5 @@
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.NodeAdmin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 
@@ -15,6 +16,12 @@ public sealed class ActionableAuthorizationResultHandler : IAuthorizationMiddlew
         AuthorizationPolicy policy,
         PolicyAuthorizationResult authorizeResult)
     {
+        if (authorizeResult.Forbidden && NodeAdminClaims.IsNodeAdmin(context.User) && !context.Response.HasStarted)
+        {
+            await NodeAdminDenial.WriteAsync(context, authorizeResult);
+            return;
+        }
+
         if (authorizeResult.Forbidden
             && context.User.Identity?.IsAuthenticated == true
             && !context.Response.HasStarted

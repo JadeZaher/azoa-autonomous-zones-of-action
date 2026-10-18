@@ -209,6 +209,13 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
+            // H6: the node-admin branch runs first and always ends in fail-or-return; see Services/NodeAdmin/AGENTS.md §token-validation.
+            if (AZOA.WebAPI.Core.NodeAdminClaims.IsNodeAdmin(principal))
+            {
+                await AZOA.WebAPI.Services.NodeAdmin.NodeAdminTokenValidation.ValidateAsync(context);
+                return;
+            }
+
             // D-5: allowlisted endpoint + scope + live consent/role + active issuing tenant and key; see Services/Consent/AGENTS.md.
             if (!await AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate.AdmitAsync(context))
                 return;
@@ -1062,6 +1069,8 @@ builder.Services.AddSingleton<AZOA.WebAPI.Services.Admin.NodeOperatorLoginThrott
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Admin.SeedAdminHostedService>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeOperatorManager,
     AZOA.WebAPI.Managers.NodeOperatorManager>();
+// Named node admins (Ed25519 + TOTP, RBAC, hash-chained audit); see Services/NodeAdmin/AGENTS.md.
+AZOA.WebAPI.Services.NodeAdmin.NodeAdminServiceCollectionExtensions.AddNodeAdmin(builder.Services, builder.Configuration);
 builder.Services.AddSingleton<WalletKeyService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory>();
 builder.Services.AddSingleton<AZOA.WebAPI.Services.Webhooks.WebhookSecretProtector>();
