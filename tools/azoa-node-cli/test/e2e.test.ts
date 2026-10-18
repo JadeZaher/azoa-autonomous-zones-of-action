@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAdminsActivate, runAdminsCreate } from "../src/commands/admins.js";
 import { runApi } from "../src/commands/api.js";
+import { runAuditVerify } from "../src/commands/audit.js";
 import { runEnroll } from "../src/commands/enroll.js";
 import { runKeygen } from "../src/commands/keygen.js";
 import { runLogin } from "../src/commands/login.js";
+import { runRootRevokeSessions } from "../src/commands/rootRevokeSessions.js";
 import { AzoaCliError } from "../src/errors.js";
 import { readKeyFileMeta } from "../src/storage/keyFile.js";
 import { upsertProfile } from "../src/storage/config.js";
@@ -44,7 +46,17 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
 
     expect(session.principal).toBe(`root:${meta.fingerprint}`);
     expect(session.permissions).toContain("admins.manage");
-    expect(server.sessions.has(session.sid)).toBe(true);
+    // `server.sessions` is keyed by the real sid (the bearer/accessToken); `handle` is the
+    // separate, wire-exposed id (lane A1 M-1) and is NOT a key into that map.
+    expect(server.sessions.has(session.accessToken)).toBe(true);
+
+    // Lane A1 deviation #16: challengeId is opaque (~300-char base64url), not a GUID, and the
+    // login above only succeeded by signing it verbatim — proving the CLI never parses/validates
+    // its shape or length-limits it.
+    const [issuedChallengeId] = [...server.challenges.keys()];
+    expect(issuedChallengeId).toBeDefined();
+    expect(issuedChallengeId!.length).toBeGreaterThan(100);
+    expect(issuedChallengeId).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   it("aborts before signing when the challenge audience does not match the pinned profile node (H1)", async () => {
@@ -221,6 +233,60 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
 
     const protectedHits = server.requestLog.filter((r) => r.path === "/api/example/protected");
     expect(protectedHits.length).toBe(2); // first 403, then the retry after re-login
+  });
+
+  it("root revoke-sessions: fails fast for a non-root profile, zero network calls", async () => {
+    upsertProfile("notroot", { node: origin, keyName: "whatever", kind: "admin" }, true);
+
+    await expect(runRootRevokeSessions({ profile: "notroot", yes: true, json: false })).rejects.toThrow(AzoaCliError);
+    let caught: AzoaCliError | undefined;
+    try {
+      await runRootRevokeSessions({ profile: "notroot", yes: true, json: false });
+    } catch (err) {
+      caught = err as AzoaCliError;
+    }
+    expect(caught!.code).toBe("PERMISSION_DENIED");
+    expect(caught!.exitCode).toBe(4);
+    expect(caught!.message).toMatch(/RootKeyRevision/);
+    expect(server.requestLog.length).toBe(0);
+  });
+
+  it("root revoke-sessions: succeeds for root, exercising the generic step-up retry on a non-keys/api command", async () => {
+    server.recentWindowMs = 1000;
+    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1", "rootpass1"] });
+    await runKeygen({ name: "root6", kind: "root", passphrase: true, json: false }, input);
+    const meta = readKeyFileMeta("root6");
+    server.rootPublicKeys.add(meta.publicKey);
+    upsertProfile("rootp6", { node: origin, keyName: "root6", kind: "root" }, true);
+    await runLogin({ profile: "rootp6", root: true, json: false }, input);
+
+    await new Promise((resolve) => setTimeout(resolve, 1200)); // session now stale
+
+    await runRootRevokeSessions({ profile: "rootp6", yes: true, json: false }, input);
+
+    const hits = server.requestLog.filter((r) => r.path === "/api/node-admin/root/revoke-sessions");
+    expect(hits.length).toBe(2); // first 403 STEP_UP_REQUIRED, then the retry after re-login succeeds
+  });
+
+  it("audit verify --full surfaces RATE_LIMITED (429) as exit 5 with a retry hint", async () => {
+    const input = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    await runKeygen({ name: "root7", kind: "root", passphrase: true, json: false }, input);
+    const meta = readKeyFileMeta("root7");
+    server.rootPublicKeys.add(meta.publicKey);
+    upsertProfile("rootp7", { node: origin, keyName: "root7", kind: "root" }, true);
+    await runLogin({ profile: "rootp7", root: true, json: false }, input);
+
+    server.forceAuditRateLimited = true;
+
+    let caught: AzoaCliError | undefined;
+    try {
+      await runAuditVerify({ profile: "rootp7", full: true, json: false });
+    } catch (err) {
+      caught = err as AzoaCliError;
+    }
+    expect(caught!.code).toBe("RATE_LIMITED");
+    expect(caught!.exitCode).toBe(5);
+    expect(caught!.message).toMatch(/minute/i);
   });
 
   it("`api` rejects an absolute URL before any network call", async () => {

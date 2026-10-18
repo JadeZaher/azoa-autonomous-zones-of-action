@@ -40,9 +40,19 @@ export async function runAuditTail(options: AuditTailOptions): Promise<AuditRow[
 
 interface VerifyEndpointResponse {
   ok: boolean;
+  fromSeq: number;
   verifiedThroughSeq: number;
   headHash: string;
   firstBrokenSeq?: number;
+}
+
+export interface AuditVerifyOptions {
+  profile?: string;
+  /** Ignore any local pin and verify the whole chain from genesis (lane A1: can answer 429 RATE_LIMITED). */
+  full?: boolean;
+  /** Explicit override for the server-side verify window's start; defaults to the local pin. */
+  fromSeq?: number;
+  json: boolean;
 }
 
 /**
@@ -51,7 +61,7 @@ interface VerifyEndpointResponse {
  * before advancing the pin. Any disagreement is a loud, non-zero-exit alert
  * — this command never silently re-pins over a broken chain.
  */
-export async function runAuditVerify(options: { profile?: string; json: boolean }): Promise<void> {
+export async function runAuditVerify(options: AuditVerifyOptions): Promise<void> {
   const resolved = resolveProfile(options.profile);
   requireSession(resolved);
   const client = httpClientFor(resolved);
@@ -75,7 +85,18 @@ export async function runAuditVerify(options: { profile?: string; json: boolean 
     );
   }
 
-  const { data: serverVerify } = await client.call<VerifyEndpointResponse>("GET", "/api/node-admin/audit/verify");
+  // lane A1 §contract-deviations #14: fromSeq defaults to the pin so the server-side verify stays
+  // incremental too; --full ignores the pin and asks the server to re-walk the whole chain
+  // (rate-limited server-side, surfaced as RATE_LIMITED -> exit 5 via errors.ts).
+  const fromSeq = options.full ? undefined : options.fromSeq ?? pin?.seq;
+  const query = new URLSearchParams();
+  if (fromSeq !== undefined) query.set("fromSeq", String(fromSeq));
+  if (options.full) query.set("full", "true");
+  const queryString = query.toString();
+  const { data: serverVerify } = await client.call<VerifyEndpointResponse>(
+    "GET",
+    `/api/node-admin/audit/verify${queryString ? `?${queryString}` : ""}`,
+  );
   if (!serverVerify.ok) {
     throw AzoaCliError.auditIntegrity(
       `AUDIT INTEGRITY ALERT: server-side /audit/verify reported a broken chain at seq ${serverVerify.firstBrokenSeq}.`,

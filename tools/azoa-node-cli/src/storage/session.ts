@@ -4,7 +4,8 @@ import { readJsonFile, writeJsonFileSecure, deleteFileIfExists } from "./fsutil.
 export interface StoredSession {
   accessToken: string;
   expiresAt: string;
-  sid: string;
+  /** Opaque session-list/revoke id (lane A1 security fix M-1) — never the token's real sid. */
+  handle: string;
   principal: string;
   permissions: string[];
   authTime: string;

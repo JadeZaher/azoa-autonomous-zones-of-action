@@ -11,6 +11,7 @@ import { runMfaReset } from "./commands/mfa.js";
 import { runProfileAdd, runProfileList, runProfileUse } from "./commands/profile.js";
 import { runRolesCreate, runRolesDelete, runRolesList, runRolesUpdate } from "./commands/roles.js";
 import { runRootEnv } from "./commands/rootEnv.js";
+import { runRootRevokeSessions } from "./commands/rootRevokeSessions.js";
 import { runSessionRevoke, runSessionsList } from "./commands/sessions.js";
 import { runWhoami } from "./commands/whoami.js";
 import { AzoaCliError, EXIT_CODES } from "./errors.js";
@@ -104,6 +105,13 @@ rootCmd
       json: jsonFlag(cmd),
     });
   }));
+rootCmd
+  .command("revoke-sessions")
+  .description("end every root session on this node (POST /root/revoke-sessions)")
+  .option("--yes", "skip the confirmation prompt", false)
+  .action(action(async (opts: { yes: boolean }, cmd: Command) => {
+    await runRootRevokeSessions({ profile: profileFlag(cmd), yes: opts.yes, json: jsonFlag(cmd) });
+  }));
 
 const profileCmd = program.command("profile").description("local CLI profiles");
 profileCmd
@@ -156,8 +164,8 @@ sessionsCmd
     await runSessionsList({ profile: profileFlag(cmd), admin: opts.admin, json: jsonFlag(cmd) });
   }));
 sessionsCmd
-  .command("revoke <sid>")
-  .action(action(async (sid: string, _opts: Record<string, unknown>, cmd: Command) => runSessionRevoke(sid, { profile: profileFlag(cmd), json: jsonFlag(cmd) })));
+  .command("revoke <handle>")
+  .action(action(async (handle: string, _opts: Record<string, unknown>, cmd: Command) => runSessionRevoke(handle, { profile: profileFlag(cmd), json: jsonFlag(cmd) })));
 
 const adminsCmd = program.command("admins").description("node admin CRUD, keys, MFA, enrollment");
 adminsCmd
@@ -282,7 +290,11 @@ auditCmd
   }));
 auditCmd
   .command("verify")
-  .action(action(async (_opts: Record<string, unknown>, cmd: Command) => runAuditVerify({ profile: profileFlag(cmd), json: jsonFlag(cmd) })));
+  .option("--full", "ignore the local pin and re-verify the whole chain from genesis (server may rate-limit this)", false)
+  .option("--from-seq <seq>", "explicit server-side verify window start (defaults to the local pin)", Number)
+  .action(action(async (opts: { full: boolean; fromSeq?: number }, cmd: Command) =>
+    runAuditVerify({ profile: profileFlag(cmd), full: opts.full, fromSeq: opts.fromSeq, json: jsonFlag(cmd) }),
+  ));
 
 program
   .command("api <method> <path>")

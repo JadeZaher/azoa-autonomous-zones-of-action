@@ -37,7 +37,11 @@ keys may opt out only via explicit `--no-passphrase`.
 
 The CLI never computes TOTP or recency windows itself — those are server-enforced (§3.4, §8 C2).
 The CLI's only responsibility on `STEP_UP_REQUIRED` is: re-run the stored profile's login flow
-once, then retry the original request once. See `commands/api.ts`.
+once, then retry the original request once. This is implemented exactly once, in
+`mutate.ts`'s `mutateWithStepUpRetry`, and every `*Recent`-gated mutating command goes through it
+— not per-command logic. See `commands/api.ts` for the one caller that needs the raw
+`StepUpRequiredError` directly (it validates the path/method first and wants to report the
+absolute-URL guard before touching the network).
 
 ## Audit chain recompute (`audit/chain.ts`)
 
@@ -68,3 +72,30 @@ be read: `NOT_FOUND`/`CONFLICT` (exit 2 — a wrong id or stale state is a user-
 `NODE_ADMIN_UNAVAILABLE` (exit 5 — the node has no `NodeAdmin__Audience` configured).
 `ADMIN_LOCKED` carries `retryAfterSeconds` on the wire; the CLI formats it into the error message
 rather than just naming the code.
+
+## Two more backend rounds (commits 08384168, a90f6ab6)
+
+- **Sessions use an opaque `handle`, never the real `sid`** (security review, M-1): `handle`
+  replaced `sid` in every response (`auth/session`, `GET /sessions`, `GET /me`), and
+  `POST /sessions/{handle}/revoke` is looked up by it. `StoredSession.handle` and
+  `SessionRow.handle` throughout — the raw sid only ever lives inside `accessToken`, which the
+  CLI already never printed.
+- **`PUT /admins/{id}/roles` returns the same reenrollment shape as `mfa reset`** (M-2):
+  `{ admin, enrollmentToken, enrollmentExpiresAt }`, non-null only when root changed a still-
+  pending admin's roles (that reset forces re-enrollment). `commands/admins.ts`'s
+  `runAdminsSetRoles` branches on it the same way `mfa.ts` does.
+- **`POST /root/revoke-sessions`** (L-2, then tightened root-only in NEW-2): ends every root
+  session; the CLI (`commands/rootRevokeSessions.ts`) checks the active profile's `kind` locally
+  — before any network call — and refuses with a hint toward `root env --railway --remove <fp>`
+  if it isn't `root`. `sessions revoke` of a `root:*` session's handle has the identical rule.
+- **`GET /audit/verify?fromSeq=&full=`**: `fromSeq` defaults to the local pin (incremental);
+  `--full` ignores it and asks the server to re-walk the whole chain from genesis, which can
+  answer `RATE_LIMITED` (429) — a new exit-5 code with a formatted retry time, same machinery as
+  `ADMIN_LOCKED`.
+- **Challenge ids are opaque** (NEW-1): the server moved to stateless, HMAC-authenticated
+  ~300-char `challengeId` strings instead of GUIDs. Nothing in the CLI needed to change — it
+  always treated `challengeId` as an opaque string to sign verbatim — but `test/fixtures/fakeNodeServer.ts`
+  now issues one too, and `test/e2e.test.ts` asserts on its shape, so a regression toward
+  "validate it as a UUID" would be caught.
+- **`ADMIN_LOCKED` backoff is exponential**: `formatRetryAfter` in `errors.ts` now renders hours
+  (`"1h 30m"`) as well as minutes/seconds, since a repeated lockout can exceed 60 minutes.

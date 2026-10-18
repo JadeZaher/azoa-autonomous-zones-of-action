@@ -37,6 +37,8 @@ const CODE_TO_EXIT: Record<string, number> = {
   // Node has no NodeAdmin__Audience configured — an operator/deployment problem, not something
   // a retry fixes, but closest to the existing "network/server" bucket.
   NODE_ADMIN_UNAVAILABLE: EXIT_CODES.NETWORK,
+  // lane A1 security-fix commit 08384168: audit/verify --full and other flood-control paths.
+  RATE_LIMITED: EXIT_CODES.NETWORK,
 };
 
 const FRIENDLY_MESSAGES: Record<string, string> = {
@@ -60,14 +62,17 @@ const FRIENDLY_MESSAGES: Record<string, string> = {
   NOT_FOUND: "No such resource (check the id).",
   CONFLICT: "The request conflicts with the current state of the resource.",
   NODE_ADMIN_UNAVAILABLE: "Node admin is not configured on this node (NodeAdmin__Audience is unset or invalid) — ask whoever manages the deployment to set it.",
+  RATE_LIMITED: "Too many requests; try again in a minute.",
 };
 
-/** e.g. 90 -> "1m 30s"; 45 -> "45s". */
+/** e.g. 5400 -> "1h 30m"; 90 -> "1m 30s"; 45 -> "45s". Exponential lockout backoff can reach hours. */
 function formatRetryAfter(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  if (hours > 0) return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  if (minutes > 0) return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 export class AzoaCliError extends Error {
@@ -97,7 +102,7 @@ export class AzoaCliError extends Error {
     const exitCode = CODE_TO_EXIT[code] ?? EXIT_CODES.NETWORK;
     const friendly = FRIENDLY_MESSAGES[code];
     const retrySuffix =
-      code === "ADMIN_LOCKED" && retryAfterSeconds !== undefined
+      (code === "ADMIN_LOCKED" || code === "RATE_LIMITED") && retryAfterSeconds !== undefined
         ? ` Try again in ${formatRetryAfter(retryAfterSeconds)}.`
         : "";
     const combined = friendly ? `${friendly}${retrySuffix} (${code}: ${message})` : `${code}: ${message}${retrySuffix}`;

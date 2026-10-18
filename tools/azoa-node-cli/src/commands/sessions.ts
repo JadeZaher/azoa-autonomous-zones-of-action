@@ -1,5 +1,7 @@
-import { httpClientFor, requireSession, resolveProfile } from "../context.js";
+import { resolveProfile, requireSession, httpClientFor } from "../context.js";
+import { createRealInputSource, type InputSource } from "../io/input.js";
 import { emit } from "../io/output.js";
+import { mutateWithStepUpRetry } from "../mutate.js";
 
 export interface SessionsListOptions {
   profile?: string;
@@ -8,7 +10,8 @@ export interface SessionsListOptions {
 }
 
 interface SessionRow {
-  sid: string;
+  /** Opaque session-list/revoke id — never the token's real sid (lane A1 security fix M-1). */
+  handle: string;
   principal: string;
   authTime: string;
   amr: string[];
@@ -40,16 +43,19 @@ export async function runSessionsList(options: SessionsListOptions): Promise<Ses
   const { data } = await client.call<SessionRow[]>("GET", path);
   emit(
     options.json,
-    data.map((s) => `${s.current ? "*" : " "} ${s.sid}\t${s.principal}\t${s.authTime}\t${s.revokedAt ? "revoked" : "active"}`).join("\n") || "(no sessions)",
+    data.map((s) => `${s.current ? "*" : " "} ${s.handle}\t${s.principal}\t${s.authTime}\t${s.revokedAt ? "revoked" : "active"}`).join("\n") || "(no sessions)",
     data,
   );
   return data;
 }
 
-export async function runSessionRevoke(sid: string, options: { profile?: string; json: boolean }): Promise<void> {
+export async function runSessionRevoke(
+  handle: string,
+  options: { profile?: string; json: boolean },
+  input: InputSource = createRealInputSource(),
+): Promise<void> {
   const resolved = resolveProfile(options.profile);
   requireSession(resolved);
-  const client = httpClientFor(resolved);
-  await client.call("POST", `/api/node-admin/sessions/${encodeURIComponent(sid)}/revoke`);
-  emit(options.json, `Session ${sid} revoked.`, { sid });
+  await mutateWithStepUpRetry(resolved, "POST", `/api/node-admin/sessions/${encodeURIComponent(handle)}/revoke`, undefined, input);
+  emit(options.json, `Session ${handle} revoked.`, { handle });
 }

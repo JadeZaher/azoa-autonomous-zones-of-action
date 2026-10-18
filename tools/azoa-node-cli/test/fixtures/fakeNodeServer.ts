@@ -63,7 +63,10 @@ interface FakeEnrollment {
 }
 
 interface FakeSession {
+  /** Bearer token key — the real sid; never exposed via /sessions, /me, or revoke (lane A1 M-1). */
   sid: string;
+  /** Opaque id exposed to the wire for listing/revoking (lane A1 M-1) — distinct from `sid`. */
+  handle: string;
   principal: string;
   permissions: string[];
   authTime: number;
@@ -97,6 +100,7 @@ const STATUS_FOR_CODE: Record<string, number> = {
   CONFLICT: 409,
   AUDIT_UNAVAILABLE: 503,
   NODE_ADMIN_UNAVAILABLE: 503,
+  RATE_LIMITED: 429,
   // ENROLLMENT_INVALID and VALIDATION_FAILED are deliberately absent: the real
   // StatusFor switch has no case for them either, so they fall to the 400 default.
 };
@@ -123,6 +127,8 @@ export class FakeNodeServer {
   /** Test-only hook: when set, /enroll/start returns this fingerprint instead of the real one
    * (internal bookkeeping still uses the real value), simulating a tampered/misbehaving response. */
   forceEnrollFingerprint?: string;
+  /** Test-only hook: when true, `audit verify --full` answers 429 RATE_LIMITED. */
+  forceAuditRateLimited = false;
 
   readonly admins = new Map<string, FakeAdmin>();
   readonly challenges = new Map<string, FakeChallenge>();
@@ -221,14 +227,20 @@ export class FakeNodeServer {
     if (method === "POST" && path === "/api/node-admin/auth/challenge") return this.handleChallenge(body, res);
     if (method === "POST" && path === "/api/node-admin/auth/session") return this.handleSession(body, res);
     if (method === "POST" && path === "/api/node-admin/auth/revoke") return this.handleRevokeSelf(req, res);
+    if (method === "POST" && path === "/api/node-admin/root/revoke-sessions") return this.handleRootRevokeSessions(req, res);
     if (method === "GET" && path === "/api/node-admin/me") return this.handleMe(req, res);
     if (method === "POST" && path === "/api/node-admin/admins") return this.handleCreateAdmin(req, body, res);
     if (method === "GET" && path === "/api/node-admin/admins") return this.handleListAdmins(req, res);
     if (method === "POST" && path === "/api/node-admin/enroll/start") return this.handleEnrollStart(body, res);
     if (method === "POST" && path === "/api/node-admin/enroll/complete") return this.handleEnrollComplete(body, res);
     if (method === "GET" && path === "/api/example/protected") return this.handleProtectedExample(req, res);
+    if (method === "GET" && path === "/api/node-admin/roles") return this.handleRolesList(req, res);
+    if (method === "POST" && path === "/api/node-admin/roles") return this.handleCreateRole(req, body, res);
+    const roleMatch = path.match(/^\/api\/node-admin\/roles\/([^/]+)$/);
+    if (method === "PUT" && roleMatch) return this.handleUpdateRole(req, roleMatch[1]!, body, res);
+    if (method === "DELETE" && roleMatch) return this.handleDeleteRole(req, roleMatch[1]!, res);
     if (method === "GET" && path === "/api/node-admin/audit") return this.handleAuditList(req, url, res);
-    if (method === "GET" && path === "/api/node-admin/audit/verify") return this.handleAuditVerifyEndpoint(req, res);
+    if (method === "GET" && path === "/api/node-admin/audit/verify") return this.handleAuditVerifyEndpoint(req, url, res);
     if (method === "GET" && path === "/api/node-admin/sessions") return this.handleSessionsList(req, url, res);
     const sessionRevokeMatch = path.match(/^\/api\/node-admin\/sessions\/([^/]+)\/revoke$/);
     if (method === "POST" && sessionRevokeMatch) return this.handleSessionRevoke(req, sessionRevokeMatch[1]!, res);
@@ -242,7 +254,10 @@ export class FakeNodeServer {
   private handleChallenge(body: Record<string, unknown>, res: ServerResponse): void {
     const purpose = body.purpose as "root_login" | "admin_login";
     const fingerprint = String(body.fingerprint ?? "");
-    const challengeId = randomUUID();
+    // Lane A1 deviation #16: challengeId is an opaque ~300-char base64url string, not a GUID — the
+    // Map key only needs to be unique and stable; the CLI must treat it as opaque and sign it
+    // verbatim (never parse/validate its shape), which this proves end to end.
+    const challengeId = toBase64Url(randomBytes(220));
     const nonce = toBase64Url(randomBytes(32));
     const expiresAt = expiresAtString(new Date(Date.now() + 60_000));
     this.challenges.set(challengeId, { purpose, nonce, expiresAt, subjectFingerprint: fingerprint, consumed: false });
@@ -279,12 +294,13 @@ export class FakeNodeServer {
       }
       const principal = `root:${fingerprint}`;
       const sid = randomUUID();
-      this.sessions.set(sid, { sid, principal, permissions: ROOT_PERMISSIONS, authTime: Date.now(), revoked: false });
+      const handle = randomUUID();
+      this.sessions.set(sid, { sid, handle, principal, permissions: ROOT_PERMISSIONS, authTime: Date.now(), revoked: false });
       this.appendAudit(principal, "auth.session", principal, "ok", { amr: ["ed25519", "root"] });
       return this.sendOk(res, {
         accessToken: sid,
         expiresAt: expiresAtString(new Date(Date.now() + 15 * 60_000)),
-        sid,
+        handle,
         principal,
         permissions: ROOT_PERMISSIONS,
       });
@@ -323,12 +339,13 @@ export class FakeNodeServer {
     const principal = `admin:${admin.id}`;
     const permissions = this.permissionsForAdmin(admin);
     const sid = randomUUID();
-    this.sessions.set(sid, { sid, principal, permissions, authTime: Date.now(), revoked: false });
+    const handle = randomUUID();
+    this.sessions.set(sid, { sid, handle, principal, permissions, authTime: Date.now(), revoked: false });
     this.appendAudit(principal, "auth.session", principal, "ok", { amr: ["ed25519", "totp"] });
     this.sendOk(res, {
       accessToken: sid,
       expiresAt: expiresAtString(new Date(Date.now() + 15 * 60_000)),
-      sid,
+      handle,
       principal,
       permissions,
       admin: { id: admin.id, username: admin.username, roles: admin.roleIds },
@@ -377,6 +394,28 @@ export class FakeNodeServer {
     return session;
   }
 
+  /** `*ManageRecent` policies: the permission check AND a step-up (recent login) check. */
+  private requireRecentPermission(req: IncomingMessage, res: ServerResponse, permission: string): FakeSession | null {
+    const session = this.requirePermission(req, res, permission);
+    if (!session) return null;
+    if (!this.isRecent(session)) {
+      this.sendError(res, "STEP_UP_REQUIRED", "Step-up re-authentication required");
+      return null;
+    }
+    return session;
+  }
+
+  /** `SessionRecent` policies: any authenticated, recently-logged-in session (no specific permission). */
+  private requireRecentAuth(req: IncomingMessage, res: ServerResponse): FakeSession | null {
+    const session = this.requireAuth(req, res);
+    if (!session) return null;
+    if (!this.isRecent(session)) {
+      this.sendError(res, "STEP_UP_REQUIRED", "Step-up re-authentication required");
+      return null;
+    }
+    return session;
+  }
+
   private handleRevokeSelf(req: IncomingMessage, res: ServerResponse): void {
     const session = this.requireAuth(req, res);
     if (!session) return;
@@ -393,7 +432,7 @@ export class FakeNodeServer {
       root: isRoot ? { fingerprint: session.principal.slice("root:".length) } : undefined,
       admin: isRoot ? undefined : this.adminDtoByPrincipal(session.principal),
       permissions: session.permissions,
-      session: { sid: session.sid, authTime: new Date(session.authTime).toISOString(), expiresAt: expiresAtString(new Date(session.authTime + 15 * 60_000)) },
+      session: { handle: session.handle, authTime: new Date(session.authTime).toISOString(), expiresAt: expiresAtString(new Date(session.authTime + 15 * 60_000)) },
     });
   }
 
@@ -420,7 +459,7 @@ export class FakeNodeServer {
   }
 
   private handleCreateAdmin(req: IncomingMessage, body: Record<string, unknown>, res: ServerResponse): void {
-    const session = this.requirePermission(req, res, "admins.manage");
+    const session = this.requireRecentPermission(req, res, "admins.manage");
     if (!session) return;
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -535,7 +574,7 @@ export class FakeNodeServer {
       return this.sendOk(res, this.adminDto(admin));
     }
     if (method === "POST" && sub === "/activate") {
-      const session = this.requirePermission(req, res, "admins.manage");
+      const session = this.requireRecentPermission(req, res, "admins.manage");
       if (!session) return;
       if (admin.status !== "pending_activation") {
         return this.sendError(res, "VALIDATION_FAILED", "admin is not pending_activation");
@@ -550,7 +589,7 @@ export class FakeNodeServer {
       return this.sendOk(res, { admin: this.adminDto(admin) });
     }
     if (method === "POST" && (sub === "/suspend" || sub === "/reactivate" || sub === "/revoke")) {
-      const session = this.requirePermission(req, res, "admins.manage");
+      const session = this.requireRecentPermission(req, res, "admins.manage");
       if (!session) return;
       admin.status = sub === "/suspend" ? "suspended" : sub === "/revoke" ? "revoked" : "active";
       admin.updatedAt = new Date().toISOString();
@@ -558,7 +597,7 @@ export class FakeNodeServer {
       return this.sendOk(res, { admin: this.adminDto(admin) });
     }
     if (method === "POST" && sub === "/revoke-sessions") {
-      const session = this.requirePermission(req, res, "admins.manage");
+      const session = this.requireRecentPermission(req, res, "admins.manage");
       if (!session) return;
       for (const s of this.sessions.values()) {
         if (s.principal === `admin:${id}`) s.revoked = true;
@@ -567,19 +606,34 @@ export class FakeNodeServer {
       return this.sendOk(res, {});
     }
     if (method === "PUT" && sub === "/roles") {
-      const session = this.requirePermission(req, res, "roles.manage");
+      const session = this.requireRecentPermission(req, res, "roles.manage");
       if (!session) return;
       admin.roleIds = Array.isArray(body.roleIds) ? (body.roleIds as string[]) : [];
       admin.updatedAt = new Date().toISOString();
-      this.appendAudit(session.principal, "admins.roles", id, "ok", { roleIds: admin.roleIds });
-      return this.sendOk(res, { admin: this.adminDto(admin) });
+      // Lane A1 M-2: NodeAdminReenrollmentView — changing a still-pending admin's roles resets
+      // them to pending_enrollment (keys/TOTP invalidated); only root gets a fresh token for it.
+      let enrollmentToken: string | null = null;
+      let enrollmentExpiresAt: string | null = null;
+      const wasPending = admin.status === "pending_enrollment" || admin.status === "pending_activation";
+      if (wasPending) {
+        for (const key of admin.keys) key.revokedAt ??= new Date().toISOString();
+        for (const rec of this.enrollmentTokens.values()) if (rec.adminId === id) rec.consumed = true;
+        for (const enr of this.enrollments.values()) if (enr.adminId === id) enr.consumed = true;
+        admin.status = "pending_enrollment";
+        admin.totpSecret = undefined;
+        admin.totpLastStep = undefined;
+        if (session.principal.startsWith("root:")) {
+          enrollmentToken = randomUUID().replace(/-/g, "");
+          enrollmentExpiresAt = expiresAtString(new Date(Date.now() + 4 * 60 * 60_000));
+          this.enrollmentTokens.set(enrollmentToken, { adminId: id, consumed: false });
+        }
+      }
+      this.appendAudit(session.principal, "admins.roles", id, "ok", { roleIds: admin.roleIds, reenrolled: wasPending });
+      return this.sendOk(res, { admin: this.adminDto(admin), enrollmentToken, enrollmentExpiresAt });
     }
     if (method === "POST" && sub === "/keys") {
-      const session = this.requireAuth(req, res);
+      const session = this.requireRecentAuth(req, res); // SessionRecent — no specific permission
       if (!session) return;
-      if (!this.isRecent(session)) {
-        return this.sendError(res, "STEP_UP_REQUIRED", "Step-up re-authentication required");
-      }
       const publicKey = String(body.publicKey ?? "");
       const fingerprint = fingerprintOf(fromBase64Url(publicKey));
       const message = addKeyMessage(this.audience, id, fingerprint);
@@ -592,7 +646,8 @@ export class FakeNodeServer {
       return this.sendOk(res, { admin: this.adminDto(admin) });
     }
     if (method === "DELETE" && sub.startsWith("/keys/")) {
-      const session = this.requirePermission(req, res, "admins.manage");
+      // SessionRecent policy (not a specific permission) — any recently-authenticated session.
+      const session = this.requireRecentAuth(req, res);
       if (!session) return;
       const fp = decodeURIComponent(sub.slice("/keys/".length));
       const key = admin.keys.find((k) => k.fingerprint === fp);
@@ -601,7 +656,7 @@ export class FakeNodeServer {
       return this.sendOk(res, {});
     }
     if (method === "POST" && sub === "/mfa/reset") {
-      const session = this.requirePermission(req, res, "admins.manage");
+      const session = this.requireRecentPermission(req, res, "admins.manage");
       if (!session) return;
       // Lane A1 contract deviations #2/#10: revokes every key + session, returns the admin to
       // pending_enrollment, and only hands a fresh enrollment token to a ROOT caller.
@@ -628,6 +683,59 @@ export class FakeNodeServer {
     this.sendError(res, "NOT_FOUND", `no fake route for ${method} /admins/${id}${sub}`);
   }
 
+  private roleDto(role: { id: string; name: string; builtIn: boolean; permissions: string[]; revision: number }) {
+    return { id: role.id, name: role.name, builtIn: role.builtIn, permissions: role.permissions, revision: role.revision };
+  }
+
+  private handleRolesList(req: IncomingMessage, res: ServerResponse): void {
+    const session = this.requirePermission(req, res, "roles.read");
+    if (!session) return;
+    this.sendOk(res, [...this.roles.values()].map((r) => this.roleDto(r)));
+  }
+
+  private handleCreateRole(req: IncomingMessage, body: Record<string, unknown>, res: ServerResponse): void {
+    const session = this.requireRecentPermission(req, res, "roles.manage");
+    if (!session) return;
+    const name = String(body.name ?? "");
+    const permissions = Array.isArray(body.permissions) ? (body.permissions as string[]) : [];
+    if ([...this.roles.values()].some((r) => r.name === name)) {
+      return this.sendError(res, "VALIDATION_FAILED", "A role with that name exists.");
+    }
+    // Custom role ids are Guid "N" (no dashes) — built-in ids equal their names (lane A1 deviation #8).
+    const id = randomUUID().replace(/-/g, "");
+    const role = { id, name, builtIn: false, permissions, revision: 1 };
+    this.roles.set(id, role);
+    this.appendAudit(session.principal, "roles.create", id, "ok", { name });
+    this.sendOk(res, this.roleDto(role));
+  }
+
+  private handleUpdateRole(req: IncomingMessage, id: string, body: Record<string, unknown>, res: ServerResponse): void {
+    const session = this.requireRecentPermission(req, res, "roles.manage");
+    if (!session) return;
+    const role = this.roles.get(id);
+    if (!role) return this.sendError(res, "NOT_FOUND", "Role not found.");
+    if (role.builtIn) return this.sendError(res, "ROLE_BUILT_IN", "Built-in roles are immutable.");
+    role.name = String(body.name ?? role.name);
+    role.permissions = Array.isArray(body.permissions) ? (body.permissions as string[]) : role.permissions;
+    role.revision += 1;
+    this.appendAudit(session.principal, "roles.update", id, "ok", { name: role.name });
+    this.sendOk(res, this.roleDto(role));
+  }
+
+  private handleDeleteRole(req: IncomingMessage, id: string, res: ServerResponse): void {
+    const session = this.requireRecentPermission(req, res, "roles.manage");
+    if (!session) return;
+    const role = this.roles.get(id);
+    if (!role) return this.sendError(res, "NOT_FOUND", "Role not found.");
+    if (role.builtIn) return this.sendError(res, "ROLE_BUILT_IN", "Built-in roles are immutable.");
+    if ([...this.admins.values()].some((a) => a.roleIds.includes(id))) {
+      return this.sendError(res, "ROLE_IN_USE", "This role is still assigned to one or more admins.");
+    }
+    this.roles.delete(id);
+    this.appendAudit(session.principal, "roles.delete", id, "ok", {});
+    this.sendOk(res, true);
+  }
+
   private handleProtectedExample(req: IncomingMessage, res: ServerResponse): void {
     const session = this.requireAuth(req, res);
     if (!session) return;
@@ -647,18 +755,29 @@ export class FakeNodeServer {
     this.sendOk(res, { rows, head: head ? { seq: head.seq, hash: head.hash } : { seq: 0, hash: GENESIS_PREV_HASH } });
   }
 
-  private handleAuditVerifyEndpoint(req: IncomingMessage, res: ServerResponse): void {
+  /**
+   * `GET /audit/verify?fromSeq=&full=` (lane A1 §contract-deviations #14): verifies the window
+   * `fromSeq..verifiedThroughSeq`. `full=true` can answer 429 `RATE_LIMITED` — simulated here via
+   * `forceAuditRateLimited`, a test-only hook (real flood control is request-rate-based).
+   */
+  private handleAuditVerifyEndpoint(req: IncomingMessage, url: URL, res: ServerResponse): void {
     const session = this.requirePermission(req, res, "audit.read");
     if (!session) return;
-    let prevHash = GENESIS_PREV_HASH;
-    for (const row of this.auditRows) {
+    const full = url.searchParams.get("full") === "true";
+    if (full && this.forceAuditRateLimited) {
+      return this.sendError(res, "RATE_LIMITED", "Too many full audit verifications; slow down.", { retryAfterSeconds: 60 });
+    }
+    const fromSeq = full ? 0 : Number(url.searchParams.get("fromSeq") ?? "0");
+    let prevHash = fromSeq > 0 ? this.auditRows.find((r) => r.seq === fromSeq)?.hash ?? GENESIS_PREV_HASH : GENESIS_PREV_HASH;
+    const window = this.auditRows.filter((r) => r.seq > fromSeq);
+    for (const row of window) {
       const recomputed = computeRowHash({ ...row, prevHash });
       if (recomputed !== row.hash) {
-        return this.sendOk(res, { ok: false, verifiedThroughSeq: row.seq - 1, headHash: prevHash, firstBrokenSeq: row.seq });
+        return this.sendOk(res, { ok: false, fromSeq, verifiedThroughSeq: row.seq - 1, headHash: prevHash, firstBrokenSeq: row.seq });
       }
       prevHash = row.hash;
     }
-    this.sendOk(res, { ok: true, verifiedThroughSeq: this.auditRows.at(-1)?.seq ?? 0, headHash: prevHash });
+    this.sendOk(res, { ok: true, fromSeq, verifiedThroughSeq: window.at(-1)?.seq ?? fromSeq, headHash: prevHash });
   }
 
   /** `?principal=` (full `admin:<id>`/`root:<fp>` string), not a bare admin id — see NodeAdminManager.ListSessionsAsync. */
@@ -675,24 +794,57 @@ export class FakeNodeServer {
       [...this.sessions.values()]
         .filter((s) => s.principal === subject)
         .map((s) => ({
-          sid: s.sid,
+          handle: s.handle,
           principal: s.principal,
           authTime: new Date(s.authTime).toISOString(),
           amr: [],
           expiresAt: expiresAtString(new Date(s.authTime + 15 * 60_000)),
           revokedAt: s.revoked ? new Date().toISOString() : undefined,
           ip: "127.0.0.1",
-          current: s.sid === session.sid,
+          current: s.handle === session.handle,
         })),
     );
   }
 
-  private handleSessionRevoke(req: IncomingMessage, sid: string, res: ServerResponse): void {
+  /**
+   * Looked up by `handle`, never the raw `sid` (lane A1 M-1) — step-up gated (`SessionRecent`-
+   * equivalent). NEW-2: only a root session can revoke a root session, full stop — not even an
+   * owner-capable admin.
+   */
+  private handleSessionRevoke(req: IncomingMessage, handle: string, res: ServerResponse): void {
     const session = this.requireAuth(req, res);
     if (!session) return;
-    const target = this.sessions.get(sid);
-    if (target) target.revoked = true;
-    this.sendOk(res, {});
+    const target = [...this.sessions.values()].find((s) => s.handle === handle);
+    if (!target) return this.sendError(res, "NOT_FOUND", "Session not found.");
+    if (target.principal.startsWith("root:") && !session.principal.startsWith("root:")) {
+      return this.sendError(res, "PERMISSION_DENIED", "Only a root session can revoke a root session.");
+    }
+    if (target.principal !== session.principal && !session.principal.startsWith("root:") && !session.permissions.includes("admins.manage")) {
+      return this.sendError(res, "PERMISSION_DENIED", "Revoking another principal's session requires admins.manage.");
+    }
+    target.revoked = true;
+    this.sendOk(res, true);
+  }
+
+  /** `POST /root/revoke-sessions` (lane A1 L-2, tightened NEW-2) — root-only; step-up gated. */
+  private handleRootRevokeSessions(req: IncomingMessage, res: ServerResponse): void {
+    const session = this.requireAuth(req, res);
+    if (!session) return;
+    if (!this.isRecent(session)) {
+      return this.sendError(res, "STEP_UP_REQUIRED", "Step-up re-authentication required");
+    }
+    if (!session.principal.startsWith("root:")) {
+      return this.sendError(
+        res,
+        "PERMISSION_DENIED",
+        "Only a root session can revoke root sessions. To cut off root, rotate NodeAdmin__RootKeyRevision in the node environment.",
+      );
+    }
+    for (const s of this.sessions.values()) {
+      if (s.principal.startsWith("root:")) s.revoked = true;
+    }
+    this.appendAudit(session.principal, "root.revoke_sessions", "root", "ok", {});
+    this.sendOk(res, true);
   }
 
   private sendOk(res: ServerResponse, result: unknown, status = 200): void {

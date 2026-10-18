@@ -26,7 +26,8 @@ interface ChallengeResponse {
 interface SessionResponse {
   accessToken: string;
   expiresAt: string;
-  sid: string;
+  /** Opaque session-list/revoke id — the real sid lives only inside accessToken (lane A1 M-1). */
+  handle: string;
   principal: string;
   permissions: string[];
   admin?: { id: string; username: string; roles: string[] };
@@ -98,7 +99,7 @@ export async function runLogin(
   const session: StoredSession = {
     accessToken: sessionResponse.accessToken,
     expiresAt: sessionResponse.expiresAt,
-    sid: sessionResponse.sid,
+    handle: sessionResponse.handle,
     principal: sessionResponse.principal,
     permissions: sessionResponse.permissions,
     authTime: new Date().toISOString(),

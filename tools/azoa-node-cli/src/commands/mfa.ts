@@ -1,5 +1,7 @@
-import { httpClientFor, requireSession, resolveProfile } from "../context.js";
+import { requireSession, resolveProfile } from "../context.js";
+import { createRealInputSource, type InputSource } from "../io/input.js";
 import { emit } from "../io/output.js";
+import { mutateWithStepUpRetry } from "../mutate.js";
 
 interface MfaResetAdmin {
   id: string;
@@ -20,12 +22,19 @@ export interface MfaResetResponse {
   enrollmentExpiresAt: string | null;
 }
 
-export async function runMfaReset(adminId: string, options: { profile?: string; json: boolean }): Promise<void> {
+export async function runMfaReset(
+  adminId: string,
+  options: { profile?: string; json: boolean },
+  input: InputSource = createRealInputSource(),
+): Promise<void> {
   const resolved = resolveProfile(options.profile);
   requireSession(resolved);
-  const { data } = await httpClientFor(resolved).call<MfaResetResponse>(
+  const data = await mutateWithStepUpRetry<MfaResetResponse>(
+    resolved,
     "POST",
     `/api/node-admin/admins/${encodeURIComponent(adminId)}/mfa/reset`,
+    undefined,
+    input,
   );
 
   if (data.enrollmentToken) {

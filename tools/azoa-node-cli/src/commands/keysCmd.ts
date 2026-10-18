@@ -1,13 +1,12 @@
 import { addKeyMessage } from "../crypto/canonical.js";
 import { generateEd25519KeyPair, signMessage } from "../crypto/keys.js";
 import { AzoaCliError } from "../errors.js";
-import { httpClientFor, requireSession, resolveProfile } from "../context.js";
+import { requireSession, resolveProfile } from "../context.js";
 import type { InputSource } from "../io/input.js";
 import { createRealInputSource } from "../io/input.js";
 import { emit } from "../io/output.js";
+import { mutateWithStepUpRetry } from "../mutate.js";
 import { writeKeyFile } from "../storage/keyFile.js";
-import { isRecentAuth } from "../storage/session.js";
-import { runLogin } from "./login.js";
 
 export interface KeysAddOptions {
   profile?: string;
@@ -18,18 +17,13 @@ export interface KeysAddOptions {
   json: boolean;
 }
 
-/** H2: keys add requires a step-up (≤10 min) session; the CLI re-logs-in transparently if stale. */
+/** H2: `POST .../keys` sits behind a `*Recent` (step-up) policy — `mutateWithStepUpRetry` handles it. */
 export async function runKeysAdd(
   options: KeysAddOptions,
   input: InputSource = createRealInputSource(),
 ): Promise<void> {
-  let resolved = resolveProfile(options.profile);
-  let session = requireSession(resolved);
-
-  if (!isRecentAuth(session.authTime)) {
-    session = await runLogin({ profile: resolved.name, json: options.json }, input);
-    resolved = resolveProfile(options.profile);
-  }
+  const resolved = resolveProfile(options.profile);
+  const session = requireSession(resolved);
 
   const adminId = options.targetAdminId ?? session.admin?.id;
   if (!adminId) {
@@ -45,12 +39,13 @@ export async function runKeysAdd(
   const message = addKeyMessage(resolved.profile.node, adminId, keyPair.fingerprint);
   const signature = signMessage(keyPair.privateKey, message);
 
-  const client = httpClientFor({ ...resolved, session });
-  await client.call("POST", `/api/node-admin/admins/${encodeURIComponent(adminId)}/keys`, {
-    publicKey: keyPair.publicKeyB64Url,
-    label: options.label,
-    signature,
-  });
+  await mutateWithStepUpRetry(
+    resolved,
+    "POST",
+    `/api/node-admin/admins/${encodeURIComponent(adminId)}/keys`,
+    { publicKey: keyPair.publicKeyB64Url, label: options.label, signature },
+    input,
+  );
 
   await writeKeyFile(options.keyName, keyPair, resolved.profile.kind, passphrase);
 
@@ -65,12 +60,16 @@ export async function runKeysRevoke(
   adminId: string,
   fingerprint: string,
   options: { profile?: string; json: boolean },
+  input: InputSource = createRealInputSource(),
 ): Promise<void> {
   const resolved = resolveProfile(options.profile);
   requireSession(resolved);
-  await httpClientFor(resolved).call(
+  await mutateWithStepUpRetry(
+    resolved,
     "DELETE",
     `/api/node-admin/admins/${encodeURIComponent(adminId)}/keys/${encodeURIComponent(fingerprint)}`,
+    undefined,
+    input,
   );
   emit(options.json, `Revoked key ${fingerprint} from admin ${adminId}.`, { adminId, fingerprint });
 }

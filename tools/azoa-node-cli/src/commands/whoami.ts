@@ -11,7 +11,7 @@ interface MeResponse {
   admin?: { id: string; username: string; status: string; roles: unknown[] };
   root?: { fingerprint: string };
   permissions: string[];
-  session: { sid: string; authTime: string; expiresAt: string };
+  session: { handle: string; authTime: string; expiresAt: string };
 }
 
 export async function runWhoami(options: WhoamiOptions): Promise<MeResponse> {

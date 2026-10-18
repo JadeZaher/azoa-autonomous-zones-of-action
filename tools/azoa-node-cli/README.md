@@ -49,7 +49,7 @@ node dist/cli.js admins list --json
 
 4. **Root creates the first node admin**:
    ```powershell
-   azoa-node admins create --username alice --display-name "Alice" --role role-node-owner --profile rootp
+   azoa-node admins create --username alice --display-name "Alice" --role node-owner --profile rootp
    ```
    Prints an enrollment token **once** — hand it to Alice out of band (she never puts it on argv).
 
@@ -85,12 +85,24 @@ node dist/cli.js admins list --json
 - **Canonical signing (H2)**: every signed message is the server's own returned strings,
   joined verbatim — the CLI never re-serializes a timestamp or id itself. See
   `src/crypto/canonical.ts`.
-- **Step-up**: `keys add` and the generic `api` passthrough both require (or transparently
-  re-establish) a session whose `auth_time` is within the server's recent-login window;
-  `api` retries the original request exactly once after re-login.
+- **Step-up**: every mutating command that sits behind a `*Recent` (step-up) policy — `keys
+  add/revoke`, `admins create/suspend/reactivate/revoke/activate/roles/revoke-sessions`, `roles
+  create/update/delete`, `mfa reset`, `root revoke-sessions`, and the generic `api` passthrough —
+  goes through one seam (`src/mutate.ts`'s `mutateWithStepUpRetry`): try the call, and on
+  `STEP_UP_REQUIRED` transparently re-run the stored profile's login flow once and retry the
+  original request exactly once. Implemented once, not per command, so there's one place to audit.
 - **Audit pins**: `audit verify` recomputes the hash chain locally from `~/.azoa/audit-pins/<profile>.json`
   and alerts (exit code 6) on any tampered row or a head that regressed behind what was
   previously pinned — see `src/audit/chain.ts`.
+- **Opaque challenge ids**: the server's `challengeId` is a ~300-character opaque string (a
+  stateless HMAC-authenticated payload, not a GUID) and is itself part of the signed message. The
+  CLI never parses, validates the shape of, or length-limits it — it is signed byte-for-byte like
+  every other server-returned string (H2).
+- **Root sessions can only be ended by root**: `root revoke-sessions` fails locally (exit 4,
+  before any network call) if the active profile isn't `kind: root`; the server refuses it too,
+  even for an admin holding every permission. To cut root off without a live root session,
+  rotate `NodeAdmin__RootKeyRevision`/root keys via `root env --railway --remove <fp>` instead.
+  The same rule applies to `sessions revoke` of a `root:*` session's handle.
 - `azoa-node` never reads or prints `.env` values, and never forwards its bearer token to any
   origin other than the profile's configured node.
 
@@ -104,14 +116,16 @@ node dist/cli.js admins list --json
 | `login [--root] [--totp <code>]` | Challenge → canonical-sign → session. Prompts for a key passphrase and/or TOTP as needed. |
 | `logout` | Revokes the server-side session, then deletes the local session file regardless of network outcome. |
 | `whoami` | `GET /me`. |
-| `sessions list [--admin <id>]` / `sessions revoke <sid>` | `--admin` filters by the full `principal` (`admin:<id>`/`root:<fp>`); a bare id is auto-prefixed with `admin:`. |
-| `admins list\|show\|create\|suspend\|reactivate\|revoke\|activate\|roles\|revoke-sessions` | `create` prints a one-time enrollment token; `activate <id> --fingerprint <fp>` completes the H3 state machine. |
-| `keys add [--admin-id <id>] --key-name <n> [--label <l>] [--no-passphrase]` / `keys revoke <adminId> <fingerprint>` | `add` requires a fresh (≤10 min) session and re-logs-in transparently if stale; the proof is always signed by the *new* key. |
+| `sessions list [--admin <id>]` / `sessions revoke <handle>` | `--admin` filters by the full `principal` (`admin:<id>`/`root:<fp>`); a bare id is auto-prefixed with `admin:`. Sessions are identified by an opaque `handle` — the real sid never leaves the access token (lane A1 M-1). Revoking a `root:*` session's handle requires a root caller. |
+| `admins list\|show\|create\|suspend\|reactivate\|revoke\|activate\|revoke-sessions` | `create` prints a one-time enrollment token; `activate <id> --fingerprint <fp>` completes the H3 state machine. |
+| `admins roles <id> --set <roleIds>` | `PUT /admins/{id}/roles` returns the same reenrollment shape as `mfa reset`: changing a still-*pending* admin's roles resets them to `pending_enrollment` (keys/TOTP invalidated); prints a fresh enrollment token when present (caller was root), otherwise warns that only root can issue one. |
+| `keys add [--admin-id <id>] --key-name <n> [--label <l>] [--no-passphrase]` / `keys revoke <adminId> <fingerprint>` | Step-up gated (auto re-login-and-retry, see below); the proof is always signed by the *new* key. |
 | `mfa reset <adminId>` | Revokes the admin's keys/sessions and returns them to `pending_enrollment`. Returns a new enrollment token (shown once) **only when the caller is root** — a peer owner gets confirmation the reset happened, no token. |
 | `enroll --origin <origin> [--profile-name <n>] [--key-name <n>] [--label <l>] [--no-passphrase] [--force]` | Reads the enrollment token from stdin or a hidden prompt — **never** a CLI argument. `--origin`/`--profile-name` (not `--node`/`--profile`) to avoid colliding with the global flags of the same purpose-adjacent name. Aborts (exit 3) if `/enroll/start`'s returned `audience`/`fingerprint` disagree with `--origin`/the local key — the same MITM-shaped check as login's H1. |
 | `roles list\|create` / `roles update <id> --name <n> --permissions <p>` / `roles delete <id>` | `update` is a full replace (`PUT /roles/{id}` takes the same `{name, permissions}` body as `create`) — `--name` is required, not optional, and can rename the role. |
+| `root revoke-sessions [--yes]` | `POST /root/revoke-sessions`, **root-only** — fails locally (exit 4) if the active profile isn't `kind: root`, before any network call. Destructive (ends every root session, including the caller's); prompts for `yes` confirmation unless `--yes`. |
 | `audit tail [--after <seq>] [--limit <n>]` | `--follow` is accepted but errors — cut per plan.md §8. |
-| `audit verify` | Recomputes and pins the chain; non-zero exit (6) on any integrity alert. |
+| `audit verify [--full] [--from-seq <n>]` | Recomputes and pins the chain locally, then cross-checks the server's own `GET /audit/verify?fromSeq=&full=`; non-zero exit (6) on any integrity alert. Defaults `fromSeq` to the local pin (incremental); `--full` ignores the pin and re-verifies from genesis, which the server may answer with `RATE_LIMITED` (429, exit 5). |
 | `api <METHOD> <path> [--data <json>\|@file]` | `path` must start with `/api/`; absolute/protocol-relative URLs are rejected before any network call. |
 
 Global flags on every command: `--profile <name>`, `--json`, `--node <origin>` (override the
@@ -121,12 +135,13 @@ profile's configured node for one invocation).
 
 `0` ok · `2` usage (incl. `NOT_FOUND`, `CONFLICT` — a wrong id or stale state is a user-input
 problem, not a permission/network fault) · `3` auth (`AUTH_FAILED`/`STEP_UP_REQUIRED`/`ADMIN_LOCKED`
-— shows the retry time from the server's `Retry-After`) · `4` permission
+— shows the retry time from the server's `Retry-After`, formatted with hours once the lockout
+backoff is exponential enough to need them) · `4` permission
 (`PERMISSION_DENIED`/`DOMINANCE_REQUIRED`/`ESCALATION_REFUSED`/`LAST_OWNER`/`SELF_ACTION_REFUSED`)
 · `5` network/server (incl. `NODE_ADMIN_UNAVAILABLE` — the node has no `NodeAdmin__Audience`
-configured) · `6` audit integrity alert. The CLI always prefers the envelope's `code` over the
-HTTP status; status is only a fallback when the body isn't a parseable AZOAResult. Full mapping
-in `src/errors.ts`.
+configured — and `RATE_LIMITED`, also with a formatted retry time) · `6` audit integrity alert.
+The CLI always prefers the envelope's `code` over the HTTP status; status is only a fallback when
+the body isn't a parseable AZOAResult. Full mapping in `src/errors.ts`.
 
 ## CONTRACT ASSUMPTIONS
 
@@ -135,11 +150,9 @@ Recorded here per the track brief; flag to the orchestrator if lane A disagrees.
 All routes, body field names and response shapes below were cross-checked against the real
 `Controllers/NodeAdmin*Controller.cs`, `Models/{Requests,Responses}/NodeAdminResponses.cs` and
 `Services/NodeAdmin/AGENTS.md` §contract-deviations in lane A1 (branch `feat/node-admin-a1`,
-commit `f4d5a77e`) — not guessed. Known CLI gap, not a contract mismatch: only `keys add` and the
-generic `api` passthrough auto-retry on `STEP_UP_REQUIRED`; `keys revoke`, `admins
-suspend/reactivate/revoke/activate/roles/revoke-sessions` and `roles create/update/delete` also
-sit behind a `*Recent` (step-up) policy server-side but currently just surface the error —
-re-running `login` then the command works, it's just not automatic yet for those.
+through commit `a90f6ab6`) — not guessed. Every `*Recent` (step-up) mutating command auto-retries
+on `STEP_UP_REQUIRED` via the single `mutateWithStepUpRetry` seam (`src/mutate.ts`); this closed
+an earlier-noted gap where only `keys add`/`api` did.
 
 1. **Key file format** is a small JSON envelope, not literal PKCS8 PEM (plan.md §5 says "PEM").
    The binding CLI security amendments (scrypt N=2^17 r=8 p=1 256 MiB + AES-256-GCM) don't
