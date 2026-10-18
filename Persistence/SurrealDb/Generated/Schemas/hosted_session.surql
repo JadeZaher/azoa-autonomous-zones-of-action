@@ -65,6 +65,7 @@ DEFINE FIELD IF NOT EXISTS resume_target_id ON TABLE hosted_session TYPE option<
 -- Outcome poll (lost-callback recovery)
 DEFINE FIELD IF NOT EXISTS next_poll_at ON TABLE hosted_session TYPE option<datetime>;
 DEFINE FIELD IF NOT EXISTS poll_attempt_count ON TABLE hosted_session TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS last_refresh_at ON TABLE hosted_session TYPE option<datetime>;
 
 -- Timestamps
 DEFINE FIELD IF NOT EXISTS created_date ON TABLE hosted_session TYPE datetime

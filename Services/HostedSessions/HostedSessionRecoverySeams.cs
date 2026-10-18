@@ -19,3 +19,23 @@ public interface IHostedSessionProgressHandler
     /// <summary>Records progress without deciding anything; a stale or mismatched attempt is a silent no-op.</summary>
     Task ObserveProgressAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default);
 }
+
+/// <summary>Whether a session's pending outcome can still change domain state.</summary>
+public enum HostedOutcomeRelevance
+{
+    /// <summary>The bound attempt is open and unexpired: a verdict would still be applied.</summary>
+    Live,
+
+    /// <summary>The bound attempt is decided, retired, superseded or expired: any verdict is a no-op.</summary>
+    Dead,
+
+    /// <summary>The domain could not tell (read fault, unknown flow); keep polling until the max-age backstop.</summary>
+    Unknown,
+}
+
+/// <summary>Domain probe the outcome poll asks before spending vendor budget on a session (RV-L2 L2-2).</summary>
+public interface IHostedSessionRelevanceProbe
+{
+    /// <summary>Read-only; never mutates the session or the attempt.</summary>
+    Task<HostedOutcomeRelevance> ProbeAsync(HostedSession session, DateTimeOffset now, CancellationToken ct = default);
+}

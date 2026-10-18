@@ -104,6 +104,32 @@ public sealed class HostedSessionFlowTests
         HostedSessionStates.IsTerminal(store.Peek(ParseId(seeded.Id))!.State).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("PENDING", false)]
+    [InlineData("RESUBMISSION_REQUESTED", false)]
+    [InlineData("REVIEW", false)]
+    [InlineData("MANUAL_CHECK", true)]
+    public async Task Only_a_vendor_manual_review_reaches_the_progress_hook(string outcome, bool manualReview)
+    {
+        var store = new InMemoryHostedSessionStore();
+        store.SeedAwaitingSubject(HostedSessionFlowKinds.Kyc, ProviderKey, ProviderSessionId, Guid.NewGuid());
+        var handler = new ProgressRecordingHandler();
+        var provider = new FakeHostedProvider
+        {
+            AuthoritativeOutcome = new HostedSessionOutcome
+            {
+                // Every one of these says the vendor knows the session; only MANUAL_CHECK means a human holds a submission.
+                SessionExists = true,
+                Outcome = outcome,
+                IsManualReview = manualReview,
+            },
+        };
+
+        await NewFlow(store, handler).HandleCallbackAsync(provider, "body");
+
+        handler.ObservedOutcomes.Should().Equal(manualReview ? [outcome] : Array.Empty<string>());
+    }
+
     [Fact]
     public async Task NonTerminalOutcome_CanStillTerminaliseOnALaterCallback()
     {
@@ -586,6 +612,20 @@ public sealed class HostedSessionFlowTests
         {
             AuthoritativeFetchCount++;
             return Task.FromResult(AZOAResult<HostedSessionOutcome>.Success(AuthoritativeOutcome));
+        }
+    }
+
+    private sealed class ProgressRecordingHandler : IHostedSessionOutcomeHandler, IHostedSessionProgressHandler
+    {
+        public List<string> ObservedOutcomes { get; } = [];
+
+        public Task<AZOAResult<string?>> ResumeAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<string?>.Success("submission-1"));
+
+        public Task ObserveProgressAsync(HostedSession session, HostedSessionOutcome outcome, CancellationToken ct = default)
+        {
+            ObservedOutcomes.Add(outcome.Outcome);
+            return Task.CompletedTask;
         }
     }
 

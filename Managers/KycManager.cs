@@ -140,8 +140,10 @@ public sealed class KycManager : IKycManager
             if (!authority.IsError && authority.Result?.Provider is IHostedSessionProvider hosted)
             {
                 // An unattached or mismatched session refreshes to an opaque no-op; the status read below is authoritative.
-                var refreshed = await _hostedFlow.RefreshAsync(hosted, sessionId, ct);
-                if (refreshed.IsError && refreshed.Code is HostedSessionFlow.RequestNotSentCode or HostedSessionFlow.ProviderRefusedCode)
+                // Per-session cooldown (RV-L2 L2-3); only a node-wide budget refusal is a 503, a per-session vendor
+                // refusal falls through to the stored status (L2-5).
+                var refreshed = await _hostedFlow.RefreshOnDemandAsync(hosted, sessionId, _settings.Identomat.OutcomePoll.RefreshCooldown, ct);
+                if (refreshed.IsError && refreshed.Code == HostedSessionFlow.RequestNotSentCode)
                     return Error<KycSubmissionModel>(refreshed.Message, code: AzoaErrorCodes.DependencyUnavailable);
             }
         }
@@ -321,8 +323,9 @@ public sealed class KycManager : IKycManager
         if (provider is not IPreparedHostedSessionProvider && _hostedSessions is not null && _recovery is not null)
         {
             var admission = await _hostedSessions.GetByIdAsync(sessionId, ct);
-            if (!admission.IsError && admission.Result is { State: HostedSessionStates.Abandoned } closed
-                && closed.OutcomeDetail == HostedSessionRecoveryOutcomes.SupersededOrphan)
+            // Any abandoned admission (superseded orphan, poll close-out, operator release) can never be reused:
+            // its session id is the attempt id, so the still-open attempt is retired and restarted (RV-L2 L2-6).
+            if (!admission.IsError && admission.Result is { State: HostedSessionStates.Abandoned })
                 return await RetireAndRestartAsync(attempt, userId, tenantId, ct, custody);
             if (!admission.IsError && admission.Result is { } existing && IsOrphan(existing, _clock.GetUtcNow()))
                 return await SupersedeOrphanAsync(attempt, existing, userId, tenantId, ct, custody);
@@ -599,7 +602,9 @@ public sealed class KycManager : IKycManager
             return Error<IEnumerable<KycSubmissionModel>>(pending.Message, pending.Exception, pending.Code);
 
         var models = new List<KycSubmissionModel>();
-        foreach (var submission in pending.Result ?? Enumerable.Empty<KycSubmission>())
+        // Only MANUAL submissions are decidable here (ApproveAsync/RejectAsync refuse the rest); hosted
+        // IN_REVIEW attempts are decided by their vendor and stay out of this queue (RV-L2 L2-9).
+        foreach (var submission in (pending.Result ?? Enumerable.Empty<KycSubmission>()).Where(item => item.Provider == KycProvider.MANUAL))
         {
             var withDocs = await WithDocuments(submission, ParseTenantId(submission), ct);
             if (withDocs.IsError || withDocs.Result is null)

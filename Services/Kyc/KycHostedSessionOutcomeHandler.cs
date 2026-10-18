@@ -210,7 +210,7 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(outcome);
-        if (outcome.IsTerminal || !outcome.SessionExists || _kycStore is not IKycHostedProgressStore progress)
+        if (outcome.IsTerminal || !outcome.IsManualReview || _kycStore is not IKycHostedProgressStore progress)
             return;
         if (!Guid.TryParseExact(session.SubjectUserId ?? string.Empty, "N", out var userId))
             return;
@@ -224,14 +224,34 @@ public sealed class KycHostedSessionOutcomeHandler : IHostedSessionOutcomeHandle
 
         var active = await _kycStore.GetActiveSubmissionAsync(userId, tenantId, ct);
         var now = _clock.GetUtcNow();
+        // Extended once, on entering review: a fixed horizon bounds both the attempt and the poll (RV-L2 L2-6).
         if (active.IsError || active.Result is not { } submission || !MatchesSession(submission, session)
-            || submission.ExpiresAt is null || submission.ExpiresAt <= now)
+            || submission.Status != KycStatus.PENDING || submission.ExpiresAt is null || submission.ExpiresAt <= now)
             return;
 
         var days = Math.Clamp(_configuration?.GetValue<int?>(SubmissionExpiryDaysKey) ?? DefaultSubmissionExpiryDays, 1, 365);
         var marked = await progress.TryMarkHostedInReviewAsync(submission, session, now, now.AddDays(days), ct);
         if (!marked.IsError && marked.Result is not null)
             _logger.LogInformation("Hosted KYC attempt {SubmissionId} is in vendor manual review; expiry extended.", submission.Id);
+    }
+
+    /// <summary>
+    /// Live only while the attempt bound to this session (attempt id == session id) is still open and
+    /// unexpired, i.e. while <see cref="ResumeAsync"/> would still apply a verdict. See AGENTS.md §manual review.
+    /// </summary>
+    public async Task<HostedOutcomeRelevance> ProbeAsync(HostedSession session, DateTimeOffset now, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!Guid.TryParseExact(session.Id ?? string.Empty, "N", out var attemptId))
+            return HostedOutcomeRelevance.Unknown;
+        var attempt = await _kycStore.GetSubmissionByIdAsync(attemptId, ct);
+        if (attempt.IsError)
+            return HostedOutcomeRelevance.Unknown;
+        return attempt.Result is { } submission && MatchesSession(submission, session)
+            && submission.Status is KycStatus.PENDING or KycStatus.IN_REVIEW
+            && submission.ExpiresAt is { } expiresAt && expiresAt > now
+                ? HostedOutcomeRelevance.Live
+                : HostedOutcomeRelevance.Dead;
     }
 
     private static bool MatchesSession(KycSubmission submission, HostedSession session)

@@ -153,6 +153,12 @@ public sealed class IdentomatKycSettings
     /// </summary>
     public int ReplicaCount { get; set; } = 1;
 
+    /// <summary>
+    /// Percent of the per-minute budget that result re-fetches (poll, refresh, callbacks) may use, so they
+    /// can never starve begin and AML screening. Clamped to 10-100.
+    /// </summary>
+    public int ResultRequestSharePercent { get; set; } = 50;
+
     /// <summary>Minutes the adapter stays circuit-open after an observed HTTP 529 ban.</summary>
     public int RateLimitBanCooldownMinutes { get; set; } = 60;
 
@@ -193,8 +199,14 @@ public sealed class IdentomatOutcomePollSettings
     /// <summary>Backoff ceiling in minutes; clamped to 1-1440.</summary>
     public int MaxIntervalMinutes { get; set; } = 60;
 
-    /// <summary>Hours after creation a still-undecided session is abandoned; clamped to 1-2160.</summary>
+    /// <summary>Backstop: hours after creation a session whose attempt state is unknown is abandoned; clamped to 1-2160. Live attempts poll until they expire.</summary>
     public int MaxAgeHours { get; set; } = 720;
+
+    /// <summary>Minimum seconds between two user/tenant-initiated re-fetches of one session; clamped to 5-3600.</summary>
+    public int RefreshCooldownSeconds { get; set; } = 30;
+
+    /// <summary>The clamped on-demand refresh cooldown.</summary>
+    public TimeSpan RefreshCooldown => TimeSpan.FromSeconds(Math.Clamp(RefreshCooldownSeconds, 5, 3600));
 }
 
 /// <summary>

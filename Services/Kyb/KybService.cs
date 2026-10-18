@@ -53,6 +53,7 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
                 ExpiresAt = now.AddHours(Math.Clamp(options.Value.AttemptLifetimeHours, 1, 720)),
                 Version = (current?.Version ?? -1) + 1,
             };
+            CarryEffectiveApproval(current, candidate, now);
             current = await store.TryStartAsync(current, candidate, ct) ?? await store.GetAsync(tenantId, ct);
         }
         if (current is null || current.Status != "PENDING"
@@ -121,10 +122,31 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
         if (string.IsNullOrWhiteSpace(session.Result.ProviderSessionId))
             return status;
         id = Guid.Parse(session.Result.Id);
-        var refreshed = await flow.RefreshAsync(provider, id, ct);
-        if (refreshed.IsError)
+        var refreshed = await flow.RefreshOnDemandAsync(provider, id, _identomat.OutcomePoll.RefreshCooldown, ct);
+        if (refreshed.IsError && refreshed.Code == HostedSessionFlow.RequestNotSentCode)
             return AZOAResult<KybStatusResponse?>.FailureWithCode("Business verification could not be refreshed.", AzoaErrorCodes.DependencyUnavailable);
         return await GetStatusAsync(tenantId, ct);
+    }
+
+    /// <summary>
+    /// An early renewal must not suspend a current approval (RV-L2 L2-7): the replacement attempt carries the
+    /// still-effective approval until it is decided. See Services/Kyb/AGENTS.md §renewal.
+    /// </summary>
+    private void CarryEffectiveApproval(KybVerification? current, KybVerification candidate, DateTimeOffset now)
+    {
+        if (current is { Status: "APPROVED", BusinessEvidenceJson: not null } approved && approved.ExpiresAt > now
+            && approved.AuthorityRevision == provider.AuthorityRevision)
+        {
+            candidate.EffectiveApprovalExpiresAt = approved.ExpiresAt;
+            candidate.EffectiveApprovalEvidenceJson = approved.BusinessEvidenceJson;
+            candidate.EffectiveApprovalAuthorityRevision = approved.AuthorityRevision;
+        }
+        else if (current is not null && KybGate.HasEffectiveCarriedApproval(current, provider.AuthorityRevision, now))
+        {
+            candidate.EffectiveApprovalExpiresAt = current.EffectiveApprovalExpiresAt;
+            candidate.EffectiveApprovalEvidenceJson = current.EffectiveApprovalEvidenceJson;
+            candidate.EffectiveApprovalAuthorityRevision = current.EffectiveApprovalAuthorityRevision;
+        }
     }
 
     /// <summary>
@@ -153,12 +175,14 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
             return AZOAResult<KybVerification>.FailureWithCode("Business verification changed. Read its current status.", AzoaErrorCodes.Conflict);
 
         var attempt = Guid.NewGuid().ToString("N");
-        var replacement = await store.TryStartAsync(current, new KybVerification
+        var candidate = new KybVerification
         {
             Id = tenantId.ToString("N"), AttemptId = attempt, AdmissionKey = $"kyb:{tenantId:N}:{attempt}",
             RequestKeyHash = requestHash, AuthorityRevision = provider.AuthorityRevision, CreatedAt = now,
             ExpiresAt = now.AddHours(Math.Clamp(options.Value.AttemptLifetimeHours, 1, 720)), Version = current.Version + 1,
-        }, ct);
+        };
+        CarryEffectiveApproval(current, candidate, now);
+        var replacement = await store.TryStartAsync(current, candidate, ct);
         return replacement is { Status: "PENDING" } && replacement.AttemptId == attempt
             ? AZOAResult<KybVerification>.Success(replacement)
             : AZOAResult<KybVerification>.FailureWithCode("Business verification changed. Read its current status.", AzoaErrorCodes.Conflict);
@@ -166,12 +190,14 @@ public sealed class KybService(IKybVerificationStore store, IdentomatKybProvider
 
     private KybStatusResponse Project(KybVerification verification)
     {
-        var fresh = verification.ExpiresAt > clock.GetUtcNow()
+        var now = clock.GetUtcNow();
+        var fresh = verification.ExpiresAt > now
             && verification.AuthorityRevision == provider.AuthorityRevision && GetCapabilities().Available;
+        var carried = GetCapabilities().Available && KybGate.HasEffectiveCarriedApproval(verification, provider.AuthorityRevision, now);
         var evidence = verification.BusinessEvidenceJson is null ? null
             : JsonSerializer.Deserialize<KybBusinessEvidence>(verification.BusinessEvidenceJson);
         return new KybStatusResponse(Guid.Parse(verification.AttemptId), fresh ? verification.Status : "EXPIRED",
-            fresh && verification.Status == "APPROVED" && evidence is { Beneficiaries.Count: > 0 },
+            (fresh && verification.Status == "APPROVED" && evidence is { Beneficiaries.Count: > 0 }) || carried,
             verification.ExpiresAt, verification.ReviewedAt, evidence?.Beneficiaries.Count ?? 0);
     }
 }

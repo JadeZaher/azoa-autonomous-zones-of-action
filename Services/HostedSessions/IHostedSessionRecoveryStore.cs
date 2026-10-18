@@ -20,7 +20,19 @@ public interface IHostedSessionRecoveryStore
     /// </summary>
     Task<bool> TryClaimPollAsync(HostedSession observed, DateTimeOffset nextPollAt, CancellationToken ct = default);
 
-    /// <summary>Attached sessions still non-terminal and untouched since <paramref name="before"/>, for the operator queue.</summary>
+    /// <summary>
+    /// Closes a polled session as <c>ABANDONED</c> with <paramref name="detail"/>. CAS on the observed version;
+    /// also takes a <c>RESUMING</c> row whose lease expired, so a crashed resume cannot pin the poll batch.
+    /// </summary>
+    Task<bool> TryAbandonPolledAsync(HostedSession observed, string detail, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>
+    /// Claims one caller-initiated re-fetch by moving <c>last_refresh_at</c> from its observed value; a
+    /// concurrent refresher gets false and answers from stored state.
+    /// </summary>
+    Task<bool> TryClaimRefreshAsync(HostedSession observed, DateTimeOffset now, CancellationToken ct = default);
+
+    /// <summary>Attached KYC/KYB sessions still non-terminal and untouched since <paramref name="before"/>, for the operator queue.</summary>
     Task<IReadOnlyList<HostedSession>> ListStalledAsync(DateTimeOffset before, int limit, CancellationToken ct = default);
 
     /// <summary>
@@ -42,4 +54,5 @@ public static class HostedSessionRecoveryOutcomes
 {
     public const string SupersededOrphan = "SUPERSEDED_ORPHAN";
     public const string PollExpired = "POLL_EXPIRED";
+    public const string AttemptClosed = "ATTEMPT_CLOSED";
 }

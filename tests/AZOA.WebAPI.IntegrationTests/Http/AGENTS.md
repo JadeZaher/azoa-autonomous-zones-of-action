@@ -64,6 +64,14 @@ KYB `/result` and callbacks are keyed by the session `id` (docs: "Use this to â€
 callbacks"). Tests flip `IdentomatSession.Verdict` to play the vendor's review and post callbacks
 with `IdentomatVendor.CallbackBody`.
 
+Undecided vs manual review (round-4 fix batch, RV-L2 test gap): the documented `result` values are
+`APPROVED | REJECTED | MANUAL_CHECK | ADDITIONAL_INFORMATION_REQUESTED`
+(`identomat-callback-contract-2026-10-15.md`); the docs give no shape for a session nobody has
+submitted yet. `Pending` therefore answers `{"result":null}` (no verdict, which the adapter maps to a
+non-terminal `UNKNOWN` without manual review), and `ManualCheck` answers the documented
+`MANUAL_CHECK`. The fake previously answered `MANUAL_CHECK` for every undecided session, which hid
+L2-1/L2-2. `IdentityResultRequests` counts `/external-api/result/` calls for budget assertions.
+
 The widget host also answers the documented `POST /external-api/delete/` (`company_key`, `session_token`):
 `true` when it deletes, `{"argumentError":"session-not-found"}` otherwise (`Providers/Kyc/IdentomatSessionDeletion.cs`
 treats both as gone). A deleted session stops answering `/external-api/result/`; `DeleteRequests` lets an orphan or

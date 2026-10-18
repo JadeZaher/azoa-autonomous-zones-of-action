@@ -9,6 +9,7 @@ using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 
@@ -186,6 +187,85 @@ public sealed class KycHostedSessionOutcomeHandlerTests
         submission.ExpiresAt.Should().Be(originalExpiry);
         _kycStore.Verify(store => store.UpsertSubmissionAsync(
             It.IsAny<KycSubmission>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    public static TheoryData<string, HostedSessionOutcome, bool> ProgressOutcomes => new()
+    {
+        // Veriff: verification null = the applicant has not submitted yet.
+        { "veriff-pending", new HostedSessionOutcome { SessionExists = true, Outcome = "PENDING" }, false },
+        { "veriff-resubmission", new HostedSessionOutcome { SessionExists = true, Outcome = "RESUBMISSION_REQUESTED" }, false },
+        // Generic hosted v1 "review" carries no manual-review contract.
+        { "generic-review", new HostedSessionOutcome { SessionExists = true, Outcome = "REVIEW" }, false },
+        { "identomat-undecided", IdentomatKycProviderService.MapOutcome(new IdentomatResultResponse { Result = null }), false },
+        { "identomat-more-info", IdentomatKycProviderService.MapOutcome(new IdentomatResultResponse { Result = "ADDITIONAL_INFORMATION_REQUESTED" }), false },
+        { "identomat-manual-check", IdentomatKycProviderService.MapOutcome(new IdentomatResultResponse { Result = "MANUAL_CHECK" }), true },
+    };
+
+    [Theory]
+    [MemberData(nameof(ProgressOutcomes))]
+    public async Task Only_a_vendor_manual_review_moves_the_attempt_to_review_and_extends_it(
+        string source, HostedSessionOutcome outcome, bool extended)
+    {
+        _ = source;
+        var progress = _kycStore.As<IKycHostedProgressStore>();
+        var session = NewSession();
+        var submission = SeedActiveSubmission(session);
+        var originalExpiry = submission.ExpiresAt!.Value;
+        progress.Setup(store => store.TryMarkHostedInReviewAsync(It.IsAny<KycSubmission>(), It.IsAny<HostedSession>(),
+                It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((KycSubmission row, HostedSession _, DateTimeOffset _, DateTimeOffset until, CancellationToken _) =>
+            {
+                row.Status = KycStatus.IN_REVIEW;
+                row.ExpiresAt = until;
+                return AZOAResult<KycSubmission>.Success(row);
+            });
+
+        await NewHandler().ObserveProgressAsync(session, outcome);
+
+        // RV-L2 L2-1: an unsubmitted or abandoned start must keep its short lifetime.
+        submission.Status.Should().Be(extended ? KycStatus.IN_REVIEW : KycStatus.PENDING);
+        if (extended)
+            submission.ExpiresAt.Should().BeAfter(originalExpiry.AddDays(1));
+        else
+            submission.ExpiresAt.Should().Be(originalExpiry);
+    }
+
+    [Theory]
+    [InlineData("open", "Live")]
+    [InlineData("in-review", "Live")]
+    [InlineData("expired", "Dead")]
+    [InlineData("retired", "Dead")]
+    [InlineData("decided", "Dead")]
+    [InlineData("other-session", "Dead")]
+    [InlineData("missing", "Dead")]
+    public async Task The_poll_probe_reports_whether_a_verdict_could_still_be_applied(string attemptState, string expected)
+    {
+        var session = NewSession();
+        var submission = new KycSubmission
+        {
+            Id = session.Id,
+            UserId = SubjectUserId.ToString("N"),
+            TenantId = TenantId.ToString("N"),
+            Provider = KycProvider.IDENTOMAT,
+            ProviderKey = ProviderKey,
+            ProviderSessionId = session.Id,
+            Status = KycStatus.PENDING,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(25),
+        };
+        switch (attemptState)
+        {
+            case "in-review": submission.Status = KycStatus.IN_REVIEW; submission.ExpiresAt = DateTimeOffset.UtcNow.AddDays(29); break;
+            case "expired": submission.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1); break;
+            case "retired": submission.Status = KycStatus.EXPIRED; break;
+            case "decided": submission.Status = KycStatus.APPROVED; break;
+            case "other-session": submission.ProviderSessionId = Guid.NewGuid().ToString("N"); break;
+        }
+        _kycStore.Setup(store => store.GetSubmissionByIdAsync(Guid.ParseExact(session.Id, "N"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmission>.Success(attemptState == "missing" ? null! : submission));
+
+        var relevance = await NewHandler().ProbeAsync(session, DateTimeOffset.UtcNow);
+
+        relevance.ToString().Should().Be(expected);
     }
 
     private static HostedSession NewSession() => new()

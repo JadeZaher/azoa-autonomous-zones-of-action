@@ -121,6 +121,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         /// <summary>Outcome polls claimed so far; drives the backoff.</summary>
         public long? PollAttemptCount { get; set; }
 
+        /// <summary>Last caller-initiated (user/tenant) vendor re-fetch; bounds on-demand refreshes per session.</summary>
+        public DateTimeOffset? LastRefreshAt { get; set; }
+
         [FieldGroup("Timestamps")]
         [ReadOnly]
         public DateTimeOffset CreatedDate { get; set; }

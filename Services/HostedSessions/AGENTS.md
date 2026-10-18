@@ -180,8 +180,9 @@ retry, no lookup by `clientUserId`, no create idempotency key).
   (one winner across replicas), sets the next poll by exponential backoff (60 s doubling to
   60 min) and refreshes through the shared flow. Prepared providers (Veriff/generic) are
   skipped. Every call spends the shared `IdentomatRateBudget`; the sweep stops when the
-  circuit is open or the budget refuses. Sessions undecided after `MaxAgeHours` (720) close as
-  `ABANDONED`/`POLL_EXPIRED`. Settings: `Kyc:Identomat:OutcomePoll:*`, on wherever a config id
+  circuit is open or the budget refuses. Dead attempts close as `ABANDONED`/`ATTEMPT_CLOSED`;
+  only sessions the domain cannot classify close at `MaxAgeHours` (720) as
+  `ABANDONED`/`POLL_EXPIRED` (see poll liveness below). Settings: `Kyc:Identomat:OutcomePoll:*`, on wherever a config id
   is set.
 - **Refresh.** User: `POST /api/kyc/refresh`. Operator: `POST
   /api/operator/hosted-sessions/{id}/refresh` now re-fetches Identomat sessions (previously 404)
@@ -201,6 +202,39 @@ retry, no lookup by `clientUserId`, no create idempotency key).
   CAS loses and the flow deletes the vendor session through the documented
   `/external-api/delete/` (`IDeletableHostedSessionProvider`), auditing
   `LateProviderSessionDeleted` (or `…DeleteFailed`; the session stays inert either way).
+- **Poll liveness (fix batch, RV-L2 L2-2/L2-4/L2-5/L2-6).** Before spending vendor budget the poll
+  asks the domain `IHostedSessionRelevanceProbe` (implemented by the outcome router): KYC is live
+  while the attempt bound to the session (attempt id = session id) is PENDING/IN_REVIEW and
+  unexpired; KYB while the session's attempt is the tenant's current unexpired PENDING one.
+  **Dead** sessions close at once as `ABANDONED`/`ATTEMPT_CLOSED` with no `/result/` call; before
+  this, an abandoned 30-minute start was polled hourly for 30 days (~700 calls each) and dead rows
+  queued ahead of live lost callbacks. **Live** sessions are never cut at `MaxAgeHours`, so an
+  extended IN_REVIEW attempt keeps being polled until its human decision lands or it expires.
+  `MaxAgeHours` is now only the backstop for **Unknown** (read fault, unknown flow). The close is
+  `TryAbandonPolledAsync`: a version CAS that also takes a `RESUMING` row whose lease expired, and
+  when it loses the row's `next_poll_at` still advances, so a crashed resume can no longer sit at
+  the head of every batch forever (it used to: the old close used `TryTransitionAsync`, which
+  refuses `RESUMING`, then `continue`d before the claim). Due rows are ordered by `next_poll_at`
+  (NONE first). Only a node-wide refusal stops a sweep: `PROVIDER_REQUEST_NOT_SENT` (local budget
+  or open circuit) or the circuit opening on a 529. A per-session 4xx is that row's problem and it
+  already carries its backoff.
+- **Budget fairness (fix batch, RV-L2 L2-3).** User and tenant refreshes go through
+  `IHostedSessionFlow.RefreshOnDemandAsync`: at most one vendor re-fetch per session per
+  `Kyc:Identomat:OutcomePoll:RefreshCooldownSeconds` (30), claimed by a CAS on
+  `hosted_session.last_refresh_at` (no `state_version` bump, so it never races the flow). Inside
+  the cooldown the stored state answers (`RefreshThrottled`). Separately,
+  `IdentomatRateBudget` caps result re-fetches (`result`, `kyb-result`: poll, refresh, callbacks)
+  at `Kyc:Identomat:ResultRequestSharePercent` (50) of the per-minute window, so a refresh storm
+  can never take begin, KYB begin or approval-time AML screening down with it. A user refresh
+  answers 503 only for a node-wide refusal; a per-session vendor refusal falls through to status.
+- **A closed admission restarts its attempt.** The KYC hosted session id is the attempt id, so an
+  `ABANDONED` admission (orphan supersede, poll close-out, operator release) can never be reused:
+  `KycManager.StartHostedAttemptAsync` retires the still-open attempt and begins a fresh one
+  instead of answering "already reached a terminal outcome" until the attempt expires.
+- **Operator lists are identity-only (RV-L1-03).** `ListReconciliationAsync` and
+  `ListStalledAsync` select KYC/KYB rows only. Fiat checkout/payout creation claims have their own
+  lifecycle (a healthy claim inside its replay window, or a checkout the user walked away from, is
+  not identity operator work); their operator resolve belongs to the fiat surface.
 - **Inert callbacks.** A callback for a session the node never attached (an orphan, a deleted
   late session, a forged id with the right key) finds no row and decides nothing; the callback
   endpoint keeps its single opaque 202 because the vendor documents no retry semantics a

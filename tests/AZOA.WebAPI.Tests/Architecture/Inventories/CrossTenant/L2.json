@@ -101,6 +101,16 @@
   },
   {
     "store": "IHostedSessionRecoveryStore",
+    "method": "TryAbandonPolledAsync",
+    "tenantCheck": "worker-only: HostedOutcomePollWorker closes a session it listed and claimed; CAS on the observed session version, never caller-addressed"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
+    "method": "TryClaimRefreshAsync",
+    "tenantCheck": "caller-checked: HostedSessionFlow.RefreshOnDemandAsync is reached only from KycManager.RefreshAsync (the caller's own first-party attempt id) and KybService.RefreshAsync (claims tenant session), after the flow/provider match; CAS on last_refresh_at"
+  },
+  {
+    "store": "IHostedSessionRecoveryStore",
     "method": "ListStalledAsync",
     "tenantCheck": "operator-only: RecentNodeOperatorSession hosted-session reconciliation route; cross-tenant by design, no provider credentials returned"
   },

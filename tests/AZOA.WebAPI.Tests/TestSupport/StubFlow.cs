@@ -55,4 +55,8 @@ public sealed class StubFlow : IHostedSessionFlow
         IHostedSessionProvider provider, Guid sessionId, CancellationToken ct = default)
         => Task.FromResult(_callbackResult
             ?? AZOAResult<HostedCallbackResult>.Failure("no refresh result configured"));
+
+    public Task<AZOAResult<HostedCallbackResult>> RefreshOnDemandAsync(
+        IHostedSessionProvider provider, Guid sessionId, TimeSpan cooldown, CancellationToken ct = default)
+        => RefreshAsync(provider, sessionId, ct);
 }

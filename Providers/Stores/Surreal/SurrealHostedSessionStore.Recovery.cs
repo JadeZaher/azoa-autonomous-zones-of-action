@@ -24,9 +24,48 @@ public sealed partial class SurrealHostedSessionStore : IHostedSessionRecoverySt
                 && (row.State == HostedSessionStates.AwaitingSubject || row.State == HostedSessionStates.AwaitingOutcome
                     || (row.State == HostedSessionStates.Resuming && row.ResumeLeaseExpiresAt <= now))
                 && (row.NextPollAt == null || row.NextPollAt <= now))
-            .OrderBy(row => row.ModifiedDate!).Limit(Math.Clamp(limit, 1, 100));
+            .OrderBy(row => row.NextPollAt!).Limit(Math.Clamp(limit, 1, 100));
         var rows = await _executor.QueryAsync<HostedSession>(query, ct);
         return rows.Select(FromStorage).ToArray();
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> TryAbandonPolledAsync(HostedSession observed, string detail, DateTimeOffset now, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+        var version = observed.StateVersion;
+        var at = now.ToUniversalTime();
+        var query = SurrealWriter.UpdateOnly<HostedSession>(observed.Id)
+            .Where(row => row.StateVersion == version
+                && (row.State == HostedSessionStates.Claimed || row.State == HostedSessionStates.AwaitingSubject
+                    || row.State == HostedSessionStates.AwaitingOutcome
+                    || (row.State == HostedSessionStates.Resuming && row.ResumeLeaseExpiresAt <= at)))
+            .Set(row => row.State, HostedSessionStates.Abandoned)
+            .Set(row => row.StateVersion, version + 1)
+            .Set(row => row.OutcomeDetail, detail)
+            .Unset(row => row.ResumeLeaseToken)
+            .Unset(row => row.ResumeLeaseExpiresAt)
+            .Set(row => row.CompletedAt, (DateTimeOffset?)at)
+            .Set(row => row.ModifiedDate, (DateTimeOffset?)at)
+            .Build();
+        var response = await _executor.ExecuteAsync(query, ct);
+        response.EnsureAllOk();
+        return response.GetValues<HostedSession>(0).Any();
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> TryClaimRefreshAsync(HostedSession observed, DateTimeOffset now, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(observed);
+        var observedLast = observed.LastRefreshAt?.ToUniversalTime();
+        // CAS on the cooldown field only: never bumps state_version under a live flow.
+        var query = SurrealWriter.UpdateOnly<HostedSession>(observed.Id)
+            .Where(row => row.LastRefreshAt == observedLast)
+            .Set(row => row.LastRefreshAt, (DateTimeOffset?)now.ToUniversalTime())
+            .Build();
+        var response = await _executor.ExecuteAsync(query, ct);
+        response.EnsureAllOk();
+        return response.GetValues<HostedSession>(0).Any();
     }
 
     /// <inheritdoc/>
@@ -49,7 +88,8 @@ public sealed partial class SurrealHostedSessionStore : IHostedSessionRecoverySt
     public async Task<IReadOnlyList<HostedSession>> ListStalledAsync(DateTimeOffset before, int limit, CancellationToken ct = default)
     {
         var query = SurrealQuery<HostedSession>.From()
-            .Where(row => row.ProviderSessionId != null
+            .Where(row => (row.FlowKind == HostedSessionFlowKinds.Kyc || row.FlowKind == HostedSessionFlowKinds.Kyb)
+                && row.ProviderSessionId != null
                 && (row.State == HostedSessionStates.AwaitingSubject || row.State == HostedSessionStates.AwaitingOutcome
                     || row.State == HostedSessionStates.Resuming)
                 && row.ModifiedDate <= before)
