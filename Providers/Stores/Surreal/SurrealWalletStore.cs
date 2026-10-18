@@ -66,8 +66,11 @@ public sealed partial class SurrealWalletStore(ISurrealExecutor executor) : IWal
     /// <inheritdoc/>
     public async Task<AZOAResult<bool>> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        var response = await ExecuteMutationAsync(SurrealWriter.DeleteOnly<GeneratedWallet>(id.ToString("N")).Build(), ct);
-        response.EnsureAllOk();
+        var existing = await executor.QuerySingleAsync<GeneratedWallet>(SurrealQuery<GeneratedWallet>.Key(id.ToString("N")), ct);
+        if (existing is null) return AZOAResult<bool>.Failure("Wallet not found.");
+        var owner = existing.UserId;
+        var response = await ExecuteMutationAsync(SurrealWriter.DeleteOnly<GeneratedWallet>(id.ToString("N"))
+            .Where(row => row.UserId == owner).Build(), ct);
         return response[2].AffectedCount() == 1 ? AZOAResult<bool>.Success(true)
             : AZOAResult<bool>.Failure("Wallet not found.");
     }

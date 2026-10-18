@@ -881,3 +881,18 @@ from caller input. It refuses `Mint` and `Exchange` before any claim, row or pro
 NFT lifecycle (mint checks, fee/cost consent, the user's own key) and exchanges through the reserve exchange; the
 platform key never creates an ASA for a caller-built request. Reads through `BlockchainOperationController` show a
 tenant-acting caller only operations that tenant drove.
+
+## §DeferredFrozenActionRuntime — breaking the ActionManager ↔ DeploymentService DI cycle (round 4, RV-L6 finding 1)
+
+`ActionManager` takes every `IActionExternalOperationResolver`; one of them, `DeploymentActionResolver`, takes
+`IDeploymentService`, and `DeploymentService` takes `IFrozenActionRuntime` — which `ActionManager` implements. With the
+old `IFrozenActionRuntime => sp.GetRequiredService<ActionManager>()` factory, constructing either end recursed through
+the other. `ValidateOnBuild` cannot see through factory lambdas, and DI's stack guard moved the recursion onto another
+thread that then blocked on the scope lock the first thread held, so the host **hung** at start instead of throwing.
+
+`IFrozenActionRuntime` is now registered as `DeferredFrozenActionRuntime`, which captures only the scope's
+`IServiceProvider` and resolves the scoped `ActionManager` on each call. Construction no longer touches
+`ActionManager`; by the time a deployment call runs, the scope's `ActionManager` either already exists (resolver path)
+or is built then, after `DeploymentService` is cached. Same scope, same instance, same authority checks — only the
+construction order changed. Do not "simplify" it back to a factory over `ActionManager`; `Hosting/ProgramCompositionTests`
+pins the bounded host start.

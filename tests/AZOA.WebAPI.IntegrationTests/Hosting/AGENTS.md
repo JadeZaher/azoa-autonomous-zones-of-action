@@ -18,3 +18,7 @@ host (and every `WebApplicationFactory` test, and the real API process) hangs in
 `ActionManager → IEnumerable<IActionExternalOperationResolver> → DeploymentActionResolver → IDeploymentService →
 DeploymentService → IFrozenActionRuntime → ActionManager` (`Program.cs:1419`, 439 nested frames in the hang dump).
 Diagnose a future hang with `dotnet test --blame-hang-timeout 3m` and `dotnet-dump analyze <dmp> -c "clrstack -all"`.
+
+Fixed in `r4/fix-core2`: `IFrozenActionRuntime` is `Managers/DeferredFrozenActionRuntime` (resolves `ActionManager` per
+call, not at construction) — `Managers/AGENTS.md` §DeferredFrozenActionRuntime. When adding a "forward the interface to
+the concrete scoped service" factory, check the concrete type's own constructor graph cannot reach the interface back.
