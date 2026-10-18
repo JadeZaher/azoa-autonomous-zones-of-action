@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -37,8 +38,24 @@ export default function UsersPage() {
   const [deleting, setDeleting] = useState(false)
   const [jsonOpen, setJsonOpen] = useState(false)
 
+  // Discoverable is a separate, instant-apply toggle (owner decision 2026-10-18) — kept out of the
+  // `ProfileFields` diff/save flow above so a profile edit never silently carries a visibility change.
+  const discoverable = Boolean(user?.discoverable)
+  const [discoverableBusy, setDiscoverableBusy] = useState(false)
+  const [discoverableError, setDiscoverableError] = useState<string | null>(null)
+
   const handleChange = (field: keyof ProfileFields) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setEdits(prev => ({ ...prev, [field]: e.target.value }))
+  }
+
+  const handleToggleDiscoverable = async (next: boolean) => {
+    if (!userId) return
+    setDiscoverableBusy(true)
+    setDiscoverableError(null)
+    const result = await azoa.api.updateUser(userId, { discoverable: next })
+    if (isOk(result)) await refreshProfile()
+    else setDiscoverableError(userFacingMessage(result.error))
+    setDiscoverableBusy(false)
   }
 
   const handleSave = async () => {
@@ -116,6 +133,27 @@ export default function UsersPage() {
             {saving ? 'Saving…' : 'Save changes'}
           </Button>
           {saveResult && <ResultDisplay result={saveResult.data} isError={!saveResult.ok} message={saveResult.message} />}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Search Visibility</CardTitle>
+          <CardDescription>Control whether other signed-in users can find you by username in search.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <label className="flex items-center gap-3 text-sm">
+            <Switch checked={discoverable} disabled={discoverableBusy || !userId} onCheckedChange={handleToggleDiscoverable} />
+            <span>
+              <strong>Show me in user search</strong>
+              <span className="block text-xs text-muted-foreground">
+                {discoverable
+                  ? 'Other signed-in users can find your username in search results.'
+                  : "You're hidden from other users' search results. You can still find yourself."}
+              </span>
+            </span>
+          </label>
+          {discoverableError && <p className="text-sm text-destructive">{discoverableError}</p>}
         </CardContent>
       </Card>
 

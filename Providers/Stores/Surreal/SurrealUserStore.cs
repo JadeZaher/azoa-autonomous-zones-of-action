@@ -78,7 +78,8 @@ public sealed class SurrealUserStore : IUserStore
             || poco.OwnerTenantId != existing.OwnerTenantId || poco.AuthNotBefore != existing.AuthNotBefore)
             return AZOAResult<IUser>.FailureWithCode("Authentication and ownership changes require the dedicated identity flow.", AzoaErrorCodes.Conflict);
         var update = WalletUserAuthenticationCas.Match(existing)
-            .Set(row => row.Username, poco.Username).Set(row => row.Email, poco.Email);
+            .Set(row => row.Username, poco.Username).Set(row => row.Email, poco.Email)
+            .Set(row => row.Discoverable, poco.Discoverable);
         update = poco.Title is null ? update.Unset(row => row.Title) : update.Set(row => row.Title, poco.Title);
         update = poco.FirstName is null ? update.Unset(row => row.FirstName) : update.Set(row => row.FirstName, poco.FirstName);
         update = poco.LastName is null ? update.Unset(row => row.LastName) : update.Set(row => row.LastName, poco.LastName);
@@ -386,7 +387,8 @@ public sealed class SurrealUserStore : IUserStore
         AuthNotBefore    = a.AuthNotBefore.HasValue
                                ? new DateTimeOffset(
                                      DateTime.SpecifyKind(a.AuthNotBefore.Value, DateTimeKind.Utc))
-                               : null
+                               : null,
+        Discoverable     = a.Discoverable
     };
 
     }
@@ -412,7 +414,8 @@ public sealed class SurrealUserStore : IUserStore
         ExternalRef      = p.ExternalRef,
         AuthWalletAddress   = p.AuthWalletAddress,
         AuthWalletChainType = p.AuthWalletChainType,
-        AuthNotBefore    = p.AuthNotBefore?.UtcDateTime
+        AuthNotBefore    = p.AuthNotBefore?.UtcDateTime,
+        Discoverable     = p.Discoverable
     };
 
 }

@@ -36,6 +36,8 @@ export interface AuthProfile {
   firstName?: string;
   lastName?: string;
   isActive: boolean;
+  /** Opt-in: this user appears in another caller's search results only when true. */
+  discoverable?: boolean;
 }
 
 export class AzoaAuthProvider {
@@ -112,6 +114,7 @@ export class AzoaAuthProvider {
       firstName: user.firstName,
       lastName: user.lastName,
       isActive: user.isActive,
+      discoverable: user.discoverable,
     });
   }
 

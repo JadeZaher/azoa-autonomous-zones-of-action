@@ -99,6 +99,8 @@ export interface UserResponse {
   /** `dapp:user` | `dapp:developer` | `dapp:manager`. */
   dappRole?: string;
   createdDate?: string;
+  /** Opt-in: this user appears in another caller's search results only when true. Present only on the caller's own profile. */
+  discoverable?: boolean;
 }
 
 export interface BusinessVerificationCapabilities {
@@ -2446,7 +2448,7 @@ export class AzoaApiClient {
 
   async updateUser(
     userId: string,
-    params: { username?: string; email?: string; title?: string; firstName?: string; lastName?: string; isActive?: boolean }
+    params: { username?: string; email?: string; title?: string; firstName?: string; lastName?: string; isActive?: boolean; discoverable?: boolean }
   ): Promise<Result<UserResponse, SdkError>> {
     assertUuid(userId, "userId");
     return this.request("PUT", `/api/user/${userId}`, params);
@@ -2659,9 +2661,16 @@ export class AzoaApiClient {
   // ─── Search ───
   // SearchController uses POST with SearchRequest body
 
-  async search(params: SearchParams): Promise<Result<SearchResult, SdkError>> {
-    // POST /api/search with SearchRequest body
-    return this.request("POST", "/api/search", params);
+  /**
+   * `operator = true` targets `POST /api/search/operator` (`Operator` policy; a node-operator
+   * session only — never reachable by an ordinary login JWT or API key). It bypasses the
+   * per-user `Discoverable` opt-in gate so a node admin finds every user, same as the plain
+   * route did before owner decision 2026-10-18 (user-discoverable). The plain route
+   * (`operator = false`, default) now only returns opted-in users plus the caller themself.
+   */
+  async search(params: SearchParams, operator = false): Promise<Result<SearchResult, SdkError>> {
+    // POST /api/search[/operator] with SearchRequest body
+    return this.request("POST", `/api/search${operator ? "/operator" : ""}`, params);
   }
 
   async getSearchFacets(): Promise<Result<unknown[], SdkError>> {

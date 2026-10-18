@@ -79,5 +79,9 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         // AC3b/H2 post-claim custody-window cut. Tenant-driven tokens (child JWT /
         // claim token) minted before this instant are rejected at the signing seam.
         public DateTimeOffset? AuthNotBefore { get; set; }
+
+        /// Opt-in: appears in another caller's POST /api/search user results only when true. See AGENTS.md §user-discoverable.
+        [Default("ALWAYS false")]
+        public bool Discoverable { get; set; }
     }
 }

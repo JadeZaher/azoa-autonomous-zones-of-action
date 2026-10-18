@@ -312,3 +312,16 @@ registration identifiers and beneficiary provider session links are server-only.
 carry status, timestamps and participant count. Historical hosted-session outcomes remain in
 `hosted_session`; the current business projection uses attempt/version/policy CAS. See
 `Services/Kyb/AGENTS.md` for the documented retention and verification boundary.
+
+## §user-discoverable (owner decision 2026-10-18)
+
+`user.discoverable` is a new field on the pre-existing `user` table, added `[Default("ALWAYS
+false")]` per §old-row-rule (not `option<bool>`, so the self-mutable field stays a plain `bool`
+matching `is_active`/`is_verified`'s existing convention). It gates `POST /api/search`: a user
+surfaces in another caller's results only when this is `true` (default `false` = not
+discoverable), the caller is matching themself, or the caller reaches search through
+`POST /api/search/operator` (`[Authorize(Policy = "Operator")]`) — see `../AGENTS.md`
+§deploy-path for why this shipped with a frozen `CompatibilityBaselines/user.surql` snapshot
+plus `Migrations/20261018_090000__add_user_discoverable.surql` rather than an in-place edit to
+the generated golden. `Managers/AGENTS.md` §user-discoverable has the filter rationale;
+`Controllers/AGENTS.md` §User responses has the node-admin route detail.
