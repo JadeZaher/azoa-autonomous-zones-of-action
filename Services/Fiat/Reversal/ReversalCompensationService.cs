@@ -554,20 +554,19 @@ public sealed partial class ReversalCompensationService : IReversalCompensation
             clawbackAddress: reserveAddress,
             ct: ct);
 
-        if (clawback.IsError)
+        if (clawback.IsError && !IsOutcomeUnknown(clawback))
         {
-            // The provider proves every precondition against the node BEFORE signing, so a
-            // refusal here means nothing was broadcast. Recording it as failed lets the next
-            // attempt try again once the cause is fixed.
+            // A definitive refusal (precondition, pool rejection): nothing entered the chain, so a
+            // later attempt key may try again once the cause is fixed (AGENTS.md §attempt-keys).
             await _idempotency.FailAsync(key, clawback.Message, ct);
             return RungResult.Retry($"The units could not be taken back: {clawback.Message}");
         }
 
-        if (IsPendingConfirmation(clawback.Message))
+        if (clawback.IsError || IsPendingConfirmation(clawback.Message))
         {
             // Submitted, outcome unknown. Retrying blind could take the units twice, so this is
             // where the reversal stops and asks for a person.
-            await _idempotency.FailAsync(key, AmbiguousMoveError(row.ChainType!, recoverable, clawback.Result), ct);
+            await _idempotency.FailAsync(key, AmbiguousMoveError(row.ChainType!, recoverable, SubmittedTransactionId(clawback)), ct);
             return RungResult.Unconfirmed(AmbiguousRecoveryReason, key);
         }
 
@@ -803,15 +802,15 @@ public sealed partial class ReversalCompensationService : IReversalCompensation
             clawbackAddress: reserveAddress,
             ct: ct);
 
-        if (clawback.IsError)
+        if (clawback.IsError && !IsOutcomeUnknown(clawback))
         {
             await _idempotency.FailAsync(key, clawback.Message, ct);
             return RungResult.Retry($"What this payment bought could not be taken back: {clawback.Message}");
         }
 
-        if (IsPendingConfirmation(clawback.Message))
+        if (clawback.IsError || IsPendingConfirmation(clawback.Message))
         {
-            await _idempotency.FailAsync(key, AmbiguousMoveError(claim.ChainType!, credited, clawback.Result), ct);
+            await _idempotency.FailAsync(key, AmbiguousMoveError(claim.ChainType!, credited, SubmittedTransactionId(clawback)), ct);
             return RungResult.Unconfirmed(AmbiguousRecoveryReason, key);
         }
 
@@ -855,8 +854,8 @@ public sealed partial class ReversalCompensationService : IReversalCompensation
             var record = await _idempotency.GetAsync(key, ct);
             if (record is null)
                 return (key, null);
-            if (record.State == IdempotencyState.Failed
-                && !(record.Error ?? string.Empty).Contains(AmbiguousRecoveryReason, StringComparison.Ordinal))
+            // Only a definitive (pre-broadcast) failure frees the next attempt key; see AGENTS.md §attempt-keys.
+            if (record.State == IdempotencyState.Failed && !IsAmbiguousFailure(record.Error))
                 continue;
             if (record.State == IdempotencyState.Failed)
             {
@@ -906,7 +905,7 @@ public sealed partial class ReversalCompensationService : IReversalCompensation
         if (record.State == IdempotencyState.Failed)
         {
             var error = record.Error ?? string.Empty;
-            return error.Contains(AmbiguousRecoveryReason, StringComparison.Ordinal)
+            return IsAmbiguousFailure(error)
                 ? RungResult.Unconfirmed(AmbiguousRecoveryReason, record.Key)
                 : RungResult.Retry($"A previous recovery attempt failed: {error}");
         }
@@ -915,6 +914,11 @@ public sealed partial class ReversalCompensationService : IReversalCompensation
     }
 
     private sealed record RecoveryClaimPayload(string Amount, string? TransactionId);
+
+    /// <summary>A failed claim whose move may have landed: marked ambiguous, or a provider outcome-unknown error.</summary>
+    private static bool IsAmbiguousFailure(string? error)
+        => (error ?? string.Empty).Contains(AmbiguousRecoveryReason, StringComparison.Ordinal)
+           || (error ?? string.Empty).Contains(OperationStatus.OutcomeUnknownMarker, StringComparison.Ordinal);
 
     /// <summary>
     /// Marks the issuance this reversal unwound, so the source-aged cash-out rule (W8.1) can
@@ -1085,6 +1089,14 @@ public sealed partial class ReversalCompensationService : IReversalCompensation
 
     private static bool IsPendingConfirmation(string? message)
         => message?.Contains(OperationStatus.PendingConfirmationMarker, StringComparison.Ordinal) == true;
+
+    /// <summary>The transaction a possibly-landed move submitted: the result, or the id the provider named in its error.</summary>
+    private static string? SubmittedTransactionId(AZOAResult<string> result)
+        => result.IsError ? OperationStatus.TransactionIdIn(result.Message) : result.Result;
+
+    /// <summary>An error the provider could not certify as pre-broadcast: the move may have landed.</summary>
+    private static bool IsOutcomeUnknown(AZOAResult<string> result)
+        => result.IsError && result.Message?.Contains(OperationStatus.OutcomeUnknownMarker, StringComparison.Ordinal) == true;
 
     private static AZOAResult<ReversalStepOutcome> Definite(FiatReversal row)
         => AZOAResult<ReversalStepOutcome>.Success(new ReversalStepOutcome(row, true, null), "Success");

@@ -39,6 +39,22 @@ public static class TenantPayoutTopUp
         var separator = rest.IndexOf(':');
         return separator == 32 && Guid.TryParseExact(rest[..separator], "N", out tenantId) && tenantId != Guid.Empty;
     }
+
+    /// <summary>
+    /// A top-up's authoritative reversed total: cumulative refunds (the gross) plus, while a dispute holds the money,
+    /// its balance impact including the fee (owner decision a). Null when the dispute cannot be read.
+    /// </summary>
+    public static async Task<long?> ReadReversedAsync(IReversalFactSource facts, StripeCredentials credentials,
+        string paymentIntentId, long amountRefundedMinorUnits, bool disputed, CancellationToken ct)
+    {
+        var reversed = Math.Max(0, amountRefundedMinorUnits);
+        if (!disputed)
+            return reversed;
+        var dispute = await facts.GetDisputeForPaymentAsync(credentials, paymentIntentId, ct);
+        if (dispute.IsError || dispute.Result is not { } standing)
+            return null;
+        return standing.FundsWithdrawn ? reversed - standing.NetBalanceImpactMinorUnits : reversed;
+    }
 }
 
 /// <summary>
@@ -106,9 +122,15 @@ public sealed class TenantPayoutTopUpHandler(
             || settled.AmountMinorUnits != session.AmountTotalMinorUnits || settled.Livemode != session.Livemode)
             return FiatEventOutcome.Failed;
 
+        // M3: a refund or dispute may already stand when the credit is first written; seed it from the charge.
+        var reversed = await TenantPayoutTopUp.ReadReversedAsync(
+            facts, credentials, session.PaymentIntentId!, settled.AmountRefundedMinorUnits, settled.Disputed, ct);
+        if (reversed is null)
+            return FiatEventOutcome.Failed;
+
         var now = clock.GetUtcNow();
         var floatRow = await ledger.GetOrCreateFloatAsync(tenant, settled.Currency, context.Environment.Name, ct);
-        await funding.RecordTopUpAsync(new TenantPayoutCredit
+        var recorded = await funding.RecordTopUpAsync(new TenantPayoutCredit
         {
             Id = TenantPayoutCredit.RecordIdFor(intent.Id),
             IntentId = intent.Id,
@@ -120,13 +142,19 @@ public sealed class TenantPayoutTopUpHandler(
             ChargeId = settled.ChargeId,
             GrossMinorUnits = settled.AmountMinorUnits,
             NetMinorUnits = settled.NetMinorUnits,
-            ReversedMinorUnits = 0,
+            ReversedMinorUnits = reversed.Value,
             State = TenantPayoutCreditStates.Pending,
-            AvailableAt = MaturesAt(context.Environment, now),
+            // L3: the dispute horizon runs from when the charge was made, not from when this handler ran.
+            AvailableAt = MaturesAt(context.Environment, settled.CreatedAt ?? now),
             Version = 0,
             CreatedAt = now,
             UpdatedAt = now,
         }, ct);
+
+        // A credit an earlier delivery wrote converges on the charge's current reversed total.
+        if (recorded.ReversedMinorUnits != reversed.Value
+            && await funding.ApplyCreditReversalAsync(recorded.Id, reversed.Value, ct) == TenantFundingSync.Retry)
+            return FiatEventOutcome.Failed;
         return FiatEventOutcome.Applied;
     }
 
@@ -148,7 +176,8 @@ public sealed class TenantPayoutTopUpReversalHandler(
     FiatOptions fiat,
     IReversalFactSource facts,
     ITenantPayoutLedger ledger,
-    ITenantPayoutFunding funding) : IFiatEventHandler
+    ITenantPayoutFunding funding,
+    IHostedSessionStore sessions) : IFiatEventHandler
 {
     /// <inheritdoc />
     public string Name => "tenant-payout-top-up-reversal";
@@ -161,28 +190,47 @@ public sealed class TenantPayoutTopUpReversalHandler(
     {
         if (string.IsNullOrWhiteSpace(context.PaymentIntentId))
             return FiatEventOutcome.Ignored;
+        var credentials = fiat.CredentialsFor(context.Environment);
         var credit = await ledger.GetCreditByPaymentAsync(context.PaymentIntentId, ct);
         if (credit is null || credit.ChargeId is null)
-            return FiatEventOutcome.Ignored;
+        {
+            // M3: a reversal of a top-up whose credit is not written yet stays pending (Failed = redelivered);
+            // the credit write seeds the charge's reversed total, so neither order loses it.
+            return await IsTopUpPaymentAsync(context, credentials, ct) is false
+                ? FiatEventOutcome.Ignored
+                : FiatEventOutcome.Failed;
+        }
 
-        var credentials = fiat.CredentialsFor(context.Environment);
         var charge = await facts.GetChargeAsync(credentials, credit.ChargeId, ct);
         if (charge.IsError || charge.Result is not { } current || current.PaymentIntentId != credit.PaymentIntentId)
             return FiatEventOutcome.Failed;
 
-        // Refunds return the gross; a withdrawn dispute costs its amount plus its fee (owner decision a).
-        var reversed = current.AmountRefundedMinorUnits;
-        if (current.Disputed)
-        {
-            var dispute = await facts.GetDisputeForPaymentAsync(credentials, credit.PaymentIntentId, ct);
-            if (dispute.IsError || dispute.Result is not { } standing)
-                return FiatEventOutcome.Failed;
-            if (standing.FundsWithdrawn)
-                reversed += -standing.NetBalanceImpactMinorUnits;
-        }
+        var reversed = await TenantPayoutTopUp.ReadReversedAsync(
+            facts, credentials, credit.PaymentIntentId, current.AmountRefundedMinorUnits, current.Disputed, ct);
+        if (reversed is null)
+            return FiatEventOutcome.Failed;
 
-        return await funding.ApplyCreditReversalAsync(credit.Id, reversed, ct) == TenantFundingSync.Retry
+        return await funding.ApplyCreditReversalAsync(credit.Id, reversed.Value, ct) == TenantFundingSync.Retry
             ? FiatEventOutcome.Failed
             : FiatEventOutcome.Applied;
+    }
+
+    /// <summary>True when the reversed payment funded a top-up intent; null when that cannot be read.</summary>
+    private async Task<bool?> IsTopUpPaymentAsync(FiatEventContext context, StripeCredentials credentials, CancellationToken ct)
+    {
+        var intentId = context.IntentId;
+        if (intentId is null && !string.IsNullOrWhiteSpace(context.ChargeId))
+        {
+            var charge = await facts.GetChargeAsync(credentials, context.ChargeId, ct);
+            if (charge.IsError || charge.Result is null)
+                return null;
+            intentId = charge.Result.IntentId;
+        }
+        if (intentId is not { } id)
+            return false;
+        var read = await sessions.GetByIdAsync(id, ct);
+        if (read.IsError)
+            return null;
+        return read.Result is { } intent && TenantPayoutTopUp.IsTopUpAdmission(intent.AdmissionKey);
     }
 }
