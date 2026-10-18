@@ -134,3 +134,13 @@ proved nothing about the transport the app actually uses. See
   reads back `record` — checked over a raw HTTP/JSON fixture, outside
   SurrealForge, so the library cannot grade its own output. A green suite that
   quietly fell back to the JSON transport is exactly what it exists to catch.
+
+## §node-admin-real-auth — `NodeAdmin/NodeAdminWebApplicationFactory`
+
+Node-admin flows need the production JWT pipeline (the `OnTokenValidated` node-admin branch, the policy
+provider, the denial handler), so this factory does **not** install `TestAuthHandler`. It creates its own
+namespace with the `node_admin*` goldens plus the startup prerequisites before host start, configures a
+generated root key, a fixed audience and a raised `operator-login` limit, and drops the namespace on dispose.
+Clients sign with real Ed25519 (`NodeAdminTestKey`, BouncyCastle aliased `BCCrypto2` exactly like the API
+project) and compute real TOTP codes; `AwaitStepHeadroomAsync` keeps a ±1-step sequence inside one 30 s
+window so step boundaries cannot flake the run.

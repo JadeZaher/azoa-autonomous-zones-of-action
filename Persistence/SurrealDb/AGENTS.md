@@ -194,6 +194,15 @@ submitted group) — a write of either fails the ASSERT, closed.
 - `20261018_090000__add_user_discoverable`: user-discoverable (§compatibility-baselines below); `user`
   gains `discoverable` (`DEFAULT ALWAYS false`) plus a one-shot NONE backfill.
 
+## §node-admin-tables
+
+`node_admin`, `node_admin_credential`, `node_admin_role`, `node_admin_challenge`, `node_admin_enrollment`,
+`node_admin_session`, `node_admin_audit`, `node_admin_audit_head`, `node_admin_root_state` and
+`node_admin_directory` (track `node-admin-rbac-cli_20261018`) are new tables: no baseline, no migration, plain
+`[Default]` is allowed (§old-row-rule applies to existing tables only). The POCO for `node_admin` is
+`NodeAdminAccount` because `NodeAdmin` collides with the `Services.NodeAdmin` namespace. Design notes:
+`Services/NodeAdmin/AGENTS.md` §storage.
+
 ## §ownership
 
 POCO→lane ownership for W2 is round-4 plan §4.8; every one of the 131 tables matches one glob there.

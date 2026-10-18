@@ -1,0 +1,58 @@
+using AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Hosting;
+
+namespace AZOA.WebAPI.IntegrationTests.NodeAdmin;
+
+/// <summary>Real-auth host for node-admin flows: production JWT validation (no TestAuthHandler), a fresh namespace and a generated root key.</summary>
+public sealed class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
+{
+    public const string Audience = "https://node.example.test";
+
+    private static readonly string[] Tables =
+    [
+        "admin_bootstrap_state", "saga_steps", "user", "api_key", "node_admin", "node_admin_audit", "node_admin_audit_head", "node_admin_challenge",
+        "node_admin_credential", "node_admin_directory", "node_admin_enrollment", "node_admin_role", "node_admin_root_state",
+        "node_admin_session",
+    ];
+
+    public string TestNamespace { get; } = $"itest{Guid.NewGuid():N}";
+
+    /// <summary>The break-glass key whose public half is configured as <c>NodeAdmin:RootPublicKeys</c>.</summary>
+    public NodeAdminTestKey RootKey { get; } = NodeAdminTestKey.Generate();
+
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        SurrealTestSchema.BootstrapAsync(TestNamespace, Tables).GetAwaiter().GetResult();
+        return base.CreateHost(builder);
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("IntegrationTest");
+        foreach (var (key, value) in new Dictionary<string, string>
+        {
+            ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
+            ["SurrealDb:User"] = SurrealTestDefaults.User,
+            ["SurrealDb:Password"] = SurrealTestDefaults.Password,
+            ["SurrealDb:Namespace"] = TestNamespace,
+            ["SurrealDb:Database"] = "test",
+            ["Jwt:Key"] = "node-admin-integration-test-signing-key-0123456789",
+            ["Jwt:Issuer"] = "test",
+            ["Jwt:Audience"] = "test",
+            ["NodeAdmin:RootPublicKeys"] = RootKey.PublicKey,
+            ["NodeAdmin:RootKeyRevision"] = "1",
+            ["NodeAdmin:Audience"] = Audience,
+            ["RateLimiting:OperatorLogin:PermitLimit"] = "1000",
+            ["AZOA:WalletEncryptionKey"] = "node-admin-integration-test-wallet-key-0123456789",
+        })
+            builder.UseSetting(key, value);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        await SurrealTestSchema.DropAsync(TestNamespace);
+    }
+}
