@@ -1,4 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
+import { fingerprintOf } from "../crypto/keys.js";
+import { fromBase64Url } from "../crypto/encoding.js";
 import { AzoaCliError } from "../errors.js";
 import { emit } from "../io/output.js";
 import { getProfile } from "../storage/config.js";
@@ -23,52 +27,187 @@ export interface RootEnvOptions {
  * a local helper that renders the `NodeAdmin__RootPublicKeys` /
  * `NodeAdmin__RootKeyRevision` env lines. Without `--railway` it has no way
  * to know the value already deployed, so `--current`/`--current-revision`
- * let the operator (or a test) supply it; with `--railway` the adapter below
- * fetches/sets it instead. Railway CLI flag syntax is best-effort (not
- * verified against a live `railway` binary in this environment) — see
- * RailwayAdapter.
+ * let the operator (or a test) supply it.
+ *
+ * SECURITY (fixed after coordinator review of cd91ed55 — see notepad
+ * issues.md): every value that reaches a spawned `railway` process (project/
+ * environment/service ids, public keys, the computed key-list value) is
+ * validated against a closed character class *before* any spawn, and the
+ * binary is resolved and invoked directly — never through a shell — so a
+ * malicious `--project`/`--remove`/etc. cannot inject shell metacharacters.
  */
+
+// --- validation (exit 2 on any failure, before any spawn) ---------------
+
+const PUBLIC_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const FINGERPRINT_PATTERN = /^[0-9a-f]{16}$/;
+const RAILWAY_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function assertValidPublicKey(key: string): void {
+  if (!PUBLIC_KEY_PATTERN.test(key)) {
+    throw AzoaCliError.usage(`Invalid public key format (expected 43 base64url chars): '${key}'`);
+  }
+  let decoded: Buffer;
+  try {
+    decoded = fromBase64Url(key);
+  } catch {
+    throw AzoaCliError.usage(`Public key is not valid base64url: '${key}'`);
+  }
+  if (decoded.length !== 32) {
+    throw AzoaCliError.usage(`Public key must decode to exactly 32 bytes, got ${decoded.length}: '${key}'`);
+  }
+}
+
+function assertValidRailwayId(label: string, value: string | undefined): asserts value is string {
+  if (value === undefined || !RAILWAY_ID_PATTERN.test(value)) {
+    throw AzoaCliError.usage(`Invalid ${label}: must match ${RAILWAY_ID_PATTERN} (got ${JSON.stringify(value)}).`);
+  }
+}
+
+function assertValidRevision(n: number | undefined): void {
+  if (n === undefined) return;
+  if (!Number.isInteger(n) || n <= 0) {
+    throw AzoaCliError.usage(`Invalid revision: must be a positive integer, got '${n}'.`);
+  }
+}
+
+/** `--remove` accepts either a raw public key or its fingerprint; reject anything else. */
+function assertValidRemoveTarget(value: string): void {
+  if (!PUBLIC_KEY_PATTERN.test(value) && !FINGERPRINT_PATTERN.test(value)) {
+    throw AzoaCliError.usage(`--remove must be a public key or a 16-hex-char fingerprint, got '${value}'.`);
+  }
+}
+
+function matchesRemoveTarget(key: string, removeTarget: string): boolean {
+  if (key === removeTarget) return true;
+  if (!FINGERPRINT_PATTERN.test(removeTarget)) return false;
+  try {
+    const decoded = fromBase64Url(key);
+    return decoded.length === 32 && fingerprintOf(decoded) === removeTarget;
+  } catch {
+    return false;
+  }
+}
+
+// --- Railway binary resolution (never a shell) ---------------------------
+
+export interface ResolvedRailwayExecutable {
+  command: string;
+  /** Extra argv entries to prepend, e.g. the shim's .js path when invoked via `process.execPath`. */
+  prefixArgs: string[];
+}
+
+/**
+ * Walks PATH looking for a real `railway`/`railway.exe` binary first. If only
+ * the npm `@railway/cli` shim (`railway.cmd`) is present, resolves the real
+ * binary npm installed beside it (`<dir>/node_modules/@railway/cli/bin/railway.exe`,
+ * falling back to the bundled `railway.js` run via `process.execPath`) —
+ * never spawns the `.cmd` shim itself, which would require a shell.
+ */
+export function resolveRailwayExecutable(env: NodeJS.ProcessEnv = process.env): ResolvedRailwayExecutable | null {
+  const pathValue = env.PATH ?? env.Path ?? "";
+  const dirs = pathValue.split(delimiter).filter(Boolean);
+
+  const directName = process.platform === "win32" ? "railway.exe" : "railway";
+  for (const dir of dirs) {
+    const direct = join(dir, directName);
+    if (existsSync(direct)) return { command: direct, prefixArgs: [] };
+  }
+
+  if (process.platform === "win32") {
+    for (const dir of dirs) {
+      if (!existsSync(join(dir, "railway.cmd"))) continue;
+      const bundledExe = join(dir, "node_modules", "@railway", "cli", "bin", "railway.exe");
+      if (existsSync(bundledExe)) return { command: bundledExe, prefixArgs: [] };
+      const bundledJs = join(dir, "node_modules", "@railway", "cli", "bin", "railway.js");
+      if (existsSync(bundledJs)) return { command: process.execPath, prefixArgs: [bundledJs] };
+    }
+  }
+
+  return null;
+}
+
+// --- Railway adapter (injectable for tests) -------------------------------
+
+export interface RailwayScope {
+  project: string;
+  environment: string;
+  service: string;
+}
+
 export interface RailwayAdapter {
-  listVariables(args: { project?: string; environment?: string; service?: string }): Promise<Record<string, string>>;
-  setVariables(
-    vars: Record<string, string>,
-    args: { project?: string; environment?: string; service?: string },
-  ): Promise<void>;
+  listVariables(scope: RailwayScope): Record<string, string>;
+  /** One variable per call — matches `railway variable set <KEY> --stdin ...`. */
+  setVariable(key: string, value: string, scope: RailwayScope, options?: { skipDeploys?: boolean }): void;
 }
 
-function resolveRailwayBinary(): string {
-  // Windows ships the Railway CLI as a .cmd/.ps1 shim; spawn through the shell so PATH resolution works.
-  return process.platform === "win32" ? "railway.cmd" : "railway";
-}
+export type SpawnSyncLike = (
+  command: string,
+  args: string[],
+  options: { input?: string; encoding: "utf8" },
+) => { status: number | null; stdout: string; stderr: string };
 
-export function createRealRailwayAdapter(): RailwayAdapter {
+const realSpawn: SpawnSyncLike = (command, args, options) => spawnSync(command, args, options);
+
+export function createRealRailwayAdapter(
+  spawn: SpawnSyncLike = realSpawn,
+  resolveExecutable: () => ResolvedRailwayExecutable | null = resolveRailwayExecutable,
+): RailwayAdapter {
+  function run(args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
+    const resolved = resolveExecutable();
+    if (!resolved) {
+      throw AzoaCliError.network(
+        "Could not find the Railway CLI: no railway.exe on PATH and no @railway/cli npm shim found either. " +
+          "Install it (https://railway.app/cli) or put railway.exe on PATH, then re-run with --railway — " +
+          "or apply the NodeAdmin__* lines above manually.",
+      );
+    }
+    // No `shell` option anywhere: `command` is always resolved to a real executable (.exe or
+    // `process.execPath` + a .js path), both directly spawnable without a command interpreter.
+    const result = spawn(resolved.command, [...resolved.prefixArgs, ...args], { input, encoding: "utf8" });
+    if (result.status !== 0) {
+      throw AzoaCliError.network(`railway ${args.join(" ")} failed (exit ${result.status}): ${result.stderr || result.stdout}`);
+    }
+    return result;
+  }
+
   return {
-    async listVariables(args) {
-      const flags: string[] = ["variables", "--json"];
-      if (args.project) flags.push("--project", args.project);
-      if (args.environment) flags.push("--environment", args.environment);
-      if (args.service) flags.push("--service", args.service);
-      const result = spawnSync(resolveRailwayBinary(), flags, { encoding: "utf8", shell: true });
-      if (result.status !== 0) {
-        throw AzoaCliError.network(`railway variables --json failed: ${result.stderr || result.stdout}`);
-      }
+    listVariables(scope) {
+      const result = run([
+        "variable",
+        "list",
+        "--project",
+        scope.project,
+        "--environment",
+        scope.environment,
+        "--service",
+        scope.service,
+        "--json",
+      ]);
       return JSON.parse(result.stdout) as Record<string, string>;
     },
-    async setVariables(vars, args) {
-      const flags: string[] = ["variables"];
-      if (args.project) flags.push("--project", args.project);
-      if (args.environment) flags.push("--environment", args.environment);
-      if (args.service) flags.push("--service", args.service);
-      for (const [key, value] of Object.entries(vars)) {
-        flags.push("--set", `${key}=${value}`);
-      }
-      const result = spawnSync(resolveRailwayBinary(), flags, { encoding: "utf8", shell: true });
-      if (result.status !== 0) {
-        throw AzoaCliError.network(`railway variables --set failed: ${result.stderr || result.stdout}`);
-      }
+    setVariable(key, value, scope, options) {
+      const args = [
+        "variable",
+        "set",
+        key,
+        "--stdin",
+        "--project",
+        scope.project,
+        "--environment",
+        scope.environment,
+        "--service",
+        scope.service,
+      ];
+      if (options?.skipDeploys) args.push("--skip-deploys");
+      // The value never touches argv — it goes to the child's stdin, so it can't be read from
+      // `ps`/process listings and isn't subject to argv-length limits either.
+      run(args, value);
     },
   };
 }
+
+// --- command ---------------------------------------------------------------
 
 function parseKeyList(value: string | undefined): string[] {
   return (value ?? "")
@@ -83,40 +222,44 @@ function keysForProfiles(names: string[]): string[] {
     if (profile.kind !== "root") {
       throw AzoaCliError.usage(`Profile '${name}' is kind '${profile.kind}', not root.`);
     }
-    return readKeyFileMeta(profile.keyName).publicKey;
+    const key = readKeyFileMeta(profile.keyName).publicKey;
+    assertValidPublicKey(key);
+    return key;
   });
 }
 
-export async function runRootEnv(
-  options: RootEnvOptions,
-  railway: RailwayAdapter = createRealRailwayAdapter(),
-): Promise<void> {
+export function runRootEnv(options: RootEnvOptions, railway: RailwayAdapter = createRealRailwayAdapter()): void {
+  for (const key of options.addPublicKey ?? []) assertValidPublicKey(key);
+  if (options.remove !== undefined) assertValidRemoveTarget(options.remove);
+  assertValidRevision(options.currentRevision);
+
+  let scope: RailwayScope | undefined;
+  if (options.railway) {
+    assertValidRailwayId("--project", options.project);
+    assertValidRailwayId("--environment", options.environment);
+    assertValidRailwayId("--service", options.service);
+    scope = { project: options.project, environment: options.environment, service: options.service };
+  }
+
   let currentKeys: string[];
   let currentRevision: number;
-
-  if (options.railway) {
-    const vars = await railway.listVariables(options);
+  if (scope) {
+    const vars = railway.listVariables(scope);
     currentKeys = parseKeyList(vars.NodeAdmin__RootPublicKeys);
     currentRevision = Number(vars.NodeAdmin__RootKeyRevision ?? "0");
   } else {
     currentKeys = parseKeyList(options.current);
     currentRevision = options.currentRevision ?? 0;
   }
+  for (const key of currentKeys) assertValidPublicKey(key);
 
-  const additions = [
-    ...(options.addPublicKey ?? []),
-    ...keysForProfiles(options.profiles ?? []),
-  ];
+  const additions = [...(options.addPublicKey ?? []), ...keysForProfiles(options.profiles ?? [])];
 
   let nextKeys = [...new Set([...currentKeys, ...additions])];
   let nextRevision = currentRevision;
   if (options.remove) {
     const before = nextKeys.length;
-    nextKeys = nextKeys.filter((k) => {
-      // caller passes a fingerprint for --remove; match by recomputing is the caller's job elsewhere,
-      // so here we accept either a raw public key or drop any key literal match.
-      return k !== options.remove;
-    });
+    nextKeys = nextKeys.filter((k) => !matchesRemoveTarget(k, options.remove!));
     if (nextKeys.length !== before) nextRevision += 1;
   }
 
@@ -128,7 +271,7 @@ export async function runRootEnv(
     lines.push(`NodeAdmin__RootKeyRevision=${nextRevision}`);
   }
 
-  if (options.railway) {
+  if (scope) {
     if (!options.yes) {
       emit(
         options.json,
@@ -137,9 +280,11 @@ export async function runRootEnv(
       );
       return;
     }
-    const toSet: Record<string, string> = { NodeAdmin__RootPublicKeys: nextKeys.join(",") };
-    if (nextRevision !== currentRevision) toSet.NodeAdmin__RootKeyRevision = String(nextRevision);
-    await railway.setVariables(toSet, options);
+    const toSet: Array<[string, string]> = [["NodeAdmin__RootPublicKeys", nextKeys.join(",")]];
+    if (nextRevision !== currentRevision) toSet.push(["NodeAdmin__RootKeyRevision", String(nextRevision)]);
+    toSet.forEach(([key, value], index) => {
+      railway.setVariable(key, value, scope!, { skipDeploys: index < toSet.length - 1 });
+    });
   }
 
   emit(options.json, lines.join("\n"), { lines, added, removed, nextRevision });

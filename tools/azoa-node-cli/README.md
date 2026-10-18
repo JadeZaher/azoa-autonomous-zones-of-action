@@ -133,9 +133,18 @@ Recorded here per the track brief; flag to the orchestrator if lane A disagrees.
    format never crosses the wire — it's local-only. See `src/AGENTS.md`.
 2. **`root env` has no wire contract** with the node at all — it's a local env-line renderer.
    Without `--railway` it can't know the currently-deployed value, so `--current`/
-   `--current-revision` let the operator supply it explicitly. The Railway CLI flag syntax used
-   in `createRealRailwayAdapter()` (`railway variables --json`, `railway variables --set K=V`)
-   is best-effort, not verified against a live `railway` binary in this environment.
+   `--current-revision` let the operator supply it explicitly. With `--railway`, `--project`/
+   `--environment`/`--service` are required (no reliance on a locally linked project); the CLI
+   never shells out — it resolves a real `railway.exe` on PATH, or (if only the npm
+   `@railway/cli` shim is installed) the bundled binary/`.js` npm installs beside the shim
+   (`<dir>/node_modules/@railway/cli/bin/railway.exe`, falling back to running the bundled
+   `railway.js` via `process.execPath`) — and calls `railway variable list --project P
+   --environment E --service S --json` to read, `railway variable set KEY --stdin --project P
+   --environment E --service S [--skip-deploys]` once per changed variable to write (the value
+   goes over stdin, never argv; `--skip-deploys` on every call but the last, so a key removal +
+   revision bump trigger exactly one redeploy). Every project/environment/service id, public
+   key, and the removal target is validated against a closed character class *before* any
+   process is spawned — see `src/commands/rootEnv.ts` and `test/rootEnv.test.ts`.
 3. **`enroll`'s `--origin` is mandatory** and supplies the audience pin, since there is no local
    profile yet at enrollment time (the admin is enrolling fresh, from their own machine). It
    (and `profile add --origin`) is named `--origin` rather than `--node` specifically because
