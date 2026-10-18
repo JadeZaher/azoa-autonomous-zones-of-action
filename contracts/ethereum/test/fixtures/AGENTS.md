@@ -10,8 +10,8 @@ The protocol fixture checks this digest before deployment. Factory/pool and
 router/quoter/position-manager artifacts come from exact lockfile dependencies
 `@uniswap/v3-core@1.0.1` and `@uniswap/v3-periphery@1.4.4`.
 
-The DEX fixture runs only an in-process Ganache chain with generated ephemeral
-accounts. Its test ERC20 and callback receiver are local adversarial fixtures;
+The DEX fixture runs only an in-process Hardhat chain with generated ephemeral
+accounts (`scripts/hardhat-network.mjs`). Its test ERC20 and callback receiver are local adversarial fixtures;
 the pool and router under test are the actual pinned protocol artifacts. No
 public RPC, inherited key, faucet or external transaction is used. Source
 authoring does not establish deployment or settlement evidence until the final

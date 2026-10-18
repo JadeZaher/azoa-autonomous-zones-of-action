@@ -23,7 +23,7 @@ public sealed partial class SwapOperationService
         if (operation.State != "NeedsOperator" || stage.State != "NeedsOperator" || operation.Version != expectedVersion) return Changed();
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
         var plan = JsonSerializer.Deserialize<SwapStagePlan>(stage.PlanJson)!;
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is not IDexOperatorSettlementModule settlement) return Fail("The original DEX module offers no operator settlement.");
         var audit = new SwapOperatorSettlement(1, operatorId, reason, DateTimeOffset.UtcNow, CanonicalJson.HashCanonical(recorded));
         var proof = await settlement.ProveOperatorSettlementAsync(intent, plan, JsonSerializer.Deserialize<SwapStageObservation>(recorded)!, audit, ct);

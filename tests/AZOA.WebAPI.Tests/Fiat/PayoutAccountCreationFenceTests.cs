@@ -88,6 +88,83 @@ public sealed class PayoutAccountCreationFenceTests
     }
 
     [Fact]
+    public async Task An_operator_attaches_the_account_a_lost_create_opened_and_setup_then_continues_on_it()
+    {
+        // RV-L1-01: crash after Stripe opened the account, person returns a day later, operator resolves.
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.LoseNextResponse = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+        (await harness.Service.BeginSetupAsync(subject, tenantId: null)).Code.Should().Be(AzoaErrorCodes.Conflict);
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+        var setup = await harness.Service.BeginSetupAsync(subject, tenantId: null);
+
+        resolved.IsError.Should().BeFalse(resolved.Message);
+        resolved.Result!.Outcome.Should().Be("attached");
+        setup.IsError.Should().BeFalse(setup.Message);
+        harness.Stripe.AccountsOpened.Should().ContainSingle("the operator path never opens a second account");
+        (await harness.AttachedAccountAsync(subject)).Should().Be(harness.Stripe.AccountsOpened.Single());
+    }
+
+    [Fact]
+    public async Task An_operator_releases_a_claim_Stripe_proves_absent_and_the_next_setup_opens_one_fresh_account()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.DropNextCreate = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+        var setup = await harness.Service.BeginSetupAsync(subject, tenantId: null);
+
+        resolved.Result!.Outcome.Should().Be("released");
+        setup.IsError.Should().BeFalse(setup.Message);
+        harness.Stripe.AccountsOpened.Should().ContainSingle();
+        harness.Stripe.CreateKeys.Distinct().Should().HaveCount(2, "the fresh claim carries a fresh Stripe idempotency key");
+        (await harness.AttachedAccountAsync(subject)).Should().Be(harness.Stripe.AccountsOpened.Single());
+    }
+
+    [Fact]
+    public async Task A_setup_still_inside_its_replay_window_is_not_operator_work()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.DropNextCreate = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(1));
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+
+        resolved.Code.Should().Be(AzoaErrorCodes.Conflict);
+        harness.Stripe.ListCalls.Should().Be(0);
+        (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subject))).Result!.CreationQuarantinedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_incomplete_Stripe_listing_is_never_taken_as_proof_of_absence()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.DropNextCreate = true;
+        await harness.Service.BeginSetupAsync(subject, tenantId: null);
+        harness.Clock.Advance(TimeSpan.FromHours(24));
+        harness.Stripe.ListingIncomplete = true;
+
+        var resolved = await harness.Service.ResolveStuckSetupAsync(subject, Operator, Evidence);
+
+        resolved.Code.Should().Be(AzoaErrorCodes.Conflict);
+        (await harness.Store.GetByAdmissionAsync(PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey,
+            PayoutAccountFlow.AdmissionKeyFor(subject))).Result.Should().NotBeNull("the claim is not released");
+    }
+
+    private static readonly Guid Operator = Guid.NewGuid();
+    private const string Evidence = "Stripe dashboard reviewed for the claim window; ticket OPS-1234.";
+
+    [Fact]
     public async Task Reading_status_first_claims_nothing_and_setup_still_opens_the_account()
     {
         var harness = new Harness();
@@ -145,6 +222,11 @@ public sealed class PayoutAccountCreationFenceTests
         private TaskCompletionSource? _holdFirst;
 
         public bool LoseNextResponse { get; set; }
+        /// <summary>The next create never reaches Stripe (timeout before send): nothing is opened.</summary>
+        public bool DropNextCreate { get; set; }
+        public bool ListingIncomplete { get; set; }
+        public int ListCalls { get; private set; }
+        private readonly List<StripeClaimedAccount> _claimed = [];
         public Task FirstCreateEntered => _firstEntered.Task;
         public IReadOnlyList<string> AccountsOpened { get { lock (_gate) return _opened.ToArray(); } }
         public IReadOnlyList<string> CreateKeys { get { lock (_gate) return _keys.ToArray(); } }
@@ -160,6 +242,11 @@ public sealed class PayoutAccountCreationFenceTests
             lock (_gate)
             {
                 _keys.Add(request.IdempotencyKey);
+                if (DropNextCreate)
+                {
+                    DropNextCreate = false;
+                    return FiatPayoutErrors.RailBusy<StripeConnectedAccount>();
+                }
                 if (!_inFlight.Add(request.IdempotencyKey))
                     return FiatPayoutErrors.RailBusy<StripeConnectedAccount>();
                 if (_firstEntered.TrySetResult()) hold = _holdFirst?.Task;
@@ -176,6 +263,7 @@ public sealed class PayoutAccountCreationFenceTests
                     account = "acct_" + Guid.NewGuid().ToString("N")[..16];
                     _accountsByKey[request.IdempotencyKey] = account;
                     _opened.Add(account);
+                    _claimed.Add(new StripeClaimedAccount(account, request.ClaimId, request.SubjectUserId));
                 }
 
                 if (LoseNextResponse)
@@ -227,6 +315,17 @@ public sealed class PayoutAccountCreationFenceTests
         public Task<AZOAResult<StripeBankPayout>> GetBankPayoutAsync(
             StripeCredentials credentials, string accountId, string payoutId, CancellationToken ct = default)
             => throw new NotSupportedException();
+
+        public Task<AZOAResult<StripeClaimedAccountList>> ListConnectedAccountsCreatedAsync(
+            StripeCredentials credentials, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        {
+            lock (_gate)
+            {
+                ListCalls++;
+                return Task.FromResult(AZOAResult<StripeClaimedAccountList>.Success(
+                    new StripeClaimedAccountList(_claimed.ToList(), !ListingIncomplete)));
+            }
+        }
     }
 
     private sealed class MutableClock(DateTimeOffset start) : TimeProvider

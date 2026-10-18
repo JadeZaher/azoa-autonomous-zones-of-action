@@ -845,6 +845,12 @@ export interface NftLifecycleView {
   needsStageAcceptance?: boolean;
   needsReplacementCosts?: boolean;
   replacementCostsAccepted?: boolean;
+  /** F-M11: a cost-bearing Solana stage is parked unsigned until its paying participant accepts an exact cost quote. */
+  needsStageCosts?: boolean;
+  /** The only user who may quote and accept this stage's costs (present on cost-bearing stages). */
+  stageCostPayerUserId?: string | null;
+  /** Limits of the binding acceptance for the current stage and generation, once accepted. */
+  acceptedStageCostLimits?: NftProtocolCostLimits | null;
   /** Display hint: the original requester's direct authority lapsed and must be renewed before the next new signature. */
   needsActorContinuation?: boolean;
   /** Display hint: the accepting participant's stage credential lapsed; that participant re-accepts the same stage. */
@@ -873,6 +879,12 @@ export interface NftStageAcceptance {
 }
 
 export interface NftReplacementCostAcceptance {
+  stage: NftStageAcceptance;
+  costs: NftProtocolCostAuthorization;
+}
+
+/** `POST /api/nft-stage-costs/{id}/accept`: the payer's acceptance of one offer for the exact reviewed stage. */
+export interface NftStageCostAcceptance {
   stage: NftStageAcceptance;
   costs: NftProtocolCostAuthorization;
 }
@@ -2229,8 +2241,9 @@ export class AzoaApiClient {
     return this.request<FiatPayoutView>("POST", `/api/admin/fiat-payouts/${encodeURIComponent(payoutId)}/recover`, { reason });
   }
 
+  /** Both recovery controllers answer a bare list (not an `AZOAResult`). */
   async listEthereumPreparations(network: "Devnet" | "Testnet" | "Mainnet", operator = false): Promise<Result<EthereumPreparationView[], SdkError>> {
-    return this.request("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
+    return this.requestBare("GET", `/api/${operator ? "operator/" : ""}ethereum/recovery/${network}`);
   }
 
   async activateEthereumSigner(network: "Devnet" | "Testnet" | "Mainnet", walletId: string): Promise<Result<boolean, SdkError>> {
@@ -3625,6 +3638,18 @@ export class AzoaApiClient {
     return this.request("POST", `/api/nft-replacement-costs/${encodeURIComponent(operationId)}/retire`, request);
   }
 
+  /** F-M11: the stage's paying participant requests an immutable five-minute cost offer for the exact reviewed stage. */
+  async quoteNftStageCosts(operationId: string, stage: NftStageAcceptance): Promise<Result<NftProtocolCostOffer, SdkError>> {
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
+    return this.request("POST", `/api/nft-stage-costs/${encodeURIComponent(operationId)}/quote`, stage);
+  }
+
+  /** F-M11: records the payer's acceptance (idempotent per stage request id); continue the lifecycle afterwards. */
+  async acceptNftStageCosts(operationId: string, request: NftStageCostAcceptance): Promise<Result<NftLifecycleView, SdkError>> {
+    assertHex32(operationId, "operationId", "NFT lifecycle reference");
+    return this.request("POST", `/api/nft-stage-costs/${encodeURIComponent(operationId)}/accept`, request);
+  }
+
   /** Discloses costs for the original frozen execution without accepting them. */
   async quoteNftWorkflowCosts(executionId: string): Promise<Result<NftWorkflowCostDisclosure, SdkError>> {
     assertUuid(executionId, "executionId");
@@ -4274,13 +4299,13 @@ export class AzoaApiClient {
     return this.request("POST", API_PATHS.EXCHANGE_RETIRED_ROW_RESOLVE(operationId), resolution);
   }
 
-  /** Operator: wallet-identity migration status and conflicts. */
+  /** Operator: wallet-identity migration status and conflicts (the controller answers a bare view). */
   async getWalletIdentityMigration(): Promise<Result<WalletIdentityMigrationView, SdkError>> {
-    return this.request("GET", API_PATHS.OPERATOR_WALLET_IDENTITIES);
+    return this.requestBare("GET", API_PATHS.OPERATOR_WALLET_IDENTITIES);
   }
 
-  /** Operator: clears one conflicting wallet binding at the observed migration version. */
-  async clearWalletIdentityConflict(repair: WalletIdentityConflictRepair): Promise<Result<WalletIdentityMigrationView, SdkError>> {
+  /** Operator: clears one conflicting wallet binding at the observed migration version; re-read the view afterwards. */
+  async clearWalletIdentityConflict(repair: WalletIdentityConflictRepair): Promise<Result<boolean, SdkError>> {
     assertNonEmpty(repair.reason, "reason");
     return this.request("POST", API_PATHS.OPERATOR_WALLET_IDENTITY_CLEAR, repair);
   }

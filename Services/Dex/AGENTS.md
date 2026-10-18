@@ -66,6 +66,14 @@ not-found. A replayed external-signing disclosure re-binds live `swap:sign`
 consent (`BindConsentAsync`) before returning the stored unsigned wire, so an
 earlier exposure record alone never re-discloses it.
 
+## Value gate and pin scope (round 4 fix batch)
+
+`SwapOperationService` consults the risk-hold-wrapped `IRealValueKycGate` (KYC + reversal account pause, X-2) at
+admission (`StartAsync`) and before any custody signature, first send or external-signing disclosure of a non-Cleanup
+stage. Residual-return cleanup stays open. New quotes (`DexQuoteService`) and the swap node's admission check resolve
+modules through the D-7 pin (`DexModuleResolver.Resolve`); every command on an already-admitted swap and the recovery
+sweep use `ResolveForExisting`, which ignores the pin so a pin flip never strands in-flight work (RV-L5-11).
+
 ## Retained provider resources
 
 Providers may implement the optional `IDexRetainedResourceModule`. After each

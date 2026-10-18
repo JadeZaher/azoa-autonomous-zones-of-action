@@ -47,8 +47,8 @@ node e2e/scripts/e2e-stack.mjs down    # stop the project; keeps its volume (add
 
 `docker-compose.e2e.yml` points `Kyc__Identomat__*BaseUrl` and `Fiat__ApiBaseUrl` at
 `https://${AZOA_E2E_VENDOR_HOST}:9443/9444`, injects the generated credentials (`:?` makes a bare
-compose up fail loudly), turns webhook delivery on (round 4; the pinned receiver is unroutable, so
-events dead-letter), and sets **both** `SSL_CERT_FILE` and
+compose up fail loudly), turns webhook delivery on (round 4) against the in-project
+`webhook-receiver` (§webhook-receiver), and sets **both** `SSL_CERT_FILE` and
 `SSL_CERT_DIR` to the mounted trust directory. .NET on Linux reads trust roots from OpenSSL's
 `SSL_CERT_FILE` and `SSL_CERT_DIR`, and only falls back to `/etc/ssl/certs` when `SSL_CERT_DIR` is
 not set (`.omc/research/dotnet-linux-x509-2026-10-16.md`), so the per-run CA is the only root.
@@ -78,8 +78,24 @@ backend fakes in `tests/AZOA.WebAPI.IntegrationTests/Http/Infrastructure/`:
   takes for that pair is undocumented, so no journey depends on it.
 - Stripe honours `Idempotency-Key` like Stripe (parameter mismatch → 400 `idempotency_error`).
 
+- Identomat also answers the documented widget `POST /external-api/delete/` (`true`, or
+  `{ argumentError: "session-not-found" }`); a deleted session stops answering `/external-api/result/`.
+
 Each exposes a `/__e2e/*` control plane that only the test runner calls (`support/vendors.ts`,
 TLS verification skipped for that client alone).
+
+## §webhook-receiver — where e2e webhook deliveries land
+
+Delivery workers run in e2e (`Webhooks__Enabled=true`). The SSRF guard refuses private, loopback and
+gateway addresses, so a host-run fake is unreachable for deliveries. Instead the `webhook-receiver`
+compose service (`support/webhook-receiver/receiver.mjs`, no dependencies) sits at the static
+public-range address `198.51.99.10` on the project-internal `e2e_webhooks` network
+(`198.51.99.0/24`), and the API pins `webhook-receiver.e2e.azoa.test` to it through `extra_hosts`.
+It serves TLS with the per-run vendor certificate, whose SAN list includes that name
+(`scripts/e2e-stack.mjs`; an older `.generated/` needs `up --rotate` once), records each POST
+(path, `x-azoa-*` headers, body) and answers 200. `FakeVendors.webhookDeliveries()` reads them
+through the loopback control plane (`AZOA_E2E_WEBHOOK_RECEIVER_PORT`, default 9445). A journey can
+therefore assert a real signed delivery instead of a dead-lettered event.
 
 ## §hosted-pages — interception, then the vendor's side
 

@@ -147,3 +147,11 @@ export function isKybRequired(error: unknown): boolean {
   if (!(error instanceof SdkError)) return false;
   return error.serverCode === KYB_REQUIRED || error.message.includes(KYB_REQUIRED);
 }
+
+/** Server code: the accepted NFT stage costs no longer cover current costs; the payer quotes and accepts again. */
+export const NFT_STAGE_COSTS_CHANGED = "NFT_STAGE_COSTS_CHANGED";
+
+/** True when the node refused to prepare an NFT stage because its accepted costs changed (F-M11). */
+export function isNftStageCostsChanged(error: unknown): boolean {
+  return error instanceof SdkError && error.serverCode === NFT_STAGE_COSTS_CHANGED;
+}

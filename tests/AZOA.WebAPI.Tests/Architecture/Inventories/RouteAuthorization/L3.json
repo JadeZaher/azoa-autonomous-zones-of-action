@@ -324,9 +324,10 @@
     "action": "Advance",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator policy; next leg chosen by the row; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; next leg chosen by the row; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -335,9 +336,10 @@
     "action": "Return",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator policy; AbandonAsync parks when money may have left; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; AbandonAsync parks when money may have left; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -346,9 +348,22 @@
     "action": "Recover",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator principal; server-fetched failed bank payout + transfer evidence; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal; server-fetched failed bank payout + transfer evidence; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST api/admin/fiat-payouts/accounts/{userId}/setup/resolve",
+    "controller": "FiatPayoutOperatorController",
+    "action": "ResolveAccountSetup",
+    "class": "non-value",
+    "scope": "Operator",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; reason 20-1000; Stripe accounts listed over the claim window (complete page) — attach the one account whose azoa_payout_claim+azoa_user_id match, or release the claim only when none exists and the replay window has passed; audited; financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -357,9 +372,10 @@
     "action": "Resolve",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator principal + reason; Stripe transfer-group / bank payout / chain evidence; audit appended; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal + reason; Stripe transfer-group / bank payout / chain evidence; audit appended; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -368,9 +384,10 @@
     "action": "Park",
     "class": "non-value",
     "scope": "Operator",
-    "enforcement": "Operator policy; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -379,9 +396,10 @@
     "action": "Restart",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator policy; idempotent saga per payout; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; idempotent saga per payout; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -423,9 +441,10 @@
     "action": "Recover",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator policy; attempt-keyed idempotent moves; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; attempt-keyed idempotent moves; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -434,9 +453,10 @@
     "action": "Settle",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator policy; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -445,9 +465,10 @@
     "action": "Resolve",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator principal + reason; chain confirmation of the recorded move; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal + reason; chain confirmation of the recorded move; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -456,9 +477,10 @@
     "action": "Restart",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator policy; idempotent saga per reversal; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator policy; idempotent saga per reversal; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {
@@ -467,9 +489,10 @@
     "action": "ClearFlag",
     "class": "value-moving",
     "scope": "Operator",
-    "enforcement": "Operator principal recorded as record link; version CAS; financial limiter",
+    "enforcement": "RecentNodeOperatorSession step-up (X-7); Operator principal recorded as record link; version CAS; financial limiter",
     "policies": [
-      "Operator"
+      "Operator",
+      "RecentNodeOperatorSession"
     ]
   },
   {

@@ -911,3 +911,9 @@ The engine handler, the admission fence in `SurrealActionNodeExecutionStore` and
 re-authorization (`ActionSigningAuthorizationService`) all read it, so a parked WTT node can be
 re-authorized with exactly the witness `WttLifecycleService` demands. `ActionSigningScopeTests` pins the
 agreement with `TryGetFor(node).ResolveSigningScopes` and `WttSigningAuthorityFence.WorkflowScopes`.
+
+No fallback (X-8): `Applies` is true for any non-null `wtt` property, well-formed or not
+(`WttActionResolver.Selects`), so a malformed body reaches the WTT route, which fails the node. Publish refuses a Bridge/Back
+config whose `wtt` member does not parse as a typed `WttActionConfig` (`ActionNodeConfigRegistry.Validate`), and the legacy
+`BridgeNodeHandler` / `BackNodeHandler` fail any node that names `wtt`, so the trusted bridge never runs a node the author
+meant for WTT even if a registry path or options difference let it through.

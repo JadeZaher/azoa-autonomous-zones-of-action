@@ -31,11 +31,11 @@ public sealed partial class SurrealSwapAdmissionTests
         (await _store.AdmitAsync(operation, authority)).Should().NotBeNull();
         var stage = (await _store.ClaimInitialStageAsync(operation.Id, 0, StagePlan(operation, terms), authority))!;
         var stageId = SurrealRecordGuid.BareId(stage.Id);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId).Where(seed => true)
             .Set(row => row.IsActive, false).Build())).EnsureAllOk();
         (await _store.AdmitCustodyAsync(operation.Id, 1, stageId, 0, authority)).Should().BeNull();
         (await _store.GetAsync(operation.Id))!.Version.Should().Be(1);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operation.ActorUserId).Where(seed => true)
             .Set(row => row.IsActive, true).Build())).EnsureAllOk();
         var claims = await Task.WhenAll(_store.AdmitCustodyAsync(operation.Id, 1, stageId, 0, authority),
             _store.AdmitCustodyAsync(operation.Id, 1, stageId, 0, authority));

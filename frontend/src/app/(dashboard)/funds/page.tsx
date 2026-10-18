@@ -14,7 +14,11 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { refusalMessage } from '@/lib/refusal-messages'
-import { clearSavedRequest, formatMinorUnits, requestKeyFor, toMinorUnits } from '@/lib/persisted-request-key'
+import { PendingRequestNotice } from '@/components/shared/pending-request-notice'
+import {
+  type SavedRequest, claimRequestKey, clearSavedRequest, formatMinorUnits, isDefiniteRefusal, isFinishedCheckout,
+  readSavedRequest, rememberServerId, toMinorUnits,
+} from '@/lib/persisted-request-key'
 
 const SCOPE = 'funds'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -33,6 +37,8 @@ export default function FundsPage() {
   const [intent, setIntent] = useState<FiatCheckoutIntent | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pending, setPending] = useState<SavedRequest | null>(null)
 
   useEffect(() => {
     void azoa.api.getFiatCheckoutCapabilities().then(result => {
@@ -41,6 +47,7 @@ export default function FundsPage() {
     })
   }, [])
 
+  /** Reads one intent and resolves the saved key by the intent's state, whichever page Stripe returned to. */
   const readIntent = useCallback(async (intentId: string) => {
     if (!userId || !UUID.test(intentId)) return
     setBusy(true)
@@ -48,8 +55,10 @@ export default function FundsPage() {
       const result = await azoa.api.getFiatCheckoutIntent(userId, intentId)
       if (isOk(result)) {
         setIntent(result.value)
-        if (result.value.settlementState === 'funds_applied' || result.value.settlementState === 'payment_failed'
-          || result.value.status === 'expired') clearSavedRequest(SCOPE, userId)
+        if (isFinishedCheckout(result.value) && readSavedRequest(SCOPE, userId)?.serverId === intentId) {
+          clearSavedRequest(SCOPE, userId)
+          setPending(null)
+        }
       } else {
         setError(refusalMessage(result.error, 'That payment could not be read.'))
       }
@@ -57,9 +66,13 @@ export default function FundsPage() {
   }, [userId])
 
   useEffect(() => {
+    if (!userId) return
+    const saved = readSavedRequest(SCOPE, userId)
     const returnedIntent = new URLSearchParams(window.location.search).get('intent')
-    if (returnedIntent) void readIntent(returnedIntent)
-  }, [readIntent])
+    if (saved?.serverId) void readIntent(saved.serverId)
+    else if (saved) setPending(saved)
+    if (returnedIntent && returnedIntent !== saved?.serverId) void readIntent(returnedIntent)
+  }, [userId, readIntent])
 
   async function pay() {
     if (!userId) return
@@ -68,14 +81,50 @@ export default function FundsPage() {
       setError('Enter an amount like 25 or 25.50.')
       return
     }
+    const claim = claimRequestKey(SCOPE, userId, minorUnits)
+    if (claim.kind === 'pending') {
+      setError(null)
+      setPending(claim.pending)
+      return
+    }
+    await send(claim.request)
+  }
+
+  async function send(request: SavedRequest) {
+    if (!userId) return
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
-      const saved = requestKeyFor(SCOPE, userId, minorUnits)
-      const result = await azoa.api.startFiatCheckout(userId, { requestKey: saved.requestKey, amountMinorUnits: minorUnits, purpose: 'funds-top-up' })
-      if (isOk(result)) setIntent(result.value)
-      else setError(refusalMessage(result.error, 'The payment could not start. Your saved request will resume it — try again.'))
+      const returnUrl = `${window.location.origin}/funds`
+      const result = await azoa.api.startFiatCheckout(userId, {
+        requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits, purpose: 'funds-top-up', successUrl: returnUrl, cancelUrl: returnUrl,
+      })
+      if (isOk(result)) {
+        setPending(null)
+        setIntent(result.value)
+        if (isFinishedCheckout(result.value)) {
+          clearSavedRequest(SCOPE, userId)
+          if (result.value.resumed) setNotice('This matched your earlier payment, which has already finished. Nothing new was charged. Press "Continue to payment" again to start a new payment.')
+        } else {
+          rememberServerId(SCOPE, userId, request.requestKey, result.value.intentId)
+        }
+      } else if (isDefiniteRefusal(result.error.status)) {
+        clearSavedRequest(SCOPE, userId)
+        setPending(null)
+        setError(refusalMessage(result.error, 'The payment was refused. Nothing was charged.'))
+      } else {
+        setPending(request)
+        setError(refusalMessage(result.error, 'The payment could not start. Resuming the saved request reopens the same payment.'))
+      }
     } finally { setBusy(false) }
+  }
+
+  function discardPending() {
+    if (!userId) return
+    clearSavedRequest(SCOPE, userId)
+    setPending(null)
+    setNotice('The unconfirmed payment request was discarded. Enter an amount to start a new one.')
   }
 
   const unavailable = capabilities !== null && !capabilities.available
@@ -87,6 +136,17 @@ export default function FundsPage() {
         <p className="text-muted-foreground">Pay by card. Your balance changes only after the payment provider confirms the money arrived.</p>
       </div>
       {error && <ErrorBanner message={error} />}
+      {notice && <p role="status" className="text-sm">{notice}</p>}
+      {pending && (
+        <PendingRequestNotice
+          summary={`A payment of ${formatMinorUnits(pending.amountMinorUnits, intent?.currency ?? '')}`}
+          detail="Resuming reopens that same payment instead of starting a second one. Discard it only if you want a separate payment; a payment page you already completed still counts."
+          resumeLabel="Resume that payment"
+          busy={busy}
+          onResume={() => void send(pending)}
+          onDiscard={discardPending}
+        />
+      )}
       {unavailable && (
         <Card><CardContent className="pt-6 text-sm">
           Payments are not available right now{capabilities?.unavailableReason ? `: ${capabilities.unavailableReason}` : '.'}

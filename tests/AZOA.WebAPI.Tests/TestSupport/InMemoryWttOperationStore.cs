@@ -17,6 +17,8 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
     internal bool LoseNextAdmissionResponse { get; set; }
     internal int Admissions { get; private set; }
     internal bool FailNextPreparationEpoch { get; set; }
+    /// <summary>Stands in for the SQL action-execution liveness read: true while the admitting run could still sign.</summary>
+    internal bool ActionRunLive { get; set; } = true;
 
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
     private static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
@@ -24,7 +26,7 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
     private static WttOperationIntent Intent(WttOperation operation)
         => JsonSerializer.Deserialize<WttOperationIntent>(operation.OwnerIntentJson ?? operation.IntentJson)!;
     private static WttActionBinding? Action(WttOperation operation)
-        => WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash);
+        => operation.OwnerIntentJson is null ? WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash) : null;
 
     public Task<WttOffer?> GetOfferAsync(string id, CancellationToken ct = default)
     { lock (_gate) return Task.FromResult(_offers.TryGetValue(id, out var row) ? Copy(row) : null); }
@@ -297,8 +299,9 @@ internal sealed class InMemoryWttOperationStore(TimeProvider? clock = null) : IW
         {
             var operation = _operations[operationId];
             var owner = WttOwnerIntent.From(JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!);
-            if (operation.Version != expectedVersion || operation.TenantId.Length == 0 || operation.OwnerIntentJson is not null
-                || operation.ActionRunId is not null || operation.Phase != "Target" || operation.State != "Ready" || operation.ProofsJson is null
+            if (operation.Version != expectedVersion || operation.TenantId.Length == 0 && operation.ActionRunId is null
+                || operation.OwnerIntentJson is not null || operation.ActionRunId is not null && ActionRunLive
+                || operation.Phase != "Target" || operation.State != "Ready" || operation.ProofsJson is null
                 || ownerIntentJson != CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(owner))
                 || _stages.Values.Any(stage => stage.OperationId == operationId && stage.Phase is "Target" or "NativeOutput"
                     && (stage.AuthorizedAt is not null || stage.ExposedAt is not null))

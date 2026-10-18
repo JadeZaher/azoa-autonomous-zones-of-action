@@ -10,7 +10,39 @@ import { isFungibleCommandSuperseded } from '@/lib/fungible-command-recovery'
 
 type SavedCommand = { id: string; kind: 'continue' | 'replace' | 'accept-quote'; body: { requestId?: string; version: number; quoteId?: string } }
 type Journal = { definition?: PlatformGenesisRequest; operationId?: string; command?: SavedCommand }
-const storageKey = 'azoa:operator:platform-genesis:v1'
+
+const OPERATION_ID = /^[0-9a-f]{32}$/i
+const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const QUOTE_ID = /^[0-9a-f]{64}$/
+const COMMAND_KINDS: readonly SavedCommand['kind'][] = ['continue', 'replace', 'accept-quote']
+
+/** Resume state lives in the page URL (no browser storage on operator pages): the operation and any unacknowledged command. */
+function readJournalFromUrl(search: string): Journal {
+  const params = new URLSearchParams(search)
+  const operationId = params.get('operation') ?? ''
+  if (!OPERATION_ID.test(operationId)) return {}
+  const kind = params.get('command') as SavedCommand['kind'] | null
+  const version = Number(params.get('version'))
+  const requestId = params.get('request') ?? ''
+  const quoteId = params.get('quote') ?? ''
+  if (!kind || !COMMAND_KINDS.includes(kind) || !params.has('version') || !Number.isSafeInteger(version) || version < 0) return { operationId }
+  if (kind === 'accept-quote') return QUOTE_ID.test(quoteId) ? { operationId, command: { id: operationId, kind, body: { version, quoteId } } } : { operationId }
+  return REQUEST_ID.test(requestId) ? { operationId, command: { id: operationId, kind, body: { version, requestId } } } : { operationId }
+}
+
+function writeJournalToUrl(journal: Journal) {
+  const url = new URL(window.location.href)
+  for (const key of ['operation', 'command', 'version', 'request', 'quote']) url.searchParams.delete(key)
+  const operationId = journal.command?.id ?? journal.operationId
+  if (operationId) url.searchParams.set('operation', operationId)
+  if (journal.command) {
+    url.searchParams.set('command', journal.command.kind)
+    url.searchParams.set('version', String(journal.command.body.version))
+    if (journal.command.body.requestId) url.searchParams.set('request', journal.command.body.requestId)
+    if (journal.command.body.quoteId) url.searchParams.set('quote', journal.command.body.quoteId)
+  }
+  window.history.replaceState(window.history.state, '', url)
+}
 
 export default function PlatformGenesisPage() {
   const journal = useRef<Journal>({})
@@ -27,7 +59,7 @@ export default function PlatformGenesisPage() {
   const [lookup, setLookup] = useState('')
 
   function persist(next: Journal) {
-    localStorage.setItem(storageKey, JSON.stringify(next))
+    writeJournalToUrl(next)
     journal.current = next
     if (alive.current) setSaved(next)
   }
@@ -42,11 +74,10 @@ export default function PlatformGenesisPage() {
 
   useEffect(() => {
     alive.current = true
-    try {
-      const raw = localStorage.getItem(storageKey)
-      if (raw) { journal.current = JSON.parse(raw) as Journal; setSaved(journal.current); setLookup(journal.current.operationId ?? '') }
-      setReady(true)
-    } catch { setError('Saved genesis recovery data could not be read. Preserve it before repairing browser storage.') }
+    journal.current = readJournalFromUrl(window.location.search)
+    setSaved(journal.current)
+    setLookup(journal.current.operationId ?? '')
+    setReady(true)
     return () => { alive.current = false }
   }, [])
 
@@ -106,7 +137,6 @@ export default function PlatformGenesisPage() {
     setOperation(observed)
     if (!isFungibleCommandSuperseded({ operationId: pending.id, version: pending.body.version }, observed))
       throw new Error('The server has not fenced this saved version. Preserve and replay the original command.')
-    localStorage.setItem(`${storageKey}:resolved-command:${pending.id}:${pending.body.version}`, JSON.stringify({ command: pending, observed }))
     persist({ ...journal.current, command: undefined })
   }
 
@@ -114,6 +144,7 @@ export default function PlatformGenesisPage() {
     <h1 className="text-2xl font-semibold">Platform genesis</h1>
     <p>One immutable definition is allowed per network. Admission does not sign. Costs require separate consent, and platform activation follows confirmed issuance and reserve accounting.</p>
     <p>Saved-command reconciliation requires a later server revision. It does not withdraw an authorization that already committed.</p>
+    <p className="text-sm text-muted-foreground">Resume state (the operation and any unacknowledged command) is kept in this page&apos;s address, never in browser storage. Keep this tab or copy its URL before navigating away.</p>
     <Button variant="outline" disabled={busy || !ready} onClick={() => void run(async () => { const value = await operatorRequest<PlatformTokenState>('platform-token'); if (alive.current) setState(value) })}>Read verified platform supply</Button>
     {state && <div className="rounded border p-3"><p>Verified asset {state.definition.assetId} - {state.definition.chainType} / {state.definition.network}</p><p>Total {state.supply.total}; circulating {state.supply.circulating}; in reserve {state.supply.inReserve} atomic units.</p></div>}
     <section className="space-y-3 rounded border p-4">

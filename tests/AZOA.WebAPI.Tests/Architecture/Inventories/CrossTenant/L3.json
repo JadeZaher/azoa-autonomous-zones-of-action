@@ -56,6 +56,11 @@
   },
   {
     "store": "IOnRampLotLedger",
+    "method": "ListSoldSinceAsync",
+    "tenantCheck": "worker-only: cross-user by design; the off-ramp funding path (OffRampService.Funding) reads only the max sold rate (D-8c cross-scope floor); no row is projected to any caller"
+  },
+  {
+    "store": "IOnRampLotLedger",
     "method": "ListNeedingOperatorAsync",
     "tenantCheck": "Operator policy only"
   },

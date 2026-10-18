@@ -135,7 +135,7 @@ public sealed partial class SurrealHoldCommandTests
         await Save(new HoldCommand { Id = "release-command", ActorUserId = intent.ParticipantUserId.ToString("N"),
             HoldRecordId = SurrealRecordGuid.BareId(hold.Id), Kind = "Release", State = "Completed", IntentHash = "release",
             IntentJson = "{}", AuthorityJson = "{}", RailPlanJson = System.Text.Json.JsonSerializer.Serialize(plan), CreatedAt = now, UpdatedAt = now });
-        await Execute(SurrealWriter.UpdateOnly<HoldLedger>(hold.Id).Set(row => row.State, "Released").Build());
+        await Execute(SurrealWriter.UpdateOnly<HoldLedger>(hold.Id).Where(seed => true).Set(row => row.State, "Released").Build());
 
         var liability = (await _store.GetPurchaseLiabilityAsync(source.Id))!;
 

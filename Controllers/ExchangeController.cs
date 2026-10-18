@@ -77,6 +77,7 @@ public sealed class ExchangeController : ControllerBase
     /// </summary>
     [HttpPost("operator/retired-rows/{operationId:guid}/resolve")]
     [Authorize(Policy = "Operator")]
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [EnableRateLimiting("financial")]
     public async Task<ActionResult<AZOAResult<RetiredExchangeRowView>>> ResolveRetiredRow(
         Guid operationId, [FromBody] RetiredExchangeResolutionRequest request, CancellationToken ct)

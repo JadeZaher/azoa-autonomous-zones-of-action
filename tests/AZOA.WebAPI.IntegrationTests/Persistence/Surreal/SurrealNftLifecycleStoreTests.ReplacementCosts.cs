@@ -63,7 +63,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         if (change.StartsWith("original-revoked", StringComparison.Ordinal))
         {
             var cutoff = DateTimeOffset.UtcNow.AddSeconds(-10);
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(original.Credential.ActorUserId.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(original.Credential.ActorUserId.ToString("N")).Where(seed => true)
                 .Set(user => user.AuthNotBefore, cutoff).Build())).EnsureAllOk();
             current = current with { Credential = current.Credential with { AuthNotBefore = cutoff, IssuedAt = cutoff.AddSeconds(1) } };
         }
@@ -75,7 +75,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
             current = current with { Credential = current.Credential with {
                 IssuedAt = DateTimeOffset.UtcNow.AddHours(-2), ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1) } };
         if (change == "payer-wallet-moved")
-            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(original.Wallet.Id.ToString("N"))
+            (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(original.Wallet.Id.ToString("N")).Where(seed => true)
                 .Set(wallet => wallet.Address, "moved-address").Build())).EnsureAllOk();
         var (accepted, _) = await ReplacementAcceptance(row, current);
 
@@ -136,7 +136,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         var (row, original) = await ExpiredGeneration();
         var (accepted, _) = await ReplacementAcceptance(row, Current(original));
         var saved = await PreparedReplacement((await _store.UpdateAsync(accepted, row.Version, requireActionAuthority: true))!);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(original.Credential.ActorUserId.ToString("N"))
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(original.Credential.ActorUserId.ToString("N")).Where(seed => true)
             .Set(user => user.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
 
         saved.State = "Submitted";

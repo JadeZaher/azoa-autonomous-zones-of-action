@@ -10,8 +10,11 @@ namespace AZOA.WebAPI.Providers.Blockchain.Solana;
 
 public partial class SolanaProvider : IClientSignedTransferModule
 {
-    /// <summary>Signatures inspected when proving an unsubmitted plan never landed; more recent traffic leaves it pending.</summary>
-    private const int ClientPlanSearchLimit = 100;
+    /// <summary>Finalized blocks one reconcile pass walks while proving a plan never landed (the cursor resumes the rest).</summary>
+    private const int ClientPlanScanBlocksPerPass = 32;
+
+    /// <summary>Upper bound on blocks between the plan's context block and its expiry (a blockhash lives ~150 blocks).</summary>
+    private const ulong ClientPlanMaximumValidityBlocks = 1024;
 
     private sealed record SolanaClientPlan(DurableSolanaPlan Plan, ValueTransferIntent Intent);
 
@@ -66,38 +69,85 @@ public partial class SolanaProvider : IClientSignedTransferModule
 
     /// <inheritdoc/>
     public async Task<AZOAResult<ClientSigningObservation>> ObserveClientSignedTransferAsync(ClientSigningPlan plan, string? transactionId,
-        CancellationToken ct)
+        string? evidenceJson, CancellationToken ct)
     {
         var message = ClientPlanMessage(plan, out var durable);
         if (await VerifyGenesisAsync(ct) != durable.Genesis)
             return AZOAResult<ClientSigningObservation>.Failure("The saved plan belongs to another Solana cluster.");
-        var pending = AZOAResult<ClientSigningObservation>.Success(new(ClientSigningVerdicts.Pending, transactionId));
-        var expired = (await DurableRpcAsync("getBlockHeight", [new { commitment = "finalized" }], ct)).GetInt64() > durable.LastValidBlockHeight;
+        var pending = Observation(ClientSigningVerdicts.Pending, transactionId, null, evidenceJson);
         if (transactionId is not null)
         {
             var status = (await DurableRpcAsync("getSignatureStatuses", [new[] { transactionId }, new { searchTransactionHistory = true }], ct))
                 .GetProperty("value")[0];
-            if (status.ValueKind == JsonValueKind.Null)
-                return expired ? AZOAResult<ClientSigningObservation>.Success(new(ClientSigningVerdicts.Expired, null,
-                    "The blockhash expired and the cluster never saw the plan's signature.")) : pending;
-            if (status.GetProperty("confirmationStatus").GetString() != "finalized") return pending;
-            return await PlannedOutcomeAsync(transactionId, message, ct) ?? AZOAResult<ClientSigningObservation>.Failure(
-                "The finalized transaction does not carry the saved message.");
+            // RV-L5-02: a null status only means this node lacks the signature; absence is proven by the ancestry scan below.
+            if (status.ValueKind != JsonValueKind.Null)
+            {
+                if (status.GetProperty("confirmationStatus").GetString() != "finalized") return pending;
+                return await PlannedOutcomeAsync(transactionId, message, ct) ?? AZOAResult<ClientSigningObservation>.Failure(
+                    "The finalized transaction does not carry the saved message.");
+            }
         }
-        if (!expired) return pending;
-        var signatures = await DurableRpcAsync("getSignaturesForAddress",
-            [plan.Signer, new { limit = ClientPlanSearchLimit, commitment = "finalized" }], ct);
-        var candidates = signatures.EnumerateArray().ToArray();
-        foreach (var candidate in candidates.Where(item => item.GetProperty("slot").GetInt64() >= durable.ContextSlot))
-        {
-            var outcome = await PlannedOutcomeAsync(candidate.GetProperty("signature").GetString()!, message, ct);
-            if (outcome is not null) return outcome;
-        }
-        var searchedPastPlan = candidates.Length < ClientPlanSearchLimit
-            || candidates.Any(item => item.GetProperty("slot").GetInt64() < durable.ContextSlot);
-        return searchedPastPlan ? AZOAResult<ClientSigningObservation>.Success(new(ClientSigningVerdicts.Expired, null,
-            "The blockhash expired and no finalized transaction from the signer since the plan carries its message.")) : pending;
+        if ((await DurableRpcAsync("getBlockHeight", [new { commitment = "finalized" }], ct)).GetInt64() <= durable.LastValidBlockHeight)
+            return pending;
+        return await ProveClientPlanAbsenceAsync(message, durable, transactionId, evidenceJson, ct);
     }
+
+    /// <summary>
+    /// RV-L5-02: the reviewed WTT finalized-ancestry scan, started at the first block past the blockhash expiry and resumed from
+    /// <paramref name="evidenceJson"/>. Only a complete scan settles <c>Expired</c>; a node without that history yields <c>Unproven</c>.
+    /// </summary>
+    private async Task<AZOAResult<ClientSigningObservation>> ProveClientPlanAbsenceAsync(byte[] message, DurableSolanaPlan durable,
+        string? transactionId, string? evidenceJson, CancellationToken ct)
+    {
+        WttMessageHistoryCursor? cursor;
+        string? signed;
+        try
+        {
+            var previous = ReadWttMessageCursor(evidenceJson);
+            var upper = previous is null ? await FirstSlotPastValidityAsync(durable, ct) : (ulong?)null;
+            (cursor, signed) = await ScanWttMessageHistoryAsync(message, durable, previous, ct, upper, ClientPlanScanBlocksPerPass);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidDataException or JsonException
+            or KeyNotFoundException or InvalidOperationException or FormatException or OverflowException)
+        {
+            return Observation(ClientSigningVerdicts.Unproven, transactionId,
+                "The blockhash expired, but this node cannot prove from finalized history that the plan never landed: " + exception.Message,
+                evidenceJson);
+        }
+        if (signed is not null)
+        {
+            var signature = Encoders.Base58.EncodeData(Convert.FromBase64String(signed).AsSpan(1, 64).ToArray());
+            return await PlannedOutcomeAsync(signature, message, ct)
+                ?? Observation(ClientSigningVerdicts.Pending, signature, "The plan's message is in a finalized block; its outcome is not yet readable.", evidenceJson);
+        }
+        if (cursor is null) return Observation(ClientSigningVerdicts.Pending, transactionId, null, evidenceJson);
+        if (!cursor.Complete)
+            return Observation(ClientSigningVerdicts.Pending, transactionId, $"Scanned {cursor.ScannedBlocks} finalized blocks toward the plan's context slot.",
+                WttCanonical(new { format = WttMessageScanFormat, history = cursor }));
+        return Observation(ClientSigningVerdicts.Expired, null,
+            "Every finalized block from the plan's context slot past its blockhash expiry lacks the plan's message.", null);
+    }
+
+    /// <summary>The finalized slot whose block height is the first past the plan's last valid height (consecutive heights per block).</summary>
+    private async Task<ulong> FirstSlotPastValidityAsync(DurableSolanaPlan plan, CancellationToken ct)
+    {
+        var first = await DurableRpcAsync("getBlocksWithLimit", [(ulong)plan.ContextSlot, 1, new { commitment = "finalized" }], ct);
+        if (first.ValueKind != JsonValueKind.Array || first.GetArrayLength() == 0 || !first[0].TryGetUInt64(out var start))
+            throw new InvalidDataException("Finalized block history from the plan's context slot is unavailable.");
+        var head = JupiterBlockHeader(await DurableRpcAsync("getBlock", [start, new { encoding = "base64", transactionDetails = "none",
+            rewards = false, commitment = "finalized", maxSupportedTransactionVersion = 0 }], ct), start);
+        if (head.Height > (ulong)plan.LastValidBlockHeight) return start;
+        var offset = (ulong)plan.LastValidBlockHeight + 1 - head.Height;
+        if (offset > ClientPlanMaximumValidityBlocks)
+            throw new InvalidDataException("The plan's validity window is wider than any blockhash allows.");
+        var slots = await DurableRpcAsync("getBlocksWithLimit", [start, offset + 1, new { commitment = "finalized" }], ct);
+        if (slots.ValueKind != JsonValueKind.Array || (ulong)slots.GetArrayLength() <= offset || !slots[(int)offset].TryGetUInt64(out var upper))
+            throw new InvalidDataException("Finalized block history past the plan's validity is unavailable.");
+        return upper;
+    }
+
+    private static AZOAResult<ClientSigningObservation> Observation(string verdict, string? transactionId, string? detail, string? evidenceJson)
+        => AZOAResult<ClientSigningObservation>.Success(new(verdict, transactionId, detail, evidenceJson));
 
     /// <summary>The finalized outcome when <paramref name="signature"/> carries exactly the planned message, else null.</summary>
     private async Task<AZOAResult<ClientSigningObservation>?> PlannedOutcomeAsync(string signature, byte[] message, CancellationToken ct)

@@ -10,7 +10,7 @@ public interface IClientSignedOperationStore
     Task<bool> TryTransitionAsync(Guid operationId, string expectedStatus, string nextStatus,
         IReadOnlyDictionary<string, string> parameters, DateTimeOffset? completedAt, CancellationToken ct = default);
 
-    /// <summary>Ids of rows still awaiting a client signature since before <paramref name="awaitingBefore"/>, and of every
-    /// <c>NeedsOperator</c> row, oldest first.</summary>
+    /// <summary>Ids of rows still awaiting a client signature or confirmation since before <paramref name="awaitingBefore"/>, and of
+    /// every <c>NeedsOperator</c> row, oldest first. The page may include custodial rows; callers keep those with a saved plan.</summary>
     Task<IReadOnlyList<Guid>> ListStuckAsync(DateTimeOffset awaitingBefore, int limit, CancellationToken ct = default);
 }

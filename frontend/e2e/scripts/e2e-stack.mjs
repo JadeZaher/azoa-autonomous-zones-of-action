@@ -65,7 +65,7 @@ function ensureCertificates() {
     [
       'basicConstraints=CA:FALSE',
       'extendedKeyUsage=serverAuth',
-      'subjectAltName=DNS:host.docker.internal,DNS:host.containers.internal,DNS:localhost,IP:127.0.0.1',
+      'subjectAltName=DNS:host.docker.internal,DNS:host.containers.internal,DNS:localhost,DNS:webhook-receiver.e2e.azoa.test,IP:127.0.0.1',
       '',
     ].join('\n'),
   )

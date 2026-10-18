@@ -13,8 +13,8 @@ public sealed partial class SurrealWttOperationStore
         WttStageAuthority authority, CancellationToken ct = default)
     {
         var operation = await GetAsync(operationId, ct);
-        if (operation is null || operation.Version != expectedVersion || operation.TenantId.Length == 0 || operation.OwnerIntentJson is not null
-            || operation.ActionRunId is not null || operation.Phase != "Target" || operation.State != "Ready" || operation.ProofsJson is null)
+        if (operation is null || operation.Version != expectedVersion || operation.TenantId.Length == 0 && operation.ActionRunId is null
+            || operation.OwnerIntentJson is not null || operation.Phase != "Target" || operation.State != "Ready" || operation.ProofsJson is null)
             return null;
         var original = JsonSerializer.Deserialize<WttOperationIntent>(operation.IntentJson)!;
         var owner = WttOwnerIntent.From(original);
@@ -24,13 +24,16 @@ public sealed partial class SurrealWttOperationStore
                 && (stage.AuthorizedAt is not null || stage.ExposedAt is not null)))
             return null;
         // lock: the operation version CAS below pins the stage set read above; every claim or authorization bumps it.
-        var guards = WttSigningAuthorityFence.Stage(owner, "Target", null, authority, "wtt_fence_takeover");
-        if (guards is null) return null;
+        var signing = WttSigningAuthorityFence.Stage(owner, "Target", null, authority, "wtt_fence_takeover");
+        if (signing is null) return null;
+        // A workflow-admitted operation transfers only once its run can no longer sign (RV-L5-07).
+        IReadOnlyList<SurrealQuery> guards = WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash) is { } action
+            ? [.. WttSigningAuthorityFence.ActionStopped(action), .. signing] : signing;
         var now = Now;
         var mutation = SurrealWriter.UpdateOnly<WttOperation>(operationId)
             .Where(row => row.Version == expectedVersion && row.State == "Ready" && row.Phase == "Target" && row.OwnerIntentJson == null)
             .Set(row => row.OwnerIntentJson, ownerIntentJson)
-            .Set(row => row.Detail, "The owner took over target signing from the tenant credential.")
+            .Set(row => row.Detail, "The owner took over target signing from the tenant or workflow authority.")
             .Set(row => row.NextAttemptAt, now).Set(row => row.Version, expectedVersion + 1).Set(row => row.UpdatedAt, now)
             .Unset(row => row.TargetQuoteJson).Build();
         return await CommitOperationAsync(guards, mutation, ct) ? await GetAsync(operationId, ct) : null;

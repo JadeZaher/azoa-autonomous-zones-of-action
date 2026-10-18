@@ -14,6 +14,8 @@ public static class ClientSigningParameters
     public const string ExecutionIdempotencyKey = "ExecutionIdempotencyKey";
     /// <summary>Why a terminal failure has no chain effect: <c>Abandoned</c>, <c>Superseded</c> or <c>FailedOnChain</c>.</summary>
     public const string Outcome = "ClientSigningOutcome";
+    /// <summary>Resumable chain absence-scan progress (Solana finalized-ancestry cursor), carried between reconcile passes.</summary>
+    public const string AbsenceEvidence = "ClientSigningAbsenceEvidence";
     /// <summary>Audit of an operator resolution (JSON).</summary>
     public const string OperatorResolution = "OperatorResolution";
     /// <summary>Chain transaction id (shared with every other operation row).</summary>

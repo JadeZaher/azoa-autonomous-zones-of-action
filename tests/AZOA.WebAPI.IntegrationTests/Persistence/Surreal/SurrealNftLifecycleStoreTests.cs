@@ -23,7 +23,7 @@ public sealed partial class SurrealNftLifecycleStoreTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await SurrealTestSchema.BootstrapAsync(_namespace, "nft_lifecycle", "nft_asset_authority", "nft_ownership", "nft_protocol_cost_quote",
-            "nft_workflow_cost_acceptance", "nft_workflow_cost_retirement", "user", "wallet", "consent_grant", "api_key", "action_definition", "action_node", "action_run", "action_node_execution");
+            "nft_workflow_cost_acceptance", "nft_workflow_cost_retirement", "user", "wallet", "consent_grant", "api_key", "action", "action_node", "action_run", "action_node_execution");
         _connection = new SurrealDbNetConnection(new SurrealConnectionOptions
         {
             Endpoint = SurrealTestDefaults.Endpoint, Namespace = _namespace, Database = "test",

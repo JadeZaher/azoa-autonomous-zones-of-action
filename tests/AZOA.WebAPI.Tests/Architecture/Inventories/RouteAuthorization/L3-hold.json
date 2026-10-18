@@ -203,9 +203,10 @@
     "action": "ResolveRetiredRow",
     "class": "non-value",
     "scope": null,
-    "enforcement": "[Authorize(Policy=Operator)]; records an attestation only; reconciliation closes the row when chain truth agrees",
+    "enforcement": "[Authorize(Policy=Operator)] + [Authorize(Policy=RecentNodeOperatorSession)] step-up (X-7); records an attestation only; reconciliation closes the row when chain truth agrees",
     "policies": [
       "Operator",
+      "RecentNodeOperatorSession",
       "authenticated"
     ]
   },

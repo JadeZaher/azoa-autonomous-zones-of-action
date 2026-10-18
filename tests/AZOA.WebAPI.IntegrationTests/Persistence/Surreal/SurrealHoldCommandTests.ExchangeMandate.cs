@@ -78,7 +78,7 @@ public sealed partial class SurrealHoldCommandTests
         var plan = new HoldRailPlan(1, "Release", HoldCommandIdentity.Operation(release), 0, intent.ReleaseConsent!.Quote,
             null, intent.ParticipantWallet, SigningContext.PlatformFor("Algorand") with { Scope = AzoaScopes.TransferSign });
         if (revokeKey)
-            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Where(seed => true).Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
 
         var claimed = await _store.ClaimRailAsync(release, plan, new(1, ReleaseMandateId: mandateId));
 
@@ -127,7 +127,7 @@ public sealed partial class SurrealHoldCommandTests
         var (intent, authority) = await ExchangeAsync();
         var now = DateTimeOffset.UtcNow;
         var scopes = change == "scope" ? new[] { AzoaScopes.SwapSign } : [AzoaScopes.SwapSign, AzoaScopes.TransferSign];
-        await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Set(row => row.Scopes, scopes).Build());
+        await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Where(seed => true).Set(row => row.Scopes, scopes).Build());
         var credential = authority.Tenant.Credential with { Scopes = scopes, StoredApiKeyScopes = scopes };
         authority = authority with { Tenant = authority.Tenant with { Credential = credential } };
         var opening = intent.Opening! with { Definition = intent.Opening!.Definition! with { AutoRelease = true, ReleaseNotBefore = now.AddMinutes(-1) } };

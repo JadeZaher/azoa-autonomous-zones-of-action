@@ -13,7 +13,11 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { refusalMessage } from '@/lib/refusal-messages'
-import { clearSavedRequest, formatMinorUnits, requestKeyFor, toMinorUnits } from '@/lib/persisted-request-key'
+import { PendingRequestNotice } from '@/components/shared/pending-request-notice'
+import {
+  type SavedRequest, claimRequestKey, clearSavedRequest, formatMinorUnits, isDefiniteRefusal, isFinishedCheckout,
+  readSavedRequest, toMinorUnits,
+} from '@/lib/persisted-request-key'
 
 const SCOPE = 'tenant-payout-top-up'
 
@@ -24,6 +28,8 @@ export default function PayoutBalancePage() {
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [pending, setPending] = useState<SavedRequest | null>(null)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -37,6 +43,7 @@ export default function PayoutBalancePage() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => { if (userId) setPending(readSavedRequest(SCOPE, userId)) }, [userId])
 
   async function startTopUp() {
     if (!userId) return
@@ -45,18 +52,45 @@ export default function PayoutBalancePage() {
       setError('Enter an amount like 500 or 500.00.')
       return
     }
+    const claim = claimRequestKey(SCOPE, userId, minorUnits)
+    if (claim.kind === 'pending') {
+      setError(null)
+      setPending(claim.pending)
+      return
+    }
+    await send(claim.request)
+  }
+
+  async function send(request: SavedRequest) {
+    if (!userId) return
     setBusy(true)
     setError(null)
+    setNotice(null)
     try {
-      const saved = requestKeyFor(SCOPE, userId, minorUnits)
-      const result = await azoa.api.startTenantPayoutTopUp({ requestKey: saved.requestKey, amountMinorUnits: minorUnits })
+      const result = await azoa.api.startTenantPayoutTopUp({ requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits })
       if (isOk(result)) {
+        setPending(null)
         setTopUp(result.value)
-        if (result.value.status === 'complete' || result.value.status === 'failed' || result.value.status === 'expired') clearSavedRequest(SCOPE, userId)
+        if (isFinishedCheckout(result.value)) {
+          clearSavedRequest(SCOPE, userId)
+          if (result.value.resumed) setNotice('This matched your earlier top-up, which has already finished. Nothing new was charged. Press "Continue to payment" again to start a new top-up.')
+        }
+      } else if (isDefiniteRefusal(result.error.status)) {
+        clearSavedRequest(SCOPE, userId)
+        setPending(null)
+        setError(refusalMessage(result.error, 'The top-up was refused. Nothing was charged.'))
       } else {
-        setError(refusalMessage(result.error, 'The top-up could not start. Trying again resumes the same request.'))
+        setPending(request)
+        setError(refusalMessage(result.error, 'The top-up could not start. Resuming the saved request reopens the same payment.'))
       }
     } finally { setBusy(false) }
+  }
+
+  function discardPending() {
+    if (!userId) return
+    clearSavedRequest(SCOPE, userId)
+    setPending(null)
+    setNotice('The unconfirmed top-up was discarded. Enter an amount to start a new one.')
   }
 
   return (
@@ -69,6 +103,17 @@ export default function PayoutBalancePage() {
         </p>
       </div>
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
+      {notice && <p role="status" className="text-sm">{notice}</p>}
+      {pending && (
+        <PendingRequestNotice
+          summary={`A top-up of ${formatMinorUnits(pending.amountMinorUnits, floats?.[0]?.currencyCode ?? '')}`}
+          detail="Resuming reopens that same payment instead of starting a second one. Discard it only if you want a separate top-up; a payment page you already completed still counts."
+          resumeLabel="Resume that top-up"
+          busy={busy}
+          onResume={() => void send(pending)}
+          onDiscard={discardPending}
+        />
+      )}
       <Card>
         <CardHeader className="flex flex-row items-start justify-between">
           <div>

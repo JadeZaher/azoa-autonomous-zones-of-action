@@ -84,6 +84,28 @@ public sealed class ActionNftRecoveryTests
     }
 
     [Fact]
+    public async Task AfterOwnerTakeoverTheStaleRunCanNoLongerAdvanceOrWriteTheLifecycle()
+    {
+        var h = new Fixture();
+        (await h.Operations.ObserveAsync(h.Reference, h.Frozen)).Status.Should().Be(ActionExternalOperationStatus.Pending);
+        var row = (await h.Rail.Store.GetAsync(h.Reference.OperationId!))!;
+        var runAuthority = JsonSerializer.Deserialize<NftLifecycleCommand>(row.RequestJson)!.ActionAuthority!;
+        var takeover = new NftStageAcceptance(Guid.NewGuid(), row.Version, row.State, row.Stage, row.PreparationGeneration);
+        (await h.Rail.Service.RenewActorAuthorityAsync(row.Id, takeover, h.Rail.FreshCredential(h.Actor))).IsError.Should().BeFalse();
+
+        var stale = await h.Rail.Service.MintAsync(h.Actor, h.Actor, NftLifecycleOperationProjection.MintModel(h.Request),
+            h.Reference.RequestKey, actionAuthority: runAuthority);
+
+        stale.IsError.Should().BeTrue("the cancelled run's handler no longer authorizes this lifecycle");
+        h.Rail.Prepared.Should().BeEmpty();
+        var current = (await h.Rail.Store.GetAsync(row.Id))!;
+        (await h.Rail.Store.UpdateAsync(current, current.Version, requireActionAuthority: true, workflowAuthority: true))
+            .Should().BeNull("the store refuses a workflow-authority write once the owner took over");
+        (await h.Rail.Service.RefreshAsync(h.Actor, row.Id, false)).Result!.State.Should().Be("Completed",
+            "the owner continues it under the takeover renewal");
+    }
+
+    [Fact]
     public async Task SamePublicRequestKeyCannotImpersonateFrozenWorkflowAuthority()
     {
         var h = new Fixture();

@@ -69,14 +69,17 @@ public interface ITenantPayoutLedger
     /// <summary>The credit funded by one payment, or null.</summary>
     Task<TenantPayoutCredit?> GetCreditByPaymentAsync(string paymentIntentId, CancellationToken ct = default);
 
-    /// <summary>Pending credits whose maturity has passed, oldest first.</summary>
-    Task<IReadOnlyList<TenantPayoutCredit>> ListMaturedPendingAsync(DateTimeOffset now, int limit, CancellationToken ct = default);
+    /// <summary>Pending credits whose maturity has passed, oldest first; only <paramref name="floatId"/>'s when given (L3).</summary>
+    Task<IReadOnlyList<TenantPayoutCredit>> ListMaturedPendingAsync(DateTimeOffset now, int limit, string? floatId = null, CancellationToken ct = default);
 
     /// <summary>One debit by payout id; null when absent.</summary>
     Task<TenantPayoutDebit?> GetDebitAsync(string payoutId, CancellationToken ct = default);
 
-    /// <summary>Reserved debits created before <paramref name="before"/>, oldest first.</summary>
-    Task<IReadOnlyList<TenantPayoutDebit>> ListStaleReservedAsync(DateTimeOffset before, int limit, CancellationToken ct = default);
+    /// <summary>
+    /// Reserved debits created before <paramref name="before"/> and at or after the cursor <paramref name="from"/>,
+    /// oldest first (M4: the sweep pages with it).
+    /// </summary>
+    Task<IReadOnlyList<TenantPayoutDebit>> ListStaleReservedAsync(DateTimeOffset before, DateTimeOffset? from, int limit, CancellationToken ct = default);
 
     /// <summary>Commits the float CAS and the entry change atomically; false when either predicate failed.</summary>
     Task<bool> CommitAsync(TenantPayoutTransition transition, CancellationToken ct = default);
@@ -148,20 +151,31 @@ public sealed class SurrealTenantPayoutLedger(ISurrealExecutor executor, TimePro
             .Where(row => row.PaymentIntentId == paymentIntentId).Limit(1), ct)).SingleOrDefault();
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<TenantPayoutCredit>> ListMaturedPendingAsync(DateTimeOffset now, int limit, CancellationToken ct = default)
-        => await executor.QueryAsync<TenantPayoutCredit>(SurrealQuery<TenantPayoutCredit>.From()
-            .Where(row => row.State == TenantPayoutCreditStates.Pending && row.AvailableAt != null && row.AvailableAt <= now)
-            .OrderBy(row => row.AvailableAt).Limit(Math.Clamp(limit, 1, 200)), ct);
+    public async Task<IReadOnlyList<TenantPayoutCredit>> ListMaturedPendingAsync(DateTimeOffset now, int limit, string? floatId = null, CancellationToken ct = default)
+    {
+        var query = floatId is null
+            ? SurrealQuery<TenantPayoutCredit>.From()
+                .Where(row => row.State == TenantPayoutCreditStates.Pending && row.AvailableAt != null && row.AvailableAt <= now)
+            : SurrealQuery<TenantPayoutCredit>.From()
+                .Where(row => row.FloatId == floatId && row.State == TenantPayoutCreditStates.Pending
+                    && row.AvailableAt != null && row.AvailableAt <= now);
+        return await executor.QueryAsync<TenantPayoutCredit>(query.OrderBy(row => row.AvailableAt).Limit(Math.Clamp(limit, 1, 200)), ct);
+    }
 
     /// <inheritdoc />
     public Task<TenantPayoutDebit?> GetDebitAsync(string payoutId, CancellationToken ct = default)
         => executor.QuerySingleAsync<TenantPayoutDebit>(SurrealQuery<TenantPayoutDebit>.Key(payoutId), ct);
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<TenantPayoutDebit>> ListStaleReservedAsync(DateTimeOffset before, int limit, CancellationToken ct = default)
-        => await executor.QueryAsync<TenantPayoutDebit>(SurrealQuery<TenantPayoutDebit>.From()
-            .Where(row => row.State == TenantPayoutDebitStates.Reserved && row.CreatedAt < before)
-            .OrderBy(row => row.CreatedAt).Limit(Math.Clamp(limit, 1, 200)), ct);
+    public async Task<IReadOnlyList<TenantPayoutDebit>> ListStaleReservedAsync(DateTimeOffset before, DateTimeOffset? from, int limit, CancellationToken ct = default)
+    {
+        var query = from is { } cursor
+            ? SurrealQuery<TenantPayoutDebit>.From()
+                .Where(row => row.State == TenantPayoutDebitStates.Reserved && row.CreatedAt < before && row.CreatedAt >= cursor)
+            : SurrealQuery<TenantPayoutDebit>.From()
+                .Where(row => row.State == TenantPayoutDebitStates.Reserved && row.CreatedAt < before);
+        return await executor.QueryAsync<TenantPayoutDebit>(query.OrderBy(row => row.CreatedAt).Limit(Math.Clamp(limit, 1, 200)), ct);
+    }
 
     /// <inheritdoc />
     public async Task<bool> CommitAsync(TenantPayoutTransition transition, CancellationToken ct = default)

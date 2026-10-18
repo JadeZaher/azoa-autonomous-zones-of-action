@@ -60,17 +60,81 @@ public sealed partial class WttLifecycleFlowTests
         Assert.Null(await participant.Store.GetAsync(optIn.Reference.OperationId!));
     }
 
+    [Fact]
+    public async Task AGraphAuthorCannotRouteARunnersBridgedValueToAnAddressTheRunnerDoesNotOwn()
+    {
+        var rig = new Rig();
+        var node = WorkflowNode.Bridge(rig, recipient: "AuthorWallet1111111111111111111111111111111");
+
+        var refused = await node.Resolver(rig).ObserveAsync(node.Reference, node.FrozenInput);
+
+        Assert.Equal(ActionExternalOperationStatus.Failed, refused.Status);
+        Assert.Equal(0, rig.Source.Quotes);
+        Assert.Null(await rig.Store.GetAsync(node.Reference.OperationId!));
+    }
+
+    [Fact]
+    public async Task TheOwnerTakesOverAWorkflowTransferStrandedAfterItsRunStoppedAndTheNodeIsLockedOut()
+    {
+        var rig = new Rig();
+        var node = WorkflowNode.Bridge(rig);
+        await node.Resolver(rig).ObserveAsync(node.Reference, node.FrozenInput);
+        var operationId = node.Reference.OperationId!;
+        rig.Source.Finalize("Algorand-Source-Transfer-0");
+        var view = Ok(await rig.Service.RefreshAsync(operationId, rig.Credential));
+        Assert.Equal("AwaitingTargetAuthorization", view.PublicState);
+
+        // While the run can still sign, the workflow keeps its authority.
+        Assert.Equal(AzoaErrorCodes.Conflict, (await rig.Service.TakeOverAsync(operationId, new(view.Version), rig.Credential)).Code);
+        rig.Store.ActionRunLive = false;
+        view = Ok(await rig.Service.TakeOverAsync(operationId, new(view.Version), rig.Credential));
+
+        var locked = await rig.Service.ContinueForWorkflowAsync(node.Witness, operationId, new(view.Version, true));
+        Assert.Equal(AzoaErrorCodes.Forbidden, locked.Code);
+        view = Ok(await rig.Service.ContinueAsync(operationId, new(view.Version, true), rig.Credential));
+        Assert.Single(rig.Target.Sent.Distinct());
+        rig.Target.Finalize(view.Stages.Last().TransactionId!);
+        Assert.Equal("Settled", Ok(await rig.Service.RefreshAsync(operationId, rig.Credential)).PublicState);
+    }
+
+    [Fact]
+    public async Task AReversalPausedAccountCannotStartOrContinueATransferAndNothingIsSent()
+    {
+        var rig = new Rig();
+        var offer = await rig.QuoteAsync("flow-paused");
+        rig.ValueGate.Paused = true;
+        Assert.Equal(AzoaErrorCodes.Forbidden,
+            (await rig.Service.StartAsync(rig.Credential, new(offer.OfferId, offer.OfferHash, true), "flow-paused")).Code);
+
+        rig.ValueGate.Paused = false;
+        var view = Ok(await rig.Service.StartAsync(rig.Credential, new(offer.OfferId, offer.OfferHash, true), "flow-paused"));
+        rig.ValueGate.Paused = true;
+        Assert.Equal(AzoaErrorCodes.Forbidden, (await rig.Service.ContinueAsync(view.OperationId, new(view.Version, true), rig.Credential)).Code);
+        Assert.Empty(rig.Source.Sent);
+    }
+
+    [Fact]
+    public async Task WithTheWttSwitchOffNothingIsQuotedOrAdmittedDirectlyOrByAWorkflow()
+    {
+        var rig = new Rig(wttEnabled: false);
+        Assert.Equal(AzoaErrorCodes.DependencyUnavailable, (await rig.Service.QuoteAsync(rig.Credential, rig.Request("flow-off"))).Code);
+
+        var node = WorkflowNode.Bridge(rig);
+        Assert.Equal(ActionExternalOperationStatus.Failed, (await node.Resolver(rig).ObserveAsync(node.Reference, node.FrozenInput)).Status);
+        Assert.Equal(0, rig.Source.Quotes);
+    }
+
     /// <summary>One frozen Bridge node: canonical input, its saved execution and the selected workflow witness.</summary>
     private sealed record WorkflowNode(Guid RunId, Guid NodeId, string FrozenInput, ActionExternalOperationReference Reference,
-        ActionNodeExecution Execution)
+        ActionNodeExecution Execution, WorkflowSigningWitness Witness)
     {
-        internal static WorkflowNode Bridge(Rig rig, IReadOnlyList<string>? scopes = null)
+        internal static WorkflowNode Bridge(Rig rig, IReadOnlyList<string>? scopes = null, string? recipient = null)
         {
             var (run, node) = (Guid.NewGuid(), Guid.NewGuid());
             var config = new
             {
                 wtt = new WttActionConfig(new(rig.SourceChain, "Devnet", rig.SourceWallet), "31566704", false, "1000000",
-                    new("Solana", "Devnet", rig.TargetWallet), rig.Recipient, new("1000", "100000", "1000"), new("1000", "5000000", "1000")),
+                    new("Solana", "Devnet", rig.TargetWallet), recipient ?? rig.Recipient, new("1000", "100000", "1000"), new("1000", "5000000", "1000")),
             };
             var input = new ActionFrozenNodeInput(1, run, node, ActionNodeType.Bridge, rig.Actor, null, JsonSerializer.SerializeToElement(config),
                 new Dictionary<Guid, ActionNodeExecution>(), new Dictionary<Guid, ActionNodeExecution>());
@@ -86,7 +150,7 @@ public sealed partial class WttLifecycleFlowTests
                 RunId = run, NodeId = node, State = ActionNodeState.Running, FrozenInput = frozen, ExternalOperation = reference,
                 SigningAuthorityJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(witness)),
             };
-            return new(run, node, frozen, reference, execution);
+            return new(run, node, frozen, reference, execution, witness);
         }
 
         internal WttActionResolver Resolver(Rig rig)

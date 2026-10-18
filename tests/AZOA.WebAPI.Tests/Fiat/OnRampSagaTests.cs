@@ -753,6 +753,9 @@ public class OnRampSagaTests
                     .Select(Clone)
                     .ToList()));
 
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(Array.Empty<OnRampLot>()));
+
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
             int limit, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(

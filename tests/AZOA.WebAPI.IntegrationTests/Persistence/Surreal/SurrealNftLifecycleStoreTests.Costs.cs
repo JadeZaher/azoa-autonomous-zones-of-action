@@ -31,7 +31,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
         var admitted = await _store.ClaimAsync(row);
         admitted.Should().NotBeNull();
         admitted!.RequestJson.Should().Be(row.RequestJson);
-        var deleted = await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<NftProtocolCostQuoteRecord>(quote.QuoteId).Build());
+        var deleted = await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<NftProtocolCostQuoteRecord>(quote.QuoteId).Where(seed => true).Build());
         deleted.EnsureAllOk();
         (await _store.ClaimAsync(row))!.RequestJson.Should().Be(admitted.RequestJson);
     }
@@ -41,7 +41,7 @@ public sealed partial class SurrealNftLifecycleStoreTests
     {
         var (row, quote) = await CostCandidate();
         await new SurrealNftProtocolCostQuoteStore(_executor).ClaimAsync(quote);
-        var altered = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<NftProtocolCostQuoteRecord>(quote.QuoteId)
+        var altered = await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<NftProtocolCostQuoteRecord>(quote.QuoteId).Where(seed => true)
             .Set(item => item.QuoteHash, new string('f', 64)).Build());
         altered.EnsureAllOk();
         (await _store.ClaimAsync(row)).Should().BeNull();

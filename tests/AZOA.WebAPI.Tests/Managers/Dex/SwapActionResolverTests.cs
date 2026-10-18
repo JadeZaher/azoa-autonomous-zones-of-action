@@ -12,6 +12,7 @@ using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Dex;
+using AZOA.WebAPI.Tests.TestSupport;
 using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -218,7 +219,8 @@ public sealed class SwapActionResolverTests
             var stages = new SwapStageCoordinator(Operations.Object);
             var quotes = new DexQuoteService(Quotes.Object, wallets.Object, new Mock<INodeFeeScheduleManager>(MockBehavior.Strict).Object,
                 authority, modules, new ConfigurationBuilder().Build());
-            var swaps = new SwapOperationService(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages));
+            var swaps = new SwapOperationService(Operations.Object, Quotes.Object, authority, modules, stages, new(Operations.Object, modules, stages),
+                new ApprovedRealValueKycGate());
             Resolver = new(quotes, swaps, Operations.Object, Executions.Object, modules);
         }
 

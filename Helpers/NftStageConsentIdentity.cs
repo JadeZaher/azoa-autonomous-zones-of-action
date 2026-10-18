@@ -134,6 +134,6 @@ public static class NftStageConsentIdentity
         => CanonicalJson.Hash(JsonSerializer.SerializeToElement(new
         {
             row.Id, row.Stage, row.PreparationGeneration, row.ChainType, row.Network,
-            row.ProtocolIdentity, row.ContractAddress, row.TokenStandard, intent,
+            row.ProtocolIdentity, row.ContractAddress, row.TokenStandard, intent = intent with { ProtocolCostQuote = null },
         }));
 }

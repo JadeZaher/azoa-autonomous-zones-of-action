@@ -77,6 +77,8 @@ public partial class EthereumProvider : IEthereumRecoveryModule
         if (row is null || row.Network != ActiveNetwork.ToString() || string.IsNullOrWhiteSpace(reason) || reason.Length > 500)
             return Error<EthereumPreparationView>("Ethereum preparation or recovery reason is invalid.");
         // A released reservation was never signed and its nonce may already belong to a successor: a same-nonce send would hit that successor.
+        if (row.State == ClientReservedState)
+            return Error<EthereumPreparationView>("A client-signed nonce reservation settles only through its operation; custody never signs it.");
         if (ReleasedReservation(row.State))
             return Error<EthereumPreparationView>("A released reservation was never signed and no longer owns its nonce; there is nothing to recover.");
         var call = JsonSerializer.Deserialize<EthereumCall>(row.IntentJson) ?? throw new InvalidOperationException("Ethereum intent is missing.");

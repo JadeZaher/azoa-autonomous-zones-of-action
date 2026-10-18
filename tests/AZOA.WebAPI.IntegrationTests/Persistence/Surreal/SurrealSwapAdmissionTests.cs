@@ -97,7 +97,7 @@ public sealed partial class SurrealSwapAdmissionTests : IAsyncLifetime
         var (quote, terms, authority) = await SeedAsync();
         var candidate = Operation(quote, terms, "owner-cancel");
         (await _store.AdmitAsync(candidate, authority)).Should().NotBeNull();
-        (await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<Wallet>(terms.Owner.WalletId.ToString("N")).Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.DeleteOnly<Wallet>(terms.Owner.WalletId.ToString("N")).Where(seed => true).Build())).EnsureAllOk();
         (await _store.CancelBeforePreparationAsync(candidate, Consent(authority)))!.State.Should().Be("Cancelled");
         var otherQuote = await SeedQuoteAsync(terms);
         (await _store.AdmitAsync(Operation(otherQuote, terms, "new-spend"), authority)).Should().BeNull();
@@ -116,15 +116,15 @@ public sealed partial class SurrealSwapAdmissionTests : IAsyncLifetime
         switch (change)
         {
             case "disabled":
-                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(quote.ActorUserId)
+                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(quote.ActorUserId).Where(seed => true)
                     .Set(row => row.IsActive, false).Build())).EnsureAllOk();
                 break;
             case "logout":
-                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(quote.ActorUserId)
+                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(quote.ActorUserId).Where(seed => true)
                     .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow).Build())).EnsureAllOk();
                 break;
             case "wallet-owner":
-                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(terms.Owner.WalletId.ToString("N"))
+                (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<Wallet>(terms.Owner.WalletId.ToString("N")).Where(seed => true)
                     .Set(row => row.UserId, SurrealLink.ToLink("user", Guid.NewGuid().ToString("N"))!).Build())).EnsureAllOk();
                 break;
             case "expired-token": authority = authority with { Credential = authority.Credential with { ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1) } }; break;
@@ -142,7 +142,7 @@ public sealed partial class SurrealSwapAdmissionTests : IAsyncLifetime
         var (quote, terms, authority) = await SeedAsync();
         var candidate = Operation(quote, terms, "replay");
         var first = await _store.AdmitAsync(candidate, authority);
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DexQuoteRecord>(quote.Id)
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<DexQuoteRecord>(quote.Id).Where(seed => true)
             .Set(row => row.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)).Build())).EnsureAllOk();
         var replay = await _store.AdmitAsync(candidate,
             authority with { Credential = authority.Credential with { ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) } });
