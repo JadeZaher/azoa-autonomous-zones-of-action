@@ -86,7 +86,7 @@ public sealed class ClientSignedSolanaFlowTests
         var wallets = new Mock<IWalletStore>();
         wallets.Setup(store => store.GetByIdAsync(_walletId, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IWallet>.Success(
             new AZOA.WebAPI.Models.Wallet { Id = _walletId, UserId = _owner, ChainType = "Solana", Address = sender, WalletType = WalletType.External }));
-        var manager = new BlockchainOperationManager(_log, factory, _idempotency, wallets: wallets.Object);
+        var manager = new BlockchainOperationManager(_log, factory, _idempotency, wallets: wallets.Object, valueAccess: new AZOA.WebAPI.Services.Kyc.ValueAccessService(new ApprovedRealValueKycGate()));
         var service = new ClientSignedOperationService(_log, _log, factory, _idempotency,
             Options.Create(new ReconciliationOptions { ClientSignatureTtlSeconds = 0 }), NullLogger<ClientSignedOperationService>.Instance,
             new ApprovedRealValueKycGate());

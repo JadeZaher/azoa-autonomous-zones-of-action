@@ -33,6 +33,43 @@ public sealed class SwapOperationServiceTests
         fixture.Saved.Should().BeNull("nothing is admitted for a paused account");
     }
 
+    public static TheoryData<bool, bool> FirstValueStage => new()
+    {
+        { false, true }, // first effect: a paused owner is refused before any custody signature
+        { true, false }, // an earlier effect already confirmed: the remaining effect returns the output to the owner
+    };
+
+    /// <summary>R-2: only the first value-sending stage is gated; a stage after a confirmed earlier effect must finish, or the
+    /// swap strands half-way. Past the gate the fixture's module serves no network, so it stops with a plain conflict.</summary>
+    [Theory]
+    [MemberData(nameof(FirstValueStage))]
+    public async Task APausedOwnerIsRefusedOnlyAtTheFirstValueSendingStage(bool earlierEffectConfirmed, bool refused)
+    {
+        var fixture = new Fixture(new Mock<IDexTransactionModule>());
+        (await fixture.Service.StartAsync(fixture.Credential, fixture.Request)).IsError.Should().BeFalse();
+        var operation = fixture.Saved!;
+        var earlier = Stage(operation, "Approve", new string('b', 64), null, earlierEffectConfirmed ? "Confirmed" : "Planned");
+        var current = Stage(operation, "Swap", new string('c', 64), earlierEffectConfirmed ? earlier.Id : null, "Planned");
+        fixture.Operations.Setup(store => store.GetStageAsync(earlier.Id, It.IsAny<CancellationToken>())).ReturnsAsync(earlier);
+        fixture.Operations.Setup(store => store.GetStageAsync(current.Id, It.IsAny<CancellationToken>())).ReturnsAsync(current);
+        operation.CurrentStageId = current.Id;
+        operation.State = "Pending";
+        fixture.ValueGate.Paused = true;
+
+        var result = await fixture.Service.SignWithCustodyAsync(operation.Id, new(operation.Version, current.Id, current.Version), fixture.Credential);
+
+        result.IsError.Should().BeTrue();
+        (result.Code == AzoaErrorCodes.Forbidden).Should().Be(refused, result.Message);
+    }
+
+    private static SwapStageRecord Stage(SwapOperationRecord operation, string name, string id, string? previous, string state)
+    {
+        var plan = new SwapStagePlan(name, 0, "preparation-" + name, operation.IntentHash, ["owner"], "{}", "{}", "100", "0");
+        var json = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(plan));
+        return new SwapStageRecord { Id = id, OperationId = operation.Id, IntentHash = operation.IntentHash, Stage = name, PlanJson = json,
+            PlanHash = CanonicalJson.HashCanonical(json), PreviousStageId = previous, State = state, Version = 1 };
+    }
+
     [Fact]
     public async Task ExposureResponseLossReplaysOnlyOriginalWireForOriginalParticipant()
     {

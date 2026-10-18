@@ -11,6 +11,8 @@ using AZOA.WebAPI.Models.Signing;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Stores.Surreal;
+using AZOA.WebAPI.Services.Actions;
+using AZOA.WebAPI.Services.Fiat.Reversal;
 using AZOA.WebAPI.Services.Signing;
 
 namespace AZOA.WebAPI.Services.Wormhole;
@@ -19,7 +21,8 @@ namespace AZOA.WebAPI.Services.Wormhole;
 public sealed partial class WttLifecycleService(IWttOperationStore store, IWalletStore wallets,
     SigningAdmissionAuthorityFactory authorities, WttModuleResolver modules, IWttPreparationStore preparations,
     WttRecoveryService recovery, IKeyCustodyService custody, IRealValueKycGate valueGate, TimeProvider clock,
-    WttStageKeyReadinessState? stageKeys = null, IWttRecipientDirectory? recipients = null, IWalletOwnershipProof? ownership = null)
+    WttStageKeyReadinessState? stageKeys = null, IWttRecipientDirectory? recipients = null, IWalletOwnershipProof? ownership = null,
+    IFiatReversalLedger? accountPause = null)
 {
     private static readonly TimeSpan MaximumOfferLifetime = TimeSpan.FromMinutes(5);
 
@@ -191,7 +194,7 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
                 ? AZOAResult<WttOperationView>.Success(await ProjectAsync(existing, ct))
                 : Conflict<WttOperationView>("The request key already belongs to a different immutable WTT operation.");
         if (!modules.AdmissionEnabled) return Unavailable<WttOperationView>(WttModuleResolver.DisabledMessage);
-        if (await ValueRefusalAsync(credential, ct) is { } refused) return Forbidden<WttOperationView>(refused);
+        if (await ValueRefusalAsync(principal, ct) is { } refused) return Forbidden<WttOperationView>(refused);
         var intent = JsonSerializer.Deserialize<WttOperationIntent>(offer.IntentJson)!;
         if (StageKeysDegraded(intent.Source.ChainType, intent.Source.Network, intent.Target.ChainType, intent.Target.Network) is { } degraded)
             return Unavailable<WttOperationView>(degraded);
@@ -407,13 +410,32 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
     private static WttActionBinding? SigningActionOf(WttOperation operation)
         => operation.OwnerIntentJson is null ? ActionOf(operation) : null;
 
-    /// <summary>X-2: the risk-hold-wrapped real-value gate (KYC + reversal pause) for the credential's actor, or null when clear.</summary>
-    private async Task<string?> ValueRefusalAsync(SigningCredentialWitness credential, CancellationToken ct)
+    /// <summary>X-2/R-2: a direct caller passes the risk-hold-wrapped real-value gate (KYC + reversal pause); a workflow node
+    /// only the reversal pause, matching <c>ValueRailCapabilityGate</c>. Null when clear.</summary>
+    private async Task<string?> ValueRefusalAsync(WttPrincipal principal, CancellationToken ct)
     {
+        var credential = principal.Credential;
+        if (principal.Workflow is not null)
+        {
+            var standing = await ValueRailCapabilityGate.AccountStandingAsync(accountPause, credential.ActorUserId, ct);
+            return standing.IsAllowed ? null : standing.RefusalMessage;
+        }
         var admitted = credential.TenantId is { } tenant
             ? await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, tenant, ct)
             : await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, ct);
         return admitted.IsError || !admitted.Result ? admitted.Message ?? "This account cannot move value right now." : null;
+    }
+
+    /// <summary>R-2: only admission and the first value-sending step are gated; source cleanup and a target leg to the actor's
+    /// own wallet always finish (see AGENTS.md §Activation and the value gate).</summary>
+    private async Task<string?> StageValueRefusalAsync(WttOperationIntent intent, string phase, string stageName, WttPrincipal principal,
+        CancellationToken ct)
+    {
+        if (phase == "Cleanup" || stageName.StartsWith("Cleanup:", StringComparison.Ordinal)) return null;
+        if (phase != "Source"
+            && await OwnRecipientAsync(intent.ActorUserId, intent.Target.ChainType, intent.RecipientAddress, ct) != RecipientKind.None)
+            return null;
+        return await ValueRefusalAsync(principal, ct);
     }
 
     private static SigningContext Context(SigningCredentialWitness credential, Guid wallet, string scope, string chain)

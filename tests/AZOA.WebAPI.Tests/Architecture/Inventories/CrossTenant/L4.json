@@ -426,6 +426,11 @@
   },
   {
     "store": "IWalletOwnershipProofStore",
+    "method": "IsHeldByAnotherUserAsync",
+    "tenantCheck": "query-pinned: returns only a boolean; true only while a different user's proof row names an External wallet that user still owns at the same canonical address"
+  },
+  {
+    "store": "IWalletOwnershipProofStore",
     "method": "RecordAsync",
     "tenantCheck": "write: user id is the authenticated caller, recorded only after WalletManager verified the caller owns the wallet and the challenge signature"
   },
