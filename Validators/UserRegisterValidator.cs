@@ -7,8 +7,10 @@ public class UserRegisterValidator : AbstractValidator<UserRegisterModel>
 {
     public UserRegisterValidator()
     {
-        RuleFor(x => x.Username).NotEmpty().Length(3, 50).Matches("^[a-zA-Z0-9_]+$")
-            .WithMessage("Username must contain only letters, numbers, and underscores.");
+        RuleFor(x => x.Username).NotEmpty()
+            .Length(UsernameRules.MinimumLength, UsernameRules.MaximumLength).WithMessage(UsernameRules.PatternMessage)
+            .Matches(UsernameRules.Pattern).WithMessage(UsernameRules.PatternMessage)
+            .Must(name => !UsernameRules.IsReservedGeneratedHandle(name)).WithMessage(UsernameRules.ReservedPrefixMessage);
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Password).NotEmpty().MinimumLength(8)
             .Matches("[A-Z]").WithMessage("Password must contain an uppercase letter.")

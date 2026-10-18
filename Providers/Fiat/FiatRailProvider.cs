@@ -446,7 +446,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
 
         var capabilities = GetCapabilities();
         if (!capabilities.Available)
-            return FiatConsumerErrors.RailUnavailable<FiatCheckoutIntent>();
+            return FiatConsumerErrors.PaymentsNotConfigured<FiatCheckoutIntent>();
 
         if (request.SubjectUserId == Guid.Empty)
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(

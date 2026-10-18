@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
@@ -40,8 +41,11 @@ public class WalletAuthController : ControllerBase
     {
         var result = await _manager.VerifyAsync(
             request.Address, request.ChainType, request.Signature, request.Message, HttpContext.RequestAborted);
-        // An auth failure surfaces as 401 (never 400) so a caller can't distinguish
-        // "no challenge" from "bad signature" beyond the generic message.
+        // A closed node refuses a NEW wallet account with 403 (a node fact, issued only after a
+        // valid proof); every auth failure stays a generic 401 so "no challenge" and
+        // "bad signature" remain indistinguishable.
+        if (result.IsError && result.Code == SelfRegistrationPolicy.DisabledCode)
+            return StatusCode(StatusCodes.Status403Forbidden, result);
         if (result.IsError) return Unauthorized(result);
         return Ok(result);
     }

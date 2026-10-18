@@ -51,6 +51,9 @@ public class TenantManager : ITenantManager
             return result;
         }
 
+        if (!string.IsNullOrWhiteSpace(model.Username) && UsernameRules.IsReservedGeneratedHandle(model.Username))
+            return AZOAResult<ChildUserResponse>.FailureWithCode(UsernameRules.ReservedPrefixMessage, AzoaErrorCodes.InvalidRequest);
+
         var externalUserId = model.ExternalUserId.Trim();
         var deterministicId = DeterministicUserId(tenantId, externalUserId);
 

@@ -6,6 +6,7 @@ public interface IActionGraphBundle
     string Name { get; set; }
     string Description { get; set; }
     string? PublicKey { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
     string? PrivateKeyHash { get; set; }
     Guid? UserId { get; set; }
     List<Guid> BoundHolonIds { get; set; }

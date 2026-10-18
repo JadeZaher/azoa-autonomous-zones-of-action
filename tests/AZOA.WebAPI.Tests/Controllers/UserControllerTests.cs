@@ -122,7 +122,7 @@ public class UserControllerTests
     [Fact]
     public async Task Update_WithError_ReturnsBadRequest()
     {
-        var id = Guid.NewGuid();
+        var id = AuthenticatedUserId;
         _manager.Setup(m => m.UpdateAsync(id, It.IsAny<UserUpdateModel>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<IUser> { IsError = true });
 
@@ -134,13 +134,22 @@ public class UserControllerTests
     [Fact]
     public async Task Update_Success_ReturnsOk()
     {
-        var id = Guid.NewGuid();
+        var id = AuthenticatedUserId;
         _manager.Setup(m => m.UpdateAsync(id, It.IsAny<UserUpdateModel>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()))
                 .ReturnsAsync(new AZOAResult<IUser> { Result = new User() });
 
         var result = await _controller.Update(id, new UserUpdateModel(), null);
 
         result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
+    [Fact]
+    public async Task Update_AnotherUsersId_IsNotFound_LikeDelete()
+    {
+        var result = await _controller.Update(Guid.NewGuid(), new UserUpdateModel { Title = "x" }, null);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _manager.Verify(m => m.UpdateAsync(It.IsAny<Guid>(), It.IsAny<UserUpdateModel>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()), Times.Never);
     }
 
     [Fact]
