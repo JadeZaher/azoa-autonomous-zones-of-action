@@ -13,10 +13,10 @@
   "phases": {
     "P0": "done",
     "P1": "merged",
-    "P2": "in_progress",
+    "P2": "merged",
     "P3": "merged",
     "P4": "merged",
-    "P5": "join-done; smoke re-run + docs pending"
+    "P5": "join+smoke done; live Railway drill pending owner root key"
   },
   "partitions": {
     "computed_at_commit": "1e68d59d",
@@ -71,6 +71,12 @@
       "reviewer": "join (real CLI vs real API)",
       "verdict": "PASS",
       "note": "backend unchanged; 3 CLI bugs fixed (FIFO stdin, bare 4xx mapping, bootstrap revision)"
+    },
+    {
+      "phase": "P2",
+      "reviewer": "security-reviewer (opus)",
+      "verdict": "MERGE",
+      "note": "no CRIT/HIGH; owner decisions M-1 (step-up on money writes for node admins), M-2 (read-audit of PII reads); LOW L-1 write->read map gate, L-2 live endpoint key test, L-4 refuse root witnesses in fence, L-5 actor ReadOnly"
     }
   ],
   "lanes_plan": {
@@ -81,9 +87,12 @@
   "merges": {
     "A1": "b3f7aeb8 (feat/node-admin-a1 @ a90f6ab6)",
     "B": "8fb69665 (feat/node-admin-cli @ 3277259c)",
-    "join_report": "088c0329"
+    "join_report": "088c0329",
+    "A2": "feat/node-admin-a2 @ 4210107f"
   },
   "owner_signoff_pending": [
-    "L-5: root can single-handedly create+enroll+activate an owner (audit-flagged created_by=root:<fp>) until four-eyes ships"
+    "L-5: root can single-handedly create+enroll+activate an owner (audit-flagged created_by=root:<fp>) until four-eyes ships",
+    "M-1: require step-up for node-admin money/data writes (refund, treasury close, fiat replay, backfill apply, saga cancel, holon-type delete)",
+    "M-2: audit node-admin PII reads (kyc/users/money) or drop kyc.read from governance/auditor"
   ]
 }
