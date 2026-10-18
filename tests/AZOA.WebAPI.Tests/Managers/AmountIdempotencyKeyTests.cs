@@ -135,7 +135,7 @@ public class AmountIdempotencyKeyTests
         var factory = new BlockchainProviderFactory(
             [new BlockchainProviderRegistration("Algorand", () => provider.Object)],
             config);
-        return new BlockchainOperationManager(store.Object, factory, idempotency);
+        return new BlockchainOperationManager(store.Object, factory, idempotency, valueAccess: new AZOA.WebAPI.Services.Kyc.ValueAccessService(new ApprovedRealValueKycGate()));
     }
 
     private static BlockchainOperation MintOp(ulong amount) => new()

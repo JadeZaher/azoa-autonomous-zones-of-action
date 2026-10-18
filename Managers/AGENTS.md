@@ -874,6 +874,17 @@ read it. `ActionGraphBundleManager.OwnershipRefusal` answers NotFound for a bund
 cannot read and Forbidden only for a readable (public) foreign one; a null acting user is
 refused on every mutation.
 
+## §Custodial value gate (RV-X R-3, round 4)
+
+`BlockchainOperationManager.ExecuteAsync` refuses a user-owned `Transfer`, `Exchange` or legacy `Swap` (row has a
+`UserId`) while the owner's `IValueAccessService` decision (risk-hold-wrapped KYC + reversal pause; acting tenant when
+set) is closed. It runs before the idempotency claim, so a cleared account can retry the same logical operation, and
+before any row write or provider call. Exempt: a `Transfer` whose recipient is one of the owner's own wallets on that
+chain (a return to self moves nothing away), platform-owned rows (no `UserId`), `Mint`, `Burn` and `IssueUnits` (value
+moving to the user or destroyed). A container without `IValueAccessService` refuses these moves (fail-closed). This is
+defence in depth: today allocation transfers already gate, holon mint/exchange are refused (§caller-built operations)
+and NFT transfers run through the NFT lifecycle; the manager gate keeps any future caller honest.
+
 ## §caller-built operations (M9, round 4)
 
 `BlockchainOperationManager.BuildAndExecuteAsync` serves the holon `mint`/`exchange` routes, which build an operation

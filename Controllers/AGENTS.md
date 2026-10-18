@@ -270,8 +270,9 @@ prover per address. Supersession rule: a new proof by another user is refused wh
 proof is still valid, meaning the wallet it names is still that holder's External wallet for the same
 canonical identity. Once the holder removes or loses that wallet, the proof is stale and the next verified
 proof replaces it in a CAS on the old (user, wallet) pair, and `WalletManager` logs the supersession with
-both user ids. Unproven External rows grant nothing: create/connect refuse only an address another user has
-*proven*. Consumers that trust an External address (WTT recipient, bridge reversal, NFT recipient
+both user ids. Unproven External rows grant nothing: create/connect refuse only an address another user holds a
+*still-valid* proof for (`IWalletOwnershipProofStore.IsHeldByAnotherUserAsync`, the same holder-validity rule as
+supersession, RV-L4-09). A stale proof never blocks the new key holder from adding the address and proving it. Consumers that trust an External address (WTT recipient, bridge reversal, NFT recipient
 resolution) must require `IWalletOwnershipProofStore.GetAsync(...).UserId == actor` or a Platform wallet.
 
 ## Public network endpoints (RV-L4-07)

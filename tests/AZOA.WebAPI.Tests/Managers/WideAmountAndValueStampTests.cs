@@ -391,7 +391,7 @@ public sealed class WideAmountAndValueStampTests
             config);
 
         return new BlockchainOperationManager(
-            store.Object, factory, new FakeIdempotencyStore(), rateSource);
+            store.Object, factory, new FakeIdempotencyStore(), rateSource, valueAccess: new AZOA.WebAPI.Services.Kyc.ValueAccessService(new ApprovedRealValueKycGate()));
     }
 
     private static BlockchainOperation MintOp(RailAmount amount) => new()

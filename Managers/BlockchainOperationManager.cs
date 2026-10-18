@@ -28,6 +28,7 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
     private readonly ILogger<BlockchainOperationManager>? _logger;
     private readonly IDeploymentService? _deployments;
     private readonly IWalletStore? _wallets;
+    private readonly IValueAccessService? _valueAccess;
 
     /// <param name="valueRateSource">D16 seam. Optional: a node that has not called
     /// <c>AddValueRateSources</c> (<c>Services/Analytics/AnalyticsRegistration</c>) falls
@@ -37,6 +38,7 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
     /// <param name="logger">Optional so the many hand-constructed instances in tests stay
     /// two-line; the container supplies a real one.</param>
     /// <param name="wallets">D-3: identifies an External source wallet, whose transfer is planned for client signing.</param>
+    /// <param name="valueAccess">RV-X R-3: the risk-hold-wrapped value gate; absent means user value moves are refused.</param>
     public BlockchainOperationManager(
         IBlockchainOperationStore blockchainOperationStore,
         IBlockchainProviderFactory chainFactory,
@@ -44,7 +46,8 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         IValueRateSource? valueRateSource = null,
         ILogger<BlockchainOperationManager>? logger = null,
         IDeploymentService? deployments = null,
-        IWalletStore? wallets = null)
+        IWalletStore? wallets = null,
+        IValueAccessService? valueAccess = null)
     {
         _blockchainOperationStore = blockchainOperationStore;
         _chainFactory = chainFactory;
@@ -53,6 +56,7 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         _logger = logger;
         _deployments = deployments;
         _wallets = wallets;
+        _valueAccess = valueAccess;
     }
 
     public async Task<AZOAResult<IBlockchainOperation>> ExecuteAsync(IBlockchainOperation operation, AZOARequest? request = null)
@@ -102,6 +106,10 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
         operation.Parameters["ChainNetwork"] = network.ToString();
         operation.Parameters.Remove("TxHash");
         operation.Parameters.Remove("Error");
+
+        // RV-X R-3: refused before the idempotency claim, so a cleared account can retry the same logical operation.
+        if (await ValueGateRefusalAsync(operation, chainType) is { } refusal)
+            return AZOAResult<IBlockchainOperation>.FailureWithCode(refusal, AzoaErrorCodes.Forbidden, operation);
 
         // ── Idempotency gate (api-safety-hardening task 11) ──────────────────
         // The on-chain effect for this operation is irreversible. We must NOT
@@ -472,6 +480,35 @@ public partial class BlockchainOperationManager : IBlockchainOperationManager
             foreach (var operation in result.Result) await RefreshNativeAsync(operation);
         return result;
     }
+
+    /// <summary>Operation kinds that move a user's own value out of a custodial wallet (Mint/Burn/IssueUnits do not).</summary>
+    private static readonly string[] UserValueMoves = ["Transfer", "Exchange", "Swap"];
+
+    /// <summary>Refusal while the owner's value gate (KYC + reversal pause) is closed; see Managers/AGENTS.md §Custodial value gate.</summary>
+    private async Task<string?> ValueGateRefusalAsync(IBlockchainOperation operation, string chainType)
+    {
+        if (!UserValueMoves.Contains(operation.OperationType, StringComparer.Ordinal)
+            || operation.UserId is not { } owner || owner == Guid.Empty) return null;
+        if (operation is ITransferOperation { RecipientAddress: { Length: > 0 } recipient } && operation.OperationType == "Transfer"
+            && await OwnsAddressAsync(owner, chainType, recipient)) return null;
+        if (_valueAccess is null) return ValueGateUnavailable;
+        var tenant = operation.ActingTenantId is { } acting && acting != Guid.Empty ? acting : (Guid?)null;
+        var gate = await _valueAccess.RequireValueAccessAsync(owner, tenant);
+        return gate.IsError || !gate.Result ? (string.IsNullOrWhiteSpace(gate.Message) ? ValueGateClosed : gate.Message) : null;
+    }
+
+    /// <summary>True when the address is one of the owner's own wallets on the chain (a return to self moves no value away).</summary>
+    private async Task<bool> OwnsAddressAsync(Guid owner, string chainType, string address)
+    {
+        if (_wallets is null) return false;
+        var owned = await _wallets.GetByUserAsync(owner, CancellationToken.None);
+        return owned is { IsError: false, Result: { } wallets } && wallets.Any(wallet => wallet.UserId == owner
+            && string.Equals(wallet.ChainType, chainType, StringComparison.OrdinalIgnoreCase)
+            && ChainAddressIdentity.Equivalent(chainType, wallet.Address, address));
+    }
+
+    private const string ValueGateUnavailable = "The value gate is not available on this node; value cannot move.";
+    private const string ValueGateClosed = "This account cannot move value right now.";
 
     private async Task ExecuteMintAsync(IBlockchainOperation operation, IBlockchainProvider chainProvider)
     {

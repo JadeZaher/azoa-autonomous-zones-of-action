@@ -240,7 +240,7 @@ public sealed class ChainStampedSigningContextTests
             new[] { new BlockchainProviderRegistration(chainType, () => provider.Object) },
             ChainEnabledConfig(chainType));
 
-        return (new BlockchainOperationManager(store.Object, factory, new FakeIdempotencyStore()), captured);
+        return (new BlockchainOperationManager(store.Object, factory, new FakeIdempotencyStore(), valueAccess: new AZOA.WebAPI.Services.Kyc.ValueAccessService(new ApprovedRealValueKycGate())), captured);
     }
 
     private static IConfiguration ChainEnabledConfig(string chainType) =>

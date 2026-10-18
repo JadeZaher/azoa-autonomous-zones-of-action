@@ -105,7 +105,8 @@ public sealed partial class WttLifecycleFlowTests
             var transport = new WttGuardianTransport(new HttpClient(Guardians), Options.Create(new WttGuardianOptions
                 { Endpoints = ["https://guardian.test/"], TimeoutSeconds = 5 }));
             Recovery = new WttRecoveryService(Store, modules, transport, verifier, Claims, NullLogger<WttRecoveryService>.Instance);
-            Service = new WttLifecycleService(Store, wallets.Object, authorities, modules, Preparations, Recovery, custody, ValueGate, Clock);
+            Service = new WttLifecycleService(Store, wallets.Object, authorities, modules, Preparations, Recovery, custody, ValueGate, Clock,
+                accountPause: ValueGate.Ledger);
             UnwrapNative = unwrapNative;
             Authorities = authorities; _wallets = wallets.Object; _modules = modules; _custody = custody;
         }
@@ -132,7 +133,8 @@ public sealed partial class WttLifecycleFlowTests
         /// <summary>Builds a second service over the same journal with keyring readiness and the cross-user recipient directory.</summary>
         internal WttLifecycleService ServiceWith(WttStageKeyReadinessState? stageKeys = null, IWttRecipientDirectory? recipients = null,
             IWalletOwnershipProof? ownership = null)
-            => new(Store, _wallets, Authorities, _modules, Preparations, Recovery, _custody, ValueGate, Clock, stageKeys, recipients, ownership);
+            => new(Store, _wallets, Authorities, _modules, Preparations, Recovery, _custody, ValueGate, Clock, stageKeys, recipients, ownership,
+                ValueGate.Ledger);
 
         private IWalletStore _wallets = null!;
         private WttModuleResolver _modules = null!;
