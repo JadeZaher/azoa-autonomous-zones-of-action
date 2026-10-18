@@ -123,7 +123,7 @@ financial limiter, reason 20–1000 chars) → `PayoutAccountService.ResolveStuc
 1. **Classify read-only.** Only a `Claimed`, unattached, begun claim past the window (or quarantined) is
    operator work; anything else refuses. It never calls `BeginOrResume` (that would start a fence).
 2. **List Stripe.** Stripe cannot search accounts by metadata, so `ListConnectedAccountsCreatedAsync` pages
-   `/v1/accounts` over `[creation_started_at − 1h, creation_started_at + 23h + 1h]` (≤ 20 pages; more =
+   `/v1/accounts` over `[creation_started_at − 1h, creation_started_at + 23h + 1h]` (≤ 100 pages; more =
    incomplete). An unreadable or incomplete listing refuses: it is not evidence of absence.
 3. **Found** (exactly one account whose `azoa_payout_claim` = the row id and `azoa_user_id` = the subject) →
    verified with a fresh account read, then attached through `ReconcileAdmissionAsync` (version CAS, audit
@@ -133,6 +133,22 @@ financial limiter, reason 20–1000 chars) → `PayoutAccountService.ResolveStuc
    `Claimed` + creation token + no provider id + version) abandons the row and renames its admission key. The
    person's next setup claims a fresh row: new creation token, new Stripe idempotency key. Two accounts for
    one claim, or a claim account naming another person, refuse.
+
+### Residuals closed (RV-L1 re-check R-1..R-3, round 4 fix-money2)
+
+- **R-1 environment.** The admission key is now `{userId:N}:payout-account:{test|live}`
+  (`PayoutAccountFlow.AdmissionKeyFor(subject, environment)`): one setup per person *per payment environment*.
+  A test↔live switch finds no row in the new environment, so it can neither resolve (list with the wrong
+  credentials, see "absent", release) nor reuse a claim whose account exists only in the other environment; it
+  opens a fresh setup there, which is correct because a test account can never receive live money. Legacy rows
+  keyed without the suffix are unreachable — acceptable under D-9 (fresh database before launch).
+- **R-2 timeout margin.** `FiatOptions.EffectiveRequestTimeout` clamps `RequestTimeoutSeconds` to 1..120 s, and the
+  absence margin is derived from it (`PayoutAccountService.AbsenceMargin`: max(5 min, 2 × timeout + 1 min)), so a
+  configured long timeout can never let an in-flight create land after the release.
+- **R-3 scale.** The listing reads up to 100 pages (10,000 accounts created in the 25 h window). Beyond that it
+  reports itself incomplete and the resolve **refuses** — fail-closed by design: an incomplete listing is not
+  evidence of absence, and attaching needs proof there is no second account. If Connect volume ever approaches
+  that, narrow the window per create attempt (record each attempt's start) rather than raising the cap.
 
 ## §collect-quantity — collect always takes the claimed quantity (round 4)
 
@@ -471,6 +487,14 @@ is refused above that price (they can still exit tenant-funded through that tena
 the floor read is an unindexed scan of lots created in the window per node-funded cash-out with unaged units
 (add an `issued_at` index if the lot table grows); a person can still route units through a transfer to defeat
 the source-aged chargeback hold (pre-existing, separate from pricing).
+
+**D-10 (owner, 2026-10-17) — provenance follows the units: DEFERRED until after live QA.** The decided target
+replaces rule 3's node-wide floor for platform-moved units with per-unit provenance (scope + sold price inherited
+on every platform transfer, lowest-priced lots first; chain-balance reconciliation before any provenance-dependent
+flow, with units no longer held → the flow is refused with a typed outcome, never paid; units arriving by a raw
+on-chain transfer keep this floor). None of it is wired yet, so **the floor rule above remains in force unchanged**
+— nothing half-built can pay. Design notes and the transfer-path inventory are in
+`conductor/tracks/platform-stub-closeout_20261015/round4-lane-fix-money2.md` §Deferred.
 
 ### Fixtures (unit, `OffRampTests.TenantFunded.cs`, `TenantPayoutTopUpTests.cs`, over a ledger fake with the production commit contract; the Surreal store was probed against SurrealDB 3.1.4)
 

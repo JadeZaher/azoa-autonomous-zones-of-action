@@ -11,27 +11,33 @@ public sealed partial class SurrealHoldCommandTests
     [Fact]
     public async Task LiabilityReadsShowOwnReceivedAndCustodyLiabilitiesAndHideEveryoneElses()
     {
+        // Rule (Services/Hold/AGENTS.md §liability-reads): what is owed to a person is theirs to see from any login;
+        // what they merely sent under a tenant's custody is visible only under that tenant's credential.
         var other = Guid.NewGuid(); var tenant = Guid.NewGuid(); var otherTenant = Guid.NewGuid();
         await Save(Liability("own", _actor, _actor, null));
         await Save(Liability("received", other, _actor, null));
         await Save(Liability("custody", other, other, _actor));
-        await Save(Liability("tenanted-own", _actor, _actor, tenant));
-        await Save(Liability("other-tenant-own", _actor, _actor, otherTenant));
+        await Save(Liability("tenanted-received", _actor, _actor, tenant));
+        await Save(Liability("tenanted-sent", _actor, other, tenant));
+        await Save(Liability("other-tenant-sent", _actor, other, otherTenant));
         await Save(Liability("foreign", other, other, null));
         var reads = new HoldLiabilityReadService(_store, _store, new ReserveOptions());
 
         (await reads.ListAsync(_actor, null, 0, 20)).Result!.Items.Select(item => item.HoldId)
-            .Should().BeEquivalentTo("own", "received", "custody");
-        (await reads.ListAsync(_actor, tenant, 0, 20)).Result!.Items.Select(item => item.HoldId).Should().Equal("tenanted-own");
+            .Should().BeEquivalentTo("own", "received", "custody", "tenanted-received");
+        (await reads.ListAsync(_actor, tenant, 0, 20)).Result!.Items.Select(item => item.HoldId)
+            .Should().BeEquivalentTo("tenanted-received", "tenanted-sent");
         (await reads.ListAsync(other, null, 0, 20)).Result!.Items.Select(item => item.HoldId)
-            .Should().BeEquivalentTo("received", "custody", "foreign");
+            .Should().BeEquivalentTo("received", "custody", "foreign", "tenanted-sent", "other-tenant-sent");
 
         var own = (await reads.GetAsync("own", _actor, null)).Result!;
         own.Asset.HoldingAddress.Should().Be("reserve");
         own.CustodyTenantId.Should().BeNull();
         (await reads.GetAsync("custody", _actor, null)).Result!.CustodyTenantId.Should().Be(_actor);
+        (await reads.GetAsync("tenanted-received", _actor, null)).Result!.CustodyTenantId.Should().Be(tenant);
         (await reads.GetAsync("foreign", _actor, null)).IsError.Should().BeTrue();
-        (await reads.GetAsync("tenanted-own", _actor, null)).IsError.Should().BeTrue();
+        (await reads.GetAsync("tenanted-sent", _actor, null)).IsError.Should().BeTrue();
+        (await reads.GetAsync("other-tenant-sent", _actor, tenant)).IsError.Should().BeTrue();
     }
 
     [Fact]
