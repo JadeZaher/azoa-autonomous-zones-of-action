@@ -35,6 +35,9 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
     // never been applied to any deployment - the D31 wipe is still pending.
     [InlineData("kyc_submission.surql", "fba8793aa7f23506b3e02a502147a86a5e631a8ece759ee472e5d49e6aa7edbe")]
     [InlineData("operation_log.surql", "fff794131ab3b093b7c6c93ce9edfa3b994433992678024f332a2af59c39744f")]
+    // user.surql joined the baselined set 2026-10-18 (user-discoverable): the exact pre-change
+    // generated golden, before `discoverable` — see CompatibilityBaselines/README.md.
+    [InlineData("user.surql", "c29e9122d4888795249030376909e7ab0702d2a138030bca3a5fae468312af87")]
     public void CompatibilityBaseline_RetainsTheShippedChecksum(string fileName, string expectedChecksum)
     {
         var path = Path.Combine(

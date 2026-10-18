@@ -908,14 +908,19 @@ or is built then, after `DeploymentService` is cached. Same scope, same instance
 construction order changed. Do not "simplify" it back to a factory over `ActionManager`; `Hosting/ProgramCompositionTests`
 pins the bounded host start.
 
-## §user-discoverable (owner decision 2026-10-18, corrected same day)
+## §user-discoverable (owner decision 2026-10-18, corrected twice same day)
 
 `SearchManager.SearchAsync`'s User branch filters on `IUser.Discoverable` (opted-in, default `false`) OR the caller
 matching themself OR `isNodeAdmin` (new trailing param, default `false`) — applied before `MatchesUser`/sort/pagination
-so `TotalCount` never counts a row the page can't show. `isNodeAdmin` is deliberately NOT the `Operator`
-authorization policy: "node admins will always be able to find users" regardless of the policy's `operator`-scope
-and no-acting-tenant axes, which an ordinary dashboard JWT held by a node admin does not carry. The caller
-(`SearchController.IsNodeAdmin()`) computes it as `AzoaClaims.IsNodeOperator(User) && !User.IsApiKey()` — axis-1
-only, so an API key belonging to a node admin never qualifies. `GetFacetsAsync`'s global User count is
+so `TotalCount` never counts a row the page can't show. There is no claims computation on the manager side: the
+CALLER decides `isNodeAdmin`, and there are exactly two callers in `SearchController` —
+`Search` (plain `[Authorize]`, always passes `false`) and `OperatorSearch` (`POST api/search/operator`,
+`[Authorize(Policy = "Operator")]`, always passes `true`). An independent security review found the first
+version of this fix unreachable: it computed `isNodeAdmin` from claims INSIDE the plain `Search` action, but
+`Program.cs`'s `OnTokenValidated` rejects any node-operator session token on an endpoint whose policy isn't in a
+fixed allowlist (`NodeOperatorSession`/`RecentNodeOperatorSession`/`DappRoleAssignment`/`Operator`/`NodeGovern`),
+and plain `[Authorize]` isn't in it — so a node-operator bearer never reached that claims check at all (401
+first). The fix is a dedicated `Operator`-policy action instead, per §User responses in Controllers/AGENTS.md.
+`GetFacetsAsync`'s global User count is
 intentionally untouched (an aggregate count, not an identity, per its existing "Users are the one public type"
 comment). See `Controllers/AGENTS.md` §User responses for the full rationale.

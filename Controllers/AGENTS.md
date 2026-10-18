@@ -314,16 +314,28 @@ current ownership proof (`CrossChainBridgeService.OwnsReversalRecipientAsync`).
   (owner decision 2026-10-18, user-discoverable; was recorded as deferred in
   `round4-lane-qa-api.md` §Deferred) are gated by a per-profile `Discoverable` opt-in
   (`IUser.Discoverable`, default `false`): a user is a hit only if they opted in, the caller is
-  matching themself, or the caller is a **node admin**. The node-admin bypass is deliberately
-  NOT the `Operator` authorization policy (owner correction, same day): that policy also requires
-  the step-up `operator` scope and no acting tenant (Program.cs), which a node admin searching
-  from an ordinary dashboard JWT does not carry. `SearchController.IsNodeAdmin()` is axis-1 only —
-  `AzoaClaims.IsNodeOperator(User) && !User.IsApiKey()` — so scope and acting-tenant don't matter
-  for this bypass; an API key belonging to a node admin never qualifies. The gate runs inside
-  `SearchManager.SearchAsync`'s per-entity filter, before sort/pagination, so `TotalCount`/pages
-  never leak a non-discoverable row. Non-user entity kinds (Holon, ActionGraphBundle, Wallet,
-  BlockchainOperation) are unaffected — they already carry their own owner-or-public / caller-only
-  scoping and never surface a bare user identity.
+  matching themself, or the caller is a **node admin**. Node-admin user search is a SEPARATE
+  action, `POST api/search/operator` (`SearchController.OperatorSearch`, `[Authorize(Policy =
+  "Operator")]`), NOT a claims check inside the plain `Search` action — a corrected design
+  (independent security review, same day, superseding an initial design that computed an
+  `IsNodeAdmin()` flag inline). The bare `[Authorize]` on `POST api/search` is NOT in
+  `Program.cs`'s `OnTokenValidated` policy allowlist (`NodeOperatorSession` /
+  `RecentNodeOperatorSession` / `DappRoleAssignment` / `Operator` / `NodeGovern`), so a
+  node-operator session bearer is rejected at token validation (401) before that action could
+  ever run a claims check — any in-controller "is this a node admin" branch on the plain route
+  was dead code. `OperatorSearch` passes `isNodeAdmin: true` unconditionally to
+  `SearchManager.SearchAsync`; the plain `Search` action passes `isNodeAdmin: false`
+  unconditionally. Every real node-operator session token already carries `scope=operator` and
+  no acting tenant (`NodeOperatorManager.CreateToken`), so the `Operator` policy is exactly the
+  reachable set for this bypass — unlike the general "Operator policy requires a scope a
+  dashboard JWT lacks" framing that motivated the original (incorrect) design. The gate runs
+  inside `SearchManager.SearchAsync`'s per-entity filter, before sort/pagination, so
+  `TotalCount`/pages never leak a non-discoverable row. The operator console BFF
+  (`frontend/src/lib/operator-routes.ts`) does not yet allowlist `/api/search/operator` — no
+  console page calls it today; it is reachable only by a direct node-operator-session bearer.
+  Non-user entity kinds (Holon, ActionGraphBundle, Wallet, BlockchainOperation) are unaffected —
+  they already carry their own owner-or-public / caller-only scoping and never surface a bare
+  user identity.
 - `PUT api/user/{id}` on a foreign id answers `404` before the manager runs, the same as `DELETE`.
 
 ## Account-creating sign-ins follow the registration switch (QA H-A)

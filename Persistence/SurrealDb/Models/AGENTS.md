@@ -319,9 +319,9 @@ carry status, timestamps and participant count. Historical hosted-session outcom
 false")]` per §old-row-rule (not `option<bool>`, so the self-mutable field stays a plain `bool`
 matching `is_active`/`is_verified`'s existing convention). It gates `POST /api/search`: a user
 surfaces in another caller's results only when this is `true` (default `false` = not
-discoverable), the caller is matching themself, or the caller is a node admin (axis-1 check,
-deliberately not the `Operator` policy — see `Controllers/AGENTS.md` §User responses) — see
-`../AGENTS.md` §deploy-path for why this shipped with a frozen `CompatibilityBaselines/user.surql`
-snapshot plus `Migrations/20261018_090000__add_user_discoverable.surql` rather than an in-place
-edit to the generated golden. `Managers/AGENTS.md` §user-discoverable has the filter rationale;
-`Controllers/AGENTS.md` §User responses has the operator-bypass detail.
+discoverable), the caller is matching themself, or the caller reaches search through
+`POST /api/search/operator` (`[Authorize(Policy = "Operator")]`) — see `../AGENTS.md`
+§deploy-path for why this shipped with a frozen `CompatibilityBaselines/user.surql` snapshot
+plus `Migrations/20261018_090000__add_user_discoverable.surql` rather than an in-place edit to
+the generated golden. `Managers/AGENTS.md` §user-discoverable has the filter rationale;
+`Controllers/AGENTS.md` §User responses has the node-admin route detail.

@@ -33,6 +33,7 @@ prior checksums; their paired forward migrations are `135000` and `136000`.
 `user` was not previously baselined — it had no post-generation-reset field changes until this one.
 `user.surql` here is the exact pre-change generated golden (no `discoverable` field); the forward
 migration `../Migrations/20261018_090000__add_user_discoverable.surql` adds `discoverable` via
-`DEFINE FIELD OVERWRITE` plus a one-shot NONE backfill. Not pinned by
-`SurrealDeploymentLeastPrivilegeContractTests` (that theory enumerates the five tables baselined as
-of the round-4 W1 re-base); add a case there if `user.surql` needs re-pinning after a future edit.
+`DEFINE FIELD OVERWRITE` plus a one-shot NONE backfill. Pinned by
+`SurrealDeploymentLeastPrivilegeContractTests.CompatibilityBaseline_RetainsTheShippedChecksum`
+(SHA-256 `c29e9122d4888795249030376909e7ab0702d2a138030bca3a5fae468312af87`) alongside the five
+tables baselined at the round-4 W1 re-base.
