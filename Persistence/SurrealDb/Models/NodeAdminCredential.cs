@@ -30,7 +30,6 @@ public partial class NodeAdminCredential : ISurrealRecord
 
     [Column(Order = 3)]
     [Inside("ed25519")]
-    [Required(NotEmpty = true)]
     public string Kind { get; set; } = "ed25519";
 
     [Column(Order = 4)]

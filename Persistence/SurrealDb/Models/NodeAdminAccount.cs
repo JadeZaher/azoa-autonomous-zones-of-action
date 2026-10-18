@@ -40,7 +40,6 @@ public partial class NodeAdminAccount : ISurrealRecord
 
     [Column(Order = 4)]
     [Inside("PendingEnrollment", "PendingActivation", "Active", "Suspended", "Revoked")]
-    [Required(NotEmpty = true)]
     public string Status { get; set; } = StatusPendingEnrollment;
 
     [Column(Order = 5)]

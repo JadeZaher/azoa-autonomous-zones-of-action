@@ -52,7 +52,6 @@ public partial class NodeAdminAudit : ISurrealRecord
 
     [Column(Order = 8)]
     [Inside("intent", "ok", "denied", "failed")]
-    [Required(NotEmpty = true)]
     [ReadOnly]
     public string Outcome { get; set; } = string.Empty;
 

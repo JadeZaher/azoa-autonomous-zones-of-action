@@ -30,7 +30,6 @@ public partial class NodeAdminChallenge : ISurrealRecord
 
     [Column(Order = 2)]
     [Inside("root_login", "admin_login", "enroll")]
-    [Required(NotEmpty = true)]
     public string Purpose { get; set; } = string.Empty;
 
     [Column(Order = 3)]

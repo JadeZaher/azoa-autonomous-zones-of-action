@@ -72,7 +72,7 @@ public static class Totp
     /// <summary>The otpauth provisioning URI of the binding contract (plan §8, CLI).</summary>
     public static string ProvisioningUri(string host, string username, string secretBase32)
     {
-        var issuer = Uri.EscapeDataString($"AZOA Node ({host})");
+        var issuer = $"AZOA%20Node%20({Uri.EscapeDataString(host)})";
         return $"otpauth://totp/{issuer}:{Uri.EscapeDataString(username)}?secret={secretBase32}&issuer={issuer}&algorithm=SHA1&digits={Digits}&period={StepSeconds}";
     }
 }
