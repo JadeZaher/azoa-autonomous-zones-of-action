@@ -100,10 +100,15 @@ public sealed class NodeAdminFlowTests(NodeAdminWebApplicationFactory factory)
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", root);
         (await Client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
-        // Operator routes do not accept node-admin tokens until lane A2 maps them.
-        using var operatorRequest = new HttpRequestMessage(HttpMethod.Get, "/api/operator/overview");
-        operatorRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", root);
-        (await Client.SendAsync(operatorRequest)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // A mapped operator route admits the token, then the permission decides: root never holds kyc.read (M3).
+        var overview = await SendToAsync(HttpMethod.Get, "/api/operator/overview", token: root);
+        overview.Status.Should().Be(HttpStatusCode.Forbidden);
+        overview.Code.Should().Be("PERMISSION_DENIED");
+
+        // A legacy-only operator route (the legacy session revoke) refuses the token at validation (M7).
+        using var legacyOnly = new HttpRequestMessage(HttpMethod.Post, "/api/operator/session/revoke");
+        legacyOnly.Headers.Authorization = new AuthenticationHeaderValue("Bearer", root);
+        (await Client.SendAsync(legacyOnly)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
         (await SendAsync(HttpMethod.Get, "/me", token: root)).Status.Should().Be(HttpStatusCode.OK);
     }

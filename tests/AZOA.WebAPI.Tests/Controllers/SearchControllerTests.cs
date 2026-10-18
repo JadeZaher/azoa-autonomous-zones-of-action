@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using AZOA.WebAPI.Controllers;
+using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -83,6 +85,12 @@ public class SearchControllerTests
         _searchManager.Setup(m => m.SearchAsync(It.IsAny<SearchRequest>(), It.IsAny<Guid?>(), It.IsAny<AZOARequest?>(), true))
             .Callback<SearchRequest, Guid?, AZOARequest?, bool>((_, _, _, isNodeAdmin) => observedIsNodeAdmin = isNodeAdmin)
             .ReturnsAsync(new AZOAResult<SearchResult> { Result = new SearchResult() });
+
+        _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator),
+            new Claim(ClaimTypes.NameIdentifier, NodeOperatorIdentity.UserId.ToString()),
+        ], "Bearer"));
 
         var result = await _controller.OperatorSearch(new SearchRequest(), null);
 
