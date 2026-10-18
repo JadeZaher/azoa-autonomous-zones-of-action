@@ -12,6 +12,15 @@ import { configDefaults, defineConfig } from 'vitest/config'
 const sliceTests = 'src/test/slices/**/*.slice.test.{ts,tsx}'
 
 /**
+ * `operator-console` imports the real Next.js route handler (`app/api/operator/[...path]/route`)
+ * to exercise the BFF layer (see `src/test/AGENTS.md` §slices) — that pulls in `next/server`,
+ * whose `ua-parser-js` dependency reads `__dirname`, a Node global a real Chromium page does not
+ * have. It is Node-only by design, not a browser surface; keep it on the jsdom `slices` project
+ * and drop it from `slices-browser` instead of letting the whole file fail to import there.
+ */
+const browserIncompatibleSliceTests = ['src/test/slices/operator-console.slice.test.tsx']
+
+/**
  * Slices run against the SDK SOURCE, not the `file:` dependency's `dist/` (which is only as
  * fresh as the last `tsup` build): drift between the SDK and the API must be visible without a
  * rebuild step. Exact-match patterns keep `azoa-sdk/api` from being rewritten into a file path.
@@ -65,6 +74,7 @@ export default defineConfig({
         test: {
           name: 'slices-browser',
           include: [sliceTests],
+          exclude: [...configDefaults.exclude, ...browserIncompatibleSliceTests],
           setupFiles: ['./src/test/slices/setup-browser.ts'],
           browser: {
             enabled: true,

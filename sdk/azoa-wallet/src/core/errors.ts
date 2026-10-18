@@ -155,3 +155,11 @@ export const NFT_STAGE_COSTS_CHANGED = "NFT_STAGE_COSTS_CHANGED";
 export function isNftStageCostsChanged(error: unknown): boolean {
   return error instanceof SdkError && error.serverCode === NFT_STAGE_COSTS_CHANGED;
 }
+
+/** Server code: `RecentNodeOperatorSession` refused a mutating operator action on a stale operator login (X-7). */
+export const RECENT_OPERATOR_LOGIN_REQUIRED = "RECENT_OPERATOR_LOGIN_REQUIRED";
+
+/** True when the node refused an operator action because the caller's own login is more than 10 minutes old. */
+export function isRecentOperatorLoginRequired(error: unknown): boolean {
+  return error instanceof SdkError && error.serverCode === RECENT_OPERATOR_LOGIN_REQUIRED;
+}

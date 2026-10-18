@@ -6,6 +6,7 @@
 // board is worse than no number. Amounts stay integers: money in minor units, units in base units,
 // both formatted only for display.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { isRecentOperatorLoginRequired, type FiatPayoutResolution, type FiatPayoutView } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { toast } from 'sonner'
 import { describePayoutResolution } from '@/lib/operator-honesty'
@@ -20,11 +21,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { ErrorBanner } from '@/components/shared/error-banner'
+import { StepUpBanner } from '@/components/shared/step-up-banner'
 import { AlertTriangle, PlayCircle, RefreshCw, Undo2 } from 'lucide-react'
 
 const PAYOUTS_PATH = '/api/admin/fiat-payouts'
-
-import type { FiatPayoutResolution, FiatPayoutView } from 'azoa-sdk'
+const PAGE_PATH = '/admin/fiat-payouts'
 
 /**
  * Operator-facing words for each durable status. The server's vocabulary is the ledger's; this is
@@ -91,7 +92,16 @@ export default function FiatPayoutsConsolePage() {
   const [loading, setLoading] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [reauthRequired, setReauthRequired] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [setupUserId, setSetupUserId] = useState('')
+  const [setupBusy, setSetupBusy] = useState(false)
+
+  /** X-7: every mutating action below is Operator + `RecentNodeOperatorSession`; surface the step-up prompt instead of a bare toast. */
+  const reportActionError = useCallback((sdkError: { message: string }) => {
+    if (isRecentOperatorLoginRequired(sdkError)) setReauthRequired(true)
+    else toast.error(sdkError.message)
+  }, [])
 
   const fetchBoard = useCallback(async () => {
     setLoading(true); setError(null)
@@ -117,7 +127,7 @@ export default function FiatPayoutsConsolePage() {
       : 'Why should the balance be returned? (the node re-reads Stripe before returning anything)'
     const reason = window.prompt(question)?.trim()
     if (!reason) return
-    setBusyId(row.id)
+    setBusyId(row.id); setReauthRequired(false)
     try {
       const res = await azoa.api.resolveFiatPayout(row.id, { resolution, reason })
       if (isOk(res)) {
@@ -126,12 +136,12 @@ export default function FiatPayoutsConsolePage() {
         else toast.warning(verdict.title, { description: verdict.detail })
         await fetchBoard()
       } else {
-        toast.error(res.error.message)
+        reportActionError(res.error)
       }
     } finally {
       setBusyId(null)
     }
-  }, [fetchBoard])
+  }, [fetchBoard, reportActionError])
 
   const act = useCallback(async (
     id: string,
@@ -140,7 +150,7 @@ export default function FiatPayoutsConsolePage() {
   ) => {
     const reason = verb === 'recover' ? window.prompt('Why should this failed bank payout be recovered?')?.trim() : 'Actioned from the operator board.'
     if (verb === 'recover' && !reason) return
-    setBusyId(id)
+    setBusyId(id); setReauthRequired(false)
     try {
       const res = await azoa.api.request<FiatPayoutView>(
         'POST', `${PAYOUTS_PATH}/${encodeURIComponent(id)}/${verb}`,
@@ -152,14 +162,40 @@ export default function FiatPayoutsConsolePage() {
         toast.success(successMessage, res.value?.status ? { description: `The node reports the cash-out as ${res.value.status}.` } : undefined)
         await fetchBoard()
       } else {
-        toast.error(res.error.message)
+        reportActionError(res.error)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'The action failed')
     } finally {
       setBusyId(null)
     }
-  }, [fetchBoard])
+  }, [fetchBoard, reportActionError])
+
+  /** RV-L1-01: the operator exit for a payout-account setup stuck past its Stripe replay window. */
+  const resolveAccountSetup = useCallback(async () => {
+    const userId = setupUserId.trim()
+    if (!userId) return
+    const reason = window.prompt('What should this account setup resolve to? (Stripe is re-read before attaching or releasing anything)')?.trim()
+    if (!reason) return
+    setSetupBusy(true); setReauthRequired(false)
+    try {
+      const res = await azoa.api.resolvePayoutAccountSetup(userId, reason)
+      if (isOk(res)) {
+        toast.success(
+          res.value.outcome === 'attached' ? 'Attached the account Stripe already holds for this claim' : 'No account existed; the claim was released for a fresh setup',
+          { description: res.value.accountId ? `Connected account ${res.value.accountId}.` : undefined },
+        )
+        setSetupUserId('')
+        await fetchBoard()
+      } else {
+        reportActionError(res.error)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'That user id is not a valid account identifier.')
+    } finally {
+      setSetupBusy(false)
+    }
+  }, [setupUserId, fetchBoard, reportActionError])
 
   const totals = useMemo(() => rows.reduce(
     (acc, row) => ({
@@ -276,7 +312,37 @@ export default function FiatPayoutsConsolePage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Stuck account setup</CardTitle>
+          <CardDescription>
+            RV-L1-01: an account setup that outlived its Stripe replay window. The node re-reads Stripe&apos;s own
+            listing first — attaches the account it finds for this claim, or releases the claim once Stripe proves
+            none exists, so the next setup opens a fresh one.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="setup-user-id">Account owner&apos;s user id</Label>
+              <Input
+                id="setup-user-id"
+                className="w-72 font-mono text-xs"
+                placeholder="00000000-0000-0000-0000-000000000000"
+                value={setupUserId}
+                onChange={e => setSetupUserId(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && resolveAccountSetup()}
+              />
+            </div>
+            <Button onClick={resolveAccountSetup} disabled={setupBusy || !setupUserId.trim()} size="sm" variant="outline">
+              {setupBusy ? 'Resolving…' : 'Resolve setup'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {error && <ErrorBanner message={error} onRetry={fetchBoard} />}
+      {reauthRequired && <StepUpBanner returnTo={PAGE_PATH} />}
 
       <Card>
         <CardHeader className="pb-3">
