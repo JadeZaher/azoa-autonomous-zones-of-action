@@ -26,8 +26,12 @@ Closing vocabulary: *Built* = compiled + unit-covered; *Authored* = compiles, ne
 
 | Item | Source | Trigger to revisit |
 |---|---|---|
-| Final fix round items not finished at push time | `round4-lane-fix-{core2,gates2,money2,frontend2}.md` §NOT DONE | first post-QA session |
-| D-10 provenance on transfer — any unfinished path (fix-money floor rule stays in force meanwhile) | owner D-10; RV-L3 re-check R2-1/R2-2 | before tenant-priced on-ramps go live |
+| **D-10 provenance on transfer — not built** (design + full path inventory in `round4-lane-fix-money2.md` §Deferred; needs a post-confirmation hook in `BlockchainOperationManager.ExecuteTransferAsync`). The fix-money conservative floor rule stays in force; RV-L3 R2-1/R2-2 remain open | owner D-10 | before tenant-priced on-ramps go live |
+| RV-L3 R2-3: index `on_ramp_lot.created_at` + fail-closed limit on the floor scan | fix-money2 | with D-10 |
+| RV-L5 re-check R1: owner cancel of an unsigned client-signed Ethereum plan (own store CAS on signed-bytes-absent + nonce release; plan view/stuck list name the blocking nonce; SDK parity) — stuck nonce, no money at risk | fix-gates2 §NOT DONE | post-QA |
+| RV-L5 re-check R2 (LOW): WTT takeover run-stopped check uses plain reads | fix-gates2 | post-QA LOW sweep |
+| Pass the caller-verified owner into `IHolonStore`/`IWalletStore.DeleteAsync` (interface change, ~8 implementers) | fix-core2 §NOT DONE | post-QA |
+| fix-frontend2 (browser-slice regression, operator step-up prompts, payout setup-resolve UI, ownership-challenge SDK) — ships as a follow-up push if not merged before the QA push | fix-frontend2 | during QA |
 | WTT six-route protocol fixtures: first run, Solana registration sequence, per-route execution | `round4-lane-verification-fixtures.md` | before `Wtt:Enabled` in production |
 | Real child-JWT + wallet-signature HTTP flows; L5 LOW-5 NFT real-DB fixtures; store-family gaps in `Round4Gates` inventory | `round4-lane-L6-verification.md` | sweep batch 1 |
 | Wallet-ownership-proof UI + end-user submit-signed UI (needs an in-browser signing helper) | `round4-lane-L7-frontend.md` | first in-browser External-wallet flow |
