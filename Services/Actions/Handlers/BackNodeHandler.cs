@@ -29,6 +29,9 @@ public sealed class BackNodeHandler : IActionNodeHandler
     public async Task<ActionNodeHandlerResult> HandleAsync(
         ActionNodeExecutionContext context, CancellationToken ct = default)
     {
+        // X-8: a node that names the wtt route never falls back to the legacy trusted bridge, malformed or not.
+        if (WttActionResolver.Selects(context.Node.Config))
+            return ActionNodeResults.Fail("[Back] the wtt route config is malformed or unavailable; refusing the legacy bridge fallback.");
         if (!ActionNodeConfig.TryDeserialize<BackNodeConfig>(context.Node.Config, nameof(ActionNodeType.Back), out var cfg, out var cfgError))
             return ActionNodeResults.Fail(cfgError);
 

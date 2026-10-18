@@ -88,6 +88,12 @@ concurrent refiller loses on the marker or the unique index and retries through
 the allocator loop. Only never-signed rows reach `Released`; see
 `Providers/Blockchain/Ethereum/AGENTS.md` §Nonce holes.
 
+Client-signed reservations (RV-L5-01) share the table and the live-nonce index: `State = ClientReserved`, empty owner,
+`IntentJson = "{}"`, never signed, released or recovered by custody. They are claimed with the same `TryClaimAsync`
+(create; a unique violation on the id or the live nonce returns the existing row or null), so one live owner per
+(protocol, sender, nonce) still holds across custody and client-signed plans. See
+`Providers/Blockchain/Ethereum/AGENTS.md` §Client-signed nonces.
+
 Deploy note: the index was renamed, so the schema sync (`IF NOT EXISTS`) defines
 the new one. A database that still has the old `ethereum_preparation_nonce`
 index must drop it (dev: `-ResetDb`). Until then, refills fail closed as "busy"
@@ -683,6 +689,14 @@ incarnation. Typed CAS composes these three records; raw LET/IF statements only
 enforce all-or-nothing mutation. Historical allocated totals are preserved and
 the separate released total can never exceed them. No unknown reservation is
 released by an observed missing current holding.
+
+## WTT owner takeover of a workflow operation
+
+`TakeOverAsync` on an action-bound operation prepends `WttSigningAuthorityFence.ActionStopped` to the takeover
+transaction (`// raw:` the run/execution liveness read and the version CAS on `wtt_operation` must share one commit). It
+reads `action_run.status` and the node's `Running` execution on the frozen-input hash and throws the journal conflict while
+both are live; the version CAS serializes it against any concurrent workflow stage claim. After takeover `Action(operation)`
+returns null, so every later stage fence demands the owner's direct authority (RV-L5-07).
 
 ## WTT preparation identity
 

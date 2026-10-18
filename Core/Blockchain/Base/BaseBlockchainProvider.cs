@@ -161,7 +161,7 @@ public abstract class BaseBlockchainProvider : IBlockchainProvider
 
         _logger.LogInformation(
             "Initialized {ChainType} provider on {Network} with node {NodeUrl}",
-            ChainType, network, config.NodeUrl);
+            ChainType, network, AZOA.WebAPI.Providers.Blockchain.ChainRpcHttp.LogSafeEndpoint(config.NodeUrl));
     }
 
     public bool TryGetModule<T>(out T? module) where T : class, IBlockchainProviderModule

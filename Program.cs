@@ -1500,6 +1500,8 @@ builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     // D9: named chain RPC clients (ChainRpcHttp.ClientName) so hosts and fixtures can supply handlers.
     httpClientFactory: sp.GetRequiredService<IHttpClientFactory>()));
 builder.Services.AddTransient<SolanaProvider>();
+// RV-L5-10: named chain RPC clients without URI request logging (path-embedded provider tokens).
+AZOA.WebAPI.Providers.Blockchain.ChainRpcHttp.AddChainRpcClients(builder.Services);
 // Ethereum: a BARE AddTransient on purpose. Constructor selection then picks the 4-arg
 // overload whose every parameter is a root-resolvable singleton (config, logger, signer
 // factory, scope factory), so the value path gets a real signer. A factory lambda would

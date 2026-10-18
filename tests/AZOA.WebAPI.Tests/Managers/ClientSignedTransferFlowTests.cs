@@ -45,6 +45,8 @@ public sealed class ClientSignedTransferFlowTests
     private readonly InMemoryOperationLog _log = new();
     private readonly FakeIdempotencyStore _idempotency = new();
     private readonly Guid _owner = Guid.NewGuid();
+    private readonly SwitchableValueGate _valueGate = new();
+    private readonly FakeEthereumPreparationStore _nonces = new();
 
     // ── Algorand ──────────────────────────────────────────────────────────────
 
@@ -187,24 +189,104 @@ public sealed class ClientSignedTransferFlowTests
         var submitted = await service.SubmitAsync(operationId, _owner, null, signed, default);
         submitted.Result!.Status.Should().Be(OperationStatus.PendingConfirmation, "the signed bytes are persisted even when the node refuses them");
         (await service.ReconcileAsync(_log.Row(operationId), DateTime.UtcNow, default)).Should().Be(ClientSigningReconcileOutcome.Unchanged);
-        var foreign = chain.MineForeign(nonce: 7);
+        (await service.ListStuckAsync(10, default)).Should().ContainSingle(view => view.OperationId == operationId && view.Submitted,
+            "a dropped or underpriced submission ages into the operator console instead of waiting invisibly");
+        var foreign = chain.MineForeign(nonce: 7, mined: false);
         chain.FinalizedNonce = 8;
 
         (await service.ReconcileAsync(_log.Row(operationId), DateTime.UtcNow, default)).Should().Be(ClientSigningReconcileOutcome.Parked,
             "an unattributed consumer might be the plan itself; failing it could invite a double payment");
+        (await service.ResolveAsync(operationId, Guid.NewGuid(), new("a node shows the replacement", foreign), default))
+            .Code.Should().Be(AzoaErrorCodes.Conflict, "a mempool-only consumer from a lagging node proves nothing");
+        chain.Mine(foreign);
         var resolved = await service.ResolveAsync(operationId, Guid.NewGuid(), new("explorer shows the replacement", foreign), default);
 
         resolved.IsError.Should().BeFalse(resolved.Message);
         _log.Row(operationId).Parameters[ClientSigningParameters.Outcome].Should().Be("Superseded");
     }
 
+    [Fact]
+    public async Task Ethereum_identical_concurrent_transfers_from_one_wallet_get_their_own_nonces_and_one_transaction_never_settles_both()
+    {
+        var key = EthECKey.GenerateKey();
+        var sender = key.GetPublicAddress();
+        using var chain = new EthereumChain(sender);
+        var (manager, service) = Ethereum(chain, sender);
+        var recipient = "0x" + new string('b', 40);
+        var first = (await manager.ExecuteAsync(Transfer(sender, recipient, "ETH", parentKey: "payout-1"))).Result!.Id;
+        var second = (await manager.ExecuteAsync(Transfer(sender, recipient, "ETH", parentKey: "payout-2"))).Result!.Id;
+        var firstPlan = ClientSignedOperationService.ReadPlan(_log.Row(first))!;
+        var secondPlan = ClientSignedOperationService.ReadPlan(_log.Row(second))!;
+
+        (firstPlan.Nonce, secondPlan.Nonce).Should().Be(("7", "8"), "each open plan reserves the signer's next nonce");
+        firstPlan.UnsignedPayloadBase64.Should().NotBe(secondPlan.UnsignedPayloadBase64);
+        var firstSigned = Convert.ToBase64String(Sign(key, Convert.FromBase64String(firstPlan.UnsignedPayloadBase64)));
+        var secondSigned = Convert.ToBase64String(Sign(key, Convert.FromBase64String(secondPlan.UnsignedPayloadBase64)));
+        secondSigned.Should().NotBe(firstSigned, "distinct nonces make distinct signed bytes even for an identical transfer");
+        var firstHash = (await service.SubmitAsync(first, _owner, null, firstSigned, default)).Result!.Parameters[ClientSigningParameters.TransactionHash];
+
+        chain.MineOwn(Convert.FromBase64String(firstSigned));
+        (await service.ReconcileAsync(_log.Row(first), DateTime.UtcNow, default)).Should().Be(ClientSigningReconcileOutcome.Completed);
+        // The second signer never submitted; an operator attributing the first transfer's hash to it must be refused.
+        (await service.ResolveAsync(second, Guid.NewGuid(), new("operator pastes the first transfer's hash", firstHash), default))
+            .IsError.Should().BeTrue("a hash attributes only to the row whose reserved nonce it consumed");
+
+        _log.Row(second).Status.Should().NotBe(OperationStatus.Completed);
+        var claims = await Task.WhenAll(_idempotency.Keys.Select(claim => _idempotency.GetAsync(claim, default)));
+        claims.Select(claim => claim!.State).Should().BeEquivalentTo([IdempotencyState.Completed, IdempotencyState.InProgress],
+            "one transfer happened, so exactly one claim completes");
+    }
+
+    [Fact]
+    public async Task A_terminal_row_whose_claim_settlement_was_lost_repairs_on_the_next_reconcile()
+    {
+        var key = EthECKey.GenerateKey();
+        var sender = key.GetPublicAddress();
+        using var chain = new EthereumChain(sender);
+        var (manager, service) = Ethereum(chain, sender);
+        var operationId = (await manager.ExecuteAsync(Transfer(sender, "0x" + new string('b', 40), "ETH"))).Result!.Id;
+        var row = _log.Row(operationId);
+        // The crash window: the terminal status committed and the process died before the claim was settled.
+        var parameters = new Dictionary<string, string>(row.Parameters) { [ClientSigningParameters.TransactionHash] = "0x" + new string('a', 64) };
+        (await _log.TryTransitionAsync(operationId, row.Status, OperationStatus.Completed, parameters, DateTimeOffset.UtcNow)).Should().BeTrue();
+
+        await service.ReconcileAsync(_log.Row(operationId), DateTime.UtcNow, default);
+
+        (await _idempotency.GetAsync(_idempotency.Keys.Single(), default))!.State.Should().Be(IdempotencyState.Completed,
+            "a duplicate request must not be answered as still in progress forever");
+    }
+
+    [Fact]
+    public async Task A_paused_account_cannot_submit_a_signed_transfer_and_nothing_is_broadcast()
+    {
+        var key = EthECKey.GenerateKey();
+        var sender = key.GetPublicAddress();
+        using var chain = new EthereumChain(sender);
+        var (manager, service) = Ethereum(chain, sender);
+        var operationId = (await manager.ExecuteAsync(Transfer(sender, "0x" + new string('b', 40), "ETH"))).Result!.Id;
+        var plan = ClientSignedOperationService.ReadPlan(_log.Row(operationId))!;
+        _valueGate.Paused = true;
+
+        var refused = await service.SubmitAsync(operationId, _owner, null,
+            Convert.ToBase64String(Sign(key, Convert.FromBase64String(plan.UnsignedPayloadBase64))), default);
+
+        refused.Code.Should().Be(AzoaErrorCodes.Forbidden);
+        _log.Row(operationId).Status.Should().Be(OperationStatus.AwaitingSignature);
+        chain.Broadcasts.Should().BeEmpty();
+    }
+
     // ── Wiring ────────────────────────────────────────────────────────────────
 
-    private BlockchainOperation Transfer(string sender, string recipient, string asset) => new()
+    private BlockchainOperation Transfer(string sender, string recipient, string asset, string? parentKey = null)
     {
-        OperationType = "Transfer", UserId = _owner, WalletId = WalletId, RecipientAddress = recipient,
-        Parameters = new() { ["WalletAddress"] = sender, ["SourceTokenId"] = asset, ["Amount"] = "500", ["ChainNetwork"] = "Devnet" },
-    };
+        var operation = new BlockchainOperation
+        {
+            OperationType = "Transfer", UserId = _owner, WalletId = WalletId, RecipientAddress = recipient,
+            Parameters = new() { ["WalletAddress"] = sender, ["SourceTokenId"] = asset, ["Amount"] = "500", ["ChainNetwork"] = "Devnet" },
+        };
+        if (parentKey is not null) operation.Parameters["IdempotencyKey"] = parentKey;
+        return operation;
+    }
 
     private Guid WalletId { get; } = Guid.NewGuid();
 
@@ -220,7 +302,7 @@ public sealed class ClientSignedTransferFlowTests
         var config = Config("Ethereum", new() { ["Blockchain:Chains:0:Devnet:ChainId"] = EthereumChain.ChainId.ToString(),
             ["AZOA:Ethereum:RpcRetryMaxAttempts"] = "0" });
         return Wire("Ethereum", sender, config, () => new EthereumProvider(config, NullLogger<EthereumProvider>.Instance,
-            signerFactory: null, custodyService: null, custodyScopeFactory: null, httpMessageHandler: chain));
+            signerFactory: null, custodyService: null, custodyScopeFactory: null, httpMessageHandler: chain, preparationStore: _nonces));
     }
 
     private (BlockchainOperationManager, ClientSignedOperationService) Wire(string chainType, string sender, IConfiguration config,
@@ -232,7 +314,7 @@ public sealed class ClientSignedTransferFlowTests
             new Wallet { Id = WalletId, UserId = _owner, ChainType = chainType, Address = sender, WalletType = WalletType.External }));
         var manager = new BlockchainOperationManager(_log, factory, _idempotency, wallets: wallets.Object);
         var service = new ClientSignedOperationService(_log, _log, factory, _idempotency,
-            Options.Create(new ReconciliationOptions { ClientSignatureTtlSeconds = 0 }), NullLogger<ClientSignedOperationService>.Instance);
+            Options.Create(new ReconciliationOptions { ClientSignatureTtlSeconds = 0 }), NullLogger<ClientSignedOperationService>.Instance, _valueGate);
         return (manager, service);
     }
 
@@ -304,13 +386,17 @@ public sealed class ClientSignedTransferFlowTests
         internal bool AcceptBroadcast { get; init; } = true;
         internal List<string> Broadcasts { get; } = new();
 
-        internal string MineForeign(long nonce)
+        /// <summary>A different transaction from the signer at <paramref name="nonce"/>; <paramref name="mined"/> false leaves it mempool-only.</summary>
+        internal string MineForeign(long nonce, bool mined = true)
         {
             var hash = "0x" + new string('f', 64);
             _transactions[hash] = new JsonObject { ["hash"] = hash, ["from"] = sender, ["nonce"] = Hex(nonce),
                 ["to"] = "0x" + new string('c', 40), ["value"] = "0x1", ["input"] = "0x", ["chainId"] = Hex(ChainId) };
+            if (mined) _transactions[hash]!["mined"] = true;
             return hash;
         }
+
+        internal void Mine(string hash) => _transactions[hash]["mined"] = true;
 
         internal string MineOwn(byte[] wire)
         {

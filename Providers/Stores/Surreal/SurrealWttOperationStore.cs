@@ -237,8 +237,9 @@ public sealed partial class SurrealWttOperationStore(ISurrealExecutor executor, 
     internal static WttOperationIntent Intent(WttOperation operation)
         => JsonSerializer.Deserialize<WttOperationIntent>(operation.OwnerIntentJson ?? operation.IntentJson)!;
 
+    /// <summary>The workflow binding that owns signing; none once the owner took the operation over.</summary>
     internal static WttActionBinding? Action(WttOperation operation)
-        => WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash);
+        => operation.OwnerIntentJson is null ? WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash) : null;
 
     private static bool ValidOffer(WttOffer offer)
         => offer is not null && Guid.TryParseExact(offer.Id, "N", out var id) && id != Guid.Empty

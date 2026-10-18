@@ -30,6 +30,24 @@ internal static class WttSigningAuthorityFence
             _ => null,
         };
 
+    /// <summary>
+    /// RV-L5-07: the inverse of <c>ActionExecutionFence</c> for an owner takeover; throws the journal conflict while the run is live
+    /// and its node still executes the admitted frozen input, i.e. while the workflow could still sign.
+    /// </summary>
+    internal static IReadOnlyList<SurrealQuery> ActionStopped(WttActionBinding action) =>
+    [
+        // raw: the run/execution liveness read and the takeover CAS on wtt_operation commit in one transaction.
+        SurrealQuery.Of("LET $_wtt_takeover_status = (SELECT VALUE status FROM type::record('action_run', $_wtt_takeover_run))[0]")
+            .WithParam("_wtt_takeover_run", action.RunId),
+        SurrealQuery.Of("""
+            LET $_wtt_takeover_live = (SELECT VALUE id FROM action_node_execution
+                WHERE run_id = type::record('action_run', $_wtt_takeover_run) AND node_id = type::record('action_node', $_wtt_takeover_node)
+                    AND state = 'Running' AND crypto::sha256(frozen_input) = $_wtt_takeover_hash)
+            """).WithParam("_wtt_takeover_run", action.RunId).WithParam("_wtt_takeover_node", action.NodeId)
+            .WithParam("_wtt_takeover_hash", action.IntentHash),
+        SurrealQuery.Of("IF $_wtt_takeover_status INSIDE ['Running', 'AwaitingReconciliation'] AND array::len($_wtt_takeover_live) > 0 { THROW 'WTT_JOURNAL_CONFLICT' }"),
+    ];
+
     private static IReadOnlyList<SurrealQuery>? Signing(WttOperationIntent intent, WttSigningAuthority owner, string chain,
         WttStageAuthority authority, string scope, string prefix, bool directOwnerOnly, WttActionBinding? action)
     {

@@ -75,7 +75,7 @@ public partial class AlgorandProvider : IClientSignedTransferModule
 
     /// <inheritdoc/>
     public async Task<AZOAResult<ClientSigningObservation>> ObserveClientSignedTransferAsync(ClientSigningPlan plan, string? transactionId,
-        CancellationToken ct)
+        string? evidenceJson, CancellationToken ct)
     {
         var planned = plan.PredictedTransactionId ?? string.Empty;
         if (transactionId is not null && transactionId != planned)
