@@ -209,19 +209,9 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
-            if (AZOA.WebAPI.Core.AzoaClaims.IsChildCredential(principal))
-            {
-                // D-5: allowlisted endpoint + scope + live consent + active issuing tenant; see Services/Consent/AGENTS.md.
-                var childGate = ActivatorUtilities.CreateInstance<AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate>(
-                    context.HttpContext.RequestServices);
-                var childRejection = await childGate.RejectAsync(
-                    principal!, context.HttpContext.GetEndpoint(), context.HttpContext.RequestAborted);
-                if (childRejection is not null)
-                {
-                    context.Fail(childRejection);
-                    return;
-                }
-            }
+            // D-5: allowlisted endpoint + scope + live consent/role + active issuing tenant and key; see Services/Consent/AGENTS.md.
+            if (!await AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate.AdmitAsync(context))
+                return;
 
             if (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(principal))
             {
@@ -604,50 +594,11 @@ builder.Services.AddAuthorization(o =>
                 ? ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.TenantProvision)
                 : ctx.User.FindFirst(AZOA.WebAPI.Core.AzoaClaims.TokenUse)?.Value == AZOA.WebAPI.Core.AzoaClaims.TokenUseLogin));
     });
-    // DappDevelop gates authoring writes; DappManage gates lifecycle writes.
-    // API keys inherit only the owner's current dApp role and, when scoped, must
-    // also carry the matching explicit dapp capability.
-    o.AddPolicy("DappDevelop", p =>
-        p.RequireAssertion(ctx =>
-        {
-            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
-            var isApiKey = string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase);
-
-            // Not an API key (i.e. a JWT identity) → must prove a dapp capability.
-            if (!isApiKey)
-                return ctx.User.HasDappDevelopAccess();
-
-            // CSV was non-empty but every token was dropped as forbidden (all-forbidden
-            // scope list) → must NOT be treated as legacy full-access. Deny.
-            if (string.Equals(ctx.User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            // Genuinely-empty-CSV key emits no scope claims → legacy full-access → allowed.
-            if (ctx.User.GetScopes().Count == 0)
-                return ctx.User.HasDappDeveloperRole();
-
-            // Scoped key → must explicitly carry the dapp-developer capability.
-            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappDevelop)
-                && ctx.User.HasDappDeveloperRole();
-        }));
-    o.AddPolicy("DappManage", p =>
-        p.RequireAssertion(ctx =>
-        {
-            var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
-            var isApiKey = string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase);
-
-            if (!isApiKey)
-                return ctx.User.HasDappManageAccess();
-
-            if (string.Equals(ctx.User.FindFirst("ScopesRestricted")?.Value, "true", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            if (ctx.User.GetScopes().Count == 0)
-                return ctx.User.HasDappManagerRole();
-
-            return ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.DappManage)
-                && ctx.User.HasDappManagerRole();
-        }));
+    // DappDevelop gates authoring writes; DappManage gates lifecycle writes. Both require the
+    // caller's live dApp role; a scope alone never admits (child tokens: store-loaded role stamped by
+    // DelegatedChildCredentialGate). See Helpers/AGENTS.md §Role-bound dApp policies.
+    o.AddPolicy("DappDevelop", p => p.RequireAssertion(ctx => ctx.User.HasDappDevelopAccess()));
+    o.AddPolicy("DappManage", p => p.RequireAssertion(ctx => ctx.User.HasDappManageAccess()));
     o.AddPolicy("DappRoleAssignment", p =>
     {
         p.RequireAuthenticatedUser();
@@ -1275,7 +1226,7 @@ builder.Services.AddScoped<WttStageKeyReadiness>();
 builder.Services.AddSingleton<WttStageKeyReadinessState>();
 builder.Services.AddHostedService<WttStageKeyReadinessWorker>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWttRecipientDirectory, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttRecipientDirectory>();
-// Replaced in place by the wallet ownership challenge's persisted proof (L4); fail-closed until then.
+// The wallet ownership challenge's persisted proof (L4, Services/Wormhole/WttRecipientOwnership.cs).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Wtt.IWalletOwnershipProof, WalletOwnershipProofAdapter>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttPreparationStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttPreparationStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWttBodyClaimStore, AZOA.WebAPI.Providers.Stores.Surreal.SurrealWttBodyClaimStore>();
@@ -1500,6 +1451,8 @@ builder.Services.AddTransient<AlgorandProvider>(sp => new AlgorandProvider(
     // D9: named chain RPC clients (ChainRpcHttp.ClientName) so hosts and fixtures can supply handlers.
     httpClientFactory: sp.GetRequiredService<IHttpClientFactory>()));
 builder.Services.AddTransient<SolanaProvider>();
+// RV-L5-10: named chain RPC clients without URI request logging (path-embedded provider tokens).
+AZOA.WebAPI.Providers.Blockchain.ChainRpcHttp.AddChainRpcClients(builder.Services);
 // Ethereum: a BARE AddTransient on purpose. Constructor selection then picks the 4-arg
 // overload whose every parameter is a root-resolvable singleton (config, logger, signer
 // factory, scope factory), so the value path gets a real signer. A factory lambda would
@@ -1785,10 +1738,10 @@ builder.Services.AddScoped<
 // because every one of these extensions VERIFIES its collaborators and throws at boot instead
 // of registering something that cannot work:
 //   AddFiatOnRamp             needs ISurrealExecutor, IAllocationManager, IPlatformTokenGenesis
-//                             and IRealValueKycGate (registered ~line 1599).
-//   AddOnRampValueRateSource  needs AddFiatOnRamp AND AddValueRateSources (~line 1539).
+//                             and IRealValueKycGate (the single registration above).
+//   AddOnRampValueRateSource  needs AddFiatOnRamp AND AddValueRateSources (above).
 //   AddFiatReversalPipeline   needs the on-ramp lot ledger, the reserve, the hold primitive,
-//                             the idempotency store, ISagaCoordinator (~line 1640), the
+//                             the idempotency store, ISagaCoordinator (above), the
 //                             provider factory, IWalletStore and the named Stripe client.
 //   AddReversalRiskValueGate  needs AddFiatReversalPipeline AND the D46 gate it wraps.
 // Ordering inside the block is therefore load-bearing and is asserted by those guards.

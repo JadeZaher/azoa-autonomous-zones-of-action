@@ -78,8 +78,8 @@ public sealed class KybEnforcementFlowTests(HttpFlowWebApplicationFactory factor
         switch (state)
         {
             case "expired": await ExpireKybAsync(tenantId); break;
-            case "rejected": await WriteAsync(SurrealWriter.UpdateOnly<KybVerification>(row).Set(value => value.Status, "REJECTED").Build()); break;
-            case "stale-authority": await WriteAsync(SurrealWriter.UpdateOnly<KybVerification>(row).Set(value => value.AuthorityRevision, "previous-config").Build()); break;
+            case "rejected": await WriteAsync(SurrealWriter.UpdateOnly<KybVerification>(row).Where(seed => true).Set(value => value.Status, "REJECTED").Build()); break;
+            case "stale-authority": await WriteAsync(SurrealWriter.UpdateOnly<KybVerification>(row).Where(seed => true).Set(value => value.AuthorityRevision, "previous-config").Build()); break;
         }
 
         using var scope = Factory.Services.CreateScope();
@@ -127,7 +127,7 @@ public sealed class KybEnforcementFlowTests(HttpFlowWebApplicationFactory factor
     }
 
     private Task ExpireKybAsync(Guid tenantId)
-        => WriteAsync(SurrealWriter.UpdateOnly<KybVerification>(tenantId.ToString("N"))
+        => WriteAsync(SurrealWriter.UpdateOnly<KybVerification>(tenantId.ToString("N")).Where(seed => true)
             .Set(value => value.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(-1)).Build());
 
     private async Task<AZOAResult<bool>> ConsentAsync(SigningContext signing)

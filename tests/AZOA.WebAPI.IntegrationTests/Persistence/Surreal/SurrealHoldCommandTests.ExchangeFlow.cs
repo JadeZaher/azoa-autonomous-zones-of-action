@@ -190,7 +190,7 @@ public sealed partial class SurrealHoldCommandTests
         if (transferSign)
         {
             string[] scopes = [AzoaScopes.SwapSign, AzoaScopes.TransferSign];
-            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Set(row => row.Scopes, scopes).Build());
+            await Execute(SurrealWriter.UpdateOnly<ApiKey>(intent.ApiKeyId.ToString("N")).Where(seed => true).Set(row => row.Scopes, scopes).Build());
             credential = credential with { Scopes = scopes, StoredApiKeyScopes = scopes };
         }
         await SeedTreasuryAsync();

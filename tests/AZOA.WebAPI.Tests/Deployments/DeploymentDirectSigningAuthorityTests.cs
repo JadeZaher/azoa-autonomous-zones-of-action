@@ -98,6 +98,21 @@ public sealed class DeploymentDirectSigningAuthorityTests
     }
 
     [Fact]
+    public async Task Operator_cannot_close_an_action_linked_operation_whose_node_would_take_its_failure_edge()
+    {
+        var harness = await Harness.Create();
+        var parked = await harness.ParkAsync();
+        harness.Store.Edit(parked.Id, row => row.ActionRunId = Guid.NewGuid().ToString("N"));
+
+        var closed = await harness.Service.ResolveNeedsOperatorAsync(parked.Id, Guid.NewGuid(),
+            new DeploymentOperatorResolution(parked.Version, "CloseUnresolvable", "RPC history pruned; tx unknown", AcknowledgeNoFurtherEffect: true));
+
+        closed.IsError.Should().BeTrue();
+        (await harness.Service.ListNeedsOperatorAsync(10)).Should().ContainSingle(row => row.OperationId == parked.Id,
+            "the row stays parked for re-observation and the action's reconciliation");
+    }
+
+    [Fact]
     public async Task Operator_close_defers_to_a_definitive_chain_answer()
     {
         var harness = await Harness.Create();

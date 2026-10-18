@@ -33,7 +33,22 @@ public sealed class WttActionResolver(WttLifecycleService lifecycle, WttRecovery
     public static IReadOnlyList<string> SigningScopes { get; } = [AzoaScopes.WttSourceSign, AzoaScopes.WttTargetSign];
 
     /// <inheritdoc/>
-    public bool Applies(AZOA.WebAPI.Models.Actions.ActionNode node) => ReadConfig(node.Config) is not null;
+    /// <remarks>X-8: any <c>wtt</c> property selects this route, so a malformed body is refused here, never run on the legacy bridge.</remarks>
+    public bool Applies(AZOA.WebAPI.Models.Actions.ActionNode node) => Selects(node.Config);
+
+    /// <summary>True when the node config carries a non-null <c>wtt</c> property of any shape (well-formed or not).</summary>
+    public static bool Selects(string? nodeConfigJson)
+    {
+        if (string.IsNullOrWhiteSpace(nodeConfigJson)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(nodeConfigJson);
+            return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.EnumerateObject()
+                .Any(property => string.Equals(property.Name, ConfigProperty, StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined));
+        }
+        catch (JsonException) { return false; }
+    }
 
     /// <inheritdoc/>
     IReadOnlyList<string> IActionWttRoute.SigningScopes => SigningScopes;
@@ -114,6 +129,8 @@ public sealed class WttActionResolver(WttLifecycleService lifecycle, WttRecovery
         var row = await operations.GetAsync(operationId, ct);
         if (row is null)
         {
+            if (!modules.AdmissionEnabled)
+                return Observation(ActionExternalOperationStatus.Failed, reference, WttModuleResolver.DisabledMessage, config.Source.ChainType);
             var admitted = await AdmitAsync(witness, reference, config, ct);
             if (admitted is not null) return admitted;
             row = await operations.GetAsync(operationId, ct);

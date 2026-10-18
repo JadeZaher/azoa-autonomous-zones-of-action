@@ -73,7 +73,7 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
         var (user, client) = await PersonAsync();
         await BeginAsync(client);
         var attempt = await SubmissionAsync(user);
-        await WriteAsync(SurrealWriter.UpdateOnly<KycSubmission>(attempt.Id)
+        await WriteAsync(SurrealWriter.UpdateOnly<KycSubmission>(attempt.Id).Where(seed => true)
             .Set(row => row.ExpiresAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-1)).Build());
         var vendorSession = Flow.Identomat.LatestIdentitySessionFor(user)!;
         vendorSession.Verdict = IdentomatVerdict.Approved;
@@ -113,7 +113,7 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
         (await GateAsync(user)).Should().BeFalse();
 
         Flow.Identomat.LatestIdentitySessionFor(user)!.Verdict = IdentomatVerdict.Approved;
-        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(attempt.Id)
+        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(attempt.Id).Where(seed => true)
             .Unset(row => row.NextPollAt).Build());
         await SweepAsync();
         (await EventuallyStatusAsync(client, KycStatus.APPROVED)).Should().Be(KycStatus.APPROVED);

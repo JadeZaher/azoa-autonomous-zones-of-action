@@ -58,9 +58,18 @@ public sealed partial class OffRampService
             : "No reserved payout balance funds this cash-out. Reconcile before sending.";
     }
 
+    /// <summary>Refusal when a node-funded exit would pay more per unit than the units were sold for.</summary>
+    public const string SoldPriceCapRefusal =
+        "Some of these units were bought at an organisation's price and cannot be cashed out above it here.";
+
+    /// <summary>Refusal when the cross-scope floor price cannot be established (fail closed).</summary>
+    public const string SoldPriceUnknownRefusal =
+        "The price these units were sold at could not be established, so they cannot be cashed out here yet. Nothing was sent.";
+
     /// <summary>
-    /// Owner decision (c): a node-funded cash-out may not pay more per unit than the tenant price the
-    /// consumed lots were sold at. Null when the cap holds; the refusal otherwise.
+    /// Owner decision (c): a node-funded cash-out may not pay more per unit than the units were sold for. Lots of a
+    /// tenant scope cap at their own rate; units of no matured lot of known scope (transferred-in, earned, legacy
+    /// null scope) cap at the cross-scope floor. Null when the cap holds; see AGENTS.md §arbitrage-cap.
     /// </summary>
     private async Task<string?> ExceedsSoldPriceAsync(
         Guid subjectUserId, BigInteger quantity, OffRampContext context, CancellationToken ct)
@@ -71,17 +80,59 @@ public sealed partial class OffRampService
         var matching = lots.Result!.Where(lot => lot.Environment == _fiat.ActiveEnvironment.Name
             && lot.ChainNetwork == _providerFactory.DefaultNetwork.ToString()).ToList();
         var plan = OffRampAging.PlanConsumption(matching, quantity, _clock.GetUtcNow());
+        var needsFloor = plan.UnagedBaseUnits > BigInteger.Zero;
         foreach (var draw in plan.Draws)
         {
             var lot = matching.FirstOrDefault(candidate => candidate.Id == draw.LotId);
-            if (lot?.PricingScopeKey is not { } scope || PriceScheduleScope.IsNode(scope))
+            if (lot?.PricingScopeKey is not { } scope)
+            {
+                // H2: a legacy lot of unknown scope is capped like a lot-less unit, never skipped.
+                needsFloor = true;
+                continue;
+            }
+            if (PriceScheduleScope.IsNode(scope))
                 continue;
             // A lower units-per-minor-unit rate pays more money per unit than the lot was sold for.
             if (!PriceScheduleMath.TryParseRate(lot.UnitsPerMinorUnit, out var soldRate, out _)
                 || context.UnitsPerMinorUnit < soldRate)
-                return "Some of these units were bought at an organisation's price and cannot be cashed out above it here.";
+                return SoldPriceCapRefusal;
         }
 
-        return null;
+        if (!needsFloor)
+            return null;
+        var floor = await CrossScopeFloorAsync(context, ct);
+        if (!floor.Known)
+            return SoldPriceUnknownRefusal;
+        return floor.Rate is { } floorRate && context.UnitsPerMinorUnit < floorRate ? SoldPriceCapRefusal : null;
+    }
+
+    /// <summary>
+    /// The highest units-per-minor-unit rate (lowest money per unit) any non-node scope sold this unit at within the
+    /// lot maturity window. Rate null = nothing was sold cross-scope there, so no cheaper price exists to arbitrage.
+    /// </summary>
+    private async Task<(bool Known, decimal? Rate)> CrossScopeFloorAsync(OffRampContext context, CancellationToken ct)
+    {
+        var window = TimeSpan.FromDays(_fiat.ChargebackWindowDays <= 0 ? 120 : _fiat.ChargebackWindowDays);
+        var sold = await _lots.ListSoldSinceAsync(_clock.GetUtcNow() - window, ct);
+        if (sold.IsError || sold.Result is null)
+            return (false, null);
+
+        decimal? floor = null;
+        foreach (var lot in sold.Result)
+        {
+            if (lot.Environment != _fiat.ActiveEnvironment.Name || lot.ChainNetwork != _providerFactory.DefaultNetwork.ToString()
+                || !string.Equals(lot.ChainType, context.ChainType, StringComparison.OrdinalIgnoreCase)
+                || lot.AssetId != context.AssetId
+                || !string.Equals(lot.CurrencyCode, context.CurrencyCode, StringComparison.OrdinalIgnoreCase)
+                || (lot.PricingScopeKey is { } scope && PriceScheduleScope.IsNode(scope)))
+                continue;
+            // An unreadable sold price is an unknown price: fail closed rather than skip it.
+            if (!PriceScheduleMath.TryParseRate(lot.UnitsPerMinorUnit, out var rate, out _))
+                return (false, null);
+            if (floor is null || rate > floor)
+                floor = rate;
+        }
+
+        return (true, floor);
     }
 }

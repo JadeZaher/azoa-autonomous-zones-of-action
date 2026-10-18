@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { AzoaApiClient } from "../../src/api/client.js";
-import { isKybRequired } from "../../src/core/errors.js";
+import { isKybRequired, isNftStageCostsChanged } from "../../src/core/errors.js";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -73,4 +73,43 @@ it("keeps the server refusal code so a page can explain KYB_REQUIRED", async () 
   fetchMock.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ isError: true, message: "Forbidden." }) });
   const other = await api().getTenantPayoutBalance();
   expect(!other.ok && isKybRequired(other.error)).toBe(false);
+});
+
+// Real server bodies (not the `{isError:false,result:{}}` default): bare-vs-envelope drift must go red here.
+it.each([
+  ["operator ethereum list (bare IReadOnlyList)", (c: AzoaApiClient) => c.listEthereumPreparations("Devnet", true),
+    [{ id: "prep-1", network: "Devnet", sender: "0x" + "a".repeat(40), state: "Prepared", nonce: "7", transactionId: null, preparationKey: "k", updatedAt: "2026-10-17T00:00:00Z" }]],
+  ["user ethereum list (bare IReadOnlyList)", (c: AzoaApiClient) => c.listEthereumPreparations("Devnet"), []],
+  ["wallet identity migration (bare View)", (c: AzoaApiClient) => c.getWalletIdentityMigration(),
+    { status: "Blocked", version: 3, conflicts: [{ userId: "u1", expectedIdentity: "algorand:ADDR", problem: "Claimed by two accounts" }] }],
+])("%s resolves to the exact server body", async (_name, call, body) => {
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => body });
+  const result = await call(api());
+  expect(result.ok && result.value).toEqual(body);
+});
+
+it("clears a wallet identity conflict as the server's AZOAResult<bool>", async () => {
+  fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ isError: false, message: "Success", result: true }) });
+  const result = await api().clearWalletIdentityConflict({ version: 3, userId: "u1", expectedIdentity: "algorand:ADDR", reason: "Stale binding confirmed" });
+  expect(result.ok && result.value).toBe(true);
+  expect(fetchMock.mock.calls[0][0]).toBe(`${base}/api/operator/wallet-identities/clear-conflicting-binding`);
+});
+
+it("quotes and accepts recipient-stage NFT costs on the F-M11 routes with the exact reviewed stage", async () => {
+  const c = api();
+  const stage = { requestId: uuid, expectedVersion: 4, state: "Preparing" as const, stage: "Transfer", generation: 0 };
+  await c.quoteNftStageCosts(hex32, stage);
+  expect(fetchMock.mock.calls[0][0]).toBe(`${base}/api/nft-stage-costs/${hex32}/quote`);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(stage);
+  const costs = { quoteId: hex32, quoteHash: hex64, limits: { networkFee: "5000", retainedRent: "2039280", protocolLevy: "0" } };
+  await c.acceptNftStageCosts(hex32, { stage, costs });
+  expect(fetchMock.mock.calls[1][0]).toBe(`${base}/api/nft-stage-costs/${hex32}/accept`);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ stage, costs });
+  await expect(c.quoteNftStageCosts("../x", stage)).rejects.toThrow();
+});
+
+it("recognises the changed-costs refusal so the payer can re-quote", async () => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ isError: true, code: "NFT_STAGE_COSTS_CHANGED", message: "NFT stage costs changed since acceptance; review and accept a new quote." }) });
+  const result = await api().refreshNftLifecycle(hex32);
+  expect(!result.ok && isNftStageCostsChanged(result.error)).toBe(true);
 });

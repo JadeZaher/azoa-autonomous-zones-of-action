@@ -1,46 +1,46 @@
 [
   {
-    "store": "SurrealActionWebhookDeliveryStore",
+    "store": "IActionWebhookDeliveryStore",
     "method": "ListAsync",
     "tenantCheck": "typed Where tenant_id = caller tenant link"
   },
   {
-    "store": "SurrealActionWebhookDeliveryStore",
+    "store": "IActionWebhookDeliveryStore",
     "method": "GetAsync",
     "tenantCheck": "keyed read, row tenant must equal caller tenant else null"
   },
   {
-    "store": "SurrealActionWebhookDeliveryStore",
+    "store": "IActionWebhookDeliveryStore",
     "method": "RetryAsync",
     "tenantCheck": "row tenant must equal caller tenant; registration tenant = event tenant pinned in CAS; non-operator actor must be the tenant"
   },
   {
-    "store": "SurrealConsentWebhookDeliveryStore",
+    "store": "IConsentWebhookDeliveryStore",
     "method": "ListAsync",
     "tenantCheck": "typed Where tenant_id = caller tenant link"
   },
   {
-    "store": "SurrealConsentWebhookDeliveryStore",
+    "store": "IConsentWebhookDeliveryStore",
     "method": "GetAsync",
     "tenantCheck": "keyed read, row tenant must equal caller tenant else null"
   },
   {
-    "store": "SurrealConsentWebhookDeliveryStore",
+    "store": "IConsentWebhookDeliveryStore",
     "method": "RetryAsync",
     "tenantCheck": "row tenant must equal caller tenant; event tenant pinned in CAS; non-operator actor must be the tenant"
   },
   {
-    "store": "SurrealWebhookRegistrationStore",
+    "store": "IWebhookRegistrationStore",
     "method": "GetByTenantAsync",
     "tenantCheck": "keyed by tenant id"
   },
   {
-    "store": "SurrealWebhookRegistrationStore",
+    "store": "IWebhookRegistrationStore",
     "method": "MutateAsync",
     "tenantCheck": "registration row keyed and CAS-pinned to the bound tenant"
   },
   {
-    "store": "SurrealWebhookRegistrationStore",
+    "store": "IWebhookRegistrationStore",
     "method": "WithdrawAsync",
     "tenantCheck": "command identity keyed by actor + tenant"
   },
@@ -58,5 +58,100 @@
     "store": "SurrealGovernanceStore",
     "method": "FinalizeAsync",
     "tenantCheck": "tenant admin locked in transaction; ledger read scoped to proposal/definition/uniqueness scope"
+  },
+  {
+    "store": "IActionWebhookDeliveryStore",
+    "method": "ListCandidatesAsync",
+    "tenantCheck": "worker-only: ActionWebhookDeliveryWorker discovers due events; discovery authorizes no send claims by server-generated event id + version; no caller-supplied id reaches it"
+  },
+  {
+    "store": "IActionWebhookDeliveryStore",
+    "method": "TryClaimAsync",
+    "tenantCheck": "worker-only: ActionWebhookDeliveryWorker claims by server-generated event id + version; no caller-supplied id reaches it"
+  },
+  {
+    "store": "IActionWebhookDeliveryStore",
+    "method": "FinishAsync",
+    "tenantCheck": "worker-only: completes only the unexpired exact lease holder returned by TryClaimAsync"
+  },
+  {
+    "store": "IConsentWebhookDeliveryStore",
+    "method": "ListCandidatesAsync",
+    "tenantCheck": "worker-only: ConsentWebhookDeliveryWorker discovers due events; discovery authorizes no send claims by server-generated event id + version; no caller-supplied id reaches it"
+  },
+  {
+    "store": "IConsentWebhookDeliveryStore",
+    "method": "TryClaimAsync",
+    "tenantCheck": "worker-only: ConsentWebhookDeliveryWorker claims by server-generated event id + version; no caller-supplied id reaches it"
+  },
+  {
+    "store": "IConsentWebhookDeliveryStore",
+    "method": "FinishAsync",
+    "tenantCheck": "worker-only: completes only the unexpired exact lease holder returned by TryClaimAsync"
+  },
+  {
+    "store": "IWebhookRegistrationStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "internal: no production caller (WebhookRegistrationManagement uses MutateAsync/WithdrawAsync keyed by the claims tenant); a future caller must pass a claims-derived TenantId"
+  },
+  {
+    "store": "IAdminBootstrapStateStore",
+    "method": "GetAsync",
+    "tenantCheck": "node-level: the single reserved node-operator binding; read by the operator token hook, NodeOperatorManager, KycControlPlaneManager and UserManager to refuse the reserved identity"
+  },
+  {
+    "store": "IAdminBootstrapStateStore",
+    "method": "BindOnceAsync",
+    "tenantCheck": "worker-only: SeedAdminHostedService binds the configured initial operator once at boot; no request reaches it"
+  },
+  {
+    "store": "IAdminBootstrapStateStore",
+    "method": "RotateCredentialsAsync",
+    "tenantCheck": "worker-only: SeedAdminHostedService rotates the configured operator credential at boot (CAS on revision); no request reaches it"
+  },
+  {
+    "store": "INodeFeeScheduleStore",
+    "method": "UpdateScheduleWithAuditAsync",
+    "tenantCheck": "node-level: one node-wide row, no per-user or per-tenant data; writes only via the NodeFeeScheduleManager under the NodeGovern/Operator policies"
+  },
+  {
+    "store": "INodeFeeScheduleStore",
+    "method": "ListAuditAsync",
+    "tenantCheck": "node-level: node-wide fee audit (actor ids of governors only); operator and transparency reads"
+  },
+  {
+    "store": "INodeGovernanceStore",
+    "method": "UpdateParametersWithAuditAsync",
+    "tenantCheck": "node-level: one node-wide row, no per-user or per-tenant data; writes only via the NodeGovernanceManager under the NodeGovern/Operator policies"
+  },
+  {
+    "store": "INodeGovernanceStore",
+    "method": "ListAuditAsync",
+    "tenantCheck": "node-level: node-wide governance audit; operator and transparency reads"
+  },
+  {
+    "store": "INodeTreasuryStore",
+    "method": "UpdateDestinationWithAuditAsync",
+    "tenantCheck": "node-level: one node-wide row, no per-user or per-tenant data; writes only via the NodeTreasuryManager under the NodeGovern/Operator policies"
+  },
+  {
+    "store": "INodeTreasuryStore",
+    "method": "ListAuditAsync",
+    "tenantCheck": "node-level: node-wide treasury destination audit; operator and transparency reads"
+  },
+  {
+    "store": "INodeTransparencyStore",
+    "method": "ListFeeAuditAsync",
+    "tenantCheck": "node-level: public transparency read of node-wide fee history (NodeTransparencyController); no tenant or user rows"
+  },
+  {
+    "store": "INodeTransparencyStore",
+    "method": "ListGovernanceAuditAsync",
+    "tenantCheck": "node-level: public transparency read of node-wide governance history; no tenant or user rows"
+  },
+  {
+    "store": "INodeTransparencyStore",
+    "method": "ListTreasuryAuditAsync",
+    "tenantCheck": "node-level: public transparency read of node-wide treasury history; no tenant or user rows"
   }
 ]

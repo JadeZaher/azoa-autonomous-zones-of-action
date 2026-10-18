@@ -66,7 +66,7 @@ public sealed class SurrealEthereumDexAllowanceTests : IAsyncLifetime
             ExternalExposedAt = exposed ? DateTimeOffset.UtcNow : null,
             CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
         });
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>("first").Set(row => row.State, "Cancelled").Build())).EnsureAllOk();
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>("first").Where(seed => true).Set(row => row.State, "Cancelled").Build())).EnsureAllOk();
         var next = await _store.ClaimAsync(Candidate("second"));
         (next is not null).Should().Be(replaceable);
         (await _store.GetAsync(first.Id))!.OperationId.Should().Be(replaceable ? "second" : "first");
@@ -168,16 +168,16 @@ public sealed class SurrealEthereumDexAllowanceTests : IAsyncLifetime
             PreparedJson = "{}", AuthorizedAt = DateTimeOffset.UtcNow, ObservationJson = Observation("Pending"),
             CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
         });
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>("first")
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>("first").Where(seed => true)
             .Set(row => row.CurrentStageId, "settled").Set(row => row.State, "Preparing").Build())).EnsureAllOk();
 
         (await _store.ClaimAsync(Candidate("second"))).Should().BeNull("a pending holder keeps the allowance lane");
         (await _store.GetAsync(first.Id))!.OperationId.Should().Be("first");
 
         // The holder's eager release is lost (never called); only the contending claim can recover it from the saved proof.
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapStageRecord>("settled")
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapStageRecord>("settled").Where(seed => true)
             .Set(row => row.State, "Confirmed").Set(row => row.ObservationJson, Observation("Confirmed")).Build())).EnsureAllOk();
-        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>("first")
+        (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<SwapOperationRecord>("first").Where(seed => true)
             .Set(row => row.State, "Completed").Build())).EnsureAllOk();
 
         var next = await _store.ClaimAsync(Candidate("second"));

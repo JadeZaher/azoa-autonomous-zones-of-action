@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
 
@@ -15,9 +16,17 @@ internal static partial class GateInventory
     {
         public string? Text(string name)
             => Value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
+
+        public IReadOnlyList<string>? Strings(string name)
+            => Value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Array
+                ? property.EnumerateArray().Select(item => item.GetString() ?? "").ToArray() : null;
     }
 
-    internal sealed record RouteSurface(string Controller, string Action, string Verb, string Template, MethodInfo Method);
+    internal sealed record RouteSurface(string Controller, string Action, string Verb, string Template, MethodInfo Method)
+    {
+        /// <summary>Row key: verb, normalized template and controller action (overloads and multi-template actions stay distinct).</summary>
+        public string Key => RouteKey(Verb, Template, Controller, Action);
+    }
 
     internal sealed record StoreSurface(string Store, string Method, MethodInfo Info);
 
@@ -39,16 +48,48 @@ internal static partial class GateInventory
         return rows;
     }
 
-    /// <summary>Every public controller action with its HTTP verb and combined route template.</summary>
-    internal static IReadOnlyList<RouteSurface> Routes()
+    /// <summary>Every public controller action method (verb-less ones included, so a <c>[Route]</c>-only all-verb action is visible).</summary>
+    internal static IReadOnlyList<(Type Controller, MethodInfo Method)> Actions()
         => Api.GetTypes()
-            .Where(type => type is { IsClass: true, IsAbstract: false, IsPublic: true } && typeof(ControllerBase).IsAssignableFrom(type))
+            .Where(type => type is { IsClass: true, IsAbstract: false, IsPublic: true } && typeof(ControllerBase).IsAssignableFrom(type)
+                && type.GetCustomAttribute<NonControllerAttribute>() is null)
             .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
-                .SelectMany(method => method.GetCustomAttributes<HttpMethodAttribute>()
-                    .SelectMany(attribute => Templates(method, attribute)
-                        .SelectMany(template => Prefixes(type).Select(prefix => Combine(prefix, template, type.Name)))
-                        .SelectMany(route => attribute.HttpMethods.Select(verb => new RouteSurface(ControllerName(type.Name), method.Name, verb, route, method))))))
+                .Where(method => !method.IsSpecialName && method.GetCustomAttribute<NonActionAttribute>() is null)
+                .Select(method => (type, method)))
             .ToArray();
+
+    /// <summary>Every public controller action with its HTTP verb(s) and combined route template(s).</summary>
+    internal static IReadOnlyList<RouteSurface> Routes()
+        => Actions().SelectMany(item => item.Method.GetCustomAttributes().OfType<IActionHttpMethodProvider>()
+                .SelectMany(provider => Templates(item.Method, provider)
+                    .SelectMany(template => Prefixes(item.Controller).Select(prefix => Combine(prefix, template, item.Controller.Name)))
+                    .SelectMany(route => provider.HttpMethods.Select(verb =>
+                        new RouteSurface(ControllerName(item.Controller.Name), item.Method.Name, verb.ToUpperInvariant(), route, item.Method)))))
+            .ToArray();
+
+    /// <summary>The authorization an action actually carries: class and method <c>[Authorize]</c> policies ("authenticated" when no
+    /// policy is named), plus "anonymous" for <c>[AllowAnonymous]</c>, or "none" when it carries neither.</summary>
+    internal static IReadOnlyList<string> Policies(MethodInfo method)
+    {
+        var attributes = method.DeclaringType!.GetCustomAttributes(inherit: true).Concat(method.GetCustomAttributes(inherit: true)).ToArray();
+        var policies = attributes.OfType<AuthorizeAttribute>()
+            .Select(attribute => string.IsNullOrWhiteSpace(attribute.Policy) ? "authenticated" : attribute.Policy!)
+            .Concat(attributes.OfType<AllowAnonymousAttribute>().Select(_ => "anonymous"))
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        return policies.Length == 0 ? ["none"] : policies;
+    }
+
+    /// <summary>Row key from a verb, a template and a controller action.</summary>
+    internal static string RouteKey(string? verb, string? template, string? controller, string? action)
+        => $"{verb?.Trim().ToUpperInvariant()} /{NormalizeRoute(template)} ({ControllerName(controller)}.{action})";
+
+    /// <summary>Splits a row route <c>"VERB /template"</c> into its verb and template.</summary>
+    internal static (string? Verb, string Template) SplitRoute(string? route)
+    {
+        var text = (route ?? "").Trim();
+        var space = text.IndexOf(' ');
+        return space > 0 && text[..space].All(char.IsLetter) ? (text[..space], text[(space + 1)..]) : (null, text);
+    }
 
     private static IEnumerable<string?> Prefixes(Type controller)
     {
@@ -56,28 +97,32 @@ internal static partial class GateInventory
         return templates.Length == 0 ? [null] : templates;
     }
 
-    private static IEnumerable<string?> Templates(MethodInfo method, HttpMethodAttribute attribute)
+    private static IEnumerable<string?> Templates(MethodInfo method, IActionHttpMethodProvider provider)
     {
-        if (attribute.Template is not null) return [attribute.Template];
+        if (provider is IRouteTemplateProvider { Template: not null } templated) return [templated.Template];
         var routes = method.GetCustomAttributes<RouteAttribute>().Select(route => (string?)route.Template).ToArray();
         return routes.Length == 0 ? [null] : routes;
     }
 
+    /// <summary>Store contracts the gate classifies: every public interface named <c>*Store</c> or <c>*Ledger</c> in the API assembly,
+    /// plus any concrete <c>Surreal*Store</c>/<c>*Ledger</c> class that implements none of them (X-5).</summary>
+    internal static IReadOnlyList<Type> StoreContracts()
+    {
+        var interfaces = Api.GetTypes().Where(type => type is { IsInterface: true, IsPublic: true } && IsStoreName(type.Name)).ToArray();
+        var concrete = Api.GetTypes().Where(type => type is { IsClass: true, IsAbstract: false, IsPublic: true }
+            && type.Name.StartsWith("Surreal", StringComparison.Ordinal) && IsStoreName(type.Name)
+            && !type.GetInterfaces().Any(interfaces.Contains)).ToArray();
+        return interfaces.Concat(concrete).ToArray();
+    }
+
     /// <summary>Owned-resource store methods: an ownership-named parameter, or an owned row in a parameter or the result.</summary>
     internal static IReadOnlyList<StoreSurface> OwnedStoreMethods()
-    {
-        var interfaces = Api.GetTypes().Where(type => type is { IsInterface: true, IsPublic: true }
-            && type.Namespace == "AZOA.WebAPI.Interfaces.Stores").ToArray();
-        var concrete = Api.GetTypes().Where(type => type is { IsClass: true, IsAbstract: false, IsPublic: true }
-            && type.Name.StartsWith("Surreal", StringComparison.Ordinal) && type.Name.EndsWith("Store", StringComparison.Ordinal)
-            && !type.GetInterfaces().Any(contract => contract.Namespace == "AZOA.WebAPI.Interfaces.Stores")).ToArray();
-        return interfaces.Concat(concrete)
+        => StoreContracts()
             .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
                 .Where(method => !method.IsSpecialName && IsOwnedResource(method))
                 .Select(method => new StoreSurface(type.Name, method.Name, method)))
             .DistinctBy(surface => (surface.Store, surface.Method))
             .ToArray();
-    }
 
     /// <summary>Normalizes a controller name: <c>FooController</c> and <c>Foo</c> are the same key.</summary>
     internal static string ControllerName(string? name)
@@ -86,10 +131,8 @@ internal static partial class GateInventory
     /// <summary>Lowercase template without verb, leading slash or route constraints.</summary>
     internal static string NormalizeRoute(string? route)
     {
-        var text = (route ?? "").Trim();
-        var space = text.IndexOf(' ');
-        if (space > 0 && text[..space].All(char.IsLetter)) text = text[(space + 1)..].Trim();
-        return ConstraintRegex().Replace(text.Trim('/').ToLowerInvariant(), "{$1}");
+        var text = SplitRoute(route).Template;
+        return ConstraintRegex().Replace(text.Trim().Trim('/').ToLowerInvariant(), "{$1}");
     }
 
     internal static string RepoRoot()
@@ -102,6 +145,9 @@ internal static partial class GateInventory
         }
         throw new InvalidOperationException("Could not locate the AZOA repository root.");
     }
+
+    private static bool IsStoreName(string name)
+        => name.EndsWith("Store", StringComparison.Ordinal) || name.EndsWith("Ledger", StringComparison.Ordinal);
 
     private static readonly HashSet<string> OwnershipProperties = new(StringComparer.Ordinal)
     {

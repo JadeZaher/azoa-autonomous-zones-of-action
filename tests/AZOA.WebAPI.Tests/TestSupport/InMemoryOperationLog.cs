@@ -61,7 +61,7 @@ internal sealed class InMemoryOperationLog : IBlockchainOperationStore, IClientS
     {
         lock (_sync)
             return Task.FromResult<IReadOnlyList<Guid>>(_rows.Values
-                .Where(row => row.Status == OperationStatus.AwaitingSignature && row.CreatedDate < awaitingBefore.UtcDateTime
+                .Where(row => row.Status is (OperationStatus.AwaitingSignature or OperationStatus.PendingConfirmation) && row.CreatedDate < awaitingBefore.UtcDateTime
                     || row.Status == ClientSigningStatus.NeedsOperator)
                 .OrderBy(row => row.CreatedDate).Take(limit).Select(row => row.Id).ToArray());
     }

@@ -117,10 +117,23 @@ Neither ever signs, quotes a new economic effect or creates a generation.
   records `ResumeState` and restores it when the cleanup stage resolves, so a settled transfer stays
   settled.
 
+## Activation and the value gate
+
+`Wtt:Enabled` (X-6) is the production switch: absent, blank or malformed means off (base `appsettings.json` ships
+`false`; Development and IntegrationTest set `true`; a deployed Railway host also needs the module-activation
+acknowledgement, see `Providers/Blockchain/AGENTS.md` §module activation). It gates only new work: direct quote and
+start, and workflow admission in `WttActionResolver` (a disabled switch fails the node before any quote). Admitted
+operations keep continuing and reconciling. It flips on per round-4 plan §8 gate 5.
+
+Every value-moving entry (start, continue, native output) consults the risk-hold-wrapped `IRealValueKycGate` for the
+credential's actor (tenant overload under a tenant credential): an unverified or reversal-paused account is refused before
+any admission, claim or send (X-2). Residual-return cleanup and cancellation stay open (they return value to the owner).
+
 ## Recipient rule
 
 A direct (owner) credential may name any recipient. Under a tenant credential (owner decision: the
-user's own wallets only, relayer fee `"0"`), the recipient must be one of the actor's own wallets on
+user's own wallets only, relayer fee `"0"`), and under a workflow run (the graph author chose the
+recipient while the runner's value moves: RV-L5-06), the recipient must be one of the actor's own wallets on
 the target chain: key custody actually held (`Platform` + `IKeyCustodyService.CanSignAsync`), or an
 `External` wallet whose ownership a verified signature challenge proved (`IWalletOwnershipProof`; the
 registered `NoWalletOwnershipProof` is fail-closed until L4's persisted proof flag replaces it in place).
@@ -149,8 +162,8 @@ continues with `AuthorizeSubmission`, reconciles finality/proof without signing,
 `Succeeded` with a `WttActionOutput` (Back binds its `ReturnOfOperationId` to the Bridge node's
 `operationId`), `Cancelled`, `Ambiguous` (NeedsOperator or lost authority) or `Pending`. A disabled or
 missing route module fails the node before any quote. A cancelled run leaves an unsent admitted
-operation inert (no effect); a sent one keeps reconciling. Graph authors choose the recipient; under a
-tenant run credential the recipient rule above still applies.
+operation inert (no effect); a sent one keeps reconciling. Graph authors choose the recipient, but the
+recipient rule above applies to every workflow run (RV-L5-06).
 
 ## Operation exits
 
@@ -178,6 +191,12 @@ tenant run credential the recipient rule above still applies.
   projection keeps the consented intent. New stages quote and sign under the owner intent's hash (stage
   rows keep the admitted `IntentHash` as journal identity; `IntentFor` replays each stage under the
   intent its quote bound). The tenant is locked out of further signing.
+- **Workflow-admitted operation after its run stops (RV-L5-07).** The same takeover applies to an action-bound
+  operation (with or without a tenant) under the same `Ready`/`Target` rules, once the admitting run can no longer
+  sign: the store write carries `WttSigningAuthorityFence.ActionStopped`, the inverse of `ActionExecutionFence` (throws
+  while the run is `Running`/`AwaitingReconciliation` and its node execution is still `Running` on the frozen input),
+  in the same transaction as the version CAS. After takeover the store's `Action(operation)` and the service's
+  `SigningActionOf` return no binding, so stages fence the owner's direct authority and the workflow node is refused.
 
 ## Guardian transport
 

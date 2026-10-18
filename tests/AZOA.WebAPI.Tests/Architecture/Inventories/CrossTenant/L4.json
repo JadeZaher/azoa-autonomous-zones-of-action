@@ -508,5 +508,50 @@
     "store": "SurrealConsentLifecycleStore",
     "method": "WithdrawAsync",
     "tenantCheck": "caller-checked: the calling manager/service compares the row owner/tenant to the authenticated actor/acting tenant"
+  },
+  {
+    "store": "IWalletOwnershipProofStore",
+    "method": "IsSignatureProvenAsync",
+    "tenantCheck": "query-pinned: true only for an External wallet owned by ownerUserId whose canonical address that same user holds the proof for"
+  },
+  {
+    "store": "IEcosystemStore",
+    "method": "GetByActionGraphBundleAsync",
+    "tenantCheck": "caller-checked: ActionGraphBundleManager loads it only after OwnershipRefusal(bundle, user); DeploymentService compares Ecosystem.UserId to the actor"
+  },
+  {
+    "store": "IEcosystemStore",
+    "method": "GetByIdAsync",
+    "tenantCheck": "internal: no production caller; a future caller must compare Ecosystem.UserId to the actor"
+  },
+  {
+    "store": "IEcosystemStore",
+    "method": "UpsertAsync",
+    "tenantCheck": "caller-checked: written only after the bundle ownership check, with UserId = the owner"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "GetAsync",
+    "tenantCheck": "caller-checked: ConsumerGovernanceService requires the proposal tenant to equal the acting tenant (and, to finalize, the actor); voting also needs a frozen-electorate claim"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "MembersAsync",
+    "tenantCheck": "query-scoped: filters by the tenant principal's id (TenantAuthority checked)"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "DecisionsAsync",
+    "tenantCheck": "caller-checked: proposal loaded and matched to the tenant principal before tallying"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "ReceiptAsync",
+    "tenantCheck": "keyed: receipt id = GovernanceCommandIdentity.Id(run, node) and SameCommand compares the stored actor"
+  },
+  {
+    "store": "SurrealGovernanceStore",
+    "method": "RejectAsync",
+    "tenantCheck": "keyed: records the invalid-command receipt for the current run node and actor"
   }
 ]

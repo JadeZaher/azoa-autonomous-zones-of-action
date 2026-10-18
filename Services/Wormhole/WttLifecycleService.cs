@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text.Json;
 using AZOA.WebAPI.Core;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Interfaces.Wtt;
@@ -17,7 +18,7 @@ namespace AZOA.WebAPI.Services.Wormhole;
 /// <summary>Authenticated WTT offers, admission and participant commands; see AGENTS.md §Operation journal.</summary>
 public sealed partial class WttLifecycleService(IWttOperationStore store, IWalletStore wallets,
     SigningAdmissionAuthorityFactory authorities, WttModuleResolver modules, IWttPreparationStore preparations,
-    WttRecoveryService recovery, IKeyCustodyService custody, TimeProvider clock,
+    WttRecoveryService recovery, IKeyCustodyService custody, IRealValueKycGate valueGate, TimeProvider clock,
     WttStageKeyReadinessState? stageKeys = null, IWttRecipientDirectory? recipients = null, IWalletOwnershipProof? ownership = null)
 {
     private static readonly TimeSpan MaximumOfferLifetime = TimeSpan.FromMinutes(5);
@@ -59,6 +60,7 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
             return Invalid<WttOfferView>("A complete WTT request with a stable request key, two distinct chains and explicit budgets is required.");
         if (!RequestKeyFits(principal, request.RequestKey))
             return Invalid<WttOfferView>("Workflow request keys are reserved for their own action node.");
+        if (!modules.AdmissionEnabled) return Unavailable<WttOfferView>(WttModuleResolver.DisabledMessage);
         if (request.RelayerFee is not (null or "0"))
             return Invalid<WttOfferView>("Relayer fees are refused: the platform redeems its own transfers, so a fee would only pay a front-runner.");
         if (principal.Workflow is { } witness && !WorkflowScopesSelected(witness))
@@ -78,8 +80,10 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
         if (sourceWallet is null || targetWallet is null)
             return Forbidden<WttOfferView>("Both WTT wallets must be owned by the authenticated participant on their exact chains.");
         var recipient = await OwnRecipientAsync(credential.ActorUserId, target.ChainType, request.RecipientAddress, ct);
-        if (credential.TenantId is not null && recipient == RecipientKind.None)
-            return Forbidden<WttOfferView>("A tenant may deliver only to one of the user's own custodial or signature-proven wallets on the destination chain.");
+        // RV-L5-06: a workflow graph author chooses the recipient, so a workflow run delivers only to the runner's own wallets too.
+        if ((credential.TenantId is not null || principal.Workflow is not null) && recipient == RecipientKind.None)
+            return Forbidden<WttOfferView>("A tenant or workflow transfer may deliver only to one of the user's own custodial or signature-proven "
+                + "wallets on the destination chain.");
         var sourceAuthority = await BindSigningAsync(principal, sourceWallet.Value.Id, source.ChainType, sourceWallet.Value.Address,
             AzoaScopes.WttSourceSign, ct);
         var targetAuthority = await BindSigningAsync(principal, targetWallet.Value.Id, target.ChainType, targetWallet.Value.Address,
@@ -186,6 +190,8 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
                 && ActionOf(existing) == principal.Action && (principal.Workflow is not null || CanReadWtt(credential))
                 ? AZOAResult<WttOperationView>.Success(await ProjectAsync(existing, ct))
                 : Conflict<WttOperationView>("The request key already belongs to a different immutable WTT operation.");
+        if (!modules.AdmissionEnabled) return Unavailable<WttOperationView>(WttModuleResolver.DisabledMessage);
+        if (await ValueRefusalAsync(credential, ct) is { } refused) return Forbidden<WttOperationView>(refused);
         var intent = JsonSerializer.Deserialize<WttOperationIntent>(offer.IntentJson)!;
         if (StageKeysDegraded(intent.Source.ChainType, intent.Source.Network, intent.Target.ChainType, intent.Target.Network) is { } degraded)
             return Unavailable<WttOperationView>(degraded);
@@ -291,8 +297,9 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
         if (operation.OwnerIntentJson is { } recorded)
             return recorded == Canonical(owner) ? AZOAResult<WttOperationView>.Success(await ProjectAsync(operation, ct))
                 : Conflict<WttOperationView>("The recorded owner intent differs from this operation's admitted intent.");
-        if (operation.TenantId.Length == 0 || operation.ActionRunId is not null)
-            return Conflict<WttOperationView>("Only a tenant-started, non-workflow operation can be taken over by its owner.");
+        // RV-L5-07: a workflow-admitted operation is taken over too, once its run can no longer sign (proved inside the store write).
+        if (operation.TenantId.Length == 0 && operation.ActionRunId is null)
+            return Conflict<WttOperationView>("Only a tenant-started or workflow-admitted operation can be taken over by its owner.");
         if (operation.Version != command.ExpectedVersion) return Changed<WttOperationView>();
         if (operation.Phase != "Target" || operation.State != "Ready")
             return Conflict<WttOperationView>("Owner takeover applies once the verified proof awaits target authorization and before any target send.");
@@ -395,6 +402,19 @@ public sealed partial class WttLifecycleService(IWttOperationStore store, IWalle
 
     private static WttActionBinding? ActionOf(WttOperation operation)
         => WttActionBinding.Of(operation.ActionRunId, operation.ActionNodeId, operation.ActionIntentHash);
+
+    /// <summary>The workflow binding that still owns signing: none once the owner took the operation over.</summary>
+    private static WttActionBinding? SigningActionOf(WttOperation operation)
+        => operation.OwnerIntentJson is null ? ActionOf(operation) : null;
+
+    /// <summary>X-2: the risk-hold-wrapped real-value gate (KYC + reversal pause) for the credential's actor, or null when clear.</summary>
+    private async Task<string?> ValueRefusalAsync(SigningCredentialWitness credential, CancellationToken ct)
+    {
+        var admitted = credential.TenantId is { } tenant
+            ? await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, tenant, ct)
+            : await valueGate.RequireCurrentApprovalAsync(credential.ActorUserId, ct);
+        return admitted.IsError || !admitted.Result ? admitted.Message ?? "This account cannot move value right now." : null;
+    }
 
     private static SigningContext Context(SigningCredentialWitness credential, Guid wallet, string scope, string chain)
         => new(credential.ActorUserId, wallet, false, credential.TenantId ?? Guid.Empty,

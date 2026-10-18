@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { NftLifecycleView, NftStageAcceptance } from 'azoa-sdk'
+import { isNftStageCostsChanged, type NftLifecycleView, type NftStageAcceptance } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { useNftRequestScope } from './use-nft-request-scope'
 import { NftFeeReview } from './nft-fee-review'
 import { NftRefundAction } from './nft-refund-action'
 import { NftReplacementCosts } from './nft-replacement-costs'
+import { NftStageCosts } from './nft-stage-costs'
 
 const descriptions: Record<NftLifecycleView['state'], string> = {
   Preparing: 'Preparing the transaction.', Prepared: 'The transaction is ready for submission.',
@@ -34,7 +35,9 @@ export function NftLifecyclePanel({ value, onChange }: {
   const [reference, setReference] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => { setReference(''); setBusy(false); setError(null) }, [userId, value?.operationId])
+  /** Continuing was refused with NFT_STAGE_COSTS_CHANGED: the payer must accept a new quote (the view cannot show this). */
+  const [stageCostsChanged, setStageCostsChanged] = useState(false)
+  useEffect(() => { setReference(''); setBusy(false); setError(null); setStageCostsChanged(false) }, [userId, value?.operationId])
   const run = async (action: 'refresh' | 'accept' | 'cancel' | 'renew' | 'reaccept') => {
     const id = value?.operationId ?? reference.trim()
     if (!id) return
@@ -83,7 +86,10 @@ export function NftLifecyclePanel({ value, onChange }: {
         : action === 'cancel' ? azoa.api.cancelNftLifecycle(id) : azoa.api.refreshNftLifecycle(id))
       if (generation.current !== current) return
       if (isOk(result)) onChange(result.value)
-      else setError(result.error.message)
+      else {
+        if (isNftStageCostsChanged(result.error)) setStageCostsChanged(true)
+        setError(result.error.message)
+      }
     } catch (cause) {
       if (generation.current === current) setError(cause instanceof Error ? cause.message : 'NFT request could not be completed.')
     } finally { if (generation.current === current) setBusy(false) }
@@ -110,6 +116,8 @@ export function NftLifecyclePanel({ value, onChange }: {
           <p className="text-sm">The requester&apos;s authority has lapsed; this stage continues after they renew it.</p>}
         {value.needsParticipantRenewal && userId !== value.renewalParticipantUserId &&
           <p className="text-sm">The accepting participant&apos;s authority has lapsed; this stage continues after they renew their acceptance.</p>}
+        {value.needsStageCosts && userId !== value.stageCostPayerUserId &&
+          <p className="text-sm">This stage continues after its paying participant accepts the network costs.</p>}
       </>}
       <div className="flex gap-2 flex-wrap">
         <Button onClick={() => run('refresh')} disabled={busy || (!value && !reference.trim())}>Refresh status</Button>
@@ -117,6 +125,9 @@ export function NftLifecyclePanel({ value, onChange }: {
           <Button disabled={busy} onClick={() => run('renew')}>Renew my authority</Button>}
         {value?.needsParticipantRenewal && userId === value.renewalParticipantUserId &&
           <Button disabled={busy} onClick={() => run('reaccept')}>Renew my acceptance</Button>}
+        {value?.state === 'Preparing' && value.acceptedStageCostLimits && !value.needsStageCosts && !value.stageAcceptance
+          && !stageCostsChanged && userId === value.stageCostPayerUserId &&
+          <Button disabled={busy} onClick={() => run('refresh')}>Continue with accepted costs</Button>}
         {value?.state === 'Preparing' && value.replacementCostsAccepted && userId === value.actorUserId &&
           <Button disabled={busy} onClick={() => run('refresh')}>Continue accepted replacement</Button>}
         {value && (['AwaitingRecipientAcceptance', 'AwaitingCreatorDestruction', 'AwaitingRefundAuthorization', 'AwaitingRefundDestinationAcceptance'].includes(value.state)
@@ -130,6 +141,9 @@ export function NftLifecyclePanel({ value, onChange }: {
       </div>
       {value && <NftRefundAction key={value.operationId} value={value} onChange={onChange} />}
       {value && userId === value.actorUserId && <NftReplacementCosts actor={userId} value={value} onChange={onChange} />}
+      {value && userId && userId === value.stageCostPayerUserId &&
+        <NftStageCosts payer={userId} value={value} costsChanged={stageCostsChanged}
+          onChange={next => { setStageCostsChanged(false); setError(null); onChange(next) }} />}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </CardContent>
   </Card>

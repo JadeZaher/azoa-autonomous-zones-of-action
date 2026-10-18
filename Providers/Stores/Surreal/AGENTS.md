@@ -88,6 +88,12 @@ concurrent refiller loses on the marker or the unique index and retries through
 the allocator loop. Only never-signed rows reach `Released`; see
 `Providers/Blockchain/Ethereum/AGENTS.md` §Nonce holes.
 
+Client-signed reservations (RV-L5-01) share the table and the live-nonce index: `State = ClientReserved`, empty owner,
+`IntentJson = "{}"`, never signed, released or recovered by custody. They are claimed with the same `TryClaimAsync`
+(create; a unique violation on the id or the live nonce returns the existing row or null), so one live owner per
+(protocol, sender, nonce) still holds across custody and client-signed plans. See
+`Providers/Blockchain/Ethereum/AGENTS.md` §Client-signed nonces.
+
 Deploy note: the index was renamed, so the schema sync (`IF NOT EXISTS`) defines
 the new one. A database that still has the old `ethereum_preparation_nonce`
 index must drop it (dev: `-ResetDb`). Until then, refills fail closed as "busy"
@@ -684,6 +690,14 @@ enforce all-or-nothing mutation. Historical allocated totals are preserved and
 the separate released total can never exceed them. No unknown reservation is
 released by an observed missing current holding.
 
+## WTT owner takeover of a workflow operation
+
+`TakeOverAsync` on an action-bound operation prepends `WttSigningAuthorityFence.ActionStopped` to the takeover
+transaction (`// raw:` the run/execution liveness read and the version CAS on `wtt_operation` must share one commit). It
+reads `action_run.status` and the node's `Running` execution on the frozen-input hash and throws the journal conflict while
+both are live; the version CAS serializes it against any concurrent workflow stage claim. After takeover `Action(operation)`
+returns null, so every later stage fence demands the owner's direct authority (RV-L5-07).
+
 ## WTT preparation identity
 
 wtt_preparation claims one unsigned blockhash/round/account plan per physical protocol, operation, phase, stage and generation. Quote and owner are immutable binding checks rather than partition keys: changing either cannot create a second candidate. Signed bytes fill once under exact version, plan and unsealed state; retries recover the winner. Typed single-record CRUD expresses these invariants. This row alone never authorizes submission; the operation journal must atomically fence first-send and cancellation against the same preparation.
@@ -966,6 +980,8 @@ ActorContinuationsJson is append-only under the same version CAS and requires th
 
 `NftEffectAuthorities.Select` is the single list of credential witnesses each lifecycle write fences, shared by the durable store and the in-memory test store. `NftLifecycleWrite` names the kind. A fresh admission fences the original requester (the empty cancellation marker and the deterministic workflow rejection fence none). An effect (participant consent append, preparation, first send) fences the effective requester plus the current stage participant when the stage needs one. A replacement-cost acceptance additionally fences the accepting credential and the receipt's database-time expiry. A requester renewal or participant renewal fences only its new credential, because it signs nothing; the next effect checks everything again. Workflow fences (`ActionExecutionFence`, workflow cost authority) join admissions, effects and cost acceptances, never renewals. A missing or non-binding witness fails closed before the batch is sent. Every contended lifecycle batch runs through `SurrealTransientConflict.RetryOnConflictAsync`; a retried loser fails its own version predicate (null or `NFT_LIFECYCLE_CHANGED`) and the caller re-reads. The mutation result is captured as `$_nft_effect_row` and returned by name, not by a guard-count offset. `CancelUnsentAsync` fences the requester's current consent (`SigningAuthorityFence.ForConsent`, operation scope) with the cancellation.
 
+A recipient-stage cost acceptance (`StageCostAcceptance`, F-M11) fences only the accepting payer's credential plus the stage receipt's immutability and database-time expiry (`NftProtocolCostAdmissionFence`) in the same batch as the version CAS; it signs nothing, so no workflow fence joins it. Every other authority-bearing write on a cost-bearing Solana stage (preparation, first send) must pass `NftStageCostContract.AdmitsWrite` before the batch is built; the consent history is part of the row, so the version CAS proves the checked history is the committed one. A workflow-authority write (`workflowAuthority: true`) is refused once `NftActorContinuationIdentity.TakenOver` holds on the stored row, and every lifecycle UPDATE also predicates on the unchanged `actor_continuations_json`, so a takeover committed between the read and the write makes the stale run's write match no row (RV-L5-09). `FindCustodialWalletIdsAsync` reads Platform wallet ids for one exact (chain, address) through `wallet_chain_address` (Ethereum also probes its checksummed and lowercase forms); a wallet whose stored chain spelling differs is simply not found, which fails closed.
+
 ## Hold command and exchange source transactions
 
 `SurrealHoldCommandStore` partials compose multi-table atomic transactions. Every raw statement is
@@ -1073,3 +1089,5 @@ SELECT, deleted with the head. Before this, dependencies round-tripped as empty,
 dependency enforcement (`ActionManager.EnforceDependenciesAsync`) only bit in-memory. The store
 is still a non-transactional multi-request fan-out (pre-existing shape; a partial write is
 visible on failure) — moving the whole aggregate into one `BEGIN…COMMIT` is a follow-up.
+
+- **Custodial NFT recipient lookup (RV-L4-08):** probe the canonical chain/address spellings from `Helpers/NftRecipientLookupForms` through the `wallet_chain_address` index; never case-fold Solana/Algorand addresses.

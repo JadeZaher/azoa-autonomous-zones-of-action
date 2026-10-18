@@ -85,7 +85,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         proposal!.TenantId.Should().Be(_tenant);
         proposal.MinimumVotes.Should().Be(2);
         JsonSerializer.Deserialize<string[]>(proposal.ElectorateJson).Should().BeEquivalentTo(new[] { _tenant, _voter });
-        await Execute(SurrealWriter.UpdateOnly<RunRow>(context.RunId.ToString("N")).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
+        await Execute(SurrealWriter.UpdateOnly<RunRow>(context.RunId.ToString("N")).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
         var canonical = Frozen(context);
         var recovered = await new GovernanceActionResolver(service).ObserveAsync(handler.CreateReference(context, CanonicalJson.HashCanonical(canonical)), canonical);
         recovered.Status.Should().Be(ActionExternalOperationStatus.Succeeded);
@@ -98,7 +98,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         var config = new GovernanceProposalCreateNodeConfig { Name = "Choose", Options = ["yes", "no"], ClosesAt = DateTimeOffset.UtcNow.AddHours(1) };
         var child = await HandlerContext(_voter, config);
         (await CreationService().CreateAsync(child, config, default)).IsError.Should().BeTrue();
-        await Execute(SurrealWriter.UpdateOnly<ApiKey>(_key).Set(row => row.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<ApiKey>(_key).Where(seed => true).Set(row => row.IsActive, false).Build());
         var principal = await HandlerContext(_tenant, config);
         (await CreationService().CreateAsync(principal, config, default)).IsError.Should().BeTrue();
         (await _store.GetAsync(GovernanceCommandIdentity.Id(principal), default)).Should().BeNull();
@@ -117,7 +117,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         var receipt = await _store.ReceiptAsync(reference.OperationId!, default);
         receipt!.IsError.Should().BeTrue();
         (await _store.GetAsync(reference.OperationId!, default)).Should().BeNull();
-        await Execute(SurrealWriter.UpdateOnly<RunRow>(context.RunId.ToString("N")).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
+        await Execute(SurrealWriter.UpdateOnly<RunRow>(context.RunId.ToString("N")).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
         (await resolver.ObserveAsync(reference, canonical)).Status.Should().Be(ActionExternalOperationStatus.Failed);
     }
 
@@ -131,7 +131,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         (await _store.GetAsync(_proposal.Id, default)).Should().NotBeNull();
         (await _store.ReceiptAsync(receipt.Id, default))!.OutputJson.Should().Be(receipt.OutputJson);
         var other = await Command(_tenant);
-        await Execute(SurrealWriter.UpdateOnly<RunRow>(other.RunId).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
+        await Execute(SurrealWriter.UpdateOnly<RunRow>(other.RunId).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
         var rejected = await _store.CreateAsync(_proposal, projection, other, default);
         rejected.IsError.Should().BeTrue();
         (await _store.ReceiptAsync(other.Id, default)).Should().BeNull();
@@ -150,12 +150,12 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         var receipt = await Command(_voter);
         switch (change)
         {
-            case "membership": await Execute(SurrealWriter.UpdateOnly<User>(_voter).Unset(row => row.OwnerTenantId).Build()); break;
-            case "approval": await Execute(SurrealWriter.UpdateOnly<KycSubmission>(_approval.Id).Set(row => row.Status, KycStatus.REJECTED).Build()); break;
-            case "selection": await Execute(SurrealWriter.UpdateOnly<TenantKycProviderSelection>(_tenant).Set(row => row.SelectionVersion, 2L).Build()); break;
-            case "aml": await Execute(SurrealWriter.UpdateOnly<KycScreeningResult>("clearance").Set(row => row.Decision, KycScreeningDecision.HIT).Build()); break;
-            case "cancel": await Execute(SurrealWriter.UpdateOnly<RunRow>(receipt.RunId).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build()); break;
-            case "cutoff": await Execute(SurrealWriter.UpdateOnly<GovernanceProposal>(_proposal.Id).Set(row => row.ClosesAt, DateTimeOffset.UtcNow.AddSeconds(-1)).Build()); break;
+            case "membership": await Execute(SurrealWriter.UpdateOnly<User>(_voter).Where(seed => true).Unset(row => row.OwnerTenantId).Build()); break;
+            case "approval": await Execute(SurrealWriter.UpdateOnly<KycSubmission>(_approval.Id).Where(seed => true).Set(row => row.Status, KycStatus.REJECTED).Build()); break;
+            case "selection": await Execute(SurrealWriter.UpdateOnly<TenantKycProviderSelection>(_tenant).Where(seed => true).Set(row => row.SelectionVersion, 2L).Build()); break;
+            case "aml": await Execute(SurrealWriter.UpdateOnly<KycScreeningResult>("clearance").Where(seed => true).Set(row => row.Decision, KycScreeningDecision.HIT).Build()); break;
+            case "cancel": await Execute(SurrealWriter.UpdateOnly<RunRow>(receipt.RunId).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build()); break;
+            case "cutoff": await Execute(SurrealWriter.UpdateOnly<GovernanceProposal>(_proposal.Id).Where(seed => true).Set(row => row.ClosesAt, DateTimeOffset.UtcNow.AddSeconds(-1)).Build()); break;
         }
         var result = await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, receipt, default);
         result.IsError.Should().BeTrue();
@@ -193,7 +193,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         (await _store.GetAsync(_proposal.Id, default)).Should().BeNull();
         (await _store.ReceiptAsync(command.Id, default)).Should().BeNull();
         var version = await _store.PolicyVersionAsync(default);
-        await Execute(SurrealWriter.UpdateOnly<NodeGovernanceParameters>("local").Set(row => row.Version, 2L).Build());
+        await Execute(SurrealWriter.UpdateOnly<NodeGovernanceParameters>("local").Where(seed => true).Set(row => row.Version, 2L).Build());
         (await _store.CreateAsync(_proposal, Projection(), command, default, version)).IsError.Should().BeTrue();
     }
 
@@ -203,7 +203,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         await SeedProposal();
         var receipt = await Command(_voter);
         (await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, receipt, default)).IsError.Should().BeFalse();
-        await Execute(SurrealWriter.UpdateOnly<RunRow>(receipt.RunId).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
+        await Execute(SurrealWriter.UpdateOnly<RunRow>(receipt.RunId).Where(seed => true).Set(row => row.Status, RunRow.ActionRunStatusKind.Cancelled).Build());
         (await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, receipt, default)).IsError.Should().BeFalse();
         receipt.IntentHash = "different-intent";
         (await _store.VoteAsync(_proposal, Claim("no"), _approval, _identity, receipt, default)).IsError.Should().BeTrue();
@@ -214,11 +214,11 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
     public async Task Expired_participation_is_not_membership_and_live_participation_can_vote()
     {
         await SeedProposal();
-        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Unset(row => row.OwnerTenantId).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Where(seed => true).Unset(row => row.OwnerTenantId).Build());
         await Save(new ConsentGrant { Id = "participation", GrantorUserId = "user:" + _voter, TenantId = "user:" + _tenant,
             Origin = "Participation", ParticipationRef = "project", Scopes = "wallet:read", ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1) });
         (await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, await Command(_voter), default)).IsError.Should().BeTrue();
-        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>("participation").Set(row => row.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(10)).Build());
+        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>("participation").Where(seed => true).Set(row => row.ExpiresAt, DateTimeOffset.UtcNow.AddMinutes(10)).Build());
         (await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, await Command(_voter), default)).IsError.Should().BeFalse();
     }
 
@@ -254,7 +254,7 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
     {
         await SeedProposal();
         _proposal.ClosesAt = DateTimeOffset.UtcNow.AddSeconds(-1);
-        await Execute(SurrealWriter.UpdateOnly<GovernanceProposal>(_proposal.Id).Set(row => row.ClosesAt, _proposal.ClosesAt).Build());
+        await Execute(SurrealWriter.UpdateOnly<GovernanceProposal>(_proposal.Id).Where(seed => true).Set(row => row.ClosesAt, _proposal.ClosesAt).Build());
         var first = await Command(_tenant); var second = await Command(_tenant);
         first.OutputJson = "{\"winner\":\"first\",\"totalVotes\":0}";
         second.OutputJson = "{\"winner\":\"second\",\"totalVotes\":0}";
@@ -276,11 +276,11 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
         (await _store.FinalizeAsync(_proposal, new Dictionary<string, int> { ["yes"] = 0, ["no"] = 0 }, early, default)).IsError.Should().BeTrue();
         // Test-only operator seed models an already closed election without wall-clock sleeps.
         _proposal.ClosesAt = DateTimeOffset.UtcNow.AddSeconds(-1);
-        await Execute(SurrealWriter.UpdateOnly<GovernanceProposal>(_proposal.Id).Set(row => row.ClosesAt, _proposal.ClosesAt).Build());
+        await Execute(SurrealWriter.UpdateOnly<GovernanceProposal>(_proposal.Id).Where(seed => true).Set(row => row.ClosesAt, _proposal.ClosesAt).Build());
         var claim = Claim("yes"); claim.DecidedAt = _proposal.ClosesAt.AddSeconds(-1);
         await Save(claim);
-        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Unset(row => row.OwnerTenantId).Set(row => row.IsActive, false).Build());
-        await Execute(SurrealWriter.UpdateOnly<KycSubmission>(_approval.Id).Set(row => row.Status, KycStatus.REJECTED).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Where(seed => true).Unset(row => row.OwnerTenantId).Set(row => row.IsActive, false).Build());
+        await Execute(SurrealWriter.UpdateOnly<KycSubmission>(_approval.Id).Where(seed => true).Set(row => row.Status, KycStatus.REJECTED).Build());
         for (var index = 0; index < 500; index++)
             await Save(new HolonRow { Id = Guid.NewGuid().ToString("N"), Name = "Forged ballot", ProviderName = "test",
                 UserId = "user:" + _voter, ParentHolonId = "holon:" + _proposal.Id, AssetType = ConsumerGovernanceHolonTypes.VoteAssetType,
@@ -302,12 +302,12 @@ public sealed partial class SurrealGovernanceTests : IAsyncLifetime
     public async Task Snapshot_excludes_new_members_and_user_explicit_grants_do_not_create_membership()
     {
         await SeedProposal();
-        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Unset(row => row.OwnerTenantId).Build());
+        await Execute(SurrealWriter.UpdateOnly<User>(_voter).Where(seed => true).Unset(row => row.OwnerTenantId).Build());
         await Save(new ConsentGrant { Id = "consent", GrantorUserId = "user:" + _voter, TenantId = "user:" + _tenant,
             Origin = "UserExplicit", Scopes = "wallet:read", ParticipationRef = "external" });
         (await _store.MembersAsync(_tenant, default)).Should().NotContain(_voter);
         (await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, await Command(_voter), default)).IsError.Should().BeTrue();
-        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>("consent").Set(row => row.Origin, "Participation").Build());
+        await Execute(SurrealWriter.UpdateOnly<ConsentGrant>("consent").Where(seed => true).Set(row => row.Origin, "Participation").Build());
         (await _store.MembersAsync(_tenant, default)).Should().Contain(_voter);
         _proposal.ElectorateJson = JsonSerializer.Serialize(new[] { _tenant });
         (await _store.VoteAsync(_proposal, Claim("yes"), _approval, _identity, await Command(_voter), default)).IsError.Should().BeTrue();

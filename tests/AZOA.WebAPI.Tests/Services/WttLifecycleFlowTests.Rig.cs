@@ -58,7 +58,8 @@ public sealed partial class WttLifecycleFlowTests
         internal const string ClaimedPlatform = "ClaimedPlatform11111111111111111111111111111";
         internal const string ExternalLinked = "ExternalLinked111111111111111111111111111111";
 
-        internal Rig(bool participantRecipient = false, bool unwrapNative = false, string sourceChain = "Algorand", bool stageKeys = false)
+        internal Rig(bool participantRecipient = false, bool unwrapNative = false, string sourceChain = "Algorand", bool stageKeys = false,
+            bool wttEnabled = true)
         {
             Store = new(Clock);
             SourceChain = sourceChain;
@@ -93,7 +94,8 @@ public sealed partial class WttLifecycleFlowTests
             var keys = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
                 { ["AZOA:WalletEncryptionKey"] = "wtt-flow-fixture-encryption-key" }).Build();
             var custody = new KeyCustodyService(wallets.Object, new WalletKeyService(keys), keys, new Mock<ITenantConsentGate>().Object);
-            var modules = new WttModuleResolver(Providers(Source, Target));
+            var modules = new WttModuleResolver(Providers(Source, Target), new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { [WttModuleResolver.EnabledKey] = wttEnabled ? "true" : "false" }).Build());
             var signatures = new Mock<IWttGuardianSignatureVerifier>();
             signatures.Setup(value => value.VerifyGuardianSignature(It.IsAny<byte[]>(), It.IsAny<WormholeVaaSignature>(), It.IsAny<byte[]>()))
                 .Returns((byte[] digest, WormholeVaaSignature signature, byte[] expected)
@@ -103,7 +105,7 @@ public sealed partial class WttLifecycleFlowTests
             var transport = new WttGuardianTransport(new HttpClient(Guardians), Options.Create(new WttGuardianOptions
                 { Endpoints = ["https://guardian.test/"], TimeoutSeconds = 5 }));
             Recovery = new WttRecoveryService(Store, modules, transport, verifier, Claims, NullLogger<WttRecoveryService>.Instance);
-            Service = new WttLifecycleService(Store, wallets.Object, authorities, modules, Preparations, Recovery, custody, Clock);
+            Service = new WttLifecycleService(Store, wallets.Object, authorities, modules, Preparations, Recovery, custody, ValueGate, Clock);
             UnwrapNative = unwrapNative;
             Authorities = authorities; _wallets = wallets.Object; _modules = modules; _custody = custody;
         }
@@ -120,6 +122,8 @@ public sealed partial class WttLifecycleFlowTests
         internal WttModuleResolver Modules => _modules;
         /// <summary>The user revoked the tenant's WTT grant: tenant credentials no longer bind payer authority.</summary>
         internal bool GrantRevoked { get; set; }
+        /// <summary>The real-value gate every value-moving WTT entry consults (swap in a paused gate per test).</summary>
+        internal SwitchableValueGate ValueGate { get; } = new();
 
         /// <summary>A child credential acting for a tenant with the two WTT payer scopes.</summary>
         internal SigningCredentialWitness TenantCredential(Guid tenant) => Credential with { TenantId = tenant, OwnerAuthority = false,
@@ -128,7 +132,7 @@ public sealed partial class WttLifecycleFlowTests
         /// <summary>Builds a second service over the same journal with keyring readiness and the cross-user recipient directory.</summary>
         internal WttLifecycleService ServiceWith(WttStageKeyReadinessState? stageKeys = null, IWttRecipientDirectory? recipients = null,
             IWalletOwnershipProof? ownership = null)
-            => new(Store, _wallets, Authorities, _modules, Preparations, Recovery, _custody, Clock, stageKeys, recipients, ownership);
+            => new(Store, _wallets, Authorities, _modules, Preparations, Recovery, _custody, ValueGate, Clock, stageKeys, recipients, ownership);
 
         private IWalletStore _wallets = null!;
         private WttModuleResolver _modules = null!;

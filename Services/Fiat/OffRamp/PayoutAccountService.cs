@@ -44,12 +44,25 @@ public sealed record PayoutAccountStatus(
     DateTimeOffset? SetupUrlExpiresAt,
     string StatusMessage);
 
+/// <summary>What an operator resolution of a stuck payout-account setup did (RV-L1-01).</summary>
+/// <param name="Outcome"><c>attached</c> (Stripe holds the claim's account) or <c>released</c> (proven absent; the next setup opens a fresh claim).</param>
+/// <param name="AccountId">The attached connected account, when one was found.</param>
+public sealed record PayoutAccountSetupResolution(string Outcome, string? AccountId);
+
 /// <summary>
 /// The person's own payout account: opened once, at the first cash-out, and re-read from the
 /// provider every time it matters. See <c>Services/Fiat/OffRamp/AGENTS.md</c> §account.
 /// </summary>
 public interface IPayoutAccountService
 {
+    /// <summary>
+    /// Operator exit for a setup whose Stripe create can no longer be replayed: attaches the account Stripe holds
+    /// for the claim, or, once Stripe proves none exists, releases the claim so a fresh one can open.
+    /// See <c>Services/Fiat/OffRamp/AGENTS.md</c> §account-recovery.
+    /// </summary>
+    Task<AZOAResult<PayoutAccountSetupResolution>> ResolveStuckSetupAsync(
+        Guid subjectUserId, Guid actor, string reason, CancellationToken ct = default);
+
     /// <summary>Reads where this person's payout account stands. Never creates anything.</summary>
     Task<AZOAResult<PayoutAccountStatus>> GetStatusAsync(
         Guid subjectUserId, CancellationToken ct = default);
@@ -273,6 +286,80 @@ public sealed class PayoutAccountService : IPayoutAccountService
 
         return AZOAResult<string>.Success(account.Result.AccountId, "Success");
     }
+
+    /// <summary>Margin around the replay window a claim's Stripe create can have landed in.</summary>
+    private static readonly TimeSpan CreationListingMargin = TimeSpan.FromHours(1);
+
+    /// <inheritdoc />
+    public async Task<AZOAResult<PayoutAccountSetupResolution>> ResolveStuckSetupAsync(
+        Guid subjectUserId, Guid actor, string reason, CancellationToken ct = default)
+    {
+        var trimmed = reason?.Trim() ?? string.Empty;
+        if (subjectUserId == Guid.Empty || actor == Guid.Empty || trimmed.Length is < 20 or > 1000)
+            return SetupConflict("An account, an operator and a 20-1000 character evidence reference are required.", AzoaErrorCodes.InvalidRequest);
+        if (!IsAvailable())
+            return SetupConflict(UnavailableMessage, AzoaErrorCodes.Conflict);
+
+        var found = await _sessions.GetByAdmissionAsync(
+            PayoutAccountFlow.FlowKind, FiatRailIds.StripeProviderKey, PayoutAccountFlow.AdmissionKeyFor(subjectUserId), ct);
+        if (found.IsError)
+            return SetupConflict("The payout-account setup could not be read. Nothing was changed.", AzoaErrorCodes.Conflict);
+        if (found.Result is not { } row || !string.Equals(row.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase))
+            return SetupConflict("This account has no payout-account setup.", AzoaErrorCodes.NotFound);
+
+        // Classified read-only (never BeginOrResume, which would start a fence): only a begun, unattached claim the
+        // creation fence can no longer replay (past the window, or quarantined) is operator work.
+        var now = _clock.GetUtcNow();
+        var stuck = row;
+        if (stuck.State != HostedSessionStates.Claimed || !string.IsNullOrWhiteSpace(stuck.ProviderSessionId)
+            || stuck.CreationStartedAt is not { } started || string.IsNullOrWhiteSpace(stuck.CreationToken)
+            || (stuck.CreationQuarantinedAt is null && started > now - FiatHostedCreation.ReplayWindow)
+            || !Guid.TryParseExact(stuck.Id, "N", out var sessionId))
+            return SetupConflict("This setup is not stuck past its replay window; it resumes on its own.", AzoaErrorCodes.Conflict);
+
+        // Stripe cannot search accounts by metadata: list the window the claim's create (and its replays) ran in.
+        var listed = await _connect.ListConnectedAccountsCreatedAsync(_fiat.CredentialsFor(_fiat.ActiveEnvironment),
+            started - CreationListingMargin, started + FiatHostedCreation.ReplayWindow + CreationListingMargin, ct);
+        if (listed.IsError || listed.Result is not { Complete: true } page)
+            return SetupConflict("Stripe's account record could not be read completely. Nothing was changed.", AzoaErrorCodes.Conflict);
+        var claimed = page.Accounts.Where(account => account.ClaimId == stuck.Id).ToList();
+        if (claimed.Count > 1 || claimed.Any(account =>
+                !string.Equals(account.SubjectUserId, subjectUserId.ToString("N"), StringComparison.OrdinalIgnoreCase)))
+            return SetupConflict("Stripe holds accounts for this claim that do not match it. Reconcile them in Stripe first.", AzoaErrorCodes.Conflict);
+
+        if (claimed.SingleOrDefault() is { } account)
+        {
+            var verified = await ReadAccountAsync(account.AccountId, ct);
+            if (verified.IsError || verified.Result is null)
+                return SetupConflict("The account Stripe holds for this claim could not be verified. Nothing was changed.", AzoaErrorCodes.Conflict);
+            if (!TryResolveReturnUrls(out var returnUrl, out _, out _))
+                return SetupConflict(UnavailableMessage, AzoaErrorCodes.Conflict);
+            var attached = await _sessions.ReconcileAdmissionAsync(stuck, actor, trimmed,
+                // Provenance only, as on the normal attach: every setup call mints a fresh onboarding link.
+                new HostedSessionCreation { ProviderSessionId = account.AccountId, RedirectUrl = returnUrl!.ToString() }, now, ct);
+            if (attached.IsError || attached.Result?.ProviderSessionId != account.AccountId)
+                return SetupConflict("The setup changed during the resolution. Nothing was changed.", AzoaErrorCodes.Conflict);
+            _logger.LogWarning("Operator {Actor} attached payout account {AccountId} to stuck setup {SessionId}.", actor, account.AccountId, stuck.Id);
+            return AZOAResult<PayoutAccountSetupResolution>.Success(new("attached", account.AccountId), "Resolved.");
+        }
+
+        // Absence is evidence only once no create (original or replay) can still be in flight.
+        if (started > now - FiatHostedCreation.ReplayWindow - TimeSpan.FromMinutes(5))
+            return SetupConflict("Stripe holds no account for this claim yet, but its create may still be replayed. Try again after the replay window.", AzoaErrorCodes.Conflict);
+
+        // Proven absent and past the window: quarantine with the audit entry, then release the claim (both CAS) so the
+        // person's next setup opens a fresh claim, token and Stripe idempotency key.
+        var audited = stuck.CreationQuarantinedAt is not null
+            ? stuck
+            : (await _sessions.ReconcileAdmissionAsync(stuck, actor, trimmed, null, now, ct)).Result;
+        if (audited is null || !await _sessions.ReleaseUnsentAdmissionAsync(sessionId, audited.CreationToken!, ct))
+            return SetupConflict("The setup changed during the resolution. Nothing was changed.", AzoaErrorCodes.Conflict);
+        _logger.LogWarning("Operator {Actor} released stuck payout-account setup {SessionId}: Stripe holds no account for it.", actor, stuck.Id);
+        return AZOAResult<PayoutAccountSetupResolution>.Success(new("released", null), "Resolved.");
+    }
+
+    private static AZOAResult<PayoutAccountSetupResolution> SetupConflict(string message, string code)
+        => AZOAResult<PayoutAccountSetupResolution>.FailureWithCode(message, code);
 
     /// <summary>The connected account id on this person's admission row, or blank when none.</summary>
     private async Task<AZOAResult<string?>> FindAccountIdAsync(Guid subjectUserId, CancellationToken ct)

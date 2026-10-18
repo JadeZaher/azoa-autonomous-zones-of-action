@@ -1,9 +1,9 @@
 import type { NftProtocolCostOffer } from 'azoa-sdk'
 
-export function NftProtocolCostReview({ offer, accepted }: { offer: NftProtocolCostOffer; accepted: boolean }) {
+export function NftProtocolCostReview({ offer, accepted, heading = 'Creation costs' }: { offer: NftProtocolCostOffer; accepted: boolean; heading?: string }) {
   const { quote } = offer
   return <div className="rounded border p-3 text-sm space-y-1">
-    <p>Creation costs on <strong>{quote.chainType} {quote.network}</strong></p>
+    <p>{heading} on <strong>{quote.chainType} {quote.network}</strong></p>
     <p>Maximum network fee: <strong>{quote.limits.networkFee} native base units</strong></p>
     <p>Account rent retained: <strong>{quote.limits.retainedRent} native base units</strong></p>
     <p>Protocol levy spent: <strong>{quote.limits.protocolLevy} native base units</strong></p>

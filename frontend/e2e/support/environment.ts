@@ -9,6 +9,8 @@ export interface E2eEnvironment {
   vendorHost: string
   identomatPort: number
   stripePort: number
+  /** Loopback port of the `webhook-receiver` compose service's control plane. */
+  webhookReceiverPort: number
   identomatCompanyKey: string
   identomatCallbackKey: string
   identomatKycConfig: string
@@ -56,6 +58,7 @@ export function loadE2eEnvironment(): E2eEnvironment {
     vendorHost: process.env.AZOA_E2E_VENDOR_HOST ?? 'host.docker.internal',
     identomatPort: Number(process.env.AZOA_E2E_IDENTOMAT_PORT ?? 9443),
     stripePort: Number(process.env.AZOA_E2E_STRIPE_PORT ?? 9444),
+    webhookReceiverPort: Number(process.env.AZOA_E2E_WEBHOOK_RECEIVER_PORT ?? 9445),
     identomatCompanyKey: value('AZOA_E2E_IDENTOMAT_COMPANY_KEY'),
     identomatCallbackKey: value('AZOA_E2E_IDENTOMAT_CALLBACK_KEY'),
     identomatKycConfig: value('AZOA_E2E_IDENTOMAT_KYC_CONFIG'),

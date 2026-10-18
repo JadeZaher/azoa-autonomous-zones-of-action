@@ -40,6 +40,12 @@ public static class AzoaClaims
     /// <summary>Unix timestamp of the interactive authentication event.</summary>
     public const string AuthTime = "auth_time";
 
+    /// <summary>Id of the tenant API key that minted a child credential; the per-request gate requires it still live.</summary>
+    public const string IssuingKeyId = "issuing_key_id";
+
+    /// <summary>Authentication type of the identity the child-credential gate stamps with the subject's store-loaded dApp role.</summary>
+    public const string LiveRoleIdentity = "azoa-live-role";
+
     public static bool IsChildCredential(ClaimsPrincipal? principal)
         => string.Equals(
             principal?.FindFirst(TokenUse)?.Value,

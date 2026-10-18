@@ -30,7 +30,7 @@ public sealed partial class SwapOperationService
             return operation.CleanupConsentJson == consentJson ? AZOAResult<SwapOperationView>.Success(await ProjectAsync(operation, ct))
                 : Fail("A different immutable cleanup command already owns this operation.");
         if (operation.Version != request.ExpectedVersion) return Changed();
-        if (modules.Resolve(intent.Terms.Network) is not { } module || module.DexCapability.CleanupSemantics?.Contains(semantics) != true)
+        if (modules.ResolveForExisting(intent.Terms.Network) is not { } module || module.DexCapability.CleanupSemantics?.Contains(semantics) != true)
             return Fail("The original DEX module does not offer this cleanup semantic for this swap.");
         var authority = await authorities.BindDirectAsync(credential, consent.Owner.WalletId, intent.Terms.Network.ChainType,
             consent.Owner.Address, [AzoaScopes.SwapSign], ct);
@@ -48,7 +48,7 @@ public sealed partial class SwapOperationService
         var intent = JsonSerializer.Deserialize<SwapIntent>(operation.IntentJson)!;
         var consent = JsonSerializer.Deserialize<SwapCleanupConsent>(operation.CleanupConsentJson)!;
         if (consent.ActorUserId != credential.ActorUserId || consent.TenantId != credential.TenantId) return Changed();
-        var module = modules.Resolve(intent.Terms.Network);
+        var module = modules.ResolveForExisting(intent.Terms.Network);
         if (module is null) return Fail("The original DEX module is unavailable for cleanup.");
         var authority = await authorities.BindDirectAsync(credential, consent.Owner.WalletId, intent.Terms.Network.ChainType,
             consent.Owner.Address, [AzoaScopes.SwapSign], ct);

@@ -136,3 +136,20 @@ NftProtocolCostContract binds an immutable server-issued receipt, including orig
 NftLifecycleIntentFactory is the shared pure construction path for NFT protocol cost quotation and preparation. It preserves signer/fee-payer separation, recipient stages, tenant scopes and original authorization fields; the cost receipt is attached only to Create.
 
 NftWorkflowCostAcceptanceIdentity partitions client acceptance keys by actor/tenant/exact execution ID and hashes the expected version, original frozen intent and exact cost authorization. Its structural binding checks do not replace current database authority fences. Original workflow and actual accepting credential witnesses are retained separately.
+
+## Role-bound dApp policies
+
+`HasDappDevelopAccess` / `HasDappManageAccess` (`ClaimsPrincipalExtensions`) are the bodies of the
+`DappDevelop` / `DappManage` policies in `Program.cs`. The caller's dApp role is always required; a
+`dapp:develop` or `dapp:manage` scope alone never admits (RV-L4-01). Per principal:
+
+- *Login JWT:* the `dapp_role` claim stamped at login (its dApp scopes are implied by that role).
+- *API key:* the owner's live role (re-read per request by `ApiKeyAuthenticationHandler`) and, for a
+  scoped key, the explicit scope; an all-forbidden CSV (`ScopesRestricted`) is denied.
+- *Delegated (child credential or `act_as_tenant`):* the delegated scope AND the role read from the
+  `azoa-live-role` identity that `DelegatedChildCredentialGate` adds after loading the user from the store.
+  A `dapp_role` claim inside the token itself is ignored, so neither a tenant nor a forged claim can
+  confer the role.
+
+`AzoaDappRoles.GrantsScope` is the single role-to-scope rule; API-key self-issuance, child-credential
+issuance and the gate all use it.

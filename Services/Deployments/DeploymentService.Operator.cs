@@ -26,6 +26,9 @@ public sealed partial class DeploymentService
         await AdvanceAsync(row, Guid.Empty, null, false, ct);
         var current = await RequireCurrentAsync(row.Id, ct);
         if (request.Action == "Reobserve" || current.State != "NeedsOperator") return AZOAResult<DeploymentReceipt>.Success(View(current));
+        // RV-L4-05: a terminal Failed would let the owning action node take its failure/compensation edge while the wire can still land.
+        if (current.ActionRunId is not null)
+            return Fail<DeploymentReceipt>("An action-linked deployment cannot be operator-closed; it stays parked for re-observation and the action's reconciliation.");
         var reason = request.Reason?.Trim();
         if (!request.AcknowledgeNoFurtherEffect || string.IsNullOrEmpty(reason) || reason.Length > MaxOperatorReasonLength || reason.Any(char.IsControl))
             return Fail<DeploymentReceipt>("Closing requires a bounded reason and an explicit acknowledgement that the unresolved wire can have no further effect.");

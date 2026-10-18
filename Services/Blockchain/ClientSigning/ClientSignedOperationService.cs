@@ -25,12 +25,14 @@ public sealed class ClientSignedOperationService(
     IBlockchainProviderFactory providers,
     IIdempotencyStore idempotency,
     IOptions<ReconciliationOptions> options,
-    ILogger<ClientSignedOperationService> logger)
+    ILogger<ClientSignedOperationService> logger,
+    IRealValueKycGate valueGate)
 {
     private const int MaxReasonLength = 500;
     private static readonly string[] Submittable = [OperationStatus.AwaitingSignature, ClientSigningStatus.NeedsOperator];
     private static readonly string[] Resolvable =
         [OperationStatus.AwaitingSignature, OperationStatus.PendingConfirmation, ClientSigningStatus.NeedsOperator];
+    private static readonly string[] TerminalStatuses = [OperationStatus.Completed, OperationStatus.Failed];
 
     private TimeSpan SignatureTtl => TimeSpan.FromSeconds(Math.Max(0, options.Value.ClientSignatureTtlSeconds));
 
@@ -57,8 +59,14 @@ public sealed class ClientSignedOperationService(
             return Refused("Client-signed operation not found.", AzoaErrorCodes.NotFound);
         if (Module(plan) is not { } module)
             return Refused("Client signing is unavailable on this operation's network.", AzoaErrorCodes.DependencyUnavailable);
+        // X-2: an unverified or reversal-paused account is refused before anything is persisted or broadcast.
+        var admitted = actingTenant is { } tenant && tenant != Guid.Empty
+            ? await valueGate.RequireCurrentApprovalAsync(caller, tenant, ct)
+            : await valueGate.RequireCurrentApprovalAsync(caller, ct);
+        if (admitted.IsError || !admitted.Result) return Refused(admitted.Message, AzoaErrorCodes.Forbidden);
         for (var attempt = 0; attempt < 2; attempt++)
         {
+            if (TerminalStatuses.Contains(operation.Status)) await RepairSettlementAsync(operation, ct);
             if (operation.Parameters.TryGetValue(ClientSigningParameters.SignedTransaction, out var saved))
                 return await ReplayAsync(operation, plan, module, saved, signedTransactionBase64, ct);
             if (!Submittable.Contains(operation.Status))
@@ -86,18 +94,34 @@ public sealed class ClientSignedOperationService(
     public async Task<ClientSigningReconcileOutcome> ReconcileAsync(IBlockchainOperation operation, DateTime now, CancellationToken ct)
     {
         if (ReadPlan(operation) is not { } plan) return ClientSigningReconcileOutcome.Flagged;
+        if (TerminalStatuses.Contains(operation.Status))
+        {
+            // RV-L5-03: the generic terminal-settlement repair; a crash between the status CAS and the claim settles here.
+            await RepairSettlementAsync(operation, ct);
+            return ClientSigningReconcileOutcome.Unchanged;
+        }
         if (operation.Status is not (OperationStatus.AwaitingSignature or OperationStatus.PendingConfirmation))
             return ClientSigningReconcileOutcome.Unchanged;
         var stale = now - operation.CreatedDate >= SignatureTtl;
         if (operation.Status == OperationStatus.AwaitingSignature && !stale) return ClientSigningReconcileOutcome.Unchanged;
         if (Module(plan) is not { } module) return ClientSigningReconcileOutcome.Flagged;
-        var observation = await ObserveAsync(module, plan, operation.Parameters.GetValueOrDefault(ClientSigningParameters.TransactionHash), ct);
+        var evidence = operation.Parameters.GetValueOrDefault(ClientSigningParameters.AbsenceEvidence);
+        var observation = await ObserveAsync(module, plan, operation.Parameters.GetValueOrDefault(ClientSigningParameters.TransactionHash),
+            evidence, ct);
         if (observation is null) return ClientSigningReconcileOutcome.Flagged;
-        if (observation.Verdict == ClientSigningVerdicts.Pending
+        if (observation.Verdict == ClientSigningVerdicts.Pending && observation.EvidenceJson is { } progress && progress != evidence)
+        {
+            // Resumable absence-scan progress (Solana); a status-preserving CAS so a concurrent transition still wins.
+            await transitions.TryTransitionAsync(operation.Id, operation.Status, operation.Status,
+                With(operation, (ClientSigningParameters.AbsenceEvidence, progress)), null, ct);
+            return ClientSigningReconcileOutcome.Unchanged;
+        }
+        if (observation.Verdict is ClientSigningVerdicts.Pending or ClientSigningVerdicts.Unproven
             || (observation.Verdict == ClientSigningVerdicts.NonceConsumed && !Attributable(operation, observation)))
         {
-            // An unexpiring signature (Ethereum) or an unattributed nonce: only an operator, or the signer submitting, settles it.
-            var unattributed = observation.Verdict == ClientSigningVerdicts.NonceConsumed;
+            // An unexpiring signature (Ethereum), an unattributed nonce, or an absence the node cannot prove: only an operator,
+            // or the signer submitting, settles it.
+            var unattributed = observation.Verdict is ClientSigningVerdicts.NonceConsumed or ClientSigningVerdicts.Unproven;
             var park = operation.Status == OperationStatus.AwaitingSignature && stale && (plan.ValidThroughHeight is null || unattributed)
                 || operation.Status == OperationStatus.PendingConfirmation && unattributed;
             if (!park) return ClientSigningReconcileOutcome.Unchanged;
@@ -109,13 +133,14 @@ public sealed class ClientSignedOperationService(
         return await ApplyTerminalAsync(operation, observation, null, ct);
     }
 
-    /// <summary>Stuck rows for the operator console: unsigned past the TTL, or parked.</summary>
+    /// <summary>Stuck rows for the operator console: unsigned or unconfirmed past the TTL (RV-L5-04: dropped or underpriced), or parked.</summary>
     public async Task<IReadOnlyList<StuckClientSignedOperationView>> ListStuckAsync(int limit, CancellationToken ct)
     {
         var ids = await transitions.ListStuckAsync(DateTimeOffset.UtcNow - SignatureTtl, limit, ct);
         var views = new List<StuckClientSignedOperationView>();
         foreach (var id in ids)
         {
+            if (views.Count >= Math.Max(1, limit)) break;
             if (await operations.GetByIdAsync(id, ct) is not { IsError: false, Result: { } operation } || ReadPlan(operation) is not { } plan)
                 continue;
             views.Add(new(operation.Id, operation.UserId, operation.Status, operation.CreatedDate, plan.ChainType, plan.Network, plan.Signer,
@@ -145,11 +170,12 @@ public sealed class ClientSignedOperationService(
         // different transaction from the same signer at the same nonce (re-proven by the module).
         var own = operation.Parameters.GetValueOrDefault(ClientSigningParameters.TransactionHash);
         var supplied = string.IsNullOrWhiteSpace(resolution.TransactionId) ? null : resolution.TransactionId.Trim();
-        var observation = await ObserveAsync(module, plan, own ?? supplied, ct);
+        var evidence = operation.Parameters.GetValueOrDefault(ClientSigningParameters.AbsenceEvidence);
+        var observation = await ObserveAsync(module, plan, own ?? supplied, evidence, ct);
         if (observation is { Verdict: ClientSigningVerdicts.NonceConsumed, TransactionId: null } && own is not null && supplied is not null
             && !string.Equals(own, supplied, StringComparison.OrdinalIgnoreCase))
-            observation = await ObserveAsync(module, plan, supplied, ct);
-        if (observation is null || observation.Verdict == ClientSigningVerdicts.Pending
+            observation = await ObserveAsync(module, plan, supplied, evidence, ct);
+        if (observation is null || observation.Verdict is ClientSigningVerdicts.Pending or ClientSigningVerdicts.Unproven
             || (observation.Verdict == ClientSigningVerdicts.NonceConsumed && !Attributable(operation, observation)))
             return Refused("Chain evidence does not settle this operation yet"
                 + (observation?.Detail is { } detail ? ": " + detail : "."), AzoaErrorCodes.Conflict);
@@ -194,10 +220,26 @@ public sealed class ClientSignedOperationService(
         if (!await transitions.TryTransitionAsync(operation.Id, operation.Status, next, With(operation, [.. updates]), DateTimeOffset.UtcNow, ct))
             return ClientSigningReconcileOutcome.Unchanged;
         var payload = confirmed ? observation.TransactionId ?? string.Empty : updates.First(item => item.Item1 == ClientSigningParameters.Error).Item2;
+        await SettleClaimsAsync(operation, confirmed, payload, ct);
+        return confirmed ? ClientSigningReconcileOutcome.Completed : ClientSigningReconcileOutcome.Failed;
+    }
+
+    /// <summary>Re-settles a terminal client-signed row's still-InProgress claims from the row's own recorded outcome.</summary>
+    private async Task RepairSettlementAsync(IBlockchainOperation operation, CancellationToken ct)
+    {
+        if (operation.Status == OperationStatus.Completed
+            && operation.Parameters.GetValueOrDefault(ClientSigningParameters.TransactionHash) is { Length: > 0 } hash)
+            await SettleClaimsAsync(operation, true, hash, ct);
+        else if (operation.Status == OperationStatus.Failed && operation.Parameters.ContainsKey(ClientSigningParameters.Outcome)
+            && operation.Parameters.GetValueOrDefault(ClientSigningParameters.Error) is { Length: > 0 } error)
+            await SettleClaimsAsync(operation, false, error, ct);
+    }
+
+    private async Task SettleClaimsAsync(IBlockchainOperation operation, bool completed, string payload, CancellationToken ct)
+    {
         foreach (var key in new[] { ClientSigningParameters.ExecutionIdempotencyKey, "IdempotencyKey" })
             if (operation.Parameters.GetValueOrDefault(key) is { Length: > 0 } claim)
-                await SettleAsync(claim, confirmed, payload, operation.Id, ct);
-        return confirmed ? ClientSigningReconcileOutcome.Completed : ClientSigningReconcileOutcome.Failed;
+                await SettleAsync(claim, completed, payload, operation.Id, ct);
     }
 
     /// <summary>
@@ -208,11 +250,11 @@ public sealed class ClientSignedOperationService(
         => observation.TransactionId is not null;
 
     private async Task<ClientSigningObservation?> ObserveAsync(IClientSignedTransferModule module, ClientSigningPlan plan, string? transactionId,
-        CancellationToken ct)
+        string? evidence, CancellationToken ct)
     {
         try
         {
-            var observed = await module.ObserveClientSignedTransferAsync(plan, transactionId, ct);
+            var observed = await module.ObserveClientSignedTransferAsync(plan, transactionId, evidence, ct);
             if (!observed.IsError && observed.Result is not null) return observed.Result;
             logger.LogWarning("Client-signed plan observation refused: {Message}", observed.Message);
             return null;

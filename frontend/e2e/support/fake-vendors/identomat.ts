@@ -23,11 +23,13 @@ export interface IdentomatSessionRecord {
   clientUserId: string
   business: boolean
   verdict: IdentomatVerdict
+  /** Set by `POST /external-api/delete/`; a deleted session stops answering the result endpoint. */
+  deleted: boolean
 }
 
 /**
  * Behavioral fake of the Identomat hosts (modern `/begin` and KYB `/result`, AML screening, and
- * the legacy widget `/external-api/result/`), plus a `/__e2e/*` control plane for journeys. Shapes
+ * the legacy widget `/external-api/result/` and `/external-api/delete/`), plus a `/__e2e/*` control plane for journeys. Shapes
  * follow the vendor documentation (`.omc/research/identomat-api-2026-10-15.md`) and mirror
  * `tests/AZOA.WebAPI.IntegrationTests/Http/Infrastructure/IdentomatVendor.cs`. See `e2e/AGENTS.md`.
  */
@@ -50,10 +52,18 @@ export async function startIdentomat(environment: E2eEnvironment): Promise<Serve
     if (request.method !== 'POST') return respond(405)
     const body = parse(request)
 
-    if (request.path === '/external-api/result/') {
+    if (request.path === '/external-api/result/' || request.path === '/external-api/delete/') {
       if (body.company_key !== environment.identomatCompanyKey) return respond(401)
       // Keyed by the session token the applicant url carries: in standard mode that is the id.
-      const session = sessions.find((candidate) => !candidate.business && candidate.sessionToken === body.session_token)
+      const session = sessions.find(
+        (candidate) => !candidate.business && !candidate.deleted && candidate.sessionToken === body.session_token,
+      )
+      // Documented delete answers: `true`, or `{ argumentError: 'session-not-found' }`.
+      if (request.path === '/external-api/delete/') {
+        if (!session) return respond(200, { argumentError: 'session-not-found' })
+        session.deleted = true
+        return respond(200, true)
+      }
       if (!session) return respond(200, { result: null })
       if (session.verdict === 'approved')
         return respond(200, {
@@ -86,6 +96,7 @@ export async function startIdentomat(environment: E2eEnvironment): Promise<Serve
           clientUserId: String(body.clientUserId ?? ''),
           business,
           verdict: 'pending',
+          deleted: false,
         }
         sessions.push(session)
         const url = `${origin}/widget/?session_token=${session.sessionToken}`

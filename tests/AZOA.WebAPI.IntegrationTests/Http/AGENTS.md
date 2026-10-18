@@ -71,6 +71,12 @@ submitted yet. `Pending` therefore answers `{"result":null}` (no verdict, which 
 non-terminal `UNKNOWN` without manual review), and `ManualCheck` answers the documented
 `MANUAL_CHECK`. The fake previously answered `MANUAL_CHECK` for every undecided session, which hid
 L2-1/L2-2. `IdentityResultRequests` counts `/external-api/result/` calls for budget assertions.
+
+The widget host also answers the documented `POST /external-api/delete/` (`company_key`, `session_token`):
+`true` when it deletes, `{"argumentError":"session-not-found"}` otherwise (`Providers/Kyc/IdentomatSessionDeletion.cs`
+treats both as gone). A deleted session stops answering `/external-api/result/`; `DeleteRequests` lets an orphan or
+late-response flow assert the node actually asked (IDENTOMAT-RECOVERY, L2).
+
 ## §stripe-fake — `Infrastructure/StripeVendor.cs`
 
 `POST /v1/checkout/sessions` (form-encoded) and `GET` by id, Bearer secret key checked.

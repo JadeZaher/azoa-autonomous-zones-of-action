@@ -3,7 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import ganache from 'ganache';
+import { serveLocalChain } from './hardhat-network.mjs';
 import { ContractFactory, JsonRpcProvider, TypedDataEncoder, Wallet, keccak256 } from 'ethers';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,11 +23,9 @@ if (await occupied(Number(process.env.AZOA_API_HOST_PORT ?? 5000)))
   throw new Error('Stop every local API/worker instance before setup; the managed API port is still listening.');
 if (await occupied(port)) throw new Error('Local EVM port is occupied; setup never replaces an existing chain.');
 const artifact = JSON.parse(fs.readFileSync(path.join(root, 'artifacts/AzoaNft.json'), 'utf8'));
-const server = ganache.server({ logging: { quiet: true }, chain: { chainId: 31337, hardfork: 'shanghai' }, wallet: { totalAccounts: 5 } });
-await server.listen(port, '127.0.0.1');
-const provider = new JsonRpcProvider(`http://127.0.0.1:${port}`, 31337, { staticNetwork: true });
-const account = Object.values(server.provider.getInitialAccounts())[0];
-const authority = new Wallet(account.secretKey, provider);
+const server = await serveLocalChain({ totalAccounts: 5, port });
+const provider = new JsonRpcProvider(server.url, 31337, { staticNetwork: true });
+const authority = new Wallet(server.keys[0], provider);
 const contract = await new ContractFactory(artifact.abi, artifact.bytecode, authority).deploy(authority.address);
 await contract.waitForDeployment();
 const address = await contract.getAddress();
@@ -50,7 +48,7 @@ if (keccak256(template) !== keccak256(normalized) || await contract.credentialAu
   throw new Error('Deployed code or immutable authority differs from the pinned artifact.');
 const epoch = randomUUID();
 const configuration = {
-  AZOA: { Ethereum: { PlatformPrivateKey: account.secretKey, AllocatorActivationEpoch: epoch,
+  AZOA: { Ethereum: { PlatformPrivateKey: authority.privateKey, AllocatorActivationEpoch: epoch,
     Nft: { Networks: { Devnet: { ContractAddress: address, RuntimeCodeHash: keccak256(deployed), CredentialAuthorityAddress: authority.address } } } } },
   Blockchain: { Mode: 'Real', DefaultChain: 'Ethereum', DefaultNetwork: 'Devnet', Chains: [
     { ChainType: 'Algorand', Devnet: { IsEnabled: false }, Testnet: { IsEnabled: false }, Mainnet: { IsEnabled: false } },

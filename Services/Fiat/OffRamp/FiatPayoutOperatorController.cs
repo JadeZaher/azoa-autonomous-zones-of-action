@@ -90,18 +90,44 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     private readonly IFiatPayoutLedger _payouts;
     private readonly IOffRamp _offRamp;
     private readonly ISagaCoordinator _sagas;
+    private readonly IPayoutAccountService _accounts;
     private readonly ILogger<FiatPayoutOperatorController> _logger;
 
     public FiatPayoutOperatorController(
         IFiatPayoutLedger payouts,
         IOffRamp offRamp,
         ISagaCoordinator sagas,
+        IPayoutAccountService accounts,
         ILogger<FiatPayoutOperatorController> logger)
     {
         _payouts = payouts ?? throw new ArgumentNullException(nameof(payouts));
         _offRamp = offRamp ?? throw new ArgumentNullException(nameof(offRamp));
         _sagas = sagas ?? throw new ArgumentNullException(nameof(sagas));
+        _accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// RV-L1-01: resolves a payout-account setup stuck past its Stripe replay window — attaches the account Stripe
+    /// holds for the claim, or releases the claim once Stripe proves none exists. See AGENTS.md §account-recovery.
+    /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
+    [HttpPost("accounts/{userId:guid}/setup/resolve")]
+    [EnableRateLimiting("financial")]
+    [ProducesResponseType(typeof(AZOAResult<PayoutAccountSetupResolution>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ResolveAccountSetup(Guid userId, [FromBody] FiatPayoutOperatorReason body, CancellationToken ct)
+    {
+        var identity = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        if (!Guid.TryParse(identity, out var actor) || actor == Guid.Empty) return Forbid();
+        var result = await _accounts.ResolveStuckSetupAsync(userId, actor, body?.Reason ?? string.Empty, ct);
+        if (!result.IsError)
+            return Ok(result);
+        return result.Code switch
+        {
+            AzoaErrorCodes.NotFound => NotFound(result),
+            AzoaErrorCodes.InvalidRequest => BadRequest(result),
+            _ => Conflict(result),
+        };
     }
 
     /// <summary>Cash-outs in flight, reversed, or waiting on a person. Newest first.</summary>
@@ -151,6 +177,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     /// the idempotency ledger before it moves anything, and a move whose outcome cannot be
     /// established parks the cash-out rather than repeating it.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/advance")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]
@@ -190,6 +217,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     /// Gives the units back and closes the cash-out. The honest undo for one that will never be
     /// sent — and the only one that leaves the person whole.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/return")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]
@@ -215,6 +243,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     }
 
     /// <summary>Returns units only after the failed bank payout's funding is recovered.</summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/recover")]
     [EnableRateLimiting("financial")]
     public async Task<IActionResult> Recover(string id, [FromBody] FiatPayoutOperatorReason body, CancellationToken ct)
@@ -229,6 +258,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     /// Audited exit for a parked or reversed cash-out: <c>record-paid</c> or <c>return-units</c>,
     /// each allowed only when re-read Stripe (and chain) evidence supports it.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/resolve")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]
@@ -259,6 +289,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     }
 
     /// <summary>Parks the cash-out for a person, with the reason recorded on the row.</summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/park")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]
@@ -281,6 +312,7 @@ public sealed class FiatPayoutOperatorController : ControllerBase
     /// Queues the durable saga for a cash-out that has stopped moving — the recovery when the
     /// saga could not be started at request time.
     /// </summary>
+    [Authorize(Policy = "RecentNodeOperatorSession")]
     [HttpPost("{id}/restart")]
     [EnableRateLimiting("financial")]
     [ProducesResponseType(typeof(AZOAResult<FiatPayoutView>), StatusCodes.Status200OK)]

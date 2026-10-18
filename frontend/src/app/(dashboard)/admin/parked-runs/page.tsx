@@ -87,7 +87,7 @@ function groupParkedRuns(steps: SagaStepView[], hardStuckMinutes: number, now: n
   return rows.sort((a, b) => b.ageMinutes - a.ageMinutes)
 }
 
-function SweepSummary({ sweep }: { sweep: WorkflowReconciliationSweep }) {
+function SweepSummary({ sweep, parkedAfter }: { sweep: WorkflowReconciliationSweep; parkedAfter?: number }) {
   const totals = sweep.results.reduce(
     (acc, r) => ({
       confirmed: acc.confirmed + r.reconciledConfirmed,
@@ -96,7 +96,7 @@ function SweepSummary({ sweep }: { sweep: WorkflowReconciliationSweep }) {
     }),
     { confirmed: 0, released: 0, unresolved: 0 },
   )
-  const verdict = describeSweep(sweep)
+  const verdict = describeSweep(sweep, parkedAfter)
 
   return (
     <Card className={verdict.tone === 'ok' ? 'border-primary/40 bg-primary/5' : 'border-destructive/40 bg-destructive/5'}>
@@ -133,21 +133,28 @@ export default function ParkedRunsConsolePage() {
   const [sweep, setSweep] = useState<WorkflowReconciliationSweep | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
-  const fetchParked = useCallback(async () => {
+  const [parkedAfterSweep, setParkedAfterSweep] = useState<number | undefined>(undefined)
+
+  /** Re-reads the parked board; resolves to the number of parked runs, or undefined when the read failed. */
+  const fetchParked = useCallback(async (): Promise<number | undefined> => {
     setLoading(true); setError(null)
     const parsedLimit = Number(limit)
     const res = await azoa.api.listSagaDeadLetters({
       status: ['Parked'],
       limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : undefined,
     })
+    let parkedRuns: number | undefined
     if (isOk(res)) {
-      setSteps(res.value.filter(isReconciliationPark))
+      const parked = res.value.filter(isReconciliationPark)
+      setSteps(parked)
       setNow(Date.now())
+      parkedRuns = new Set(parked.map(step => step.correlationKey)).size
     } else {
       setSteps([])
       setError(res.error.message)
     }
     setLoading(false)
+    return parkedRuns
   }, [limit])
 
   useEffect(() => { fetchParked() }, [fetchParked])
@@ -168,12 +175,13 @@ export default function ParkedRunsConsolePage() {
     try {
       const res = await azoa.api.reconcileParkedRuns()
       if (isOk(res)) {
+        const parkedAfter = await fetchParked()
         setSweep(res.value)
-        const verdict = describeSweep(res.value)
+        setParkedAfterSweep(parkedAfter)
+        const verdict = describeSweep(res.value, parkedAfter)
         if (verdict.tone === 'ok') toast.success(verdict.title)
         else if (verdict.tone === 'bad') toast.error(verdict.title)
         else toast.warning(verdict.title)
-        await fetchParked()
       } else {
         toast.error(res.error.message)
       }
@@ -253,7 +261,7 @@ export default function ParkedRunsConsolePage() {
 
       {error && <ErrorBanner message={error} onRetry={fetchParked} />}
 
-      {sweep && <SweepSummary sweep={sweep} />}
+      {sweep && <SweepSummary sweep={sweep} parkedAfter={parkedAfterSweep} />}
 
       <Card>
         <CardHeader className="pb-3">

@@ -1,0 +1,58 @@
+{
+  "purpose": "Jupiter v6 + Orca Whirlpool clone for the local Solana DEX protocol fixture",
+  "capturedAt": "2026-10-17T19:09:38.341Z",
+  "source": "https://api.mainnet-beta.solana.com",
+  "slot": 458147380,
+  "programs": [
+    {
+      "programId": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+      "programData": "4Ec7ZxZS6Sbdg5UGSLHbAnM7GQHp2eFd4KYWRexAipQT",
+      "slot": 458147372,
+      "lastDeploySlot": 454465850,
+      "dataLength": 2892224,
+      "executableSha256": "099da3a26d336aa7174960f057546f192fc1ccda8e3e9d1b4aa5c69fa8a79a5f"
+    },
+    {
+      "programId": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+      "programData": "CtXfPzz36dH5Ws4UYKZvrQ1Xqzn42ecDW6y8NKuiN8nD",
+      "slot": 458147376,
+      "lastDeploySlot": 457152296,
+      "dataLength": 10485715,
+      "executableSha256": "c422b22f3eefe86dd55878a4f505b9c68c26e241dc96af1573ca032b24b8ee3f"
+    }
+  ],
+  "pool": {
+    "address": "HJPjoWUrhoZzkNfRpHuieeFk9WcZWjwy6PBjZ81ngndJ",
+    "owner": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+    "dataLength": 653,
+    "whirlpoolsConfig": "2LecshUwdy9xi7meFgHtFJQNSKk4KdTrcpvaB56dP2NQ",
+    "tickSpacing": 64,
+    "tokenMintA": "So11111111111111111111111111111111111111112",
+    "tokenVaultA": "3YQm7ujtXWJU2e9jhp2QGHpnn1ShXn12QjvzMvDgabpX",
+    "tokenMintB": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "tokenVaultB": "2JTw1fE2wz1SymWUQ7UqpVtrTuKjcd6mWwYwUJUCh2rq",
+    "oracle": "4GkRbcYg1VKsZropgai4dMf2Nj2PkXNLf43knFpavrSi",
+    "tickArraysAtCapture": [
+      {
+        "startTickIndex": -39424,
+        "address": "EVqGhR2ukNuqZNfvFFAitrX6UqrRm2r8ayKX9LH9xHzK"
+      },
+      {
+        "startTickIndex": -33792,
+        "address": "2Eh8HEeu45tCWxY6ruLLRN6VcTSD7bfshGj7bZA87Kne"
+      },
+      {
+        "startTickIndex": -28160,
+        "address": "A2W6hiA2nf16iqtbZt9vX8FJbiXjv3DBUG3DgTja61HT"
+      },
+      {
+        "startTickIndex": -22528,
+        "address": "CEstjhG1v4nUgvGDyFruYEbJ18X8XeN4sX1WFCLt4D5c"
+      },
+      {
+        "startTickIndex": -16896,
+        "address": "HoDhUt77EotPNLUfJuvCCLbmpiM1JR6WLqWxeDPR1xvK"
+      }
+    ]
+  }
+}

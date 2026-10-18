@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Text.Json;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain.ClientSigning;
 using Nethereum.Model;
 
@@ -10,9 +11,13 @@ namespace AZOA.WebAPI.Providers.Blockchain.Ethereum;
 
 public partial class EthereumProvider : IClientSignedTransferModule
 {
+    /// <summary>Durable state of a client-signed nonce reservation in <c>ethereum_preparation</c>; custody never signs it.</summary>
+    internal const string ClientReservedState = "ClientReserved";
+
     /// <summary>The fields the unsigned EIP-1559 payload commits to, kept so observation never re-parses RLP.</summary>
+    /// <param name="ReservationId">The <c>ethereum_preparation</c> row that owns <see cref="Nonce"/> for this plan alone.</param>
     private sealed record EthereumClientPlan(string ChainId, string Nonce, string PriorityFee, string MaxFee, string GasLimit,
-        string Target, string Value, string Data);
+        string Target, string Value, string Data, string ReservationId);
 
     /// <inheritdoc/>
     public async Task<AZOAResult<ClientSigningPlan>> PlanClientSignedTransferAsync(ValueTransferIntent intent, CancellationToken ct)
@@ -31,15 +36,63 @@ public partial class EthereumProvider : IClientSignedTransferModule
         var sender = intent.Sender.ToLowerInvariant();
         var gas = await EstimateGasAsync(sender, target, value, data, "plan a client-signed transfer", ct);
         if (gas.IsError) return Error<ClientSigningPlan>(gas.Message);
-        var pending = await RpcReadAsync("eth_getTransactionCount", new object?[] { sender, "pending" }, ct);
-        if (pending.IsError || !pending.TryGetString(out var nonceText) || !EthereumHex.TryParseQuantity(nonceText, out var nonce))
-            return Error<ClientSigningPlan>("The sender's pending nonce is unavailable.");
-        var call = new EthereumClientPlan(chain.Result.ToString(CultureInfo.InvariantCulture), nonce.ToString(CultureInfo.InvariantCulture),
+        var chainId = chain.Result.ToString(CultureInfo.InvariantCulture);
+        var intentHash = CanonicalJson.Hash(intent);
+        var reserved = await ReserveClientNonceAsync("eip155:" + chainId, sender, intent.PreparationKey, intentHash, ct);
+        if (reserved.IsError || reserved.Result is null) return Error<ClientSigningPlan>(reserved.Message);
+        var call = new EthereumClientPlan(chainId, BigInteger.Parse(reserved.Result.Nonce, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
             fees.Result.MaxPriorityFeePerGas.ToString(CultureInfo.InvariantCulture), fees.Result.MaxFeePerGas.ToString(CultureInfo.InvariantCulture),
-            gas.Result.ToString(CultureInfo.InvariantCulture), target.ToLowerInvariant(), value.ToString(CultureInfo.InvariantCulture), EthereumHex.Data(data));
+            gas.Result.ToString(CultureInfo.InvariantCulture), target.ToLowerInvariant(), value.ToString(CultureInfo.InvariantCulture), EthereumHex.Data(data),
+            reserved.Result.Id);
         return Ok(new ClientSigningPlan(1, ChainType, ActiveNetwork.ToString(), "eip155:" + call.ChainId, ClientSigningFormats.Ethereum,
-            sender, Convert.ToBase64String(ClientTransaction(call).GetRLPEncodedRaw()), CanonicalJson.Hash(intent),
+            sender, Convert.ToBase64String(ClientTransaction(call).GetRLPEncodedRaw()), intentHash,
             Nonce: call.Nonce, RecoveryJson: JsonSerializer.Serialize(call)));
+    }
+
+    /// <summary>
+    /// RV-L5-01/-05: reserves this operation's own signer nonce in the shared allocator table (UNIQUE live nonce), so concurrent
+    /// plans from one signer never share a nonce, bytes or hash. See <c>Providers/Blockchain/Ethereum/AGENTS.md</c> §client-signed nonces.
+    /// </summary>
+    private async Task<AZOAResult<EthereumPreparation>> ReserveClientNonceAsync(string protocol, string sender, string operationKey,
+        string intentHash, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(operationKey) || (_custodyScopeFactory is null && _preparationStore is null))
+            return Error<EthereumPreparation>("Client-signed Ethereum plans require an operation key and the durable nonce store.");
+        var key = "client-signed:" + operationKey;
+        var id = EthereumIdentity(protocol, sender, key);
+        return await WithPreparationStoreAsync(async store =>
+        {
+            var row = await store.GetAsync(id, ct);
+            for (var attempt = 0; attempt < 32 && row is null; attempt++)
+            {
+                var pending = await RpcReadAsync("eth_getTransactionCount", new object?[] { sender, "pending" }, ct);
+                if (pending.IsError || !pending.TryGetString(out var nonceText) || !EthereumHex.TryParseQuantity(nonceText, out var nonce))
+                    return Error<EthereumPreparation>("The sender's pending nonce is unavailable.");
+                // Reservations at or above the chain's pending nonce are open plans; a new plan queues after them.
+                var highest = await store.GetHighestNonceAsync(protocol, sender, ct);
+                if (highest is not null) nonce = BigInteger.Max(nonce, BigInteger.Parse(highest.Nonce, CultureInfo.InvariantCulture) + 1);
+                if (nonce < 0 || nonce >= ulong.MaxValue) return Error<EthereumPreparation>("The sender's nonce is outside the EIP-2681 range.");
+                var now = DateTimeOffset.UtcNow;
+                row = await store.TryClaimAsync(new EthereumPreparation
+                {
+                    Id = id, ProtocolIdentity = protocol, Network = ActiveNetwork.ToString(), Sender = sender, PreparationKey = key,
+                    Nonce = nonce.ToString("D78", CultureInfo.InvariantCulture), CallFingerprint = intentHash, IntentJson = "{}",
+                    State = ClientReservedState, CreatedAt = now, UpdatedAt = now,
+                }, ct);
+            }
+            if (row is null) return Error<EthereumPreparation>("The sender's nonce admission is busy; retry the transfer.");
+            return row.CallFingerprint == intentHash && row.State == ClientReservedState && row.Sender == sender && row.NonceSlot.Length == 0
+                ? Ok(row) : Error<EthereumPreparation>("The operation's nonce reservation belongs to another transfer.");
+        });
+    }
+
+    /// <summary>True while the plan's reservation alone owns its nonce; the UNIQUE live-nonce index makes that exclusive.</summary>
+    private async Task<bool> OwnsClientReservationAsync(ClientSigningPlan plan, EthereumClientPlan call, CancellationToken ct)
+    {
+        var row = await WithPreparationStoreAsync(store => store.GetAsync(call.ReservationId, ct));
+        return row is { State: ClientReservedState, NonceSlot.Length: 0 } && row.CallFingerprint == plan.IntentHash
+            && row.Sender == plan.Signer.ToLowerInvariant() && row.ProtocolIdentity == plan.ProtocolIdentity
+            && BigInteger.Parse(row.Nonce, CultureInfo.InvariantCulture) == BigInteger.Parse(call.Nonce, CultureInfo.InvariantCulture);
     }
 
     /// <inheritdoc/>
@@ -65,6 +118,8 @@ public partial class EthereumProvider : IClientSignedTransferModule
         var chain = await GetChainIdAsync(ct);
         if (chain.IsError || plan.ProtocolIdentity != "eip155:" + chain.Result.ToString(CultureInfo.InvariantCulture))
             return Error<string>("The saved plan belongs to another Ethereum chain.");
+        if (!await OwnsClientReservationAsync(plan, ReadClientPlan(plan), ct))
+            return Error<string>("The plan no longer owns its reserved nonce; nothing was broadcast.");
         var response = await RpcCallAsync("eth_sendRawTransaction",
             new object?[] { EthereumHex.Data(Convert.FromBase64String(signedTransactionBase64)) }, ct);
         if (response.IsError)
@@ -76,7 +131,7 @@ public partial class EthereumProvider : IClientSignedTransferModule
 
     /// <inheritdoc/>
     public async Task<AZOAResult<ClientSigningObservation>> ObserveClientSignedTransferAsync(ClientSigningPlan plan, string? transactionId,
-        CancellationToken ct)
+        string? evidenceJson, CancellationToken ct)
     {
         var call = ReadClientPlan(plan);
         var chain = await GetChainIdAsync(ct);
@@ -96,8 +151,14 @@ public partial class EthereumProvider : IClientSignedTransferModule
                     || !TryReadQuantityProperty(tx, "nonce", out var txNonce) || txNonce != nonce)
                     return Error<ClientSigningObservation>("The transaction is not from the plan signer at the plan nonce.");
                 if (SamePayload(tx, call))
+                {
+                    // RV-L5-01 operator path: a hash attributes to this row only while its reservation alone owns the nonce.
+                    if (!await OwnsClientReservationAsync(plan, call, ct))
+                        return Error<ClientSigningObservation>("The plan does not own its reserved nonce, so no transaction can settle it.");
                     return await FinalizedOutcomeAsync(transactionId, pending, ct);
-                consumer = transactionId;
+                }
+                // RV-L5-08: a different consumer is attributed only once mined in a canonical finalized block.
+                if (await FinalizedCanonicalReceiptAsync(transactionId, ct) is not null) consumer = transactionId;
             }
         }
         var finalizedNonce = await RpcReadAsync("eth_getTransactionCount", new object?[] { plan.Signer, "finalized" }, ct);
@@ -112,18 +173,24 @@ public partial class EthereumProvider : IClientSignedTransferModule
 
     private async Task<AZOAResult<ClientSigningObservation>> FinalizedOutcomeAsync(string transactionId,
         AZOAResult<ClientSigningObservation> pending, CancellationToken ct)
+        => await FinalizedCanonicalReceiptAsync(transactionId, ct) is { } status
+            ? Ok(new ClientSigningObservation(status == 1 ? ClientSigningVerdicts.Confirmed : ClientSigningVerdicts.FailedOnChain, transactionId))
+            : pending;
+
+    /// <summary>The receipt status (0 or 1) when the transaction is mined in a canonical block at or below finalized, else null.</summary>
+    private async Task<BigInteger?> FinalizedCanonicalReceiptAsync(string transactionId, CancellationToken ct)
     {
         var receipt = await RpcCallAsync("eth_getTransactionReceipt", new object?[] { transactionId }, ct);
         if (receipt.IsError || receipt.IsNullResult
             || !TryReadQuantityProperty(receipt.Value, "blockNumber", out var blockNumber)
             || !TryReadStringProperty(receipt.Value, "blockHash", out var blockHash)
-            || !TryReadQuantityProperty(receipt.Value, "status", out var status) || status < 0 || status > 1) return pending;
+            || !TryReadQuantityProperty(receipt.Value, "status", out var status) || status < 0 || status > 1) return null;
         var block = await RpcCallAsync("eth_getBlockByNumber", new object?[] { EthereumHex.Quantity(blockNumber), false }, ct);
         var finalized = await RpcCallAsync("eth_getBlockByNumber", new object?[] { "finalized", false }, ct);
         if (block.IsError || finalized.IsError || block.IsNullResult || finalized.IsNullResult
             || !TryReadStringProperty(block.Value, "hash", out var canonical) || !string.Equals(canonical, blockHash, StringComparison.OrdinalIgnoreCase)
-            || !TryReadQuantityProperty(finalized.Value, "number", out var finalizedNumber) || finalizedNumber < blockNumber) return pending;
-        return Ok(new ClientSigningObservation(status == 1 ? ClientSigningVerdicts.Confirmed : ClientSigningVerdicts.FailedOnChain, transactionId));
+            || !TryReadQuantityProperty(finalized.Value, "number", out var finalizedNumber) || finalizedNumber < blockNumber) return null;
+        return status;
     }
 
     private static bool SamePayload(JsonElement tx, EthereumClientPlan call)
@@ -139,7 +206,7 @@ public partial class EthereumProvider : IClientSignedTransferModule
             throw new InvalidOperationException("The saved plan is not an Ethereum client-signing plan for this network.");
         var call = JsonSerializer.Deserialize<EthereumClientPlan>(plan.RecoveryJson)
             ?? throw new InvalidOperationException("The saved Ethereum plan fields are missing.");
-        if (call.Nonce != plan.Nonce || "eip155:" + call.ChainId != plan.ProtocolIdentity
+        if (call.Nonce != plan.Nonce || "eip155:" + call.ChainId != plan.ProtocolIdentity || string.IsNullOrWhiteSpace(call.ReservationId)
             || !ClientTransaction(call).GetRLPEncodedRaw().AsSpan().SequenceEqual(Convert.FromBase64String(plan.UnsignedPayloadBase64)))
             throw new InvalidOperationException("The saved Ethereum plan fields do not reproduce its unsigned bytes.");
         return call;

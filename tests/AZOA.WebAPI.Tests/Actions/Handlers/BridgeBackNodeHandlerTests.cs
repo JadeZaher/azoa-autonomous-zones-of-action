@@ -112,6 +112,22 @@ public class BridgeBackNodeHandlerTests
         result.Message.Should().Contain("fail-closed");
     }
 
+    [Theory]
+    [InlineData(ActionNodeType.Bridge, """{"sourceChain":"Algorand","targetChain":"Solana","tokenId":"1","recipientAddress":"R","wtt":{"source":7}}""")]
+    [InlineData(ActionNodeType.Back, """{"bridgeTransactionId":"b","sourceRecipientAddress":"S","wtt":"not-an-object"}""")]
+    public async Task A_node_naming_a_malformed_wtt_route_is_refused_at_publish_and_never_runs_on_the_trusted_bridge(
+        ActionNodeType type, string config)
+    {
+        AZOA.WebAPI.Services.Actions.ActionNodeConfigRegistry.Validate(type, config).Should().NotBeNull("publish refuses it");
+        var bridge = new Mock<ICrossChainBridgeService>(MockBehavior.Strict);
+        IActionNodeHandler handler = type == ActionNodeType.Bridge ? new BridgeNodeHandler(bridge.Object) : new BackNodeHandler(bridge.Object);
+
+        var result = await handler.HandleAsync(CtxFor(NodeWith(type, config), Guid.NewGuid(), Guid.NewGuid()));
+
+        result.IsError.Should().BeTrue("a strict bridge mock would throw on any legacy call; the node fails before reaching it");
+        result.Message.Should().Contain("wtt route");
+    }
+
     [Fact]
     public async Task BridgeNodeHandler_UnknownMode_FailsClosed_NoBridgeCall()
     {

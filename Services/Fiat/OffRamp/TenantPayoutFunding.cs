@@ -47,7 +47,9 @@ public sealed record TenantPayoutFloatView(
     long RecomputedCreditedMinorUnits,
     long RecomputedReservedMinorUnits,
     long RecomputedFinalizedMinorUnits,
-    bool Consistent);
+    bool Consistent,
+    int StrandedReservedCount = 0,
+    DateTimeOffset? OldestReservedAt = null);
 
 /// <summary>D-8 tenant-funded payouts: reserve, finalize, release, reverse and credit the float exactly once.</summary>
 public interface ITenantPayoutFunding
@@ -86,6 +88,9 @@ public sealed class TenantPayoutFunding(
     ILogger<TenantPayoutFunding> logger) : ITenantPayoutFunding
 {
     private const int MaxAttempts = 4;
+
+    /// <summary>A Reserved debit older than this is stranded money an operator must see (bank payouts settle in days).</summary>
+    public static readonly TimeSpan StrandedReservedAfter = TimeSpan.FromDays(7);
 
     /// <inheritdoc />
     public async Task<TenantFundingReservation> ReserveAsync(FiatPayout row, CancellationToken ct = default)
@@ -236,10 +241,17 @@ public sealed class TenantPayoutFunding(
             var reserved = snapshot.Debits.Where(d => d.State == TenantPayoutDebitStates.Reserved).Sum(d => d.Outstanding());
             var finalized = snapshot.Debits.Where(d => d.State == TenantPayoutDebitStates.Finalized).Sum(d => d.Outstanding());
             var available = row.Available();
+            // M4: money held Reserved past the threshold is stranded, so the float is not reported consistent.
+            var openDebits = snapshot.Debits.Where(d => d.State == TenantPayoutDebitStates.Reserved).ToList();
+            var strandedBefore = clock.GetUtcNow() - StrandedReservedAfter;
+            var stranded = openDebits.Count(d => d.CreatedAt < strandedBefore);
+            DateTimeOffset? oldest = openDebits.Count == 0 ? null : openDebits.Min(d => d.CreatedAt);
             views.Add(new TenantPayoutFloatView(row.Id, tenantId, row.CurrencyCode, row.Environment,
                 row.CreditedMinorUnits, row.ReservedMinorUnits, row.FinalizedMinorUnits, available,
                 available < 0 ? -available : 0, pending, credited, reserved, finalized,
-                credited == row.CreditedMinorUnits && reserved == row.ReservedMinorUnits && finalized == row.FinalizedMinorUnits));
+                credited == row.CreditedMinorUnits && reserved == row.ReservedMinorUnits && finalized == row.FinalizedMinorUnits
+                    && stranded == 0,
+                stranded, oldest));
         }
 
         return views;
@@ -250,10 +262,9 @@ public sealed class TenantPayoutFunding(
     private async Task<int> PromoteMaturedAsync(string? floatId, CancellationToken ct)
     {
         var promoted = 0;
-        foreach (var candidate in await ledger.ListMaturedPendingAsync(clock.GetUtcNow(), 50, ct))
+        // L3: filtered by float in the query, so another tenant's backlog cannot starve this float's promotion.
+        foreach (var candidate in await ledger.ListMaturedPendingAsync(clock.GetUtcNow(), 50, floatId, ct))
         {
-            if (floatId is not null && candidate.FloatId != floatId)
-                continue;
             for (var attempt = 0; attempt < MaxAttempts; attempt++)
             {
                 var credit = await ledger.GetCreditAsync(candidate.Id, ct);
@@ -292,11 +303,13 @@ public sealed class TenantPayoutFunding(
             fiat.CredentialsFor(fiat.ActiveEnvironment), OffRampService.TransferGroupFor(row.Id), ct);
         if (listed.IsError || listed.Result is not { HasMore: false } page)
             return null;
-        var ours = page.Transfers.Where(transfer => transfer.IntentId == row.Id).ToList();
-        return ours.Count switch
+        // L2: any transfer in the group is evidence; one that does not name this cash-out is unresolvable here.
+        if (page.Transfers.Any(transfer => transfer.IntentId != row.Id))
+            return null;
+        return page.Transfers.Count switch
         {
             0 => new TransferEvidence(true, null),
-            1 => new TransferEvidence(true, ours[0]),
+            1 => new TransferEvidence(true, page.Transfers[0]),
             _ => null,
         };
     }
@@ -308,7 +321,9 @@ public sealed class TenantPayoutFunding(
         {
             // Critic rule 2: one reversal source in every state, monotonic, capped at the debit.
             var reversed = Math.Min(debit.AmountMinorUnits, Math.Max(debit.ReversedMinorUnits, transfer.AmountReversedMinorUnits));
-            var terminal = row.Status is FiatPayoutStatuses.Paid or FiatPayoutStatuses.Returned or FiatPayoutStatuses.Refused;
+            // M4: a transfer reversed while bank-pending ends Reversed, which is terminal for the debit too.
+            var terminal = row.Status is FiatPayoutStatuses.Paid or FiatPayoutStatuses.Returned
+                or FiatPayoutStatuses.Refused or FiatPayoutStatuses.Reversed;
             var toState = debit.State == TenantPayoutDebitStates.Reserved && terminal
                 ? TenantPayoutDebitStates.Finalized
                 : debit.State;

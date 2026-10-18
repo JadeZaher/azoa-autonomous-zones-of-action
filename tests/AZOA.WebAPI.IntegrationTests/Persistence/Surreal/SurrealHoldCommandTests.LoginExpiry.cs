@@ -44,7 +44,7 @@ public sealed partial class SurrealHoldCommandTests
         var frozen = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(new { runId, nodeId, Actor = _actor, Intent = open }));
         var witness = new WorkflowSigningWitness(1, ExpiredLogin().Direct!.Credential,
             new(runId, nodeId, _actor, null, CanonicalJson.HashCanonical(frozen)), [AzoaScopes.ActionExecute, AzoaScopes.TransferSign], []);
-        await Save(new ActionRun { Id = runId.ToString("N"), ActionId = "action_definition:" + Guid.NewGuid().ToString("N"),
+        await Save(new ActionRun { Id = runId.ToString("N"), ActionId = "action:" + Guid.NewGuid().ToString("N"),
             UserId = "user:" + _actor.ToString("N"), Status = ActionRun.ActionRunStatusKind.Running, StartedAt = now });
         await Save(new ActionNodeExecution { Id = executionId.ToString("N"), RunId = "action_run:" + runId.ToString("N"),
             NodeId = "action_node:" + nodeId.ToString("N"), State = ActionNodeExecution.ActionNodeState.Running,

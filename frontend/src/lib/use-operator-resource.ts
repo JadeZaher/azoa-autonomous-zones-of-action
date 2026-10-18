@@ -9,15 +9,19 @@ export function useOperatorResource<T>(path: string | null, fallbackError: strin
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(path !== null)
 
-  const reload = useCallback(async () => {
-    if (path === null) return
+  /** Re-reads the path; resolves to the fresh value, or null after recording the error. */
+  const reload = useCallback(async (): Promise<T | null> => {
+    if (path === null) return null
     setLoading(true)
     setError(null)
     try {
-      setData(await operatorRequest<T>(path))
+      const value = await operatorRequest<T>(path)
+      setData(value)
+      return value
     } catch (cause) {
       setData(null)
       setError(cause instanceof Error ? cause.message : fallbackError)
+      return null
     } finally {
       setLoading(false)
     }

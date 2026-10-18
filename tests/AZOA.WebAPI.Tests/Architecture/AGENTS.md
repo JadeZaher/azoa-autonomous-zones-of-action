@@ -90,19 +90,60 @@ hold this way.
 
 `RouteAuthorizationGateTests` and `CrossTenantGateTests` load every lane's
 `Inventories/RouteAuthorization/*.json` and `Inventories/CrossTenant/*.json` (each file is a JSON array).
-Each lane classifies only the routes and stores it owns.
+After round 4 (RV-L4-04, X-3..X-5) the inventories have a single owner (`r4/fix-security`); later lanes add
+their own rows in their lane file.
 
-- **Route rows:** `route` (`"VERB /template"`, compared after normalizing case and constraints),
-  `controller`, `action`, `class` (`value-moving` | `non-value`), `scope` (required when value-moving),
-  `enforcement`, plus optional `childCredentialScope` and `childSigningScopes`. Every POST/PUT/DELETE/PATCH
-  action must have exactly one row. A row that names a missing action is stale and fails. The
-  `[DelegatedChildCredential]` endpoints and the delegable scope vocabulary must equal the inventoried
-  child-credential rows.
-- **Store rows:** `store` (interface name, or the concrete `Surreal*Store` when it has no interface),
-  `method`, `tenantCheck`. An owned-resource method is any public method on an `Interfaces.Stores`
-  interface, or on an interface-less `Surreal*Store`, that takes an ownership-named parameter (`userId`,
-  `tenantId`, `actor`, ...) or takes or returns a type with an owner/tenant property. Overloads share one
-  row.
+- **Route rows:** `route` (`"VERB /template"`), `controller`, `action`, `class` (`value-moving` |
+  `non-value`), `scope` (required when value-moving), `enforcement`, `policies`, plus optional
+  `childCredentialScope` and `childSigningScopes`. The key is verb + normalized template + action, so an
+  overload, a second `[HttpX]` template or a second controller `[Route]` prefix (an `api/operator` alias)
+  each need their own row. `policies` is the action's real authorization: class and method
+  `[Authorize(Policy)]` names, `authenticated` for a bare `[Authorize]`, `anonymous` for
+  `[AllowAnonymous]`, or `none`. The gate compares it to the reflected attributes and fails on any
+  difference, and it fails when `enforcement` names a policy the action does not carry. That is what makes a
+  row a claim about enforcement rather than free text: removing or swapping an `[Authorize]` turns the gate
+  red until the row is re-reviewed.
+- **Verb and minimal-API completeness:** every controller action must declare its verbs
+  (`IActionHttpMethodProvider`: `[HttpX]` or `[AcceptVerbs]`); a `[Route]`-only action answers every verb
+  and fails. A `Map{Post,Put,Delete,Patch,Methods}` call in production code fails too, because the
+  controller inventory cannot see it.
+- **Store rows:** `store`, `method`, `tenantCheck`, one method per row (no composite `"A / B"` rows). The
+  scanned contracts are every public interface named `*Store` or `*Ledger` anywhere in the API assembly,
+  plus a concrete `Surreal*Store`/`*Ledger` that implements none of them. A row keyed on a concrete class
+  that implements a scanned interface is stale: key it by the interface. An owned-resource method takes an
+  ownership-named parameter (`userId`, `tenantId`, `actor`, ...) or takes or returns a type with an
+  owner/tenant property. Overloads share one row. `tenantCheck` starts with how isolation holds:
+  `query-scoped`, `query-pinned`, `caller-checked` (name the caller and the comparison), `keyed`,
+  `fenced`, `worker-only`, `operator-only`, `node-level`, or `internal` (no production caller).
 
-Both "every ... is classified" tests fail until every lane's inventory has merged, which is intended: they
-are the sweep's completeness gate.
+**Rule for every lane that adds a route or a store method:** add its row in the same change, with the
+real `policies`, and run both gate classes by filter. The "every ... is classified" tests are the
+completeness gate and must stay green on the merged tree.
+
+## surrealql-source-rules
+
+`SurrealQlSourceRulesTests` scans production C# (`CSharpSource`: comment-free code plus string literals with
+offsets, so raw/verbatim/interpolated SQL is seen) for the round-4 fail-closed classes. Every rule is pinned by a
+pre-fix snippet that must be red and a post-fix snippet that must be green (the mutation check). Rules: no `;` in
+`SurrealQuery.Of` literals; `Of` takes only literal text (or a same-file `const`, or a ternary of literals) outside
+`Core/Surreal/{SurrealIdentifierTemplate,SurrealGeneratedStatementScope,SigningAuthorityFence}.cs`; SRDB0001 is
+suppressed only there (pragma/`SuppressMessage`; project files never silence it); no `Assign(Key(…))`; no ordinal
+enum casts (target resolved by reflection to an app enum); prefer an absolute result index captured before a
+top-level RETURN (RV-L4's 3.1.4 probe: BEGIN and COMMIT keep their slots, so this is robustness, not a live defect);
+nothing between a top-level RETURN and COMMIT (3.1.4 skips it); every typed `UpdateOnly`/`DeleteOnly` carries a
+`Where` (1.3.0 `Build()` throws without one); no bare id into a `[References]` column — POCO initializers and typed
+`Set`, types resolved the way the compiler would (aliases, usings, nested types), locals followed one level; POCOs
+whose store links ids in `ToStorage` are skipped only if that store provably links every reference column; forward
+migrations use `DEFINE … OVERWRITE`; `tenant_payout_*` rows change only through the D-8 ledger commit.
+
+`KnownViolations` is a ratchet of reviewed residue per (rule, file) with an owner: a new site fails, a fixed site
+fails until its entry is lowered. The round-4 entries are W3 fix-batch items (lane L6 record §Needs other lane).
+
+## transaction-scope-gate
+
+`TransactionScopeGateTests` mechanizes `round3-transaction-scope-review.md`: every member that opens `BEGIN` reaches
+a `COMMIT` in itself, a callee or a caller (call-graph fixpoint; delegate-committed openers listed with a reason);
+every batch family that decides carries a THROW guard (`THROW`, `RequireResult`, fence calls; guardless batches
+listed with a reason); egress writes (`AuthorizedAt`/`ExternalExposedAt`) happen only in members that call the
+family's operation-row committer (swap `CommitStageAsync`, WTT `CommitAsync`); and ratcheted files carry a
+`// lock: <row>` comment before every in-batch read in the same member.

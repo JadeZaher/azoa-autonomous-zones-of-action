@@ -350,6 +350,26 @@ public class ReversalTests
     }
 
     [Fact]
+    public async Task An_unacknowledged_clawback_broadcast_parks_and_is_never_clawed_again_under_a_new_attempt()
+    {
+        // H1: the POST to algod threw after the node may have accepted the clawback. The payer still holds
+        // more than is owed, so a blind attempt-suffixed retry WOULD find units to take a second time.
+        var harness = new Harness { Holding = (BigInteger.Parse(IssuedBaseUnits) * 2).ToString(), ClawbackBroadcastUnacknowledged = true };
+        await harness.ApplyRefundAsync();
+        var id = harness.Reversals.Single().Id;
+
+        await harness.Compensation.RecoverAsync(id);
+        await harness.Compensation.RecoverAsync(id);
+
+        harness.ClawedBack.Should().ContainSingle("an outcome-unknown broadcast is ambiguous, not a definitive failure");
+        var row = harness.Reversals.Single();
+        row.Status.Should().Be(FiatReversalStatuses.NeedsOperator);
+        row.PendingMoveKey.Should().NotBeNull();
+        (await harness.Idempotency.GetAsync(row.PendingMoveKey!, default))!.Error
+            .Should().Contain(ReversalCompensationService.AmbiguousRecoveryReason).And.Contain("tx=CLAWBACKTX");
+    }
+
+    [Fact]
     public async Task An_unreadable_balance_is_retryable_and_recovers_nothing()
     {
         var harness = new Harness { HoldingReadFails = true };
@@ -784,6 +804,9 @@ public class ReversalTests
 
         public bool ClawbackConfirms { get; init; } = true;
 
+        /// <summary>The clawback reached algod and the POST failed: the provider's outcome-unknown error.</summary>
+        public bool ClawbackBroadcastUnacknowledged { get; init; }
+
         public ReversalOptions Options { get; } = new();
 
         public OnRampOptions OnRamp { get; } = new();
@@ -933,6 +956,9 @@ public class ReversalTests
                     SigningContext _, string? __, CancellationToken ___) =>
                 {
                     ClawedBack.Add(new ClawbackCall(assetId, holder, recipient, amount.BaseUnits));
+                    if (ClawbackBroadcastUnacknowledged)
+                        return AZOAResult<string>.Failure(
+                            "Broadcast failed to revoke ASA (tx CLAWBACKTX); reconcile against chain truth before re-sending: timeout");
                     return ClawbackConfirms
                         ? AZOAResult<string>.Success("CLAWBACKTX", "confirmed in round 42")
                         : AZOAResult<string>.Success(
@@ -1135,6 +1161,9 @@ public class ReversalTests
             Guid userId, CancellationToken ct = default)
             => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(
                 _rows.Values.Where(r => r.Status == OnRampLotStatuses.Issued).ToList()));
+
+        public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListSoldSinceAsync(DateTimeOffset since, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<IReadOnlyList<OnRampLot>>.Success(Array.Empty<OnRampLot>()));
 
         public Task<AZOAResult<IReadOnlyList<OnRampLot>>> ListNeedingOperatorAsync(
             int limit, CancellationToken ct = default)
