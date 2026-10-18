@@ -19,6 +19,7 @@ const ERROR_COPY: Record<string, string> = {
   link_failed: 'That account could not be linked. Start the linking flow again.',
   link_conflict: 'That provider account is already linked to a different user.',
   unsupported_provider: 'That sign-in provider is not available on this node.',
+  registration_closed: 'This node is not accepting new accounts, so that sign-in could not create one. An account that already exists can still sign in.',
 }
 
 export default function OAuthCallbackPage() {

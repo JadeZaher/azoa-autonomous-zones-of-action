@@ -86,6 +86,7 @@ interface AZOAResponse<T> {
 
 // ─── Response types matching .NET DTOs ───
 
+/** `UserProfileResponse` (own profile / operator view); credential fields such as password hashes never cross the wire. */
 export interface UserResponse {
   id: string;
   username: string;
@@ -94,6 +95,10 @@ export interface UserResponse {
   firstName?: string;
   lastName?: string;
   isActive: boolean;
+  isVerified?: boolean;
+  /** `dapp:user` | `dapp:developer` | `dapp:manager`. */
+  dappRole?: string;
+  createdDate?: string;
 }
 
 export interface BusinessVerificationCapabilities {
@@ -1276,7 +1281,8 @@ export interface ActionNodeTemplateCreateParams {
 export interface ApiKeyCreateParams {
   name: string;
   expiresInDays?: number;
-  scopes?: string;
+  /** Scope list, or the wire CSV; sent as CSV. */
+  scopes?: string | readonly string[];
 }
 
 export interface ApiKeyCreateResult {
@@ -1286,7 +1292,8 @@ export interface ApiKeyCreateResult {
   key: string;
   keyPrefix: string;
   expiresAt?: string;
-  scopes?: string;
+  /** Normalized from the wire CSV; empty means legacy full access. */
+  scopes: string[];
   createdDate: string;
 }
 
@@ -1299,7 +1306,21 @@ export interface ApiKeyInfo {
   lastUsedAt?: string;
   revokedAt?: string;
   isActive: boolean;
-  scopes?: string;
+  /** Normalized from the wire CSV; empty means legacy full access. */
+  scopes: string[];
+}
+
+/** API key scopes arrive as a comma-separated string (`ApiKeyInfo.Scopes`); accepts that or a list and returns a clean list. */
+export function normalizeApiKeyScopes(value: unknown): string[] {
+  const parts = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return parts
+    .filter((part): part is string => typeof part === "string")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function withNormalizedScopes<T extends { scopes?: unknown }>(value: T): T & { scopes: string[] } {
+  return { ...value, scopes: normalizeApiKeyScopes(value?.scopes) };
 }
 
 /**
@@ -2384,8 +2405,8 @@ export class AzoaApiClient {
   // ─── User ───
 
   async login(email: string, password: string): Promise<Result<string, SdkError>> {
-    // .NET returns AZOAResult<string> where Result is the JWT token
-    return this.request("POST", "/api/user/login", { email, password });
+    // .NET returns AZOAResult<string> where Result is the JWT token; a credential exchange never carries or refreshes a session.
+    return this.request("POST", API_PATHS.USER_LOGIN, { email, password }, false, undefined, true);
   }
 
   async loginByUserId(userId: string, password: string): Promise<Result<string, SdkError>> {
@@ -2401,7 +2422,7 @@ export class AzoaApiClient {
     lastName?: string;
   }): Promise<Result<UserResponse, SdkError>> {
     // .NET returns AZOAResult<IUser>
-    return this.request("POST", "/api/user/register", params);
+    return this.request("POST", API_PATHS.USER_REGISTER, params, false, undefined, true);
   }
 
   /**
@@ -2418,6 +2439,7 @@ export class AzoaApiClient {
     return this.request("GET", `/api/user/${userId}`);
   }
 
+  /** Operator only (`Operator` policy): an account sign-in gets 403. */
   async getAllUsers(): Promise<Result<UserResponse[], SdkError>> {
     return this.request("GET", "/api/user");
   }
@@ -2503,8 +2525,15 @@ export class AzoaApiClient {
       { "Idempotency-Key": options.idempotencyKey });
   }
 
+  /** The controller answers a bare array (not an `AZOAResult`); anything that is not a list is refused, never read as empty. */
   async listFungibleCreations(offset = 0, limit = 25): Promise<Result<FungibleCreationView[], SdkError>> {
-    return this.request("GET", `/api/fungible-creation?offset=${offset}&limit=${limit}`);
+    const path = `/api/fungible-creation?offset=${Math.max(0, Math.trunc(offset))}&limit=${clampLimit(limit, 100)}`;
+    const result = await this.requestBare<unknown>("GET", path);
+    if (!result.ok) return result;
+    const body = result.value as { result?: unknown } | unknown[] | null;
+    const list = Array.isArray(body) ? body : body && typeof body === "object" && Array.isArray(body.result) ? body.result : null;
+    if (!list) return this.fail(new SdkError(SdkErrorCode.API_ERROR, `GET ${path}: unexpected response shape`, { method: "GET", path }));
+    return ok(list as FungibleCreationView[]);
   }
 
   async getFungibleCreation(id: string): Promise<Result<FungibleCreationView, SdkError>> {
@@ -4058,12 +4087,18 @@ export class AzoaApiClient {
 
   /** Create a new API key. The raw key is returned ONCE — store it securely. */
   async createApiKey(params: ApiKeyCreateParams): Promise<Result<ApiKeyCreateResult, SdkError>> {
-    return this.request("POST", "/api/apikey", params);
+    const scopes = params.scopes === undefined ? undefined : normalizeApiKeyScopes(params.scopes).join(",");
+    const result = await this.request<ApiKeyCreateResult>("POST", "/api/apikey", { ...params, scopes });
+    return result.ok ? ok(withNormalizedScopes(result.value)) : result;
   }
 
   /** List all API keys for the authenticated user (raw keys are never returned). */
   async listApiKeys(): Promise<Result<ApiKeyInfo[], SdkError>> {
-    return this.request("GET", "/api/apikey");
+    const result = await this.request<ApiKeyInfo[]>("GET", "/api/apikey");
+    if (!result.ok) return result;
+    if (!Array.isArray(result.value))
+      return this.fail(new SdkError(SdkErrorCode.API_ERROR, "GET /api/apikey: unexpected response shape", { method: "GET", path: "/api/apikey" }));
+    return ok(result.value.map(withNormalizedScopes));
   }
 
   /** Revoke an API key (soft-delete — deactivated but record retained). */
@@ -4099,7 +4134,8 @@ export class AzoaApiClient {
    */
   async rotateApiKey(keyId: string): Promise<Result<ApiKeyCreateResult, SdkError>> {
     assertUuid(keyId, "keyId");
-    return this.request("POST", API_PATHS.APIKEY_ROTATE(keyId));
+    const result = await this.request<ApiKeyCreateResult>("POST", API_PATHS.APIKEY_ROTATE(keyId));
+    return result.ok ? ok(withNormalizedScopes(result.value)) : result;
   }
 
   // ─── DappSeries (DappSeriesController) ───
@@ -4372,9 +4408,9 @@ export class AzoaApiClient {
     try {
       const resp = await this.fetchWithAuth(method, path, body, extraHeaders, anonymous);
 
-      // An anonymous call carries no token to refresh, so a 401 falls straight
-      // through to the plain !resp.ok branch below instead of this retry.
-      if (!anonymous && resp.status === 401 && this.config.onTokenRefresh && !_retried) {
+      // An anonymous call or a credential exchange has no session to refresh, so its 401
+      // (e.g. "Invalid credentials.") falls straight through to the plain !resp.ok branch.
+      if (!anonymous && !isCredentialExchangePath(path) && resp.status === 401 && this.config.onTokenRefresh && !_retried) {
         try {
           await this.getOrRefreshToken(true);
         } catch (refreshErr) {
@@ -4425,7 +4461,7 @@ export class AzoaApiClient {
     try {
       const resp = await this.fetchWithAuth(method, path, body);
 
-      if (resp.status === 401 && this.config.onTokenRefresh && !_retried) {
+      if (!isCredentialExchangePath(path) && resp.status === 401 && this.config.onTokenRefresh && !_retried) {
         try {
           await this.getOrRefreshToken(true);
         } catch (refreshErr) {
@@ -4463,10 +4499,17 @@ export class AzoaApiClient {
       const body = (await resp.json()) as {
         message?: string;
         error?: string;
-        detail?: SdkErrorDetail;
+        detail?: SdkErrorDetail | string;
+        errors?: Record<string, unknown>;
         code?: string;
       };
-      return { message: body.message ?? body.error, detail: body.detail, code: typeof body.code === "string" ? body.code : undefined };
+      const message = body.message ?? body.error ?? validationErrorsText(body.errors)
+        ?? (typeof body.detail === "string" ? body.detail : undefined);
+      return {
+        message,
+        detail: typeof body.detail === "object" && body.detail !== null ? body.detail : undefined,
+        code: typeof body.code === "string" ? body.code : undefined,
+      };
     } catch {
       return {}; // non-JSON / empty body (e.g. a bare 500 with no body)
     }
@@ -4487,6 +4530,7 @@ export class AzoaApiClient {
       path,
       detail: parsed.detail,
       serverCode: parsed.code,
+      serverMessage: parsed.message,
     });
   }
 
@@ -4590,6 +4634,28 @@ export class AzoaApiClient {
     }
     return this.fail(new SdkError(SdkErrorCode.NETWORK_ERROR, `${method} ${path}: network request failed`, { method, path, cause: e as Error }));
   }
+}
+
+/** Routes that exchange credentials for a session: a 401 there is a refusal, never an expired session. */
+const CREDENTIAL_EXCHANGE_PATHS = new Set<string>([
+  API_PATHS.USER_LOGIN,
+  API_PATHS.USER_REGISTER,
+  "/api/user/auth/challenge",
+  "/api/user/auth/verify",
+  "/api/user/claim",
+]);
+
+function isCredentialExchangePath(path: string): boolean {
+  return CREDENTIAL_EXCHANGE_PATHS.has(path.split("?")[0]!);
+}
+
+/** Flattens ASP.NET `ValidationProblemDetails.errors` into one message, or undefined when absent. */
+function validationErrorsText(errors: Record<string, unknown> | undefined): string | undefined {
+  if (!errors || typeof errors !== "object") return undefined;
+  const messages = Object.values(errors)
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return messages.length > 0 ? messages.join(" ") : undefined;
 }
 
 /** Shallow-redact obvious credentials before logging a request body. */

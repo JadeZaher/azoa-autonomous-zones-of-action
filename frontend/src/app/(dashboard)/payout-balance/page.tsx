@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorBanner } from '@/components/shared/error-banner'
-import { refusalMessage } from '@/lib/refusal-messages'
+import { isPaymentsNotConfigured, refusalMessage } from '@/lib/refusal-messages'
 import { PendingRequestNotice } from '@/components/shared/pending-request-notice'
 import {
   type SavedRequest, claimRequestKey, clearSavedRequest, formatMinorUnits, isDefiniteRefusal, isFinishedCheckout,
@@ -30,6 +30,7 @@ export default function PayoutBalancePage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<SavedRequest | null>(null)
+  const [paymentsUnconfigured, setPaymentsUnconfigured] = useState(false)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -75,9 +76,11 @@ export default function PayoutBalancePage() {
           clearSavedRequest(SCOPE, userId)
           if (result.value.resumed) setNotice('This matched your earlier top-up, which has already finished. Nothing new was charged. Press "Continue to payment" again to start a new top-up.')
         }
-      } else if (isDefiniteRefusal(result.error.status)) {
+      } else if (isDefiniteRefusal(result.error.status) || isPaymentsNotConfigured(result.error)) {
+        // PAYMENTS_NOT_CONFIGURED is refused before any payment page exists, so there is nothing to resume.
         clearSavedRequest(SCOPE, userId)
         setPending(null)
+        setPaymentsUnconfigured(isPaymentsNotConfigured(result.error))
         setError(refusalMessage(result.error, 'The top-up was refused. Nothing was charged.'))
       } else {
         setPending(request)
@@ -157,7 +160,7 @@ export default function PayoutBalancePage() {
                   <Label htmlFor="top-up-amount">Amount</Label>
                   <Input id="top-up-amount" className="w-40" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} placeholder="500.00" />
                 </div>
-                <Button onClick={() => void startTopUp()} disabled={busy || !userId}>Continue to payment</Button>
+                <Button onClick={() => void startTopUp()} disabled={busy || !userId || paymentsUnconfigured}>Continue to payment</Button>
               </div>
               {topUp?.paymentUrl && topUp.settlementState === 'not_started' && (
                 <a className="inline-flex items-center gap-1 underline underline-offset-4" href={topUp.paymentUrl}>

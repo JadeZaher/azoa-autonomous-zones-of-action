@@ -2,13 +2,15 @@ import { screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EthereumPreparationView, SagaStepView, WalletIdentityMigrationView } from 'azoa-sdk'
+import type { EthereumPreparationView, FiatPayoutView, SagaStepView, WalletIdentityMigrationView } from 'azoa-sdk'
 import * as operatorRoute from '@/app/api/operator/[...path]/route'
 import { EthereumRecovery } from '@/components/operator/chain-recovery'
 import OperatorFeesPage from '@/app/operator/(console)/fees/page'
+import OperatorPayoutsPage from '@/app/operator/(console)/payouts/page'
+import OperatorReversalsPage from '@/app/operator/(console)/reversals/page'
 import OperatorSagasPage from '@/app/operator/(console)/sagas/page'
 import OperatorWalletIdentitiesPage from '@/app/operator/(console)/wallet-identities/page'
-import { SLICE_API_ORIGIN, apiUrl, azoaOk } from '../msw/api'
+import { SLICE_API_ORIGIN, apiUrl, azoaError, azoaOk } from '../msw/api'
 import { renderSlice } from './render-slice'
 
 vi.mock('next/headers', () => ({ cookies: async () => ({ get: () => ({ value: 'operator-session-token' }) }) }))
@@ -114,5 +116,44 @@ describe('operator console slice (real BFF route)', () => {
     await renderSlice(<OperatorFeesPage />, { apis: [{ handlers }], session: 'anonymous' })
 
     await waitFor(() => expect(screen.getByText('The node returned an invalid operator response.')).toBeInTheDocument())
+  })
+
+  it('reads the cash-out board through the BFF with the operator cookie, not a user Bearer (M1)', async () => {
+    const payout: FiatPayoutView = {
+      id: 'ab'.repeat(16), status: 'NeedsOperator', statusReason: 'Bank outcome unknown', subjectUserId: '0f0e0d0c-0b0a-4908-8706-050403020100',
+      tenantId: null, amountMinorUnits: 2500, currencyCode: 'USD', quantityBaseUnits: '2500', agedQuantityBaseUnits: '2500',
+      unitsOwedBaseUnits: '0', reversedMinorUnits: 0, consumedLotCount: 1, attemptCount: 1, requestedAt: '2026-10-18T05:00:00Z',
+    }
+    const seen: (string | null)[] = []
+    // `FiatPayoutOperatorController.ListBoard` (Operator policy) returns `AZOAResult<IReadOnlyList<FiatPayoutView>>`.
+    const handlers = [http.get(apiUrl('/api/admin/fiat-payouts'), ({ request }) => {
+      seen.push(request.headers.get('Authorization'))
+      return HttpResponse.json(azoaOk([payout]))
+    })]
+    await renderSlice(<OperatorPayoutsPage />, { apis: [{ handlers }], session: 'anonymous' })
+
+    expect(await screen.findByText(/1 need.? a decision/)).toBeInTheDocument()
+    expect(seen).toEqual(['Bearer operator-session-token'])
+  })
+
+  it('never shows zero totals next to a refused read (M1)', async () => {
+    const handlers = [http.get(apiUrl('/api/admin/fiat-reversals'), () => HttpResponse.json(azoaError('Forbidden.'), { status: 403 }))]
+    await renderSlice(<OperatorReversalsPage />, { apis: [{ handlers }], session: 'anonymous' })
+
+    expect(await screen.findByText('The board could not be read, so nothing is shown.')).toBeInTheDocument()
+    expect(screen.queryByText('Money taken back')).not.toBeInTheDocument()
+    expect(screen.queryByText(/0\.00/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nothing has been taken back/)).not.toBeInTheDocument()
+  })
+
+  it('says Ethereum is not enabled instead of a 500 or an empty list (M2)', async () => {
+    // `EthereumOperatorRecoveryController.List` with no Ethereum rail: 409 `{ isError, message, code }`.
+    const handlers = [http.get(apiUrl('/api/operator/ethereum/recovery/Devnet'), () =>
+      HttpResponse.json(azoaError('Ethereum recovery is not available on this node.', 'ETHEREUM_RECOVERY_UNAVAILABLE'), { status: 409 }))]
+    await renderSlice(<EthereumRecovery />, { apis: [{ handlers }], session: 'anonymous' })
+
+    expect(await screen.findByText(/Ethereum is not enabled on this node/)).toBeInTheDocument()
+    expect(screen.queryByText(/No platform preparations need recovery/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Activate platform signer/)).not.toBeInTheDocument()
   })
 })

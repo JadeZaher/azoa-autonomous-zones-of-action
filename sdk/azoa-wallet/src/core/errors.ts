@@ -37,6 +37,8 @@ export interface SdkErrorOptions {
   detail?: SdkErrorDetail;
   /** The server's typed refusal code (`AZOAResult.code`, e.g. `KYB_REQUIRED`), when it sent one. */
   serverCode?: string;
+  /** The server's own message without the method/path prefix, when it sent one. */
+  serverMessage?: string;
 }
 
 export class SdkError extends Error {
@@ -48,6 +50,7 @@ export class SdkError extends Error {
   readonly path?: string;
   readonly detail?: SdkErrorDetail;
   readonly serverCode?: string;
+  readonly serverMessage?: string;
 
   constructor(
     code: SdkErrorCode,
@@ -64,6 +67,7 @@ export class SdkError extends Error {
     this.path = options?.path;
     this.detail = options?.detail;
     this.serverCode = options?.serverCode;
+    this.serverMessage = options?.serverMessage;
   }
 
   /**
@@ -83,6 +87,7 @@ export class SdkError extends Error {
       ...(this.path !== undefined ? { path: this.path } : {}),
       ...(this.detail !== undefined ? { detail: this.detail } : {}),
       ...(this.serverCode !== undefined ? { serverCode: this.serverCode } : {}),
+      ...(this.serverMessage !== undefined ? { serverMessage: this.serverMessage } : {}),
       ...(this.cause !== undefined
         ? { cause: { name: this.cause.name, message: this.cause.message } }
         : {}),
@@ -123,6 +128,11 @@ export class SdkError extends Error {
       lines.push(`  cause:   ${this.cause.name}: ${this.cause.message}`);
     return lines.join("\n");
   }
+}
+
+/** Copy for a person: the server's own message when it sent one, else the SDK message without its `METHOD /path:` prefix. */
+export function userFacingMessage(error: SdkError): string {
+  return error.serverMessage?.trim() || error.message.replace(/^[A-Z]+ \S+: /, "");
 }
 
 /**

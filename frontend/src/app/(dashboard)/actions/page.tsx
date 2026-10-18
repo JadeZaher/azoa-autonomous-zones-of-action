@@ -156,6 +156,10 @@ function ActionList() {
     }
   }, [userId])
 
+  // Load on mount so a just-created action is listed without a manual reload (QA L8).
+  // Deferred one microtask: a one-shot read against the API, not state derived during the effect (react-hooks/set-state-in-effect).
+  useEffect(() => { void Promise.resolve().then(loadActions) }, [loadActions])
+
   const loadAction = async (id: string) => {
     const result = await azoa.api.request<ActionDefinition>('GET', `/api/action/${id}`)
     if (isOk(result)) setSelected(result.value)
@@ -166,14 +170,14 @@ function ActionList() {
     setActionResult(null)
     setActionError(null)
     try {
-      const result = (await fn()) as { ok: boolean; value?: unknown; error?: { message: string } }
+      const result = (await fn()) as { ok: boolean; value?: unknown; error?: { message: string; status?: number } }
       if (result.ok) {
         setActionResult(result.value)
         if (selected) await loadAction(selected.id)
         // Reload list to reflect status changes (e.g. publish flips Draft→Active).
         await loadActions()
       } else {
-        setActionError(result.error?.message ?? `${label} failed`)
+        setActionError(result.error ? authoringRefusal(result.error) : `${label} failed`)
       }
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Unknown error')
@@ -361,6 +365,13 @@ function ActionList() {
   )
 }
 
+/** A 403 on authoring means the caller lacks the DApp developer role (`DappDevelop` policy); say so instead of a bare status (QA M4). */
+function authoringRefusal(error: { message: string; status?: number }): string {
+  if (error.status === 403)
+    return 'Creating and changing actions needs the DApp developer role. Ask a DApp manager or the node operator to assign it to your account.'
+  return error.message
+}
+
 // ─── Action Builder (visual) ───
 
 function ActionBuilder({ onCreated }: { onCreated: () => void }) {
@@ -393,7 +404,7 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
           setResult(res.value)
           onCreated()
         } else {
-          setError(res.error.message)
+          setError(authoringRefusal(res.error))
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Request failed')
@@ -555,7 +566,7 @@ function ActionTemplateCreator({ nodeTemplates, onCreated }: { nodeTemplates: No
           setResult(res.value)
           onCreated()
         } else {
-          setError(res.error.message)
+          setError(authoringRefusal(res.error))
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Request failed')
@@ -875,8 +886,11 @@ export default function ActionsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [tab, setTab] = useState('actions')
 
+  const [createdNotice, setCreatedNotice] = useState<string | null>(null)
+
   const onActionCreated = () => {
     setRefreshKey((k) => k + 1)
+    setCreatedNotice('Action created as a private draft. Validate and publish it from the list below.')
     setTab('actions')
   }
 
@@ -919,6 +933,7 @@ export default function ActionsPage() {
 
       {/* Panel — only the active one renders */}
       <div>
+        {tab === 'actions' && createdNotice && <p role="status" className="text-sm">{createdNotice}</p>}
         {tab === 'actions' && <ActionList key={refreshKey} />}
         {tab === 'create' && <ActionBuilder onCreated={onActionCreated} />}
         {tab === 'start-public' && <StartPublicAction />}

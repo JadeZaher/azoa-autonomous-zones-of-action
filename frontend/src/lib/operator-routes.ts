@@ -28,6 +28,9 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const HEX32 = '[0-9a-f]{32}'
 const HEX64 = '[0-9a-f]{64}'
 const NETWORK = '(Devnet|Testnet|Mainnet)'
+/** `FiatPayout.RecordIdFor` (hex32) and `FiatReversal.RecordIdFor` (hex64). */
+const PAYOUT_ID = HEX32
+const REVERSAL_ID = HEX64
 
 function text(body: Body, key: string, min: number, max: number): string | undefined {
   const value = body[key]
@@ -212,6 +215,40 @@ export const CONSOLE_ROUTES: ConsoleRoute[] = [
     },
   },
   { method: 'GET', pattern: /^node-governance\/fee-audit$/, upstream: () => '/api/node-governance/fee-audit', query: limitQuery(100) },
+  // Money boards moved from `/admin/*` (QA M1): Operator policy routes the user Bearer can never reach.
+  { method: 'GET', pattern: /^admin\/fiat-payouts$/, upstream: () => '/api/admin/fiat-payouts', query: limitQuery(500, 100) },
+  {
+    method: 'POST', pattern: new RegExp(`^admin/fiat-payouts/(${PAYOUT_ID})/(advance|restart)$`),
+    upstream: (_path, match) => `/api/admin/fiat-payouts/${match[1]}/${match[2]}`, body: emptyBody,
+  },
+  {
+    method: 'POST', pattern: new RegExp(`^admin/fiat-payouts/(${PAYOUT_ID})/(return|park|recover)$`),
+    upstream: (_path, match) => `/api/admin/fiat-payouts/${match[1]}/${match[2]}`, body: reasonBody(1),
+  },
+  {
+    method: 'POST', pattern: new RegExp(`^admin/fiat-payouts/(${PAYOUT_ID})/resolve$`),
+    upstream: (_path, match) => `/api/admin/fiat-payouts/${match[1]}/resolve`,
+    body: body => {
+      const reason = text(body, 'reason', 1, 512)
+      return reason && (body.resolution === 'record-paid' || body.resolution === 'return-units') && onlyKeys(body, ['resolution', 'reason'])
+        ? { resolution: body.resolution, reason } : null
+    },
+  },
+  {
+    method: 'POST', pattern: new RegExp(`^admin/fiat-payouts/accounts/(${UUID})/setup/resolve$`, 'i'),
+    upstream: (_path, match) => `/api/admin/fiat-payouts/accounts/${match[1].toLowerCase()}/setup/resolve`, body: reasonBody(1),
+  },
+  { method: 'GET', pattern: /^admin\/fiat-reversals$/, upstream: () => '/api/admin/fiat-reversals', query: limitQuery(500, 100) },
+  {
+    method: 'POST', pattern: new RegExp(`^admin/fiat-reversals/(${REVERSAL_ID})/(recover|settle|restart)$`),
+    upstream: (_path, match) => `/api/admin/fiat-reversals/${match[1]}/${match[2]}`, body: emptyBody,
+  },
+  {
+    method: 'POST', pattern: new RegExp(`^admin/fiat-reversals/(${REVERSAL_ID})/(resolve|clear-flag)$`),
+    upstream: (_path, match) => `/api/admin/fiat-reversals/${match[1]}/${match[2]}`, body: reasonBody(1),
+  },
+  // Parked-run re-probe (Operator policy on ActionController); observes settlement truth, never re-sends.
+  { method: 'POST', pattern: /^action\/runs\/reconcile-sweep$/, upstream: () => '/api/action/runs/reconcile-sweep', body: emptyBody },
 ]
 
 /** Resolves a console request against the round-4 allowlist; null when no entry admits it exactly. */

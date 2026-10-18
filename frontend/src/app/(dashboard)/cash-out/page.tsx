@@ -156,7 +156,7 @@ export default function CashOutPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Available</CardTitle>
+          <CardTitle>What you can cash out</CardTitle>
           <CardDescription>{quote?.statusMessage ?? 'Reading what you can cash out…'}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
