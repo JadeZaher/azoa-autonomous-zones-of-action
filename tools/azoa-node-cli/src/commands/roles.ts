@@ -29,15 +29,20 @@ export async function runRolesCreate(
   return data;
 }
 
+/**
+ * `PUT /roles/{id}` takes the SAME `{ name, permissions }` body as create (confirmed against
+ * `NodeAdminRoleRequest`/`UpdateRoleAsync`, lane A1 f4d5a77e) — it is a full replace, including
+ * the name, and can rename the role. `--name` is therefore required, not optional.
+ */
 export async function runRolesUpdate(
   id: string,
-  args: { permissions: string[] },
+  args: { name: string; permissions: string[] },
   options: CommonOptions,
 ): Promise<void> {
   const resolved = resolveProfile(options.profile);
   requireSession(resolved);
   await httpClientFor(resolved).call("PUT", `/api/node-admin/roles/${encodeURIComponent(id)}`, args);
-  emit(options.json, `Updated role ${id}.`, { id, ...args });
+  emit(options.json, `Updated role ${id} (name='${args.name}').`, { id, ...args });
 }
 
 export async function runRolesDelete(id: string, options: CommonOptions): Promise<void> {

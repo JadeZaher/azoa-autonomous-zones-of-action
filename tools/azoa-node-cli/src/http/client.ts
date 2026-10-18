@@ -89,7 +89,13 @@ export class AzoaHttpClient {
       throw AzoaCliError.fromServerCode("STEP_UP_REQUIRED", message);
     }
     if (result?.isError) {
-      throw AzoaCliError.fromServerCode(result.code ?? "AUTH_FAILED", result.message || `request failed (${status})`);
+      // Prefer the envelope's `code` over the HTTP status for exit-code mapping (plan.md §8 / lane
+      // A1 confirmed mapping in NodeAdminResults.StatusFor) — status is only a fallback below.
+      throw AzoaCliError.fromServerCode(
+        result.code ?? "AUTH_FAILED",
+        result.message || `request failed (${status})`,
+        result.retryAfterSeconds,
+      );
     }
     if (status >= 400) {
       throw AzoaCliError.network(`HTTP ${status} calling ${method} ${path}`);

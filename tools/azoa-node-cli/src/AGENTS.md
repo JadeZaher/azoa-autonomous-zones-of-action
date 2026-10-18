@@ -44,3 +44,27 @@ once, then retry the original request once. See `commands/api.ts`.
 Implements the §8 H4/H5 formula verbatim:
 `hash = hex(sha256(utf8(prevHash + "\n" + seq + "\n" + at + "\n" + actor + "\n" + action + "\n" + target + "\n" + outcome + "\n" + detail)))`.
 `amr`, `ip`, `requestId` are metadata, never hashed. Genesis `prevHash` is 64 `"0"` chars.
+
+## Cross-checked against lane A1 (backend, commit f4d5a77e)
+
+Once the real backend landed, three response shapes and one query param turned out to differ
+from the initial plan-only assumptions (see `Services/NodeAdmin/AGENTS.md`
+§contract-deviations in that worktree):
+
+- `/enroll/start` also returns `audience` + `fingerprint` — `commands/enroll.ts` treats both as
+  an H1-style abort-before-continuing check, not just informational fields.
+- `/admins/{id}/mfa/reset` returns `{ admin, enrollmentToken: string|null, enrollmentExpiresAt: string|null }`
+  — the token is `null` unless the caller is root (C1: a peer owner can't re-enroll someone
+  else's identity with their own key). `commands/mfa.ts` branches on that.
+- `GET /sessions` filters by the full `principal` string (`admin:<id>`/`root:<fp>`), not a bare
+  admin id — `commands/sessions.ts`'s `--admin` flag auto-prefixes a bare id with `admin:`.
+- `PUT /roles/{id}` is a full replace sharing `NodeAdminRoleRequest` with create (`{name,
+  permissions}`), so `roles update` requires `--name`, not just `--permissions`.
+- Built-in role ids equal their names (`node-owner`, not a synthetic `role-node-owner`);
+  `PUT /admins/{id}/roles` is gated by `roles.manage`, not `admins.manage`.
+
+`errors.ts` gained three codes only visible once the backend's actual `StatusFor` switch could
+be read: `NOT_FOUND`/`CONFLICT` (exit 2 — a wrong id or stale state is a user-input problem) and
+`NODE_ADMIN_UNAVAILABLE` (exit 5 — the node has no `NodeAdmin__Audience` configured).
+`ADMIN_LOCKED` carries `retryAfterSeconds` on the wire; the CLI formats it into the error message
+rather than just naming the code.

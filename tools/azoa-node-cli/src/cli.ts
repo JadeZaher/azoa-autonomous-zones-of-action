@@ -258,9 +258,14 @@ rolesCmd
   }));
 rolesCmd
   .command("update <id>")
+  .requiredOption("--name <name>", "PUT /roles/{id} is a full replace, including the name — not optional")
   .requiredOption("--permissions <permissions>", "comma-separated permission names")
-  .action(action(async (id: string, opts: { permissions: string }, cmd: Command) => {
-    await runRolesUpdate(id, { permissions: opts.permissions.split(",").map((s) => s.trim()).filter(Boolean) }, { profile: profileFlag(cmd), json: jsonFlag(cmd) });
+  .action(action(async (id: string, opts: { name: string; permissions: string }, cmd: Command) => {
+    await runRolesUpdate(
+      id,
+      { name: opts.name, permissions: opts.permissions.split(",").map((s) => s.trim()).filter(Boolean) },
+      { profile: profileFlag(cmd), json: jsonFlag(cmd) },
+    );
   }));
 rolesCmd
   .command("delete <id>")

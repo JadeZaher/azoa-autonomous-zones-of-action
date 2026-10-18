@@ -30,6 +30,13 @@ const CODE_TO_EXIT: Record<string, number> = {
   UNKNOWN_PERMISSION: EXIT_CODES.USAGE,
   VALIDATION_FAILED: EXIT_CODES.USAGE,
   AUDIT_UNAVAILABLE: EXIT_CODES.NETWORK,
+  // Confirmed against the real backend (Core/NodeAdminPermissions.cs, lane A1 f4d5a77e):
+  // NOT_FOUND is a user-input problem (wrong id), not a permission or network fault.
+  NOT_FOUND: EXIT_CODES.USAGE,
+  CONFLICT: EXIT_CODES.USAGE,
+  // Node has no NodeAdmin__Audience configured — an operator/deployment problem, not something
+  // a retry fixes, but closest to the existing "network/server" bucket.
+  NODE_ADMIN_UNAVAILABLE: EXIT_CODES.NETWORK,
 };
 
 const FRIENDLY_MESSAGES: Record<string, string> = {
@@ -50,7 +57,18 @@ const FRIENDLY_MESSAGES: Record<string, string> = {
   UNKNOWN_PERMISSION: "One or more permissions in the request are not recognized.",
   VALIDATION_FAILED: "The request failed validation.",
   AUDIT_UNAVAILABLE: "The audit log is temporarily unavailable; the action was refused, not silently skipped.",
+  NOT_FOUND: "No such resource (check the id).",
+  CONFLICT: "The request conflicts with the current state of the resource.",
+  NODE_ADMIN_UNAVAILABLE: "Node admin is not configured on this node (NodeAdmin__Audience is unset or invalid) — ask whoever manages the deployment to set it.",
 };
+
+/** e.g. 90 -> "1m 30s"; 45 -> "45s". */
+function formatRetryAfter(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+}
 
 export class AzoaCliError extends Error {
   readonly exitCode: number;
@@ -75,10 +93,14 @@ export class AzoaCliError extends Error {
     return new AzoaCliError(message, EXIT_CODES.AUDIT_INTEGRITY);
   }
 
-  static fromServerCode(code: string, message: string): AzoaCliError {
+  static fromServerCode(code: string, message: string, retryAfterSeconds?: number): AzoaCliError {
     const exitCode = CODE_TO_EXIT[code] ?? EXIT_CODES.NETWORK;
     const friendly = FRIENDLY_MESSAGES[code];
-    const combined = friendly ? `${friendly} (${code}: ${message})` : `${code}: ${message}`;
+    const retrySuffix =
+      code === "ADMIN_LOCKED" && retryAfterSeconds !== undefined
+        ? ` Try again in ${formatRetryAfter(retryAfterSeconds)}.`
+        : "";
+    const combined = friendly ? `${friendly}${retrySuffix} (${code}: ${message})` : `${code}: ${message}${retrySuffix}`;
     return new AzoaCliError(combined, exitCode, code);
   }
 }

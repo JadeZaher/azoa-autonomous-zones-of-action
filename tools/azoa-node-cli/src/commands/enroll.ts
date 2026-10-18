@@ -25,6 +25,17 @@ interface EnrollStartResponse {
   enrollmentId: string;
   otpauthUri: string;
   totpSecretBase32: string;
+  /** Server's real configured audience — not an echo of anything the client sent (there is no
+   * profile/challenge yet at this point), so this is a genuine H1-style check, not a formality. */
+  audience: string;
+  /** The fingerprint the server computed from the public key we just submitted. */
+  fingerprint: string;
+}
+
+interface EnrollCompleteResponse {
+  adminId: string;
+  status: string;
+  fingerprint: string;
 }
 
 /**
@@ -67,6 +78,28 @@ export async function runEnroll(
     label: options.label,
   });
 
+  // Coordinator-flagged contract deviation (lane A1 f4d5a77e): /enroll/start echoes back the
+  // server's real NodeAdmin__Audience and the fingerprint it derived from our public key. Treat
+  // both like the H1 audience check on login — abort before any further step (QR, prompt,
+  // /enroll/complete) if either disagrees with what we expect.
+  if (start.audience !== options.node) {
+    throw new AzoaCliError(
+      `Audience mismatch: /enroll/start reported audience '${start.audience}' but --origin was ` +
+        `'${options.node}'. Refusing to continue enrollment — this could be a relay/MITM attempt.`,
+      3,
+      "AUTH_FAILED",
+    );
+  }
+  if (start.fingerprint !== keyPair.fingerprint) {
+    throw new AzoaCliError(
+      `Fingerprint mismatch: /enroll/start reported fingerprint '${start.fingerprint}' for the key ` +
+        `we just submitted, but it does not match our local key's fingerprint '${keyPair.fingerprint}'. ` +
+        `Refusing to continue enrollment.`,
+      3,
+      "AUTH_FAILED",
+    );
+  }
+
   if (!options.json) {
     qrcodeTerminal.generate(start.otpauthUri, { small: true });
   }
@@ -79,7 +112,7 @@ export async function runEnroll(
   const totp = await input.readVisible("Authenticator code: ");
   const signature = signMessage(keyPair.privateKey, enrollMessage(options.node, start.enrollmentId));
 
-  await client.call("POST", "/api/node-admin/enroll/complete", {
+  const { data: complete } = await client.call<EnrollCompleteResponse>("POST", "/api/node-admin/enroll/complete", {
     enrollmentId: start.enrollmentId,
     totp,
     signature,
@@ -90,10 +123,10 @@ export async function runEnroll(
 
   emit(
     options.json,
-    `Enrollment complete. Your account is now 'pending_activation'.\n` +
+    `Enrollment complete. Your account (${complete.adminId}) is now '${complete.status}'.\n` +
       `Tell this fingerprint to the admin who created your account so they can run ` +
-      `'azoa-node admins activate <your-admin-id> --fingerprint ${keyPair.fingerprint}':\n` +
-      `${keyPair.fingerprint}`,
-    { fingerprint: keyPair.fingerprint, profile: options.profile },
+      `'azoa-node admins activate ${complete.adminId} --fingerprint ${complete.fingerprint}':\n` +
+      `${complete.fingerprint}`,
+    { adminId: complete.adminId, status: complete.status, fingerprint: complete.fingerprint, profile: options.profile },
   );
 }

@@ -62,6 +62,100 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     expect(server.requestLog.some((r) => r.path === "/api/node-admin/auth/challenge")).toBe(true);
   });
 
+  it("enroll: aborts before /enroll/complete when /enroll/start's audience disagrees with --origin (H1-style)", async () => {
+    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    await runKeygen({ name: "rootE1", kind: "root", passphrase: true, json: false }, rootInput);
+    const rootMeta = readKeyFileMeta("rootE1");
+    server.rootPublicKeys.add(rootMeta.publicKey);
+    upsertProfile("rootpE1", { node: origin, keyName: "rootE1", kind: "root" }, true);
+    await runLogin({ profile: "rootpE1", root: true, json: false }, rootInput);
+    const created = await runAdminsCreate(
+      { username: "bob", displayName: "Bob", roleIds: ["node-owner"] },
+      { profile: "rootpE1", json: false },
+    );
+
+    server.audience = "https://not-the-real-node.example.test"; // reachable at `origin`, but claims a different audience
+
+    const enrollInput = new FakeInputSource({ piped: created.enrollmentToken, visibles: ["000000"] }); // never reached
+    await expect(
+      runEnroll(
+        { node: origin, profile: "bob", keyName: "bob-key", label: "laptop", passphrase: false, force: false, json: false },
+        enrollInput,
+      ),
+    ).rejects.toThrow(/Audience mismatch/);
+
+    expect(server.requestLog.some((r) => r.path === "/api/node-admin/enroll/complete")).toBe(false);
+    expect(server.requestLog.some((r) => r.path === "/api/node-admin/enroll/start")).toBe(true);
+  });
+
+  it("enroll: aborts before /enroll/complete when /enroll/start's returned fingerprint disagrees with the local key", async () => {
+    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    await runKeygen({ name: "rootE2", kind: "root", passphrase: true, json: false }, rootInput);
+    const rootMeta = readKeyFileMeta("rootE2");
+    server.rootPublicKeys.add(rootMeta.publicKey);
+    upsertProfile("rootpE2", { node: origin, keyName: "rootE2", kind: "root" }, true);
+    await runLogin({ profile: "rootpE2", root: true, json: false }, rootInput);
+    const created = await runAdminsCreate(
+      { username: "carol", displayName: "Carol", roleIds: ["node-owner"] },
+      { profile: "rootpE2", json: false },
+    );
+
+    server.forceEnrollFingerprint = "ffffffffffffffff"; // simulate a tampered/misbehaving response
+
+    const enrollInput = new FakeInputSource({ piped: created.enrollmentToken, visibles: ["000000"] }); // never reached
+    await expect(
+      runEnroll(
+        { node: origin, profile: "carol", keyName: "carol-key", label: "laptop", passphrase: false, force: false, json: false },
+        enrollInput,
+      ),
+    ).rejects.toThrow(/Fingerprint mismatch/);
+
+    expect(server.requestLog.some((r) => r.path === "/api/node-admin/enroll/complete")).toBe(false);
+  });
+
+  it("ADMIN_LOCKED after 5 consecutive bad TOTP attempts: CLI surfaces the retry time, exit class AUTH", async () => {
+    const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
+    await runKeygen({ name: "rootL1", kind: "root", passphrase: true, json: false }, rootInput);
+    const rootMeta = readKeyFileMeta("rootL1");
+    server.rootPublicKeys.add(rootMeta.publicKey);
+    upsertProfile("rootpL1", { node: origin, keyName: "rootL1", kind: "root" }, true);
+    await runLogin({ profile: "rootpL1", root: true, json: false }, rootInput);
+    const created = await runAdminsCreate(
+      { username: "dave", displayName: "Dave", roleIds: ["node-owner"] },
+      { profile: "rootpL1", json: false },
+    );
+
+    const enrollInput = new FakeInputSource({
+      piped: created.enrollmentToken,
+      visibles: [() => {
+        const [enrollment] = [...server.enrollments.values()];
+        return totp(enrollment!.totpSecretPending, Math.floor(Date.now() / 1000));
+      }],
+    });
+    await runEnroll(
+      { node: origin, profile: "dave", keyName: "dave-key", label: "laptop", passphrase: false, force: false, json: false },
+      enrollInput,
+    );
+    const daveMeta = readKeyFileMeta("dave-key");
+    await runAdminsActivate(created.admin.id, daveMeta.fingerprint, { profile: "rootpL1", json: false });
+
+    // 5 consecutive second-factor failures lock the admin (AGENTS.md §auth / SECOND_FACTOR_LOCK_THRESHOLD).
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(runLogin({ profile: "dave", totp: "000000", json: false })).rejects.toThrow(AzoaCliError);
+    }
+
+    let caught: AzoaCliError | undefined;
+    try {
+      await runLogin({ profile: "dave", totp: "000000", json: false });
+    } catch (err) {
+      caught = err as AzoaCliError;
+    }
+    expect(caught).toBeInstanceOf(AzoaCliError);
+    expect(caught!.code).toBe("ADMIN_LOCKED");
+    expect(caught!.exitCode).toBe(3);
+    expect(caught!.message).toMatch(/15m/); // formatted Retry-After (default 15 min lock)
+  });
+
   it("full admin lifecycle: create -> enroll (stdin token) -> activate -> login with TOTP", async () => {
     // Root bootstraps and creates the admin (2 secrets for keygen's passphrase+confirm, 1 for login).
     const rootInput = new FakeInputSource({ secrets: ["rootpass1", "rootpass1", "rootpass1"] });
@@ -72,7 +166,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     await runLogin({ profile: "rootp3", root: true, json: false }, rootInput);
 
     const created = await runAdminsCreate(
-      { username: "alice", displayName: "Alice", roleIds: ["role-node-owner"] },
+      { username: "alice", displayName: "Alice", roleIds: ["node-owner"] }, // built-in role id == name (lane A1 deviation #8)
       { profile: "rootp3", json: false },
     );
     expect(created.admin.status).toBe("pending_enrollment");
