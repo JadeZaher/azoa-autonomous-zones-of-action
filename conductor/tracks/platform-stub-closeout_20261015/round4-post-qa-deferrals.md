@@ -78,3 +78,32 @@ Summary and evidence: `qa-live-2026-10-18.md`. Accounts: `qa-test-accounts.md`. 
 | L8 | 2026-10-18 | Action builder UX | A successful create shows no confirmation and My Actions still says "0 actions" until reloaded. There is no validate control in My Actions (`POST /api/action/{id}/validate` → "DAG is valid.") | Confirmation, a list refresh, and a visible validate control | LOW | `09-dappdev-actions.png` |
 | L9 | 2026-10-18 | Railway config hygiene | `AdminBootstrap__SeedEmail` / `SeedSecret` are set on `azoa-api`, but NODE-HOST §8.9 says "Do not configure them for a new node" | Remove the legacy pair (owner) | LOW | Railway variable names only |
 | L10 | 2026-10-18 | `/cash-out` | An unverified user sees "Identity verification **Available**" | A label that says the state ("Not verified") | LOW | `06-cash-out-setup.png` |
+
+#### Status after QA re-run on `0de1b99d` (2026-10-18)
+
+Evidence: `qa-live-2026-10-18.md` § Re-run (0de1b99d). Screenshots `20-*`, `21-*`, `22-*`, `23-*`.
+
+| # | Status | Re-run evidence |
+|---|---|---|
+| C1 | **FIXED-VERIFIED** | Real `/operator/login` UI: wrong password → 401 "The username or password was not accepted."; correct → 200, `/operator`, cookie HttpOnly/Strict/Secure at `/api/operator`, nothing in localStorage. Writes go through the BFF: fee schedule publish PUT 200, KYC provider policy save PUT 200 (profile/trust revision 0→1). `/operator/wallet-identities` renders on a fresh session. Step-up: after 11 minutes `/operator/wallet-identities` → `/operator/login?reason=step-up&returnTo=…` ("Please sign in again to confirm the sensitive action you selected."), re-auth returns to the page and it renders. "End operator session" DELETE 200, cookie cleared, protected page → `/operator/login`. (`20-op-*.png`, `21-op-step-up-*.png`) |
+| H-A | **FIXED (code), not live-verifiable** | D-11: wallet/OAuth first sign-in now follows `SelfRegistrationPolicy` (`WalletAuthManager`). Registration is open on this node (D-12), so the closed-node refusal can't be watched live. Re-check if the node is ever closed again |
+| H-B | **RESOLVED by owner decision D-12** | Email registration open on the QA node. UI registration of `qa.email1+r4@azoa.test` → 200 "Created.", signed in at `/overview` (`22-register-email1.png`) |
+| H1 | **FIXED-VERIFIED** | Wrong password for a real email account shows "Invalid credentials." (`22-login-wrong-password.png`) |
+| H2 | **FIXED-VERIFIED** | `/api-keys` renders with a revoked key in the list. UI create shows reveal `azoa_438d5caf6a1`, the list shows both keys, UI revoke → `isActive:false` (`22-api-keys-*.png`) |
+| H3 | **FIXED-VERIFIED** | `/fungible-mint` renders the harness, no page errors (`22-fungible-mint.png`) |
+| H4 | **FIXED-VERIFIED** | Wallet user USER2 saves First/Last name through the UI (PUT 200, persisted). An invalid username shows the field rule ("3-50 characters … letters, numbers, underscores, or hyphens") (`22-profile-invalid-username.png`) |
+| H5 | **FIXED-VERIFIED** | No `passwordHash` / `authNotBefore` in register, login, wallet verify, self GET, PUT, or other-user GET responses (email and wallet users) |
+| M1 | **FIXED-VERIFIED** | `/operator/payouts`, `/operator/reversals`, `/operator/parked-runs` render honest empty states with no errors. The old `/admin/fiat-*`, `/admin/parked-runs`, `/admin/sagas` now send a signed-in user to `/operator/login` (`20-op-operator-*.png`) |
+| M2 | **FIXED-VERIFIED** | `GET /api/operator/ethereum/recovery/Devnet` → 409 `ETHEREUM_RECOVERY_UNAVAILABLE`. The panel says "Ethereum is not enabled on this node, so there are no preparations to recover." (`20-op-operator-chains.png`). The browser console still logs the 409 (cosmetic) |
+| M3 | **FIXED-VERIFIED** | Tenant top-up shows "Payments are not configured on this node, so nothing can be charged here yet. Nothing was charged." with no resumable pending record. `/funds` unchanged and honest (`22-tenant-payout-topup.png`, `22-funds.png`) |
+| M4 | **FIXED-VERIFIED** | `dapp:user` Create shows "Creating and changing actions needs the DApp developer role. Ask a DApp manager or the node operator to assign it to your account." (`22-action-builder-dapp-user.png`) |
+| M5 | **FIXED-VERIFIED** | `GET /api/user` → 403 for `dapp:user` and `dapp:manager`, 200 for the node operator (id/username/title only) |
+| L1 | **FIXED-VERIFIED** (partial) | New refusal copy no longer carries the method/path prefix (M3/M4/KYC). The register page is moot now that registration is open |
+| L2 | **FIXED-VERIFIED** | KYC start: "Identity verification is not available on this node yet. The node operator still has to finish setting it up." with no config key names (`23-verify-identity-start.png`) |
+| L6 | **STILL FAILING** (partial) | `PUT /api/user/{other}` now → 404 (fixed). `DELETE /api/action/{other's private id}` still → 403 while GET → 404 |
+| L9 | **STILL OPEN** (owner) | `AdminBootstrap__SeedEmail` / `SeedSecret` are still set on `azoa-api` |
+| L10 | **FIXED-VERIFIED** | Label now "What you can cash out" |
+| L3, L4, L5, L7, L8 | not re-tested | Unchanged from the first pass |
+| NEW-1 | **NEW · LOW** | The dashboard sidebar still shows an "ADMIN" group (Saga Console, Waiting on Settlement, Returned Payments, Cash-outs) to ordinary users, and each entry now bounces to `/operator/login`. Hide it for non-operators |
+| NEW-2 | **NEW · LOW** | Fee schedule "Publish" of an unchanged all-zero schedule returns 200 but the page stays at "version 0" with "No recorded changes". Unclear whether that is an intended no-op. Confirm, or say "nothing changed" |
+| NEW-3 | **NEW · INFO** | `/operator/chains` WTT stage-key keyring shows DEGRADED ("New stage-key transfers are refused until the keyring is ready"). The refusal is honest. Owner to provision before `Wtt:Enabled` |
