@@ -15,6 +15,7 @@ public sealed class StoreFamilyGuardInventoryTests
 
     private static readonly Dictionary<string, Cases> Families = new(StringComparer.Ordinal)
     {
+        ["NodeAdminAuditLog"] = new(Surreal + "SurrealNodeAdminAuditLogTests.ConcurrentAppendRetriesRefusedHeadCasWithoutForkOrGap", Surreal + "SurrealNodeAdminAuditLogTests.DuplicateNextRowRollsBackEveryHeadAdvanceAndPreservesExistingEvidence"),
         ["SurrealActionEmitStore"] = new(Surreal + "SurrealActionEmitTests.Changed_frozen_input_or_cancelled_run_cannot_accept", Surreal + "SurrealActionEmitTests.Original_dispatch_and_absent_receipt_recovery_accept_one_local_receipt"),
         ["SurrealActionLocalMutationStore"] = new(Surreal + "SurrealActionLocalMutationTests.ChangedQueryMembershipRollsBackEveryStagedWriteAndReceipt", Surreal + "SurrealActionNftHolonLinkTests.ConcurrentAttachmentHasOneReceiptAndReplayDoesNotTouchChangedOwner"),
         ["SurrealActionNodeExecutionStore"] = new(Surreal + "SurrealActionNodeExecutionStoreTests.FrozenAdmissionUsesRecordLinksAndFencesStaleCompletion", Surreal + "SurrealActionNodeExecutionStoreTests.ConcurrentFrozenAdmissionsHaveOneWinnerAndRetainItsPayload"),

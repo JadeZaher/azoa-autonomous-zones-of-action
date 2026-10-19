@@ -241,3 +241,6 @@ conductor/.conductor_session_log
 # scrt/mpg local search caches (machine-local, regenerable)
 .mpg/
 scripts/__pycache__/
+
+# Isolated local agent worktrees.
+.worktrees/

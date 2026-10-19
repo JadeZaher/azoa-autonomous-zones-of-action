@@ -4,6 +4,14 @@ type: runbook
 
 # Local tenant AI drill
 
+## Required UI03 correction rerun — not executed by the author
+
+Verify scope/review copy also discloses that a later explicit run requires an active tenant registration and can enqueue webhook notifications; import itself does not execute. Checkpoints neither wait for nor prove review or approval. Do not run the graph as part of this bounded import-only QA.
+
+Use the coordinator's guarded disposable tenant fixture and refreshed exact images. Keep the synthetic-only cap; this source batch makes no model calls. The remaining two study requests are coordinator-owned.
+
+Verify interview-only is selected initially and no graph/import appears without planning opt-in. Explicitly choose planning/data-only and read its limits: fixed Emit notes record manual/external handoffs; they implement no two-person approval, eligibility, caps, refunds, payouts or settlement. Submit a complete synthetic six-dimension brief with fact confirmations, specific paid/unpaid/unknown-frozen recovery, adviser facts and legitimate amounts/allocations. Review the contextual checklist without treating professional questions as blockers or legal conclusions. No statutory rates/thresholds, DTO names or phantom-draft narrative should appear. Expect actual `DraftReady` state and a nonempty private canonical graph; review its payloads, acknowledge the limitation and import to the editable canvas. Do not save, publish, execute or move funds in this proof. Interview-only/manual builder remains available. A failed/missing graph must produce honest no-draft state. Record actual outcomes and request counts; this procedure is not a pass.
+
 The bounded model/service smoke was completed on 2026-10-18: the final strict-schema request made one real OpenRouter HTTP 200 call and produced a typed follow-up interview with no draft, persistence or execution. Three synthetic requests total were used across diagnosis and verification. The full authenticated browser drill below remains unexecuted. See `verification.md`; do not treat transport/service evidence as UI task completion.
 
 Use the existing local API database/auth configuration and a real local test tenant. The feature defaults to disabled. This procedure adds only process-local AI configuration and never changes Railway or writes a credential into a file.

@@ -129,6 +129,20 @@ mocked inside the browser except the vendor's own page.
 There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
 tenant API exactly as an integration would; the browser covers every screen that exists.
 
+`completeBusinessVerification` reuses the hosted KYB journey before either
+custodial-member enrollment flow. The tenant owner completes the real UI and
+authoritative fake-vendor callback; a provider assignment alone grants no KYB
+approval. A later personal KYC interception deliberately registers the latest
+handler for the same hosted-widget route. The webhook secret assertion selects
+the exact textbox role/name: a broad label also matches the rotation checkbox.
+
+Stripe uses a separately registered first-party payer. That person completes
+personal KYC, then grants the verified tenant `transfer:sign` through Settings
+with a bounded expiry before the tenant key starts checkout. A custodial child
+credential cannot manufacture owner consent, and Participation does not include
+this value scope. The checkout, intent reads and signed settlement still use
+the original tenant flow.
+
 ## §writing-a-journey (round 4: NFT, DEX, Hold)
 
 1. `import { expect, signIn, test } from '../support/fixtures'`; actors come from `api`

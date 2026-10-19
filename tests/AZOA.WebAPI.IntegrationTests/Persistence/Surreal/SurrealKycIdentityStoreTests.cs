@@ -2,6 +2,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.IntegrationTests.Persistence.Surreal.Round4Gates.Interleaving;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
+using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using AZOA.WebAPI.Services.Kyc;

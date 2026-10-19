@@ -2,7 +2,6 @@ using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models.Actions;
 using System.Security.Claims;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using AZOA.WebAPI.Services.Actions.Predicates;
 
 namespace AZOA.WebAPI.Services.Actions.Designer;
@@ -27,23 +26,26 @@ public static class WorkflowDesignerPolicy
         new("sec-crypto", "SEC: Transactions involving crypto assets", "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/transactions-involving-crypto-assets", "United States securities; classification depends on facts")
     ];
 
-    public static List<string> MissingIntake(WorkflowDesignerIntake intake)
+    public static List<WorkflowDesignerDimension> MissingDimensions(WorkflowDesignerIntake intake)
     {
-        var questions = new List<string>();
-        foreach (var (answer, question) in new[] {
-            (intake.Purpose, "What are you creating, and what event earns or releases value?"),
-            (intake.Participants, "Who pays, receives, operates and approves? Describe entity types and whether minors participate."),
-            (intake.Jurisdictions, "Which countries/states govern the operator and participants, and where are they tax resident?"),
-            (intake.ValueMovement, "What assets, exact units, amounts, fees and custody arrangements apply? Who controls the funds?"),
-            (intake.AllocationsAndTax, "Who receives each allocation, who bears fees/taxes, and who records valuation, basis and reporting?"),
-            (intake.FailureAndRefunds, "Who approves release, and what happens on cancellation, disputes, expiry, partial completion or failed payment?") })
+        var missing = new List<WorkflowDesignerDimension>();
+        foreach (var (answer, dimension) in new[] {
+            (intake.Purpose, WorkflowDesignerDimension.Purpose), (intake.Participants, WorkflowDesignerDimension.Participants),
+            (intake.Jurisdictions, WorkflowDesignerDimension.Jurisdictions), (intake.ValueMovement, WorkflowDesignerDimension.ValueMovement),
+            (intake.AllocationsAndTax, WorkflowDesignerDimension.AllocationsAndTax), (intake.FailureAndRefunds, WorkflowDesignerDimension.FailureAndRefunds) })
         {
-            if (string.IsNullOrWhiteSpace(answer) || answer.Trim().Length < 12 ||
-                Regex.IsMatch(answer, @"\b(unknown|unsure|tbd|undecided|unconfirmed|not (?:yet )?(?:known|sure|decided|determined)|have not (?:yet )?decided|don't know|do not know)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-                questions.Add(question);
+            var wholeAnswer = string.Join(" ", (answer ?? "").Trim().TrimEnd('.', '!', '?').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
+            if (wholeAnswer.Length < 12 || UncertaintyAnswers.Contains(wholeAnswer)) missing.Add(dimension);
         }
-        return questions;
+        return missing;
     }
+
+    private static readonly IReadOnlySet<string> UncertaintyAnswers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "unknown", "unsure", "tbd", "undecided", "unconfirmed", "not known", "not yet known", "not sure",
+        "not decided", "not yet decided", "not determined", "not yet determined", "we have not decided",
+        "don't know", "do not know", "i don't know", "i do not know", "jurisdiction is unknown"
+    };
 
     public static List<string> ValidateDraft(WorkflowDesignerReply reply, WorkflowDesignerRequest request, IActionDagValidator dagValidator,
         IActionDagExecutabilityValidator executabilityValidator)

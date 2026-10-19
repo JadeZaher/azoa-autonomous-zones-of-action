@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text.Json;
 using AZOA.WebAPI.Controllers;
+using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Interfaces.Actions;
 using AZOA.WebAPI.Models.Actions;
-using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Services;
 using AZOA.WebAPI.Services.Actions;
 using AZOA.WebAPI.Services.Actions.Designer;
@@ -15,191 +15,151 @@ namespace AZOA.WebAPI.Tests.Actions;
 
 public sealed class WorkflowDesignerTests
 {
+    private const string ValidSelection = """{"questionIds":[],"riskIds":[],"gapIds":[],"blockerIds":[],"planStages":["ApprovalReview","ExternalSettlementReview","ReconciliationReview"]}""";
+
     [Fact]
     public async Task NoConsent_NeverCallsModel()
     {
         var model = new FakeModel();
-        var result = await Service(model).InterviewAsync(new WorkflowDesignerRequest(), CancellationToken.None);
+        var result = await Service(model).InterviewAsync(new(), default);
         Assert.Equal("AI_CONSENT_REQUIRED", result.Code);
         Assert.Equal(0, model.Calls);
     }
 
-    [Fact]
-    public async Task MissingJurisdiction_RemovesPrematureModelDraft()
-    {
-        var request = CompleteRequest();
-        request.Intake.Jurisdictions = "unknown";
-        var result = await Service(new FakeModel()).InterviewAsync(request, CancellationToken.None);
-        Assert.False(result.IsError);
-        Assert.Null(result.Result!.Draft);
-        Assert.False(result.Result.ReadyForDraft);
-        Assert.Contains(result.Result.Questions, q => q.Contains("tax resident"));
-        Assert.Contains(result.Result.Concerns, q => q.StartsWith("Tax:"));
-        Assert.All(result.Result.Sources, source => Assert.Contains("United States", source.Jurisdiction));
-    }
-
-    [Fact]
-    public async Task OutstandingFollowUp_RequiresAnotherInterviewTurn()
-    {
-        var model = new FakeModel();
-        model.Reply.Questions.Add("Who authorizes a disputed refund?");
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.False(result.Result.ReadyForDraft);
-    }
-
     [Theory]
+    [InlineData("unknown")]
     [InlineData("Jurisdiction is unknown")]
     [InlineData("not yet determined")]
     [InlineData("we have not decided")]
-    public async Task ExplicitUncertainty_RefusesPrematureDraft(string jurisdiction)
+    public async Task WholeAnswerUncertainty_NeedsDetailsWithoutPretendingADraftExists(string answer)
+    {
+        var request = CompleteRequest(); request.Intake.Jurisdictions = answer;
+        var reply = (await Service(new()).InterviewAsync(request, default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsDetails, reply.State);
+        Assert.Null(reply.Draft); Assert.False(reply.ReadyForDraft);
+        Assert.Contains(reply.Questions, question => question.Contains("tax resident"));
+        Assert.Contains("No draft is available", reply.Summary);
+    }
+
+    [Fact]
+    public async Task CompleteRecoveryWithUnknownPaymentStateAndAmounts_ProducesOnlyCanonicalPlanningData()
     {
         var request = CompleteRequest();
-        request.Intake.Jurisdictions = jurisdiction;
-        var result = await Service(new FakeModel()).InterviewAsync(request, CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.Questions, q => q.Contains("tax resident"));
+        request.Intake.ValueMovement = "5000 cents per job, 50/50 allocations, fee cap 100 cents; operator owns the funds.";
+        request.Intake.FailureAndRefunds = "Two independent officers approve. Paid completes; confirmed unpaid allows one reviewed retry; unknown stays frozen for treasurer investigation. Cancellation returns earmarks and disputes freeze.";
+        var model = new FakeModel();
+        model.Reply.QuestionIds = [WorkflowDesignerQuestion.TaxYear, WorkflowDesignerQuestion.PayerPayeeClassification, WorkflowDesignerQuestion.PaymentSourceAndResidence];
+        model.Reply.RiskIds = [WorkflowDesignerRisk.ReportingAndWithholding, WorkflowDesignerRisk.WorkerClassification];
+        var reply = (await Service(model).InterviewAsync(request, default)).Result!;
+        Assert.Equal(WorkflowDesignerState.DraftReady, reply.State);
+        Assert.True(reply.ReadyForDraft); Assert.NotNull(reply.Draft); Assert.False(reply.Draft.IsPublic);
+        Assert.Empty(reply.Questions); Assert.NotEmpty(reply.ReviewQuestions);
+        Assert.Contains(reply.ReviewQuestions, question => question.Contains("tax year"));
+        Assert.Equal("5000 cents per job, 50/50 allocations, fee cap 100 cents; operator owns the funds.", request.Intake.ValueMovement);
+        Assert.All(reply.Draft.Nodes, node => {
+            Assert.Equal(ActionNodeType.Emit, node.NodeType);
+            using var config = JsonDocument.Parse(node.Config);
+            Assert.Equal("planning.checkpoint", config.RootElement.GetProperty("eventType").GetString());
+            var payload = config.RootElement.GetProperty("payload");
+            Assert.Equal(new[] { "checkpoint", "fundsMoved", "requiresExternalReview", "scope" }, payload.EnumerateObject().Select(p => p.Name).OrderBy(name => name).ToArray());
+            Assert.Equal("planning_data_only", payload.GetProperty("scope").GetString());
+            Assert.False(payload.GetProperty("fundsMoved").GetBoolean());
+            Assert.True(payload.GetProperty("requiresExternalReview").GetBoolean());
+            Assert.True(Enum.TryParse<WorkflowDesignerStage>(payload.GetProperty("checkpoint").GetString(), out _));
+        });
+        Assert.Contains(reply.Limitations, value => value.Contains("automatic fiat payouts"));
+        Assert.Contains("No two-person approval", reply.Draft.Description);
+        Assert.Contains(WorkflowDesignerCatalog.ExecutionDisclosure, reply.Draft.Description);
+        Assert.Contains(WorkflowDesignerCatalog.ExecutionDisclosure, reply.Limitations);
+        Assert.Equal(reply.Draft.Nodes.Count - 1, reply.Draft.Edges.Count);
+        Assert.Empty(reply.DraftErrors);
+        var serialized = JsonSerializer.Serialize(reply);
+        foreach (var forbidden in new[] { "$600", "24%", "30%", "JurisdictionsConfirmed", "EconomicTermsConfirmed", "5000", "50/50" }) Assert.DoesNotContain(forbidden, serialized);
     }
 
     [Fact]
-    public async Task UnconfirmedEconomicTerms_RefuseDraft()
+    public async Task PlanningScopeMustBeExplicit_AndFactsDoNotMeanCompliance()
     {
-        var request = CompleteRequest();
-        request.EconomicTermsConfirmed = false;
-        var result = await Service(new FakeModel()).InterviewAsync(request, CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.Questions, q => q.Contains("economic terms"));
+        var request = CompleteRequest(); request.PlanningScopeAccepted = false;
+        var reply = (await Service(new()).InterviewAsync(request, default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsPlanningScope, reply.State); Assert.Null(reply.Draft); Assert.False(reply.ReadyForDraft);
+        request.PlanningScopeAccepted = true; request.EconomicTermsConfirmed = false;
+        reply = (await Service(new()).InterviewAsync(request, default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsConfirmation, reply.State); Assert.Null(reply.Draft);
+        Assert.Contains(reply.Questions, question => question.Contains("economic terms"));
+        Assert.DoesNotContain("EconomicTermsConfirmed", JsonSerializer.Serialize(reply));
+    }
+
+    [Fact]
+    public async Task SpecificOperationalQuestionsSuppressGenericDimensionDuplicates()
+    {
+        var model = new FakeModel();
+        model.Reply.GapIds = [WorkflowDesignerDimension.FailureAndRefunds, WorkflowDesignerDimension.FailureAndRefunds];
+        model.Reply.QuestionIds = [WorkflowDesignerQuestion.FailureAndRefunds, WorkflowDesignerQuestion.ApprovalEvidence,
+            WorkflowDesignerQuestion.ApprovalEvidence, WorkflowDesignerQuestion.ExternalSettlementEvidence];
+        var reply = (await Service(model).InterviewAsync(CompleteRequest(), default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsDetails, reply.State); Assert.Null(reply.Draft);
+        Assert.Equal(2, reply.Questions.Count);
+        Assert.Contains(WorkflowDesignerCatalog.Question(WorkflowDesignerQuestion.ApprovalEvidence), reply.Questions);
+        Assert.Contains(WorkflowDesignerCatalog.Question(WorkflowDesignerQuestion.ExternalSettlementEvidence), reply.Questions);
+        Assert.DoesNotContain(WorkflowDesignerCatalog.Question(WorkflowDesignerQuestion.FailureAndRefunds), reply.Questions);
+    }
+
+    [Fact]
+    public async Task UnsupportedAutomationIsDisclosedWithoutBlockingChosenPlanningScope()
+    {
+        var model = new FakeModel(); model.Reply.BlockerIds = [WorkflowDesignerBlocker.FundsMovementUnsupported];
+        var reply = (await Service(model).InterviewAsync(CompleteRequest(), default)).Result!;
+        Assert.Equal(WorkflowDesignerState.DraftReady, reply.State); Assert.NotNull(reply.Draft);
+        Assert.Contains(reply.Limitations, text => text.Contains("not evidence that a payment occurred"));
+        model.Reply.BlockerIds = [WorkflowDesignerBlocker.PlanningSequenceUnclear];
+        reply = (await Service(model).InterviewAsync(CompleteRequest(), default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsPlanningStructure, reply.State); Assert.Null(reply.Draft);
+        Assert.False(reply.ReadyForDraft); Assert.Contains("No draft", reply.Summary);
+    }
+
+    [Fact]
+    public async Task InvalidOrNullCatalogSelection_IsRefused()
+    {
+        var model = new FakeModel(); model.Reply.RiskIds = [(WorkflowDesignerRisk)999];
+        Assert.Equal("AI_INVALID_REPLY", (await Service(model).InterviewAsync(CompleteRequest(), default)).Code);
+        model.Reply.RiskIds = null!;
+        Assert.Equal("AI_INVALID_REPLY", (await Service(model).InterviewAsync(CompleteRequest(), default)).Code);
+    }
+
+    [Fact]
+    public async Task EmptyOrGenericOutline_DoesNotBecomeAnApparentlyReadyDraft()
+    {
+        var model = new FakeModel(); model.Reply.PlanStages = [];
+        var reply = (await Service(model).InterviewAsync(CompleteRequest(), default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsPlanningStructure, reply.State);
+        Assert.Null(reply.Draft); Assert.False(reply.ReadyForDraft);
+        model.Reply.PlanStages = [WorkflowDesignerStage.RequestReview, WorkflowDesignerStage.RecordsReview];
+        reply = (await Service(model).InterviewAsync(CompleteRequest(), default)).Result!;
+        Assert.Equal(WorkflowDesignerState.NeedsPlanningStructure, reply.State);
+        Assert.Null(reply.Draft); Assert.False(reply.ReadyForDraft);
+    }
+
+    [Fact]
+    public async Task FailedGraphValidation_ClearsProposalAndUsesTruthfulState()
+    {
+        var service = new WorkflowDesignerService(new FakeModel(), new RejectingDagValidator(), new ActionDagExecutabilityValidator());
+        var reply = (await service.InterviewAsync(CompleteRequest(), default)).Result!;
+        Assert.Equal(WorkflowDesignerState.DraftRejected, reply.State);
+        Assert.Null(reply.Draft); Assert.False(reply.ReadyForDraft);
+        Assert.Contains("No draft is available", reply.Summary); Assert.NotEmpty(reply.DraftErrors);
     }
 
     [Theory]
-    [InlineData("1eec296c664b447597dec274bd36bebe")]
-    [InlineData("1234567890123456789")]
-    [InlineData("opaque-provider-quote-123")]
-    public async Task UnconfirmedResourceForms_RefuseDraft(string identifier)
+    [InlineData("{\"questionIds\":[\"1099 threshold $600\"],\"riskIds\":[],\"gapIds\":[],\"blockerIds\":[],\"planStages\":[]}")]
+    [InlineData("{\"questionIds\":[],\"riskIds\":[],\"gapIds\":[],\"blockerIds\":[],\"planStages\":[],\"summary\":\"24% backup and 30% nonresident withholding\"}")]
+    [InlineData("{\"questionIds\":[],\"riskIds\":[],\"gapIds\":[],\"blockerIds\":[],\"planStages\":[],\"draft\":{\"description\":\"This draft models current law\"}}")]
+    [InlineData("{\"questionIds\":[],\"riskIds\":[],\"gapIds\":[],\"blockerIds\":[],\"planStages\":[0]}")]
+    [InlineData("{}")]
+    public async Task NarrativeAndUnknownOrMissingModelFields_CannotReachTheProduct(string content)
     {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].Config = JsonSerializer.Serialize(new { eventType = "review", payload = new { quoteId = identifier } });
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.DraftErrors, e => e.Contains("unconfirmed identifier"));
-    }
-
-    [Fact]
-    public async Task ConfirmedGuidHandles_AcceptCanonicalEquivalentForms()
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].Config = """{"eventType":"review","payload":{"recipientId":"1eec296c664b447597dec274bd36bebe"}}""";
-        var request = CompleteRequest();
-        request.ConfirmedResourceHandles.Add("1eec296c-664b-4475-97de-c274bd36bebe");
-        var result = await Service(model).InterviewAsync(request, CancellationToken.None);
-        Assert.NotNull(result.Result!.Draft);
-    }
-
-    [Theory]
-    [InlineData(ActionNodeType.Transfer, "{\"nftId\":\"1eec296c664b447597dec274bd36bebe\",\"request\":{}}")]
-    [InlineData(ActionNodeType.Hold, "{\"reservePartition\":\"invented-reserve\",\"assetId\":\"12345\",\"amount\":\"500\",\"autoRelease\":false}")]
-    [InlineData(ActionNodeType.LoanOpen, "{\"principal\":\"500\",\"currencyCode\":\"unknown-asset\"}")]
-    [InlineData(ActionNodeType.Emit, "{\"eventType\":\"review\",\"payload\":{\"source\":{\"$from\":\"holon.1eec296c664b447597dec274bd36bebe.status\"}}}")]
-    public async Task ActualEconomicConfigAndHolonBindings_RejectUnconfirmedResources(ActionNodeType type, string config)
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].NodeType = type;
-        model.Reply.Draft.Nodes[0].Config = config;
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.DraftErrors, error => error.Contains("unconfirmed identifier") || error.Contains("config parse error"));
-    }
-
-    [Fact]
-    public async Task HoldNodeName_MustReferenceAnActualHoldProducer()
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].NodeType = ActionNodeType.Release;
-        model.Reply.Draft.Nodes[0].Config = """{"holdNodeName":"inventedHold"}""";
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.DraftErrors, error => error.Contains("HoldNodeName"));
-    }
-
-    [Fact]
-    public async Task ValidDraft_IsPrivate_AndNeverSaved()
-    {
-        var result = await Service(new FakeModel()).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.False(result.IsError);
-        Assert.True(result.Result!.ReadyForDraft);
-        Assert.False(result.Result.Draft!.IsPublic);
-        Assert.Empty(result.Result.DraftErrors);
-    }
-
-    [Theory]
-    [InlineData(ActionNodeType.BlockchainExecute)]
-    [InlineData(ActionNodeType.GovernanceVote)]
-    [InlineData((ActionNodeType)999)]
-    public async Task UnsupportedNode_RefusesDraft(ActionNodeType type)
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].NodeType = type;
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.DraftErrors, e => e.Contains("unsupported node"));
-    }
-
-    [Fact]
-    public async Task InventedHandle_RefusesDraft()
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].Config = """{"eventType":"review","payload":{"recipient":"1eec296c-664b-4475-97de-c274bd36bebe"}}""";
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.DraftErrors, e => e.Contains("identifier"));
-    }
-
-    [Fact]
-    public async Task BadEdgeAndUnknownConfig_RefuseDraft()
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].Config = """{"script":"sendFunds()"}""";
-        model.Reply.Draft.Edges.Add(new() { SourceNodeId = 0, TargetNodeId = 40 });
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.Contains(result.Result.DraftErrors, e => e.Contains("invalid edge"));
-        Assert.Contains(result.Result.DraftErrors, e => e.Contains("config parse error"));
-    }
-
-    [Theory]
-    [InlineData(ActionNodeType.Emit, "")]
-    [InlineData(ActionNodeType.ComposeOutputs, " ")]
-    [InlineData(ActionNodeType.ComposeOutputs, "not JSON")]
-    [InlineData(ActionNodeType.ComposeOutputs, "{broken")]
-    [InlineData(ActionNodeType.ComposeOutputs, "[]")]
-    [InlineData(ActionNodeType.ComposeOutputs, "null")]
-    public async Task EmptyNodeConfig_IsARefusalRatherThanAnException(ActionNodeType type, string config)
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Nodes[0].NodeType = type;
-        model.Reply.Draft.Nodes[0].Config = config;
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.NotEmpty(result.Result.DraftErrors);
-    }
-
-    [Fact]
-    public async Task CyclicGraph_RefusesDraft()
-    {
-        var model = new FakeModel();
-        model.Reply.Draft!.Edges.Add(new() { SourceNodeId = 0, TargetNodeId = 0 });
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Null(result.Result!.Draft);
-        Assert.NotEmpty(result.Result.DraftErrors);
-    }
-
-    [Fact]
-    public async Task NullModelCollections_RefuseReply()
-    {
-        var model = new FakeModel();
-        model.Reply.Questions = null!;
-        var result = await Service(model).InterviewAsync(CompleteRequest(), CancellationToken.None);
-        Assert.Equal("AI_INVALID_REPLY", result.Code);
+        var result = await Provider(new(content)).InterviewAsync(CompleteRequest(), default);
+        Assert.Equal("AI_INVALID_REPLY", result.Code); Assert.Null(result.Reply);
     }
 
     [Fact]
@@ -239,7 +199,7 @@ public sealed class WorkflowDesignerTests
     [Fact]
     public async Task ProviderRequest_ContainsNoTools_AndUsesOnlyServerCredential()
     {
-        var http = new FakeHttpHandler("""{"summary":"Which jurisdiction?","questions":["Where?"],"concerns":[],"assumptions":[],"readyForDraft":false,"draft":null}""");
+        var http = new FakeHttpHandler(ValidSelection);
         var request = CompleteRequest();
         request.ConfirmedResourceHandles = ["confirmed-asset-123"];
         var result = await Provider(http).InterviewAsync(request, CancellationToken.None);
@@ -258,16 +218,19 @@ public sealed class WorkflowDesignerTests
         Assert.True(responseSchema.GetProperty("strict").GetBoolean());
         var schema = responseSchema.GetProperty("schema");
         Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
-        Assert.Equal(6, schema.GetProperty("required").GetArrayLength());
+        Assert.Equal(5, schema.GetProperty("required").GetArrayLength());
         Assert.True(schema.GetRawText().Length < 16000);
-        var draft = schema.GetProperty("properties").GetProperty("draft").GetProperty("anyOf")[0];
-        Assert.False(draft.GetProperty("properties").GetProperty("isPublic").GetProperty("enum")[0].GetBoolean());
-        var nodeTypes = draft.GetProperty("properties").GetProperty("nodes").GetProperty("items").GetProperty("properties").GetProperty("nodeType").GetProperty("enum");
-        Assert.Contains(nodeTypes.EnumerateArray(), node => node.GetString() == "Emit");
-        Assert.DoesNotContain(nodeTypes.EnumerateArray(), node => node.GetString() == "ExecuteScript");
+        foreach (var field in schema.GetProperty("properties").EnumerateObject())
+        {
+            Assert.Equal("array", field.Value.GetProperty("type").GetString());
+            Assert.Equal("string", field.Value.GetProperty("items").GetProperty("type").GetString());
+            Assert.NotEmpty(field.Value.GetProperty("items").GetProperty("enum").EnumerateArray());
+        }
+        Assert.False(schema.GetProperty("properties").TryGetProperty("summary", out _));
+        Assert.False(schema.GetProperty("properties").TryGetProperty("draft", out _));
         Assert.DoesNotContain("test-only-not-a-key", http.Body!);
         Assert.DoesNotContain(request.TenantId.ToString(), http.Body!);
-        Assert.Contains("confirmed-asset-123", http.Body!);
+        Assert.DoesNotContain("confirmed-asset-123", http.Body!);
     }
 
     [Theory]
@@ -302,11 +265,18 @@ public sealed class WorkflowDesignerTests
     }
 
     private static WorkflowDesignerService Service(FakeModel model) => new(model, new ActionDagValidator(), new ActionDagExecutabilityValidator());
+
+    private sealed class RejectingDagValidator : IActionDagValidator
+    {
+        /// <inheritdoc/>
+        public DagValidationResult Validate(ActionDefinition action, bool fanOutAsError = false)
+            => new() { IsValid = false, Errors = ["Synthetic graph-validation refusal."] };
+    }
     private static OpenRouterWorkflowDesignerModel Provider(FakeHttpHandler http) => new(new FakeClientFactory(http),
         Options.Create(new WorkflowDesignerOptions { Enabled = true, ApiKey = "test-only-not-a-key" }));
     private static WorkflowDesignerRequest CompleteRequest() => new()
     {
-        ConsentToProvider = true,
+        ConsentToProvider = true, PlanningScopeAccepted = true,
         TenantId = Guid.NewGuid(), JurisdictionsConfirmed = true, EconomicTermsConfirmed = true,
         Intake = new() {
             Purpose = "A completed project produces a review notification.", Participants = "Adult cooperative members and a review committee.",
@@ -314,17 +284,11 @@ public sealed class WorkflowDesignerTests
             AllocationsAndTax = "No allocation in this graph; recordkeeping assessed by local advisers.",
             FailureAndRefunds = "Committee reviews the notification before any separate settlement." }
     };
-
     private sealed class FakeModel : IWorkflowDesignerModel
     {
         public int Calls { get; private set; }
         public WorkflowDesignerAvailability Availability => new(true, "Test", "Test", "Test disclosure");
-        public WorkflowDesignerReply Reply { get; } = new() {
-            Summary = "Review notification", ReadyForDraft = true,
-            Draft = new ActionCreateModel { Name = "Review draft", IsPublic = true,
-                Nodes = [new() { Name = "Notify", NodeType = ActionNodeType.Emit,
-                    Config = """{"eventType":"review","payload":{}}""", IsEntry = true, IsTerminal = true }] }
-        };
+        public WorkflowDesignerModelReply Reply { get; } = new() { PlanStages = [WorkflowDesignerStage.ApprovalReview, WorkflowDesignerStage.ExternalSettlementReview, WorkflowDesignerStage.ReconciliationReview] };
         public Task<WorkflowDesignerModelResult> InterviewAsync(WorkflowDesignerRequest request, CancellationToken cancellationToken)
         { Calls++; return Task.FromResult(new WorkflowDesignerModelResult(Reply)); }
     }

@@ -4,6 +4,18 @@ type: verification
 
 # Verification — 2026-10-18
 
+## Coordinator runtime checkpoint - 2026-10-18
+
+The reviewed closed-catalog source passed the collected full unit suite (5,427 tests), SDK typecheck and 326 SDK tests, frontend lint and 314 frontend tests, and the production frontend build. These supersede the author-only pending runtime statements below. Refreshed images and guarded UI passes04/05 remain pending, so draft review/import usability and the UX exit criteria are not yet proved. The six failures from the changed backend integration collection were corrected in an independently reviewed batch: all six names and both new audit transaction witnesses pass in the subsequent 62/62 affected-database collection. API/unit/integration compilation and all 5,427 unit tests pass again. This is a focused rerun, not a new complete broad-suite result. No main push or Railway configuration has occurred. Provider use remains bounded to one further synthetic request in each follow-up pass, with the existing bridge counter preserved.
+
+## Superseding UI03 finding and unexecuted correction
+
+The first authorized compile-only batch passed API/unit/integration project builds. SDK build was blocked before compilation by sandbox filesystem traversal; frontend then reported stale SDK exports. After the three collected review corrections, all three .NET projects compiled again with `--no-restore`, and an elevated SDK build succeeded. Frontend then exposed one real TS2352 intake-initialization cast, corrected to an explicit six-field typed object; the subsequent frontend typecheck passed. Final compile gates are all exit 0. Logs are root `.omc/research/ai-closed-catalog-compile/final/`, including `frontend-typecheck-after-typed-initialization.log`. No tests, lint, provider requests or runtime changes ran. Final independent recheck and coordinator test/UI proof remain separate.
+
+The later real UI study found obsolete statutory advice, leaked confirmation identifiers and narrative describing a draft absent from the UI. Earlier service/provider success below does not certify that behavior. The current authored correction admits five required closed enum arrays only; unknown/missing fields and numeric enums are refused locally as well as through native schema routing. All visible wording and the private Emit-only graph are server-owned. New authored regressions cover extra prose/fields, missing fields, numeric enums, explicit scope, nonblocking professional review, contextual unknown recovery, user amounts, canonical payloads and truthful graph readiness/import.
+
+These new test cases have not been executed by this lane. The coordinator's collected test/lint sweep and refreshed browser proof remain pending; compile success is not task-completion evidence. The graph records manual/external planning notes and implements no approval/eligibility/cap/refund/payout/settlement controls. Full executable economic graph generation remains unsupported. No statutory accuracy, professional determination or release-readiness claim follows from the closed catalog. No additional provider call was made while authoring this correction; the remaining two bounded synthetic study requests are coordinator-owned.
+
 The feature branch includes the reviewed implementation `1b2b6e23`, release checkpoint `d89e3295`, release typing fix `f474863b` via merge `538c5ccd`, common lint-scope fix `d6a9a53c`, and verification fixes `2d1b4043`. No push, main merge or Railway configuration was performed by this lane.
 
 ## Collected final sweep before live provider diagnosis

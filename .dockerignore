@@ -6,6 +6,8 @@
 **/.git
 **/.omc
 **/.claude
+**/.env*
+**/*.env
 **/coverage
 .worktrees
 uxqa/.secrets

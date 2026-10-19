@@ -1120,12 +1120,13 @@ directly when no effect authorization (and so no BEGIN/COMMIT fence) is needed â
 
 ## wallet-claim-query-binding
 
-`SurrealWalletAuthClaimTokenStore.GetByTokenAsync` captures `claimToken` for its
-typed equality predicate. The LINQ translator derives a bound parameter name from
-the captured variable; `$token` is a protected SurrealDB variable and fails before
-the lookup executes. Keep the method's public `token` parameter while using the
-non-reserved local capture. The real-DB wallet authentication fixture checks exact
-matching between two invites and a miss without weakening invite consumption.
+`SurrealWalletAuthClaimTokenStore.GetByTokenAsync` scopes its typed equality
+query through `SurrealGeneratedStatementScope.Apply` with `claim_lookup`.
+SurrealForge 1.3 derives parameters from column names, so renaming a captured
+local cannot avoid the protected `$token` variable. The shared helper renames
+only generated parameter tokens and bindings; exact equality and LIMIT remain.
+The real-DB fixture checks two distinct invites and a miss, plus unchanged invite
+state after rejected claims and one-time consumption after a valid claim.
 
 ## hosted-identity-binding-parameters
 

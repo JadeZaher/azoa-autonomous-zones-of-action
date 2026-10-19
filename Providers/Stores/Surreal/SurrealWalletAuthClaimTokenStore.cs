@@ -1,5 +1,6 @@
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
+using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
@@ -22,9 +23,9 @@ public sealed class SurrealWalletAuthClaimTokenStore(ISurrealExecutor executor) 
     /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthClaimToken>> GetByTokenAsync(string token, CancellationToken ct = default)
     {
-        var claimToken = token;
-        var row = await executor.QuerySingleAsync<WalletAuthClaimTokenPoco>(SurrealQuery<WalletAuthClaimTokenPoco>.From()
-            .Where(row => row.Token == claimToken).Limit(1), ct);
+        var query = SurrealGeneratedStatementScope.Apply(SurrealQuery<WalletAuthClaimTokenPoco>.From()
+            .Where(row => row.Token == token).Limit(1), "claim_lookup");
+        var row = await executor.QuerySingleAsync<WalletAuthClaimTokenPoco>(query, ct);
         return new AZOAResult<WalletAuthClaimToken> { Result = row is null ? null : ToDomain(row) };
     }
 

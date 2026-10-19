@@ -1,0 +1,19 @@
+{
+  "type": "UX Triage Ledger",
+  "passId": "03-release-readiness",
+  "status": "REVIEWED_RECORDED_FAILURE",
+  "releaseVerdict": "NOT_READY",
+  "humanSessionsExecuted": 0,
+  "runs": {"raw":9,"ui":8,"probe":1,"completedUi":7,"partialUi":1},
+  "modelRequests": {"observed":2,"budget":2,"genericHarnessCoverage":0,"note":"Separate method/path-only observer; no request bodies or headers retained in the public ledger."},
+  "findings": [
+    {"id":"AI-TAX-CURRENCY","severity":"HIGH","disposition":"FIX","status":"OPEN_AT_PASS_CLOSE","observation":"Both replies asserted a USD600 1099-NEC threshold; one called it current guidance. IRS guidance specifies USD2000 for payments made in2026.","source":"https://www.irs.gov/businesses/small-businesses-self-employed/am-i-required-to-file-a-form-1099-or-other-information-return","scope":"Confirmed threshold error; no certification of all other legal/tax statements."},
+    {"id":"AI-RECOVERY-READINESS","severity":"MEDIUM","disposition":"FIX","status":"OPEN_AT_PASS_CLOSE","observation":"Explicit payment recovery containing contextual unknown was treated as an incomplete answer; an already answered question was repeated and the graph withheld.","cause":"Coordinator-confirmed source policy; the UI-only lane did not inspect source."},
+    {"id":"AI-PHANTOM-DRAFT","severity":"MEDIUM","disposition":"FIX","status":"OPEN_AT_PASS_CLOSE","observation":"Reply referred to a draft while no draft/review/import control existed and the canvas remained empty."},
+    {"id":"AI-INTERNAL-COPY","severity":"LOW","disposition":"FIX","status":"OPEN_AT_PASS_CLOSE","observation":"The narrative exposed DTO confirmation property names instead of user-facing labels."},
+    {"id":"A11Y-INITIAL-CONTRAST","severity":"MEDIUM","disposition":"INVESTIGATE","status":"TRANSIENT_DIAGNOSTIC_PENDING_REVIEW","observation":"Frozen gold scans recorded two contrast rule instances across three nodes. Separate initial/settled diagnostics found no settled violations; initial audit scan reproduced low contrast.","counts":"Settings1node; operator audit2nodes. Diagnostic is excluded from scored metrics."},
+    {"id":"AI-REVIEW-COMPREHENSION","severity":null,"disposition":"RESEARCH","status":"UNTESTED_WITH_HUMANS","observation":"Determine whether tenants understand geographic limits, adviser review, provider sharing, and planning/import versus execution.","plan":"Existing human-validation.md; five proposed sessions per affected segment, zero executed."}
+  ],
+  "exit": {"gold":true,"coverage":true,"frictionTrend":true,"newHigh":false,"adversarialApproval":false,"twoConsecutivePassingStudies":false},
+  "limits": ["Synthetic agent evidence, not human research","No post-fix model/UI verification","Private traces and rendered replies are not publication artifacts","Generic API instrumentation missed interview requests","Prior source-free panel hypotheses are not new independent panels in this pass"]
+}

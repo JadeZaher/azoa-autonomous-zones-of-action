@@ -185,7 +185,7 @@ public sealed class WorkflowDesignerHttpTests
         public Task<WorkflowDesignerModelResult> InterviewAsync(WorkflowDesignerRequest request, CancellationToken cancellationToken)
         {
             Calls++;
-            return Task.FromResult(new WorkflowDesignerModelResult(new() { Summary = "Which jurisdiction applies?", Questions = ["Where does the tenant operate?"] }));
+            return Task.FromResult(new WorkflowDesignerModelResult(new() { GapIds = [WorkflowDesignerDimension.Jurisdictions], QuestionIds = [WorkflowDesignerQuestion.OperatingLocations] }));
         }
     }
 

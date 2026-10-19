@@ -41,6 +41,26 @@ export class AzoaApi {
     return { ...person, userId: registered.id }
   }
 
+  /** Authenticates the actual person's owner credential for first-party commands. */
+  async personToken(person: Person): Promise<string> {
+    return this.ok<string>(await this.request.post('/api/user/login', {
+      data: { email: person.email, password: person.password },
+    }))
+  }
+
+  async beginPersonalKyc(accessToken: string): Promise<{ verificationUrl: string }> {
+    return this.ok(await this.request.post('/api/kyc/session', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }))
+  }
+
+  async personalKycStatus(accessToken: string): Promise<string> {
+    const submission = await this.ok<{ status: string }>(await this.request.get('/api/kyc/status', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }))
+    return submission.status
+  }
+
   async operatorToken(): Promise<string> {
     if (this.operatorAccessToken) return this.operatorAccessToken
     const session = await this.ok<{ accessToken: string }>(

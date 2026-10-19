@@ -1,5 +1,15 @@
 # Real SurrealDB store fixtures
 
+## retained-history-and-terminal-races
+
+The recovery ancestry audit seeds inert historical predecessors with typed
+writers. Live `ClaimAsync` admission checks the parent's current child and must
+reject a retained predecessor; the fixture also proves it cannot authorize a
+submission. Pagination, immutable digests and stale-version checks use the real
+audit store. In the consent expiry/revoke race, revoke may win without an expiry
+event. Preserve the at-most-one expiry count and validate the original timestamp
+of every expiry event that exists, alongside exactly one revocation event.
+
 ## user-store-fixtures
 
 `SurrealUserStoreTests` creates both the user schema and the wallet identity migration
@@ -22,7 +32,9 @@ owner/address or explicit live grant, retaining the production CAS assertions.
 
 `SurrealWalletAuthenticationTests` reads two real claim invites by exact token and
 checks an absent token. The regression exercises the typed query over the real CBOR
-transport: SurrealDB reserves `$token`, so the store captures `claimToken` instead.
+transport: SurrealDB reserves `$token`, so the shared statement helper scopes the
+column-derived binding to `$claim_lookup_token`. A local-variable rename cannot
+change SurrealForge 1.3's generated parameter name.
 The gate fixture uses a fresh username/email for its second profile so uniqueness
 does not mask the allow path after migration.
 
@@ -33,6 +45,13 @@ namespace. A later refused mutation must roll back the earlier role mutation and
 directory epoch; concurrent claims at the same epoch produce exactly one winner;
 a duplicate role create returns the typed duplicate outcome and cannot overwrite
 the winner. These are the named store-family inventory witnesses.
+
+`SurrealNodeAdminAuditLogTests` forwards every read and transaction to the real
+database. An asynchronous read barrier makes two appenders capture the same
+head; a witnessed head-CAS refusal must retry and produce a contiguous verified
+chain. A preoccupied next row makes insertion fail after the head mutation;
+every retry must roll back the head and preserve the existing row. These cases
+inventory `NodeAdminAuditLog` separately from directory/role commits.
 
 ## hosted-identity-provider-binding
 

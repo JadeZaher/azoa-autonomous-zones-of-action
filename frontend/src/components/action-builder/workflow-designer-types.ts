@@ -1,4 +1,4 @@
-import type { BuiltGraph } from './graph-serialization'
+import type { WorkflowDesignerAvailability, WorkflowDesignerDraft, WorkflowDesignerIntake, WorkflowDesignerMessage, WorkflowDesignerReply } from 'azoa-sdk'
 import type { ActionPreset } from './presets'
 
 export const INTAKE_FIELDS = [
@@ -10,20 +10,11 @@ export const INTAKE_FIELDS = [
   ['failureAndRefunds', 'What happens when things go wrong?', 'Release approval, cancellation, disputes, expiry, partial completion, failed payments and refunds.'],
 ] as const
 
-export type WorkflowIntake = Record<(typeof INTAKE_FIELDS)[number][0], string>
-export interface DesignerMessage { role: 'user' | 'assistant'; content: string }
-export interface DesignerAvailability { available: boolean; provider: string; model: string; disclosure: string; tenantId: string }
-export interface DesignerDraft extends BuiltGraph { name: string; description?: string; isPublic: boolean }
-export interface DesignerReply {
-  summary: string
-  questions: string[]
-  concerns: string[]
-  assumptions: string[]
-  readyForDraft: boolean
-  draft: DesignerDraft | null
-  draftErrors: string[]
-  sources: Array<{ id: string; title: string; url: string; jurisdiction: string }>
-}
+export type WorkflowIntake = WorkflowDesignerIntake
+export type DesignerMessage = WorkflowDesignerMessage
+export type DesignerAvailability = WorkflowDesignerAvailability
+export type DesignerDraft = WorkflowDesignerDraft
+export type DesignerReply = WorkflowDesignerReply
 
 /** Convert reviewed server draft to the existing canvas preset contract. */
 export function designerDraftPreset(draft: DesignerDraft): ActionPreset {
@@ -35,7 +26,7 @@ export function designerDraftPreset(draft: DesignerDraft): ActionPreset {
     })),
     edges: draft.edges.map(edge => ({
       from: String(edge.sourceNodeId), to: String(edge.targetNodeId), edgeType: edge.edgeType,
-      condition: edge.condition,
+      condition: edge.condition ?? undefined,
     })),
   }
 }

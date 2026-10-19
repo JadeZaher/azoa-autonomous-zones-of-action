@@ -154,6 +154,12 @@ comments, and unbound variables. It accepts trusted generated SQL only, never us
 SQL. This preserves the typed writer's record-link marshalling. The single raw
 factory reconstructs identical generated SQL with disjoint binding names.
 
+`Apply` also scopes a standalone typed query when a generated binding would use
+a protected SurrealDB variable. SurrealForge 1.3 names predicate parameters after
+columns, so a `Token` equality needs a scope such as `claim_lookup` to avoid
+`$token`. Renaming the captured C# local does not affect the generated name.
+Column names, comparison operators and bound values remain unchanged.
+
 **Capturing a read vs a mutation.** `Assign` captures a statement's result verbatim:
 right for `UPDATE ONLY …` (one object or `NONE`), wrong for a read.
 `SurrealQuery<T>.Key(id)` emits `SELECT * FROM type::record($_t, $_id)`, and a
