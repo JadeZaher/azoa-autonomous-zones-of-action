@@ -22,8 +22,9 @@ public sealed class SurrealWalletAuthClaimTokenStore(ISurrealExecutor executor) 
     /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthClaimToken>> GetByTokenAsync(string token, CancellationToken ct = default)
     {
+        var claimToken = token;
         var row = await executor.QuerySingleAsync<WalletAuthClaimTokenPoco>(SurrealQuery<WalletAuthClaimTokenPoco>.From()
-            .Where(row => row.Token == token).Limit(1), ct);
+            .Where(row => row.Token == claimToken).Limit(1), ct);
         return new AZOAResult<WalletAuthClaimToken> { Result = row is null ? null : ToDomain(row) };
     }
 

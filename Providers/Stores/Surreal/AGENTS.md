@@ -1117,3 +1117,12 @@ before the column type, so without it `Unset(ParentHolonId)` threw "required fie
 
 `SurrealQuery.Combine` refuses a single query: `SurrealFungibleCreationStore.UpdateAsync` sends its lone progress statement
 directly when no effect authorization (and so no BEGIN/COMMIT fence) is needed — a single statement is already atomic.
+
+## wallet-claim-query-binding
+
+`SurrealWalletAuthClaimTokenStore.GetByTokenAsync` captures `claimToken` for its
+typed equality predicate. The LINQ translator derives a bound parameter name from
+the captured variable; `$token` is a protected SurrealDB variable and fails before
+the lookup executes. Keep the method's public `token` parameter while using the
+non-reserved local capture. The real-DB wallet authentication fixture checks exact
+matching between two invites and a miss without weakening invite consumption.

@@ -46,12 +46,37 @@ public sealed class SurrealWalletAuthenticationTests : IAsyncLifetime
         user.AuthWalletChainType = "ethereum";
         (await _users.UpsertAsync(user)).IsError.Should().BeTrue();
         (await _users.TryUpdateAuthenticationAsync(user, null, null, null, null)).IsError.Should().BeTrue();
-        user.Id = Guid.NewGuid();
+        user = DomainUser();
+        user.AuthWalletAddress = EthereumAddress;
+        user.AuthWalletChainType = "ethereum";
         (await _users.CreateIfAbsentAsync(user)).IsError.Should().BeTrue();
         (await _users.GetByAuthWalletAsync(EthereumAddress, "ethereum")).IsError.Should().BeTrue();
         await _migration.SweepAsync(default);
         (await _migration.GetAsync(default)).Status.Should().Be("Ready");
         (await _users.CreateIfAbsentAsync(user)).IsError.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Claim_token_lookup_uses_a_non_reserved_binding_and_returns_only_the_exact_invite()
+    {
+        var tokens = new SurrealWalletAuthClaimTokenStore(_executor);
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var expected = await InviteAsync(userId, tenantId);
+        var other = await InviteAsync(userId, tenantId);
+
+        var found = await tokens.GetByTokenAsync(expected.Token);
+        found.IsError.Should().BeFalse();
+        found.Result.Should().NotBeNull();
+        found.Result!.Id.Should().Be(expected.Id);
+        found.Result.Token.Should().Be(expected.Token);
+        found.Result.TargetUserId.Should().Be(userId);
+        found.Result.TenantId.Should().Be(tenantId);
+        found.Result.ConsumedAt.Should().BeNull();
+        (await tokens.GetByTokenAsync(other.Token)).Result!.Id.Should().Be(other.Id);
+        var missing = await tokens.GetByTokenAsync(Guid.NewGuid().ToString("N"));
+        missing.IsError.Should().BeFalse();
+        missing.Result.Should().BeNull();
     }
 
     [Fact]
