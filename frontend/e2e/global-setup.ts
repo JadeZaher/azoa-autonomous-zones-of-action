@@ -2,11 +2,7 @@ import { proveEgressIsHermetic } from './support/egress-probe'
 import { loadE2eEnvironment } from './support/environment'
 import { startFakeVendors } from './support/fake-vendors'
 
-/**
- * Starts the fake vendors for the whole run (they must outlive every worker), fails fast when the
- * stack is not up, and proves the API cannot reach a real vendor. The returned function is the
- * global teardown. See `e2e/AGENTS.md` §run.
- */
+/** Starts run-scoped fake vendors and proves egress controls; see `e2e/AGENTS.md` §hermetic. */
 export default async function globalSetup(): Promise<(() => Promise<void>) | undefined> {
   if (process.env.AZOA_E2E_SHELL_ONLY === '1') return undefined
 
@@ -15,7 +11,7 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | und
   try {
     const health = await fetch(`${environment.apiUrl}/health`)
     if (!health.ok) throw new Error(`API health at ${environment.apiUrl} answered ${health.status}`)
-    proveEgressIsHermetic(environment)
+    await proveEgressIsHermetic(environment)
   } catch (error) {
     await vendors.close()
     throw new Error(

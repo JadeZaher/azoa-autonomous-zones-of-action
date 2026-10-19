@@ -326,20 +326,20 @@ public class BlockchainOperationManagerTests
 
         var ops = Enumerable.Range(0, concurrency).Select(_ => NewMintOp()).ToArray();
 
-        // ready: every task signals once parked at the start line. go: a single
-        // Set() releases all N at once so the idempotency claims genuinely race.
-        using var ready = new CountdownEvent(concurrency);
-        using var go = new ManualResetEventSlim(false);
+        // All contenders await one asynchronous start gate; see AGENTS.md §concurrent-start-gates.
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var arrivals = 0;
 
         var tasks = ops.Select(op => Task.Run(async () =>
         {
-            ready.Signal();      // I am at the start line.
-            go.Wait();           // Hold until the gun fires.
+            if (Interlocked.Increment(ref arrivals) == concurrency) ready.SetResult();
+            await go.Task;
             return await _manager.ExecuteAsync(op);
         })).ToArray();
 
-        ready.Wait();            // All N tasks parked at the gate.
-        go.Set();                // Fire — all N race simultaneously.
+        await ready.Task;
+        go.SetResult();
 
         var results = await Task.WhenAll(tasks);
 

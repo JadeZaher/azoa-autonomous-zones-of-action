@@ -70,14 +70,14 @@ public class BridgeRedeemRecoveryTests
                 };
             });
 
-        using var gate = new ManualResetEventSlim(false);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
         {
-            gate.Wait();
+            await gate.Task;
             return await h.CreateService().RedeemWithVAAAsync(bridgeId);
         })).ToList();
 
-        gate.Set();
+        gate.SetResult();
         var results = await Task.WhenAll(tasks);
 
         redeemCalls.Should().Be(1, "exactly one caller must win the VAAReady→Redeeming gate");

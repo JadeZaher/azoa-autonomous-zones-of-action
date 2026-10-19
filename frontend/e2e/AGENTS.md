@@ -62,6 +62,16 @@ kept as `EgressProbe.csx` because the repo-root `AZOA.WebAPI.csproj` compiles ev
 script copies it to `Program.cs` and publishes it inside `mcr.microsoft.com/dotnet/sdk:10.0`, and
 compose mounts the output at `/e2e/probe`.
 
+The runner awaits an asynchronous `execFile` subprocess for the probe, bounded
+to 120 seconds and 1 MiB of output per stream. Runtime discovery uses the same
+non-shell API with a five-second bound per candidate. The Node event loop must
+remain free: this same process hosts the fake HTTPS vendors that the positive
+control calls, so a synchronous subprocess wait prevents the vendor from
+answering and creates a false timeout. Numeric probe failures retain the control
+report; launch, signal, timeout and output-limit errors still abort setup and
+close the vendors. The configured Node child-process types document the
+asynchronous callback, `timeout`, `maxBuffer` and direct executable semantics.
+
 Executed locally in `aspnet:10.0` containers (2026-10-16): with both variables the probe reported
 "certificate not trusted" for both Identomat hosts; with only `SSL_CERT_FILE` (the first-pass
 configuration) `widget.identomat.com` answered a trusted response, which is why both are set.
