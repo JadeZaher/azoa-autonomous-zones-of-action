@@ -30,7 +30,8 @@ function containerRuntime(): string {
  * `SSL_CERT_DIR`, exactly as the API process does. See `e2e/AGENTS.md` §hermetic.
  */
 export function proveEgressIsHermetic(environment: E2eEnvironment): void {
-  const fakeVendor = `https://${environment.vendorHost}:${environment.identomatPort}/__e2e/sessions`
+  const upstreamPort = process.env.AZOA_E2E_IDENTOMAT_UPSTREAM_PORT ?? environment.identomatPort
+  const fakeVendor = `https://${environment.vendorHost}:${upstreamPort}/__e2e/sessions`
   const result = spawnSync(
     containerRuntime(),
     ['exec', apiContainer, 'dotnet', probeAssembly, `+${fakeVendor}`, ...realVendorOrigins.map((origin) => `-${origin}`)],

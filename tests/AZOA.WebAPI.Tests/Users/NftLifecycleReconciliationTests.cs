@@ -132,13 +132,14 @@ public sealed class NftLifecycleReconciliationTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         h.Store.BeforeUpdate = async _ => { entered.TrySetResult(); await release.Task.WaitAsync(TimeSpan.FromSeconds(10)); };
-        var pending = h.Service.ReconcileAsync(result.Result!.OperationId);
+        var operationId = result.Result!.OperationId;
+        var pending = Task.Run(() => h.Service.ReconcileAsync(operationId));
         var signatures = h.Prepared.Count; var sends = h.Submitted.Count;
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
             h.Store.BeforeUpdate = null;
-            var interactive = (await h.Store.GetAsync(result.Result.OperationId))!;
+            var interactive = (await h.Store.GetAsync(operationId))!;
             interactive.State = "Prepared";
             await h.Store.UpdateAsync(interactive, interactive.Version);
         }

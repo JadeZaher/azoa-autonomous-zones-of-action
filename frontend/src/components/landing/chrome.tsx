@@ -4,9 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 
-// Shared AZOA marketing chrome — styles, fonts, nav, footer — used by the
-// landing (/) and Federation (/federation) routes. Imported from the Claude
-// Design "Autonomous Zones of Action" project. See src/app/AGENTS.md §landing.
+// Shared public styles and navigation; see AGENTS.md.
 
 export const GITHUB = 'https://github.com/JadeZaher/azoa-autonomous-zones-of-action'
 
@@ -15,15 +13,15 @@ export const LANDING_STYLES = `
 .azoa-landing *{box-sizing:border-box;}
 .azoa-landing section,.azoa-landing header,.azoa-landing footer,.azoa-landing nav,.azoa-landing .az-ticker{width:100%;max-width:100%;}
 .azoa-landing a{text-decoration:none;}
-.azoa-landing ::selection{background:#C8501E;color:#F2EDE3;}
+.azoa-landing ::selection{background:#A63D15;color:#F2EDE3;}
 .azoa-landing .mono{font-family:'IBM Plex Mono',monospace;}
 
 .az-nav{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:60px;border-bottom:1px solid #16120D;background:#F2EDE3;}
 .az-brand{font-weight:700;font-size:18px;letter-spacing:0.08em;}
 .az-nav-right{display:flex;align-items:center;gap:28px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.06em;}
 .az-link{transition:color .15s;}
-.az-link:hover{color:#C8501E;}
-.az-link--active{color:#C8501E;}
+.az-link:hover{color:#A63D15;}
+.az-link--active{color:#A63D15;}
 
 .az-burger{display:none;flex-direction:column;justify-content:center;gap:5px;width:38px;height:32px;padding:0 8px;background:transparent;border:1px solid #16120D;cursor:pointer;}
 .az-burger span{display:block;width:100%;height:1.5px;background:#16120D;transition:transform .2s,opacity .2s;}
@@ -33,16 +31,16 @@ export const LANDING_STYLES = `
 .az-mobile-menu{display:none;position:fixed;top:60px;left:0;right:0;z-index:19;background:#F2EDE3;border-bottom:1px solid #16120D;flex-direction:column;font-family:'IBM Plex Mono',monospace;}
 .az-mobile-link{padding:18px 18px;border-top:1px solid #d6ccba;font-size:14px;letter-spacing:0.08em;color:#16120D;transition:background .15s,color .15s;}
 .az-mobile-link:first-child{border-top:none;}
-.az-mobile-link:hover,.az-mobile-link:active{background:#e9e2d3;color:#C8501E;}
+.az-mobile-link:hover,.az-mobile-link:active{background:#e9e2d3;color:#A63D15;}
 .az-mobile-link--cta{background:#16120D;color:#F2EDE3;}
-.az-mobile-link--cta:hover,.az-mobile-link--cta:active{background:#C8501E;color:#F2EDE3;}
+.az-mobile-link--cta:hover,.az-mobile-link--cta:active{background:#A63D15;color:#F2EDE3;}
 
 .az-btn{display:inline-flex;align-items:center;font-family:'IBM Plex Mono',monospace;letter-spacing:0.08em;transition:background .15s,color .15s,border-color .15s;cursor:pointer;white-space:nowrap;text-decoration:none;}
 .az-btn--sm{font-size:13px;padding:8px 16px;}
 .az-btn--md{font-size:13px;padding:14px 24px;}
 .az-btn--lg{font-size:14px;padding:16px 32px;}
 .az-btn--dark{border:1px solid #16120D;background:#16120D;color:#F2EDE3;}
-.az-btn--dark:hover{background:#C8501E;border-color:#C8501E;color:#F2EDE3;}
+.az-btn--dark:hover{background:#A63D15;border-color:#A63D15;color:#F2EDE3;}
 .az-btn--outline{border:1px solid #16120D;color:#16120D;background:transparent;}
 .az-btn--outline:hover{background:#16120D;color:#F2EDE3;}
 .az-btn--outline-inv{border:1px solid #F2EDE3;color:#F2EDE3;background:transparent;}
@@ -51,19 +49,19 @@ export const LANDING_STYLES = `
 .az-hero{position:relative;height:100vh;min-height:680px;overflow:hidden;}
 .az-hero-fade{position:absolute;inset:0;background:linear-gradient(to top,rgba(242,237,227,0.92) 0%,rgba(242,237,227,0.25) 45%,rgba(242,237,227,0) 70%);pointer-events:none;}
 .az-hero-content{position:absolute;left:32px;right:32px;bottom:56px;pointer-events:none;}
-.az-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.18em;color:#C8501E;margin-bottom:20px;}
+.az-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.18em;color:#A63D15;margin-bottom:20px;}
 .az-h1{margin:0;font-size:clamp(56px,8.5vw,140px);line-height:0.94;font-weight:700;letter-spacing:-0.03em;text-transform:uppercase;max-width:1200px;}
 .az-hero-row{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px;margin-top:32px;}
 .az-hero-lede{margin:0;font-size:clamp(17px,1.5vw,21px);line-height:1.45;max-width:560px;color:#3d362c;text-wrap:pretty;}
 .az-hero-cta{display:flex;gap:12px;pointer-events:auto;flex-wrap:wrap;}
 .az-hero-badge{position:absolute;top:76px;right:32px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.1em;color:#6f665a;display:flex;align-items:center;gap:8px;}
-.az-dot{width:8px;height:8px;border-radius:50%;background:#C8501E;display:inline-block;}
+.az-dot{width:8px;height:8px;border-radius:50%;background:#A63D15;display:inline-block;}
 
 .az-ticker{border-top:1px solid #16120D;border-bottom:1px solid #16120D;padding:14px 32px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.14em;color:#6f665a;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;}
 
 .az-wrap{max-width:1400px;margin:0 auto;}
 .az-shead{display:grid;grid-template-columns:minmax(180px,1fr) 3fr;gap:32px;}
-.az-kicker{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.14em;color:#C8501E;}
+.az-kicker{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.14em;color:#A63D15;}
 .az-h2{margin:0;font-size:clamp(36px,4.5vw,68px);line-height:1.02;font-weight:700;letter-spacing:-0.025em;text-transform:uppercase;}
 
 #domains{padding:110px 32px 0;}
@@ -74,7 +72,7 @@ export const LANDING_STYLES = `
 .az-domain p{margin:0;font-size:17px;line-height:1.55;color:#3d362c;text-wrap:pretty;}
 .az-domains-note{max-width:1400px;margin:0 auto;padding:56px 0 110px;}
 .az-domains-note p{margin:0;font-size:clamp(22px,2.6vw,36px);line-height:1.3;font-weight:500;letter-spacing:-0.015em;max-width:1000px;text-wrap:pretty;}
-.az-accent{color:#C8501E;}
+.az-accent{color:#A63D15;}
 
 .az-dark{border-top:1px solid #16120D;background:#16120D;color:#F2EDE3;padding:110px 32px;}
 .az-dark .az-kicker{color:#E08A5B;}
@@ -91,7 +89,7 @@ export const LANDING_STYLES = `
 .az-trust h2{margin:0 0 40px;font-size:clamp(36px,4.5vw,68px);line-height:1.02;font-weight:700;letter-spacing:-0.025em;text-transform:uppercase;}
 .az-trust-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:40px 56px;max-width:1000px;}
 .az-trust-item{display:flex;flex-direction:column;gap:10px;}
-.az-trust-item .lbl{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.1em;color:#C8501E;}
+.az-trust-item .lbl{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.1em;color:#A63D15;}
 .az-trust-item p{margin:0;font-size:16px;line-height:1.55;color:#3d362c;text-wrap:pretty;}
 
 #next{padding:110px 32px;}
@@ -99,17 +97,19 @@ export const LANDING_STYLES = `
 .az-next-card{border:1px solid #16120D;padding:48px 36px;display:flex;flex-direction:column;gap:18px;min-height:300px;transition:background .15s,color .15s,border-color .15s;}
 .az-next-card--outline:hover{background:#e9e2d3;}
 .az-next-card--dark{background:#16120D;color:#F2EDE3;}
-.az-next-card--dark:hover{background:#C8501E;border-color:#C8501E;color:#F2EDE3;}
-.az-next-tag{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.14em;color:#C8501E;}
+.az-next-card--dark:hover{background:#A63D15;border-color:#A63D15;color:#F2EDE3;}
+.az-next-tag{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.14em;color:#A63D15;}
 .az-next-card--dark .az-next-tag{color:#E08A5B;}
+.az-next-card--dark:hover .az-next-tag{color:#F2EDE3;}
 .az-next-title{font-size:clamp(32px,3.4vw,52px);font-weight:700;letter-spacing:-0.02em;text-transform:uppercase;line-height:1;}
 .az-next-card p{margin:0;font-size:17px;line-height:1.55;color:#3d362c;max-width:480px;text-wrap:pretty;}
 .az-next-card--dark p{color:#F2EDE3;opacity:0.8;}
+.az-next-card--dark:hover p{opacity:1;}
 .az-next-more{margin-top:auto;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.08em;}
 
 .az-cta{border-top:1px solid #16120D;padding:130px 32px;text-align:center;}
 .az-cta--plain{border-top:none;}
-.az-cta-kicker{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.16em;color:#C8501E;margin-bottom:24px;}
+.az-cta-kicker{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.16em;color:#A63D15;margin-bottom:24px;}
 .az-cta h2{margin:0 auto;font-size:clamp(44px,6.5vw,104px);line-height:0.98;font-weight:700;letter-spacing:-0.03em;text-transform:uppercase;max-width:1100px;}
 .az-cta p{margin:28px auto 0;font-size:18px;line-height:1.5;color:#3d362c;max-width:520px;text-wrap:pretty;}
 .az-cta-row{display:flex;justify-content:center;gap:12px;margin-top:40px;flex-wrap:wrap;}
@@ -117,7 +117,7 @@ export const LANDING_STYLES = `
 .az-footer{border-top:1px solid #16120D;padding:24px 32px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.08em;color:#6f665a;}
 .az-footer-links{display:flex;gap:28px;}
 .az-flink{color:#6f665a;transition:color .15s;}
-.az-flink:hover{color:#C8501E;}
+.az-flink:hover{color:#A63D15;}
 
 /* Federation route */
 .az-fed-header{padding:180px 32px 90px;border-bottom:1px solid #16120D;}

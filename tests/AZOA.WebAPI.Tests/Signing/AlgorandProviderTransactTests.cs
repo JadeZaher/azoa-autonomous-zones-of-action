@@ -196,7 +196,7 @@ public class AlgorandProviderTransactTests : IDisposable
         var intent = new ValueTransferIntent("Algorand", ChainNetwork.Devnet, "123",
             _platform.Address.EncodeAsString(), new AlgoAccount().Address.EncodeAsString(), "500",
             SigningContext.PlatformFor("Algorand"), "value:overlap:0");
-        var first = provider.PrepareValueTransferAsync(intent, default);
+        var first = Task.Run(() => provider.PrepareValueTransferAsync(intent, default));
         try
         {
             await _signatureEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));

@@ -1,22 +1,4 @@
-/**
- * Runtime (not build-time) API base URL resolution.
- *
- * `NEXT_PUBLIC_*` vars are inlined into the client bundle at `next build`
- * time, so baking `NEXT_PUBLIC_API_URL` into the Docker image (see
- * frontend/Dockerfile) makes the value dead at runtime — an operator can't
- * repoint the UI at a different API host without rebuilding the image.
- *
- * Fix: the value is read server-side from a plain (non-`NEXT_PUBLIC_`) env
- * var at REQUEST time (Server Components re-read `process.env` on every
- * render — Next.js does not inline non-public vars into the bundle), then
- * injected into the page as `window.__RUNTIME_CONFIG__` via a small inline
- * script rendered by the root layout. The client singleton (azoa.ts) reads
- * that global instead of a build-time constant.
- *
- * This module is intentionally free of React/SDK imports so both the SDK
- * singleton (azoa.ts) and the server layout can use it without an import
- * cycle — same split as networks.ts / debug.ts.
- */
+/** Runtime public and internal API origins; see AGENTS.md §Runtime API origins. */
 
 declare global {
   interface Window {
@@ -55,12 +37,12 @@ function isPrivateBrowserHost(hostname: string): boolean {
   )
 }
 
-function normalizeApiUrl(value: string, allowInsecureLocal: boolean): string {
+function normalizeApiUrl(value: string, allowInsecureLocal: boolean, setting = 'API_URL'): string {
   let url: URL
   try {
     url = new URL(value)
   } catch {
-    throw new Error('API_URL must be an absolute HTTP(S) URL.')
+    throw new Error(`${setting} must be an absolute HTTP(S) URL.`)
   }
 
   if (
@@ -71,7 +53,7 @@ function normalizeApiUrl(value: string, allowInsecureLocal: boolean): string {
     url.hash ||
     url.pathname !== '/'
   ) {
-    throw new Error('API_URL must be a credential-free HTTP(S) origin.')
+    throw new Error(`${setting} must be a credential-free HTTP(S) origin.`)
   }
 
   if (process.env.NODE_ENV === 'production') {
@@ -79,14 +61,14 @@ function normalizeApiUrl(value: string, allowInsecureLocal: boolean): string {
     const isExplicitLocalDevelopment =
       allowInsecureLocal && isPrivateHost && url.protocol === 'http:'
     if (!isExplicitLocalDevelopment && (url.protocol !== 'https:' || isPrivateHost)) {
-      throw new Error('Production API_URL must be a public HTTPS origin.')
+      throw new Error(`Production ${setting} must be a public HTTPS origin.`)
     }
   }
 
   return url.origin
 }
 
-/** Server-side only: resolve the API URL from the live process environment. */
+/** Resolve the public API origin injected into browser runtime configuration. */
 export function resolveServerApiUrl(): string {
   const isProduction = process.env.NODE_ENV === 'production'
   const configured =
@@ -99,12 +81,14 @@ export function resolveServerApiUrl(): string {
   return normalizeApiUrl(configured, process.env.AZOA_ALLOW_INSECURE_LOCAL_API === 'true')
 }
 
-/**
- * SSR-safe read of the API base URL.
- * - In the browser: reads the value the server injected at request time.
- * - During SSR/build (no `window`): falls back to the live process env so
- *   server-rendered output is still correct.
- */
+/** Resolve the server-to-server API origin, falling back to the public origin. */
+export function resolveInternalApiUrl(): string {
+  const configured = process.env.INTERNAL_API_URL
+  if (!configured) return resolveServerApiUrl()
+  return normalizeApiUrl(configured, process.env.AZOA_ALLOW_INSECURE_LOCAL_API === 'true', 'INTERNAL_API_URL')
+}
+
+/** Read the public API origin from browser runtime configuration or SSR environment. */
 export function readInitialApiUrl(): string {
   if (typeof window === 'undefined') return resolveServerApiUrl()
   const configured = window.__RUNTIME_CONFIG__?.apiUrl

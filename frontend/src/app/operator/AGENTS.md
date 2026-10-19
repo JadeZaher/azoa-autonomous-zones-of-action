@@ -161,3 +161,7 @@ refusal `code` with fixed copy (`FORWARDED_UPSTREAM_CODES` in `lib/operator-bff.
 `ETHEREUM_RECOVERY_UNAVAILABLE` (409, no Ethereum rail on the node; QA M2): `useOperatorResource`
 exposes it as `errorCode`, and the Ethereum recovery panel shows it as a neutral state and hides the
 signer controls instead of an error with a retry button.
+
+## Provider policy freshness
+
+`KycProviderRegistry.BuiltIn` returns version-zero defaults with Unix epoch timestamps until an operator persists a policy. The provider page names that state “Policy has not been configured yet” rather than formatting the sentinel as a 1969/1970 update. Persisted policies, including disabled ones, retain their real update timestamp. This display rule changes no authority, provider enablement or backend timestamp data.

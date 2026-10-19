@@ -7,3 +7,8 @@
 **/.omc
 **/.claude
 **/coverage
+.worktrees
+uxqa/.secrets
+uxqa/passes/*/runs
+uxqa/passes/*/flows
+frontend/e2e/.generated
