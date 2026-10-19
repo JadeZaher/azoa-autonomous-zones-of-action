@@ -4,6 +4,8 @@ type: runbook
 
 # Local tenant AI drill
 
+The bounded model/service smoke was completed on 2026-10-18: the final strict-schema request made one real OpenRouter HTTP 200 call and produced a typed follow-up interview with no draft, persistence or execution. Three synthetic requests total were used across diagnosis and verification. The full authenticated browser drill below remains unexecuted. See `verification.md`; do not treat transport/service evidence as UI task completion.
+
 Use the existing local API database/auth configuration and a real local test tenant. The feature defaults to disabled. This procedure adds only process-local AI configuration and never changes Railway or writes a credential into a file.
 
 The operator must have issued an active `tenant:provision` credential for the same active account that logs into the tenant UI, and assigned that account the DApp developer/manager role. The assistant checks both. A normal developer account without tenant authority receives an honest setup message; a root/operator session is not a tenant authoring session. The model never receives the tenant id or login credential.

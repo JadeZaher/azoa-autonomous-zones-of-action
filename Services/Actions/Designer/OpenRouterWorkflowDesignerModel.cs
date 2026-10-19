@@ -50,8 +50,10 @@ public sealed class OpenRouterWorkflowDesignerModel(IHttpClientFactory clients, 
         message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Value.ApiKey);
         message.Content = JsonContent.Create(new {
             model = options.Value.Model, messages, max_tokens = 4000,
-            response_format = new { type = "json_object" },
-            provider = new { data_collection = "deny", allow_fallbacks = false }
+            response_format = new { type = "json_schema", json_schema = new {
+                name = "workflow_designer_reply", strict = true, schema = WorkflowDesignerResponseSchema.Create()
+            } },
+            provider = new { data_collection = "deny", allow_fallbacks = false, require_parameters = true }
         });
         using var response = await clients.CreateClient(WorkflowDesignerOptions.ClientName)
             .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -106,6 +108,7 @@ public sealed class OpenRouterWorkflowDesignerModel(IHttpClientFactory clients, 
             Use only the exact ConfirmedResourceHandles supplied as data for wallet, hold, asset, recipient, reserve partition, currency and quote identifiers.
             JurisdictionsConfirmed and EconomicTermsConfirmed must both be true before drafting; otherwise ask the user to confirm the current brief.
             No fabricated handles, code, HTTP requests, scripts, interest-bearing primitives or arbitrary blockchain operations.
+            Return the JSON object matching the supplied response schema directly, with no Markdown fences or surrounding prose.
             Only return JSON with these fields: summary:string, questions:string[], concerns:string[], assumptions:string[], readyForDraft:boolean,
             draft:null or {name:string,description:string,isPublic:false,nodes:[{name:string,nodeType:string,config:string,isEntry:boolean,isTerminal:boolean}],
             edges:[{sourceNodeId:integer,targetNodeId:integer,edgeType:"Control"|"Conditional"|"Data",condition:null|string}]}.

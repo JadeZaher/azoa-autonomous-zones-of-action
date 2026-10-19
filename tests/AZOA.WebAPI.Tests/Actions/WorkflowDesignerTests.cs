@@ -214,6 +214,7 @@ public sealed class WorkflowDesignerTests
 
     [Theory]
     [InlineData("{malformed")]
+    [InlineData("```json\n{}\n```")]
     [InlineData("{\"readyForDraft\":true,\"draft\":{\"nodes\":[{\"nodeType\":\"ExecuteScript\"}]}}")]
     [InlineData("{\"readyForDraft\":true,\"draft\":{\"nodes\":[{\"nodeType\":0}]}}")]
     public async Task ProviderMalformedOrUnknownEnum_IsTypedRefusal(string content)
@@ -249,9 +250,38 @@ public sealed class WorkflowDesignerTests
         Assert.False(body.RootElement.TryGetProperty("tools", out _));
         Assert.Equal(4000, body.RootElement.GetProperty("max_tokens").GetInt32());
         Assert.Equal("deny", body.RootElement.GetProperty("provider").GetProperty("data_collection").GetString());
+        Assert.True(body.RootElement.GetProperty("provider").GetProperty("require_parameters").GetBoolean());
+        Assert.False(body.RootElement.GetProperty("provider").GetProperty("allow_fallbacks").GetBoolean());
+        var format = body.RootElement.GetProperty("response_format");
+        Assert.Equal("json_schema", format.GetProperty("type").GetString());
+        var responseSchema = format.GetProperty("json_schema");
+        Assert.True(responseSchema.GetProperty("strict").GetBoolean());
+        var schema = responseSchema.GetProperty("schema");
+        Assert.False(schema.GetProperty("additionalProperties").GetBoolean());
+        Assert.Equal(6, schema.GetProperty("required").GetArrayLength());
+        Assert.True(schema.GetRawText().Length < 16000);
+        var draft = schema.GetProperty("properties").GetProperty("draft").GetProperty("anyOf")[0];
+        Assert.False(draft.GetProperty("properties").GetProperty("isPublic").GetProperty("enum")[0].GetBoolean());
+        var nodeTypes = draft.GetProperty("properties").GetProperty("nodes").GetProperty("items").GetProperty("properties").GetProperty("nodeType").GetProperty("enum");
+        Assert.Contains(nodeTypes.EnumerateArray(), node => node.GetString() == "Emit");
+        Assert.DoesNotContain(nodeTypes.EnumerateArray(), node => node.GetString() == "ExecuteScript");
         Assert.DoesNotContain("test-only-not-a-key", http.Body!);
         Assert.DoesNotContain(request.TenantId.ToString(), http.Body!);
         Assert.Contains("confirmed-asset-123", http.Body!);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.UnprocessableEntity)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task UnsupportedStructuredOutputOrProviderRefusal_IsUnavailableWithoutRelaxingFormat(HttpStatusCode status)
+    {
+        var http = new FakeHttpHandler("provider detail must not reach the caller", status: status);
+        var result = await Provider(http).InterviewAsync(CompleteRequest(), CancellationToken.None);
+        Assert.Equal("AI_PROVIDER_UNAVAILABLE", result.Code);
+        Assert.Null(result.Reply);
+        Assert.Equal(1, http.Calls);
     }
 
     [Fact]
@@ -304,18 +334,20 @@ public sealed class WorkflowDesignerTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
-    private sealed class FakeHttpHandler(string content, bool rawEnvelope = false) : HttpMessageHandler
+    private sealed class FakeHttpHandler(string content, bool rawEnvelope = false, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
     {
+        public int Calls { get; private set; }
         public string? Uri { get; private set; }
         public string? Authorization { get; private set; }
         public string? Body { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
             Uri = request.RequestUri!.ToString();
             Authorization = request.Headers.Authorization!.ToString();
             Body = await request.Content!.ReadAsStringAsync(cancellationToken);
-            return new(HttpStatusCode.OK) { Content = new StringContent(rawEnvelope ? content : JsonSerializer.Serialize(new {
+            return new(status) { Content = new StringContent(rawEnvelope ? content : JsonSerializer.Serialize(new {
                 choices = new[] { new { finish_reason = "stop", message = new { content } } }
             })) };
         }
