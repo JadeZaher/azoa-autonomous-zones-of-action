@@ -6,6 +6,7 @@ using AZOA.WebAPI.Providers.Blockchain.Ethereum;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -26,7 +27,8 @@ public sealed class EthereumOperatorRecoveryController(IBlockchainProviderFactor
     [HttpPost("activate")]
     public async Task<IActionResult> Activate(ChainNetwork network, EthereumPlatformActivationRequest request, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actor = operatorActor.SubjectUserId;
         if (RecoveryModule(network) is not { } recovery) return Unavailable();
         var result = await recovery.ActivateSignerAsync(request.Sender, actor, ct);
         return result.IsError ? Conflict(result) : Ok(result);
@@ -35,7 +37,8 @@ public sealed class EthereumOperatorRecoveryController(IBlockchainProviderFactor
     [HttpPost("{id}")]
     public async Task<IActionResult> Recover(ChainNetwork network, string id, EthereumRecoveryRequest request, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actor = operatorActor.SubjectUserId;
         if (RecoveryModule(network) is not { } recovery) return Unavailable();
         var result = await recovery.RecoverPreparationAsync(id, actor, Guid.Empty, true, request.Cancel,
             request.MaximumFeePerGas, request.Reason, AzoaScopes.ValueSigningScopes, ct);

@@ -8,6 +8,8 @@ DEFINE TABLE IF NOT EXISTS action_recovery_audit SCHEMAFULL;
 
 DEFINE FIELD IF NOT EXISTS id ON TABLE action_recovery_audit TYPE string;
 DEFINE FIELD IF NOT EXISTS operator_id ON TABLE action_recovery_audit TYPE string;
+DEFINE FIELD IF NOT EXISTS actor ON TABLE action_recovery_audit TYPE option<string>
+    READONLY;
 DEFINE FIELD IF NOT EXISTS execution_id ON TABLE action_recovery_audit TYPE string;
 DEFINE FIELD IF NOT EXISTS run_id ON TABLE action_recovery_audit TYPE string;
 DEFINE FIELD IF NOT EXISTS node_id ON TABLE action_recovery_audit TYPE string;

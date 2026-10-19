@@ -1,6 +1,7 @@
 'use client'
 
 import type { Edge } from '@xyflow/react'
+import { useId } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +15,7 @@ interface EdgeInspectorProps {
 
 /** Inspector body for the selected edge: edge type picker and the Conditional condition (G2). */
 export function EdgeInspector({ edge, onPatch, onDelete }: EdgeInspectorProps) {
+  const conditionId = useId()
   const data = (edge.data as EdgeData) ?? {}
   const edgeType = data.edgeType ?? 'Control'
   const condition = data.condition ?? ''
@@ -22,7 +24,7 @@ export function EdgeInspector({ edge, onPatch, onDelete }: EdgeInspectorProps) {
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label className="text-xs">Edge Type</Label>
+        <span className="text-xs font-medium">Edge Type</span>
         <div className="flex gap-2">
           {EDGE_TYPE_OPTIONS.map((t) => (
             <button
@@ -44,12 +46,13 @@ export function EdgeInspector({ edge, onPatch, onDelete }: EdgeInspectorProps) {
       {edgeType === 'Conditional' && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label className="text-xs">Condition</Label>
+            <Label htmlFor={conditionId} className="text-xs">Condition</Label>
             {missingCondition && (
               <span className="text-[10px] text-red-600">required</span>
             )}
           </div>
           <Input
+            id={conditionId}
             value={condition}
             onChange={(e) => onPatch({ condition: e.target.value })}
             placeholder="e.g. true, false, output.ok == true"

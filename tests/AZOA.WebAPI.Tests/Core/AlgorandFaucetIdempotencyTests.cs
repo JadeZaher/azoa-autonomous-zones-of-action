@@ -206,11 +206,14 @@ public class AlgorandFaucetIdempotencyTests
         var (faucet, store) = BuildFaucet();
         var key = DerivedKey(addr, amount);
 
-        using var barrier = new Barrier(concurrency);
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var arrivals = 0;
 
         var tasks = Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
         {
-            barrier.SignalAndWait();
+            if (Interlocked.Increment(ref arrivals) == concurrency) ready.SetResult();
+            await go.Task;
             try
             {
                 await faucet.DispenseAsync(addr, amount);
@@ -222,6 +225,8 @@ public class AlgorandFaucetIdempotencyTests
             }
         })).ToArray();
 
+        await ready.Task;
+        go.SetResult();
         var outcomes = await Task.WhenAll(tasks);
 
         store.RecordCount.Should().Be(1, "all N concurrent identical dispenses collapse to ONE idempotency claim");

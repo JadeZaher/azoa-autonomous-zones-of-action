@@ -1,5 +1,12 @@
 # AZOA.WebAPI.IntegrationTests — module notes
 
+All four independent `WebApplicationFactory<Program>` roots explicitly set
+`OpenTelemetry:ExportEnabled=false` before host registration. Their derived HTTP
+flow and Development composition factories inherit it. Trace and metric providers,
+instrumentation and correlation remain active; only remote OTLP processors/readers
+are absent, so fixture disposal does not wait on an external collector. See
+`Observability/AGENTS.md` for the pinned SDK contract and default-enabled behavior.
+
 ## §factory-bootstrap-order — create isolation before host startup
 
 `WebApplicationFactory.CreateClient()` starts application hosted services. Test
@@ -134,3 +141,30 @@ proved nothing about the transport the app actually uses. See
   reads back `record` — checked over a raw HTTP/JSON fixture, outside
   SurrealForge, so the library cannot grade its own output. A green suite that
   quietly fell back to the JSON transport is exactly what it exists to catch.
+
+The shared factory pins **both** `SurrealDb` and `SurrealRuntime` to its generated
+namespace and `test` database, using the same local endpoint and root fixture
+credentials. `DevelopmentCompositionFactory` selects the Development config,
+which already contains `SurrealRuntime`; pinning only the legacy section lets the
+eager SDK binding escape into the shared `azoa` namespace. Apply identical values
+with `UseSetting` before registration and the late in-memory provider.
+
+## §node-admin-real-auth — `NodeAdmin/NodeAdminWebApplicationFactory`
+
+Node-admin flows need the production JWT pipeline (the `OnTokenValidated` node-admin branch, the policy
+provider, the denial handler), so this factory does **not** install `TestAuthHandler`. It creates its own
+namespace with the `node_admin*` goldens plus the startup prerequisites before host start, configures a
+generated root key, a fixed audience and a raised `operator-login` limit, and drops the namespace on dispose.
+Clients sign with real Ed25519 (`NodeAdminTestKey`, BouncyCastle aliased `BCCrypto2` exactly like the API
+project) and compute real TOTP codes; `AwaitStepHeadroomAsync` keeps a ±1-step sequence inside one 30 s
+window so step boundaries cannot flake the run.
+
+`NodeAdminOperatorRoutesFactory` (lane A2) derives from it through `ExtraTables`/`ExtraSettings`: it adds the
+governance and KYC tables and seeds the legacy reserved operator (`NodeOperator:*`), so one host exercises named
+admins, root and the legacy operator token against the same operator routes (`NodeAdminOperatorRouteFlowTests`,
+`NodeAdminOperatorFenceTests`). Step-up is driven by rewinding the session row's `auth_time`, never by a fake clock.
+
+`TestAuthHandler`'s operator principal (`X-Test-Operator`) defaults its subject to the reserved operator id, the only
+subject a real `node_operator` token can carry: operator controllers resolve their actor with
+`HttpContext.TryGetOperatorActor`, which refuses any other subject. Operator tests that assert `actor_user_id`
+therefore expect `NodeOperatorIdentity.UserId`.

@@ -66,7 +66,9 @@ public sealed class SurrealWalletOwnershipProofStoreTests : IAsyncLifetime
         var refused = await _proofs.RecordAsync(new WalletOwnershipProof(mallory, Guid.NewGuid(), "ethereum", Lower, DateTime.UtcNow));
         (await _proofs.IsSignatureProvenAsync(aliceWallet, alice)).Should().BeTrue();
         var executor = new DefaultSurrealExecutor(_connection);
-        (await executor.ExecuteAsync(SurrealWriter.DeleteOnly<WalletRow>(aliceWallet.ToString("N")).Build())).EnsureAllOk();
+        var owner = SurrealLink.ToLink("user", alice.ToString("N"))!;
+        (await executor.ExecuteAsync(SurrealWriter.DeleteOnly<WalletRow>(aliceWallet.ToString("N"))
+            .Where(row => row.UserId == owner && row.Address == Upper).Build())).EnsureAllOk();
         var moved = await _proofs.RecordAsync(new WalletOwnershipProof(mallory, Guid.NewGuid(), "ethereum", Lower, DateTime.UtcNow));
 
         refused.IsError.Should().BeTrue();
@@ -87,7 +89,9 @@ public sealed class SurrealWalletOwnershipProofStoreTests : IAsyncLifetime
 
         var whileHeld = await _proofs.IsHeldByAnotherUserAsync("Ethereum", Upper, carol);
         var forHolder = await _proofs.IsHeldByAnotherUserAsync("ethereum", Lower, alice);
-        (await new DefaultSurrealExecutor(_connection).ExecuteAsync(SurrealWriter.DeleteOnly<WalletRow>(aliceWallet.ToString("N")).Build())).EnsureAllOk();
+        var owner = SurrealLink.ToLink("user", alice.ToString("N"))!;
+        (await new DefaultSurrealExecutor(_connection).ExecuteAsync(SurrealWriter.DeleteOnly<WalletRow>(aliceWallet.ToString("N"))
+            .Where(row => row.UserId == owner && row.Address == Upper).Build())).EnsureAllOk();
         var afterDelete = await _proofs.IsHeldByAnotherUserAsync("ethereum", Lower, carol);
 
         whileHeld.Should().BeTrue();

@@ -1,4 +1,4 @@
-import { expect, test } from '../support/fixtures'
+import { completeBusinessVerification, expect, signIn, test } from '../support/fixtures'
 
 /**
  * Stripe test-mode on-ramp: a KYC-approved member pays on the hosted checkout and the node
@@ -7,11 +7,15 @@ import { expect, test } from '../support/fixtures'
  */
 test('a hosted card payment settles the funding intent through the signed webhook', async ({ page, api, vendors }) => {
   const tenant = await api.makeTenant(await api.registerPerson('onramp'))
+  await signIn(page, tenant)
+  await completeBusinessVerification(page, api, vendors)
   await api.assignIdentomat(tenant)
   const subject = `payer-${Date.now().toString(36)}`
-  const payerId = await api.enrolMember(tenant, subject)
+  const payer = await api.provisionMember(tenant, subject)
+  const payerId = payer.userId
+  expect(await api.enrolMember(tenant, subject)).toBe(payerId)
 
-  // Funding is a value action: the payer clears identity verification first.
+  // Tenant checkout requires this tenant's current identity approval.
   await vendors.interceptIdentomatWidget(page.context(), async (sessionToken) => {
     const session = await vendors.identomatSessionByToken(sessionToken)
     await vendors.setIdentomatVerdict(session.id, 'approved')
@@ -21,6 +25,23 @@ test('a hosted card payment settles the funding intent through the signed webhoo
   await page.goto(verificationUrl)
   await page.getByRole('button', { name: 'Complete verification' }).click()
   await expect.poll(() => api.memberKycStatus(tenant, subject), { timeout: 15_000 }).toBe('Approved')
+
+  await api.claimMember(tenant, payer)
+  await signIn(page, payer)
+  await page.goto('/settings')
+  const permissions = page.getByRole('region', { name: 'Tenant permissions' })
+  await permissions.getByLabel('Tenant ID for consent').fill(tenant.userId)
+  await permissions.getByLabel('Consent scopes').fill('transfer:sign')
+  const expiry = await page.evaluate(() => {
+    const date = new Date(Date.now() + 60 * 60 * 1000)
+    const pad = (value: number) => value.toString().padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  })
+  await permissions.getByLabel('Consent expiry').fill(expiry)
+  await permissions.getByRole('button', { name: 'Grant selected permissions' }).click()
+  const grant = permissions.getByRole('listitem').filter({ hasText: `Tenant: ${tenant.userId}` })
+  await expect(grant.getByText('transfer:sign', { exact: true })).toBeVisible()
+  await expect(grant.getByText(/^Expires /)).toBeVisible()
 
   const checkout = await api.startCheckout(tenant, payerId, 2_500)
   let paidEventStatus = 0

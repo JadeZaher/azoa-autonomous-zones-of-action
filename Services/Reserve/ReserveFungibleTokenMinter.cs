@@ -20,7 +20,7 @@ public sealed class ReserveFungibleTokenMinter(IFungibleCreationService lifecycl
         FungibleTokenCreateRequest request, string operationKey, CancellationToken ct = default)
     {
         if (operatorUserId != NodeOperatorIdentity.UserId || request.AuthenticationWitness is not { } credential
-            || credential.ActorUserId != operatorUserId || credential.TokenUse != AzoaClaims.TokenUseNodeOperator || credential.TenantId is not null)
+            || credential.ActorUserId != operatorUserId || !OperatorActor.IsOperatorCredential(credential) || credential.TenantId is not null)
             return AZOAResult<FungibleTokenResult>.Failure("Actual node-operator credentials are required for platform genesis.");
         var network = request.Network ?? providers.DefaultNetwork;
         var rows = await definitions.ListForNetworkAsync(network.ToString(), ct);

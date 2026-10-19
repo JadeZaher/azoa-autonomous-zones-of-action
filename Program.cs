@@ -209,6 +209,13 @@ builder.Services.AddAuthentication(options =>
         OnTokenValidated = async context =>
         {
             var principal = context.Principal;
+            // H6: the node-admin branch runs first and always ends in fail-or-return; see Services/NodeAdmin/AGENTS.md §token-validation.
+            if (AZOA.WebAPI.Core.NodeAdminClaims.IsNodeAdmin(principal))
+            {
+                await AZOA.WebAPI.Services.NodeAdmin.NodeAdminTokenValidation.ValidateAsync(context);
+                return;
+            }
+
             // D-5: allowlisted endpoint + scope + live consent/role + active issuing tenant and key; see Services/Consent/AGENTS.md.
             if (!await AZOA.WebAPI.Services.Consent.DelegatedChildCredentialGate.AdmitAsync(context))
                 return;
@@ -500,6 +507,10 @@ builder.Services.AddAuthorization(o =>
             if (isFirstPartyLogin)
                 return true;
 
+            // Node admins are never first-party users; on a mapped operator route the operator policies decide (§route-permission-map).
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
+
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
                 || ctx.Resource is not HttpContext httpContext)
             {
@@ -553,12 +564,14 @@ builder.Services.AddAuthorization(o =>
     {
         p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
         p.RequireAuthenticatedUser();
+        // Dual-accepting: node-admin branch first, legacy predicate unchanged; see Services/NodeAdmin/AGENTS.md §route-permission-map.
         p.RequireAssertion(ctx =>
-            AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
+            AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx)
+            ?? (AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
             && AZOA.WebAPI.Core.AzoaClaims.TryGetSubjectId(ctx.User, out var subject)
             && subject == AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
             && ctx.User.GetActingTenantId() is null
-            && !string.Equals(ctx.User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase));
+            && !string.Equals(ctx.User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase)));
     });
     o.AddPolicy("RecentNodeOperatorSession", p =>
     {
@@ -566,6 +579,8 @@ builder.Services.AddAuthorization(o =>
         p.RequireAuthenticatedUser();
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User)
                 || !AZOA.WebAPI.Core.AzoaClaims.TryGetSubjectId(ctx.User, out var subject)
                 || subject != AZOA.WebAPI.Services.Admin.NodeOperatorIdentity.UserId
@@ -604,6 +619,8 @@ builder.Services.AddAuthorization(o =>
         p.RequireAuthenticatedUser();
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             if (!AZOA.WebAPI.Core.AzoaClaims.IsNodeOperator(ctx.User))
                 return ctx.User.CanAssignDappRoles();
             if (!ctx.User.HasScope(AZOA.WebAPI.Core.AzoaScopes.Operator)
@@ -622,6 +639,8 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("Operator", p =>
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             // Axis 1: reject API-key-authenticated principals outright. An API key can
             // never be an operator — operator authority originates only from a JWT.
             var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
@@ -636,6 +655,8 @@ builder.Services.AddAuthorization(o =>
     o.AddPolicy("NodeGovern", p =>
         p.RequireAssertion(ctx =>
         {
+            if (AZOA.WebAPI.Services.NodeAdmin.NodeAdminOperatorAccess.Admit(ctx) is { } nodeAdmin)
+                return nodeAdmin;
             var authMethod = ctx.User.FindFirst("AuthMethod")?.Value;
             if (string.Equals(authMethod, "ApiKey", StringComparison.OrdinalIgnoreCase))
                 return false;
@@ -744,6 +765,15 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // Bounded model egress shared by every credential of one tenant owner.
+    options.AddPolicy("workflow-designer", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerPolicy.BudgetPartition(httpContext.User), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = Math.Clamp(builder.Configuration.GetValue("WorkflowDesigner:RequestsPerHour", 12), 1, 60),
+            Window = TimeSpan.FromHours(1),
+            QueueLimit = 0
+        }));
+
     // Strict named policy for irreversible / value-moving endpoints.
     options.AddPolicy("financial", httpContext =>
     {
@@ -797,7 +827,8 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("operator-login", httpContext =>
     {
-        var address = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        // IPv6 by /64 so one subscriber cannot rotate addresses within its allocation; see Core/Networking/AGENTS.md.
+        var address = RateLimitPartitionKey.Address(httpContext.Connection.RemoteIpAddress);
         return RateLimitPartition.GetFixedWindowLimiter($"operator-login:{address}", _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = rlOperatorLoginPermit,
@@ -1062,6 +1093,8 @@ builder.Services.AddSingleton<AZOA.WebAPI.Services.Admin.NodeOperatorLoginThrott
 builder.Services.AddHostedService<AZOA.WebAPI.Services.Admin.SeedAdminHostedService>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.INodeOperatorManager,
     AZOA.WebAPI.Managers.NodeOperatorManager>();
+// Named node admins (Ed25519 + TOTP, RBAC, hash-chained audit); see Services/NodeAdmin/AGENTS.md.
+AZOA.WebAPI.Services.NodeAdmin.NodeAdminServiceCollectionExtensions.AddNodeAdmin(builder.Services, builder.Configuration);
 builder.Services.AddSingleton<WalletKeyService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory>();
 builder.Services.AddSingleton<AZOA.WebAPI.Services.Webhooks.WebhookSecretProtector>();
@@ -1365,6 +1398,12 @@ builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IUserNFTService, UserNFTService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionConfigBindingResolver>();
+builder.Services.Configure<AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerOptions>(builder.Configuration.GetSection("WorkflowDesigner"));
+builder.Services.AddHttpClient(AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerOptions.ClientName, client =>
+    client.Timeout = TimeSpan.FromSeconds(90))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IWorkflowDesignerModel, AZOA.WebAPI.Services.Actions.Designer.OpenRouterWorkflowDesignerModel>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerService>();
 builder.Services.AddScoped<ActionManager>();
 builder.Services.AddScoped<IActionManager>(sp => sp.GetRequiredService<ActionManager>());
 // Deferred per-call resolution: a factory over ActionManager here deadlocks host start (see Managers/AGENTS.md §DeferredFrozenActionRuntime).

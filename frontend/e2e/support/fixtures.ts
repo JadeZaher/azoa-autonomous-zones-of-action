@@ -42,3 +42,26 @@ export async function signIn(page: Page, person: Person): Promise<void> {
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/\/overview/)
 }
+
+/** Completes the tenant's authoritative hosted business review through the product UI. */
+export async function completeBusinessVerification(page: Page, api: AzoaApi, vendors: FakeVendors): Promise<void> {
+  await page.goto('/business-verification')
+  await page.getByRole('button', { name: 'Start verification' }).click()
+  await expect(page.getByText('Status: pending')).toBeVisible()
+
+  await vendors.interceptIdentomatWidget(page.context(), async (sessionToken) => {
+    const session = await vendors.identomatSessionByToken(sessionToken)
+    await vendors.setIdentomatVerdict(session.id, 'approved')
+    await api.postIdentomatCallback(session.id, 'approved')
+  })
+  const popupOpened = page.waitForEvent('popup')
+  await page.getByRole('link', { name: 'Continue with Identomat' }).click()
+  const hosted = await popupOpened
+  await hosted.getByRole('button', { name: 'Complete verification' }).click()
+  await expect(hosted.getByRole('status')).toHaveText('Verification submitted')
+  await hosted.close()
+
+  await page.getByRole('button', { name: 'Refresh status' }).click()
+  await expect(page.getByText('Business verified')).toBeVisible()
+  await expect(page.getByText(/Linked participants: 1/)).toBeVisible()
+}

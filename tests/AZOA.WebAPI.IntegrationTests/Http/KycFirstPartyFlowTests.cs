@@ -32,6 +32,7 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
     {
         var (user, client) = await PersonAsync();
         var started = await BeginAsync(client);
+        var attempt = await SubmissionAsync(user);
         started.HostedVerification.Should().BeTrue();
         started.VerificationUrl.Should().StartWith($"https://{IdentomatVendor.WidgetHost}/");
         (await GateAsync(user)).Should().BeFalse("nothing is verified yet");
@@ -42,7 +43,9 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
             IdentomatVendor.CallbackBody(Flow.CallbackApiKey, vendorSession.Id, "REJECTED"));
         callback.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        (await StatusAsync(client)).Status.Should().Be(KycStatus.APPROVED, "the re-fetched result decides, not the callback body");
+        var status = (await StatusAsync(client)).Status;
+        status.Should().Be(KycStatus.APPROVED, "the re-fetched result decides, not the callback body; {0}",
+            await FailureContextAsync(attempt.Id, status != KycStatus.APPROVED));
         (await GateAsync(user)).Should().BeTrue();
 
         var decided = await SubmissionAsync(user);
@@ -90,10 +93,12 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
     {
         var (user, client) = await PersonAsync();
         await BeginAsync(client);
+        var attempt = await SubmissionAsync(user);
         Flow.Identomat.LatestIdentitySessionFor(user)!.Verdict = IdentomatVerdict.Approved;
 
         using var refreshed = await client.PostAsync("api/kyc/refresh", null);
-        (await ReadOkAsync<KycSubmissionModel>(refreshed)).Status.Should().Be(KycStatus.APPROVED);
+        var status = (await ReadOkAsync<KycSubmissionModel>(refreshed)).Status;
+        status.Should().Be(KycStatus.APPROVED, "{0}", await FailureContextAsync(attempt.Id, status != KycStatus.APPROVED));
         (await GateAsync(user)).Should().BeTrue();
     }
 
@@ -116,7 +121,8 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
         await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(attempt.Id).Where(seed => true)
             .Unset(row => row.NextPollAt).Build());
         await SweepAsync();
-        (await EventuallyStatusAsync(client, KycStatus.APPROVED)).Should().Be(KycStatus.APPROVED);
+        var status = await EventuallyStatusAsync(client, KycStatus.APPROVED);
+        status.Should().Be(KycStatus.APPROVED, "{0}", await FailureContextAsync(attempt.Id, status != KycStatus.APPROVED));
         (await GateAsync(user)).Should().BeTrue();
     }
 
@@ -125,10 +131,13 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
     {
         var (user, client) = await PersonAsync();
         await BeginAsync(client);
+        var attempt = await SubmissionAsync(user);
         var vendorSession = Flow.Identomat.LatestIdentitySessionFor(user)!;
         vendorSession.Verdict = IdentomatVerdict.Approved;
         await PostCallbackAsync(CallbackIngress, IdentomatVendor.CallbackBody(Flow.CallbackApiKey, vendorSession.Id, "APPROVED"));
-        (await ValueAccessAsync(user)).IsError.Should().BeFalse("the person is verified and has no reversal");
+        var admitted = await ValueAccessAsync(user);
+        admitted.IsError.Should().BeFalse("the person is verified and has no reversal; {0}",
+            await FailureContextAsync(attempt.Id, admitted.IsError, admitted.Code));
 
         await FlagAccountAsync(user);
 
@@ -196,7 +205,9 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
         var (user, client) = await PersonAsync();
         await BeginAsync(client);
         var attempt = await SubmissionAsync(user);
+        var session = await HostedSessionAsync(attempt.Id);
         await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(attempt.Id)
+            .Where(row => row.State == session.State && row.StateVersion == session.StateVersion)
             .Set(row => row.State, HostedSessionStates.Resuming)
             .Set(row => row.ResumeLeaseToken, Guid.NewGuid().ToString("N"))
             .Set(row => row.ResumeLeaseExpiresAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-10))
@@ -341,6 +352,14 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
     private async Task<HostedSession> HostedSessionAsync(string id)
         => (await RowsAsync(SurrealQuery<HostedSession>.Key(id))).Single();
 
+    private async Task<string> FailureContextAsync(string attemptId, bool failed, string? errorCode = null)
+    {
+        if (!failed) return string.Empty;
+        var session = await HostedSessionAsync(attemptId);
+        return $"Hosted state={session.State}; outcome={session.AuthoritativeOutcome ?? "none"}; "
+            + $"outcomeDetail={session.OutcomeDetail ?? "none"}; errorCode={errorCode ?? "none"}";
+    }
+
     /// <summary>The hosted worker may close the row first; either way the committed row converges.</summary>
     private async Task<HostedSession> EventuallyHostedSessionAsync(string id, Func<HostedSession, bool> settled)
     {
@@ -355,5 +374,6 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
 
     private Task ExpireAttemptAsync(string attemptId)
         => WriteAsync(SurrealWriter.UpdateOnly<KycSubmission>(attemptId)
+            .Where(row => row.Status == KycStatus.PENDING || row.Status == KycStatus.IN_REVIEW)
             .Set(row => row.ExpiresAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddMinutes(-1)).Build());
 }

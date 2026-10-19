@@ -11,6 +11,24 @@ Exception logging policy and file-sink configuration live in
 `Core/Diagnostics/AGENTS.md`. OpenTelemetry currently exports traces and metrics;
 structured exception logs remain on the standard `ILogger` pipeline.
 
+`OpenTelemetry:ServiceName` defaults to `AZOA.WebAPI`.
+`OpenTelemetry:ExportEnabled` defaults to `true` and controls only registration
+of the OTLP trace exporter and metric reader. Setting it to `false` keeps resource
+metadata, activity sources, meters, ASP.NET/HTTP instrumentation and request
+correlation available to local listeners. Integration hosts set it before eager
+registration so their shutdown never depends on an external collector.
+When export remains enabled, `OpenTelemetry:Otlp:Endpoint` and `Protocol` retain
+their existing behavior: an omitted endpoint uses SDK defaults or its environment
+override, and the application protocol defaults to gRPC (`http/protobuf` opts in).
+An omitted endpoint is not a no-op; the SDK defaults to localhost.
+
+These choices follow the packaged OpenTelemetry OTLP exporter 1.15.3 README
+(`core-1.15.3`, repository commit `d622e6c7c899527638b53a6b06919859f5752add`):
+`AddOtlpExporter` adds a batch trace processor or periodic metric reader, and its
+HTTP/protobuf `HttpClientFactory` option supports an in-process transport in
+`OpenTelemetryExtensionsTests`. The tests retain local collection and verify
+default/explicit enablement versus explicit refusal without a real collector.
+
 ## Real-value readiness
 
 `RealValueReadinessHealthCheck` is inert while

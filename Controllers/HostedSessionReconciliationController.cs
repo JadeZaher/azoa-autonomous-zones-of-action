@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Interfaces.HostedSessions;
@@ -9,6 +8,7 @@ using AZOA.WebAPI.Providers.Kyb;
 using AZOA.WebAPI.Services.HostedSessions;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Options;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -61,7 +61,8 @@ public sealed class HostedSessionReconciliationController(
     [RequestSizeLimit(8192)]
     public async Task<IActionResult> Reconcile(Guid sessionId, [FromBody] HostedSessionReconciliationRequest request, CancellationToken ct)
     {
-        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actorId = operatorActor.SubjectUserId;
         var reason = request.Reason?.Trim();
         if (reason is null || reason.Length < 20 || reason.Length > 1000 || !request.OperatorReviewedSubjectAndProvider)
             return BadRequest("A reviewed provider/subject decision and a 20-1000 character evidence reference are required.");
@@ -139,7 +140,8 @@ public sealed class HostedSessionReconciliationController(
         }
 
         // Identomat persists no provider attempt: re-fetch /result/ through the shared flow (F-H1).
-        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return Unauthorized();
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actorId = operatorActor.SubjectUserId;
         var located = await store.GetByIdAsync(sessionId, ct);
         if (located.IsError) return StatusCode(StatusCodes.Status503ServiceUnavailable);
         if (located.Result is not { } row) return NotFound();

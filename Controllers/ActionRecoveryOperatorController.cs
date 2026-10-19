@@ -1,10 +1,10 @@
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Actions;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Actions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -40,8 +40,9 @@ public sealed class ActionRecoveryOperatorController(ActionOperationRecoveryServ
     public async Task<IActionResult> Retry(Guid id, ActionRecoveryRequest request, CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        var result = await recovery.RetryAsync(id, actor, request, ct);
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        var actor = operatorActor.SubjectUserId;
+        var result = await recovery.RetryAsync(id, actor, request, ct, operatorActor);
         return result.IsError ? Conflict(result) : Ok(result);
     }
 }

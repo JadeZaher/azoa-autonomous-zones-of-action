@@ -354,3 +354,30 @@ generic `401`. The OAuth refusal redirects with `error=registration_closed`.
 - Fiat checkout and tenant payout top-up answer `503 PAYMENTS_NOT_CONFIGURED` when the node has no payment
   provider keys (`FiatConsumerErrors.Unresolved`), distinct from the transient `RAIL_UNAVAILABLE` /
   `RAIL_BUSY`, so a client can say "not configured" instead of "try again shortly".
+
+## node-admin
+
+`NodeAdminAuthController` (`api/node-admin` auth, sessions, `me`, enrollment), `NodeAdminAdminsController`,
+`NodeAdminRolesController` and `NodeAdminAuditController` are the named-admin surface (track
+`node-admin-rbac-cli_20261018`, lane A1). Design, invariants and contract deviations live in
+`Services/NodeAdmin/AGENTS.md`.
+
+- Every controller carries a class-level `NodeAdmin:session` policy; actions add `NodeAdmin:<permission>`
+  or `NodeAdmin:<permission>:recent` (step-up). Anonymous actions (`auth/challenge`, `auth/session`,
+  `enroll/*`) are `[AllowAnonymous]` + `[CredentialFreePublicEndpoint]` + `operator-login` rate limit.
+- Only these policies and the mapped operator routes admit a node-admin token; every other endpoint fails it in
+  `OnTokenValidated`.
+- `NodeAdminControllerBase.Respond` maps `result.code` to the contract status (`NodeAdminResults.StatusFor`),
+  sets `no-store`, `Retry-After` for `ADMIN_LOCKED` and the step-up header.
+- Controllers stay thin: invariants are enforced in `Managers/NodeAdminManager` and
+  `Managers/NodeAdminAuthManager`, writes are audited structurally by `NodeAdminAuditActionFilter`.
+- Mutating routes are inventoried in `tests/AZOA.WebAPI.Tests/Architecture/Inventories/RouteAuthorization/node-admin.json`.
+
+### Operator routes for named admins (lane A2)
+
+Every route carrying `Operator`, `NodeGovern`, `NodeOperatorSession`, `RecentNodeOperatorSession` or
+`DappRoleAssignment` is mapped to one node-admin permission in `Services/NodeAdmin/NodeAdminRoutePermissions.cs`
+(gate: `Architecture/NodeAdminRoutePermissionGateTests`; a new operator route without a row fails CI and denies node
+admins at runtime). Operator controllers resolve the caller with `HttpContext.TryGetOperatorActor(out var actor)` and
+pass `actor.SubjectUserId` (always the reserved operator subject) plus `actor` to audit writers — never parse `sub` on an
+operator route. Design: `Services/NodeAdmin/AGENTS.md` §operator-actor, §route-permission-map, §reserved-id-inventory.

@@ -21,7 +21,7 @@ public sealed partial class SurrealWebhookRegistrationStore
             || command.ExpectedVersion < 0 || string.IsNullOrWhiteSpace(command.Reason))
             return AZOAResult<WebhookRegistrationWithdrawal>.Failure("The exact saved registration command is required.");
         var credential = authority.Credential;
-        var isOperator = credential.TokenUse == AzoaClaims.TokenUseNodeOperator;
+        var isOperator = OperatorActor.IsOperatorCredential(credential);
         if (credential.TenantId is not null || (!isOperator && credential.ActorUserId != tenantId))
             return AZOAResult<WebhookRegistrationWithdrawal>.Failure("Only the original tenant authority can withdraw this command.");
         var fences = SigningAuthorityFence.ForConsent(authority, [isOperator ? AzoaScopes.Operator : AzoaScopes.TenantProvision], "webhook_withdrawal");

@@ -15,6 +15,7 @@ public sealed class StoreFamilyGuardInventoryTests
 
     private static readonly Dictionary<string, Cases> Families = new(StringComparer.Ordinal)
     {
+        ["NodeAdminAuditLog"] = new(Surreal + "SurrealNodeAdminAuditLogTests.ConcurrentAppendRetriesRefusedHeadCasWithoutForkOrGap", Surreal + "SurrealNodeAdminAuditLogTests.DuplicateNextRowRollsBackEveryHeadAdvanceAndPreservesExistingEvidence"),
         ["SurrealActionEmitStore"] = new(Surreal + "SurrealActionEmitTests.Changed_frozen_input_or_cancelled_run_cannot_accept", Surreal + "SurrealActionEmitTests.Original_dispatch_and_absent_receipt_recovery_accept_one_local_receipt"),
         ["SurrealActionLocalMutationStore"] = new(Surreal + "SurrealActionLocalMutationTests.ChangedQueryMembershipRollsBackEveryStagedWriteAndReceipt", Surreal + "SurrealActionNftHolonLinkTests.ConcurrentAttachmentHasOneReceiptAndReplayDoesNotTouchChangedOwner"),
         ["SurrealActionNodeExecutionStore"] = new(Surreal + "SurrealActionNodeExecutionStoreTests.FrozenAdmissionUsesRecordLinksAndFencesStaleCompletion", Surreal + "SurrealActionNodeExecutionStoreTests.ConcurrentFrozenAdmissionsHaveOneWinnerAndRetainItsPayload"),
@@ -44,6 +45,7 @@ public sealed class StoreFamilyGuardInventoryTests
         ["SurrealKycStore"] = new(Surreal + "SurrealConsentLifecycleTests.Custodial_kyc_mutations_and_first_send_reject_changed_authority", Surreal + "Round4Gates.Interleaving.KycBeginInterleavingTests.ConcurrentBeginsForOneSubjectScopeAdmitOneAttemptAndOnlyItsDocuments"),
         ["SurrealNftLifecycleStore"] = new(Surreal + "SurrealNftLifecycleStoreTests.ChangedStoredEvidenceRollsBackLifecycleCreation", Surreal + "SurrealNftLifecycleStoreTests.AtomicCommitScopesTwoTypedWritersAndStaleReplayCannotChangeOwnership"),
         ["SurrealNftWorkflowCostAcceptanceStore"] = new(Surreal + "SurrealNftLifecycleStoreTests.EmptyWorkflowRejectionRequiresOriginalExecutionAndCannotContainPreparedWire", Surreal + "SurrealNftLifecycleStoreTests.WorkflowCostAcceptanceCommitsOnceAndReplaysAfterAuthorityAndQuoteRemoval"),
+        ["SurrealNodeAdminStore"] = new(Surreal + "SurrealNodeAdminStoreTests.RefusedMutationRollsBackDirectoryAndEarlierRoleWrite", Surreal + "SurrealNodeAdminStoreTests.ConcurrentDirectoryClaimsCommitOneRoleAndDuplicateCannotOverwriteIt"),
         ["SurrealNodeFeeScheduleStore"] = new(null, null, "fee schedule version CAS cases owed (L1): stale version refused, concurrent save one audit"),
         ["SurrealNodeFeeSettlementStore"] = new(Surreal + "SurrealNodeFeeSettlementStoreTests.ManagerPrepare_DivergentDecisionForPinnedKey_ReturnsConflictWithoutOverwrite", Surreal + "SurrealNodeFeeSettlementStoreTests.ConcurrentClaimAndExpiredLeaseReclaim_ElectsOneWinner"),
         ["SurrealNodeGovernanceStore"] = new(Surreal + "SurrealNodeGovernanceStoreTests.AuditCreateFailure_RollsBackPolicyWrite", null, "concurrent same-version policy save case owed (L1)"),

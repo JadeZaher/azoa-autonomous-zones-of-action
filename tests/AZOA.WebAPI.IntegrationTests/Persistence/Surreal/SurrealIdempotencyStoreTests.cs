@@ -12,18 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
-/// <summary>
-/// Store-layer integration tests for <see cref="SurrealIdempotencyStore"/>.
-///
-/// Each test creates an isolated SurrealDB namespace (test_{guid}) against the
-/// test container on port 8442. Tests skip gracefully via <see cref="SkippableFact"/>
-/// and <see cref="Skip.IfNot"/> when the SurrealDB container is unavailable, so the
-/// test runner reports them as Skipped instead of Passed.
-///
-/// Namespace isolation: each test instance gets its own SurrealDB namespace so
-/// tests can run in parallel without data leakage. Teardown drops the namespace
-/// via <see cref="IAsyncLifetime.DisposeAsync"/>.
-/// </summary>
+/// <summary>Isolated real-DB idempotency and refund recovery fixtures; see AGENTS.md §authority-and-refund-seeds.</summary>
 public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
 {
     // ── Connection config ──────────────────────────────────────────────────────
@@ -67,10 +56,6 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
         {
             await DropNamespaceAsync();
         }
-        catch
-        {
-            // Best-effort — swallow teardown errors.
-        }
         finally
         {
             _connection.Dispose();
@@ -79,9 +64,7 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
 
     // ── Tests ──────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Test 1: TryClaimAsync first time → wins (Won=true, state=InProgress).
-    /// </summary>
+    /// <summary>Refund recovery advances beyond the first fifty permanently unreconciled lots.</summary>
     [SkippableFact]
     public async Task PermanentlyUnreconciledRefundsCannotStarveRowsBeyondFirstFifty()
     {
@@ -92,8 +75,8 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
         for (var index = 0; index < 51; index++)
         {
             var intent = Guid.NewGuid().ToString("N");
-            var row = new OnRampLot { Id = OnRampLot.RecordIdFor(intent), IntentId = intent,
-                SubjectUserId = Guid.NewGuid().ToString("N"), ChainType = "Algorand", AssetId = "123",
+            var row = new OnRampLot { Id = OnRampLot.RecordIdFor(intent), IntentId = SurrealLink.ToLink("hosted_session", intent)!,
+                SubjectUserId = SurrealLink.ToLink("user", Guid.NewGuid().ToString("N"))!, ChainType = "Algorand", AssetId = "123",
                 Environment = "test", ChainNetwork = "Devnet", Status = OnRampLotStatuses.RefundPending,
                 CurrencyCode = "USD", FiatMinorUnits = 100, CreatedAt = old, UpdatedAt = old };
             (await executor.ExecuteAsync(SurrealWriter.Create(row), default)).EnsureAllOk();
@@ -390,16 +373,10 @@ public sealed class SurrealIdempotencyStoreTests : IAsyncLifetime
             var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
-        catch { return false; }
+        catch (HttpRequestException) { return false; }
+        catch (TaskCanceledException) { return false; }
     }
 
-    /// <summary>
-    /// Applies the minimal DDL for <c>idempotency_key_store</c> matching
-    /// the committed schema at <c>Persistence/SurrealDb/Generated/Schemas/idempotency_key_store.surql</c>
-    /// (authored from <c>Persistence/SurrealDb/Models/IdempotencyKeyStore.cs</c>).
-    /// The inline schema lets the tests be self-contained without requiring the
-    /// schema runner to have been executed beforehand.
-    /// </summary>
     private Task BootstrapSchemaAsync()
         => SurrealTestSchema.BootstrapAsync(_testNamespace, "idempotency_key_store");
 

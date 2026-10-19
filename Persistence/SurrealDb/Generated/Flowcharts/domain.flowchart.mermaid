@@ -11,7 +11,7 @@ graph LR
     %%   dapp_composition: dapp_series, dapp_series_action, ecosystem, ecosystem_node
     %%   deployment: deployment_artifact, deployment_operation, deployment_recovery_audit, deployment_recovery_audit_entry, native_preparation, native_quote
     %%   ethereum_custody: ethereum_preparation, ethereum_signer_checkpoint
-    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, exchange_hold_settlement_receipt, exchange_hold_source, exchange_purchase_allocation, exchange_retired_resolution, fiat_event, fiat_payout, fiat_reversal, governance_command_receipt, governance_proposal, hold_command, hold_command_authorization, hold_command_receipt, hold_ledger, hold_mandate_use_receipt, hold_recovery_receipt, hold_release_mandate, hold_release_mandate_offer, holon, holon_type_registry, hosted_provider_attempt, hosted_provider_callback, hosted_session, hosted_session_provider_alias, kyb_verification, kyc_authority_guard, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_governance_policy_lock, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_payout_credit, tenant_payout_debit, tenant_payout_float, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_challenge_budget, wallet_auth_claim_token, wallet_auth_identity_migration
+    %%   identity: action_graph_bundle, admin_bootstrap_state, api_key, consent_audit, consent_grant, exchange_hold_settlement_receipt, exchange_hold_source, exchange_purchase_allocation, exchange_retired_resolution, fiat_event, fiat_payout, fiat_reversal, governance_command_receipt, governance_proposal, hold_command, hold_command_authorization, hold_command_receipt, hold_ledger, hold_mandate_use_receipt, hold_recovery_receipt, hold_release_mandate, hold_release_mandate_offer, holon, holon_type_registry, hosted_provider_attempt, hosted_provider_callback, hosted_session, hosted_session_provider_alias, kyb_verification, kyc_authority_guard, kyc_control_audit, kyc_document, kyc_identity, kyc_provider_profile, kyc_screening_monitor, kyc_screening_poll_state, kyc_screening_result, kyc_submission, node_admin, node_admin_audit, node_admin_audit_head, node_admin_challenge, node_admin_credential, node_admin_directory, node_admin_enrollment, node_admin_role, node_admin_root_state, node_admin_session, node_fee_audit, node_fee_schedule, node_governance_audit, node_governance_parameters, node_governance_policy_lock, node_treasury_audit, node_treasury_destination, oauth_exchange_code, on_ramp_lot, person_operation_claim, platform_reserve_ledger, platform_token, project_treasury_ledger, tenant_kyc_provider_selection, tenant_payout_credit, tenant_payout_debit, tenant_payout_float, tenant_price_schedule, user, user_external_login, wallet_auth_challenge, wallet_auth_challenge_budget, wallet_auth_claim_token, wallet_auth_identity_migration
     %%   swap: dex_quote, ethereum_dex_allowance, swap_operation, swap_stage
     %%   wallet_nft: fungible_asset_authority, fungible_creation_attachment, fungible_creation_authorization, fungible_creation_cancellation, fungible_creation_operation, fungible_creation_projection, nft_asset_authority, nft_lifecycle, nft_ownership, nft_protocol_cost_quote, nft_workflow_cost_acceptance, nft_workflow_cost_retirement, wallet, wallet_ownership_proof
     %%   wtt: wtt_body_claim, wtt_evidence_progress, wtt_offer, wtt_operation, wtt_operation_stage, wtt_preparation, wtt_stage_key
@@ -55,6 +55,10 @@ graph LR
     %%   kyc_screening_result.decision: NO_HIT, MANUAL_REVIEW, HIT  (KycScreeningResult.KycScreeningDecision)
     %%   kyc_submission.provider: MANUAL, VERIFF, GENERIC_HOSTED, IDENTOMAT  (KycSubmission.KycProvider)
     %%   kyc_submission.status: PENDING, IN_REVIEW, APPROVED, REJECTED, EXPIRED  (KycSubmission.KycStatus)
+    %%   node_admin.status: PendingEnrollment, PendingActivation, Active, Suspended, Revoked
+    %%   node_admin_audit.outcome: intent, ok, denied, failed, read
+    %%   node_admin_challenge.purpose: root_login, admin_login, enroll
+    %%   node_admin_credential.kind: ed25519
     %%   node_fee_atomic_group.state: Submitted, PendingConfirmation, Confirmed  (NodeFeeAtomicGroup.StateKind)
     %%   node_fee_audit.action: ScheduleUpdated
     %%   node_fee_settlement.fee_effect_state: NotStarted, Submitted, Confirmed, Failed, Unknown  (NodeFeeSettlement.EffectStateKind)
@@ -191,6 +195,16 @@ graph LR
         kyc_screening_poll_state["kyc_screening_poll_state: Node"]:::nodeClass
         kyc_screening_result["kyc_screening_result: Node"]:::nodeClass
         kyc_submission["kyc_submission: Node"]:::nodeClass
+        node_admin["node_admin: Node"]:::nodeClass
+        node_admin_audit["node_admin_audit: Node"]:::nodeClass
+        node_admin_audit_head["node_admin_audit_head: Node"]:::nodeClass
+        node_admin_challenge["node_admin_challenge: Node"]:::nodeClass
+        node_admin_credential["node_admin_credential: Node"]:::nodeClass
+        node_admin_directory["node_admin_directory: Node"]:::nodeClass
+        node_admin_enrollment["node_admin_enrollment: Node"]:::nodeClass
+        node_admin_role["node_admin_role: Node"]:::nodeClass
+        node_admin_root_state["node_admin_root_state: Node"]:::nodeClass
+        node_admin_session["node_admin_session: Node"]:::nodeClass
         node_fee_audit["node_fee_audit: Node"]:::nodeClass
         node_fee_schedule["node_fee_schedule: Node"]:::nodeClass
         node_governance_audit["node_governance_audit: Node"]:::nodeClass

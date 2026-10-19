@@ -22,6 +22,8 @@ public sealed class NodeGovernanceAuditResponse
     public string Action { get; set; } = string.Empty;
 
     public Guid ActorUserId { get; set; }
+    /// <summary>Real operator actor (<c>legacy-operator</c> | <c>admin:&lt;id&gt;</c> | <c>root:&lt;fingerprint&gt;</c>); null on older rows.</summary>
+    public string? Actor { get; set; }
 
     public long PreviousVersion { get; set; }
 

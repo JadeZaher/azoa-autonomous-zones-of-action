@@ -139,3 +139,15 @@ tests. The event is produced by a real transition (tenant provisions a child →
 grant → consent notification); the only arranged state is the crashed-worker lease in the
 abandoned-attempt test, which no public route can create. Signature verification re-implements
 the documented length-prefixed HMAC (`Core/Webhooks/WebhookHmacSigner.cs`) independently.
+
+The abandoned-attempt arrangement resets only the current cycle's attempt count
+below its budget, retaining lifetime attempts. Otherwise an exhausted dead-letter
+row correctly classifies as `AttemptBudgetExhausted` before the expired-lease case.
+The first-party KYC dead-attempt arrangements match the session's observed state
+and state version, or a pending/in-review submission, through guarded typed writers.
+
+First-party approval failures attach only the same attempt's hosted state,
+authoritative outcome, outcome detail and available application error code.
+Diagnostic reads run only after the observed assertion value is wrong; they never
+include provider bodies, person/document attributes, session tokens or identifiers.
+Expected approval and value-access assertions remain unchanged.

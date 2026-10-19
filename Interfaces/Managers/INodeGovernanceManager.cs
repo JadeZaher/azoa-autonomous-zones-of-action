@@ -1,5 +1,6 @@
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Core;
 
 namespace AZOA.WebAPI.Interfaces.Managers;
 
@@ -12,6 +13,7 @@ public interface INodeGovernanceManager
     Task<AZOAResult<NodeGovernanceParametersResponse>> UpdateParametersAsync(
         NodeGovernanceParametersUpdateRequest request,
         Guid actorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default);
 
     /// <summary>Returns the operator-visible governance audit history.</summary>

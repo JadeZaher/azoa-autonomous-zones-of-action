@@ -6,9 +6,7 @@ using OpenTelemetry.Trace;
 
 namespace AZOA.WebAPI.Observability;
 
-/// <summary>
-/// Configures OpenTelemetry tracing, metrics, and W3C request correlation for AZOA WebAPI.
-/// </summary>
+/// <summary>Configures tracing, metrics and W3C request correlation; see Observability/AGENTS.md.</summary>
 public static class OpenTelemetryExtensions
 {
     /// <summary>
@@ -25,16 +23,11 @@ public static class OpenTelemetryExtensions
     /// </summary>
     public static readonly ActivitySource ActivitySource = new(ActivitySourceName);
 
-    /// <summary>
-    /// Registers OpenTelemetry tracing and metrics.
-    /// Config keys consumed:
-    ///   OpenTelemetry:ServiceName       — resource service.name (default: "AZOA.WebAPI")
-    ///   OpenTelemetry:Otlp:Endpoint     — OTLP exporter endpoint URI (optional; omit = exporter still registered but uses SDK default / env override)
-    ///   OpenTelemetry:Otlp:Protocol     — "grpc" | "http/protobuf" (optional; default: "grpc")
-    /// </summary>
+    /// <summary>Registers instrumentation and optionally OTLP export.</summary>
     public static IServiceCollection AddAzoaObservability(this IServiceCollection services, IConfiguration config)
     {
         var serviceName = config["OpenTelemetry:ServiceName"] ?? "AZOA.WebAPI";
+        var exportEnabled = config.GetValue("OpenTelemetry:ExportEnabled", true);
 
         var otlpEndpoint = config["OpenTelemetry:Otlp:Endpoint"];
         var otlpProtocolRaw = config["OpenTelemetry:Otlp:Protocol"];
@@ -61,6 +54,8 @@ public static class OpenTelemetryExtensions
                     })
                     .AddHttpClientInstrumentation();
 
+                if (!exportEnabled) return;
+
                 if (!string.IsNullOrWhiteSpace(otlpEndpoint))
                 {
                     tracing.AddOtlpExporter(opts =>
@@ -71,9 +66,7 @@ public static class OpenTelemetryExtensions
                 }
                 else
                 {
-                    // Register exporter with SDK defaults; honours OTEL_EXPORTER_OTLP_ENDPOINT env var.
-                    // Deliberately not specifying an endpoint — SDK will no-op if none is configured
-                    // at runtime, so startup never throws when OTLP is unconfigured.
+                    // Preserve SDK endpoint defaults and OTEL_EXPORTER_OTLP_ENDPOINT overrides.
                     tracing.AddOtlpExporter(opts =>
                     {
                         opts.Protocol = otlpProtocol;
@@ -86,6 +79,8 @@ public static class OpenTelemetryExtensions
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddMeter(SurrealInstrumentationName);
+
+                if (!exportEnabled) return;
 
                 if (!string.IsNullOrWhiteSpace(otlpEndpoint))
                 {

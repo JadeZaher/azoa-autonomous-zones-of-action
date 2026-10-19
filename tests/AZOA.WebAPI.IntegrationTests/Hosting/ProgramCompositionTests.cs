@@ -9,9 +9,11 @@ using AZOA.WebAPI.Services.Fungible;
 using AZOA.WebAPI.Services.Governance;
 using AZOA.WebAPI.Services.HostedSessions;
 using AZOA.WebAPI.Services.Kyc;
+using AZOA.WebAPI.Services.NodeAdmin;
 using AZOA.WebAPI.Services.Wormhole;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -88,6 +90,28 @@ public sealed class ProgramCompositionTests : IClassFixture<ProgramCompositionTe
         services.Invoking(provider => provider.GetRequiredService<IFungibleCreationService>()).Should().NotThrow();
 
         services.GetServices<IHostedService>().Should().ContainSingle(service => service is FungibleCreationRecoveryWorker);
+    }
+
+    [Fact]
+    public void Every_node_admin_route_grant_resolves_against_the_live_endpoint_table_through_the_runtime_lookup()
+    {
+        // L-2: the gate tests key routes from reflection; this proves the runtime key (RoutePattern.RawText) agrees, row for row.
+        var resolved = new HashSet<string>(StringComparer.Ordinal);
+        var unresolved = new List<string>();
+        foreach (var endpoint in Services().GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+                     .Where(NodeAdminRoutePermissions.IsOperatorEndpoint))
+        {
+            foreach (var method in endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? [])
+            {
+                var key = NodeAdminRoutePermissions.Key(method, endpoint.RoutePattern.RawText);
+                if (NodeAdminRoutePermissions.TryResolve(endpoint, method, out _)) resolved.Add(key);
+                else unresolved.Add(key);
+            }
+        }
+
+        unresolved.Should().BeEmpty("every live operator-policy endpoint must resolve to a grant at runtime (unresolved = node admins denied)");
+        NodeAdminRoutePermissions.Map.Keys.Except(resolved, StringComparer.Ordinal).Should()
+            .BeEmpty("every grant must be reachable from a live endpoint through the same lookup the policies use");
     }
 
     /// <summary>The shared test host switched to the Development environment with full container validation.</summary>

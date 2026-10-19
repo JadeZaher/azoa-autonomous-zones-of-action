@@ -4,8 +4,8 @@ type: runbook
 
 # AZOA — Session Runbook
 
-**Last updated:** 2026-10-17 (evening) · **Branch:** `feat/platform-stub-closeout` ·
-**Last commit:** see `git log -1` — **`main` = `d0e9eed1`, LIVE on Railway since 2026-10-18 05:20Z** (D-9 DB reset done; schema/api/frontend deployed by commit SHA). Live QA running → `qa-live-2026-10-18.md`, accounts → `qa-test-accounts.md`.
+**Last updated:** 2026-10-18 (Codex continuation) · **Candidate branch:** `feat/node-admin-release` ·
+**Last commit:** see `git log -1`; main/upstream remain `9c2f4580` at this checkpoint, before the scoped QA delivery. Verify Git and Railway state rather than treating historical deployment entries as current. Resume at §7; see the node-admin track's release validation for exact tested source and remaining conditions.
 
 > **Rewritten from scratch 2026-10-17** at the owner's request. The previous 2,127-line runbook
 > (Aug–Sep 2026 programs: Phases 0–4, the ArdaNova production-readiness waves, launch-readiness L0,
@@ -294,6 +294,35 @@ Highest reversal cost first. The top line is the likeliest to be wrong.
 ---
 
 ## 7. Continuation plan
+
+### RESUME HERE (2026-10-18 - node-admin release and tenant AI QA)
+
+The Claude handoff's partial `feat/node-admin-fix` at649d501c is preserved in its
+original worktree. Its finished/reviewed batch and the tenant economic workflow
+AI track are integrated on `feat/node-admin-release`, with the latest tested
+source checkpoint `aff895da`. Verify actual `git status`, `git worktree list` and
+`upstream/main` before acting; the remote is **upstream**. This checkpoint records
+no main push or Railway write yet.
+
+The owner-authorized delivery is a scoped QA update: final evidence/secret/merge
+checks, isolated `--no-ff` merge into main, identical-tree proof, push upstream,
+then verify API/schema/frontend deployments at the exact pushed revision. Review
+[combined validation](tracks/node-admin-rbac-cli_20261018/release-validation.md)
+and the independent coordinator evidence before each delivery. Local focus/reflow
+proof passes, but formal UX research remains open and the recorded failure
+studies remain unchanged. AI production configuration is default-disabled and
+unconfigured; never put the Pi provider key into source, browser state or logs.
+
+After deployment, confirm migrations/health and expected503 NODE_ADMIN_UNAVAILABLE
+at the root challenge before owner public-key/audience configuration. The owner
+alone performs the prepared [live drill](tracks/node-admin-rbac-cli_20261018/owner-live-drill.md)
+in their own terminal. The agent never generates or reads that owner's private
+key. The92-failure broad integration snapshot, Stripe hermetic settlement gap,
+vendor readiness, development dependency findings, CI gate, human validation and
+two qualifying UX studies remain separate full-release conditions. Do not report
+scoped QA delivery as production launch approval. The detailed
+[settlement follow-up](tracks/node-admin-rbac-cli_20261018/hermetic-stripe-settlement-followup.md)
+remains open.
 
 ### ▶ RESUME HERE (2026-10-17 evening — live QA on Railway; loops deferred until after QA)
 

@@ -49,7 +49,11 @@ public sealed class ClientSigningTransitionRaceTests : IAsyncLifetime
         stored.Status.Should().Be(outcomes[0] ? OperationLog.StatusKind.PendingConfirmation : OperationLog.StatusKind.Failed);
         stored.Parameters!.Value.GetProperty("by").GetString().Should().Be(outcomes[0] ? "submit" : "reconcile");
         (stored.CompletedDate is null).Should().Be(outcomes[0], "only the terminal reconcile stamps completion");
-        (await _store.ListStuckAsync(DateTimeOffset.UtcNow.AddHours(1), 10)).Should().NotContain(operation, "neither outcome leaves it awaiting");
+        var reconciliation = await _store.ListStuckAsync(DateTimeOffset.UtcNow.AddHours(1), 10);
+        if (outcomes[0])
+            reconciliation.Should().Contain(operation, "the submitted wire still needs confirmation reconciliation");
+        else
+            reconciliation.Should().NotContain(operation, "terminal failure needs no further reconciliation");
     }
 
     private async Task<Guid> AwaitingAsync()

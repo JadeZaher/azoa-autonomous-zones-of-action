@@ -1,10 +1,10 @@
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Models.Wtt;
 using AZOA.WebAPI.Services.Wormhole;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers;
 
@@ -28,8 +28,8 @@ public sealed class WttOperatorController(WttLifecycleService lifecycle, WttReco
     [HttpPost("stage-keys/rewrap")]
     public async Task<IActionResult> RewrapStageKeys(CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        logger.LogWarning("Operator {OperatorId} started a WTT stage-key rewrap pass", actor);
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        logger.LogWarning("Operator {OperatorId} started a WTT stage-key rewrap pass", operatorActor.AuditActor);
         return Ok(AZOAResult<WttStageKeyRewrapReport>.Success(await stageKeys.RewrapAsync(ct)));
     }
 
@@ -44,8 +44,8 @@ public sealed class WttOperatorController(WttLifecycleService lifecycle, WttReco
     [HttpPost("operations/{id}/reconcile")]
     public async Task<IActionResult> Reconcile(string id, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        logger.LogWarning("Operator {OperatorId} reconciled WTT operation {OperationId}", actor, id);
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        logger.LogWarning("Operator {OperatorId} reconciled WTT operation {OperationId}", operatorActor.AuditActor, id);
         if (await lifecycle.InspectAsync(id, ct) is null) return NotFound();
         await recovery.ReconcileAsync(id, ct);
         return Ok(AZOAResult<WttOperationView>.Success((await lifecycle.InspectAsync(id, ct))!));
@@ -54,8 +54,8 @@ public sealed class WttOperatorController(WttLifecycleService lifecycle, WttReco
     [HttpPost("operations/{id}/refetch-proof")]
     public async Task<IActionResult> RefetchProof(string id, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        logger.LogWarning("Operator {OperatorId} re-fetched the WTT guardian proof for {OperationId}", actor, id);
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        logger.LogWarning("Operator {OperatorId} re-fetched the WTT guardian proof for {OperationId}", operatorActor.AuditActor, id);
         if (await lifecycle.InspectAsync(id, ct) is null) return NotFound();
         if (!await recovery.RefetchProofAsync(id, ct))
             return Conflict(AZOAResult<object>.FailureWithCode(
@@ -67,8 +67,8 @@ public sealed class WttOperatorController(WttLifecycleService lifecycle, WttReco
     [HttpPost("operations/{id}/resume-proof")]
     public async Task<IActionResult> ResumeProof(string id, CancellationToken ct)
     {
-        if (!AzoaClaims.TryGetSubjectId(User, out var actor)) return Unauthorized();
-        logger.LogWarning("Operator {OperatorId} resumed WTT proof verification for {OperationId}", actor, id);
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return Unauthorized();
+        logger.LogWarning("Operator {OperatorId} resumed WTT proof verification for {OperationId}", operatorActor.AuditActor, id);
         if (await lifecycle.InspectAsync(id, ct) is null) return NotFound();
         if (!await recovery.ResumeProofAsync(id, ct))
             return Conflict(AZOAResult<object>.FailureWithCode("Only a parked operation whose confirmed source transfer now has an attributed "

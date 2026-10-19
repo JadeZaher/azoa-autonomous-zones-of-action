@@ -1,4 +1,6 @@
 export type * from "./api/webhooks.js";
+export type * from "./api/workflow-designer.js";
+export { hasWorkflowPlanningDraft } from "./api/workflow-designer.js";
 export type * from "./api/hold-commands.js";
 export type * from "./api/dex.js";
 export type * from "./api/wtt.js";

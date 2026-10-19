@@ -1,0 +1,154 @@
+{
+  "personas": [
+    {
+      "handle": "qa-uxqa-mobile",
+      "role": "anonymous",
+      "segment": "newcomer, low literacy, visible text only",
+      "patience": 2,
+      "constraints": {
+        "width": 390
+      },
+      "goals": [
+        "Understand what AZOA offers and where I sign in",
+        "Recover from an operator page when signed out"
+      ]
+    },
+    {
+      "handle": "qa-uxqa-keyboard",
+      "role": "member",
+      "segment": "developer using only keyboard and accessibility tree",
+      "patience": 3,
+      "constraints": {
+        "keyboardOnly": true
+      },
+      "goals": [
+        "Find my wallets and account settings",
+        "Understand my identity-verification status"
+      ]
+    },
+    {
+      "handle": "qa-uxqa-zoom",
+      "role": "member",
+      "segment": "returning developer on a slow network using 200 percent zoom",
+      "patience": 2,
+      "constraints": {
+        "zoom": 2,
+        "slow": true
+      },
+      "goals": [
+        "Navigate account and verification screens without losing context",
+        "Understand unavailable actions"
+      ]
+    },
+    {
+      "handle": "qa-uxqa-operator",
+      "role": "operator",
+      "segment": "interrupted node operator inspecting state only",
+      "patience": 3,
+      "constraints": {},
+      "goals": [
+        "Inspect node readiness",
+        "Find audit history and understand permission or session recovery"
+      ]
+    },
+    {
+      "handle": "qa-uxqa-gold-member",
+      "role": "member",
+      "segment": "ordinary returning developer",
+      "patience": 3,
+      "constraints": {},
+      "goals": [
+        "Find my account and integration settings"
+      ]
+    },
+    {
+      "handle": "qa-uxqa-probe",
+      "role": "anonymous",
+      "segment": "capability probe, excluded from UX metrics",
+      "patience": 1,
+      "constraints": {},
+      "goals": [
+        "Inspect CLI help and unauthenticated fail-closed node-admin behavior without a root key"
+      ]
+    },
+    {
+      "handle": "qa-uxqa-ai-tenant",
+      "role": "member",
+      "patience": 3,
+      "constraints": {},
+      "goal": "Explore a synthetic economic workflow interview and review its private draft without publishing or running it.",
+      "segment": "tenant developer designing a synthetic cooperative workflow",
+      "goals": [
+        "Explore a synthetic economic workflow interview and review its private draft without publishing or running it."
+      ]
+    }
+  ],
+  "lanes": [
+    {
+      "name": "mobile-comprehension",
+      "kind": "ux",
+      "modelTier": "fast",
+      "personas": [
+        "qa-uxqa-mobile"
+      ],
+      "journey": "Explore public pages and sign-in choices using visible text only at 390 pixels. No source or API. Record confusion and stop after two failed attempts."
+    },
+    {
+      "name": "keyboard-account",
+      "kind": "ux",
+      "modelTier": "standard",
+      "personas": [
+        "qa-uxqa-keyboard"
+      ],
+      "journey": "Use keyboard only and accessibility snapshots to find wallets, settings and identity status; record focus or labeling barriers. No pointer clicks or source."
+    },
+    {
+      "name": "zoom-slow-account",
+      "kind": "ux",
+      "modelTier": "standard",
+      "personas": [
+        "qa-uxqa-zoom"
+      ],
+      "journey": "At 200 percent zoom on a slow network, inspect overview, wallet and verification status, then settings; no value, provider or notification writes."
+    },
+    {
+      "name": "operator-readiness",
+      "kind": "ux",
+      "modelTier": "standard",
+      "personas": [
+        "qa-uxqa-operator"
+      ],
+      "journey": "Inspect read-only node overview, audit, tenants and provider information. Explain permission/expired-session states and recover only through visible UI. No administrative writes."
+    },
+    {
+      "name": "gold-goals",
+      "kind": "gold",
+      "modelTier": "standard",
+      "personas": [
+        "qa-uxqa-mobile",
+        "qa-uxqa-gold-member",
+        "qa-uxqa-operator"
+      ],
+      "journey": "Run all declared gold tasks through runGold, each in its own trace. Do not inspect predicate implementation or application source. API workarounds are failure evidence."
+    },
+    {
+      "name": "cli-auth-probe",
+      "kind": "probe",
+      "modelTier": "standard",
+      "personas": [
+        "qa-uxqa-probe"
+      ],
+      "journey": "Inspect CLI help and existing node-admin authorization contracts; perform only anonymous or deliberately invalid-key requests to guarded local endpoints. Never read, create or use owner root keys. Record expected statuses against code; do not weaken assertions or treat this as UI gold success."
+    },
+    {
+      "name": "manual-planning-editor",
+      "kind": "ux",
+      "modelTier": "standard",
+      "personas": [
+        "qa-uxqa-ai-tenant"
+      ],
+      "journey": "Exercise the manual planning editor through visible UI with nine ordinary Emit nodes, truthful node/edge counts, normal selection and reversible named-field edits, undo/redo, toolbar geometry and contrast. Zero interview requests. Preserve pass05's actual AI import as separate evidence; no save, publish, run, notification or value operation."
+    }
+  ],
+  "seed": []
+}

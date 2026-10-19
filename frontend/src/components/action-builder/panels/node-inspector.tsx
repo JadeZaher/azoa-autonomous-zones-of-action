@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import type { Node } from '@xyflow/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,7 @@ interface NodeInspectorProps {
 
 /** Inspector body for the selected node: name, type badges, entry/terminal flags, JSON config. */
 export function NodeInspector({ node, onPatch, onDelete }: NodeInspectorProps) {
+  const fieldId = useId()
   const configValid = useMemo(() => isValidJsonConfig(node.data.config), [node.data.config])
   const isPreview = isPreviewNodeType(node.data.nodeType)
 
@@ -35,15 +36,16 @@ export function NodeInspector({ node, onPatch, onDelete }: NodeInspectorProps) {
         </div>
       )}
       <div className="space-y-1.5">
-        <Label className="text-xs">Name</Label>
+        <Label htmlFor={`${fieldId}-name`} className="text-xs">Name</Label>
         <Input
+          id={`${fieldId}-name`}
           value={node.data.label}
           onChange={(e) => onPatch({ label: e.target.value })}
           className="h-8 text-xs"
         />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Type</Label>
+        <span className="text-xs font-medium">Type</span>
         <div className="flex items-center gap-1.5">
           <Badge className={`text-[10px] ${CATEGORY_COLOR[categoryFor(node.data.nodeType)].badge}`}>
             {node.data.nodeType}
@@ -74,10 +76,11 @@ export function NodeInspector({ node, onPatch, onDelete }: NodeInspectorProps) {
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-xs">Config (JSON)</Label>
+          <Label htmlFor={`${fieldId}-config`} className="text-xs">Config (JSON)</Label>
           {!configValid && <span className="text-[10px] text-red-600">invalid JSON</span>}
         </div>
         <Textarea
+          id={`${fieldId}-config`}
           value={node.data.config}
           onChange={(e) => onPatch({ config: e.target.value })}
           className={`min-h-[160px] font-mono text-[11px] ${!configValid ? 'border-red-500' : ''}`}

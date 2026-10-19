@@ -131,14 +131,18 @@ public sealed class SurrealDeploymentAuthorityTests : IAsyncLifetime
         var now = DateTimeOffset.UtcNow;
         var actor = Guid.NewGuid().ToString("N");
         var tenant = withTenant ? Guid.NewGuid().ToString("N") : null;
+        var nodeId = Guid.NewGuid().ToString("N");
         var run = new ActionRun
         {
-            Id = Guid.NewGuid().ToString("N"), ActionId = Guid.NewGuid().ToString("N"), UserId = actor,
-            ActingTenantId = tenant, Status = ActionRun.ActionRunStatusKind.Running, StartedAt = now,
+            Id = Guid.NewGuid().ToString("N"), ActionId = SurrealLink.ToLink("action", Guid.NewGuid().ToString("N"))!,
+            UserId = SurrealLink.ToLink("user", actor)!,
+            ActingTenantId = tenant is null ? null : SurrealLink.ToLink("user", tenant),
+            Status = ActionRun.ActionRunStatusKind.Running, StartedAt = now,
         };
         var execution = new ActionNodeExecution
         {
-            Id = Guid.NewGuid().ToString("N"), RunId = run.Id, NodeId = Guid.NewGuid().ToString("N"),
+            Id = Guid.NewGuid().ToString("N"), RunId = SurrealLink.ToLink("action_run", run.Id)!,
+            NodeId = SurrealLink.ToLink("action_node", nodeId)!,
             State = ActionNodeExecution.ActionNodeState.Running, StartedAt = now, FrozenInput = "{\"Version\":1}",
         };
         (await _executor.ExecuteAsync(SurrealWriter.Create(run))).EnsureAllOk();
@@ -147,12 +151,13 @@ public sealed class SurrealDeploymentAuthorityTests : IAsyncLifetime
         {
             Id = Guid.NewGuid().ToString("N"), ActorUserId = actor, TenantId = tenant ?? string.Empty,
             ArtifactId = "immutable-artifact", ArtifactHash = "immutable-artifact-hash", IntentHash = "intent-hash",
-            RequestJson = "{}", ActionRunId = run.Id, ActionNodeId = execution.NodeId,
+            RequestJson = "{}", ActionRunId = run.Id, ActionNodeId = nodeId,
             ActionIntentHash = CanonicalJson.HashCanonical(execution.FrozenInput), CreatedAt = now, UpdatedAt = now,
         };
     }
 
     private async Task SetRunStateAsync(DeploymentOperation operation, ActionRun.ActionRunStatusKind state)
-        => (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(operation.ActionRunId!).Where(seed => true)
+        => (await _executor.ExecuteAsync(SurrealWriter.UpdateOnly<ActionRun>(operation.ActionRunId!)
+            .Where(row => row.Status == ActionRun.ActionRunStatusKind.Running)
             .Set(row => row.Status, state).Build())).EnsureAllOk();
 }

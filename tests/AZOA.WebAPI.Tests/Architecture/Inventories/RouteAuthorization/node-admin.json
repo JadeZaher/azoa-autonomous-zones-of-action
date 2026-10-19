@@ -1,0 +1,242 @@
+[
+  {
+    "route": "POST /api/node-admin/auth/challenge",
+    "controller": "NodeAdminAuthController",
+    "action": "Challenge",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous; operator-login rate limit (IPv6 by /64); stateless HMAC-authenticated 60 s challenge, nothing written (NEW-1); issued for any well-formed fingerprint (no key-existence oracle)",
+    "policies": [
+      "NodeAdmin:session",
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/auth/session",
+    "controller": "NodeAdminAuthController",
+    "action": "Session",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous; operator-login rate limit (IPv6 by /64); challenge MAC/expiry/audience/fingerprint checked, Ed25519 over the challenge's exact strings, THEN a consumed marker (replay refused); TOTP replay guard CAS for named admins; uniform AUTH_FAILED; audit row before the session is issued",
+    "policies": [
+      "NodeAdmin:session",
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/auth/revoke",
+    "controller": "NodeAdminAuthController",
+    "action": "Revoke",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:session:recent (D-M1); revokes only the caller's own server-side session row; audited by the node-admin action filter",
+    "policies": [
+      "NodeAdmin:session",
+      "NodeAdmin:session:recent"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/sessions/{handle}/revoke",
+    "controller": "NodeAdminAuthController",
+    "action": "RevokeSession",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:session:recent (D-M1); addressed by an opaque handle that is never the token sid (M-1); a root:* session only by root (NEW-2); another principal's requires admins.manage and dominance (C1); audited",
+    "policies": [
+      "NodeAdmin:session",
+      "NodeAdmin:session:recent"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/root/revoke-sessions",
+    "controller": "NodeAdminAuthController",
+    "action": "RevokeRootSessions",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; root sessions only (NEW-2: an admin is refused so a rogue owner cannot lock root out; admins cut root off by rotating NodeAdmin__RootKeyRevision); root_session_revision CAS; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/enroll/start",
+    "controller": "NodeAdminAuthController",
+    "action": "EnrollStart",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous; operator-login rate limit; hashed one-time token; started_at CAS binds exactly one key (H3); uniform ENROLLMENT_INVALID; intent audited before the write",
+    "policies": [
+      "NodeAdmin:session",
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/enroll/complete",
+    "controller": "NodeAdminAuthController",
+    "action": "EnrollComplete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "anonymous; operator-login rate limit; proves the bound Ed25519 key and the TOTP secret; consumed_at CAS; admin becomes pending_activation only; intent audited before the write",
+    "policies": [
+      "NodeAdmin:session",
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins",
+    "controller": "NodeAdminAdminsController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; no escalation (roles within the caller's permissions unless root); enrollment token shown once to the creator, hash stored; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/suspend",
+    "controller": "NodeAdminAdminsController",
+    "action": "Suspend",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; self-action refused; dominance (C1); last owner checked atomically with a directory CAS (M1); admin_revision bump ends the target's sessions; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/reactivate",
+    "controller": "NodeAdminAdminsController",
+    "action": "Reactivate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; self-action refused; dominance (C1); last owner checked atomically with a directory CAS (M1); admin_revision bump ends the target's sessions; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/revoke",
+    "controller": "NodeAdminAdminsController",
+    "action": "Revoke",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; self-action refused; dominance (C1); last owner checked atomically with a directory CAS (M1); admin_revision bump ends the target's sessions; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/activate",
+    "controller": "NodeAdminAdminsController",
+    "action": "Activate",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; root or a dominating admin; fingerprint must match the enrolled key (H3); directory CAS; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "PUT /api/node-admin/admins/{id}/roles",
+    "controller": "NodeAdminAdminsController",
+    "action": "AssignRoles",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:roles.manage:recent; dominance over current roles, no escalation, no self-strip of admins.manage, last owner via directory CAS (M1); audited; a pending admin must re-enroll (open enrollments consumed, bound key revoked, fresh token only to root, M-2)",
+    "policies": [
+      "NodeAdmin:roles.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/revoke-sessions",
+    "controller": "NodeAdminAdminsController",
+    "action": "RevokeSessions",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; dominance (C1); session_revision CAS plus row revocation; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/keys",
+    "controller": "NodeAdminAdminsController",
+    "action": "AddKey",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:session:recent; own key with step-up, another admin's only by root or a dominating owner-equivalent; new key proves possession by signing add_key (H2); audited",
+    "policies": [
+      "NodeAdmin:session",
+      "NodeAdmin:session:recent"
+    ]
+  },
+  {
+    "route": "DELETE /api/node-admin/admins/{id}/keys/{fingerprint}",
+    "controller": "NodeAdminAdminsController",
+    "action": "RevokeKey",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:session:recent; own key except the last one; another admin's requires admins.manage and dominance; admin_revision bump ends sessions; audited",
+    "policies": [
+      "NodeAdmin:session",
+      "NodeAdmin:session:recent"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/admins/{id}/mfa/reset",
+    "controller": "NodeAdminAdminsController",
+    "action": "ResetMfa",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:admins.manage:recent; self refused; root or a dominating owner-equivalent; revokes keys and sessions; new enrollment token returned to root only (C1); last owner via directory CAS; audited",
+    "policies": [
+      "NodeAdmin:admins.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "POST /api/node-admin/roles",
+    "controller": "NodeAdminRolesController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:roles.manage:recent; closed permission catalog; no escalation; directory CAS; audited",
+    "policies": [
+      "NodeAdmin:roles.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "PUT /api/node-admin/roles/{id}",
+    "controller": "NodeAdminRolesController",
+    "action": "Update",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:roles.manage:recent; built-ins immutable; dominance over old permissions, no escalation, no self-strip, last owner via directory CAS (M1); audited",
+    "policies": [
+      "NodeAdmin:roles.manage:recent",
+      "NodeAdmin:session"
+    ]
+  },
+  {
+    "route": "DELETE /api/node-admin/roles/{id}",
+    "controller": "NodeAdminRolesController",
+    "action": "Delete",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "NodeAdmin:roles.manage:recent; built-ins immutable; refused while assigned (ROLE_IN_USE); dominance; directory CAS; audited",
+    "policies": [
+      "NodeAdmin:roles.manage:recent",
+      "NodeAdmin:session"
+    ]
+  }
+]

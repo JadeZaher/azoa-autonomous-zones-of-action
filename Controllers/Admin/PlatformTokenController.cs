@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Reserve;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers.Admin;
 
@@ -64,8 +65,7 @@ public sealed class PlatformTokenController : ControllerBase
     public async Task<ActionResult<AZOAResult<PlatformTokenGenesisResponse>>> Genesis(
         [FromBody] PlatformTokenGenesisRequest request, CancellationToken ct)
     {
-        var operatorUserId = GetUserIdFromClaims();
-        if (operatorUserId is null)
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor))
             return Unauthorized(new AZOAResult<PlatformTokenGenesisResponse>
             {
                 IsError = true,
@@ -76,7 +76,7 @@ public sealed class PlatformTokenController : ControllerBase
         var captured = await factory.CaptureCredentialAsync(User, ct);
         if (captured.IsError || captured.Result is null) return BadRequest(captured);
         request.AuthenticationWitness = captured.Result;
-        var outcome = await _genesis.RunAsync(request, operatorUserId.Value, ct);
+        var outcome = await _genesis.RunAsync(request, operatorActor.SubjectUserId, ct);
         if (outcome.IsError || outcome.Result is null)
         {
             var failure = new AZOAResult<PlatformTokenGenesisResponse>
@@ -97,13 +97,6 @@ public sealed class PlatformTokenController : ControllerBase
 
         var response = AZOAResult<PlatformTokenGenesisResponse>.Success(PlatformTokenGenesisResponse.From(outcome.Result), outcome.Message);
         return outcome.Result.Operation is { State: not "Completed" } ? Accepted(response) : Ok(response);
-    }
-
-    private Guid? GetUserIdFromClaims()
-    {
-        var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-                  ?? User.FindFirst("sub")?.Value;
-        return Guid.TryParse(sub, out var id) ? id : null;
     }
 }
 

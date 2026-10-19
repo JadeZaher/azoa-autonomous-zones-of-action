@@ -1,13 +1,12 @@
 using System.Text.Json;
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models.Blockchain;
 using AZOA.WebAPI.Models.Responses;
-using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Services.Signing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Controllers.Admin;
 
@@ -53,8 +52,8 @@ public sealed class PlatformGenesisRecoveryController(IFungibleCreationStore sto
 
     private async Task<Guid?> OwnsGenesisAsync(string id)
     {
-        if (!AzoaClaims.IsNodeOperator(User) || !AzoaClaims.TryGetSubjectId(User, out var actor) || actor != NodeOperatorIdentity.UserId
-            || User.GetActingTenantId() is not null) return null;
+        if (!HttpContext.TryGetOperatorActor(out var operatorActor)) return null;
+        var actor = operatorActor.SubjectUserId;
         var row = await store.GetAsync(id, HttpContext.RequestAborted);
         return row?.ActorUserId == actor.ToString("N") && row.TenantId is null
             && JsonSerializer.Deserialize<FungibleCreationCommand>(row.RequestJson)?.GenesisAuthority is not null ? actor : null;

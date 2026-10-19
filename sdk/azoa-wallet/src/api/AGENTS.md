@@ -1,5 +1,11 @@
 # API contracts
 
+The workflow-designer interview route omits its entire brief/history from SDK debug logging. Its default client deadline is 95 seconds so the API's bounded 90-second model call can return a typed timeout; an explicitly configured SDK timeout remains authoritative. No designer request saves, publishes, starts a run, or moves funds.
+
+`workflow-designer.ts` mirrors the public contract, including explicit `planningScopeAccepted`, canonical state, separate professional-review questions and limitations. `hasWorkflowPlanningDraft` requires `DraftReady`, the readiness flag and a nonempty private Emit-only graph; consumers separately require scope consent and review. This graph records fixed planning/manual-external-handoff notes, implementing no approval, eligibility, cap, refund, payout or settlement controls. It is not an automated economic workflow. The model selects closed IDs privately; public wording/configs are server-owned. User amounts and contextual unknown-payment recovery travel unchanged in the private request. Legal/tax checklists are not professional determinations. Manual authoring remains available.
+
+Import does not execute the graph. A later explicit run of Emit nodes requires an active tenant registration and can enqueue webhook notifications to its configured destination. Checkpoints do not wait for or prove review/approval. Consumers must preserve the server's limitations and require acknowledgment of this side effect before import; graph execution remains a separate explicit operation.
+
 NFT lifecycle methods return durable operation views, including HTTP 202 pending
 states. Completed alone establishes confirmed chain completion. Request keys are
 required for mint/transfer/burn/issue/refund; reuse the same key and body after an

@@ -41,14 +41,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
-/**
- * Who a nav entry is shown to. 'all' = every signed-in user; 'operator' = hidden unless
- * {@link isOperatorConsole} says this console instance is opted into operator-facing nav
- * (see OI-84). `NavGroup.audience` is REQUIRED (not defaulted) so a new group cannot join
- * the sidebar without a deliberate visibility choice — the compiler enforces it the same
- * way `ReserveDrawAuthority` forces reserve callers to name who may draw
- * (Services/Reserve/ReserveDrawAuthority.cs). An item may narrow below its group's default.
- */
+/** Navigation audience; see AGENTS.md §Audience. */
 type NavAudience = 'all' | 'operator'
 
 interface NavItem {
@@ -65,15 +58,7 @@ interface NavGroup {
   items: NavItem[]
 }
 
-/**
- * STUB (OI-84): AZOA's regular user session carries no role or scope today — `AuthProfile`
- * (frontend/src/lib/azoa-context.tsx) has no field for it, and "operator" is presently a
- * JWT-only backend claim (Controllers/UserController.cs `ActingIsOperator`) with nothing
- * client-visible to read here. Until AuthProfile/AzoaState carries a real per-user signal,
- * this resolves to a build-time flag instead of a per-user check, and — per the reserve
- * options precedent (ReserveDrawAuthority.cs ~:180) — an unset or blank value MUST resolve to
- * the narrowest setting, so an unconfigured deployment hides operator-only nav for everyone.
- */
+/** Explicit console-instance opt-in, defaulting to hidden operator navigation. */
 function isOperatorConsole(): boolean {
   return process.env.NEXT_PUBLIC_AZOA_OPERATOR_CONSOLE === 'true'
 }
@@ -187,7 +172,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         {visibleGroups.map((group, gi) => (
           <div key={gi}>
             {group.label && (
-              <p className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 first:mt-0">
+              <p className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground first:mt-0">
                 {group.label}
               </p>
             )}
@@ -245,8 +230,8 @@ export function MobileSidebar() {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger className="inline-flex items-center justify-center rounded-md p-2 hover:bg-accent md:hidden">
-        <Menu className="h-5 w-5" />
+      <SheetTrigger aria-label="Open navigation" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md p-2 hover:bg-accent md:hidden">
+        <Menu className="h-5 w-5" aria-hidden="true" />
       </SheetTrigger>
       <SheetContent side="left" className="w-56 p-0">
         <SheetTitle className="sr-only">Navigation</SheetTitle>

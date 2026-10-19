@@ -1,0 +1,100 @@
+{
+    "track_id":  "node-admin-rbac-cli_20261018",
+    "name":  "Node admin identity, RBAC, MFA and azoa-node CLI",
+    "status":  "in_progress",
+    "created_at":  "2026-10-18",
+    "updated_at":  "2026-10-18",
+    "decisions":  [
+                      "A-1 ed25519 root key",
+                      "A-2 named admins + break-glass root",
+                      "A-3 full RBAC + TOTP MFA, four-eyes deferred",
+                      "A-4 Node.js CLI tools/azoa-node-cli",
+                      "D-L5 accepted: root-created owners audit-flagged; four-eyes deferred",
+                      "D-M1 accepted: recent login on every authenticated node-admin write",
+                      "D-M2 accepted: best-effort audit of node-admin PII reads with critical outage log"
+                  ],
+    "phases":  {
+                   "P0":  "done",
+                   "P1":  "merged",
+                   "P2":  "merged",
+                   "P3":  "merged",
+                   "P4":  "merged",
+                   "P5":  "join+smoke done; live Railway drill pending owner root key",
+                   "fix_batch":  "source reviewed; scoped core gates passed; UI05 accessibility correction in progress; main/Railway/owner drill pending"
+               },
+    "partitions":  {
+                       "computed_at_commit":  "1e68d59d",
+                       "confidence":  "medium",
+                       "lanes":  {
+                                     "A-backend":  {
+                                                       "owns":  [
+                                                                    "Controllers/NodeAdmin*",
+                                                                    "Managers/NodeAdmin*",
+                                                                    "Services/NodeAdmin/**",
+                                                                    "Persistence/SurrealDb/Models/NodeAdmin*",
+                                                                    "Persistence/SurrealDb/Generated/**",
+                                                                    "Persistence/SurrealDb/Migrations/**",
+                                                                    "Core/NodeAdmin*",
+                                                                    "Program.cs#auth",
+                                                                    "Core/Surreal/SigningAuthorityFence.cs",
+                                                                    "Core/Surreal/PlatformGenesisFence.cs",
+                                                                    "tests/**/NodeAdmin*",
+                                                                    "tests/AZOA.WebAPI.Tests/Architecture/Inventories/RouteAuthorization/**"
+                                                                ]
+                                                   },
+                                     "B-cli":  {
+                                                   "owns":  [
+                                                                "tools/azoa-node-cli/**"
+                                                            ]
+                                               }
+                                 },
+                       "shared_contract":  "plan.md Â§3"
+                   },
+    "review_ledger":  [
+                          {
+                              "phase":  "P0",
+                              "reviewer":  "oh-my-claudecode:critic",
+                              "date":  "2026-10-18",
+                              "verdict":  "APPROVE WITH EDITS",
+                              "note":  "C1 dominance, C2 server-side sessions + live perms, C3 reserved-id inventory, H1-H6, M1-M7 folded into plan.md Â§8 (binding)"
+                          },
+                          {
+                              "phase":  "P1+P3",
+                              "reviewer":  "security-reviewer (opus)",
+                              "verdict":  "FIX FIRST -\u003e FIX FIRST -\u003e MERGE",
+                              "note":  "H-1 lockout race, M-1 sid exposure, M-2 pending-role enrollment, M-3 audit flood; NEW-1 challenge-cap root DoS (stateless challenges), NEW-2 rogue-admin root revocation (root-only); LOW deferred: known-key timing oracle"
+                          },
+                          {
+                              "phase":  "P4",
+                              "reviewer":  "code-reviewer (opus) + automated security-guidance",
+                              "verdict":  "FIX FIRST -\u003e fixed (3277259c)",
+                              "note":  "shell:true injection in rootEnv; H1 --node token leak, H2 no-op Windows ACL verify, H3 key overwrite/path traversal; M1-M6"
+                          },
+                          {
+                              "phase":  "P5",
+                              "reviewer":  "join (real CLI vs real API)",
+                              "verdict":  "PASS",
+                              "note":  "backend unchanged; 3 CLI bugs fixed (FIFO stdin, bare 4xx mapping, bootstrap revision)"
+                          },
+                          {
+                              "phase":  "P2",
+                              "reviewer":  "security-reviewer (opus)",
+                              "verdict":  "MERGE",
+                              "note":  "no CRIT/HIGH; owner decisions M-1 (step-up on money writes for node admins), M-2 (read-audit of PII reads); LOW L-1 write-\u003eread map gate, L-2 live endpoint key test, L-4 refuse root witnesses in fence, L-5 actor ReadOnly"
+                          }
+                      ],
+    "lanes_plan":  {
+                       "A1":  "P1+P3 identity/auth/MFA/audit/admin CRUD (opus)",
+                       "A2":  "P2 RBAC + operator-policy integration (opus, after A1)",
+                       "B":  "P4 CLI (sonnet, parallel with A1)"
+                   },
+    "merges":  {
+                   "A1":  "b3f7aeb8 (feat/node-admin-a1 @ a90f6ab6)",
+                   "B":  "8fb69665 (feat/node-admin-cli @ 3277259c)",
+                   "join_report":  "088c0329",
+                   "A2":  "feat/node-admin-a2 @ 4210107f"
+               },
+    "owner_signoff_pending":  [
+
+                              ]
+}

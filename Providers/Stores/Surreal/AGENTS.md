@@ -1117,3 +1117,32 @@ before the column type, so without it `Unset(ParentHolonId)` threw "required fie
 
 `SurrealQuery.Combine` refuses a single query: `SurrealFungibleCreationStore.UpdateAsync` sends its lone progress statement
 directly when no effect authorization (and so no BEGIN/COMMIT fence) is needed — a single statement is already atomic.
+
+## wallet-claim-query-binding
+
+`SurrealWalletAuthClaimTokenStore.GetByTokenAsync` scopes its typed equality
+query through `SurrealGeneratedStatementScope.Apply` with `claim_lookup`.
+SurrealForge 1.3 derives parameters from column names, so renaming a captured
+local cannot avoid the protected `$token` variable. The shared helper renames
+only generated parameter tokens and bindings; exact equality and LIMIT remain.
+The real-DB fixture checks two distinct invites and a miss, plus unchanged invite
+state after rejected claims and one-time consumption after a valid claim.
+
+## hosted-identity-binding-parameters
+
+`SurrealKycIdentityStore.BindVerifiedUserAsync` retains one atomic transaction
+for evidence serialization, the exact hosted lease, active-attempt authority and
+person membership. Its attempt parameters use `_attempt_*`; identity mutation
+parameters use `_binding_*`, disjoint from the shared evidence and lease guards.
+SurrealForge Client 1.3.0's `SurrealQuery.Combine` XML contract merges parameter
+dictionaries with last-write-wins semantics. The attempt's provider key
+(`identomat`) must therefore never share a parameter with the persisted provider
+enum (`IDENTOMAT`). The tenant parameters are distinct even when their values
+currently agree. All existing lease, expiry, subject, tenant, selection, trust and
+membership predicates remain enforced.
+
+Optional identity fields use `$parameter ?? NONE` in the atomic mutation to
+translate nullable CBOR parameters into absent SCHEMAFULL option values. Required
+identity/provenance fields retain their required types. The real-DB binding
+fixture covers node-direct and tenant-scoped success with null personal fields,
+and changed lease/provider/selection/trust authority with transaction rollback.

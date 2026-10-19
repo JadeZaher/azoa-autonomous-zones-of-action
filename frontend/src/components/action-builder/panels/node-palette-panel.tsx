@@ -59,7 +59,7 @@ export function NodePalettePanel({
   }
 
   return (
-    <div className="flex h-full w-56 shrink-0 flex-col overflow-hidden rounded-md border bg-card">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-md border bg-card">
       <div className="border-b p-2">
         <Input
           value={filter}

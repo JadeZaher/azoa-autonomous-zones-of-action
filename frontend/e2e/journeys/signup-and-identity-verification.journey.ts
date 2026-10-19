@@ -1,4 +1,4 @@
-import { expect, test } from '../support/fixtures'
+import { completeBusinessVerification, expect, test } from '../support/fixtures'
 import type { Tenant } from '../support/api'
 
 /**
@@ -23,6 +23,7 @@ test('a new tenant\'s member opens the KYC gate only through the vendor\'s autho
     email: `journey-${suffix}@e2e.azoa.test`,
     password: `Journey-${suffix}-Pass1`,
   })
+  await completeBusinessVerification(page, api, vendors)
   await api.assignIdentomat(tenant)
 
   await page.goto('/kyc')

@@ -77,7 +77,7 @@ export default function OperatorOverviewPage() {
               <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#C8501E]">Runtime</p>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">Runtime</p>
                     <CardTitle id="node-runtime" className="mt-2 text-xl">{overview.node.environment} node</CardTitle>
                   </div>
                   <StatusPill tone={overview.node.persistenceReady ? 'ready' : 'attention'}>
@@ -169,7 +169,7 @@ export default function OperatorOverviewPage() {
           </section>
 
           <section aria-labelledby="operator-session-control">
-            <FlatCard className="border-red-300 bg-red-50/40">
+            <FlatCard className="azoa-light-surface border-red-300 bg-red-50 text-foreground">
               <CardHeader>
                 <CardTitle id="operator-session-control" className="flex items-center gap-2 text-base text-red-950">
                   <ShieldAlert className="h-4 w-4" aria-hidden="true" /> Session security
@@ -189,7 +189,7 @@ export default function OperatorOverviewPage() {
                     <p className="font-medium text-red-950">Confirm global revocation</p>
                     <p className="mt-1 leading-5 text-red-900/80">Every signed-in operator, including this browser, will need the current credentials again.</p>
                     <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                      <Button variant="destructive" className="min-h-11" disabled={revokingAll} onClick={() => void revokeAllSessions()}>
+                      <Button variant="destructive" className="min-h-11 bg-red-800 text-white hover:bg-red-900 hover:text-white dark:bg-red-800 dark:text-white dark:hover:bg-red-900 dark:hover:text-white" disabled={revokingAll} onClick={() => void revokeAllSessions()}>
                         {revokingAll ? 'Revoking every session…' : 'Yes, revoke every session'}
                       </Button>
                       <Button variant="outline" className="min-h-11" disabled={revokingAll} onClick={() => setConfirmRevokeAll(false)}>

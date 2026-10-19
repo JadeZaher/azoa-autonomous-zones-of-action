@@ -28,6 +28,8 @@ DEFINE FIELD IF NOT EXISTS assurance_level ON TABLE kyc_control_audit TYPE optio
 DEFINE FIELD IF NOT EXISTS previous_trust_revision ON TABLE kyc_control_audit TYPE option<int>;
 DEFINE FIELD IF NOT EXISTS trust_revision ON TABLE kyc_control_audit TYPE option<int>;
 DEFINE FIELD IF NOT EXISTS actor_user_id ON TABLE kyc_control_audit TYPE record<user>;
+DEFINE FIELD IF NOT EXISTS actor ON TABLE kyc_control_audit TYPE option<string>
+    READONLY;
 DEFINE FIELD IF NOT EXISTS occurred_at ON TABLE kyc_control_audit TYPE datetime
     DEFAULT time::now()
     READONLY;

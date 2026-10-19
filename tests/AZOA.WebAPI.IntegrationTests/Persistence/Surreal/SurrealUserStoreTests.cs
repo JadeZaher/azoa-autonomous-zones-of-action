@@ -4,25 +4,11 @@ using SurrealForge.Client.Connection;
 using SurrealForge.Client.Query;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Providers.Stores.Surreal;
+using AZOA.WebAPI.Services.Auth;
 
 namespace AZOA.WebAPI.IntegrationTests.Persistence.Surreal;
 
-/// <summary>
-/// Store-layer integration tests for <see cref="SurrealUserStore"/>.
-///
-/// Each test creates an isolated SurrealDB namespace (test_{guid}) against
-/// the test container on port 8442. Tests skip gracefully via <see cref="SkippableFact"/>
-/// and <see cref="Skip.IfNot"/> when the SurrealDB container is unavailable, so the
-/// test runner reports them as Skipped instead of Passed.
-///
-/// Minimum coverage required:
-///   1. Upsert → GetById round-trip
-///   2. GetById of non-existent id returns IsError=true
-///   3. Upsert (update path) overwrites existing record
-///   4. Delete removes the row
-///   5. Delete of non-existent id returns IsError=true
-///   6. GetAll returns all inserted users
-/// </summary>
+/// <summary>User-store contracts against isolated real schemas; see AGENTS.md §user-store-fixtures.</summary>
 public sealed class SurrealUserStoreTests : IAsyncLifetime
 {
     // ── Connection config ─────────────────────────────────────────────────────
@@ -57,49 +43,15 @@ public sealed class SurrealUserStoreTests : IAsyncLifetime
         _store = new SurrealUserStore(executor);
 
         await BootstrapSchemaAsync();
-
-        // /health returning 200 is necessary but NOT sufficient: a SurrealDB 3.x
-        // instance answers /health yet rejects the 1.5.x DDL / namespace flow this
-        // fixture uses (the known integration-test-namespace-isolation /
-        // 3.x-strict harness gap — project memory surrealdb-3x-upgrade-progress).
-        // Confirm the harness can actually round-trip a write before claiming the
-        // store is usable; otherwise mark unavailable so every test in this file
-        // (pre-existing and tenant) reports Skipped rather than Failed.
-        _surrealAvailable = await CanRoundTripAsync();
-    }
-
-    /// <summary>
-    /// True only if a probe user can be written and read back through the store
-    /// in this namespace. Distinguishes a usable harness from a /health-only-OK
-    /// instance that rejects the bootstrap (3.x-strict).
-    /// </summary>
-    private async Task<bool> CanRoundTripAsync()
-    {
-        try
-        {
-            var probe = new User
-            {
-                Id           = Guid.NewGuid(),
-                Username     = $"probe_{Guid.NewGuid():N}",
-                Email        = $"probe_{Guid.NewGuid():N}@test.com",
-                PasswordHash = "h"
-            };
-            var saved = await _store.UpsertAsync(probe);
-            if (saved.IsError) return false;
-            var got = await _store.GetByIdAsync(probe.Id);
-            return !got.IsError && got.Result is not null;
-        }
-        catch
-        {
-            return false;
-        }
+        var migration = new WalletAuthIdentityMigrationService(executor);
+        await migration.SweepAsync(default);
+        (await migration.GetAsync(default)).Status.Should().Be("Ready");
     }
 
     public async Task DisposeAsync()
     {
         if (!_surrealAvailable || _connection is null) return;
         try { await DropNamespaceAsync(); }
-        catch { /* best-effort */ }
         finally { _connection.Dispose(); }
     }
 
@@ -128,8 +80,8 @@ public sealed class SurrealUserStoreTests : IAsyncLifetime
         var upsertResult = await _store.UpsertAsync(user);
 
         upsertResult.IsError.Should().BeFalse();
-        upsertResult.Message.Should().Be("Saved.");
         upsertResult.Result.Should().NotBeNull();
+        upsertResult.Result!.Id.Should().Be(user.Id);
 
         var getResult = await _store.GetByIdAsync(user.Id);
 
@@ -186,17 +138,19 @@ public sealed class SurrealUserStoreTests : IAsyncLifetime
             Id           = id,
             Username     = username,
             Email        = email,
-            PasswordHash = "updated_hash",
+            PasswordHash = "original_hash",
             FirstName    = "Robert"
         };
         var upsertResult = await _store.UpsertAsync(updated);
 
         upsertResult.IsError.Should().BeFalse();
-        upsertResult.Message.Should().Be("Saved.");
+        upsertResult.Result.Should().NotBeNull();
+        upsertResult.Result!.Id.Should().Be(id);
 
         var getResult = await _store.GetByIdAsync(id);
         getResult.IsError.Should().BeFalse();
         getResult.Result!.FirstName.Should().Be("Robert");
+        getResult.Result.PasswordHash.Should().Be("original_hash");
     }
 
     /// <summary>Test 4: Delete removes the user; subsequent GetById returns not-found.</summary>
@@ -219,24 +173,22 @@ public sealed class SurrealUserStoreTests : IAsyncLifetime
 
         deleteResult.IsError.Should().BeFalse();
         deleteResult.Result.Should().BeTrue();
-        deleteResult.Message.Should().Be("Deleted.");
 
         var getResult = await _store.GetByIdAsync(user.Id);
         getResult.IsError.Should().BeTrue();
         getResult.Message.Should().StartWith("User not found");
     }
 
-    /// <summary>Test 5: Delete of a non-existent id returns IsError=true, Result=false.</summary>
+    /// <summary>Deleting an absent user succeeds without claiming a deletion.</summary>
     [SkippableFact]
-    public async Task Delete_NotFound_ReturnsError()
+    public async Task Delete_NotFound_SucceedsWithoutDeletingARow()
     {
         Skip.IfNot(_surrealAvailable, "SurrealDB test container not available on " + SurrealTestDefaults.Endpoint);
 
         var result = await _store.DeleteAsync(Guid.NewGuid());
 
-        result.IsError.Should().BeTrue();
+        result.IsError.Should().BeFalse();
         result.Result.Should().BeFalse();
-        result.Message.Should().Be("User not found.");
     }
 
     /// <summary>Test 6: GetAll returns all users inserted in this namespace.</summary>
@@ -374,11 +326,12 @@ public sealed class SurrealUserStoreTests : IAsyncLifetime
             var r = await probe.GetAsync($"{SurrealTestDefaults.Endpoint}/health");
             return r.IsSuccessStatusCode;
         }
-        catch { return false; }
+        catch (HttpRequestException) { return false; }
+        catch (TaskCanceledException) { return false; }
     }
 
     private Task BootstrapSchemaAsync()
-        => SurrealTestSchema.BootstrapAsync(_testNamespace, "user");
+        => SurrealTestSchema.BootstrapAsync(_testNamespace, "user", "wallet_auth_identity_migration");
 
     private Task DropNamespaceAsync() => SurrealTestSchema.DropAsync(_testNamespace);
 }

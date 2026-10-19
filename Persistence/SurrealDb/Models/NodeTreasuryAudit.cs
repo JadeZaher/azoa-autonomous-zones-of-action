@@ -60,5 +60,10 @@ namespace AZOA.WebAPI.Persistence.SurrealDb.Models
         [Column(Order = 11)]
         [ReadOnly]
         public DateTimeOffset OccurredAt { get; set; }
+
+        /// <summary>Real operator actor: <c>legacy-operator</c> | <c>admin:&lt;id&gt;</c> | <c>root:&lt;fingerprint&gt;</c>; NONE on rows written before named node admins.</summary>
+        [Column(Order = 12)]
+        [ReadOnly]
+        public string? Actor { get; set; }
     }
 }

@@ -82,6 +82,32 @@ export class AzoaApi {
     return account.userId
   }
 
+  /** Provisions a claimable member using its server-returned identity and a future owner password. */
+  async provisionMember(tenant: Tenant, subject: string): Promise<Person> {
+    const member = await this.ok<{ userId: string; externalUserId: string; username: string; email: string }>(
+      await this.request.post('/api/tenant/users', {
+        headers: this.tenantHeaders(tenant), data: { externalUserId: subject },
+      }),
+    )
+    expect(member.externalUserId).toBe(subject)
+    expect(member.email).toBeTruthy()
+    return { userId: member.userId, username: member.username, email: member.email, password: `E2e-${randomUUID()}-Pass1` }
+  }
+
+  /** Claims that exact member through a real tenant invitation and user-chosen password. */
+  async claimMember(tenant: Tenant, member: Person): Promise<void> {
+    const invite = await this.ok<{ claimToken: string; targetUserId: string }>(
+      await this.request.post('/api/user/claim-invite', {
+        headers: this.tenantHeaders(tenant), data: { childUserId: member.userId },
+      }),
+    )
+    expect(invite.targetUserId).toBe(member.userId)
+    const claimed = await this.ok<{ userId: string }>(await this.request.post('/api/user/claim', {
+      data: { targetUserId: member.userId, claimToken: invite.claimToken, newPassword: member.password },
+    }))
+    expect(claimed.userId).toBe(member.userId)
+  }
+
   async beginMemberKyc(tenant: Tenant, subject: string): Promise<{ verificationUrl: string }> {
     return this.ok(
       await this.request.post(`/api/tenant/custodial-accounts/${subject}/kyc/session`, {

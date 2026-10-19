@@ -61,6 +61,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
     public async Task<AZOAResult<NodeTreasuryDestinationResponse>> UpdateDestinationAsync(
         NodeTreasuryDestinationUpdateRequest request,
         Guid actorUserId,
+        OperatorActor? actor = null,
         CancellationToken ct = default)
     {
         if (request is null)
@@ -130,6 +131,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
             Id = SurrealId.ToSurrealId(Guid.NewGuid()),
             Action = "DestinationUpdated",
             ActorUserId = actorLink,
+            Actor = actor?.AuditActor,
             Chain = next.Chain,
             Network = next.Network,
             PreviousVersion = currentVersion,
@@ -253,6 +255,7 @@ public sealed class NodeTreasuryManager : INodeTreasuryManager
             Id = SurrealRecordGuid.Parse(row.Id),
             Action = row.Action,
             ActorUserId = SurrealRecordGuid.ParseOptional(row.ActorUserId) ?? Guid.Empty,
+            Actor = row.Actor,
             Chain = row.Chain,
             Network = ParseNetwork(row.Network),
             PreviousVersion = row.PreviousVersion,

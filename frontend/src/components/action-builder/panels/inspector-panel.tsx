@@ -29,7 +29,7 @@ export function InspectorPanel({
   children,
 }: InspectorPanelProps) {
   return (
-    <div className="flex h-full w-72 shrink-0 flex-col overflow-hidden rounded-md border bg-card">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-md border bg-card">
       <div className="border-b p-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {selectedNode ? 'Node Config' : selectedEdge ? 'Edge Config' : 'Inspector'}

@@ -209,6 +209,7 @@ services:
       # server layer, so repointing the UI needs only a restart, not a rebuild.
       # The former NEXT_PUBLIC_API_URL was baked at `next build` and is now dead.
       API_URL: "http://localhost:5000"
+      INTERNAL_API_URL: "http://azoa-api:5000"
       AZOA_ALLOW_INSECURE_LOCAL_API: "true"
       NODE_ENV: "production"
     ports:

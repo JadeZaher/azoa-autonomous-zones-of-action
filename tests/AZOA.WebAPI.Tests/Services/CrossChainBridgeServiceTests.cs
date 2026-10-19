@@ -534,19 +534,19 @@ public class CrossChainBridgeServiceTests
             });
 
         // All callers wait on one gate, then go at once to maximize interleaving.
-        using var gate = new ManualResetEventSlim(false);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var tasks = new List<Task<AZOAResult<BridgeTransactionResult>>>(concurrency);
         for (int i = 0; i < concurrency; i++)
         {
             tasks.Add(Task.Run(async () =>
             {
-                gate.Wait();
+                await gate.Task;
                 var (svc, _) = harness.CreateService();
                 return await svc.RedeemWithVAAAsync(bridgeId);
             }));
         }
 
-        gate.Set();
+        gate.SetResult();
         var results = await Task.WhenAll(tasks);
 
         redeemInvocations.Should().Be(1,

@@ -24,3 +24,12 @@ tenant subject plus a SHA-256 digest of the canonical external subject. The
 ordinary global API-key partition still applies as the tenant aggregate ceiling.
 This two-level composition prevents one external subject from consuming the
 entire tenant budget without allowing subjects to evade the aggregate limit.
+
+## operator-login partition (node-admin-rbac-cli NEW-1)
+
+`RateLimitPartitionKey.Address` keys the `operator-login` limiter by full IPv4 address (IPv4-mapped IPv6
+unwrapped) and by the **/64** prefix for IPv6. A single subscriber normally owns a whole /64, so per-address
+IPv6 buckets let one attacker rotate through 2^64 fresh buckets. The policy is shared by the legacy
+`POST /api/operator/session` and the node-admin `auth/challenge`, `auth/session`, `enroll/*` routes; for both,
+coarser IPv6 buckets only make throttling more conservative (a shared /64 shares 20 attempts per 15 min). The
+global and financial limiters keep their identity/IP partitioning unchanged.

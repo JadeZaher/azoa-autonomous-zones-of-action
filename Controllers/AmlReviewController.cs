@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 
-using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using AZOA.WebAPI.Services.NodeAdmin;
 
 namespace AZOA.WebAPI.Models.Responses
 {
@@ -115,8 +115,9 @@ namespace AZOA.WebAPI.Controllers
             [FromQuery] string? cursor = null,
             CancellationToken ct = default)
         {
-            if (!AzoaClaims.TryGetSubjectId(User, out var operatorId))
+            if (!HttpContext.TryGetOperatorActor(out var operatorActor))
                 return Unauthorized();
+            var operatorId = operatorActor.SubjectUserId;
             return Translate(await _manager.ListAmlReviewsAsync(limit, cursor, operatorId, ct));
         }
 
@@ -129,9 +130,10 @@ namespace AZOA.WebAPI.Controllers
             [FromBody] AmlManualReviewDecisionRequest request,
             CancellationToken ct)
         {
-            if (!AzoaClaims.TryGetSubjectId(User, out var operatorId))
+            if (!HttpContext.TryGetOperatorActor(out var operatorActor))
                 return Unauthorized();
-            return Translate(await _manager.DecideAmlReviewAsync(userId, request, operatorId, ct));
+            var operatorId = operatorActor.SubjectUserId;
+            return Translate(await _manager.DecideAmlReviewAsync(userId, request, operatorId, operatorActor, ct));
         }
 
         private ActionResult<AZOAResult<T>> Translate<T>(AZOAResult<T> result)

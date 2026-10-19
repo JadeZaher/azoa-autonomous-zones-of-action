@@ -66,7 +66,8 @@ Known limits (SurrealForge, owner repo; harmless while nothing reconciles or pas
 
 A baselined table's generated golden is **not** what a deployment applies; only baseline +
 migrations are. Every POCO change to `admin_bootstrap_state`, `bridge_tx`, `holon`,
-`kyc_submission`, `operation_log` or `user` (`swap_state` was pruned in round 4) therefore needs a forward migration in the same
+`kyc_submission`, `operation_log`, `user`, `kyc_control_audit`, `node_governance_audit`, `node_fee_audit`,
+`node_treasury_audit` or `action_recovery_audit` (`swap_state` was pruned in round 4) therefore needs a forward migration in the same
 change. W1 found `kyc_submission` had drifted (Identomat missing from `$kyc_submission_provider`, so
 every Identomat KYC write failed its ASSERT; `aml_lineage_key` absent) and added
 `Migrations/20261017_121000`. `KycSubmission` gained the `kyc_submission_tenant_id` index that
@@ -193,6 +194,19 @@ submitted group) — a write of either fails the ASSERT, closed.
 - `20261017_130000__add_operation_log_needs_operator_status`: D-3 `NeedsOperator` status param overwrite.
 - `20261018_090000__add_user_discoverable`: user-discoverable (§compatibility-baselines below); `user`
   gains `discoverable` (`DEFAULT ALWAYS false`) plus a one-shot NONE backfill.
+- `20261018_120000__add_operator_actor_to_domain_audits`: node-admin lane A2; `actor option<string>` on
+  `kyc_control_audit`, `node_governance_audit`, `node_fee_audit`, `node_treasury_audit`, `action_recovery_audit`
+  (all five baselined at their pre-change goldens, §compatibility-baselines). Design: `Services/NodeAdmin/AGENTS.md`
+  §operator-actor.
+
+## §node-admin-tables
+
+`node_admin`, `node_admin_credential`, `node_admin_role`, `node_admin_challenge`, `node_admin_enrollment`,
+`node_admin_session`, `node_admin_audit`, `node_admin_audit_head`, `node_admin_root_state` and
+`node_admin_directory` (track `node-admin-rbac-cli_20261018`) are new tables: no baseline, no migration, plain
+`[Default]` is allowed (§old-row-rule applies to existing tables only). The POCO for `node_admin` is
+`NodeAdminAccount` because `NodeAdmin` collides with the `Services.NodeAdmin` namespace. Design notes:
+`Services/NodeAdmin/AGENTS.md` §storage.
 
 ## §ownership
 

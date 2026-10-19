@@ -47,7 +47,7 @@ public sealed class WebhookRegistrationManagement(SigningAdmissionAuthorityFacto
             return AZOAResult<SigningConsentWitness>.Failure(captured.Message);
         if (credential.TenantId is not null || operatorTenant == Guid.Empty)
             return AZOAResult<SigningConsentWitness>.Failure("A direct tenant-management credential is required.");
-        var isOperator = credential.TokenUse == AzoaClaims.TokenUseNodeOperator;
+        var isOperator = OperatorActor.IsOperatorCredential(credential);
         if (operatorTenant.HasValue != isOperator || (isOperator && credential.IssuedAt < DateTimeOffset.UtcNow.AddMinutes(-5)))
             return AZOAResult<SigningConsentWitness>.Failure("Operator access requires the operator route and authentication within five minutes.");
         if (!isOperator && credential.TokenUse != AzoaClaims.TokenUseLogin && credential.Kind != "ApiKey")

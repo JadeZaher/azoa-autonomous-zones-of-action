@@ -84,18 +84,24 @@ public sealed class WebhookOutboxDrainFlowTests(WebhookDrainWebApplicationFactor
 
         // A worker crashed mid-attempt: Pending, holding a lease, not due again for an hour.
         var id = dead.EventId.ToString("N");
-        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id).Where(seed => true)
+        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id)
+            .Where(row => row.Status == Event.DeliveryStatus.DeadLettered && row.Version == dead.Version)
             .Set(row => row.Status, Event.DeliveryStatus.Pending).Set(row => row.Version, dead.Version + 1)
+            .Set(row => row.CycleAttemptCount, 0L)
             .Set(row => row.LeaseId, Guid.NewGuid().ToString("N")).Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddMinutes(5))
             .Set(row => row.NextAttemptAt, DateTimeOffset.UtcNow.AddHours(1)).Build());
         var live = await StatusAsync(tenant, dead.EventId);
+        live.AttemptCount.Should().Be(dead.AttemptCount, "arranging a new cycle must retain lifetime attempts");
+        live.CycleAttemptCount.Should().Be(0);
         live.AttemptInFlight.Should().BeTrue();
         live.Retryable.Should().BeFalse();
         using (var refused = await tenant.Client.PostAsJsonAsync($"{Events}/{dead.EventId}/retry",
                    new WebhookEventRetryCommand(Guid.NewGuid(), live.Version, "Retry while the attempt is in flight."), JsonOptions))
             await ShouldReturnAsync(refused, HttpStatusCode.Conflict);
 
-        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id).Where(seed => true).Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)).Build());
+        await WriteAsync(SurrealWriter.UpdateOnly<Event>(id)
+            .Where(row => row.Status == Event.DeliveryStatus.Pending && row.Version == live.Version)
+            .Set(row => row.LeaseExpiresAt, DateTimeOffset.UtcNow.AddSeconds(-1)).Build());
         var abandoned = await StatusAsync(tenant, dead.EventId);
         abandoned.Retryable.Should().BeTrue();
         using var retried = await tenant.Client.PostAsJsonAsync($"{Events}/{dead.EventId}/retry",

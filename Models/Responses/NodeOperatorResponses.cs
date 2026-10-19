@@ -130,5 +130,7 @@ public sealed class KycControlAuditResponse
     public long? PreviousTrustRevision { get; set; }
     public long? TrustRevision { get; set; }
     public Guid ActorUserId { get; set; }
+    /// <summary>Real operator actor (<c>legacy-operator</c> | <c>admin:&lt;id&gt;</c> | <c>root:&lt;fingerprint&gt;</c>); null on older rows.</summary>
+    public string? Actor { get; set; }
     public DateTimeOffset OccurredAt { get; set; }
 }
