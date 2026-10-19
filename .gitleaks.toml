@@ -31,6 +31,11 @@ regexes = [
   '''^6a4575a6-4187-46ad-a248-baa0b9823138$''',                                             # RateLimitPartitionKeyTests api-key id
   '''^azoa_secretkey123$''',
   '''^azoa_test12345$''',
+  '''^jwt-key-one-0123456789012345678901234567$''',                                      # In-memory node-admin challenge codec fixture seed
+  '''^jwt-key-two-0123456789012345678901234567$''',                                      # Different-key refusal fixture seed; never host configuration
+  '''^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$''',                                            # Public RFC 6238 ASCII 12345678901234567890 encoded as base32
+  '''^11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo$''',                                # Ed25519 PUBLIC key A in the fake Railway root-env tests
+  '''^HlodJLV9Kimzd4gu5t3dmY9o0eaZ3D6gdAHdQ1Js6cQ$''',                                # Ed25519 PUBLIC key B in the fake Railway root-env tests
   # Local-only SurrealDB default credentials (dev container / CI service container).
   '''^["']root:root["']$''',
   # Prose and placeholders matched by generic-api-key / curl-auth-header.
