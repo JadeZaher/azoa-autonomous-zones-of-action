@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Moq;
 
@@ -32,9 +33,9 @@ public sealed class WorkflowDesignerHttpTests
     [Fact]
     public async Task OnlyLiveTenantOwnerGetsContext_AndRevocationIsCheckedBeforeEveryEgress()
     {
-        using var fixture = new Fixture();
+        await using var fixture = await Fixture.CreateAsync();
         var owner = Guid.NewGuid();
-        var client = fixture.Server.CreateClient();
+        using var client = fixture.Server.CreateClient();
         using var availability = await client.SendAsync(Request(HttpMethod.Get, owner));
         Assert.Equal(HttpStatusCode.OK, availability.StatusCode);
         var context = await availability.Content.ReadFromJsonAsync<AZOAResult<WorkflowDesignerAvailability>>();
@@ -48,9 +49,9 @@ public sealed class WorkflowDesignerHttpTests
     [Fact]
     public async Task CrossOwnerSelectedContextAndNonTenantAreRejected_WithoutProviderCall()
     {
-        using var fixture = new Fixture();
+        await using var fixture = await Fixture.CreateAsync();
         var owner = Guid.NewGuid();
-        var client = fixture.Server.CreateClient();
+        using var client = fixture.Server.CreateClient();
         using var crossOwner = await client.SendAsync(Request(HttpMethod.Post, owner, Guid.NewGuid()));
         Assert.Equal(HttpStatusCode.Forbidden, crossOwner.StatusCode);
         fixture.TenantsActive = false;
@@ -62,9 +63,9 @@ public sealed class WorkflowDesignerHttpTests
     [Fact]
     public async Task DeveloperScopeWithoutRole_AndDelegatedCredential_DoNotReachProvider()
     {
-        using var fixture = new Fixture();
+        await using var fixture = await Fixture.CreateAsync();
         var owner = Guid.NewGuid();
-        var client = fixture.Server.CreateClient();
+        using var client = fixture.Server.CreateClient();
         using var noRole = Request(HttpMethod.Post, owner, owner, apiKey: Guid.NewGuid());
         noRole.Headers.Add("X-Test-Role", AzoaDappRoles.User);
         using var noRoleResult = await client.SendAsync(noRole);
@@ -79,9 +80,9 @@ public sealed class WorkflowDesignerHttpTests
     [Fact]
     public async Task RotatedKeysAndOwnerLoginShareTenantBudget_AnotherTenantHasOwnBudget()
     {
-        using var fixture = new Fixture(permitLimit: 1);
+        await using var fixture = await Fixture.CreateAsync(permitLimit: 1);
         var owner = Guid.NewGuid();
-        var client = fixture.Server.CreateClient();
+        using var client = fixture.Server.CreateClient();
         using var first = await client.SendAsync(Request(HttpMethod.Post, owner, owner, Guid.NewGuid()));
         using var rotated = await client.SendAsync(Request(HttpMethod.Post, owner, owner, Guid.NewGuid()));
         using var login = await client.SendAsync(Request(HttpMethod.Post, owner, owner));
@@ -97,9 +98,9 @@ public sealed class WorkflowDesignerHttpTests
     [Fact]
     public async Task MissingConsentDoesNotCallProvider_AndAnonymousGetsChallenge()
     {
-        using var fixture = new Fixture();
+        await using var fixture = await Fixture.CreateAsync();
         var owner = Guid.NewGuid();
-        var client = fixture.Server.CreateClient();
+        using var client = fixture.Server.CreateClient();
         using var noConsent = Request(HttpMethod.Post, owner, owner, consent: false);
         using var refused = await client.SendAsync(noConsent);
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
@@ -120,12 +121,13 @@ public sealed class WorkflowDesignerHttpTests
         return request;
     }
 
-    private sealed class Fixture : IDisposable
+    private sealed class Fixture : IAsyncDisposable
     {
         public bool TenantsActive { get; set; } = true;
         public FakeModel Model { get; } = new();
-        public TestServer Server { get; }
-        public Fixture(int permitLimit = 12)
+        private readonly IHost _host;
+        public TestServer Server => _host.GetTestServer();
+        private Fixture(int permitLimit)
         {
             var users = new Mock<IUserStore>();
             users.Setup(store => store.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -133,7 +135,7 @@ public sealed class WorkflowDesignerHttpTests
             var keys = new Mock<IApiKeyStore>();
             keys.Setup(store => store.ListByUserAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Guid id, CancellationToken _) => (IReadOnlyList<ApiKey>)[new ApiKey { UserId = id, Scopes = AzoaScopes.TenantProvision, IsActive = TenantsActive }]);
-            Server = new TestServer(new WebHostBuilder().ConfigureServices(services => {
+            _host = new HostBuilder().ConfigureWebHost(web => web.UseTestServer().ConfigureServices(services => {
                 services.AddLogging();
                 services.AddSingleton(users.Object);
                 services.AddSingleton(keys.Object);
@@ -153,9 +155,27 @@ public sealed class WorkflowDesignerHttpTests
             }).Configure(app => {
                 app.UseRouting(); app.UseAuthentication(); app.UseAuthorization(); app.UseRateLimiter();
                 app.UseEndpoints(endpoints => endpoints.MapControllers());
-            }));
+            })).Build();
         }
-        public void Dispose() => Server.Dispose();
+        public static async Task<Fixture> CreateAsync(int permitLimit = 12)
+        {
+            var fixture = new Fixture(permitLimit);
+            try
+            {
+                await fixture._host.StartAsync();
+                return fixture;
+            }
+            catch
+            {
+                fixture._host.Dispose();
+                throw;
+            }
+        }
+        public async ValueTask DisposeAsync()
+        {
+            try { await _host.StopAsync(); }
+            finally { _host.Dispose(); }
+        }
     }
 
     private sealed class FakeModel : IWorkflowDesignerModel

@@ -51,7 +51,8 @@ export function WorkflowDesigner({ onImport }: { onImport: (draft: DesignerDraft
       if (!active.current) return
       if (isOk(result)) {
         setReply(result.value)
-        setMessages([...history, { role: 'assistant', content: [result.value.summary, ...result.value.questions, ...result.value.concerns].join('\n').slice(0, 4000) }].slice(-16))
+        const assistantMessage: DesignerMessage = { role: 'assistant', content: [result.value.summary, ...result.value.questions, ...result.value.concerns].join('\n').slice(0, 4000) }
+        setMessages([...history, assistantMessage].slice(-16))
         setAnswer('')
       } else {
         setError(result.error.status === 429 ? 'The assistant request budget is used for now. Try later or continue in the visual builder.' : result.error.message)

@@ -381,6 +381,12 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
   const { templates, reload } = useNodeTemplates()
   const [aiDraft, setAiDraft] = useState<DesignerDraft | null>(null)
   const [draftRevision, setDraftRevision] = useState(0)
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [isPublic, setIsPublic] = useState(false)
+  const [result, setResult] = useState<unknown>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const importedPreset = useMemo(() => aiDraft ? designerDraftPreset(aiDraft) : undefined, [aiDraft])
   const importDraft = (draft: DesignerDraft) => {
     setName(draft.name)
@@ -391,13 +397,6 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
     setResult(null)
     setError(null)
   }
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [isPublic, setIsPublic] = useState(false)
-  const [result, setResult] = useState<unknown>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
   const handleSubmit = useCallback(
     async (graph: BuiltGraph) => {
       if (!name.trim()) {
