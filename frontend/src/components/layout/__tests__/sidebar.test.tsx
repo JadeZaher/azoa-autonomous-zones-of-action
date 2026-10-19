@@ -13,7 +13,7 @@ describe('mobile account navigation', () => {
     await user.click(screen.getByRole('button', { name: 'Open navigation' }))
 
     const navigation = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(navigation).getByRole('link', { name: 'Wallets', exact: true })).toBeInTheDocument()
-    expect(within(navigation).getByRole('link', { name: 'Settings', exact: true })).toBeInTheDocument()
+    expect(within(navigation).getByRole('link', { name: 'Wallets' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('link', { name: 'Settings' })).toBeInTheDocument()
   })
 })
