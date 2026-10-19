@@ -4,6 +4,12 @@ type: verification
 
 # Verification — 2026-10-18
 
+## Superseding UI06 technical checkpoint
+
+The exact `ef224234` local candidate sampled the prior label, dark destructive text, toolbar and enabled-opacity corrections working. The separate real-GET audit probe measured first-enabled opacity1 with no opacity animation and clear scans in all three phases. Provider-free pass06 used nine manual Emit nodes/zero edges, not another AI response/import; the original bridge remains exhausted4/4 and production remains disabled/unconfigured.
+
+Pass06 is still PARTIAL with three initial failed selections, subsequent ordinary pan recovery and unchanged frozen friction6.625; intentional rapid additions and the different authoring job limit human-frustration/trend interpretations. Axe0 did not detect its transparent keyboard-focus indicator or narrow63px graph. Source-confirmed focus/reflow and an unobserved edge-label omission received a collected correction and separate static acceptance. One frontend sweep passed typecheck/lint/317tests in57files/build/production audit, retaining117warnings and7development audit highs. Exact-new-image focus/layout proof and independent study closure remain pending. This establishes no new legal/tax accuracy, economic control enforcement, native-zoom conformance, human usability or complete release readiness. Pass05's real planning interview/review/import remains separate positive evidence.
+
 ## Superseding UI05 evidence - actual planning import, accessibility correction pending
 
 The eight-file presentation correction was independently accepted and then passed the coordinator's single collected frontend sweep: typecheck, lint,316tests/56files, production build and production-only audit. Existing117lint warnings and7high all/development audit findings remain. Browser contrast, first-enabled-frame and canvas geometry proof still require refreshed images. The local provider key has been removed by restoring the exact key-free API backup; both local guards subsequently passed. No model request or counter reset occurred.

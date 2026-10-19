@@ -11,10 +11,22 @@ native label focus and stable IDs across node changes.
 Canvas controls occupy a wrapping, nonshrinking row outside the ReactFlow
 viewport. Fit view, pan/zoom, hit-testing and screen-to-flow drop coordinates use
 only that viewport; toolbar height is reserved by flex layout rather than node
-offsets or refit effects. Selection/history callbacks and initialization remain
-unchanged. Real-browser proof must check first/middle/last selection, wrapping
-and magnification; jsdom cannot establish geometry or contrast. Shared button
-color/enable-state rules live in `../ui/AGENTS.md`.
+offsets or refit effects. `action-canvas.module.css` stacks full-width panels by
+default, then uses a named inline-size container query for three columns only
+when the actual editor width can fit useful graph space. Panel scroll areas have
+bounded heights; normal page scrolling retains access in the stack. Unsupported
+container-query browsers keep the stacked layout. One mounted flow and its
+selection/history callbacks remain; no resize state or refit effect is involved.
+
+Real-browser proof must check first/middle/last selection, wrapping and
+magnification; jsdom cannot establish geometry or contrast. A long disconnected
+row may still need ordinary panning at minimum zoom; this layout does not promise
+all-node framing. Shared focus/color/enable-state rules live in `../ui/AGENTS.md`.
+
+EdgeInspector's Conditional input also has an instance-unique associated label;
+Edge Type is informational text above its native controls. This omission was
+identified from source during pass06 triage, not a newly observed pass06 failure.
+Its focused test drives label focus, actual edits and required-state clearing.
 
 ## AI workflow interview
 
