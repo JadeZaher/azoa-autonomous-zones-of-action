@@ -172,7 +172,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         {visibleGroups.map((group, gi) => (
           <div key={gi}>
             {group.label && (
-              <p className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 first:mt-0">
+              <p className="mb-1 mt-4 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground first:mt-0">
                 {group.label}
               </p>
             )}

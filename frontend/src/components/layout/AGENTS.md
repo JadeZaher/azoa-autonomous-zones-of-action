@@ -7,3 +7,8 @@ Every navigation group declares an audience. Individual items may narrow it; fil
 ## Accessible navigation
 
 The icon-only mobile sheet trigger is named “Open navigation” and the sheet is titled “Navigation.” The decorative Menu icon is hidden from the accessibility tree. The trigger provides a minimum 44-pixel target; Base UI owns expanded-state and dialog keyboard behavior. The dashboard's independently scrolling main region is keyboard-focusable and has a visible focus outline so enlarged-text users can scroll it without a pointer.
+
+Group labels use the complete muted foreground token. Reducing that text to 60%
+opacity produced 3.44:1 contrast at 11 pixels on the dark sidebar in the guarded
+pass-02 diagnostic, affecting every route with the desktop sidebar. Keep visual
+hierarchy through size, weight and spacing rather than fading these labels.
