@@ -1,5 +1,21 @@
 # components/action-builder — design notes
 
+## Inspector accessibility and canvas controls
+
+NodeInspector uses one stable React instance ID for its distinct Name and Config
+label/control pairs, so multiple builders cannot cross-label each other. Type is
+informational text. Selection tests edit through accessible names and retain
+values after changing selection; the inspector test checks multiple instances,
+native label focus and stable IDs across node changes.
+
+Canvas controls occupy a wrapping, nonshrinking row outside the ReactFlow
+viewport. Fit view, pan/zoom, hit-testing and screen-to-flow drop coordinates use
+only that viewport; toolbar height is reserved by flex layout rather than node
+offsets or refit effects. Selection/history callbacks and initialization remain
+unchanged. Real-browser proof must check first/middle/last selection, wrapping
+and magnification; jsdom cannot establish geometry or contrast. Shared button
+color/enable-state rules live in `../ui/AGENTS.md`.
+
 ## AI workflow interview
 
 `workflow-designer.tsx` is a tenant authoring assistant beside the existing canvas. It requests disclosure before consent and sends the entered brief, fact/scope choices and latest eight interview turns. All response wording and graph configurations are server-owned; the model selects closed category IDs only. The parent keys the builder by authenticated subject so account change discards interview and imported graph; async replies check mount liveness. Intake or scope changes invalidate the prior proposal; follow-up edits clear its review acknowledgment.
@@ -66,7 +82,7 @@ others. Rules of thumb when extending:
   `useActionGraphState` therefore takes `setSelectedNodeId` / `setSelectedEdgeId`,
   not the whole selection controller.
 - Panels take data + callbacks. `ActionFlowCanvas` and `InspectorPanel` accept
-  `children` for their overlay/footer so the root never re-creates their wrapper
+  `children` for their controls row/footer so the root never re-creates their wrapper
   markup.
 - New backend-mirroring rules belong in `dag-warnings.ts` (or a helper in
   `dag-analysis.ts`), never inside a hook — they must stay unit-testable without React.

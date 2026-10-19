@@ -6,7 +6,33 @@ description: Setup gates, exact local commands and recorded pass status.
 
 # UX study runbook
 
-## Current coordinator checkpoint — pass 03 closed, pass 04 prepared
+## Current coordinator checkpoint — UI05 fixes under collected verification
+
+The eight-file frontend correction received independent static acceptance. The one collected sweep passed typecheck, lint,316tests in56files, production build and production dependency audit. Lint retains117existing warnings; the all/development audit retains7high findings. Evidence is `.omc/research/ux05-frontend-collected-gates/`; no individual fix was tested first. Actual destructive contrast, first-enabled audit visibility and canvas geometry still need refreshed-image browser proof. The separately prepared06manual-editor journey uses no model request and must not be described as another AI interview/import. All three original gold tasks and four constrained journeys remain, and the completed05 model/import evidence is preserved.
+
+The exact key-free API backup was restored and the temporary credential-bearing container removed. The helper's final guard first refused CONFIGURATION because its plugin-library environment path was omitted; no container mutation was repeated. After supplying that path, a separate read-only check proved the exact restored identity, key absence and both local guards. Protected frontend/database/receiver/bridge process checks had passed before that final guard. The existing bridge remains4/4 exhausted and no more study model calls are planned for these presentation fixes. Production is still disabled/unconfigured, and no main push or Railway write has occurred.
+
+## Pass 05 — closed REVIEWED_RECORDED_FAILURE, import completed with defects
+
+On the guarded candidate67628a9c, all eight UI journeys completed plus one separate anonymous probe. The AI lane actually reviewed/acknowledged/imported9Emit planning checkpoints and8Control edges with one observed POST, without saving, publishing or running. The generic graph does not embed economic decisions or enforce payment/approval/settlement rules. Detailed decisions remain a separate brief; no legal/tax certification follows.
+
+All three navigation gold predicates passed and coverage remained12/57 (21.1%). Friction rose15/8=1.875, +25% over04, failing the10% tolerance. Three axe rule instances affect four elements: two unnamed inspector controls, Delete Node contrast3.34:1, and one unidentified audit-gold contrast node. The first-node toolbar click timeout was outside the attempt wrapper and is explicitly unscored. All raw failures remain intact.
+
+Four source-free panels and independent truthfulness review accepted the recorded failure. The separate coordinator diagnostic held/released the genuine audit GET and proved enabled controls fading through opacity0.5→1 with inadequate contrast; it does not substitute its two targets for the gold's unknown node. A collected source batch is authoring stable inspector labels, readable destructive text, transitions excluding opacity and reserved toolbar layout. No individual fix has been tested yet. Independent source review, one collected frontend sweep and refreshed-image browser proof are required.
+
+Bridge counter was4/4, remaining0, idle after05. This reservation is exhausted and no additional model calls are planned for the editor-only correction. The provider-free follow-up will retain the successful05 model/import evidence and exercise the corrected manual editor and enabled audit controls. Any later full interview repeat needs a separately stated bounded budget; no counter reset is permitted. Human validation remains proposed75slots, zero executed. Full E2E4/5, wider integration failures, Railway and owner drill remain separate open release gates. No two consecutive qualifying passes are established.
+
+## Pass 04 — closed REVIEWED_PARTIAL_EVIDENCE, release NOT_READY
+
+Candidate67628a9c API/frontend images were refreshed and their exact identities proved. Both local guards passed. Four constrained flows, three gold flows and the separate anonymous probe executed; all scripts exited0. The coordinator regenerated and read the rollup: raw9/UI8/probe1, seven completed/one PARTIAL, three gold successes, 12/57 routes (21.1%), friction12/8=1.50, zero settled axe violations, two HTTP and four console errors retained. The gold method preserves initial captures and awaits finite entrance animations before settled scans; historical03 contrast is untouched.
+
+Exactly one consented AI request used the planning-only scope and complete fictional brief. It truthfully withheld a graph and generated no statutory threshold/rate in this observed response. Two questions seek finer approval/settlement evidence and two repeat supplied categories. No graph review/import occurred. One-call limits prevent a second-turn conclusion. Four actual source-free panel artifacts, synthesis, ledger and verdict preserve these limits. Human validation remains proposed, with75 session slots and zero executed.
+
+Bridge health: accepted3/4, remaining1, idle. The final request is reserved exclusively for05; no retries, reset or additional instance. The temporary API remains server-key-enabled; exact key-free backupf59fbbb6 is retained and must be restored after studies. No provider key entered browser state or committed artifacts. Full hermetic E2E is4/5: signed Stripe settlement is blocked by missing verified genesis and existing simulated-chain capabilities. Wider integration backlog92 remains. No release-wide green, AI import success or formal two-pass completion is claimed.
+
+Independent review accepted the checked arithmetic, triage and limited navigation/research interpretation after final citation/human-plan corrections. The coordinator verified applicable command evidence and closes04 with AI PARTIAL and no two-pass completion claim. Pass05 may now be prepared. It will refine missing approval evidence/external settlement responsibilities, preserve every goal and record import only if actually offered. No app change is justified solely by a LOW panel hypothesis.
+
+## Previous coordinator checkpoint — pass 03 closed, pass 04 prepared
 
 Passes 01–03 are recorded failures. Pass 03 reached 12/57 routes, passed all three gold tasks and completed seven of eight UI journeys; the AI interview remained partial. Its confirmed tax-threshold error and false readiness/draft narrative are being corrected in a separate source batch. See the reviewed pass-03 synthesis, ledger and verdict. No two consecutive qualifying passes, human validation or release approval is claimed.
 

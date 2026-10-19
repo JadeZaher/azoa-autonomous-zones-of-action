@@ -57,7 +57,7 @@ function ToolbarIconButton({
   )
 }
 
-/** Floating canvas toolbar: preset loader, undo/redo, copy/paste, auto-layout, clear. */
+/** Reserved canvas controls row: preset loader, undo/redo, copy/paste, auto-layout, clear. */
 export function CanvasToolbar({
   nodeCount,
   onLoadPreset,
@@ -73,7 +73,7 @@ export function CanvasToolbar({
   canPaste,
 }: CanvasToolbarProps) {
   return (
-    <div className="absolute right-2 top-2 z-10 flex gap-1">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1 border-b bg-background p-2">
       <ToolbarIconButton label="Undo" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo}>
         <Undo2 />
       </ToolbarIconButton>

@@ -10,22 +10,24 @@ test('a hosted card payment settles the funding intent through the signed webhoo
   await signIn(page, tenant)
   await completeBusinessVerification(page, api, vendors)
   await api.assignIdentomat(tenant)
-  const payer = await api.registerPerson('payer')
+  const subject = `payer-${Date.now().toString(36)}`
+  const payer = await api.provisionMember(tenant, subject)
   const payerId = payer.userId
-  const payerToken = await api.personToken(payer)
-  await signIn(page, payer)
+  expect(await api.enrolMember(tenant, subject)).toBe(payerId)
 
-  // Funding is a value action: the payer clears identity verification first.
+  // Tenant checkout requires this tenant's current identity approval.
   await vendors.interceptIdentomatWidget(page.context(), async (sessionToken) => {
     const session = await vendors.identomatSessionByToken(sessionToken)
     await vendors.setIdentomatVerdict(session.id, 'approved')
     await api.postIdentomatCallback(session.id, 'APPROVED')
   })
-  const { verificationUrl } = await api.beginPersonalKyc(payerToken)
+  const { verificationUrl } = await api.beginMemberKyc(tenant, subject)
   await page.goto(verificationUrl)
   await page.getByRole('button', { name: 'Complete verification' }).click()
-  await expect.poll(() => api.personalKycStatus(payerToken), { timeout: 15_000 }).toBe('APPROVED')
+  await expect.poll(() => api.memberKycStatus(tenant, subject), { timeout: 15_000 }).toBe('Approved')
 
+  await api.claimMember(tenant, payer)
+  await signIn(page, payer)
   await page.goto('/settings')
   const permissions = page.getByRole('region', { name: 'Tenant permissions' })
   await permissions.getByLabel('Tenant ID for consent').fill(tenant.userId)

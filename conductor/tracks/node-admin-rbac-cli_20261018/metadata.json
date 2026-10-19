@@ -20,7 +20,7 @@
                    "P3":  "merged",
                    "P4":  "merged",
                    "P5":  "join+smoke done; live Railway drill pending owner root key",
-                   "fix_batch":  "source complete; independent review and integrated verification pending"
+                   "fix_batch":  "source reviewed; scoped core gates passed; UI05 accessibility correction in progress; main/Railway/owner drill pending"
                },
     "partitions":  {
                        "computed_at_commit":  "1e68d59d",

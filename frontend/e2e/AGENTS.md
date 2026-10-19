@@ -123,7 +123,7 @@ mocked inside the browser except the vendor's own page.
 |---|---|
 | `signup-and-identity-verification` | Register (UI) → operator issues tenant key → `/kyc` shows Identomat → member enrolled → hosted KYC (intercepted) → callback → member gate `Approved` |
 | `tenant-business-verification` | Sign in (UI) → `/business-verification` → start → hosted KYB in a popup → callback → refresh → "Business verified" |
-| `stripe-on-ramp` | Member KYC approved → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `payment_received`/`funds_applied` |
+| `stripe-on-ramp` | Same tenant member provisioned/enrolled → tenant KYC/AML approved → member claims account → owner signs in and grants fresh consent → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `payment_received`/`funds_applied` |
 | `webhook-registration` | Sign in (UI) → `/settings` → register `webhook-receiver.e2e.azoa.test` (pinned via compose `extra_hosts`, no DNS) → secret shown once → reload shows version 1 and no secret |
 
 There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
@@ -132,16 +132,43 @@ tenant API exactly as an integration would; the browser covers every screen that
 `completeBusinessVerification` reuses the hosted KYB journey before either
 custodial-member enrollment flow. The tenant owner completes the real UI and
 authoritative fake-vendor callback; a provider assignment alone grants no KYB
-approval. A later personal KYC interception deliberately registers the latest
+approval. A later member KYC interception deliberately registers the latest
 handler for the same hosted-widget route. The webhook secret assertion selects
 the exact textbox role/name: a broad label also matches the rotation checkbox.
 
-Stripe uses a separately registered first-party payer. That person completes
-personal KYC, then grants the verified tenant `transfer:sign` through Settings
-with a bounded expiry before the tenant key starts checkout. A custodial child
-credential cannot manufacture owner consent, and Participation does not include
-this value scope. The checkout, intent reads and signed settlement still use
-the original tenant flow.
+Stripe provisions and enrolls the same tenant member, asserting the canonical
+IDs match, then completes hosted KYC under that tenant's policy. The tenant status
+must be `Approved`, which also requires clear AML lineage. Node-direct personal
+KYC has different tenant provenance and cannot cover a tenant-key checkout.
+After approval, the real claim-invite and anonymous password-claim routes let
+that member take ownership. The fixture uses the server-returned synthetic email
+for normal UI login; no delegated credential stands in for owner authority.
+Claim revokes prior consent but preserves KYC/AML evidence, so the owner then
+grants fresh `transfer:sign` through Settings with a bounded expiry. Provisioned
+participation alone never includes this value scope. Checkout, intent reads and
+signed settlement retain the original tenant flow and financial assertions.
+
+### Current settlement limit — candidate 67628a9c
+
+The latest complete collection passed four journeys and failed Stripe settlement.
+The hermetic fake-vendor positive control and all three real-vendor negative
+controls passed. Stripe now clears tenant KYC/AML, real account claim, UI login,
+fresh owner consent, tenant checkout and the hosted payment. Its signed webhook
+returns 500 because no verified platform unit exists on Devnet; the unchanged
+200/202 delivery assertion correctly fails. Settlement and complete-intent
+success are not established.
+
+The existing simulated provider lacks both durable fungible creation and
+recipient preparation. Those gaps and the checked settlement gates already
+exist in upstream/main; no prior passing Stripe run is
+established. A genesis call or a fabricated active platform-token row cannot
+supply the required verified issuance lineage. Further real setup also requires
+an operator-declared on-ramp budget, exact tenant price and both current KYC
+contexts selected by the settlement/allocation path. The separate open
+[hermetic settlement follow-up](../../conductor/tracks/node-admin-rbac-cli_20261018/hermetic-stripe-settlement-followup.md)
+requires design review before capability or harness implementation. Preserve the
+positive payment assertions and report this known red independently of passing
+scoped node-admin checks.
 
 ## §writing-a-journey (round 4: NFT, DEX, Hold)
 

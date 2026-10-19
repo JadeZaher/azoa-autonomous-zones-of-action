@@ -41,26 +41,6 @@ export class AzoaApi {
     return { ...person, userId: registered.id }
   }
 
-  /** Authenticates the actual person's owner credential for first-party commands. */
-  async personToken(person: Person): Promise<string> {
-    return this.ok<string>(await this.request.post('/api/user/login', {
-      data: { email: person.email, password: person.password },
-    }))
-  }
-
-  async beginPersonalKyc(accessToken: string): Promise<{ verificationUrl: string }> {
-    return this.ok(await this.request.post('/api/kyc/session', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }))
-  }
-
-  async personalKycStatus(accessToken: string): Promise<string> {
-    const submission = await this.ok<{ status: string }>(await this.request.get('/api/kyc/status', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }))
-    return submission.status
-  }
-
   async operatorToken(): Promise<string> {
     if (this.operatorAccessToken) return this.operatorAccessToken
     const session = await this.ok<{ accessToken: string }>(
@@ -100,6 +80,32 @@ export class AzoaApi {
       await this.request.put(`/api/tenant/custodial-accounts/${subject}`, { headers: this.tenantHeaders(tenant, `enrol-${subject}`) }),
     )
     return account.userId
+  }
+
+  /** Provisions a claimable member using its server-returned identity and a future owner password. */
+  async provisionMember(tenant: Tenant, subject: string): Promise<Person> {
+    const member = await this.ok<{ userId: string; externalUserId: string; username: string; email: string }>(
+      await this.request.post('/api/tenant/users', {
+        headers: this.tenantHeaders(tenant), data: { externalUserId: subject },
+      }),
+    )
+    expect(member.externalUserId).toBe(subject)
+    expect(member.email).toBeTruthy()
+    return { userId: member.userId, username: member.username, email: member.email, password: `E2e-${randomUUID()}-Pass1` }
+  }
+
+  /** Claims that exact member through a real tenant invitation and user-chosen password. */
+  async claimMember(tenant: Tenant, member: Person): Promise<void> {
+    const invite = await this.ok<{ claimToken: string; targetUserId: string }>(
+      await this.request.post('/api/user/claim-invite', {
+        headers: this.tenantHeaders(tenant), data: { childUserId: member.userId },
+      }),
+    )
+    expect(invite.targetUserId).toBe(member.userId)
+    const claimed = await this.ok<{ userId: string }>(await this.request.post('/api/user/claim', {
+      data: { targetUserId: member.userId, claimToken: invite.claimToken, newPassword: member.password },
+    }))
+    expect(claimed.userId).toBe(member.userId)
   }
 
   async beginMemberKyc(tenant: Tenant, subject: string): Promise<{ verificationUrl: string }> {

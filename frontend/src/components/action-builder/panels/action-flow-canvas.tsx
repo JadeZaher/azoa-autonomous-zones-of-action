@@ -1,6 +1,5 @@
 'use client'
 
-import { useRef } from 'react'
 import {
   ReactFlow,
   Background,
@@ -33,11 +32,11 @@ interface ActionFlowCanvasProps {
   onClearSelection: () => void
   /** React Flow's native multi-select (click = single, Ctrl/Cmd+click = additive). */
   onSelectionChange: OnSelectionChangeFunc<Node<ActionNodeData>, Edge>
-  /** Overlay content rendered above the flow (the toolbar). */
+  /** Controls in a reserved row above the graph viewport. */
   children?: React.ReactNode
 }
 
-/** Center column: the React Flow surface, its empty state, and any overlay children. */
+/** Center column: a reserved controls row and the React Flow viewport. */
 export function ActionFlowCanvas({
   nodes,
   edges,
@@ -53,42 +52,41 @@ export function ActionFlowCanvas({
   onSelectionChange,
   children,
 }: ActionFlowCanvasProps) {
-  const wrapperRef = useRef<HTMLDivElement>(null)
-
   return (
-    <div ref={wrapperRef} className="relative flex-1 overflow-hidden rounded-md border">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onInit={onInit}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onNodeClick={(_, node) => onSelectNode(node.id)}
-        onEdgeClick={(_, edge) => onSelectEdge(edge.id)}
-        onPaneClick={onClearSelection}
-        onSelectionChange={onSelectionChange}
-        nodeTypes={nodeTypes}
-        fitView
-        proOptions={{ hideAttribution: true }}
-        deleteKeyCode={['Backspace', 'Delete']}
-      >
-        <Background gap={16} />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable className="!bg-muted" nodeStrokeWidth={2} />
-      </ReactFlow>
-
-      {nodes.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p className="text-sm text-muted-foreground">
-            Click or drag a node from the palette to begin.
-          </p>
-        </div>
-      )}
-
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border">
       {children}
+      <div className="relative min-h-0 min-w-0 flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onInit={onInit}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onNodeClick={(_, node) => onSelectNode(node.id)}
+          onEdgeClick={(_, edge) => onSelectEdge(edge.id)}
+          onPaneClick={onClearSelection}
+          onSelectionChange={onSelectionChange}
+          nodeTypes={nodeTypes}
+          fitView
+          proOptions={{ hideAttribution: true }}
+          deleteKeyCode={['Backspace', 'Delete']}
+        >
+          <Background gap={16} />
+          <Controls showInteractive={false} />
+          <MiniMap pannable zoomable className="!bg-muted" nodeStrokeWidth={2} />
+        </ReactFlow>
+
+        {nodes.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="text-sm text-muted-foreground">
+              Click or drag a node from the palette to begin.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

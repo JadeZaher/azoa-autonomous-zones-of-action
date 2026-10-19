@@ -8,7 +8,7 @@ Repeat the four original constrained journeys and all three gold tasks against t
 
 ## Prepared pass 04: corrected planning contract
 
-This pass is prepared but has not executed. Start only after the independently reviewed closed-catalog correction is built into refreshed local images, the coordinator proves the exact local target and both guards, and the provider bridge remains the same single instance. The source correction must not be called verified based on preparation.
+This scenario was prepared before execution. The coordinator subsequently proved refreshed candidate images and both guards; the existing bridge remained the same single process. Execution is now recorded in this pass's synthesis, ledger, metrics and verdict. The source correction is not deemed verified from preparation alone.
 
 The coordinator permits ONE actual synthetic interview request in pass 04 and ONE in pass 05, using the remaining two reservations of the existing four-request bridge budget. Prior pass03 spent two; the earlier three service diagnostics are separate. Retries consume the reservation and cannot exceed this limit. Provider credentials remain server-only.
 

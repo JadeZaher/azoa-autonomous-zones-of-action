@@ -1,0 +1,532 @@
+{
+ "pass": "04-release-readiness",
+ "frictionVersion": 1,
+ "generatedAt": "2026-10-19T03:44:02.984Z",
+ "runs": 9,
+ "uxRuns": 8,
+ "probeRuns": 1,
+ "coverage": {
+  "framework": "next-app",
+  "pageRoutes": 57,
+  "visited": 12,
+  "unvisited": [
+   "/operator/wallet-identities",
+   "/admin/fiat-reversals",
+   "/operator/deployments",
+   "/operator/parked-runs",
+   "/admin/fiat-payouts",
+   "/admin/key-rotation",
+   "/operator/reversals",
+   "/admin/parked-runs",
+   "/operator/exchange",
+   "/operator/actions",
+   "/operator/genesis",
+   "/operator/payouts",
+   "/operator/reviews",
+   "/operator/chains",
+   "/operator/money",
+   "/operator/sagas",
+   "/operator/fees",
+   "/admin/roles",
+   "/admin/sagas",
+   "/business-verification",
+   "/action-graph-bundle",
+   "/node-transparency",
+   "/linked-accounts",
+   "/payout-balance",
+   "/fungible-mint",
+   "/architecture",
+   "/holon-query",
+   "/blockchain",
+   "/federation",
+   "/analytics",
+   "/user-nfts",
+   "/callback",
+   "/register",
+   "/api-keys",
+   "/cash-out",
+   "/bridge",
+   "/holons",
+   "/search",
+   "/funds",
+   "/holds",
+   "/tests",
+   "/users",
+   "/nfts",
+   "/swap",
+   "/kyc"
+  ],
+  "unmatchedPaths": [],
+  "api": {
+   "declared": 3,
+   "hit": 2,
+   "unhit": [
+    "/api/health"
+   ],
+   "observedOps": {
+    "GET /api/operator/session": 4,
+    "GET /api/operator/overview": 2,
+    "GET /api/operator/kyc/audit": 2,
+    "GET /api/operator/kyc/providers": 2,
+    "GET /api/operator/tenants": 1,
+    "GET /api/operator/hosted-sessions/reconciliation": 1
+   }
+  }
+ },
+ "outcomes": {
+  "PARTIAL": 1,
+  "COMPLETED": 7
+ },
+ "totals": {
+  "clicks": 26,
+  "deadClicks": 0,
+  "rageClicks": 0,
+  "workarounds": 0,
+  "httpErrors": 2,
+  "consoleErrors": 4,
+  "failedAttempts": 0,
+  "axeViolations": 0,
+  "friction": 12
+ },
+ "frictionPerJourney": 1.5,
+ "heatmap": [
+  {
+   "route": "/operator/audit",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 4,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 2,
+   "friction": 8
+  },
+  {
+   "route": "/verify-identity",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 2,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 0,
+   "friction": 4
+  },
+  {
+   "route": "/login",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 2,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 1,
+   "friction": 4
+  },
+  {
+   "route": "/",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 3,
+   "friction": 0
+  },
+  {
+   "route": "/overview",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 2,
+   "friction": 0
+  },
+  {
+   "route": "/operator/login",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 1,
+   "friction": 0
+  },
+  {
+   "route": "/operator",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 0,
+   "revisits": 2,
+   "friction": 0
+  }
+ ],
+ "tasks": [
+  {
+   "persona": "qa-uxqa-ai-tenant",
+   "task": "tenant-economic-workflow-interview",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-ai-tenant--tenant-economic-workflow-interview",
+   "outcome": "PARTIAL",
+   "seconds": 88,
+   "clicks": 9,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 12,
+   "validationErrors": 0,
+   "pageViews": 4,
+   "distinctPages": 3,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 0,
+   "friction": 0
+  },
+  {
+   "persona": "qa-uxqa-gold-member",
+   "task": "gold-member-settings",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-gold-member--gold-member-settings",
+   "outcome": "COMPLETED",
+   "seconds": 3,
+   "clicks": 1,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 3,
+   "distinctPages": 2,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 0,
+   "friction": 0
+  },
+  {
+   "persona": "qa-uxqa-keyboard",
+   "task": "keyboard-account-replay",
+   "mode": "ui-only",
+   "constraints": [
+    "keyboard"
+   ],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-keyboard--keyboard-account-replay",
+   "outcome": "COMPLETED",
+   "seconds": 10,
+   "clicks": 4,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 6,
+   "distinctPages": 5,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 1,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 0,
+   "friction": 2
+  },
+  {
+   "persona": "qa-uxqa-mobile",
+   "task": "gold-operator-recovery",
+   "mode": "ui-only",
+   "constraints": [
+    "mobile"
+   ],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-mobile--gold-operator-recovery",
+   "outcome": "COMPLETED",
+   "seconds": 3,
+   "clicks": 0,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 3,
+   "distinctPages": 2,
+   "revisits": 1,
+   "httpErrors": 1,
+   "consoleErrors": 1,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 1,
+   "friction": 4
+  },
+  {
+   "persona": "qa-uxqa-mobile",
+   "task": "mobile-comprehension-corrected-replay",
+   "mode": "ui-only",
+   "constraints": [
+    "mobile"
+   ],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-mobile--mobile-comprehension-corrected-replay",
+   "outcome": "COMPLETED",
+   "seconds": 4,
+   "clicks": 2,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 7,
+   "distinctPages": 4,
+   "revisits": 3,
+   "httpErrors": 1,
+   "consoleErrors": 1,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 1,
+   "friction": 4
+  },
+  {
+   "persona": "qa-uxqa-operator",
+   "task": "gold-operator-audit",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-operator--gold-operator-audit",
+   "outcome": "COMPLETED",
+   "seconds": 4,
+   "clicks": 1,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 3,
+   "distinctPages": 2,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 3,
+   "friction": 0
+  },
+  {
+   "persona": "qa-uxqa-operator",
+   "task": "operator-readiness",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-operator--operator-readiness",
+   "outcome": "COMPLETED",
+   "seconds": 10,
+   "clicks": 3,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 5,
+   "distinctPages": 4,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 7,
+   "friction": 0
+  },
+  {
+   "persona": "qa-uxqa-probe",
+   "task": "anonymous-node-admin-probe",
+   "mode": "probe",
+   "constraints": [],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-probe--anonymous-node-admin-probe",
+   "outcome": "COMPLETED",
+   "seconds": 3,
+   "clicks": 0,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 2,
+   "distinctPages": 1,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 2,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 0,
+   "friction": 4
+  },
+  {
+   "persona": "qa-uxqa-zoom",
+   "task": "zoom-slow-account",
+   "mode": "ui-only",
+   "constraints": [
+    "zoom200",
+    "slow"
+   ],
+   "runDir": "passes\\04-release-readiness\\runs\\qa-uxqa-zoom--zoom-slow-account",
+   "outcome": "COMPLETED",
+   "seconds": 17,
+   "clicks": 6,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 5,
+   "distinctPages": 4,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 1,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 0,
+   "friction": 2
+  }
+ ],
+ "axeRules": [],
+ "goldTrend": {
+  "gold-member-settings": {
+   "01-release-readiness": {
+    "runs": 1,
+    "successRate": 0,
+    "medianClicks": 1,
+    "medianSeconds": 4,
+    "medianFriction": 1
+   },
+   "02-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 3,
+    "medianFriction": 1
+   },
+   "03-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 2,
+    "medianFriction": 1
+   },
+   "04-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 3,
+    "medianFriction": 0
+   }
+  },
+  "gold-operator-recovery": {
+   "01-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 0,
+    "medianSeconds": 3,
+    "medianFriction": 5
+   },
+   "02-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 0,
+    "medianSeconds": 2,
+    "medianFriction": 4
+   },
+   "03-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 0,
+    "medianSeconds": 2,
+    "medianFriction": 4
+   },
+   "04-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 0,
+    "medianSeconds": 3,
+    "medianFriction": 4
+   }
+  },
+  "gold-operator-audit": {
+   "01-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 3,
+    "medianFriction": 1
+   },
+   "02-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 3,
+    "medianFriction": 0
+   },
+   "03-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 3,
+    "medianFriction": 1
+   },
+   "04-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 4,
+    "medianFriction": 0
+   }
+  }
+ },
+ "frictionByPass": {
+  "00-setup": 1,
+  "01-release-readiness": 9.25,
+  "02-release-readiness": 2.4285714285714284,
+  "03-release-readiness": 1.75,
+  "04-release-readiness": 1.5
+ },
+ "exitChecks": {
+  "goldSuccess": {
+   "target": 0.8,
+   "missing": [],
+   "below": [],
+   "ok": true
+  },
+  "frictionTrend": {
+   "previousPass": "03-release-readiness",
+   "previous": 1.75,
+   "current": 1.5,
+   "tolerance": 0.1,
+   "ok": true
+  },
+  "newHigh": {
+   "target": 0,
+   "count": null,
+   "ok": null
+  },
+  "routeCoverage": {
+   "target": 0.2,
+   "ratio": 0.21052631578947367,
+   "ok": true
+  }
+ }
+}
