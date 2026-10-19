@@ -1,5 +1,12 @@
 # AZOA.WebAPI.IntegrationTests — module notes
 
+All four independent `WebApplicationFactory<Program>` roots explicitly set
+`OpenTelemetry:ExportEnabled=false` before host registration. Their derived HTTP
+flow and Development composition factories inherit it. Trace and metric providers,
+instrumentation and correlation remain active; only remote OTLP processors/readers
+are absent, so fixture disposal does not wait on an external collector. See
+`Observability/AGENTS.md` for the pinned SDK contract and default-enabled behavior.
+
 ## §factory-bootstrap-order — create isolation before host startup
 
 `WebApplicationFactory.CreateClient()` starts application hosted services. Test

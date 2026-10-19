@@ -50,6 +50,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
+        builder.UseSetting("OpenTelemetry:ExportEnabled", "false");
 
         // ── Surreal connection settings must land in HOST configuration ──────
         // SurrealForge 1.0.0's AddSurrealForgeSdk takes a concrete options
@@ -80,6 +81,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Key"]      = "super-secret-test-key-that-is-long-enough!",
                 ["Jwt:Issuer"]   = "test",
                 ["Jwt:Audience"] = "test",
+                ["OpenTelemetry:ExportEnabled"] = "false",
 
                 // Keep the AZOA provider key so Program.cs provider-selection code
                 // (if any) doesn't throw on missing config.

@@ -34,6 +34,7 @@ public class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
+        builder.UseSetting("OpenTelemetry:ExportEnabled", "false");
         foreach (var (key, value) in new Dictionary<string, string>
         {
             ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,

@@ -415,6 +415,7 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
+        builder.UseSetting("OpenTelemetry:ExportEnabled", "false");
 
         // Surreal settings go into HOST configuration: Program.cs binds the
         // section eagerly (AddSurrealForgeSdk needs the endpoint at
