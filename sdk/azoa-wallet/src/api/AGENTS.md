@@ -1,5 +1,7 @@
 # API contracts
 
+The workflow-designer interview route omits its entire brief/history from SDK debug logging. Its default client deadline is 95 seconds so the API's bounded 90-second model call can return a typed timeout; an explicitly configured SDK timeout remains authoritative. No designer request saves, publishes, starts a run, or moves funds.
+
 NFT lifecycle methods return durable operation views, including HTTP 202 pending
 states. Completed alone establishes confirmed chain completion. Request keys are
 required for mint/transfer/burn/issue/refund; reuse the same key and body after an

@@ -1,6 +1,8 @@
 'use client'
 
 import { ReactFlowProvider } from '@xyflow/react'
+import { useEffect } from 'react'
+import type { ActionPreset } from './presets'
 import { useActionSelection } from './hooks/use-action-selection'
 import { useActionGraphState } from './hooks/use-action-graph-state'
 import { useNodePalette } from './hooks/use-node-palette'
@@ -22,6 +24,7 @@ export type { NodeTemplateMeta } from './node-palette'
 export type { BuiltGraph } from './graph-serialization'
 
 interface ActionCanvasProps {
+  initialPreset?: ActionPreset
   nodeTemplates: NodeTemplateMeta[]
   /** Called with serialized graph when the user clicks the submit button. */
   onSubmit: (graph: BuiltGraph) => void
@@ -29,13 +32,19 @@ interface ActionCanvasProps {
   submitLabel?: string
 }
 
-function ActionCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = 'Create Action' }: ActionCanvasProps) {
+function ActionCanvasInner({ nodeTemplates, onSubmit, submitting, submitLabel = 'Create Action', initialPreset }: ActionCanvasProps) {
   const selection = useActionSelection()
   const graph = useActionGraphState({
     setSelectedNodeId: selection.setSelectedNodeId,
     setSelectedEdgeId: selection.setSelectedEdgeId,
   })
   const palette = useNodePalette(nodeTemplates)
+  const { loadPreset } = graph
+  useEffect(() => {
+    let current = true
+    if (initialPreset) void Promise.resolve().then(() => { if (current) loadPreset(initialPreset) })
+    return () => { current = false }
+  }, [initialPreset, loadPreset])
   const dragAndDrop = usePaletteDragAndDrop({ palette: palette.entries, addNode: graph.addNode })
   const validation = useDagValidation({ nodes: graph.nodes, edges: graph.edges })
   // NOTE: `.selected` is deliberately NOT rewritten on the way into <ReactFlow>.

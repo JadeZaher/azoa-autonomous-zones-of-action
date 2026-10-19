@@ -1,5 +1,11 @@
 # components/action-builder — design notes
 
+## AI workflow interview
+
+`workflow-designer.tsx` is a tenant authoring assistant beside the existing canvas. It requests the server's provider disclosure before consent and sends only the explicitly entered brief and latest eight interview turns. Model prose is rendered as text. The parent keys the entire builder by authenticated subject so an account change discards both interview and imported graph; asynchronous replies check mount liveness before updating. Intake changes invalidate the prior proposed graph; follow-up edits clear its human-review acknowledgment.
+
+The assistant receives a server-validated, private draft using economic/control node contracts. Import requires a separate review acknowledgment and replaces the current canvas via `initialPreset`; it never invokes action save, publish, run or money APIs. The initial preset is memoized by the parent and applied through a cleanup-guarded microtask so StrictMode cannot double-load a discarded mount. The ordinary editable canvas and authoring validation remain the final save path. The UI discloses provider egress, forbids submission of signing material/personal records and labels official IRS/FinCEN/SEC references as US-only examples requiring jurisdiction-specific professional review. Server controls live in `Services/Actions/Designer/AGENTS.md`.
+
 The Action DAG authoring surface: a React Flow canvas with a node palette on the
 left and an inspector on the right, plus the read-only run views that reuse the
 same node card. `action-canvas.tsx` is a composition root only — every piece of
