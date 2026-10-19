@@ -765,6 +765,15 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    // Bounded model egress shared by every credential of one tenant owner.
+    options.AddPolicy("workflow-designer", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerPolicy.BudgetPartition(httpContext.User), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = Math.Clamp(builder.Configuration.GetValue("WorkflowDesigner:RequestsPerHour", 12), 1, 60),
+            Window = TimeSpan.FromHours(1),
+            QueueLimit = 0
+        }));
+
     // Strict named policy for irreversible / value-moving endpoints.
     options.AddPolicy("financial", httpContext =>
     {
@@ -1389,6 +1398,12 @@ builder.Services.AddScoped<INftManager, NftManager>();
 builder.Services.AddScoped<ISearchManager, SearchManager>();
 builder.Services.AddScoped<IUserNFTService, UserNFTService>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.ActionConfigBindingResolver>();
+builder.Services.Configure<AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerOptions>(builder.Configuration.GetSection("WorkflowDesigner"));
+builder.Services.AddHttpClient(AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerOptions.ClientName, client =>
+    client.Timeout = TimeSpan.FromSeconds(90))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IWorkflowDesignerModel, AZOA.WebAPI.Services.Actions.Designer.OpenRouterWorkflowDesignerModel>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerService>();
 builder.Services.AddScoped<ActionManager>();
 builder.Services.AddScoped<IActionManager>(sp => sp.GetRequiredService<ActionManager>());
 // Deferred per-call resolution: a factory over ActionManager here deadlocks host start (see Managers/AGENTS.md §DeferredFrozenActionRuntime).

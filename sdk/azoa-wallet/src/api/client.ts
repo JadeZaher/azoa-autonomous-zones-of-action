@@ -4556,7 +4556,7 @@ export class AzoaApiClient {
     if (!this.config.debug) return;
     this.logger.debug(
       `[azoa-sdk] → ${method} ${path}`,
-      body !== undefined ? redactSecrets(body) : ""
+      body !== undefined ? (isWorkflowDesignerInterview(path) ? "«private AI interview omitted»" : redactSecrets(body)) : ""
     );
   }
 
@@ -4606,7 +4606,7 @@ export class AzoaApiClient {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 30000);
+    const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs ?? (isWorkflowDesignerInterview(path) ? 95000 : 30000));
 
     try {
       return await fetch(`${this.config.baseUrl}${path}`, {
@@ -4643,6 +4643,10 @@ export class AzoaApiClient {
     }
     return this.fail(new SdkError(SdkErrorCode.NETWORK_ERROR, `${method} ${path}: network request failed`, { method, path, cause: e as Error }));
   }
+}
+
+function isWorkflowDesignerInterview(path: string): boolean {
+  return (path.split(/[?#]/, 1)[0] ?? "").replace(/\/+$/, "").toLowerCase() === "/api/action-designer/interview";
 }
 
 /** Routes that exchange credentials for a session: a 401 there is a refusal, never an expired session. */

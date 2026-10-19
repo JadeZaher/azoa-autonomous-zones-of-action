@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,8 @@ import { DagFlow } from '@/components/action-builder/dag-flow'
 import { ActionCanvas, type BuiltGraph, type NodeTemplateMeta } from '@/components/action-builder/action-canvas'
 import { NodeTemplateCreator } from '@/components/action-builder/node-template-creator'
 import { RunPanel } from '@/components/action-builder/run-panel'
+import { WorkflowDesigner } from '@/components/action-builder/workflow-designer'
+import { designerDraftPreset, type DesignerDraft } from '@/components/action-builder/workflow-designer-types'
 import { OwnerAccessControls } from '@/components/action-access/owner-access-controls'
 import { MarketplaceAccessAction } from '@/components/action-access/marketplace-access-action'
 import { MyRequestsPanel } from '@/components/action-access/my-requests-panel'
@@ -375,7 +377,20 @@ function authoringRefusal(error: { message: string; status?: number }): string {
 // ─── Action Builder (visual) ───
 
 function ActionBuilder({ onCreated }: { onCreated: () => void }) {
+  const { userId } = useAzoa()
   const { templates, reload } = useNodeTemplates()
+  const [aiDraft, setAiDraft] = useState<DesignerDraft | null>(null)
+  const [draftRevision, setDraftRevision] = useState(0)
+  const importedPreset = useMemo(() => aiDraft ? designerDraftPreset(aiDraft) : undefined, [aiDraft])
+  const importDraft = (draft: DesignerDraft) => {
+    setName(draft.name)
+    setDescription(draft.description ?? '')
+    setIsPublic(false)
+    setAiDraft(draft)
+    setDraftRevision(value => value + 1)
+    setResult(null)
+    setError(null)
+  }
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [isPublic, setIsPublic] = useState(false)
@@ -440,7 +455,8 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
         Publish to marketplace (other users can start this action once it's Active)
       </label>
 
-      <ActionCanvas nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create Action" />
+      <WorkflowDesigner key={userId ?? 'anonymous'} onImport={importDraft} />
+      <ActionCanvas key={`${userId}:${draftRevision}`} initialPreset={importedPreset} nodeTemplates={templates} onSubmit={handleSubmit} submitting={submitting} submitLabel="Create Action" />
 
       {error ? <ErrorBanner message={error} /> : null}
       {result !== null && result !== undefined && <ResultDisplay result={result} />}
@@ -883,6 +899,7 @@ function StartPublicAction() {
 // ─── Main Page ───
 
 export default function ActionsPage() {
+  const { userId } = useAzoa()
   const [refreshKey, setRefreshKey] = useState(0)
   const [tab, setTab] = useState('actions')
 
@@ -935,7 +952,7 @@ export default function ActionsPage() {
       <div>
         {tab === 'actions' && createdNotice && <p role="status" className="text-sm">{createdNotice}</p>}
         {tab === 'actions' && <ActionList key={refreshKey} />}
-        {tab === 'create' && <ActionBuilder onCreated={onActionCreated} />}
+        {tab === 'create' && <ActionBuilder key={userId ?? 'anonymous'} onCreated={onActionCreated} />}
         {tab === 'start-public' && <StartPublicAction />}
         {tab === 'my-requests' && <MyRequestsPanel />}
         {tab === 'templates' && <ActionTemplates />}
