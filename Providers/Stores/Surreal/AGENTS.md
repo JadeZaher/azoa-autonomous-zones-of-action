@@ -1126,3 +1126,22 @@ the captured variable; `$token` is a protected SurrealDB variable and fails befo
 the lookup executes. Keep the method's public `token` parameter while using the
 non-reserved local capture. The real-DB wallet authentication fixture checks exact
 matching between two invites and a miss without weakening invite consumption.
+
+## hosted-identity-binding-parameters
+
+`SurrealKycIdentityStore.BindVerifiedUserAsync` retains one atomic transaction
+for evidence serialization, the exact hosted lease, active-attempt authority and
+person membership. Its attempt parameters use `_attempt_*`; identity mutation
+parameters use `_binding_*`, disjoint from the shared evidence and lease guards.
+SurrealForge Client 1.3.0's `SurrealQuery.Combine` XML contract merges parameter
+dictionaries with last-write-wins semantics. The attempt's provider key
+(`identomat`) must therefore never share a parameter with the persisted provider
+enum (`IDENTOMAT`). The tenant parameters are distinct even when their values
+currently agree. All existing lease, expiry, subject, tenant, selection, trust and
+membership predicates remain enforced.
+
+Optional identity fields use `$parameter ?? NONE` in the atomic mutation to
+translate nullable CBOR parameters into absent SCHEMAFULL option values. Required
+identity/provenance fields retain their required types. The real-DB binding
+fixture covers node-direct and tenant-scoped success with null personal fields,
+and changed lease/provider/selection/trust authority with transaction rollback.

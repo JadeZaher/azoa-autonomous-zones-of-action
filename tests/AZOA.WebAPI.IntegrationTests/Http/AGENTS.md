@@ -145,3 +145,9 @@ below its budget, retaining lifetime attempts. Otherwise an exhausted dead-lette
 row correctly classifies as `AttemptBudgetExhausted` before the expired-lease case.
 The first-party KYC dead-attempt arrangements match the session's observed state
 and state version, or a pending/in-review submission, through guarded typed writers.
+
+First-party approval failures attach only the same attempt's hosted state,
+authoritative outcome, outcome detail and available application error code.
+Diagnostic reads run only after the observed assertion value is wrong; they never
+include provider bodies, person/document attributes, session tokens or identifiers.
+Expected approval and value-access assertions remain unchanged.

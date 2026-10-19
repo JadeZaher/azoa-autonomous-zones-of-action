@@ -33,3 +33,13 @@ namespace. A later refused mutation must roll back the earlier role mutation and
 directory epoch; concurrent claims at the same epoch produce exactly one winner;
 a duplicate role create returns the typed duplicate outcome and cannot overwrite
 the winner. These are the named store-family inventory witnesses.
+
+## hosted-identity-provider-binding
+
+`SurrealKycIdentityStoreTests` binds a pending attempt under its exact live hosted
+lease, through the real CBOR transport and generated schemas. Both direct and
+tenant-scoped cases retain a lowercase provider key and uppercase enum, with null
+optional personal fields and retention. Separate negative cases change the lease
+token, provider key, selection version or trust revision and require a typed
+conflict with no identity or evidence-guard partial write. This guards combined
+query parameter collisions without removing any authority predicate.

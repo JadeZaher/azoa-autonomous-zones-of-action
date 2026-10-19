@@ -64,27 +64,27 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
             || candidate.UserIds?.Count != 1 || candidate.UserIds[0] != expected.UserId
             || candidate.TenantId != expected.TenantId || candidate.ProviderKey != expected.ProviderKey)
             return AZOAResult<KycIdentity>.FailureWithCode("The verified attempt changed.", AzoaErrorCodes.Conflict);
-        // raw: atomic lease + active-attempt fencing + identity membership; see AGENTS.md.
+        // raw: atomic lease + active-attempt fencing + identity membership; see AGENTS.md §hosted-identity-binding-parameters.
         var fence = HostedSessionLeaseFence.CreateGuard(lease);
         var attempt = SurrealQuery.Of("""
             LET $_attempt = (UPDATE type::record($_attempt_table, $_attempt_id)
                 SET provider_trust_revision = provider_trust_revision
-                WHERE user_id = $_user AND provider_key = $_provider AND provider_session_id = $_session
-                    AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE))
-                    AND status = $_status AND expires_at > time::now()
-                    AND provider_selection_version = $_selection AND provider_trust_revision = $_trust
+                WHERE user_id = $_attempt_user AND provider_key = $_attempt_provider_key AND provider_session_id = $_attempt_session
+                    AND (($_attempt_has_tenant AND tenant_id = $_attempt_tenant) OR (!$_attempt_has_tenant AND tenant_id = NONE))
+                    AND status = $_attempt_status AND expires_at > time::now()
+                    AND provider_selection_version = $_attempt_selection AND provider_trust_revision = $_attempt_trust
                 RETURN AFTER)
             """)
             .WithParam("_attempt_table", KycSubmission.SchemaNameConst)
             .WithParam("_attempt_id", expected.Id)
-            .WithParam("_user", SurrealRecordParam.Of("user", expected.UserId))
-            .WithParam("_provider", expected.ProviderKey)
-            .WithParam("_session", lease.Id)
-            .WithParam("_has_tenant", expected.TenantId is not null)
-            .WithParam("_tenant", SurrealRecordParam.Of("user", expected.TenantId))
-            .WithParam("_status", expected.Status.ToString())
-            .WithParam("_selection", expected.ProviderSelectionVersion)
-            .WithParam("_trust", expected.ProviderTrustRevision);
+            .WithParam("_attempt_user", SurrealRecordParam.Of("user", expected.UserId))
+            .WithParam("_attempt_provider_key", expected.ProviderKey)
+            .WithParam("_attempt_session", lease.Id)
+            .WithParam("_attempt_has_tenant", expected.TenantId is not null)
+            .WithParam("_attempt_tenant", SurrealRecordParam.Of("user", expected.TenantId))
+            .WithParam("_attempt_status", expected.Status.ToString())
+            .WithParam("_attempt_selection", expected.ProviderSelectionVersion)
+            .WithParam("_attempt_trust", expected.ProviderTrustRevision);
         var transaction = SurrealQuery.Combine(
             SurrealQuery.Of("BEGIN"), KycEvidenceFence.Create(expected.UserId, expected.TenantId), fence,
             HostedSessionLeaseFence.AssertCurrent(),
@@ -113,47 +113,47 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
         var newUser = candidate.UserIds?.FirstOrDefault();
         return SurrealQuery
             .Of("""
-                UPSERT type::record($_t, $_id)
-                SET tenant_scope = $_scope,
-                    tenant_id = $_tenant,
-                    person_key = $_person_key,
-                    global_person_key = $_global_person_key,
-                    person_key_version = $_key_version,
+                UPSERT type::record($_binding_table, $_binding_id)
+                SET tenant_scope = $_binding_scope,
+                    tenant_id = $_binding_tenant ?? NONE,
+                    person_key = $_binding_person_key,
+                    global_person_key = $_binding_global_person_key,
+                    person_key_version = $_binding_key_version,
                     user_ids = IF (user_ids = NONE
                             OR array::len(user_ids) = 0
-                            OR $_new_user INSIDE user_ids)
-                        THEN array::distinct(array::concat(user_ids OR [], $_new_users))
+                            OR $_binding_new_user INSIDE user_ids)
+                        THEN array::distinct(array::concat(user_ids OR [], $_binding_new_users))
                         ELSE user_ids END,
-                    first_name = $_first_name,
-                    last_name = $_last_name,
-                    birthday = $_birthday,
-                    citizenship = $_citizenship,
-                    provider = $_provider,
-                    provider_key = $_provider_key,
-                    retention_expires_at = $_retention_expires_at,
-                    modified_date = $_now
-                WHERE user_ids = NONE OR array::len(user_ids) = 0 OR $_new_user INSIDE user_ids
+                    first_name = $_binding_first_name ?? NONE,
+                    last_name = $_binding_last_name ?? NONE,
+                    birthday = $_binding_birthday ?? NONE,
+                    citizenship = $_binding_citizenship ?? NONE,
+                    provider = $_binding_provider_enum,
+                    provider_key = $_binding_provider_key,
+                    retention_expires_at = $_binding_retention_expires_at ?? NONE,
+                    modified_date = $_binding_now
+                WHERE user_ids = NONE OR array::len(user_ids) = 0 OR $_binding_new_user INSIDE user_ids
                 RETURN AFTER
                 """)
-            .WithParam("_t", KycIdentity.SchemaNameConst)
-            .WithParam("_id", body.Id)
-            .WithParam("_scope", body.TenantScope)
-            .WithParam("_tenant", SurrealRecordParam.Of("user", candidate.TenantId))
-            .WithParam("_person_key", body.PersonKey)
-            .WithParam("_global_person_key", body.GlobalPersonKey)
-            .WithParam("_key_version", body.PersonKeyVersion)
-            .WithParam("_new_user", newUser)
-            .WithParam("_new_users", string.IsNullOrWhiteSpace(newUser)
+            .WithParam("_binding_table", KycIdentity.SchemaNameConst)
+            .WithParam("_binding_id", body.Id)
+            .WithParam("_binding_scope", body.TenantScope)
+            .WithParam("_binding_tenant", SurrealRecordParam.Of("user", candidate.TenantId))
+            .WithParam("_binding_person_key", body.PersonKey)
+            .WithParam("_binding_global_person_key", body.GlobalPersonKey)
+            .WithParam("_binding_key_version", body.PersonKeyVersion)
+            .WithParam("_binding_new_user", newUser)
+            .WithParam("_binding_new_users", string.IsNullOrWhiteSpace(newUser)
                 ? Array.Empty<string>()
                 : new[] { newUser! })
-            .WithParam("_first_name", body.FirstName)
-            .WithParam("_last_name", body.LastName)
-            .WithParam("_birthday", body.Birthday)
-            .WithParam("_citizenship", body.Citizenship)
-            .WithParam("_provider", body.Provider.ToString())
-            .WithParam("_provider_key", body.ProviderKey)
-            .WithParam("_retention_expires_at", body.RetentionExpiresAt)
-            .WithParam("_now", body.ModifiedDate ?? DateTimeOffset.UtcNow);
+            .WithParam("_binding_first_name", body.FirstName)
+            .WithParam("_binding_last_name", body.LastName)
+            .WithParam("_binding_birthday", body.Birthday)
+            .WithParam("_binding_citizenship", body.Citizenship)
+            .WithParam("_binding_provider_enum", body.Provider.ToString())
+            .WithParam("_binding_provider_key", body.ProviderKey)
+            .WithParam("_binding_retention_expires_at", body.RetentionExpiresAt)
+            .WithParam("_binding_now", body.ModifiedDate ?? DateTimeOffset.UtcNow);
     }
 
     /// <inheritdoc/>
