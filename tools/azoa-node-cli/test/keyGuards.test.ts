@@ -47,4 +47,12 @@ describe("guardKeyOverwrite (H3: refuse to clobber an existing key file)", () =>
       guardKeyOverwrite("existing-root", "root", true, new FakeInputSource({ visibles: ["existing-root"] })),
     ).resolves.toBeUndefined();
   });
+
+  it("requires root confirmation even when the replacement kind is admin", async () => {
+    await writeKeyFile("root-to-admin", generateEd25519KeyPair(), "root", "whatever-passphrase");
+    await expect(guardKeyOverwrite("root-to-admin", "admin", true, new FakeInputSource({ visibles: ["wrong"] })))
+      .rejects.toThrow(/did not match/);
+    await expect(guardKeyOverwrite("root-to-admin", "admin", true, new FakeInputSource({ visibles: ["root-to-admin"] })))
+      .resolves.toBeUndefined();
+  });
 });

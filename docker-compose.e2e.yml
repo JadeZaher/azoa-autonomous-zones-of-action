@@ -51,7 +51,8 @@ services:
       default: {}
       e2e_webhooks: {}
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:${AZOA_E2E_HOST_GATEWAY:-host-gateway}"
+      - "host.containers.internal:${AZOA_E2E_HOST_GATEWAY:-host-gateway}"
       - "webhook-receiver.e2e.azoa.test:198.51.99.10"
     environment:
       SurrealRuntime__Endpoint: "http://surrealdb:8000"
@@ -85,8 +86,8 @@ services:
       NodeOperator__SessionMinutes: "20"
 
       Kyc__Provider: "identomat"
-      Kyc__Identomat__BeginBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_IDENTOMAT_PORT:-9443}"
-      Kyc__Identomat__ResultBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_IDENTOMAT_PORT:-9443}"
+      Kyc__Identomat__BeginBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_IDENTOMAT_UPSTREAM_PORT:-9443}"
+      Kyc__Identomat__ResultBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_IDENTOMAT_UPSTREAM_PORT:-9443}"
       Kyc__Identomat__CompanyKey: "${AZOA_E2E_IDENTOMAT_COMPANY_KEY:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
       Kyc__Identomat__ConfigId: "${AZOA_E2E_IDENTOMAT_KYC_CONFIG:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
       Kyc__Identomat__CallbackApiKey: "${AZOA_E2E_IDENTOMAT_CALLBACK_KEY:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
@@ -102,7 +103,7 @@ services:
       Kyb__ReturnUrl: "https://app.e2e.azoa.test/business-verification"
 
       Fiat__Environment: "test"
-      Fiat__ApiBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_STRIPE_PORT:-9444}"
+      Fiat__ApiBaseUrl: "https://${AZOA_E2E_VENDOR_HOST:-host.docker.internal}:${AZOA_E2E_STRIPE_UPSTREAM_PORT:-9444}"
       Fiat__Test__SecretKey: "${AZOA_E2E_STRIPE_SECRET_KEY:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
       Fiat__Test__WebhookSecret: "${AZOA_E2E_STRIPE_WEBHOOK_SECRET:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
       Fiat__Checkout__AllowedReturnOrigins__0: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}"
@@ -157,12 +158,14 @@ services:
     environment:
       # Read per request (src/lib/runtime-config.ts): the browser calls the API's host port.
       API_URL: "http://localhost:${AZOA_E2E_API_PORT:-5200}"
+      INTERNAL_API_URL: "http://azoa-api:5000"
       AZOA_ALLOW_INSECURE_LOCAL_API: "true"
       NODE_ENV: "production"
     ports:
       - "${AZOA_E2E_FRONTEND_PORT:-3200}:3000"
 
 networks:
+  default: {}
   # Public-range on purpose (the SSRF guard refuses private and TEST-NET ranges); `internal` gives the
   # bridge no outbound route, so a delivery to 198.51.99.10 can only reach the receiver (RV-L1-07).
   e2e_webhooks:

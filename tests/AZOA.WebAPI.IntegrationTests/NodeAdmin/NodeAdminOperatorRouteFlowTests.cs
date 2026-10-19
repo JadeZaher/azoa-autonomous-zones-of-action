@@ -147,6 +147,30 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
     }
 
     [Fact]
+    public async Task Session_revocations_require_step_up_and_denial_leaves_the_original_session_live()
+    {
+        var root = await RootLoginAsync();
+        var me = await SendAsync(HttpMethod.Get, "/me", token: root);
+        var handle = me.Result.GetProperty("session").GetProperty("handle").GetString()!;
+        await AgeSessionAsync(root, TimeSpan.FromMinutes(11));
+
+        foreach (var path in new[] { "/auth/revoke", $"/sessions/{handle}/revoke" })
+        {
+            var stale = await SendAsync(HttpMethod.Post, path, token: root);
+            stale.Status.Should().Be(HttpStatusCode.Forbidden);
+            stale.Code.Should().Be(NodeAdminErrorCodes.StepUpRequired);
+            stale.AuthRequirement.Should().Be(NodeAdminErrorCodes.RecentNodeAdminLogin);
+        }
+        (await SendAsync(HttpMethod.Get, "/me", token: root)).Status.Should().Be(HttpStatusCode.OK);
+
+        var recent = await RootLoginAsync();
+        (await SendAsync(HttpMethod.Post, $"/sessions/{handle}/revoke", token: recent)).Status.Should().Be(HttpStatusCode.OK);
+        (await SendAsync(HttpMethod.Get, "/me", token: root)).Status.Should().Be(HttpStatusCode.Unauthorized);
+        (await SendAsync(HttpMethod.Get, "/me", token: recent)).Status.Should().Be(HttpStatusCode.OK,
+            "revoking by the original handle preserves the replacement session");
+    }
+
+    [Fact]
     public async Task Node_admin_reads_of_kyc_data_are_chained_as_read_rows_naming_the_admin_without_query_values()
     {
         var root = await RootLoginAsync();
@@ -156,6 +180,10 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
         (await SendToAsync(HttpMethod.Get, $"/api/operator/kyc/submissions?status=pending&limit=10&probe={Uri.EscapeDataString(probe)}",
             token: compliance.Token)).Status.Should().Be(HttpStatusCode.OK);
         (await SendToAsync(HttpMethod.Get, FeeAudit, token: root)).Status.Should().Be(HttpStatusCode.OK);
+        (await SendToAsync(HttpMethod.Get, "/api/user", token: compliance.Token)).Status.Should().Be(HttpStatusCode.OK);
+        await AgeSessionAsync(compliance.Token, TimeSpan.FromMinutes(11));
+        (await SendToAsync(HttpMethod.Post, "/api/search/operator", new { query = probe, entityTypes = 1 }, compliance.Token))
+            .Status.Should().Be(HttpStatusCode.OK, "the allow-listed body-carried query remains a read even with an old session");
 
         var rows = await AuditRowsAsync(root);
         var read = rows.Should().ContainSingle(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
@@ -164,6 +192,12 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
         var detail = read.GetProperty("detail").GetString()!;
         detail.Should().Be("""{"status":200,"permission":"kyc.read","query":["limit","probe","status"]}""");
         detail.Should().NotContain("pii-probe").And.NotContain("pending", "query values never reach the chain");
+        var searchRead = rows.Should().ContainSingle(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
+            && row.GetProperty("action").GetString() == "POST /api/search/operator").Subject;
+        searchRead.GetProperty("outcome").GetString().Should().Be(NodeAdminAuditLog.OutcomeRead);
+        searchRead.GetProperty("detail").GetString().Should().NotContain(probe, "body values never reach read-audit metadata");
+        rows.Should().Contain(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
+            && row.GetProperty("action").GetString()!.ToLowerInvariant() == "get /api/user" && row.GetProperty("outcome").GetString() == NodeAdminAuditLog.OutcomeRead);
 
         rows.Should().NotContain(row => row.GetProperty("action").GetString() == "GET /api/node-governance/fee-audit",
             "audit.read reads are not chained (they would only audit the audit)");

@@ -61,6 +61,21 @@ public sealed class NodeAdminRoutePermissionGateTests
     }
 
     [Fact]
+    public void Every_authenticated_node_admin_management_write_requires_a_recent_session()
+    {
+        var writes = GateInventory.Routes()
+            .Where(route => NodeAdminRoutePermissions.Normalize(route.Template).StartsWith("api/node-admin", StringComparison.Ordinal)
+                && route.Verb is not ("GET" or "HEAD" or "OPTIONS"))
+            .Select(route => (route.Key, Policies: GateInventory.Policies(route.Method)))
+            .Where(route => !route.Policies.Contains("anonymous"))
+            .ToArray();
+
+        writes.Should().NotBeEmpty();
+        writes.Where(route => !route.Policies.Any(policy => NodeAdminPolicies.TryParse(policy, out _, out var recent) && recent))
+            .Select(route => route.Key).Should().BeEmpty("D-M1 applies to named-admin management and session writes too");
+    }
+
+    [Fact]
     public void Every_inventoried_operator_route_row_is_mapped()
     {
         var rows = GateInventory.Load("RouteAuthorization")

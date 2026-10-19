@@ -9,11 +9,15 @@ import { runEnroll } from "../src/commands/enroll.js";
 import { runKeysAdd } from "../src/commands/keysCmd.js";
 import { runKeygen } from "../src/commands/keygen.js";
 import { runLogin } from "../src/commands/login.js";
+import { runLogout } from "../src/commands/logout.js";
 import { runRootRevokeSessions } from "../src/commands/rootRevokeSessions.js";
+import { computeRowHash } from "../src/audit/chain.js";
 import { AzoaCliError } from "../src/errors.js";
 import { readKeyFileMeta } from "../src/storage/keyFile.js";
 import { keyPath } from "../src/storage/paths.js";
 import { upsertProfile } from "../src/storage/config.js";
+import { loadSession } from "../src/storage/session.js";
+import { loadAuditPin } from "../src/storage/auditPin.js";
 import { FakeInputSource } from "./fixtures/fakeInput.js";
 import { FakeNodeServer } from "./fixtures/fakeNodeServer.js";
 import { totp } from "./fixtures/totp.js";
@@ -74,6 +78,23 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     // The CLI must never have reached /auth/session with this mismatched audience.
     expect(server.requestLog.some((r) => r.path === "/api/node-admin/auth/session")).toBe(false);
     expect(server.requestLog.some((r) => r.path === "/api/node-admin/auth/challenge")).toBe(true);
+  });
+
+  it("stale logout revokes the original handle and the replacement login session", async () => {
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456", "rootpass123456"] });
+    await runKeygen({ name: "logout-root", kind: "root", passphrase: true, json: false }, input);
+    server.rootPublicKeys.add(readKeyFileMeta("logout-root").publicKey);
+    upsertProfile("logout-root", { node: origin, keyName: "logout-root", kind: "root" }, true);
+    const original = await runLogin({ profile: "logout-root", root: true, json: false }, input);
+    server.sessions.get(original.accessToken)!.authTime -= 11 * 60_000;
+
+    await runLogout({ profile: "logout-root", json: true }, input);
+
+    expect(loadSession("logout-root")).toBeNull();
+    expect(server.sessions.size).toBe(2);
+    expect([...server.sessions.values()].every((session) => session.revoked)).toBe(true);
+    expect(server.requestLog.filter((request) => request.path === `/api/node-admin/sessions/${original.handle}/revoke`)).toHaveLength(2);
+    expect(server.requestLog.filter((request) => request.path === "/api/node-admin/auth/revoke")).toHaveLength(2);
   });
 
   it("enroll: aborts before /enroll/complete when /enroll/start's audience disagrees with --origin (H1-style)", async () => {
@@ -307,7 +328,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     expect(server.requestLog.length).toBe(0);
   });
 
-  it("enroll (M4): deletes the just-written key file when /enroll/complete fails", async () => {
+  it("enroll retains its key when /enroll/complete fails", async () => {
     const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "rootM4a", kind: "root", passphrase: true, json: false }, rootInput);
     const rootMeta = readKeyFileMeta("rootM4a");
@@ -328,10 +349,10 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
       ),
     ).rejects.toThrow(AzoaCliError);
 
-    expect(existsSync(keyPath("erin-key"))).toBe(false); // the key the server never registered is not left on disk
+    expect(existsSync(keyPath("erin-key"))).toBe(true);
   });
 
-  it("keys add (M4): deletes the just-written key file when the server call fails", async () => {
+  it("keys add retains its key when the server call fails", async () => {
     const rootInput = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
     await runKeygen({ name: "rootM4b", kind: "root", passphrase: true, json: false }, rootInput);
     const rootMeta = readKeyFileMeta("rootM4b");
@@ -348,7 +369,7 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
       ),
     ).rejects.toThrow(AzoaCliError);
 
-    expect(existsSync(keyPath("orphan-key"))).toBe(false);
+    expect(existsSync(keyPath("orphan-key"))).toBe(true);
   });
 
   it("audit verify (pin flow, e2e over real HTTP against the fake server): a tampered row is caught, and a broken chain is never pinned", async () => {
@@ -376,5 +397,52 @@ describe("end-to-end CLI <-> fake node (plan.md §3/§8 contract)", () => {
     await runAuditVerify({ profile: "rootpAudit", json: false });
     const { loadAuditPin } = await import("../src/storage/auditPin.js");
     expect(loadAuditPin("rootpAudit")).toEqual({ seq: row.seq, hash: row.hash });
+  });
+
+  it("preserves both enrollment and second-key private files when the server commits but the response is lost", async () => {
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
+    await runKeygen({ name: "durable-root", kind: "root", passphrase: true, json: false }, input);
+    server.rootPublicKeys.add(readKeyFileMeta("durable-root").publicKey);
+    upsertProfile("durable-root", { node: origin, keyName: "durable-root", kind: "root" }, true);
+    await runLogin({ profile: "durable-root", root: true, json: false }, input);
+    const created = await runAdminsCreate({ username: "durable", displayName: "Durable", roleIds: ["node-owner"] }, { profile: "durable-root", json: false });
+    server.dropEnrollmentCompleteResponse = true;
+    const enrollInput = new FakeInputSource({ piped: created.enrollmentToken, visibles: [() => {
+      const enrollment = [...server.enrollments.values()][0]!;
+      expect(existsSync(keyPath("durable-enrolled"))).toBe(true);
+      return totp(enrollment.totpSecretPending, Math.floor(Date.now() / 1000));
+    }] });
+
+    await expect(runEnroll({ node: origin, profile: "durable", keyName: "durable-enrolled", label: "cli", passphrase: false, force: false, json: false }, enrollInput))
+      .rejects.toMatchObject({ exitCode: 5 });
+    expect(server.admins.get(created.admin.id)?.status).toBe("pending_activation");
+    expect(server.admins.get(created.admin.id)?.keys[0]?.fingerprint).toBe(readKeyFileMeta("durable-enrolled").fingerprint);
+
+    server.dropKeyRegistrationResponse = true;
+    await expect(runKeysAdd({ profile: "durable-root", targetAdminId: created.admin.id, keyName: "durable-second", label: "cli", passphrase: false, force: false, json: false }, input))
+      .rejects.toMatchObject({ exitCode: 5 });
+    expect(server.admins.get(created.admin.id)?.keys.map((key) => key.fingerprint)).toContain(readKeyFileMeta("durable-second").fingerprint);
+    expect(existsSync(keyPath("durable-enrolled"))).toBe(true);
+    expect(existsSync(keyPath("durable-second"))).toBe(true);
+  });
+
+  it("audit verification pins its captured head despite a valid append before row paging", async () => {
+    const input = new FakeInputSource({ secrets: ["rootpass123456", "rootpass123456", "rootpass123456"] });
+    await runKeygen({ name: "snapshot-root", kind: "root", passphrase: true, json: false }, input);
+    server.rootPublicKeys.add(readKeyFileMeta("snapshot-root").publicKey);
+    upsertProfile("snapshot-root", { node: origin, keyName: "snapshot-root", kind: "root" }, true);
+    await runLogin({ profile: "snapshot-root", root: true, json: false }, input);
+    const captured = { ...server.auditRows.at(-1)! };
+    server.afterAuditVerify = () => {
+      server.afterAuditVerify = undefined;
+      const next = { ...captured, seq: captured.seq + 1, prevHash: captured.hash, hash: "" };
+      next.hash = computeRowHash(next);
+      server.auditRows.push(next);
+    };
+
+    await runAuditVerify({ profile: "snapshot-root", json: true });
+    expect(loadAuditPin("snapshot-root")).toEqual({ seq: captured.seq, hash: captured.hash });
+    await runAuditVerify({ profile: "snapshot-root", json: true });
+    expect(loadAuditPin("snapshot-root")).toEqual({ seq: captured.seq + 1, hash: server.auditRows.at(-1)!.hash });
   });
 });

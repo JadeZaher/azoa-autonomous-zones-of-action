@@ -7,16 +7,14 @@ import { useAzoaAuth } from '@/lib/azoa-auth'
 import { useChainInfo } from '@/lib/azoa-hooks'
 import { ChainBadge } from '@/components/shared/chain-badge'
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton'
-import { ErrorBanner } from '@/components/shared/error-banner'
 
 function ChainInfoCard({ chain }: { chain: string }) {
   const { info, loading, error } = useChainInfo(chain)
 
   if (loading) return <LoadingSkeleton />
-  if (error) return <ErrorBanner message={error} />
 
   return (
-    <Card>
+    <Card role="region" aria-label={`${chain} network status`}>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <ChainBadge chain={chain} />
@@ -24,7 +22,11 @@ function ChainInfoCard({ chain }: { chain: string }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        {info ? (
+        {error ? (
+          <p role="status" className="text-muted-foreground">
+            Network details could not be loaded. Try again later.
+          </p>
+        ) : info ? (
           Object.entries(info).map(([key, value]) => (
             <div key={key} className="flex justify-between gap-4">
               <span className="text-muted-foreground">

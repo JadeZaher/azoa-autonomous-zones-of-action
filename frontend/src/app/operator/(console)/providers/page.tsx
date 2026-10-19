@@ -147,7 +147,9 @@ function ProviderCard({ profile, onEdit }: { profile: KycProviderProfileResponse
           </p>
         )}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-muted-foreground">Updated {formatOperatorDate(profile.updatedAt)}</p>
+          <p className="text-xs text-muted-foreground">
+            {profile.version === 0 ? 'Policy has not been configured yet' : `Updated ${formatOperatorDate(profile.updatedAt)}`}
+          </p>
           <Button variant="outline" className="min-h-11 rounded-none" onClick={onEdit}>
             <Pencil className="mr-2 h-4 w-4" aria-hidden="true" /> Edit policy
           </Button>

@@ -10,7 +10,7 @@ import { promptNewPassphrase } from "../io/passphrase.js";
 import { upsertProfile } from "../storage/config.js";
 import { writeKeyFile } from "../storage/keyFile.js";
 import { assertValidName } from "../validation.js";
-import { deleteKeyFileQuietly, guardKeyOverwrite } from "./keyGuards.js";
+import { guardKeyOverwrite, warnRetainedKey } from "./keyGuards.js";
 
 export interface EnrollOptions {
   node: string;
@@ -69,12 +69,20 @@ export async function runEnroll(
 
   const keyPair = generateEd25519KeyPair();
   const client = new AzoaHttpClient(options.node);
+  await writeKeyFile(options.keyName, keyPair, "admin", passphrase);
 
-  const { data: start } = await client.call<EnrollStartResponse>("POST", "/api/node-admin/enroll/start", {
-    enrollmentToken: token,
-    publicKey: keyPair.publicKeyB64Url,
-    label: options.label,
-  });
+  let start: EnrollStartResponse;
+  try {
+    const result = await client.call<EnrollStartResponse>("POST", "/api/node-admin/enroll/start", {
+      enrollmentToken: token,
+      publicKey: keyPair.publicKeyB64Url,
+      label: options.label,
+    });
+    start = result.data;
+  } catch (error) {
+    warnRetainedKey(options.keyName);
+    throw error;
+  }
 
   // Lane A1 contract deviation: /enroll/start echoes back the server's real NodeAdmin__Audience
   // and the fingerprint it derived from our public key. Treat both like the H1 audience check on
@@ -109,11 +117,6 @@ export async function runEnroll(
   const totp = await input.readVisible("Authenticator code: ");
   const signature = signMessage(keyPair.privateKey, enrollMessage(options.node, start.enrollmentId));
 
-  // M4: write the (possibly encrypted) key file BEFORE the call that depends on it existing —
-  // a crash between "server accepted our proof" and "we saved the key" would otherwise lose the
-  // only copy of a private key the server now expects. Delete it again if the call fails, since
-  // an unregistered key file left on disk under this name would only confuse a retry.
-  await writeKeyFile(options.keyName, keyPair, "admin", passphrase);
   let complete: EnrollCompleteResponse;
   try {
     const result = await client.call<EnrollCompleteResponse>("POST", "/api/node-admin/enroll/complete", {
@@ -123,7 +126,7 @@ export async function runEnroll(
     });
     complete = result.data;
   } catch (err) {
-    deleteKeyFileQuietly(options.keyName);
+    warnRetainedKey(options.keyName);
     throw err;
   }
 

@@ -20,8 +20,7 @@ public sealed record NodeAdminRequestInfo(string Ip, string UserAgent, string Re
     }
 }
 
-/// <summary>Global MVC filter: an <c>intent</c> row before every node-admin write (503 AUDIT_UNAVAILABLE if it fails) and an outcome row
-/// after (H4); a best-effort <c>read</c> row after node-admin reads of personal/financial data (D-M2). See <c>Services/NodeAdmin/AGENTS.md</c> §audit.</summary>
+/// <summary>Audits node-admin writes and personal/financial reads; see <c>Services/NodeAdmin/AGENTS.md</c> §audit.</summary>
 public sealed class NodeAdminAuditActionFilter(NodeAdminAuditLog audit, ILogger<NodeAdminAuditActionFilter> logger) : IAsyncActionFilter
 {
     /// <summary>Runs before <c>ModelStateInvalidFilter</c> (order -2000), so invalid-model 400s get an outcome row.</summary>
@@ -83,8 +82,7 @@ public sealed class NodeAdminAuditActionFilter(NodeAdminAuditLog audit, ILogger<
         }
     }
 
-    /// <summary>Runs the read, then chains a <c>read</c> row when the route's grant is an audited read permission. Never blocks the
-    /// read: an audit outage is a critical <c>NodeAdminReadAuditUnavailable</c> log event instead (§audit, D-M2).</summary>
+    /// <summary>Records a best-effort read row for personal/financial reads.</summary>
     private async Task AuditedReadAsync(ActionExecutingContext context, ActionExecutionDelegate next, NodeAdminCaller caller)
     {
         var http = context.HttpContext;

@@ -35,7 +35,7 @@ export default function DashboardLayout({
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main tabIndex={0} className="flex-1 overflow-y-auto p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">{children}</main>
       </div>
     </div>
   )
