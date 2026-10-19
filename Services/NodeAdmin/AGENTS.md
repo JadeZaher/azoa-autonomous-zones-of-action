@@ -174,10 +174,14 @@ a loser re-reads the head and retries (16 attempts). Every field is `READONLY`; 
 Each row is mirrored as a structured `NodeAdminAudit` log line (H5), without `detail`.
 
 Coverage:
-- `NodeAdminAuditActionFilter` (global MVC filter): for every non-GET request by a validated node-admin
+- `NodeAdminAuditActionFilter` (global MVC filter): for every write request by a validated node-admin
   caller, an `intent` row **before** the action (failure → 503 `AUDIT_UNAVAILABLE`, action not run) and an
   `ok | denied | failed` row after, with `{status, code}` detail. Action = `VERB /route-template`, target =
   route values.
+- D-M2: `kyc.read`, `users.read` and `money.read` reads append one `read` row after execution, including
+  body-carried `POST api/search/operator`. Detail contains response status, permission and bounded, sorted query
+  parameter names; query/body values are excluded. No intent is emitted for a read. An audit outage leaves the read
+  available and emits `NodeAdminReadAuditUnavailable` at Critical. `audit.read` is excluded to avoid auditing audit reads.
 - `NodeAdminDenial` (from `ActionableAuthorizationResultHandler`): every 403 for a node-admin principal is
   an `authz.denied` row.
 - The filter is ordered at -3000, before `ModelStateInvalidFilter` (-2000), so automatic invalid-body 400s on
@@ -197,6 +201,9 @@ Coverage:
   whose own hash is recomputed; `?full=true` rescans from genesis and is throttled to once per minute per
   principal (`RATE_LIMITED`, 429; L-b). The CLI is expected to run a periodic full verify and pin the last
   verified `(seq, hash)` (L-c, H5); the server keeps no schedule of its own. The hourly sweep loops 500-row batches until a short batch (≤ 50 per table).
+- Verification captures the head once and caps all page queries at that sequence. Concurrent appends cannot become
+  false integrity errors or keep verification running indefinitely. The CLI requests that verified cutoff first,
+  recomputes exactly the same prefix and still requires exact sequence/hash agreement before advancing its pin.
 - Never logged or audited: signatures, TOTP codes or secrets, tokens, enrollment tokens.
 
 Exception boundaries: audit writes are the only place this module catches broad exceptions, and each catch
@@ -252,12 +259,12 @@ recorded actor:
 - **Fences mirror the session validator in the transaction.** `SigningAuthorityFence.Credential` keeps the legacy branch
   (reserved user row + `admin_bootstrap_state` revisions) and, for a node-admin witness, locks the subject user row
   (active; its login watermark is *not* applied to the admin's token) plus `node_admin_session` (record id, principal,
-  `revoked_at = NONE`, `expires_at > now`) and either `node_admin` (`status = Active`, `admin_revision`,
-  `session_revision`) or `node_admin_root_state` (`root_key_revision`, `root_session_revision`). Any change since
-  capture (revoke, suspend, role/status change bumping `admin_revision`, root revision advance) throws
+  `revoked_at = NONE`, `expires_at > now`) and `node_admin` (`status = Active`, `admin_revision`,
+  `session_revision`). Root witnesses are rejected at capture, the operator-credential check and the fence (M3, L-4).
+  Any change since capture (revoke, suspend, role/status change bumping `admin_revision`) throws
   `SIGNING_AUTHORITY_CHANGED`. `PlatformGenesisFence` inherits it through `ForRunAdmission`. Not re-checked in the
-  transaction: the live permission set (role edits apply without bumping `admin_revision`, §invariants) and the env
-  root-key list — both were checked on the same request moments earlier, the same freshness the legacy fence has.
+  transaction: the live permission set (role edits apply without bumping `admin_revision`, §invariants), which was
+  checked on the same request moments earlier, the same freshness the legacy fence has.
   Statement params share one namespace per transaction, which is why the watermark cutoff switch is its own param
   (`_cutoff_applies`); `NodeAdminOperatorFenceTests` runs the fence against a real database.
 
@@ -269,13 +276,23 @@ requireRecent)` for every route whose policies include `Operator`, `NodeGovern`,
 `*.read`/`audit.read`, writes → the domain permission; recovery surfaces (and their reads, the catalog has no
 `recovery.read`) → `recovery.operate`; webhook registration → `catalog.manage`; webhook event retry → `recovery.operate`;
 fiat/treasury/platform-token reads → `money.read`; genesis/creation mutations → `platform.genesis`. `requireRecent` is
-true exactly where the route carries `RecentNodeOperatorSession` or `DappRoleAssignment` (legacy step-up), so step-up is
-the same 10-minute `auth_time` window for both principals. Two rows carry `null` (legacy only): the legacy password
+true for every node-admin write (D-M1), and wherever legacy already required recent login. The window is 10 minutes;
+legacy policies retain their original recency rules. `POST api/search/operator` is the sole allow-listed read query
+using a write verb; it maps to `users.read`, skips step-up and emits a read audit. Authenticated writes under
+`api/node-admin`, including both session revoke routes, also require `:recent`; anonymous auth/enrollment is exempt.
+Two rows carry `null` (legacy only): the legacy password
 login and its session revoke.
 
 Gates (`tests/.../Architecture/NodeAdminRoutePermissionGateTests`): every live operator-policy route is mapped, no row is
-stale, `requireRecent` equals the live recent-policy set, every permission is in the catalog, and every
+stale, node-admin recency is at least as strong as the legacy policy, every write requires recent login, no write
+maps to a `.read` grant except the explicit query allow-list, every permission is in the catalog, and every
 `Inventories/RouteAuthorization/*.json` row with an operator policy is mapped. An unmapped route fails CI.
+`ProgramCompositionTests` also resolves every real `RouteEndpoint` through the runtime map so route-template
+normalization drift cannot silently deny legitimate admins.
+
+D-L5: activating an owner-capable admin as root emits a structured Critical `NodeAdminRootCreatedOwner` event
+with admin id, username, activating actor and creator. The append-only audit records the management mutation too.
+Domain-audit `actor` fields are READONLY; migration `20261018_120000` was amended before its first deployment.
 
 **Dual-accepting policies** (`Program.cs`, edited in place): each of the five operator policies first calls
 `NodeAdminOperatorAccess.Admit(ctx)`; it returns `null` for any non-node-admin principal, so the legacy predicate runs

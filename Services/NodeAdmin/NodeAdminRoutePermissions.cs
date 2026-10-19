@@ -18,8 +18,7 @@ public static partial class NodeAdminRoutePermissions
     public static readonly IReadOnlySet<string> RecentOperatorPolicies = new HashSet<string>(
         ["RecentNodeOperatorSession", "DappRoleAssignment"], StringComparer.Ordinal);
 
-    /// <summary>Non-GET routes that only read (body-carried query): the one place a write verb may map to a <c>*.read</c> grant
-    /// without step-up, and the filter audits them as reads (L-1, D-M2).</summary>
+    /// <summary>Body-carried read queries exempt from write step-up; see <c>AGENTS.md</c> §route-permission-map.</summary>
     public static readonly IReadOnlySet<string> ReadOnlyWriteVerbRoutes = new HashSet<string>(
         ["POST api/search/operator"], StringComparer.Ordinal);
 

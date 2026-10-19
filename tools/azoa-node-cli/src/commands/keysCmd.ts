@@ -9,7 +9,7 @@ import { promptNewPassphrase } from "../io/passphrase.js";
 import { mutateWithStepUpRetry } from "../mutate.js";
 import { writeKeyFile } from "../storage/keyFile.js";
 import { assertValidName } from "../validation.js";
-import { deleteKeyFileQuietly, guardKeyOverwrite } from "./keyGuards.js";
+import { guardKeyOverwrite, warnRetainedKey } from "./keyGuards.js";
 
 export interface KeysAddOptions {
   profile?: string;
@@ -43,10 +43,7 @@ export async function runKeysAdd(
   const message = addKeyMessage(resolved.profile.node, adminId, keyPair.fingerprint);
   const signature = signMessage(keyPair.privateKey, message);
 
-  // M4: the key file must exist on disk before the server call that depends on it, so a crash
-  // between "server accepted the key" and "we saved it" can never lose the only copy of a
-  // private key the server now expects to see again. If the server call fails, the file is
-  // useless (the key was never registered) — delete it rather than leave orphaned clutter.
+  // Persist before registration; see src/AGENTS.md §Key registration durability.
   await writeKeyFile(options.keyName, keyPair, resolved.profile.kind, passphrase);
   try {
     await mutateWithStepUpRetry(
@@ -57,7 +54,7 @@ export async function runKeysAdd(
       input,
     );
   } catch (err) {
-    deleteKeyFileQuietly(options.keyName);
+    warnRetainedKey(options.keyName);
     throw err;
   }
 

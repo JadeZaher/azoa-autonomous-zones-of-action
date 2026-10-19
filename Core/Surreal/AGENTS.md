@@ -214,10 +214,13 @@ invocation receipt replay precedes these live gates and cannot create another ru
 `SigningAuthorityFence` composes credential, exact selected grant and wallet checks into the owning admission or first-egress transaction. The raw statements are multi-record locking invariants, not ordinary CRUD. Parameter prefixes isolate the generated snippets: templates are written with `$_sa_<name>` and `Sql()` rewrites them to `$<prefix>_<name>`, which must equal the bound `WithParam(prefix + "_<name>")` key exactly (SurrealQL binds `$x` to parameter `x`). A mismatch leaves every variable unbound, so every fenced batch fails closed (a `SIGNING_AUTHORITY_CHANGED` throw or a query error), which reads like a real authority change and is invisible to deny-path fixtures — only an allow-path fixture against the real database catches it; operator credentials also pin bootstrap credential/session revisions. Workflow callers compare the saved run credential at node admission and the exact node witness at first egress. Explicit legacy participant consent has its own immutable receipt; it never rewrites the original run credential.
 
 Node-admin operator witnesses (`TokenUse = node_admin`, `NodeAdmin` evidence) lock `node_admin_session` plus the
-`node_admin` row or `node_admin_root_state` instead of the bootstrap revisions, and skip the reserved user's login
+`node_admin` row instead of the bootstrap revisions, and skip the reserved user's login
 watermark cutoff (`$_sa_cutoff_applies`). Every `$_sa_*` name in one fence is one transaction parameter: two statements
 binding the same name to different values silently overwrite each other (the first allow-path run caught exactly that).
 Design: `Services/NodeAdmin/AGENTS.md` §operator-actor.
+
+Root evidence is refused structurally before composing any transaction statements (M3, L-4), including saved or
+hand-built witnesses. Root never carries economic signing authority; only a named admin's witness reaches these locks.
 ## Fungible genesis and captured mutations
 
 `PlatformGenesisFence` composes current validated operator/bootstrap evidence with the original pending platform definition and exact lifecycle identity. Its definition-only branch is used only in finalized accounting, which cannot require a renewed signing session. Activation and reserve/issuance projection commit together. `FungibleCreationAuthorityFence` selects mutually exclusive ordinary signing or genesis purpose; it never treats a node-operator credential as an unrestricted user.

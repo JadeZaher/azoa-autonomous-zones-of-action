@@ -129,6 +129,9 @@ export class FakeNodeServer {
   forceEnrollFingerprint?: string;
   /** Test-only hook: when true, `audit verify --full` answers 429 RATE_LIMITED. */
   forceAuditRateLimited = false;
+  dropEnrollmentCompleteResponse = false;
+  dropKeyRegistrationResponse = false;
+  afterAuditVerify?: () => void;
 
   readonly admins = new Map<string, FakeAdmin>();
   readonly challenges = new Map<string, FakeChallenge>();
@@ -419,6 +422,7 @@ export class FakeNodeServer {
   private handleRevokeSelf(req: IncomingMessage, res: ServerResponse): void {
     const session = this.requireAuth(req, res);
     if (!session) return;
+    if (!this.isRecent(session)) return this.sendError(res, "STEP_UP_REQUIRED", "Step-up re-authentication required");
     session.revoked = true;
     this.sendOk(res, {});
   }
@@ -553,6 +557,10 @@ export class FakeNodeServer {
       void tok;
     }
     this.appendAudit(`admin:${admin.id}`, "enroll.complete", admin.id, "ok", {});
+    if (this.dropEnrollmentCompleteResponse) {
+      res.destroy();
+      return;
+    }
     // NodeAdminEnrollCompleteView shape (lane A1): { adminId, status, fingerprint } — not { admin }.
     this.sendOk(res, { adminId: admin.id, status: admin.status, fingerprint: enrollment.fingerprint });
   }
@@ -643,6 +651,10 @@ export class FakeNodeServer {
       admin.keys.push({ publicKey, fingerprint, label: String(body.label ?? "cli") });
       admin.updatedAt = new Date().toISOString();
       this.appendAudit(session.principal, "admins.keys.add", id, "ok", { fingerprint });
+      if (this.dropKeyRegistrationResponse) {
+        res.destroy();
+        return;
+      }
       return this.sendOk(res, { admin: this.adminDto(admin) });
     }
     if (method === "DELETE" && sub.startsWith("/keys/")) {
@@ -778,6 +790,7 @@ export class FakeNodeServer {
       prevHash = row.hash;
     }
     this.sendOk(res, { ok: true, fromSeq, verifiedThroughSeq: window.at(-1)?.seq ?? fromSeq, headHash: prevHash });
+    this.afterAuditVerify?.();
   }
 
   /** `?principal=` (full `admin:<id>`/`root:<fp>` string), not a bare admin id — see NodeAdminManager.ListSessionsAsync. */
@@ -814,6 +827,7 @@ export class FakeNodeServer {
   private handleSessionRevoke(req: IncomingMessage, handle: string, res: ServerResponse): void {
     const session = this.requireAuth(req, res);
     if (!session) return;
+    if (!this.isRecent(session)) return this.sendError(res, "STEP_UP_REQUIRED", "Step-up re-authentication required");
     const target = [...this.sessions.values()].find((s) => s.handle === handle);
     if (!target) return this.sendError(res, "NOT_FOUND", "Session not found.");
     if (target.principal.startsWith("root:") && !session.principal.startsWith("root:")) {

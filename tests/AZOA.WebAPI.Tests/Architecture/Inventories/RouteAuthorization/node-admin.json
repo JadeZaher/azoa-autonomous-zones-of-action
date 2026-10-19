@@ -29,9 +29,10 @@
     "action": "Revoke",
     "class": "non-value",
     "scope": null,
-    "enforcement": "NodeAdmin:session; revokes only the caller's own server-side session row; audited by the node-admin action filter",
+    "enforcement": "NodeAdmin:session:recent (D-M1); revokes only the caller's own server-side session row; audited by the node-admin action filter",
     "policies": [
-      "NodeAdmin:session"
+      "NodeAdmin:session",
+      "NodeAdmin:session:recent"
     ]
   },
   {
@@ -40,9 +41,10 @@
     "action": "RevokeSession",
     "class": "non-value",
     "scope": null,
-    "enforcement": "NodeAdmin:session; addressed by an opaque handle that is never the token sid (M-1); a root:* session only by root (NEW-2); own session freely, another principal's requires admins.manage and dominance (C1); audited",
+    "enforcement": "NodeAdmin:session:recent (D-M1); addressed by an opaque handle that is never the token sid (M-1); a root:* session only by root (NEW-2); another principal's requires admins.manage and dominance (C1); audited",
     "policies": [
-      "NodeAdmin:session"
+      "NodeAdmin:session",
+      "NodeAdmin:session:recent"
     ]
   },
   {

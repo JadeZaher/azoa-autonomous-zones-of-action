@@ -2,14 +2,10 @@ import { existsSync } from "node:fs";
 import { AzoaCliError } from "../errors.js";
 import type { InputSource } from "../io/input.js";
 import type { ProfileKind } from "../storage/config.js";
-import { deleteFileIfExists } from "../storage/fsutil.js";
+import { readKeyFileMeta } from "../storage/keyFile.js";
 import { azoaHome, keyPath } from "../storage/paths.js";
 
-/**
- * H3: refuses to clobber an existing key file unless `--force`; a `--force` overwrite of a ROOT
- * key additionally requires typing the key name back to confirm (a root key is the one credential
- * that can never be silently regenerated out from under its holder).
- */
+/** Requires force for overwrites and typed confirmation for existing or replacement root keys. */
 export async function guardKeyOverwrite(
   name: string,
   kind: ProfileKind,
@@ -22,7 +18,7 @@ export async function guardKeyOverwrite(
       `Key '${name}' already exists under ${azoaHome()}/keys. Pass --force to overwrite, or choose a different name.`,
     );
   }
-  if (kind === "root") {
+  if (kind === "root" || readKeyFileMeta(name).kind === "root") {
     const typed = await input.readVisible(`This overwrites an existing ROOT key. Type '${name}' to confirm: `);
     if (typed.trim() !== name) {
       throw AzoaCliError.usage("Confirmation did not match the key name; aborting overwrite.");
@@ -30,7 +26,7 @@ export async function guardKeyOverwrite(
   }
 }
 
-/** M4: cleans up a just-written key file after the server call it was written for fails. */
-export function deleteKeyFileQuietly(name: string): void {
-  deleteFileIfExists(keyPath(name));
+/** Reports recovery guidance for a key retained after an unconfirmed registration. */
+export function warnRetainedKey(name: string): void {
+  console.error(`Key '${name}' was retained. Confirm its fingerprint with the node administrator before retrying; use a new key name for a fresh enrollment.`);
 }

@@ -130,9 +130,9 @@ real origin. Load-bearing ones, beyond what's already covered elsewhere in this 
   server's head to carry the SAME hash at an already-pinned seq (not just a non-regressed seq).
   The row-paging loop refuses to continue if a page doesn't advance the cursor.
 - **M4**: `keys add` and `enroll` now write the (possibly encrypted) key file to disk BEFORE the
-  network call that depends on it existing, deleting it again if that call fails — so a crash
+  network call that depends on it existing, retaining it if that call fails — so a crash
   between "server accepted the proof" and "we saved the key" can't lose the only copy of a
-  private key the server now expects to see again.
+  private key the server now expects to see again. The recovery behavior is amended below.
 - **M5**: `root env`'s railway path sets the revision bump (skip-deploys) before the key-list
   change that actually deploys, for a removal; it also now refuses a non-integer revision read
   back from Railway instead of letting `Number(...)`'s `NaN` propagate, and is a true no-op
@@ -185,3 +185,31 @@ manually with the diff as a guide) rather than via a mechanical merge:
 New coverage: `test/cliProcess.test.ts` (spawns the real built CLI with real piped multi-line
 stdin), `test/httpClient.test.ts` (a bare `node:http` server emitting each un-enveloped status),
 `test/rootEnv.test.ts` (the non-railway bootstrap path).
+
+## Key registration durability
+
+Persist keys before any request that can bind them, including enrollment start. A lost response can follow a
+committed registration or completed enrollment, so every server-call failure retains the private file and emits
+recovery guidance on stderr. The operator confirms the public fingerprint and enrollment state before retrying;
+a fresh enrollment uses a new name. No automatic cleanup can decide whether the remote commit happened.
+Overwriting an existing root key requires typing its name even when the requested replacement kind is `admin`.
+
+## Session revocation and command parsing
+
+All authenticated management writes require recent login, including session revocations. Logout first attempts
+self-revocation. On step-up, it obtains the current original handle before reauthentication, revokes that handle
+through the shared retry helper, then revokes any replacement login session. Local session data is cleared only
+after success or an explicit initial `AUTH_FAILED` proving the original bearer is already invalid. Other failures
+retain the current session and propagate an error. Retrying self-revoke directly after login would revoke only the
+replacement and leak the original session.
+
+Commander exit override and excess-argument rejection are configured before constructing children so nested
+commands inherit them. Parser errors are caught at the outer boundary and exit 2; help exits 0. Diagnostics and
+recovery warnings use stderr, preserving stdout for command JSON.
+
+## Audit verification snapshot
+
+The CLI first gets the server's verified cutoff `(seq, hash)`, then fetches and recomputes only through that sequence.
+Later appends belong to the next verification. Exact local/server equality is required even for an empty window;
+pin regression and same-sequence hash-change checks remain. Full verification also recomputes locally from genesis.
+Tests append a valid row deterministically between the verify response and the first raw-row page.

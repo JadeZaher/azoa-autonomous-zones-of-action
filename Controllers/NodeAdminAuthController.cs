@@ -32,6 +32,7 @@ public sealed class NodeAdminAuthController(NodeAdminAuthManager auth, NodeAdmin
         => Respond(await auth.CreateSessionAsync(request, NodeAdminRequestInfo.From(HttpContext), ct));
 
     [HttpPost("auth/revoke")]
+    [Authorize(Policy = NodeAdminPolicies.SessionRecent)]
     public async Task<ActionResult<AZOAResult<bool>>> Revoke(CancellationToken ct)
         => Respond(await auth.RevokeOwnAsync(Caller, ct));
 
@@ -40,6 +41,7 @@ public sealed class NodeAdminAuthController(NodeAdminAuthManager auth, NodeAdmin
         => Respond(await manager.ListSessionsAsync(Caller, principal, ct));
 
     [HttpPost("sessions/{handle}/revoke")]
+    [Authorize(Policy = NodeAdminPolicies.SessionRecent)]
     public async Task<ActionResult<AZOAResult<bool>>> RevokeSession(string handle, CancellationToken ct)
         => Respond(await manager.RevokeSessionAsync(Caller, handle, ct));
 

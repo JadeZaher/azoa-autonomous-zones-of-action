@@ -199,6 +199,18 @@ crypto + secrets) before merge; CLI gets code review. One integrated test sweep 
 
 These **supersede** anything above that conflicts. Both lanes implement them.
 
+Resumed fix batch (2026-10-18): D-M1 applies recent-login step-up to every authenticated node-admin write,
+including session revocation; legacy operator recency remains unchanged. The sole write-verb read query is
+`POST api/search/operator`. D-M2 records `kyc.read`, `users.read` and `money.read` accesses as best-effort `read`
+audit rows without query/body values, with a Critical event if read auditing fails. Mutation intent remains fail-closed.
+Root economic witnesses are structurally refused; domain-audit actor fields are READONLY in the POCOs and the
+undeployed `20261018_120000` migration. Real endpoint keys, mapping write/read separation, and root-owner activation
+logging are covered by the fix batch. Independent static review also required a stable audit verification cutoff,
+preserving private keys after ambiguous registration responses, root overwrite confirmation across kind changes,
+and original-session-safe logout. CLI parser errors exit 2 including child commands. Tests are authored; the
+orchestrator runs the integrated sweep after independent review. Design: `Services/NodeAdmin/AGENTS.md`,
+`Core/Surreal/AGENTS.md`, `tools/azoa-node-cli/src/AGENTS.md`.
+
 **C1 dominance.** Any mutation targeting another admin (roles, suspend, revoke, revoke-sessions,
 keys, MFA reset) requires `perms(target) ⊆ perms(actor)`. MFA reset and key add for *another*
 admin require root or an actor holding every permission (node-owner-equivalent). A new

@@ -70,6 +70,23 @@ node dist/cli.js admins list --json
 
 ## Security notes
 
+All authenticated node-admin writes, including session revocation, require a login within the last
+10 minutes. A command may ask you to sign in again. Legacy operator policies retain their existing
+step-up rules. Logout revokes the original session and any replacement session used for step-up;
+an unconfirmed revocation reports failure and retains the local session for recovery.
+
+## Scripting
+
+- Use `--json` for one JSON result on stdout. Prompts and errors use stderr. Invalid flags,
+  missing arguments and excess arguments exit 2, including on nested commands; help exits 0.
+- Send each prompted answer on its own line, then close stdin. A process that keeps its pipe open
+  after the last answer can keep the CLI alive waiting for EOF.
+- In Git Bash, set `MSYS_NO_PATHCONV=1` when passing `/api/...` paths so MSYS preserves them.
+- Enrollment tokens and key passphrases go through stdin or the interactive prompt. Keep them out
+  of command arguments, shell history and captured logs.
+
+## Key handling
+
 - **Keys**: `~/.azoa/keys/<name>.key` — a JSON envelope (not literal PEM; see
   `src/AGENTS.md` "Key file envelope" for why) carrying a PKCS8 DER Ed25519 private key,
   optionally encrypted with scrypt (N=2^17, r=8, p=1, 256 MiB) + AES-256-GCM. Root keys require
@@ -140,14 +157,14 @@ node dist/cli.js admins list --json
 | `root env [--profile-keys ...] [--add-public-key ...] [--remove <key>] [--current ...] [--current-revision n] [--railway --project --environment --service --yes]` | Renders `NodeAdmin__RootPublicKeys`/`NodeAdmin__RootKeyRevision`. `--current-revision 0` is the valid bootstrap state (nothing deployed yet) — the rendered revision is clamped to ≥ 1 whenever the key list being rendered is non-empty. See CONTRACT ASSUMPTIONS below. |
 | `profile add <name> --origin <origin> --kind root\|admin --key-name <n> [--use]` / `profile list` / `profile use <name>` | Local-only, never touches the network. Named `--origin`, not `--node` — see CONTRACT ASSUMPTIONS below. |
 | `login [--root] [--totp <code>]` | Challenge → canonical-sign → session. Prompts for a key passphrase and/or TOTP as needed. |
-| `logout` | Revokes the server-side session, then deletes the local session file regardless of network outcome. |
+| `logout` | Revokes the original server-side session before clearing the local file. If step-up is required, confirms the original current handle, reauthenticates, revokes that original handle and then revokes the replacement session. A failed or ambiguous revocation returns an error and retains the current local session for recovery. An already-invalid original bearer can be forgotten. |
 | `whoami` | `GET /me`. |
 | `sessions list [--admin <id>]` / `sessions revoke <handle>` | `--admin` filters by the full `principal` (`admin:<id>`/`root:<fp>`); a bare id is auto-prefixed with `admin:`. Sessions are identified by an opaque `handle` — the real sid never leaves the access token (lane A1 M-1). Revoking a `root:*` session's handle requires a root caller. |
 | `admins list\|show\|create\|suspend\|reactivate\|revoke\|activate\|revoke-sessions` | `create` prints a one-time enrollment token; `activate <id> --fingerprint <fp>` completes the H3 state machine. |
 | `admins roles <id> --set <roleIds>` | `PUT /admins/{id}/roles` returns the same reenrollment shape as `mfa reset`: changing a still-*pending* admin's roles resets them to `pending_enrollment` (keys/TOTP invalidated); prints a fresh enrollment token when present (caller was root), otherwise warns that only root can issue one. |
-| `keys add [--admin-id <id>] --key-name <n> [--label <l>] [--no-passphrase] [--force]` / `keys revoke <adminId> <fingerprint>` | Step-up gated (auto re-login-and-retry, see below); the proof is always signed by the *new* key. The key file is written to disk BEFORE the server call that depends on it existing, and deleted again if that call fails. |
+| `keys add [--admin-id <id>] --key-name <n> [--label <l>] [--no-passphrase] [--force]` / `keys revoke <adminId> <fingerprint>` | Step-up gated (auto re-login-and-retry, see below); the proof is always signed by the *new* key. The key file is persisted before registration and retained if the request fails, since the node may have committed before its response was lost. Confirm its fingerprint with the node administrator before retrying. |
 | `mfa reset <adminId>` | Revokes the admin's keys/sessions and returns them to `pending_enrollment`. Returns a new enrollment token (shown once) **only when the caller is root** — a peer owner gets confirmation the reset happened, no token. |
-| `enroll --origin <origin> [--profile-name <n>] [--key-name <n>] [--label <l>] [--no-passphrase] [--force]` | Reads the enrollment token from stdin or a hidden prompt — **never** a CLI argument; the token read and every later prompt (passphrase, confirm, TOTP) share one FIFO line queue over real stdin, so a script piping all of them in order works correctly. Named `--origin`/`--profile-name` — see CONTRACT ASSUMPTIONS below. Aborts (exit 3) if `/enroll/start`'s returned `audience`/`fingerprint` disagree with `--origin`/the local key — the same MITM-shaped check as login's H1. The key file is written to disk BEFORE `/enroll/complete`, and deleted again if that call fails. |
+| `enroll --origin <origin> [--profile-name <n>] [--key-name <n>] [--label <l>] [--no-passphrase] [--force]` | Reads the enrollment token from stdin or a hidden prompt — **never** a CLI argument; prompts consume piped input one line at a time. Aborts (exit 3) if the returned audience or fingerprint disagrees with the local values. Persists the private key before `/enroll/start` binds it and retains it on failure. Ask the node administrator to confirm its fingerprint and enrollment state before retrying; use a fresh key name for a new enrollment. |
 | `roles list\|create` / `roles update <id> --name <n> --permissions <p>` / `roles delete <id>` | `update` is a full replace (`PUT /roles/{id}` takes the same `{name, permissions}` body as `create`) — `--name` is required, not optional, and can rename the role. |
 | `root revoke-sessions [--yes]` | `POST /root/revoke-sessions`, **root-only** — fails locally (exit 4) if the active profile isn't `kind: root`, before any network call. Destructive (ends every root session, including the caller's); prompts for `yes` confirmation unless `--yes`. |
 | `audit tail [--after <seq>] [--limit <n>]` | `--follow` is accepted but errors — cut per plan.md §8. |
@@ -169,6 +186,16 @@ backoff is exponential enough to need them) · `4` permission
 configured — and `RATE_LIMITED`, also with a formatted retry time) · `6` audit integrity alert.
 The CLI always prefers the envelope's `code` over the HTTP status; status is only a fallback when
 the body isn't a parseable AZOAResult. Full mapping in `src/errors.ts`.
+
+Unknown flags, unknown commands, missing arguments and extra positional arguments exit `2`, including nested
+commands; `--help` exits `0`. With `--json`, successful command data goes to stdout. Diagnostics, recovery warnings
+and step-up login messages go to stderr; scripts should check the exit status before parsing stdout. Parser usage
+errors are human-readable stderr. Pass sensitive enrollment tokens and passphrases through prompts/stdin.
+
+Audit verification captures the server's verified `(seq, hash)` first, then independently recomputes exactly that
+prefix before updating the local pin. Concurrent appends are checked on the next run; missing rows, hash mismatches,
+pin regressions and a changed hash at a pinned sequence remain integrity errors. `--full` also recomputes locally
+from genesis.
 
 ## CONTRACT ASSUMPTIONS
 
