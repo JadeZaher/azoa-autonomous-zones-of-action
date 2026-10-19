@@ -5,8 +5,9 @@ status: PROPOSED_NOT_EXECUTED
 
 # Human validation for the release study
 
-No human research sessions have occurred. The agent journeys and four independent
-panel interpretations identify things to investigate; they do not estimate human
+No human research sessions have occurred. The agent journeys and four research
+lenses identify things to investigate; pass06 uses two analysts applying two
+disclosed lenses each, rather than four independent analysts. They do not estimate human
 success, comprehension, exclusion or willingness to share information. Recruit
 **five participants per affected segment** below. Keep each segment's observations
 separate, even when one participant qualifies for more than one segment. These
@@ -95,6 +96,25 @@ Recorded programmatic-label/contrast failures require technical correction even
 when a human workaround succeeds. Operator-access slots retain initial/loading/
 newly-enabled/settled audit-state tasks; delayed technical probes stay separate
 from unaided human observations. Reading-guide relevance remains RQ-AI-ADVISER.
+
+Pass06 adds focus and responsive navigation tasks within those same75 proposed
+slots; no participants or sessions were added or executed. RQ-AI-ACCESS asks
+keyboard authors to locate the focused field, checkbox, toolbar action and Delete
+control without activating consequential actions, then edit first/middle/last
+nodes using ordinary pan/zoom. Low-vision authors use their normal native browser
+zoom and narrow windows, identify panel reading order and scroll between palette,
+graph and inspector. Record actual zoom method, focus visibility, clipping and
+successful independent recovery. CSS-root zoom in a technical probe is not a
+substitute for these tasks. Compare rapid intentional palette additions with
+actual confusion before interpreting a rage-click proxy as human frustration.
+Keep three failed synthetic attempts and its PARTIAL result unchanged even when
+later panning succeeds. Within the same author slots, ask for an unaided
+explanation of Undo's restored content when selection clears, and what graph
+warnings beside Create Action imply. Observe safe repair of a fictional
+unconnected graph without submission; the synthetic lane never activated Create
+Action and establishes no acceptance, rejection or execution outcome for it.
+Technical focus/reflow corrections require independent
+paint/layout verification regardless of a participant's workaround.
 
 Record task paths, explanations, costly detours and contradictions. Report an
 observed access barrier independently of comprehension. Raise a finding's severity

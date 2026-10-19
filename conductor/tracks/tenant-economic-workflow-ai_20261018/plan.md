@@ -8,8 +8,8 @@ type: implementation-plan
 
 - [x] Exact `ef224234` provider-free manual editor and audit probes sample prior label/contrast/toolbar/opacity corrections; preserve partial manual outcome and all raw failed attempts.
 - [x] Collect newly confirmed focus/reflow and source-inventoried edge-label corrections; independent source review and one frontend sweep passed typecheck/lint/317tests in57files/build/production audit. Retain117warnings and7development audit highs.
-- [ ] Verify new compiled focus/layout candidate with ordinary graph interaction, actual painted focus and meaningful683px geometry; preserve method/scope limits.
-- [ ] Finish pass06 source-free panels and independent recorded-failure closure. Formal study exit, human validation and two consecutive qualifying studies remain open; do not make extra model calls to test presentation fixes.
+- [x] Verify exact `aff895da` compiled focus/layout candidate:46focused checks pass, actual683graph599px; source-free07 verifies real drop/Undo at both widths while retaining six harness selector failures/PARTIAL. Fresh-session audit probe passes after the retained expired-fixture setup failure. Method/scope limits remain explicit.
+- [x] Finish pass06 four source-free lenses and independent recorded-failure closure. Formal study exit, human validation and two consecutive qualifying studies remain open; do not make extra model calls to test presentation fixes.
 - [ ] Scoped main QA delivery and exact Railway revision verification, then separately reviewed server-only provider configuration and owner-only root-key drill. Production is currently default-disabled/unconfigured; no push or Railway write has occurred.
 
 ## Current UI05 checkpoint
