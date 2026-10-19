@@ -135,6 +135,13 @@ proved nothing about the transport the app actually uses. See
   SurrealForge, so the library cannot grade its own output. A green suite that
   quietly fell back to the JSON transport is exactly what it exists to catch.
 
+The shared factory pins **both** `SurrealDb` and `SurrealRuntime` to its generated
+namespace and `test` database, using the same local endpoint and root fixture
+credentials. `DevelopmentCompositionFactory` selects the Development config,
+which already contains `SurrealRuntime`; pinning only the legacy section lets the
+eager SDK binding escape into the shared `azoa` namespace. Apply identical values
+with `UseSetting` before registration and the late in-memory provider.
+
 ## §node-admin-real-auth — `NodeAdmin/NodeAdminWebApplicationFactory`
 
 Node-admin flows need the production JWT pipeline (the `OnTokenValidated` node-admin branch, the policy

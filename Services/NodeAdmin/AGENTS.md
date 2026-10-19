@@ -16,6 +16,20 @@ user and a user/API-key/operator token can never satisfy a `NodeAdmin:*` policy.
 operator (`Services/Admin`) keeps working unchanged; the existing operator policies accept either principal
 (§route-permission-map).
 
+## §bootstrap-shutdown
+
+Stop and dispose atomically transfer the bootstrap cancellation source to one
+caller. That caller cancels it and disposes it only after its cancellation callbacks
+finish; the other path never accesses the transferred source. Retry uses a token
+cached at construction, so a late startup failure cannot read an already disposed
+source. `StopAsync` waits for cancellation and retry together only within the host's
+shutdown budget. Cleanup continues under the winning caller after that deadline.
+
+`NodeAdminBootstrapLifecycleTests` covers both lifecycle orderings and uses a
+blocked cancellation callback to hold the overlap deterministically. Its private
+source probe supplies that synchronization without adding a production test hook;
+the assertions concern source lifetime, retry cancellation and the host deadline.
+
 ## §configuration
 
 | Key | Meaning |

@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Services.NodeAdmin;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -136,14 +137,31 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
         stale.Code.Should().Be(NodeAdminErrorCodes.StepUpRequired);
         stale.AuthRequirement.Should().Be(NodeAdminErrorCodes.RecentNodeAdminLogin);
 
-        // Legacy behavior is unchanged: a 30-minute-old operator login is still admitted there by the policy...
+        // A valid stale login must be newer than the operator's credential watermark.
         var legacy = await LegacyTokenAsync(authAge: TimeSpan.FromMinutes(30));
-        var legacyRefund = await SendToAsync(HttpMethod.Post, refund, new { reason = "customer asked for a refund" }, legacy);
-        legacyRefund.Status.Should().NotBe(HttpStatusCode.Forbidden, legacyRefund.Body.ToString())
-            .And.NotBe(HttpStatusCode.Unauthorized, "the legacy Operator policy has no step-up; the domain answers the unknown intent");
-        // ...while the same stale token is refused where legacy step-up applies, proving it really is stale.
-        (await SendToAsync(HttpMethod.Post, $"/api/operator/kyc/submissions/{Guid.NewGuid()}/decision", new { decision = "approve" }, legacy))
-            .Status.Should().Be(HttpStatusCode.Forbidden);
+        (await SendToAsync(HttpMethod.Post, refund, new { reason = "before credential cut" }, legacy))
+            .Status.Should().Be(HttpStatusCode.Unauthorized, "a token before the seeded credential watermark must remain invalid");
+        using var scope = Factory.Services.CreateScope();
+        var executor = scope.ServiceProvider.GetRequiredService<ISurrealExecutor>();
+        var operatorId = NodeOperatorIdentity.UserId.ToString("N");
+        var original = await executor.QuerySingleAsync<User>(SurrealQuery<User>.Key(operatorId), CancellationToken.None);
+        original.Should().NotBeNull();
+        var watermark = original!.AuthNotBefore;
+        (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operatorId).Where(row => true)
+            .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow.AddHours(-1)).Build(), CancellationToken.None)).EnsureAllOk();
+        try
+        {
+            var legacyRefund = await SendToAsync(HttpMethod.Post, refund, new { reason = "customer asked for a refund" }, legacy);
+            legacyRefund.Status.Should().NotBe(HttpStatusCode.Forbidden, legacyRefund.Body.ToString())
+                .And.NotBe(HttpStatusCode.Unauthorized, "the legacy Operator policy has no step-up; the domain answers the unknown intent");
+            (await SendToAsync(HttpMethod.Post, $"/api/operator/kyc/submissions/{Guid.NewGuid()}/decision", new { decision = "approve" }, legacy))
+                .Status.Should().Be(HttpStatusCode.Forbidden, "the same valid stale login still fails a legacy recent-login policy");
+        }
+        finally
+        {
+            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operatorId).Where(row => true)
+                .Set(row => row.AuthNotBefore, watermark).Build(), CancellationToken.None)).EnsureAllOk();
+        }
     }
 
     [Fact]
@@ -193,7 +211,7 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
         detail.Should().Be("""{"status":200,"permission":"kyc.read","query":["limit","probe","status"]}""");
         detail.Should().NotContain("pii-probe").And.NotContain("pending", "query values never reach the chain");
         var searchRead = rows.Should().ContainSingle(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
-            && row.GetProperty("action").GetString() == "POST /api/search/operator").Subject;
+            && row.GetProperty("action").GetString() == "POST /api/Search/operator").Subject;
         searchRead.GetProperty("outcome").GetString().Should().Be(NodeAdminAuditLog.OutcomeRead);
         searchRead.GetProperty("detail").GetString().Should().NotContain(probe, "body values never reach read-audit metadata");
         rows.Should().Contain(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
