@@ -2,7 +2,28 @@
 
 `azoa-sdk` follows semver; while the major version is 0, a breaking change bumps the minor version.
 
-## Unreleased
+## 0.6.0
+
+The breaking change below is why this is a minor bump; everything under "Added (money UI)" is additive.
+
+### Added (money UI, SR-05 P0 + P1)
+- `azoa-sdk/money` (framework-free): the `AzoaMoneyTransport` seam a host injects (no `userId` anywhere;
+  the subject is the host session), `MoneyResult` / `MoneyRefusal` with a closed refusal vocabulary and
+  `refusalFromSdkError`, browser-safe views (`CheckoutView` without `admissionKey`, `CustodialAccountView`
+  without tenant/subject/user ids) with allowlist narrowing helpers, persisted request keys
+  (`createKeyStore`, `claimRequestKey`, `rememberServerId`, `clearSavedRequest`; per-subject, saved before
+  the request leaves), the keyed flows (`startCheckout`/`sendCheckout`, `startCashOut`/`sendCashOut`,
+  `startSale`/`sendSale`, `resolveCheckoutByState`), amount helpers, the default copy map, and
+  `createDirectMoneyTransport` for first-party apps (it refuses a client configured with an `apiKey`).
+- `azoa-sdk/money/testing`: `runMoneyTransportContract` / `moneyTransportContractCases`, a
+  framework-agnostic contract every transport must pass.
+- `azoa-sdk/react` (`"use client"` entry; React `>=18.2 <20` as an optional peer): `AzoaMoneyProvider`,
+  the hooks `useCustodialAccount`, `useAddFunds`, `useCheckoutStatus`, `useCashOut`, `useSellUnits`,
+  `useBalance`, and unstyled components (`MoneyGate`, `KycStep`, `ConsentStatus`, `CustodialAccountCard`,
+  `AddFundsForm`, `CheckoutStatus`, `WithdrawForm`, `PayoutDestinationStep`, `SellUnitsForm`,
+  `BalanceSummary`, `PendingRequestNotice`) with `slots` and `className`. The host navigates
+  (`onRedirect`); the SDK never sets `location`.
+- `AzoaApiClient.hasApiKey()`.
 
 ### Breaking
 - `ApiKeyInfo.scopes` and `ApiKeyCreateResult.scopes` are now `string[]`, normalized from the

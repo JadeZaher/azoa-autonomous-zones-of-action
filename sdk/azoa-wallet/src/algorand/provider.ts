@@ -480,7 +480,8 @@ export class AlgorandProvider implements ChainProvider {
           "Content-Type": "application/x-binary",
           ...(this.config.algodToken ? { "X-Algo-API-Token": this.config.algodToken } : {}),
         },
-        body: signedTx,
+        // Copied onto a plain ArrayBuffer: DOM `BodyInit` (TS 5.7+) rejects a possibly shared-buffer view.
+        body: new Uint8Array(signedTx),
       });
 
       if (!resp.ok) {

@@ -2231,6 +2231,11 @@ export class AzoaApiClient {
     return this.config.baseUrl;
   }
 
+  /** True when this client carries a tenant API key: a privileged, server-only credential that must never reach a browser. */
+  hasApiKey(): boolean {
+    return typeof this.config.apiKey === "string" && this.config.apiKey.length > 0;
+  }
+
   /**
    * Toggle verbose diagnostics at runtime. When on, every
    * request/response/error is logged and the backend's server-side exception

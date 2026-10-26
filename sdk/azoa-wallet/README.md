@@ -34,6 +34,27 @@ state and must not present simulated verification as production KYC.
 
 ---
 
+## Money UI (`azoa-sdk/money`, `azoa-sdk/react`)
+
+Host apps render AZOA's add-funds, cash-out, KYC and consent UI without holding a credential in the
+browser: the host implements `AzoaMoneyTransport` over its own backend (the only holder of the tenant API
+key) and injects it. Components are unstyled (`slots`, `className`) and never navigate on their own.
+
+```tsx
+import { AzoaMoneyProvider, MoneyGate, AddFundsForm } from "azoa-sdk/react";
+
+<AzoaMoneyProvider transport={transport} subject={session.userId} onRedirect={url => router.push(url)}>
+  <MoneyGate require="ready">
+    <AddFundsForm presets={[10_00, 25_00]} returnedIntentId={searchParams.get("intent")} />
+  </MoneyGate>
+</AzoaMoneyProvider>
+```
+
+Verify a transport with `runMoneyTransportContract` from `azoa-sdk/money/testing`. Design notes:
+`src/money/AGENTS.md`, `src/react/AGENTS.md`.
+
+---
+
 ## Workflow SDK (`azoa.workflow`)
 
 DESIGN a workflow *shape* once as an `ActionTemplate` (a DAG of generic nodes with
