@@ -135,3 +135,14 @@ Evidence: `qa-live-2026-10-18.md` § Re-run (0de1b99d). Screenshots `20-*`, `21-
   the live dev node) and time out data-churny suites at their 8s client budget;
   the integrated verdict is GitHub Actions' dedicated-container run. Local
   proof: green per-family subsets + the unit suite.
+
+## CLOSED 2026-10-26 — CI green on main
+
+GitHub Actions run 40309480218 93e601670: all nine jobs green (unit 5509+, integration with the
+dedicated container, E2E five journeys including stripe-on-ramp settling to
+funds_applied through the Simulated rail, gitleaks history+worktree, schema,
+perf budgets, SDK, frontend audit + browser slices, Railway blueprint). The
+"Integrated sweep, once" and "CI green on main" release blockers are closed.
+"Enable Railway Wait for CI" is now actionable — the gate it waits on exists.
+Still open from this table: the live Identomat drill (vendor trial) and the
+production activation pins.
