@@ -21,6 +21,9 @@ commits = [
   "d69671a1e54336f6668c9a14ff145712ba75f2f0",
 ]
 regexes = [
+  # Placeholder literals in test fixtures (reviewed 2026-10-26, CI run 40266823245).
+  '''^pk_test_abc123$''',                                                                   # SurrealActionGraphBundleStoreTests fixture public key
+  '''^0xTESTPUBKEY123$''',                                                                  # ActionGraphBundleController_QA.jsonl recorded placeholder
   # Published test vectors and well-known samples.
   '''^f8f8a2f43c8376ccb0871305060d7b27b0554d2cc72bccf41b2705608452f315$''',                 # Mastering Ethereum worked-example key (EthereumKeygenTests)
   '''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ\.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c$''', # jwt.io sample token (malicious-input fixtures)
@@ -60,6 +63,8 @@ paths = [
   # Deleted in 0726c0f9; history only. 50 JWTs from a 2026-06 local live-test run, issuer
   # "OASIS.WebAPI" (retired), dev signing key, all expired 2026-06-09.
   '''^tests/live-test-results\.md$''',
-  # Pin manifest: by construction only upstream git blob/tree hashes, sha256 digests and public program ids.
-  '''^tests/AZOA\.WebAPI\.IntegrationTests/Fixtures/Wtt/wormhole-pins\.json$''',
+  # Pin manifest: by construction only upstream git blob/tree hashes, sha256 digests and public
+  # program ids. No ^ anchor: the CI working-tree scan (--no-git) reports container-absolute
+  # paths (/repo/tests/...), which a ^tests anchor silently fails to match.
+  '''tests/AZOA\.WebAPI\.IntegrationTests/Fixtures/Wtt/wormhole-pins\.json$''',
 ]
