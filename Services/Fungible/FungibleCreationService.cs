@@ -91,6 +91,7 @@ public sealed class FungibleCreationService(IFungibleCreationStore store, IBlock
     {
         if (command.ActorUserId == Guid.Empty || string.IsNullOrWhiteSpace(command.RequestKey) || command.RequestKey.Length > 200
             || command.ActorUserId != command.Intent.ActorUserId || command.TenantId != command.Intent.TenantId
+            || (command.ReserveOwnerTenantId is { } owner && (command.TenantId is not null || owner != command.ActorUserId))
             || (command.GenesisAuthority is null && command.WalletId == Guid.Empty) || (command.Intent.Quote is not null && !FungibleCreationIdentity.IsValidQuote(command.Intent))
             || command.Intent.Generation != 0 || command.MintTarget is not ("PlatformReserve" or "CallerWallet")
             || (command.MintTarget == "PlatformReserve") != command.Intent.SigningContext.IsPlatform
@@ -221,7 +222,7 @@ public sealed class FungibleCreationService(IFungibleCreationStore store, IBlock
                 };
                 var reserve = command.MintTarget == "PlatformReserve" ? ReserveAssetRegistrationPlan.Create(
                     new ReserveAssetRegistration(intent.ChainType, observed.AssetId!, intent.UnitName, intent.Decimals,
-                        BigInteger.Parse(intent.TotalBaseUnits, System.Globalization.CultureInfo.InvariantCulture), command.TenantId),
+                        BigInteger.Parse(intent.TotalBaseUnits, System.Globalization.CultureInfo.InvariantCulture), command.ReserveTenantId()),
                     new ReserveAccount(intent.ChainType, intent.CreatorAddress, true), intent.Network.ToString(), observed.ProtocolIdentity, DateTimeOffset.UtcNow) : null;
                 if (await store.CompleteAsync(row, authority, reserve, ct)) continue;
                 return Pending(row, "Chain creation is confirmed; reserve or holon projection requires recovery.");

@@ -65,6 +65,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     private readonly IHostedSessionFlow _flow;
     private readonly ILogger<IdentomatKycProviderService> _logger;
     private readonly IConfiguration? _configuration;
+    private readonly bool _allowDevVendor;
 
     public IdentomatKycProviderService(
         IOptions<KycSettings> options,
@@ -72,7 +73,8 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         IKycTenantQuota quota,
         IHostedSessionFlow flow,
         ILogger<IdentomatKycProviderService>? logger = null,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        IHostEnvironment? environment = null)
     {
         _settings = options.Value.Identomat;
         _transport = transport;
@@ -80,6 +82,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         _flow = flow;
         _logger = logger ?? NullLogger<IdentomatKycProviderService>.Instance;
         _configuration = configuration;
+        _allowDevVendor = KycRuntimeSafety.IsInsecureDevVendorAllowed(environment, configuration);
     }
 
     public KycProvider Provider => KycProvider.IDENTOMAT;
@@ -128,9 +131,9 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
     public IReadOnlyList<string> MissingConfigurationKeys()
     {
         var missing = new List<string>();
-        if (!ValidHttpsOrigin(_settings.BeginBaseUrl))
+        if (!ValidVendorOrigin(_settings.BeginBaseUrl))
             missing.Add(IdentomatKycSettings.BeginBaseUrlName);
-        if (!ValidHttpsOrigin(_settings.ResultBaseUrl))
+        if (!ValidVendorOrigin(_settings.ResultBaseUrl))
             missing.Add(IdentomatKycSettings.ResultBaseUrlName);
         if (string.IsNullOrWhiteSpace(_settings.CompanyKey))
             missing.Add(IdentomatKycSettings.CompanyKeyName);
@@ -309,7 +312,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             return AZOAResult<HostedSessionCreation>.FailureWithCode(response.Message, response.Code ?? AzoaErrorCodes.DependencyUnavailable);
 
         var url = response.Result.Url;
-        if (!ValidHttpsRedirect(url))
+        if (!ValidWidgetRedirect(url))
         {
             _logger.LogError("Identomat /begin returned a redirect that is not an acceptable HTTPS URL.");
             return AZOAResult<HostedSessionCreation>.FailureWithCode(
@@ -518,6 +521,16 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
             ReturnUrlConfigurationName);
         return null;
     }
+
+    /// <summary>Public HTTPS origin, or a loopback dev sidecar when the dev-vendor allowance is on (see <c>tools/dev-kyc-vendor/AGENTS.md</c> §origin-allowance).</summary>
+    private bool ValidVendorOrigin(string? value)
+        => ValidHttpsOrigin(value)
+            || (_allowDevVendor && KycRuntimeSafety.IsLoopbackDevVendorUrl(value, origin: true));
+
+    /// <summary>Public HTTPS widget redirect, or (dev allowance only) a loopback one pinned to the configured result host (shared predicate, see M1).</summary>
+    private bool ValidWidgetRedirect(string? value)
+        => ValidHttpsRedirect(value)
+            || (_allowDevVendor && KycRuntimeSafety.IsPinnedLoopbackRedirect(value, _settings.ResultBaseUrl));
 
     /// <summary>Mirrors the origin validation used by the generic hosted scaffold.</summary>
     private static bool ValidHttpsOrigin(string? value)

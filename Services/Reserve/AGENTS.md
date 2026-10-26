@@ -250,6 +250,20 @@ reads go through the record id, and `ProjectTreasuryService.ParseTenant` accepts
 forms, so `GuardRowOwnership` compares GUIDs, never strings. Admin wire views that echo
 `row.TenantId` now show the link form (see the lane record's cross-lane note).
 
+## §simulated-project-treasury — per-project sim: accounts
+
+`ProjectTreasuryKeyDerivation` registers `Simulated` with the same HKDF-SHA256 rule as Algorand
+(parent = the Simulated platform key from `AZOA:Simulated:PlatformSeed`, info =
+`chain|tenant|project`, 32 bytes out). Any 32 bytes are a valid simulated key, and the address goes
+through `PlatformReserveAddressDerivation` → `WalletKeyService.SimulatedAddressFor`, so a project
+treasury is an ordinary `sim:simulated:<base32>` address the Simulated provider validates — one
+address rule shared with the reserve and simulated wallet rows. No new seed, no new config key.
+
+**Gating** mirrors Services/Custody/AGENTS.md §simulated-platform-key: the registry is static and a
+live node fails closed twice over — `GuardReference` reads `Reserve:Chains` (shipped: Algorand only;
+the Development overlay adds Simulated), and the custody door refuses without the seed, which only
+the Development config sets.
+
 ## §reattribution — tenant-funded cash-outs return units to the tenant (round 4, D-8)
 
 Owner decision (b): units collected by a tenant-funded cash-out belong to the tenant that paid to buy
@@ -260,3 +274,12 @@ declared supply is unchanged, so the supply cap still holds. Only `ReserveDrawAu
 may call it (the off-ramp rail; both partitions come from node configuration and a node-written row).
 The target partition is `tenant-payout:{tenant compact id}`; the cash-out row records it in
 `collect_partition`, and returning units draws `Issue` from that same partition.
+
+## §receipt-operation-id
+
+`ExchangeReceipt.OperationId` is set for every persisted exchange source (any rail, any state) by
+`ExchangeHoldSourceIdentity.OperationId(source.Id)`: the first 16 bytes of SHA-256 over
+`"azoa-exchange-operation-v1:" + sourceId`. The durable source replaced the retired `BlockchainOperation`
+row, so no rail stamped one; consumers (ArdaNova's settlement gateway) require a non-empty Guid with
+`isTerminal` and `requiresReconciliation == false`. It is derived at read time, never stored, so sources
+admitted before this existed report the same id with no migration. A preview has no source and stays null.

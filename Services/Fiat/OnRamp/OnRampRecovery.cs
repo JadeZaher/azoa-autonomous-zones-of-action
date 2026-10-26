@@ -2,6 +2,7 @@ using System.Text.Json;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Idempotency;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Models.Idempotency;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
@@ -34,6 +35,10 @@ public sealed class OnRampRecovery(IOnRampLotLedger lots, IIdempotencyStore idem
         var claim = await idempotency.GetAsync(IssuanceLedgerKey(key), ct);
         if (claim?.OperationType == RefundReservationType)
             return AZOAResult<OnRampLot>.Failure("A refund owns this payment; issuance cannot resume.");
+        // A refusal recorded before any value effect is terminal for replays; the operator's
+        // resume is the one actor allowed to release it (see OnRamp/AGENTS.md §resume).
+        if (claim is { State: IdempotencyState.Failed } && idempotency is IAllocationRecoveryStore reopenable)
+            await reopenable.TryReopenAfterNoEffectAsync(IssuanceLedgerKey(key), ct);
         if (row.Status != OnRampLotStatuses.Pending)
         {
             Audit(row, actorId, "resume", reason);

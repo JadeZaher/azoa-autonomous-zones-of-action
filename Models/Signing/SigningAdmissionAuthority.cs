@@ -15,9 +15,11 @@ public sealed record SigningCredentialWitness(int Version, string Kind, Guid Act
 public sealed record NodeAdminAuthorityWitness(string Principal, string SessionRecordId,
     long? AdminRevision, long? SessionRevision, long? RootKeyRevision, long? RootSessionRevision);
 
-/// <summary>One exact selected delegated grant and its unchanged scope/expiry evidence.</summary>
+/// <summary>One exact selected delegated grant and its unchanged scope/expiry evidence; a set <see cref="ParticipationRef"/>
+/// names a tenant-provisioned participation grant (omitted from JSON when null so legacy witness hashes are unchanged).</summary>
 public sealed record SigningGrantWitness(Guid Id, string RequiredScope, string StoredScopes,
-    DateTimeOffset GrantedAt, DateTimeOffset? ExpiresAt);
+    DateTimeOffset GrantedAt, DateTimeOffset? ExpiresAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ParticipationRef = null);
 
 /// <summary>The participant's exact owned wallet binding captured before new economic authorization.</summary>
 public sealed record SigningWalletWitness(Guid Id, Guid OwnerUserId, string Address, string ChainType);

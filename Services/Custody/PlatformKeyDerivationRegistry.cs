@@ -20,6 +20,7 @@ public sealed class PlatformKeyDerivationRegistry
         new AlgorandPlatformKeyDerivation(),
         new SolanaPlatformKeyDerivation(),
         new EthereumPlatformKeyDerivation(),
+        new SimulatedPlatformKeyDerivation(),
     ]);
 
     private readonly Dictionary<string, IPlatformKeyDerivation> _byChainType;

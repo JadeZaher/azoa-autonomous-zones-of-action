@@ -355,6 +355,36 @@ generic `401`. The OAuth refusal redirects with `error=registration_closed`.
   provider keys (`FiatConsumerErrors.Unresolved`), distinct from the transient `RAIL_UNAVAILABLE` /
   `RAIL_BUSY`, so a client can say "not configured" instead of "try again shortly".
 
+## §fiat-checkout-consent
+
+A tenant API key starting an add-funds checkout for a person (`POST /api/fiat/checkout/{userId}`) is
+consent-probed with **`units:issue`**, not `transfer:sign`. What the payment funds is an
+`AllocationKind.IssueUnits` draw from the platform reserve into the payer's own custodial account
+(`OnRampSettlementHandler`), signed with the PLATFORM key — inbound credit, the OI-23 reasoning in
+`AllocationController.SigningShapeFor`. The probe used to say `transfer:sign` (a pre-OI-23 comment
+claimed IssueUnits mapped to it), which no custodially onboarded person can ever hold: value-signing
+scopes are refused under a `Participation` grant (H4), and those people have no first-party login to
+grant one explicitly. Every tenant-driven checkout therefore 403'd with "No live consent grant covers
+this tenant-driven signing action". `units:issue` is in `AzoaScopes.ParticipationInboundCreditFloor`,
+so the provisioned participation grant covers it. The payout direction (`FiatPayoutController`) still
+probes `transfer:sign` — money leaving an account. Pinned by
+`tests/AZOA.WebAPI.Tests/Fiat/FiatCheckoutConsentScopeTests.cs`.
+
+## §platform-unit-partitions
+
+`POST api/admin/platform-token/partitions` (`PlatformTokenController.DeclarePartitions`) is the operator's
+door for carving named budgets (`on-ramp`, `contributor`, ...) out of the node's OWN unit. It exists because
+the shared `POST api/reserve/{assetId}/partitions` operator lane was unreachable: that route carries only
+`[Authorize]`, and `OnTokenValidated` (`Program.cs`) fails every node-operator / node-admin session on an
+endpoint without an operator policy, so nobody could declare the `on-ramp` partition the fiat settlement draws
+from. The new route carries `Operator` (class) + `RecentNodeOperatorSession`, is mapped to
+`platform.genesis` (recent) in `NodeAdminRoutePermissions`, and takes NO asset or chain from the body: both
+come from the active `platform_token` definition. It calls the same
+`PlatformReserveService.DeclarePartitionsAsync` with `ReserveDrawAuthority.NodeOperator`, so re-declaring
+SETS a budget (idempotent) and the oversubscription check is the service's, not the door's. The tenant route
+is unchanged and still refuses the platform unit (`ReservePartitionScope.RefuseDeclaration`). Budget parsing
+is shared (`PlatformReserveController.ReadBudgets`).
+
 ## node-admin
 
 `NodeAdminAuthController` (`api/node-admin` auth, sessions, `me`, enrollment), `NodeAdminAdminsController`,

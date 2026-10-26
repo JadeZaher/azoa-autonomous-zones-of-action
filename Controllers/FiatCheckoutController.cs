@@ -227,11 +227,10 @@ public sealed class FiatCheckoutController : ControllerBase
                     AzoaErrorCodes.DependencyUnavailable)));
         }
 
-        // The scope probed is the one the ISSUANCE this payment funds will sign under
-        // (AllocationKind.IssueUnits maps to transfer:sign), so consent granted here is consent
-        // for what actually happens next, not for a weaker action.
+        // Probe the scope the funded issuance signs under (IssueUnits => units:issue, OI-23); see
+        // Controllers/AGENTS.md §fiat-checkout-consent.
         var probe = new SigningContext(subjectUserId, Guid.Empty, IsPlatform: false)
-            .ActingAs(callerUserId, AzoaScopes.TransferSign, subjectUserId);
+            .ActingAs(callerUserId, AzoaScopes.UnitsIssue, subjectUserId);
 
         var consent = await _consentGate.EnsureAllowedAsync(probe, HttpContext.RequestAborted);
         if (consent.IsError)

@@ -42,7 +42,7 @@ namespace AZOA.WebAPI.Providers.Blockchain.Simulated;
 /// mint/transfer/burn. It is deliberately non-durable (test/demo scope). A
 /// durable SurrealDB <c>simulated_balance</c> table is a documented follow-up.</para>
 /// </summary>
-public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider, IBridgeSourceLeg, IBridgeTargetLeg
+public sealed partial class SimulatedBlockchainProvider : BaseBlockchainProvider, IBridgeSourceLeg, IBridgeTargetLeg
 {
     /// <summary>Reserved marker prefix for all simulated identifiers. Centralized
     /// so tests reference it instead of a magic string.</summary>
@@ -57,7 +57,7 @@ public sealed class SimulatedBlockchainProvider : BaseBlockchainProvider, IBridg
 
     public override string ChainType => "Simulated";
 
-    /// <summary>Capability name shared by every module this provider implements (both bridge legs).</summary>
+    /// <summary>Capability name shared by every module this provider implements (bridge legs, fungible creation).</summary>
     public string CapabilityName => "Simulated.Bridge";
 
     // (address, tokenId) → balance. tokenId "" represents the native/default unit.

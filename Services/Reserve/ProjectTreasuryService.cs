@@ -12,6 +12,7 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Custody;
+using AZOA.WebAPI.Services.Signing;
 using SurrealForge.Client;
 using SurrealForge.Client.Idempotency;
 using SurrealForge.Client.Query;
@@ -568,7 +569,7 @@ public static class ProjectTreasuryKeyDerivation
 
     /// <summary>Chains this derivation supports, for a caller-safe error message.</summary>
     public static string SupportedChainsMessage =>
-        "Project treasury keys can be derived for: Algorand.";
+        "Project treasury keys can be derived for: Algorand, Simulated.";
 
     /// <summary>Domain-separating HKDF salt; changing it changes every derived address.</summary>
     private static readonly byte[] Salt = Encoding.UTF8.GetBytes(Version);
@@ -578,6 +579,8 @@ public static class ProjectTreasuryKeyDerivation
         new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             ["Algorand"] = AlgorandPlatformKeyDerivation.PrivateKeyLength,
+            // Any 32 bytes are a valid simulated key; see Services/Reserve/AGENTS.md §simulated-project-treasury.
+            [WalletKeyService.SimulatedChainType] = SimulatedPlatformKeyDerivation.PrivateKeyLength,
         };
 
     /// <summary>True when a treasury key can be derived on this chain at all.</summary>

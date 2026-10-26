@@ -19,8 +19,10 @@ public sealed partial class HoldCommandService
         var prior = await store.GetCommandAsync(id, ct);
         if (prior is not null)
         {
-            if (prior.IntentHash != CanonicalJson.Hash(intent) || prior.ActorUserId != credential.ActorUserId.ToString("N")
+            if (prior.ActorUserId != credential.ActorUserId.ToString("N")
                 || prior.TenantId != credential.TenantId?.ToString("N")) return Refuse();
+            // Same actor, same key, different bytes: say so instead of "not found" (see Services/Hold/AGENTS.md §replay-conflict).
+            if (prior.IntentHash != CanonicalJson.Hash(intent)) return AZOAResult<HoldCommandView>.Failure(ReplayConflict);
             var original = prior.RailPlanJson is null ? null : JsonSerializer.Deserialize<HoldRailPlan>(prior.RailPlanJson);
             if (original?.SenderWallet?.Id != senderWalletId || original?.RecipientWallet?.Id != recipientWalletId) return Refuse();
             return await ReadResultAsync(prior, ct);

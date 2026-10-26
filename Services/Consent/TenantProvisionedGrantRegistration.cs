@@ -15,9 +15,9 @@ namespace AZOA.WebAPI.Services.Consent;
 public static class TenantProvisionedGrant
 {
     /// <summary>Namespaced, versioned prefix of the deterministic participation reference.</summary>
-    public const string ParticipationRefPrefix = "tenant-provisioned:v1:";
+    public const string ParticipationRefPrefix = ConsentScopeCoverage.TenantProvisionedRefPrefix;
 
-    /// <summary>Non-spending provisioning scopes, validated by the atomic lifecycle admission.</summary>
+    /// <summary>Stored non-spending provisioning scopes; the reserve-exchange scope is covered at check time (Core/AGENTS.md §consent-scope-coverage).</summary>
     public static readonly IReadOnlyList<string> ImpliedScopes = new[]
     {
         AzoaScopes.WalletManage,

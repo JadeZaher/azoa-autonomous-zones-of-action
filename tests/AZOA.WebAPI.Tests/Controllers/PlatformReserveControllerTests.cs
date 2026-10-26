@@ -13,6 +13,14 @@ using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
 using AZOA.WebAPI.Services.Reserve;
+using AZOA.WebAPI.Services.Signing;
+using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.Stores;
+using AZOA.WebAPI.Models.Requests;
+using AZOA.WebAPI.Tests.TestSupport;
+using SurrealForge.Client;
+using SurrealForge.Client.Query;
+using ApiKeyRow = AZOA.WebAPI.Persistence.SurrealDb.Models.ApiKey;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -371,6 +379,82 @@ public sealed class PlatformReserveControllerTests
             .Should().NotContain(name => name.Contains("Address", StringComparison.OrdinalIgnoreCase));
     }
 
+    // ── Mint door → partitions door (L1.1: both resolve the tenant from the principal) ──
+
+    [Fact]
+    public async Task TenantKeyMint_StampsTheKeysTenant_SoTheSameKeyReadsAndDeclaresIdempotently()
+    {
+        var mint = new FungibleAdmissionHarness(ReserveMintTargets.PlatformReserve);
+        var minted = await MintThroughTheDoor(mint, ApiKeyPrincipal(mint.Actor, AzoaScopes.TokenCreateSign));
+
+        minted.Result.Should().BeOfType<AcceptedResult>();
+        var command = mint.Commands.Values.Single();
+        command.TenantId.Should().BeNull("a tenant's own key delegates for no one, so signing stays un-delegated");
+        var harness = ReserveRouteHarness.WithRegisteredRow(RegisteredRowFor(command));
+        var tenant = harness.ControllerFor(ApiKeyPrincipal(mint.Actor, AzoaScopes.TokenCreateSign));
+
+        Succeeded(await tenant.Get(AssetId, Chain, CancellationToken.None));
+        var declaration = Budget((InvestorPartition, "600"), (ContributorPartition, "400"));
+        Succeeded(await tenant.Declare(AssetId, Chain, declaration, CancellationToken.None));
+        Succeeded(await tenant.Declare(AssetId, Chain, declaration, CancellationToken.None));
+
+        harness.DeclaredFor(InvestorPartition).Should().Be(new BigInteger(600));
+        harness.DeclaredFor(ContributorPartition).Should().Be(new BigInteger(400));
+    }
+
+    [Fact]
+    public async Task FirstPartyMint_RegistersTheNodesOwnUnit_WhichStillRefusesATenant()
+    {
+        var mint = new FungibleAdmissionHarness(ReserveMintTargets.PlatformReserve);
+        var now = DateTimeOffset.UtcNow;
+        var minted = await MintThroughTheDoor(mint,
+            new Claim(ClaimTypes.NameIdentifier, mint.Actor.ToString()),
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseLogin),
+            new Claim(AzoaClaims.AuthTime, now.AddMinutes(-1).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new Claim("exp", now.AddHours(1).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+        minted.Result.Should().BeOfType<AcceptedResult>();
+        var command = mint.Commands.Values.Single();
+        command.ReserveTenantId().Should().BeNull();
+        var harness = ReserveRouteHarness.WithRegisteredRow(RegisteredRowFor(command));
+        var tenant = harness.ControllerFor(ApiKeyPrincipal(mint.Actor, AzoaScopes.TokenCreateSign));
+
+        Forbidden(await tenant.Declare(AssetId, Chain, Budget((ContributorPartition, "400")), CancellationToken.None))
+            .Message.Should().Contain("this node's own unit");
+        harness.DeclaredFor(ContributorPartition).Should().Be(BigInteger.Zero);
+    }
+
+    /// <summary>Drives NftController.FungibleMint with a real manager; API-key capture reads a live key row carrying token:create:sign.</summary>
+    private static async Task<ActionResult<AZOAResult<FungibleTokenResult>>> MintThroughTheDoor(
+        FungibleAdmissionHarness mint, params Claim[] claims)
+    {
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(mint.Actor, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IUser>.Success(new AZOA.WebAPI.Models.User { Id = mint.Actor, IsActive = true }));
+        var executor = new Mock<ISurrealExecutor>();
+        executor.Setup(store => store.QuerySingleAsync<ApiKeyRow>(It.IsAny<SurrealQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ApiKeyRow { Id = Guid.NewGuid().ToString("N"), UserId = $"user:{mint.Actor:N}", IsActive = true,
+                KeyHash = "fixture-hash", Scopes = [AzoaScopes.TokenCreateSign] });
+        var http = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")) };
+        http.Request.Headers["Idempotency-Key"] = "tenant-owned-probe";
+        var door = new NftController(Mock.Of<INftManager>(), mint.Manager,
+            new SigningAdmissionAuthorityFactory(users.Object, Mock.Of<IWalletStore>(), executor.Object))
+        {
+            ControllerContext = new ControllerContext { HttpContext = http },
+        };
+        return await door.FungibleMint(new FungibleMintRequest
+        {
+            Name = "Tenant Owned Probe", UnitName = "TOP", Total = 1000, Decimals = 2, ChainType = Chain,
+        });
+    }
+
+    /// <summary>The ledger row FungibleCreationService registers on confirmation, from the admitted command.</summary>
+    private static PlatformReserveLedger RegisteredRowFor(AZOA.WebAPI.Models.Blockchain.FungibleCreationCommand command) =>
+        ReserveAssetRegistrationPlan.Create(
+            new ReserveAssetRegistration(command.Intent.ChainType, AssetId, command.Intent.UnitName, command.Intent.Decimals,
+                BigInteger.Parse(command.Intent.TotalBaseUnits, System.Globalization.CultureInfo.InvariantCulture), command.ReserveTenantId()),
+            new ReserveAccount(command.Intent.ChainType, command.Intent.CreatorAddress, true), Network, null, DateTimeOffset.UtcNow);
+
     // ── Principals ────────────────────────────────────────────────────────────
 
     private static Claim[] SignedInUser(Guid userId) =>
@@ -398,6 +482,47 @@ public sealed class PlatformReserveControllerTests
             new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator),
             new Claim("scope", AzoaScopes.Operator),
         };
+
+    // ── Operator route on the platform unit (POST api/admin/platform-token/partitions) ──
+
+    [Fact]
+    public async Task PlatformUnitPartitions_Operator_DeclaresAndARedeclareSetsRatherThanAdds()
+    {
+        var harness = ReserveRouteHarness.WithPlatformUnit();
+        var controller = harness.PlatformTokenControllerFor(LegacyOperatorPrincipal());
+
+        var first = await controller.DeclarePartitions(PlatformBudget(("on-ramp", "600")), CancellationToken.None);
+        var replay = await controller.DeclarePartitions(PlatformBudget(("on-ramp", "600")), CancellationToken.None);
+
+        Succeeded(first).Partitions.Should().ContainSingle().Which.Declared.Should().Be("600");
+        Succeeded(replay).Partitions.Should().ContainSingle().Which.Declared.Should().Be("600");
+        harness.DeclaredFor("on-ramp").Should().Be(new BigInteger(600));
+    }
+
+    [Fact]
+    public async Task PlatformUnitPartitions_TenantApiKey_IsRefusedAndCarvesNothing()
+    {
+        var harness = ReserveRouteHarness.WithPlatformUnit();
+        var controller = harness.PlatformTokenControllerFor(
+            ApiKeyPrincipal(Guid.NewGuid(), AzoaScopes.TokenCreateSign, AzoaScopes.TenantProvision));
+
+        var response = await controller.DeclarePartitions(PlatformBudget(("on-ramp", "600")), CancellationToken.None);
+
+        response.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        harness.DeclaredFor("on-ramp").Should().Be(BigInteger.Zero);
+    }
+
+    private static Claim[] LegacyOperatorPrincipal() =>
+        new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, OperatorActor.Legacy.SubjectUserId.ToString()),
+            new Claim(AzoaClaims.TokenUse, AzoaClaims.TokenUseNodeOperator),
+            new Claim("scope", AzoaScopes.Operator),
+        };
+
+    private static AZOA.WebAPI.Controllers.Admin.PlatformUnitPartitionDeclarationBody PlatformBudget(
+        params (string Name, string Declared)[] partitions) =>
+        new() { Partitions = partitions.ToDictionary(p => p.Name, p => p.Declared, StringComparer.Ordinal) };
 
     // ── Request + response helpers ────────────────────────────────────────────
 
@@ -467,10 +592,13 @@ public sealed class PlatformReserveControllerTests
         /// <summary>The node's own unit: a ledger row with no tenant on it.</summary>
         public static ReserveRouteHarness WithPlatformUnit() => Build(null);
 
-        private static ReserveRouteHarness Build(Guid? tenantId)
+        /// <summary>A row exactly as the fungible-creation registration plan produced it.</summary>
+        public static ReserveRouteHarness WithRegisteredRow(PlatformReserveLedger row) => Build(null, row);
+
+        private static ReserveRouteHarness Build(Guid? tenantId, PlatformReserveLedger? row = null)
         {
             var ledger = new InMemoryLedgerStore();
-            ledger.Seed(NewRow(tenantId));
+            ledger.Seed(row ?? NewRow(tenantId));
 
             var providers = new Mock<IBlockchainProviderFactory>();
             providers.SetupGet(factory => factory.DefaultNetwork).Returns(ChainNetwork.Devnet);
@@ -493,6 +621,27 @@ public sealed class PlatformReserveControllerTests
                     },
                 },
             };
+
+        /// <summary>The operator platform-unit route over the same real reserve, with genesis reporting this ledger row's asset.</summary>
+        public AZOA.WebAPI.Controllers.Admin.PlatformTokenController PlatformTokenControllerFor(params Claim[] claims)
+        {
+            var genesis = new Mock<IPlatformTokenGenesis>();
+            genesis.Setup(g => g.GetStateAsync(It.IsAny<CancellationToken>())).ReturnsAsync(
+                AZOAResult<PlatformTokenState>.Success(new PlatformTokenState(
+                    new PlatformTokenDefinition(Chain, Network, AssetId, "Unit", "UNIT", 2,
+                        BigInteger.Parse(AssetTotalSupply), "RESERVE-ADDRESS", DateTimeOffset.UtcNow),
+                    new PlatformTokenSupply(BigInteger.Parse(AssetTotalSupply), 0, 0, BigInteger.Parse(AssetTotalSupply)))));
+            return new AZOA.WebAPI.Controllers.Admin.PlatformTokenController(genesis.Object, reserve: _reserve)
+            {
+                ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")),
+                    },
+                },
+            };
+        }
 
         /// <summary>What the LEDGER says the partition is declared at — the counter itself.</summary>
         public BigInteger DeclaredFor(string partition)

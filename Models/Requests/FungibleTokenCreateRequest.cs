@@ -17,4 +17,6 @@ public class FungibleTokenCreateRequest
     public Guid? HolonId { get; set; }
     [JsonIgnore] public ActionEffectAuthority? ActionAuthority { get; set; }
     [JsonIgnore] public AZOA.WebAPI.Models.Signing.SigningCredentialWitness? AuthenticationWitness { get; set; }
+    /// <summary>Server-set reserve-row owner from the principal (never the body); see Services/Fungible/AGENTS.md §reserve-owner.</summary>
+    [JsonIgnore] public Guid? ReserveOwnerTenantId { get; set; }
 }

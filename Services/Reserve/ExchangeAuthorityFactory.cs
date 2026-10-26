@@ -30,15 +30,20 @@ public sealed class ExchangeAuthorityFactory(SigningAdmissionAuthorityFactory si
         var tenant = SurrealLink.ToLink("user", tenantId.ToString("N"))!;
         var now = DateTimeOffset.UtcNow;
         var candidates = await executor.QueryAsync<GrantRow>(SurrealQuery<GrantRow>.From()
-            .Where(row => row.GrantorUserId == grantor && row.TenantId == tenant && row.Origin == "UserExplicit"
+            .Where(row => row.GrantorUserId == grantor && row.TenantId == tenant
                 && row.RevokedAt == null && (row.ExpiresAt == null || row.ExpiresAt > now)).OrderBy(row => row.Id), ct);
-        var selected = candidates.FirstOrDefault(row => row.Scopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Contains(AzoaScopes.SwapSign, StringComparer.Ordinal));
+        // An explicit swap:sign grant wins; otherwise the tenant-provisioned implied grant (Core/AGENTS.md §consent-scope-coverage).
+        var selected = candidates.FirstOrDefault(row => row.Origin == "UserExplicit"
+                && ConsentScopeCoverage.SplitScopes(row.Scopes).Contains(AzoaScopes.SwapSign, StringComparer.Ordinal))
+            ?? candidates.FirstOrDefault(row => ConsentScopeCoverage.IsTenantProvisioned(row.Origin, row.ParticipationRef)
+                && ConsentScopeCoverage.Covers(row.Origin, row.ParticipationRef, row.Scopes, AzoaScopes.SwapSign));
         if (selected is null) return Refuse();
+        var participationRef = selected.Origin == "UserExplicit" ? null : selected.ParticipationRef;
         var watermark = user.AuthNotBefore is { } value ? new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)) : (DateTimeOffset?)null;
         return AZOAResult<ExchangeParticipantAuthority>.Success(new(1, principal.Result, participantId, watermark,
             new(walletId, participantId, account.Address, account.ChainType),
-            new(SurrealRecordGuid.Parse(selected.Id), AzoaScopes.SwapSign, selected.Scopes, selected.GrantedAt, selected.ExpiresAt)));
+            new(SurrealRecordGuid.Parse(selected.Id), AzoaScopes.SwapSign, selected.Scopes, selected.GrantedAt, selected.ExpiresAt,
+                participationRef)));
     }
 
     private static AZOAResult<ExchangeParticipantAuthority> Refuse()

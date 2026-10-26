@@ -46,6 +46,7 @@ public class WalletKeyService
             "algorand" => GenerateAlgorandKeypair(),
             "solana" => GenerateSolanaKeypair(),
             "ethereum" => GenerateEthereumKeypair(),
+            "simulated" => GenerateSimulatedKeypair(),
             _ => throw new NotSupportedException($"Chain type '{chainType}' is not supported for wallet generation.")
         };
     }
@@ -53,6 +54,12 @@ public class WalletKeyService
     /// <summary>Generate the development-only tenant keypair without a recovery phrase.</summary>
     public (string publicKey, string privateKeyHex, string address) GenerateCustodialKeypair(string chainType)
     {
+        if (string.Equals(chainType, SimulatedChainType, StringComparison.OrdinalIgnoreCase))
+        {
+            var simulated = GenerateSimulatedKeypair();
+            return (simulated.Item1, simulated.Item2, simulated.Item3);
+        }
+
         if (!string.Equals(chainType, "Algorand", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException(
                 "Tenant custodial bootstrap currently supports Algorand development simulation only.");
@@ -119,6 +126,49 @@ public class WalletKeyService
     }
 
     // ─── Chain-specific generation ───
+
+    /// <summary>Canonical name of the network-free chain (see Services/Signing/AGENTS.md §simulated-keys).</summary>
+    public const string SimulatedChainType = "Simulated";
+
+    /// <summary>Byte length of a throwaway simulated private key.</summary>
+    public const int SimulatedPrivateKeyLength = 32;
+
+    /// <summary>Public half of a simulated key: a domain-separated SHA-256 of the private bytes, lower hex.</summary>
+    public static string SimulatedPublicKeyHex(ReadOnlySpan<byte> privateKey)
+    {
+        var domain = "azoa:simulated-public-key:v1|"u8;
+        var material = new byte[domain.Length + privateKey.Length];
+        try
+        {
+            domain.CopyTo(material);
+            privateKey.CopyTo(material.AsSpan(domain.Length));
+            return AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(SHA256.HashData(material));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(material);
+        }
+    }
+
+    /// <summary>The <c>sim:simulated:…</c> address the Simulated provider accepts for a simulated private key.</summary>
+    public static string SimulatedAddressFor(ReadOnlySpan<byte> privateKey)
+        => AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider.SimAddress(
+            SimulatedChainType, SimulatedPublicKeyHex(privateKey));
+
+    private static (string, string, string, string?) GenerateSimulatedKeypair()
+    {
+        // Throwaway random bytes: signs nothing on any real chain, so no seed phrase is issued.
+        var privateKeyBytes = RandomNumberGenerator.GetBytes(SimulatedPrivateKeyLength);
+        try
+        {
+            return (SimulatedPublicKeyHex(privateKeyBytes), AZOA.WebAPI.Helpers.ByteEncoding.ToLowerHex(privateKeyBytes),
+                SimulatedAddressFor(privateKeyBytes), null);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(privateKeyBytes);
+        }
+    }
 
     private (string publicKey, string privateKeyHex, string address, string? seedPhrase) GenerateAlgorandKeypair(
         bool includeSeedPhrase = true)

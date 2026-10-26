@@ -395,6 +395,8 @@ public class WalletManager : IWalletManager
         var custody = CustodyModeResolver.Resolve(_config, _environment);
         if (!custody.Available)
             return AZOAResult<IWallet>.Failure($"{WalletCustodyUnavailable}{custody.UnavailableReason}");
+        if (RefuseSimulatedChainOffSimulatedNode(WalletBootstrapIdentity.CanonicalChain(model.ChainType)) is { } offSimulated)
+            return AZOAResult<IWallet>.Failure(offSimulated);
 
         try
         {
@@ -458,6 +460,8 @@ public class WalletManager : IWalletManager
         var chainType = WalletBootstrapIdentity.CanonicalChain(model.ChainType);
         if (chainType is null)
             return AZOAResult<IWallet>.Failure($"Chain type '{model.ChainType}' is not supported for wallet generation.");
+        if (RefuseSimulatedChainOffSimulatedNode(chainType) is { } offSimulated)
+            return AZOAResult<IWallet>.Failure(offSimulated);
 
         var walletId = WalletBootstrapIdentity.For(userId, chainType);
         var existing = await _walletStore.GetByIdAsync(walletId, default);
@@ -491,6 +495,7 @@ public class WalletManager : IWalletManager
         if (!custody.Available) return AZOAResult<IWallet>.Failure($"{WalletCustodyUnavailable}{custody.UnavailableReason}");
         var chain = WalletBootstrapIdentity.CanonicalChain(model.ChainType);
         if (userId == Guid.Empty || chain is null) return AZOAResult<IWallet>.Failure("A valid child and chain are required.");
+        if (RefuseSimulatedChainOffSimulatedNode(chain) is { } offSimulated) return AZOAResult<IWallet>.Failure(offSimulated);
         var id = WalletBootstrapIdentity.For(userId, chain);
         var existing = await _walletStore.GetByIdAsync(id, ct);
         if (existing.IsError && existing.Message != "Wallet not found.") return existing;
@@ -502,6 +507,17 @@ public class WalletManager : IWalletManager
         }
         catch (NotSupportedException exception) { return AZOAResult<IWallet>.Failure(exception.Message); }
     }
+
+    /// <summary>Refusal prefix when a Simulated-chain wallet is requested on a node not in Blockchain:Mode=Simulated.</summary>
+    public const string SimulatedChainOffSimulatedNode =
+        "Simulated-chain wallets exist only on a node running Blockchain:Mode=Simulated.";
+
+    // Simulated keys are throwaway; a live node must never hold one (see Managers/AGENTS.md §simulated-chain-wallets).
+    private string? RefuseSimulatedChainOffSimulatedNode(string? canonicalChain)
+        => canonicalChain == WalletBootstrapIdentity.SimulatedChain
+            && !string.Equals(_config[CustodyModeResolver.BlockchainModeConfigurationPath],
+                CustodyModeResolver.SimulatedBlockchainMode, StringComparison.OrdinalIgnoreCase)
+            ? SimulatedChainOffSimulatedNode : null;
 
     private Wallet CreateBootstrapCandidate(WalletGenerateRequest model, Guid userId, string chainType, Guid walletId)
     {

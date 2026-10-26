@@ -29,6 +29,22 @@ public sealed class OnRampRecoveryTests
         fixture.CreateCount.Should().Be(1);
         (await fixture.Idempotency.TryClaimAsync(key, "fiat_allocation", default)).Won.Should().BeFalse();
     }
+    [Theory]
+    [InlineData(true, true)]   // refused before any value moved (e.g. KYC): resume frees the key
+    [InlineData(false, false)] // outcome unknown: the claim keeps blocking re-issuance
+    public async Task ResumeReleasesOnlyAProvenNoEffectAllocationFailure(bool provenNoEffect, bool reissuable)
+    {
+        var fixture = new Fixture();
+        var key = OnRampRecovery.IssuanceLedgerKey(fixture.Intent.ToString("N"));
+        await fixture.Idempotency.TryClaimAsync(key, "fiat_allocation", default);
+        if (provenNoEffect) await fixture.Idempotency.RecordNoEffectFailureAsync(key, "KYC_FORBIDDEN: refused", default);
+        else await fixture.Idempotency.FailAsync(key, "Outcome cannot be established", default);
+
+        await fixture.Service.ResumeAsync(fixture.Intent, fixture.Actor, "Identity scope fixed", default);
+
+        (await fixture.Idempotency.TryClaimAsync(key, "fiat_allocation", default)).Won.Should().Be(reissuable);
+    }
+
     [Fact]
     public async Task RefusedUnissuedPaymentRefundsOnceAndExcludesFutureAllocation()
     {
@@ -191,7 +207,11 @@ public sealed class OnRampRecoveryTests
                 .ReturnsAsync(() => ListedRefunds is { } page
                     ? AZOAResult<StripeRefundList>.Success(page)
                     : AZOAResult<StripeRefundList>.Failure("Refund list unavailable"));
-            var handler = new OnRampSettlementHandler(options, new(), gateway.Object, Mock.Of<IHostedSessionStore>(),
+            // The resumed settlement stops at the intent read; these tests own the ledger keys, not issuance.
+            var sessions = new Mock<IHostedSessionStore>();
+            sessions.Setup(x => x.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AZOAResult<HostedSession>.Failure("Intent unavailable"));
+            var handler = new OnRampSettlementHandler(options, new(), gateway.Object, sessions.Object,
                 Mock.Of<ITenantPriceScheduleStore>(), lots.Object, Mock.Of<IPlatformTokenGenesis>(), Mock.Of<IAllocationManager>(),
                 Mock.Of<IRealValueKycGate>(), Mock.Of<IValueRailProviderFactory>(), NullLogger<OnRampSettlementHandler>.Instance);
             Service = new(lots.Object, Idempotency, gateway.Object, refunds.Object, options, handler, TimeProvider.System);

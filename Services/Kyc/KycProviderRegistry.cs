@@ -32,6 +32,7 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
     private readonly IReadOnlyDictionary<string, IKycProviderService> _adapters;
+    private readonly IdentomatKycProviderService _identomat;
 
     public KycProviderRegistry(
         IKycControlStore store,
@@ -47,6 +48,7 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
         _nodeSettings = settings.Value;
         _environment = environment;
         _configuration = configuration;
+        _identomat = identomat;
         _adapters = new Dictionary<string, IKycProviderService>(StringComparer.Ordinal)
         {
             ["manual"] = manual,
@@ -381,15 +383,8 @@ public sealed class KycProviderRegistry : IKycProviderRegistry
         }
         else if (adapterKey == IdentomatKycProviderService.ProviderKeyValue)
         {
-            var identomat = _nodeSettings.Identomat;
-            if (!ValidHttpsOrigin(identomat.BeginBaseUrl)) missing.Add(IdentomatKycSettings.BeginBaseUrlName);
-            if (!ValidHttpsOrigin(identomat.ResultBaseUrl)) missing.Add(IdentomatKycSettings.ResultBaseUrlName);
-            if (string.IsNullOrWhiteSpace(identomat.CompanyKey)) missing.Add(IdentomatKycSettings.CompanyKeyName);
-            if (string.IsNullOrWhiteSpace(identomat.ConfigId)) missing.Add(IdentomatKycSettings.ConfigIdName);
-            // Presence is not configuration for the one secret that authenticates an
-            // anonymous endpoint; the adapter owns the floor and this mirrors it.
-            if (!IdentomatKycProviderService.IsUsableCallbackSecret(identomat.CallbackApiKey))
-                missing.Add(IdentomatKycSettings.CallbackApiKeyName);
+            // The adapter owns the rule (origins, dev-vendor allowance, callback-secret floor).
+            return _identomat.MissingConfigurationKeys();
         }
 
         return missing;

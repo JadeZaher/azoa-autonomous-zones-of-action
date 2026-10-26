@@ -567,6 +567,61 @@ public class BootstrapWalletCustodyGateTests
             s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    private static (WalletManager manager, Mock<IWalletStore> store, IConfiguration config) NewSimulatedChainManager(
+        string custodyMode, string blockchainMode, string environmentName)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["AZOA:WalletEncryptionKey"] = "test-encryption-key-for-unit-tests-min-32-chars!!",
+            [CustodyModeResolver.CustodyModeConfigurationPath] = custodyMode,
+            [CustodyModeResolver.BlockchainModeConfigurationPath] = blockchainMode,
+        }).Build();
+        var store = new Mock<IWalletStore>();
+        store.Setup(s => s.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<IWallet>.Failure("Wallet not found."));
+        store.Setup(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IWallet wallet, CancellationToken _) => AZOAResult<IWallet>.Success(wallet));
+        var environment = Mock.Of<Microsoft.Extensions.Hosting.IHostEnvironment>(e => e.EnvironmentName == environmentName);
+        return (new WalletManager(store.Object, new Mock<IHolonStore>().Object, new Mock<IBlockchainProviderFactory>().Object,
+            new WalletKeyService(config), config, environment), store, config);
+    }
+
+    /// <summary>The fungible genesis path in Blockchain:Mode=Simulated: the wallet row is one the Simulated provider accepts and its key controls.</summary>
+    [Fact]
+    public async Task BootstrapWalletAsync_SimulatedChainOnSimulatedDevelopmentNode_MintsAWalletItsKeyControls()
+    {
+        var (manager, _, config) = NewSimulatedChainManager(CustodyModeResolver.DevelopmentOnlyMode, "Simulated", "Development");
+        var userId = Guid.NewGuid();
+
+        var result = await manager.BootstrapWalletAsync(new WalletGenerateRequest { ChainType = "simulated" }, userId);
+
+        result.IsError.Should().BeFalse(result.Message);
+        var wallet = result.Result!;
+        wallet.ChainType.Should().Be("Simulated");
+        wallet.Id.Should().Be(AZOA.WebAPI.Helpers.WalletBootstrapIdentity.For(userId, "Simulated"));
+        var provider = new AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider(config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>.Instance);
+        (await provider.ValidateAddressAsync(wallet.Address)).Result.Should().BeTrue();
+        var key = new WalletKeyService(config).DecryptPrivateKeyBytes(wallet.EncryptedPrivateKey!);
+        WalletKeyService.SimulatedAddressFor(key).Should().Be(wallet.Address);
+        WalletKeyService.SimulatedPublicKeyHex(key).Should().Be(wallet.PublicKey);
+    }
+
+    /// <summary>A live node never mints a throwaway Simulated key, even with usable custody.</summary>
+    [Fact]
+    public async Task BootstrapWalletAsync_SimulatedChainOnLiveNode_RefusesAndMintsNothing()
+    {
+        var (manager, store, _) = NewSimulatedChainManager(CustodyModeResolver.PlatformMode, "Live", "Production");
+
+        var result = await manager.BootstrapWalletAsync(new WalletGenerateRequest { ChainType = "Simulated" }, Guid.NewGuid());
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Be(WalletManager.SimulatedChainOffSimulatedNode);
+        store.Verify(s => s.CreateIfAbsentAsync(It.IsAny<IWallet>(), It.IsAny<CancellationToken>()), Times.Never);
+        (await manager.BootstrapWalletAsync(new WalletGenerateRequest { ChainType = "Algorand" }, Guid.NewGuid()))
+            .IsError.Should().BeFalse("the refusal is the Simulated chain on a live node, not custody");
+    }
 }
 
 /// <summary>

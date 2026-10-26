@@ -20,11 +20,16 @@ public sealed class PlatformTokenController : ControllerBase
 {
     private readonly IPlatformTokenGenesis _genesis;
     private readonly AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? _signingAuthority;
+    private readonly IPlatformReserve? _reserve;
 
-    public PlatformTokenController(IPlatformTokenGenesis genesis, AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null)
+    public PlatformTokenController(
+        IPlatformTokenGenesis genesis,
+        AZOA.WebAPI.Services.Signing.SigningAdmissionAuthorityFactory? signingAuthority = null,
+        IPlatformReserve? reserve = null)
     {
         _genesis = genesis ?? throw new ArgumentNullException(nameof(genesis));
         _signingAuthority = signingAuthority;
+        _reserve = reserve;
     }
 
     /// <summary>Returns the verified platform definition and available reserve supply.</summary>
@@ -98,6 +103,56 @@ public sealed class PlatformTokenController : ControllerBase
         var response = AZOAResult<PlatformTokenGenesisResponse>.Success(PlatformTokenGenesisResponse.From(outcome.Result), outcome.Message);
         return outcome.Result.Operation is { State: not "Completed" } ? Accepted(response) : Ok(response);
     }
+
+    /// <summary>Declares (re-declare SETS, never adds) named reserve partitions on this node's platform unit; see Controllers/AGENTS.md §platform-unit-partitions.</summary>
+    [HttpPost("partitions")]
+    [Authorize(Policy = "RecentNodeOperatorSession")]
+    [EnableRateLimiting("financial")]
+    [ProducesResponseType(typeof(AZOAResult<ReservePartitionsView>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AZOAResult<ReservePartitionsView>>> DeclarePartitions(
+        [FromBody] PlatformUnitPartitionDeclarationBody body, CancellationToken ct)
+    {
+        if (!HttpContext.TryGetOperatorActor(out _))
+            return Unauthorized(AZOAResult<ReservePartitionsView>.FailureWithCode("Invalid token.", AzoaErrorCodes.Forbidden));
+
+        var budgets = PlatformReserveController.ReadBudgets(body?.Partitions, out var budgetError);
+        if (budgets is null)
+            return BadRequest(AZOAResult<ReservePartitionsView>.FailureWithCode(budgetError, AzoaErrorCodes.InvalidRequest));
+
+        var reserve = _reserve ?? throw new InvalidOperationException("The platform reserve is not registered.");
+        var state = await _genesis.GetStateAsync(ct);
+        if (state.IsError || state.Result is null)
+        {
+            var failure = AZOAResult<ReservePartitionsView>.FailureWithCode(state.Message, state.Code ?? AzoaErrorCodes.InvalidRequest);
+            return state.Code == PlatformTokenGenesisCodes.NotGenesised ? NotFound(failure) : BadRequest(failure);
+        }
+
+        var unit = state.Result.Definition;
+        var declared = await reserve.DeclarePartitionsAsync(
+            unit.ChainType, unit.AssetId, budgets, ReserveDrawAuthority.NodeOperator, ct);
+        if (declared.IsError || declared.Result is null)
+        {
+            var failure = AZOAResult<ReservePartitionsView>.FailureWithCode(declared.Message, declared.Code ?? AzoaErrorCodes.InvalidRequest);
+            return declared.Code switch
+            {
+                AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, failure),
+                AzoaErrorCodes.NotFound => NotFound(failure),
+                _ => BadRequest(failure),
+            };
+        }
+
+        var partitions = ReservePartitionCodec.Decode(declared.Result.Partitions, out var decodeError);
+        if (partitions is null)
+            return BadRequest(AZOAResult<ReservePartitionsView>.FailureWithCode(decodeError, AzoaErrorCodes.DependencyUnavailable));
+
+        return Ok(AZOAResult<ReservePartitionsView>.Success(ReservePartitionsView.From(declared.Result, partitions), declared.Message));
+    }
+}
+
+/// <summary>Partition name to its budget (whole base units, decimal string). No asset or chain field: the target is always the platform unit.</summary>
+public sealed class PlatformUnitPartitionDeclarationBody
+{
+    public Dictionary<string, string>? Partitions { get; set; }
 }
 
 /// <summary>The platform unit's on-chain definition. Amounts are base-unit decimal strings.</summary>

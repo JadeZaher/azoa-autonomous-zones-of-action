@@ -386,6 +386,42 @@ public sealed class SurrealFungibleProjectionTests : IAsyncLifetime
         return (row, authority, holon, issuer, owner);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task TenantKeyReserveCompletionStampsTheKeysTenantAndRefusesAnyOtherOwner(bool ownerMatches)
+    {
+        var issuer = Guid.NewGuid();
+        await Execute(SurrealWriter.Create(new UserRow { Id = issuer.ToString("N"), Username = issuer.ToString("N"), IsActive = true,
+            CreatedDate = DateTimeOffset.UtcNow, Email = Guid.NewGuid().ToString("N") + "@example.test", PasswordHash = "fixture-no-login" }));
+        const string key = "tenant-owned";
+        var id = FungibleCreationIdentity.OperationId(issuer, null, key);
+        var intent = new FungibleCreationIntent(id, 0, issuer, null, "Algorand", ChainNetwork.Devnet, "reserve",
+            SigningContext.PlatformFor("Algorand") with { Scope = AzoaScopes.TokenCreateSign }, "Tenant Owned Probe", "TOP", "1000", 0, false,
+            "reserve", "reserve", "reserve", "reserve");
+        var quote = new FungibleCreationQuote("", FungibleCreationIdentity.IntentHash(intent), "genesis", "1000", "100000", "ALGO", 6, "reserve", DateTimeOffset.UtcNow.AddMinutes(-1));
+        intent = intent with { Quote = quote with { QuoteId = FungibleCreationIdentity.QuoteId(quote) } };
+        var command = new FungibleCreationCommand(issuer, null, key, Guid.NewGuid(), "reserve", false, "PlatformReserve", null, intent,
+            ReserveOwnerTenantId: issuer);
+        var observation = new FungibleCreationObservation("Confirmed", "tx", "genesis", "42", "100", "verified-creation");
+        var row = new FungibleCreationOperation { Id = id, ActorUserId = issuer.ToString("N"), RequestHash = CanonicalJson.Hash(command),
+            RequestJson = JsonSerializer.Serialize(command), IntentJson = JsonSerializer.Serialize(intent), State = "Confirmed", AssetId = "42",
+            ObservationJson = JsonSerializer.Serialize(observation), AcceptedAt = DateTimeOffset.UtcNow.AddMinutes(-2), QuoteExpiresAt = quote.ExpiresAt,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow };
+        await Execute(SurrealWriter.Create(row));
+        var authority = new FungibleAssetAuthority { Id = Guid.NewGuid().ToString("N"), OperationId = id, IssuerUserId = issuer.ToString("N"),
+            ChainType = "Algorand", Network = "Devnet", ProtocolIdentity = "genesis", AssetId = "42", CreatorAddress = "reserve", CreationTransactionId = "tx",
+            IntentHash = CanonicalJson.Hash(intent), IntentJson = row.IntentJson, EvidenceJson = observation.EvidenceJson!, CreatedAt = DateTimeOffset.UtcNow };
+        var reserve = ReserveAssetRegistrationPlan.Create(new("Algorand", "42", "TOP", 0, new System.Numerics.BigInteger(1000),
+            ownerMatches ? command.ReserveTenantId() : Guid.NewGuid()), new("Algorand", "reserve", true), "Devnet", "genesis", DateTimeOffset.UtcNow);
+
+        (await _store.CompleteAsync(row, authority, reserve)).Should().Be(ownerMatches);
+
+        var ledger = await _executor.QueryAsync<PlatformReserveLedger>(SurrealQuery<PlatformReserveLedger>.From());
+        if (ownerMatches) SurrealRecordGuid.ParseOptional(ledger.Single().TenantId).Should().Be(issuer);
+        else ledger.Should().BeEmpty();
+    }
+
     private static SigningConsentWitness Consent(Guid actor) => new(1,
         new(1, "Jwt", actor, null, null, DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(10), null, null,
             [], true, TokenUse: AzoaClaims.TokenUseLogin), [AzoaScopes.DappDevelop], []);

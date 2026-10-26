@@ -8,6 +8,7 @@ using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Blockchain;
+using AZOA.WebAPI.Services.Signing;
 using AlgorandAccount = Algorand.Algod.Model.Account;
 using SolanaPublicKey = Solnet.Wallet.PublicKey;
 
@@ -581,7 +582,7 @@ public static class PlatformReserveAddressDerivation
 
     /// <summary>Chains this derivation supports, for a caller-safe error message.</summary>
     public static string SupportedChainsMessage =>
-        "Reserve addresses can be derived for: Algorand, Solana.";
+        "Reserve addresses can be derived for: Algorand, Solana, Simulated.";
 
     /// <summary>Derives the reserve address for a chain, or null when the chain has no rule.</summary>
     public static string? Derive(string chainType, byte[] platformKey)
@@ -603,6 +604,10 @@ public static class PlatformReserveAddressDerivation
                 Array.Copy(platformKey, platformKey.Length - SolanaPublicKeyLength, publicKey, 0, SolanaPublicKeyLength);
                 return new SolanaPublicKey(publicKey).Key;
             }
+
+            // Same rule a simulated wallet row uses, so the reserve is an ordinary sim: address.
+            if (string.Equals(chainType, WalletKeyService.SimulatedChainType, StringComparison.OrdinalIgnoreCase))
+                return WalletKeyService.SimulatedAddressFor(platformKey);
 
             return null;
         }

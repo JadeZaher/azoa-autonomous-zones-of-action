@@ -153,8 +153,34 @@ or receive.
   `CommitLocalAsync` (credential tenant, else the caller when it registered the asset; node operator
   only for the platform unit).
 
+### §tenant-key-draw — a plain tenant key on its own partition (F18)
+
+A tenant's own API key carries no `act_as_tenant` claim, so its captured credential tenant is
+null, and it MUST stay null (`Helpers/AGENTS.md` §principal-tenant: it is the delegation axis the
+intent and every signing fence match). The hold door therefore takes no
+`GetActingTenantOrPrincipalTenantId` substitution. Unlike F17's registration door, it does not
+need one: the `Open` draw already answers "whose budget" at the store
+(`SurrealHoldCommandStore.CommitLocalAttemptAsync`: credential tenant, else the actor when the
+reserve row's tenant IS the actor), and `/reserve-assets` derives the same authority. Another
+tenant's row and the platform unit still refuse a plain key. Flow tests:
+`SurrealHoldCommandTests.TenantKeyDraw.cs`. The hold-record id a tenant derives to address
+`/liabilities/{id}` is pinned in `tests/AZOA.WebAPI.Tests/Helpers/HoldCommandIdentityContractTests.cs`.
+
 Captured-null negatives for `FindOwnedHoldAsync` and the workflow-mandate run guard live in
 `SurrealHoldCommandTests.CapturedNull.cs` / `.WorkflowMandate.cs` (`TenantedRun`).
+
+### §replay-conflict — same key, different intent (F31)
+
+The operation id is `hash(actor, tenant, requestKey)`, and the WHOLE intent is hashed: a reserve
+`ReleaseIntoHold` replay must carry the identical `NextReleaseNotBefore` (to the 100 ns tick) or it
+is a different command under a key that already completed. `AdmitAsync` keeps that refusal but
+names it (`HoldCommandService.ReplayConflict`) instead of the generic "operation not found", which
+it still returns for a foreign actor/tenant. Found live: ArdaNova's first approve committed the
+continuation, then failed locally and rolled back its window instant; every retry recomputed
+`now + window` and was refused as "not found". The node was right to refuse; callers must persist
+the instant at a precision they can round-trip (whole seconds) before calling, or adopt the
+committed child's `releaseNotBefore` from `/liabilities`. Flow tests:
+`SurrealHoldCommandTests.TenantKeyDraw.cs` (`PlainTenantKeyContinuation*`).
 
 ## History
 

@@ -605,6 +605,7 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
         {
             ReceiptReference = ExchangeIdempotency.CreateFromClientKey(intent.ApiKeyId, intent.RequestKey).Correlation,
             SourceId = source.Id,
+            OperationId = ExchangeHoldSourceIdentity.OperationId(source.Id),
             State = state,
             IsTerminal = state != ExchangeReceiptState.AwaitingReconciliation,
             RequiresReconciliation = state == ExchangeReceiptState.AwaitingReconciliation,

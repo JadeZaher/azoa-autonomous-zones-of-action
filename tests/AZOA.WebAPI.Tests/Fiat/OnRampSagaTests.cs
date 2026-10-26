@@ -127,6 +127,9 @@ public class OnRampSagaTests
         outcome.Should().Be(FiatEventOutcome.Applied);
         harness.CapturedRequest!.Amount.Should().Be("250000");
         harness.Lots.Single().PriceScheduleVersion.Should().Be(7);
+        // The tenant's custodial payer is approved in the tenant's scope; the manager must re-gate there.
+        harness.CapturedIdentityTenantId.Should().Be(TenantUserId);
+        harness.CapturedDrawAuthority!.ActingTenantId.Should().BeNull();
     }
 
     [Fact]
@@ -883,6 +886,9 @@ public class OnRampSagaTests
         /// <summary>On whose authority the rail asked the reserve to be drawn (OI-21).</summary>
         public ReserveDrawAuthority? CapturedDrawAuthority { get; private set; }
 
+        /// <summary>The scope the manager was told to read the payer's KYC approval in.</summary>
+        public Guid? CapturedIdentityTenantId { get; private set; }
+
         public IReadOnlyCollection<OnRampLot> Lots => Ledger.Rows;
 
         public Task<FiatEventOutcome> ApplyAsync() => BuildHandler().ApplyAsync(BuildContext());
@@ -938,14 +944,15 @@ public class OnRampSagaTests
                 .Setup(a => a.AllocateAsync(
                     It.IsAny<Guid>(), It.IsAny<AllocationRequest>(), It.IsAny<Guid>(),
                     It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<Guid?>(),
-                    It.IsAny<ReserveDrawAuthority?>()))
+                    It.IsAny<ReserveDrawAuthority?>(), It.IsAny<Guid?>()))
                 .Returns((
                     Guid _, AllocationRequest request, Guid _, string? key, string _, Guid? _,
-                    ReserveDrawAuthority? authority) =>
+                    ReserveDrawAuthority? authority, Guid? identityTenant) =>
                 {
                     CapturedRequest = request;
                     CapturedIdempotencyKey = key;
                     CapturedDrawAuthority = authority;
+                    CapturedIdentityTenantId = identityTenant;
 
                     if (AllocationFailure is { } failure)
                         return Task.FromResult(failure);

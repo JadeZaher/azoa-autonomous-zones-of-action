@@ -163,3 +163,7 @@ would have let anyone register a generated handle ahead of its owner — the wal
 deterministic from public inputs — and break that person's first sign-in at the `user_username` UNIQUE
 index. So the generated prefixes are reserved: registration, tenant provisioning and a profile RENAME
 refuse them, while a user who already holds a generated handle may keep resending it.
+
+## §principal-tenant
+
+`GetActingTenantOrPrincipalTenantId` answers "which tenant owns what this principal registers", the question the reserve partitions door (`Controllers/PlatformReserveController.cs` `RequireDeclarationAuthority`, lane 2) already answers from the principal alone (launch-readiness L1.1: never from the body). Precedence: an explicit `act_as_tenant` claim (delegated/acting child credential) wins; else an API-key principal's tenant IS the key's owning user (AZOA has no separate Tenant entity); else null — a first-party human session registers the node's own unit. It is deliberately NOT `GetActingTenantId`: that one is the *delegation* axis (consent grants, signing `ActingAs`, credential witness matching) and must stay null for a tenant's own key, or every signing seam would demand a self-consent grant.

@@ -21,6 +21,17 @@ direct calls resolve node-default authority. This centralizes readiness without
 moving ArdaNova project/task economics into AZOA or replacing AZOA's independent
 ownership, consent, governance, fee, and custody checks.
 
+### §identity scope — which (participant, scope) the allocation gate reads
+
+KYC approvals are scope-strict: a tenant's custodial user is approved in that
+tenant's scope and has no global row. `AllocationManager` gates in
+`actingTenantId ?? identityTenantId`. The node's own on-ramp rail acts with no
+tenant (so it cannot borrow tenant signing/consent authority) but names the
+intent's tenant as `identityTenantId`, matching its own D46 pre-check. Before this,
+the rail re-gated the payer in GLOBAL scope and refused every tenant-custodial
+payer (`KYC_FORBIDDEN`) even though the D46 check had just passed. Fungible
+creation never hit this: its actor is the tenant itself, approved globally.
+
 Project definition and ordinary collaboration paths do not consume this gate.
 Action value nodes inherit it through the same managers; a new value-bearing
 manager must use this seam rather than call `IKycGateService` directly.
@@ -924,3 +935,13 @@ first). The fix is a dedicated `Operator`-policy action instead, per §User resp
 `GetFacetsAsync`'s global User count is
 intentionally untouched (an aggregate count, not an identity, per its existing "Users are the one public type"
 comment). See `Controllers/AGENTS.md` §User responses for the full rationale.
+
+## §simulated-chain-wallets
+
+`WalletBootstrapIdentity.CanonicalChain` recognises `Simulated` (static, like the real chains, because
+its other callers - tenant custodial capability, recipient lookup forms, the tenant bootstrap store
+fence - are pure identity checks). The **mint** is gated instead: `WalletManager` refuses to generate
+or bootstrap a Simulated wallet unless `Blockchain:Mode=Simulated`
+(`SimulatedChainOffSimulatedNode`), mirroring `CustodyModeResolver`'s rule that development custody
+exists only on a simulated host. Combined with custody, a Simulated key can only be minted under
+`DevelopmentOnly` custody in Development. Keys: Services/Signing/AGENTS.md §simulated-keys.

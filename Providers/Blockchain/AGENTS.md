@@ -232,7 +232,7 @@ the plan from its recovery fields before trusting it. See `Services/Blockchain/A
 ## §module activation (D-7, round 4)
 
 Algorand declares `IDexTransactionModule` and `IExchangeTransactionModule`; Ethereum and Solana declare
-`IDexTransactionModule`. Declaration is not activation: each provider re-maps `IBlockchainProvider.TryGetModule<T>`
+`IDexTransactionModule`; Simulated declares `IExchangeTransactionModule` (§simulated-exchange). Declaration is not activation: each provider re-maps `IBlockchainProvider.TryGetModule<T>`
 through `ChainModuleActivation`, which advertises a DEX or exchange module only where
 `{Dex|Exchange}:Activation:{Chain}:{Network}` is explicitly `true` (`BlockchainProviderFactory.TryGetModule` delegates to
 the provider so the pin applies on every path). `appsettings.Development.json` turns the devnet pins on for fixtures;
@@ -277,3 +277,51 @@ provider's unacknowledged-broadcast error carries); with it, the move is recorde
 the message names (`OperationStatus.TransactionIdIn`) and parks. Other Algorand broadcast sites (atomic
 groups, recipient preparation) and Solana still return the outcome-unknown error rather than the pending
 result; their callers must keep honouring the marker.
+
+## §simulated-recipient-preparation
+
+`SimulatedBlockchainProvider.RecipientPreparation.cs` implements `IRecipientPreparationModule` so the
+`IssueUnits` path (the fiat on-ramp settlement) can run on `Blockchain:Mode=Simulated`. Without it
+`CustodialRecipientPreparer` refused every issuance ("not supported on rail Simulated") before any draw.
+The in-process ledger has no account minimum or opt-in, so readiness is always `CanReceive` with shortfall
+`"0"`; `PrepareRecipientForAssetAsync` is therefore unreachable and refuses rather than fabricating a receipt.
+
+## §simulated-exchange
+
+`SimulatedBlockchainProvider.Exchange.cs` implements `IExchangeTransactionModule` so `Blockchain:Mode=Simulated` can run
+the W5.1 reserve exchange (`ReserveExchangeManager` → `ExchangeHoldSourceService`). Without it the D-7 check
+(`ReserveExchangeManager.ExchangeDeclared`) refused every exchange and quote with `RAIL_UNAVAILABLE`.
+
+- **Gated like Algorand.** Exchange is a D-7 module, so `SimulatedBlockchainProvider.ModuleActivation.cs` re-maps
+  `IBlockchainProvider.TryGetModule<T>` through `ChainModuleActivation.TryGetGated`; only
+  `Exchange:Activation:Simulated:Devnet=true` (set in `appsettings.Development.json`) advertises it. Production never
+  runs Simulated mode (boot guard), and a Railway host ignores the pin without the deployed-host acknowledgement.
+- **Same intent contract, sim addresses.** Validation mirrors `AlgorandProvider.ValidExchangeIntent` (roles, swap:sign
+  scope, ≤16 members) but requires `sim:` addresses and protocol identity `sim:<network>`.
+- **Stateless, deterministic preparation.** Preparation id is a domain-separated hash of chain/network/source/generation;
+  group id `sim:group:` and per-member `sim:tx:` ids also bind the intent hash; member count mirrors the Algorand group
+  (readiness, legs, fee payer). Nothing is signed (no-signer provider); submit/observe re-derive and refuse any other candidate.
+- **Atomic.** `Submit` computes every member's delta first, then applies the whole group once under one lock keyed by
+  preparation id — both legs or neither. Balances are not checked (consistent with sim transfers). Observe is `Unknown`
+  until submitted, then `Confirmed` at finalized position `1`; there is no validity window, so never `ExpiredAbsent`.
+  The first call therefore ends `Submitted` (SETTLEMENT_PENDING); the caller's retry or the reconciliation worker
+  completes it. The submission set is in-process; after a restart observation is `Unknown` and the saved group is re-applied.
+
+## §simulated-fungible-creation
+
+`SimulatedBlockchainProvider` implements `IFungibleCreationModule` (`SimulatedBlockchainProvider.Fungible.cs`) so
+`Blockchain:Mode=Simulated` can run a project-token genesis without a chain. Discovery is the base `this is T`
+`TryGetModule`; fungible creation is not a D-7 gated module, so no activation pin is needed.
+
+- **Stateless, deterministic preparation.** Quote is zero-cost in `SIM` (fee and minimum balance `"0"`), protocol
+  identity `sim:<network>`. Preparation id is `FungibleCreationIdentity.PreparationId(intent)`; the tx id is
+  `sim:tx:` + digest of it; the "signed wire" is a marked placeholder. Re-preparing yields the same candidate,
+  so no journal row is needed; submit/observe re-derive and refuse any candidate that differs.
+- **Pending until submitted.** Observe returns `Pending` until `Submit` records the preparation id, then
+  `Confirmed` with a positive 63-bit ASA-shaped asset id derived from the preparation id and fixed evidence JSON
+  (no timestamps), so repeat observation is identical. This mirrors real-chain semantics and exercises the
+  lifecycle's rebroadcast path: `continue` ends at `Submitted`; the next `refresh` (or the 20 s recovery worker)
+  confirms and completes. The submission set is in-process like the balance ledger; after a restart the
+  lifecycle simply re-submits.
+- The asset id is numeric rather than `sim:`-prefixed so it stays shape-compatible with ASA ids (and safe inside
+  derived record ids); simulated rows stay partitioned by `ChainType = "Simulated"` and the `sim:` protocol identity.

@@ -76,6 +76,20 @@ public sealed class FungibleTokenManagerTests
     }
 
     [Fact]
+    public async Task Reserve_owner_is_only_the_callers_own_tenant_and_binds_into_the_request_key()
+    {
+        var harness = new FungibleAdmissionHarness();
+        var foreign = harness.Request(); foreign.ReserveOwnerTenantId = Guid.NewGuid();
+        (await harness.AdmitAsync(foreign, "foreign")).IsError.Should().BeTrue();
+        harness.Commands.Should().BeEmpty();
+
+        await harness.AdmitAsync(key: "shared");                       // first-party admission: the node's own unit
+        var owned = harness.Request(); owned.ReserveOwnerTenantId = harness.Actor;
+        (await harness.AdmitAsync(owned, "shared")).IsError.Should().BeTrue("a key admitted as the platform unit cannot replay as tenant-owned");
+        harness.Commands.Values.Single().ReserveTenantId().Should().BeNull();
+    }
+
+    [Fact]
     public async Task Policy_refusal_precedes_readiness_and_custody_and_keeps_consumer_code()
     {
         var harness = new FungibleAdmissionHarness(governance: new NodeGovernanceGuard(Options.Create(new NodeGovernanceOptions { AllowedAssetTypes = ["NFT"] })));

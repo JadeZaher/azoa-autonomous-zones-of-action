@@ -47,12 +47,16 @@ public static class IdentomatTestFactory
         IOptions<KycSettings>? options = null,
         IIdentomatHttpTransport? transport = null,
         IKycTenantQuota? quota = null,
-        IHostedSessionFlow? flow = null)
+        IHostedSessionFlow? flow = null,
+        Microsoft.Extensions.Configuration.IConfiguration? configuration = null,
+        Microsoft.Extensions.Hosting.IHostEnvironment? environment = null)
         => new(
             options ?? Options(),
             transport ?? Mock.Of<IIdentomatHttpTransport>(),
             quota ?? AlwaysAllowQuota(),
-            flow ?? Mock.Of<IHostedSessionFlow>());
+            flow ?? Mock.Of<IHostedSessionFlow>(),
+            configuration: configuration,
+            environment: environment);
 
     /// <summary>A quota that never refuses; use a strict mock to test refusal.</summary>
     public static IKycTenantQuota AlwaysAllowQuota()

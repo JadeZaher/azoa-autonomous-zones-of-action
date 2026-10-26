@@ -211,7 +211,7 @@ public sealed partial class SurrealFungibleCreationStore(ISurrealExecutor execut
                 || reserve.Network != authority.Network || reserve.ProtocolIdentity != authority.ProtocolIdentity
                 || reserve.ReserveAddress != intent.CreatorAddress || reserve.TotalSupply != intent.TotalBaseUnits
                 || reserve.UnitName != intent.UnitName || reserve.Decimals != intent.Decimals
-                || SurrealRecordGuid.ParseOptional(reserve.TenantId) != command.TenantId)) return false;
+                || SurrealRecordGuid.ParseOptional(reserve.TenantId) != command.ReserveTenantId())) return false;
         var previousReserve = reserve is null ? null : await executor.QuerySingleAsync<PlatformReserveLedger>(SurrealQuery<PlatformReserveLedger>.Key(reserve.Id), ct);
         if (previousReserve is not null && !ReserveAssetRegistrationPlan.SameIdentity(previousReserve, reserve!)) return false;
         var genesisRow = command.GenesisAuthority is { } genesisPurpose

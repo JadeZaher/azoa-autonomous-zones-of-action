@@ -68,6 +68,18 @@ public sealed class FakeIdempotencyStore : IIdempotencyStore, IAllocationRecover
         }
     }
 
+    public async Task<bool> TryReopenAfterNoEffectAsync(string key, CancellationToken ct)
+    {
+        var record = await GetAsync(key, ct);
+        if (record is null) return false;
+        lock (record)
+        {
+            if (record.State != IdempotencyState.Failed || record.OperationType != "fiat_allocation"
+                || !_noEffect.TryRemove(key, out _)) return false;
+            return ((ICollection<KeyValuePair<string, IdempotencyRecord>>)_records).Remove(new(key, record));
+        }
+    }
+
     public int RecordCount => _records.Count;
     public IEnumerable<string> Keys => _records.Keys;
 

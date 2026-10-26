@@ -406,7 +406,10 @@ public sealed class OnRampSettlementHandler : IFiatSettlementHandler
             // definition and the partition off node configuration, so neither can be named
             // by a caller. This is the POSITIVE operator signal the reserve now requires —
             // the missing tenant above grants nothing on its own (OI-21).
-            drawAuthority: ReserveDrawAuthority.NodeOperator);
+            drawAuthority: ReserveDrawAuthority.NodeOperator,
+            // The manager re-gates in the SAME scope the D46 check above used; a tenant's
+            // custodial payer is approved in that tenant's scope, never globally.
+            identityTenantId: tenantId);
 
         if (allocation.IsError || allocation.Result is null)
         {

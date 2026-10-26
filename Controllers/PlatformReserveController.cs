@@ -245,7 +245,7 @@ public sealed class PlatformReserveController : ControllerBase
     /// base-unit decimal strings and nothing else: <c>NumberStyles.None</c> refuses a sign,
     /// a separator and surrounding whitespace, so a negative budget cannot reach the ledger.
     /// </summary>
-    private static Dictionary<string, BigInteger>? ReadBudgets(
+    internal static Dictionary<string, BigInteger>? ReadBudgets(
         IDictionary<string, string>? partitions, out string error)
     {
         error = string.Empty;

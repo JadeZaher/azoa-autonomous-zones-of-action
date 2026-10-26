@@ -71,6 +71,25 @@ public sealed class SurrealExchangeAuthorityTests : IAsyncLifetime
         (await WalletAsync(authority))!.Label.Should().BeNull("the dependent effect rolls back with either authority fence");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TheTenantProvisionedImpliedGrantAuthorizesTheExchangeUntilRevoked(bool revoked)
+    {
+        // Core/AGENTS.md §consent-scope-coverage: the stored row lacks swap:sign; coverage is computed.
+        var authority = await SeedAsync(implied: true);
+        if (revoked)
+            await Execute(SurrealWriter.UpdateOnly<GrantRow>(authority.Grant.Id.ToString("N")).Where(seed => true)
+                .Set(row => row.RevokedAt, DateTimeOffset.UtcNow).Build());
+
+        if (revoked)
+            await FluentActions.Awaiting(() => ApplyAsync(authority)).Should().ThrowAsync<SurrealStatementException>();
+        else
+            await ApplyAsync(authority);
+
+        (await WalletAsync(authority))!.Label.Should().Be(revoked ? null : "authorized-effect");
+    }
+
     private async Task ApplyAsync(ExchangeParticipantAuthority authority)
     {
         var guards = ExchangeAuthorityFence.Create(authority, "exchange_fixture")!;
@@ -83,7 +102,7 @@ public sealed class SurrealExchangeAuthorityTests : IAsyncLifetime
         await Execute(SurrealQuery.Combine(statements.ToArray()));
     }
 
-    private async Task<ExchangeParticipantAuthority> SeedAsync()
+    private async Task<ExchangeParticipantAuthority> SeedAsync(bool implied = false)
     {
         var tenant = Guid.NewGuid(); var participant = Guid.NewGuid(); var wallet = Guid.NewGuid(); var key = Guid.NewGuid(); var grant = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
@@ -93,12 +112,14 @@ public sealed class SurrealExchangeAuthorityTests : IAsyncLifetime
         await Execute(SurrealWriter.Create(new KeyRow { Id = key.ToString("N"), UserId = $"user:{tenant:N}", KeyHash = keyHash,
             KeyPrefix = "fixture", IsActive = true, Scopes = [AzoaScopes.SwapSign], CreatedDate = now }));
         await Execute(SurrealWriter.Create(new WalletRow { Id = wallet.ToString("N"), UserId = $"user:{participant:N}", ChainType = "Algorand", Address = "participant-address" }));
+        var scopes = implied ? "action:execute,kyc:read,kyc:submit,nft:mint,units:issue,wallet:manage" : AzoaScopes.SwapSign;
+        var reference = implied ? ConsentScopeCoverage.TenantProvisionedRefPrefix + "3f252778f9171c6fe514c783db6bb4ac" : null;
         await Execute(SurrealWriter.Create(new GrantRow { Id = grant.ToString("N"), GrantorUserId = $"user:{participant:N}", TenantId = $"user:{tenant:N}",
-            Scopes = AzoaScopes.SwapSign, Origin = "UserExplicit", GrantedAt = now }));
+            Scopes = scopes, Origin = implied ? "Participation" : "UserExplicit", ParticipationRef = reference, GrantedAt = now }));
         var credential = new SigningCredentialWitness(1, "ApiKey", tenant, null, null, null, null, key, keyHash,
             [AzoaScopes.SwapSign], false, [AzoaScopes.SwapSign]);
         return new(1, new(1, credential, [AzoaScopes.SwapSign], []), participant, null,
-            new(wallet, participant, "participant-address", "Algorand"), new(grant, AzoaScopes.SwapSign, AzoaScopes.SwapSign, now, null));
+            new(wallet, participant, "participant-address", "Algorand"), new(grant, AzoaScopes.SwapSign, scopes, now, null, reference));
     }
 
     private Task<WalletRow?> WalletAsync(ExchangeParticipantAuthority authority)

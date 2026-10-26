@@ -220,3 +220,21 @@ one — the interface node-held custody already satisfies would be implemented b
 adapter the same way. Absent that adapter, every platform path here fails closed on a
 missing/malformed config secret or an unrecognised/unavailable mode rather than degrading
 to a weaker key source.
+
+## §simulated-platform-key — the Simulated chain's platform door
+
+`Blockchain:Mode=Simulated` stamps `ChainType = "Simulated"` on every intent the factory redirect
+produces, so a fungible genesis asks the reserve for the **Simulated** account, not Algorand's.
+Simulated is a first-class chain here rather than a remap onto Algorand: custody wallets keep their
+own Algorand keying, and simulated rows stay partitioned by chain.
+
+- `SimulatedPlatformKeyDerivation` reads `AZOA:Simulated:PlatformSeed` (any non-blank text) and
+  derives 32 bytes as `SHA-256("azoa:simulated-platform-key:v1|" + seed)`. The seed is committed in
+  `appsettings.Development.json` on purpose: the key signs nothing on any real chain.
+- The reserve address is `WalletKeyService.SimulatedAddressFor(key)` - the same rule a simulated
+  wallet row uses - so it is an ordinary `sim:simulated:<base32>` address the Simulated provider
+  validates. `Reserve:ExpectedAddresses:Simulated` pins it; `PlatformReserveTests` fails if the seed
+  and the declaration drift.
+- **Gating.** The derivation registry stays static. A live node fails closed twice over: the shipped
+  `Reserve:Chains` lists only Algorand, and no shipped config sets the seed. Wallet minting for the
+  chain is gated on `Blockchain:Mode` separately (Managers/AGENTS.md §simulated-chain-wallets).

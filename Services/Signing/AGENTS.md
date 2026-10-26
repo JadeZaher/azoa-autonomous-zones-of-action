@@ -102,3 +102,13 @@ key set and completed envelope. No new secret export or fallback path is introdu
 `ValidatedTokenTime` reads the token class's actual validated authentication instant: login/operator `auth_time`, child `nbf`, plus bounded `exp` and optional consistent `iat`. It never substitutes worker time. The transaction fences the exact observed user authentication watermark; workflow recovery preserves the original ceiling without pretending the original JWT is still a fresh HTTP session.
 
 Economic node admission selects one exact explicit grant per required scope; separate grants can cover separate scopes. The node stores those grant identities, scope strings and expiry evidence atomically with the run scheduler epoch. Subsequent effect authorization must use the same grants and exact owned wallet binding. Workers may observe prior effects after revocation, but cannot replace a revoked grant with a newer grant to authorize another effect.
+
+## §simulated-keys
+
+`WalletKeyService` generates Simulated keypairs for both `GenerateKeypair` and
+`GenerateCustodialKeypair`: 32 random private bytes, public key = lower-hex
+`SHA-256("azoa:simulated-public-key:v1|" + private)`, address =
+`SimulatedBlockchainProvider.SimAddress("Simulated", publicKeyHex)` (`sim:simulated:<base32>`), no
+seed phrase. The `sim:` marker is what `SimulatedBlockchainProvider.ValidateAddressAsync` requires,
+so a simulated key can never pass for a real-chain address. `SimulatedAddressFor` is shared with the
+reserve derivation (Services/Custody/AGENTS.md §simulated-platform-key).

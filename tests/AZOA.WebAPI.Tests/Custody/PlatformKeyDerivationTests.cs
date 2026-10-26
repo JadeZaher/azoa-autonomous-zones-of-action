@@ -120,10 +120,10 @@ public sealed class PlatformKeyDerivationTests
     // ─── Registry: total lookup, no silent neighbour ───
 
     [Fact]
-    public void Default_registry_covers_exactly_the_chains_with_a_real_provider()
+    public void Default_registry_covers_exactly_the_real_provider_chains_plus_Simulated()
     {
         PlatformKeyDerivationRegistry.Default.RegisteredChainTypes
-            .Should().BeEquivalentTo(["Algorand", "Ethereum", "Solana"]);
+            .Should().BeEquivalentTo(["Algorand", "Ethereum", "Simulated", "Solana"]);
     }
 
     [Theory]
@@ -141,7 +141,6 @@ public sealed class PlatformKeyDerivationTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("Bitcoin")]
-    [InlineData("Simulated")]
     public void Registry_resolves_nothing_for_an_unregistered_chain(string? chainType)
     {
         PlatformKeyDerivationRegistry.Default.TryGet(chainType, out var derivation).Should().BeFalse();
@@ -165,7 +164,7 @@ public sealed class PlatformKeyDerivationTests
     {
         var display = PlatformKeyDerivationRegistry.Default.RegisteredChainTypesDisplay;
 
-        display.Should().Be("Algorand, Ethereum, Solana");
+        display.Should().Be("Algorand, Ethereum, Simulated, Solana");
         display.Should().NotContain(":", "a chain list must never carry a config path or value");
     }
 

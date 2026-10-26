@@ -15,6 +15,12 @@ The operator money console and SDK expose these actions; the BFF allowlists exac
 paths and checks same-origin mutations.
 
 Resume reopens a parked lot and reuses its original allocation idempotency key.
+§resume: a Failed allocation claim carrying the structured no-effect proof (refused
+before any value moved, e.g. a KYC refusal) is otherwise replayed forever; Resume
+releases it with the same atomic predicate the refund reservation uses, so exactly
+one of resume or refund can take it. Ambiguous Failed claims still block. Note a
+`Pending` lot whose attempts are exhausted parks `Stuck` on the first resume; the
+second resume resets its attempt count.
 Refund atomically claims that exact allocation key with a distinct refund-reservation
 operation type before requesting money back. An allocation that already owns the
 key blocks refund even if the lot has no operation ID. A refund that owns it blocks

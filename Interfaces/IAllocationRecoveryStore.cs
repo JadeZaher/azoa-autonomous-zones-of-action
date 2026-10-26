@@ -8,4 +8,7 @@ public interface IAllocationRecoveryStore
 
     /// <summary>Transfers a proven no-effect failed allocation to the refund reservation; ambiguous claims never qualify.</summary>
     Task<bool> TryReserveRefundAfterNoEffectAsync(string key, CancellationToken ct);
+
+    /// <summary>Releases a proven no-effect failed allocation so an operator resume can claim it afresh; ambiguous claims never qualify.</summary>
+    Task<bool> TryReopenAfterNoEffectAsync(string key, CancellationToken ct);
 }

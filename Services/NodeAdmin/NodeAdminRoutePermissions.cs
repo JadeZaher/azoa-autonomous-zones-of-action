@@ -107,6 +107,7 @@ public static partial class NodeAdminRoutePermissions
 
         // Platform genesis
         ["POST api/admin/platform-token/genesis"] = Recent(NodeAdminPermissions.PlatformGenesis),
+        ["POST api/admin/platform-token/partitions"] = Recent(NodeAdminPermissions.PlatformGenesis),
         ["POST api/admin/platform-token/creation/{id}/refresh"] = Write(NodeAdminPermissions.PlatformGenesis),
         ["POST api/admin/platform-token/creation/{id}/quote"] = Recent(NodeAdminPermissions.PlatformGenesis),
         ["POST api/admin/platform-token/creation/{id}/accept-quote"] = Recent(NodeAdminPermissions.PlatformGenesis),

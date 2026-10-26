@@ -154,4 +154,17 @@ public static class ClaimsPrincipalExtensions
         var raw = principal?.FindFirst("act_as_tenant")?.Value;
         return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
     }
+
+    /// <summary>The tenant that owns what this principal registers (launch-readiness L1.1: from the principal, never the body):
+    /// an explicit <c>act_as_tenant</c> claim, else an API key's owning tenant user, else null for a first-party session.
+    /// See `Helpers/AGENTS.md` §principal-tenant.</summary>
+    public static Guid? GetActingTenantOrPrincipalTenantId(this ClaimsPrincipal principal)
+    {
+        if (principal.GetActingTenantId() is { } acting) return acting;
+        if (!principal.IsApiKey()) return null;
+        var raw = principal.FindFirst("UserId")?.Value
+                  ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                  ?? principal.FindFirst("sub")?.Value;
+        return Guid.TryParse(raw, out var id) && id != Guid.Empty ? id : null;
+    }
 }

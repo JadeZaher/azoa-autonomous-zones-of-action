@@ -114,8 +114,12 @@ public sealed class AllocationManager : IAllocationManager
         string? clientIdempotencyKey,
         string apiKeyId,
         Guid? actingTenantId = null,
-        ReserveDrawAuthority? drawAuthority = null)
+        ReserveDrawAuthority? drawAuthority = null,
+        Guid? identityTenantId = null)
     {
+        // The acting tenant always owns the KYC scope; identityTenantId only names where a
+        // tenant-less (node-rail) subject's approval lives. See Managers/AGENTS.md §identity scope.
+        var identityScope = actingTenantId ?? identityTenantId;
         if (request is null)
             return ToConsumerSafeFailure("Allocation request is required.");
         if (string.IsNullOrWhiteSpace(request.ChainType))
@@ -161,7 +165,7 @@ public sealed class AllocationManager : IAllocationManager
         // It deliberately sits before TryClaim so a preview can never consume the key
         // the real allocation will need.
         if (request.PreviewOnly)
-            return await PreviewAsync(userId, request, actingTenantId);
+            return await PreviewAsync(userId, request, actingTenantId, identityScope);
 
         // ── Step 2: idempotency claim ─────────────────────────────────────────
         // TryClaim BEFORE any irreversible effect. On a lost claim we replay the
@@ -177,7 +181,7 @@ public sealed class AllocationManager : IAllocationManager
             // Per D3, the value-bearing allocation is gated. Provisioning may
             // precede approval, but we gate before generating the wallet too so
             // a rejected user produces NO side effect at all under a won claim.
-            var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
+            var gate = await _valueAccess.RequireValueAccessAsync(userId, identityScope);
             if (gate.IsError)
             {
                 var refusal = ToConsumerSafeFailure(gate.Message);
@@ -315,9 +319,9 @@ public sealed class AllocationManager : IAllocationManager
     /// the machine-checkable proof that no allocation happened.
     /// </summary>
     private async Task<AZOAResult<AllocationResult>> PreviewAsync(
-        Guid userId, AllocationRequest request, Guid? actingTenantId)
+        Guid userId, AllocationRequest request, Guid? actingTenantId, Guid? identityScope)
     {
-        var gate = await _valueAccess.RequireValueAccessAsync(userId, actingTenantId);
+        var gate = await _valueAccess.RequireValueAccessAsync(userId, identityScope);
         if (gate.IsError)
             return ToConsumerSafeFailure(gate.Message);
 

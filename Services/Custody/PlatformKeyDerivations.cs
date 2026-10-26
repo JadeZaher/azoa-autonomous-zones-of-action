@@ -154,6 +154,34 @@ public sealed class EthereumPlatformKeyDerivation : IPlatformKeyDerivation
     }
 }
 
+/// <summary>
+/// Simulated platform key: any non-blank seed → 32-byte domain-separated SHA-256. Throwaway by
+/// design; see Services/Custody/AGENTS.md §simulated-platform-key.
+/// </summary>
+public sealed class SimulatedPlatformKeyDerivation : IPlatformKeyDerivation
+{
+    /// <summary>Config path of the simulated platform seed (Development config only).</summary>
+    public const string ConfigPath = "AZOA:Simulated:PlatformSeed";
+
+    /// <summary>Simulated key length (matches WalletKeyService.SimulatedPrivateKeyLength).</summary>
+    public const int PrivateKeyLength = 32;
+
+    public string ChainType => "Simulated";
+    public string PlatformKeyConfigPath => ConfigPath;
+    public string SecretDescription => "non-blank simulated platform seed";
+    public int KeyLength => PrivateKeyLength;
+
+    public bool TryDerive(string configuredSecret, out byte[] key)
+    {
+        key = [];
+        if (string.IsNullOrWhiteSpace(configuredSecret))
+            return false;
+
+        var derived = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("azoa:simulated-platform-key:v1|" + configuredSecret.Trim()));
+        return PlatformKeyDerivationGuard.AcceptExactLength(derived, PrivateKeyLength, out key);
+    }
+}
+
 /// <summary>Shared length gate: a wrong-length derivation is wiped, never handed out.</summary>
 internal static class PlatformKeyDerivationGuard
 {

@@ -6,6 +6,7 @@ using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Services.HostedSessions;
+using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Options;
 
@@ -13,10 +14,12 @@ namespace AZOA.WebAPI.Providers.Kyb;
 
 /// <summary>Identomat business verification using the documented modern begin/result contracts.</summary>
 public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOptions<KybSettings> options,
-    IIdentomatHttpTransport transport) : IHostedSessionProvider, IDeletableHostedSessionProvider
+    IIdentomatHttpTransport transport, IHostEnvironment? environment = null, IConfiguration? configuration = null)
+    : IHostedSessionProvider, IDeletableHostedSessionProvider
 {
     private readonly IdentomatKycSettings _credentials = kycOptions.Value.Identomat;
     private readonly KybSettings _settings = options.Value;
+    private readonly bool _allowDevVendor = KycRuntimeSafety.IsInsecureDevVendorAllowed(environment, configuration);
 
     /// <inheritdoc/>
     public string FlowKind => HostedSessionFlowKinds.Kyb;
@@ -32,7 +35,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
     public HostedSessionCapabilities GetHostedCapabilities()
     {
         var missing = new List<string>();
-        if (!ValidPublicUrl(_credentials.BeginBaseUrl, true)) missing.Add("Kyc__Identomat__BeginBaseUrl");
+        if (!ValidVendorUrl(_credentials.BeginBaseUrl, true)) missing.Add("Kyc__Identomat__BeginBaseUrl");
         if (string.IsNullOrWhiteSpace(_credentials.CompanyKey)) missing.Add("Kyc__Identomat__CompanyKey");
         if (string.IsNullOrWhiteSpace(_settings.ConfigId)) missing.Add("Kyb__ConfigId");
         if (string.IsNullOrWhiteSpace(_settings.PolicyVersion)) missing.Add("Kyb__PolicyVersion");
@@ -66,7 +69,7 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
         var value = response.Result;
         var redirect = value.AdditionalSessionUrl ?? value.Url;
         if (string.IsNullOrWhiteSpace(value.Id) || value.Id.Length > 256 || value.AdditionalSessionId?.Length > 256
-            || !ValidPublicUrl(redirect, false))
+            || !ValidVendorRedirect(redirect))
             return AZOAResult<HostedSessionCreation>.FailureWithCode("Business verification could not start.", AzoaErrorCodes.DependencyUnavailable);
         return AZOAResult<HostedSessionCreation>.Success(new HostedSessionCreation
         {
@@ -111,13 +114,23 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
 
     /// <inheritdoc/>
     public Task<AZOAResult<bool>> DeleteProviderSessionAsync(string providerSessionId, CancellationToken ct = default)
-        => GetHostedCapabilities().Available && ValidPublicUrl(_credentials.ResultBaseUrl, true)
+        => GetHostedCapabilities().Available && ValidVendorUrl(_credentials.ResultBaseUrl, true)
             ? IdentomatSessionDeletion.DeleteAsync(transport, _credentials.ResultBaseUrl!, _credentials.CompanyKey!,
                 providerSessionId, "kyb-delete", ct)
             : Task.FromResult(AZOAResult<bool>.Failure("Business verification is unavailable."));
 
     private static AZOAResult<HostedCallbackTrigger> Rejected()
         => AZOAResult<HostedCallbackTrigger>.FailureWithCode(HostedSessionFlow.OpaqueCallbackFailure, AzoaErrorCodes.Forbidden);
+
+    /// <summary>Public HTTPS, or a loopback dev sidecar under the dev-vendor allowance (see <c>tools/dev-kyc-vendor/AGENTS.md</c> §origin-allowance).</summary>
+    private bool ValidVendorUrl(string? value, bool origin)
+        => ValidPublicUrl(value, origin)
+            || (_allowDevVendor && KycRuntimeSafety.IsLoopbackDevVendorUrl(value, origin));
+
+    /// <summary>Public HTTPS widget redirect, or (dev allowance only) a loopback one pinned to the configured result host — mirrors the KYC side's same-host pin (M1, A4 adversarial review).</summary>
+    private bool ValidVendorRedirect(string? value)
+        => ValidPublicUrl(value, origin: false)
+            || (_allowDevVendor && KycRuntimeSafety.IsPinnedLoopbackRedirect(value, _credentials.ResultBaseUrl));
 
     private static bool ValidPublicUrl(string? value, bool origin)
         => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps

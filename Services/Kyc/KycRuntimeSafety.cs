@@ -17,6 +17,41 @@ public static class KycRuntimeSafety
                 StringComparison.OrdinalIgnoreCase)
             && !configuration.GetValue<bool>("Blockchain:Bridge:RealValueEnabled");
 
+    /// <summary>Opt-in flag for the local dev Identomat sidecar; see <c>tools/dev-kyc-vendor/AGENTS.md</c> §origin-allowance.</summary>
+    public const string InsecureDevVendorConfigurationKey = "Kyc:Identomat:AllowInsecureDevVendor";
+
+    /// <summary>True only on a Development + Simulated host that explicitly sets <see cref="InsecureDevVendorConfigurationKey"/>.</summary>
+    public static bool IsInsecureDevVendorAllowed(
+        IHostEnvironment? environment,
+        IConfiguration? configuration)
+        => environment is not null
+            && configuration is not null
+            && configuration.GetValue<bool>(InsecureDevVendorConfigurationKey)
+            && IsManualSimulationAllowed(environment, configuration);
+
+    /// <summary>A loopback-only http(s) URL with no credentials or fragment (and no query when <paramref name="origin"/>).</summary>
+    public static bool IsLoopbackDevVendorUrl(string? value, bool origin)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && string.IsNullOrEmpty(uri.Fragment)
+            && (!origin || string.IsNullOrEmpty(uri.Query))
+            && uri.IsLoopback;
+
+    /// <summary>
+    /// A loopback dev-vendor redirect (<see cref="IsLoopbackDevVendorUrl"/>) that ALSO sits on
+    /// the same scheme+host+port as <paramref name="pinnedOrigin"/> — the operator-configured
+    /// vendor origin the applicant's browser is allowed to land on. Without this pin, the dev
+    /// allowance would accept a redirect to any loopback port, not just the configured sidecar
+    /// (M1, A4 adversarial review 2026-10-24). Shared by the KYC and KYB adapters so the two
+    /// cannot drift again the way they did before this fix.
+    /// </summary>
+    public static bool IsPinnedLoopbackRedirect(string? value, string? pinnedOrigin)
+        => IsLoopbackDevVendorUrl(value, origin: false)
+            && Uri.TryCreate(value, UriKind.Absolute, out var redirect)
+            && Uri.TryCreate(pinnedOrigin, UriKind.Absolute, out var pinned)
+            && Uri.Compare(redirect, pinned, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
+
     /// <summary>Rejects simulation-only identity paths before a production/mainnet host starts.</summary>
     public static void GuardStartup(IHostEnvironment environment, IConfiguration configuration)
     {
@@ -38,6 +73,19 @@ public static class KycRuntimeSafety
         {
             throw new InvalidOperationException(
                 "KYC mock/manual providers and admin overrides are limited to Local/Test/CI/Testnet simulation and cannot run in Production or on Mainnet.");
+        }
+
+        // L2 (A4 fix batch): the dev vendor allowance only ever activates on a Development host
+        // (IsInsecureDevVendorAllowed), so the flag being set anywhere else is never a live
+        // bypass — but it silently no-ops instead of telling the operator their config did
+        // nothing. Fail loud at boot instead, matching the throw convention above.
+        if (configuration.GetValue<bool>(InsecureDevVendorConfigurationKey) && !environment.IsDevelopment())
+        {
+            throw new InvalidOperationException(
+                $"{InsecureDevVendorConfigurationKey} is set to true but the host environment is "
+                + $"\"{environment.EnvironmentName}\", not Development. The dev KYC vendor allowance "
+                + "only ever activates on Development (see KycRuntimeSafety.IsInsecureDevVendorAllowed), "
+                + "so on this host the flag can only be a leftover misconfiguration; unset it before boot.");
         }
     }
 

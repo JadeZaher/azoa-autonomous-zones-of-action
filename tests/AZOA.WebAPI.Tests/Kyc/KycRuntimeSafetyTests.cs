@@ -122,4 +122,38 @@ public sealed class KycRuntimeSafetyTests
 
         act.Should().NotThrow();
     }
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    public void Startup_RejectsTheDevVendorAllowanceOutsideDevelopment(string environmentName)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [KycRuntimeSafety.InsecureDevVendorConfigurationKey] = "true",
+            })
+            .Build();
+
+        var act = () => KycRuntimeSafety.GuardStartup(
+            Mock.Of<IHostEnvironment>(item => item.EnvironmentName == environmentName), configuration);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void Startup_AllowsTheDevVendorAllowanceOnDevelopment()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [KycRuntimeSafety.InsecureDevVendorConfigurationKey] = "true",
+            })
+            .Build();
+
+        var act = () => KycRuntimeSafety.GuardStartup(
+            Mock.Of<IHostEnvironment>(item => item.EnvironmentName == Environments.Development), configuration);
+
+        act.Should().NotThrow();
+    }
 }

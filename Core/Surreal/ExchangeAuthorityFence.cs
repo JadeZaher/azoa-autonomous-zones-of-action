@@ -16,12 +16,14 @@ public static class ExchangeAuthorityFence
     {
         var credential = authority.Tenant.Credential;
         var grant = authority.Grant;
+        // A witnessed participation reference locks the implied tenant-provisioned grant; none locks an explicit grant.
+        var origin = grant.ParticipationRef is null ? "UserExplicit" : "Participation";
+        var reference = grant.ParticipationRef;
         if (authority.Version != 1 || credential.Kind != "ApiKey" || credential.TenantId is not null
             || authority.ParticipantUserId == Guid.Empty || authority.Wallet.Id == Guid.Empty
             || authority.Wallet.OwnerUserId != authority.ParticipantUserId || grant.Id == Guid.Empty
             || grant.RequiredScope != AzoaScopes.SwapSign
-            || !grant.StoredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Contains(AzoaScopes.SwapSign, StringComparer.Ordinal)) return null;
+            || !ConsentScopeCoverage.Covers(origin, grant.ParticipationRef, grant.StoredScopes, AzoaScopes.SwapSign)) return null;
         var tenantFence = SigningAuthorityFence.ForConsent(authority.Tenant, [AzoaScopes.SwapSign], prefix + "_tenant");
         if (tenantFence is null) return null;
         var participantId = authority.ParticipantUserId.ToString("N");
@@ -39,11 +41,20 @@ public static class ExchangeAuthorityFence
             .Where(row => row.UserId == participantLink && row.ChainType == authority.Wallet.ChainType && row.Address == authority.Wallet.Address)
             .Set(row => row.Address, authority.Wallet.Address).Build(), prefix + "_wallet", "_" + prefix + "_wallet"));
         var selected = SurrealWriter.UpdateOnly<GrantRow>(grant.Id.ToString("N"));
-        selected = grant.ExpiresAt is { } expiry
-            ? selected.Where(row => row.GrantorUserId == participantLink && row.TenantId == tenantLink && row.Origin == "UserExplicit"
-                && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == expiry && row.RevokedAt == null)
-            : selected.Where(row => row.GrantorUserId == participantLink && row.TenantId == tenantLink && row.Origin == "UserExplicit"
-                && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == null && row.RevokedAt == null);
+        var expiry = grant.ExpiresAt;
+        selected = (expiry, reference) switch
+        {
+            ({ } expires, null) => selected.Where(row => row.GrantorUserId == participantLink && row.TenantId == tenantLink && row.Origin == origin
+                && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == expires && row.RevokedAt == null),
+            (null, null) => selected.Where(row => row.GrantorUserId == participantLink && row.TenantId == tenantLink && row.Origin == origin
+                && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == null && row.RevokedAt == null),
+            ({ } expires, { } participation) => selected.Where(row => row.GrantorUserId == participantLink && row.TenantId == tenantLink
+                && row.Origin == origin && row.ParticipationRef == participation
+                && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == expires && row.RevokedAt == null),
+            (null, { } participation) => selected.Where(row => row.GrantorUserId == participantLink && row.TenantId == tenantLink
+                && row.Origin == origin && row.ParticipationRef == participation
+                && row.Scopes == grant.StoredScopes && row.GrantedAt == grant.GrantedAt && row.ExpiresAt == null && row.RevokedAt == null),
+        };
         statements.Add(SurrealGeneratedStatementScope.Assign(selected.Set(row => row.Scopes, grant.StoredScopes).Build(),
             prefix + "_grant", "_" + prefix + "_grant"));
         statements.Add(SurrealGeneratedStatementScope.RequireResult("_" + prefix + "_participant", FailureMarker));

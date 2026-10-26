@@ -37,9 +37,9 @@ public sealed class FungibleAdmissionHarness
     public IWallet Wallet { get; }
 
     public FungibleAdmissionHarness(string target = ReserveMintTargets.PlatformReserve, INodeGovernanceGuard? governance = null,
-        IPlatformReserve? reserve = null)
+        IPlatformReserve? reserve = null, IBlockchainProviderFactory? providerFactory = null, string walletChainType = "Algorand")
     {
-        Wallet = new AZOA.WebAPI.Models.Wallet { Id = Guid.NewGuid(), UserId = Actor, ChainType = "Algorand", Address = "caller-wallet", WalletType = WalletType.Platform };
+        Wallet = new AZOA.WebAPI.Models.Wallet { Id = Guid.NewGuid(), UserId = Actor, ChainType = walletChainType, Address = "caller-wallet", WalletType = WalletType.Platform };
         WalletStore.Setup(store => store.GetByUserAsync(Actor, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IEnumerable<IWallet>>.Success([Wallet]));
         WalletStore.Setup(store => store.GetByIdAsync(Wallet.Id, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IWallet>.Success(Wallet));
         Wallets.Setup(manager => manager.BootstrapWalletAsync(It.IsAny<WalletGenerateRequest>(), Actor, null)).ReturnsAsync(AZOAResult<IWallet>.Success(Wallet));
@@ -62,7 +62,7 @@ public sealed class FungibleAdmissionHarness
         });
         Lifecycle.Setup(service => service.GetAsync(It.IsAny<string>(), Actor, It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync((string id, Guid _, Guid? tenant, CancellationToken _) =>
             AZOAResult<FungibleCreationView>.Success(View(id, Commands[id])));
-        Manager = new(ValueAccess.Object, Wallets.Object, WalletStore.Object, providers.Object, store.Object, Lifecycle.Object,
+        Manager = new(ValueAccess.Object, Wallets.Object, WalletStore.Object, providerFactory ?? providers.Object, store.Object, Lifecycle.Object,
             reserve ?? Reserve.Object, new ReserveOptions { FungibleMintTarget = target }, governance ?? NodeGovernanceGuard.Unrestricted,
             new SigningAdmissionAuthorityFactory(Mock.Of<IUserStore>(), WalletStore.Object, Mock.Of<ISurrealExecutor>()), Mock.Of<IActionNodeExecutionStore>());
     }

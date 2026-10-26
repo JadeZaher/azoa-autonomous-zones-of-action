@@ -82,6 +82,19 @@ public sealed class SurrealIdempotencyStore : IIdempotencyStore, IAllocationReco
     }
 
     /// <inheritdoc/>
+    public async Task<bool> TryReopenAfterNoEffectAsync(string key, CancellationToken ct)
+    {
+        // Same predicate as the refund reservation, so reopen and refund stay mutually exclusive.
+        var query = SurrealWriter.DeleteOnly<IdempotencyKeyStore>(DeterministicId(key))
+            .Where(row => row.State == IdempotencyKeyStore.StateKind.Failed && row.OperationType == "fiat_allocation"
+                && row.EffectDisposition == NoValueEffectProof).Build();
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () => {
+            var result = await _executor.ExecuteAsync(query, ct); result.EnsureAllOk(); return result;
+        }, ct);
+        return response.GetValues<IdempotencyKeyStore>(0).Count == 1;
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> TryPrepareAsync(string key, string preparedJson, CancellationToken ct, long expectedGeneration = 0)
     {
         var query = SurrealWriter.UpdateOnly<IdempotencyKeyStore>(DeterministicId(key))

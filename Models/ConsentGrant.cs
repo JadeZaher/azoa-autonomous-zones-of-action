@@ -82,6 +82,5 @@ public sealed class ConsentGrant
     /// </summary>
     public bool Covers(string scope, DateTime now)
         => IsLiveAt(now)
-           && !string.IsNullOrWhiteSpace(scope)
-           && Scopes.Contains(scope, StringComparer.Ordinal);
+           && Core.ConsentScopeCoverage.Covers(Origin.ToString(), ParticipationRef, Scopes, scope);
 }

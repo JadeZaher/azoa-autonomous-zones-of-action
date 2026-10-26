@@ -132,6 +132,16 @@ public sealed class SurrealHolonStore : IHolonStore
 
         var poco = ToPoco(holon);
 
+        // created_date is READONLY with no schema default: an update must re-send the stored
+        // value byte-for-byte or SurrealDB refuses ("changed value ... readonly"). The domain
+        // model self-stamps CreatedDate (= DateTime.UtcNow initializer), so a caller-supplied
+        // value on an existing row is never authoritative — the stored instant is
+        // (mvp-tandem-demo F30).
+        var current = await _executor.QuerySingleAsync<HolonPoco>(
+            SurrealQuery<HolonPoco>.Key(SurrealId.ToSurrealId(holon.Id)), ct);
+        if (current is not null)
+            poco.CreatedDate = current.CreatedDate;
+
         // Coercion-safe SET-based UPSERT (SurrealWriter): keeps `table:id`-shaped
         // string columns as strings (3.x would otherwise coerce them to record
         // ids), type::decimal-wraps decimals, and omits null option<> fields.

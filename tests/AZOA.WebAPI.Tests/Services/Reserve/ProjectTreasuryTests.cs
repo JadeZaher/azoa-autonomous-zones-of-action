@@ -15,6 +15,7 @@ using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Reserve;
 using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using Xunit;
 using AlgorandAccount = Algorand.Algod.Model.Account;
@@ -527,6 +528,75 @@ public class ProjectTreasuryTests
         ProjectTreasuryKeyDerivation
             .Derive(UnsupportedChain, platformKey, new ProjectTreasuryReference(UnsupportedChain, TenantOne, ProjectAlpha))
             .Should().BeNull();
+    }
+
+    // ── Simulated chain, the dev node's real composition ──────────────────────
+
+    [Fact]
+    public async Task ResolveAsync_on_Simulated_derives_a_stable_per_project_sim_address_from_the_dev_config()
+    {
+        var (treasury, ledger, config, options) = TreasuryFromShippedConfig(developmentOverlay: true);
+        var simulatedProvider = new AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider(config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>.Instance);
+
+        var alpha = await treasury.ResolveAsync(new ProjectTreasuryReference(SimulatedChain, TenantOne, ProjectAlpha));
+        var alphaAgain = await treasury.ResolveAsync(new ProjectTreasuryReference(SimulatedChain, TenantOne, ProjectAlpha));
+        var beta = await treasury.ResolveAsync(new ProjectTreasuryReference(SimulatedChain, TenantOne, ProjectBeta));
+
+        alpha.IsError.Should().BeFalse(alpha.Message);
+        alpha.Result!.Address.Should().StartWith("sim:simulated:");
+        (await simulatedProvider.ValidateAddressAsync(alpha.Result.Address)).Result.Should().BeTrue();
+        alpha.Result.Address.Should().NotBe(options.ExpectedAddresses[SimulatedChain],
+            "a project treasury is the project's own account, never the platform reserve");
+        alphaAgain.Result!.Address.Should().Be(alpha.Result.Address, "resolve is idempotent");
+        beta.Result!.Address.Should().NotBe(alpha.Result.Address, "two projects never share one account");
+        ledger.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_on_Simulated_refuses_under_the_shipped_base_config_alone()
+    {
+        var (treasury, ledger, _, _) = TreasuryFromShippedConfig(developmentOverlay: false);
+
+        var account = await treasury.ResolveAsync(new ProjectTreasuryReference(SimulatedChain, TenantOne, ProjectAlpha));
+
+        account.IsError.Should().BeTrue();
+        account.Message.Should().Contain("Reserve:Chains");
+        ledger.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_on_Algorand_still_refuses_without_a_mnemonic_under_the_dev_config()
+    {
+        var (treasury, ledger, _, _) = TreasuryFromShippedConfig(developmentOverlay: true);
+
+        var account = await treasury.ResolveAsync(new ProjectTreasuryReference(Chain, TenantOne, ProjectAlpha));
+
+        account.IsError.Should().BeTrue();
+        account.Message.Should().Contain(AlgorandPlatformKeyDerivation.ConfigPath);
+        ledger.Count.Should().Be(0);
+    }
+
+    private const string SimulatedChain = WalletKeyService.SimulatedChainType;
+
+    /// <summary>Shipped appsettings (+ optional Development overlay) with REAL custody, as PlatformReserveTests does.</summary>
+    private static (ProjectTreasuryService Treasury, InMemoryProjectTreasuryLedgerStore Ledger, IConfiguration Config, ReserveOptions Options)
+        TreasuryFromShippedConfig(bool developmentOverlay)
+    {
+        var builder = new ConfigurationBuilder().AddJsonFile("appsettings.json", optional: false)
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AZOA:WalletEncryptionKey"] = "test-encryption-key-for-unit-tests-min-32-chars!!" });
+        if (developmentOverlay) builder.AddJsonFile("appsettings.Development.json", optional: false);
+        var config = builder.Build();
+        var options = config.GetSection(ReserveOptions.SectionName).Get<ReserveOptions>()!;
+        var consent = new Mock<ITenantConsentGate>();
+        consent.Setup(gate => gate.EnsureAllowedAsync(It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Success(true));
+        var custody = new KeyCustodyService(
+            Mock.Of<AZOA.WebAPI.Interfaces.Stores.IWalletStore>(), new WalletKeyService(config), config, consent.Object);
+        var factory = new Mock<IBlockchainProviderFactory>();
+        factory.SetupGet(f => f.DefaultNetwork).Returns(ChainNetwork.Devnet);
+        var ledger = new InMemoryProjectTreasuryLedgerStore();
+        return (new ProjectTreasuryService(custody, factory.Object, ledger, options), ledger, config, options);
     }
 
     [Fact]

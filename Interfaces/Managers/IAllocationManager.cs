@@ -69,6 +69,11 @@ public interface IAllocationManager
     /// the live consent check before key decrypt. Null = user-driven (no grant
     /// required).
     /// </param>
+    /// <param name="identityTenantId">
+    /// The tenant scope the subject's KYC approval is read in when no tenant is acting
+    /// (the node's own on-ramp rail). Ignored when <paramref name="actingTenantId"/> is set;
+    /// grants no signing or consent authority. See <c>Managers/AGENTS.md</c> §identity scope.
+    /// </param>
     Task<AZOAResult<AllocationResult>> AllocateAsync(
         Guid userId,
         AllocationRequest request,
@@ -76,5 +81,6 @@ public interface IAllocationManager
         string? clientIdempotencyKey,
         string apiKeyId,
         Guid? actingTenantId = null,
-        AZOA.WebAPI.Services.Reserve.ReserveDrawAuthority? drawAuthority = null);
+        AZOA.WebAPI.Services.Reserve.ReserveDrawAuthority? drawAuthority = null,
+        Guid? identityTenantId = null);
 }

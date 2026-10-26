@@ -45,3 +45,9 @@ The switch is off in `appsettings.json` and on only in `appsettings.IntegrationT
 enabled only after the route-authorization gate and the tenant-branch flows pass the round-4 sweep.
 The allowlist must equal the `childCredentialScope`/`childSigningScopes` rows in the lane inventories
 (`RouteAuthorizationGateTests`).
+
+### Implied exchange coverage
+
+The tenant-provisioned implied grant also covers `swap:sign` for the W5.1 reserve exchange, computed
+at check time from its reserved participation-ref prefix rather than stored. Rule, rationale and the
+`transfer:sign` exclusion: `Core/AGENTS.md` §consent-scope-coverage.

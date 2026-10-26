@@ -38,7 +38,8 @@ public sealed class AllocationControllerTests
             It.IsAny<string?>(),
             It.IsAny<string>(),
             It.IsAny<Guid?>(),
-            It.IsAny<ReserveDrawAuthority?>()), Times.Never);
+            It.IsAny<ReserveDrawAuthority?>(),
+            It.IsAny<Guid?>()), Times.Never);
     }
 
     [Fact]
@@ -55,9 +56,10 @@ public sealed class AllocationControllerTests
                 It.IsAny<string?>(),
                 It.IsAny<string>(),
                 It.IsAny<Guid?>(),
-                It.IsAny<ReserveDrawAuthority?>()))
-            .Callback<Guid, AllocationRequest, Guid, string?, string, Guid?, ReserveDrawAuthority?>(
-                (_, _, caller, _, _, _, _) => capturedCaller = caller)
+                It.IsAny<ReserveDrawAuthority?>(),
+                It.IsAny<Guid?>()))
+            .Callback<Guid, AllocationRequest, Guid, string?, string, Guid?, ReserveDrawAuthority?, Guid?>(
+                (_, _, caller, _, _, _, _, _) => capturedCaller = caller)
             .ReturnsAsync(AZOAResult<AllocationResult>.Success(new AllocationResult()));
         var controller = CreateController(
             manager.Object,

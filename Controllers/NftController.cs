@@ -104,6 +104,7 @@ public class NftController : ControllerBase
             .CaptureCredentialAsync(User, HttpContext.RequestAborted);
         if (authority.IsError || authority.Result is null) return BadRequest(AZOAResult<FungibleTokenResult>.Failure(authority.Message));
         request.AuthenticationWitness = authority.Result;
+        request.ReserveOwnerTenantId = User.GetActingTenantOrPrincipalTenantId(); // L1.1: the partitions door's tenant, from the principal.
         var result = await _fungibleTokenManager.CreateAsync(userId.Value, request, userId.Value,
             ReadIdempotencyKey(), GetApiKeyId() ?? userId.Value.ToString("N"), User.GetActingTenantId());
         if (result.IsError || result.Result is null) return BadRequest(result);

@@ -39,8 +39,13 @@ public sealed class FungibleTokenManager(IValueAccessService valueAccess, IWalle
             || request.Total == 0 || request.Decimals is < 0 or > 19 || string.IsNullOrWhiteSpace(request.Name)
             || string.IsNullOrWhiteSpace(request.UnitName) || string.IsNullOrWhiteSpace(request.ChainType) || request.HolonId == Guid.Empty)
             return AZOAResult<FungibleTokenResult>.Failure("An authenticated owner, original request key and valid token descriptor are required.");
+        if (request.ReserveOwnerTenantId is { } claimedOwner && claimedOwner != (tenant ?? actor))
+            return AZOAResult<FungibleTokenResult>.Failure("The reserve owner must be the acting tenant or the API key's own tenant.");
+        var reserveOwner = tenant is null ? request.ReserveOwnerTenantId : null; // a delegating tenant already owns the row via TenantId.
         var id = FungibleCreationIdentity.OperationId(actor, tenant, key);
-        var requestHash = CanonicalJson.Hash(new { Request = request, SelectedTarget = selectedTarget, request.ActionAuthority });
+        var requestHash = reserveOwner is null
+            ? CanonicalJson.Hash(new { Request = request, SelectedTarget = selectedTarget, request.ActionAuthority })
+            : CanonicalJson.Hash(new { Request = request, SelectedTarget = selectedTarget, request.ActionAuthority, ReserveOwnerTenantId = reserveOwner });
         var prior = await operations.GetAsync(id);
         if (prior is not null)
         {
@@ -111,7 +116,8 @@ public sealed class FungibleTokenManager(IValueAccessService valueAccess, IWalle
         }
         if (bound.IsError || bound.Result is null) return AZOAResult<FungibleTokenResult>.Failure(bound.Message);
         var command = new FungibleCreationCommand(actor, tenant, key, wallet.Id, wallet.Address, provisioned,
-            target.Value.ToString(), request.HolonId, intent, request.ActionAuthority, requestHash, bound.Result);
+            target.Value.ToString(), request.HolonId, intent, request.ActionAuthority, requestHash, bound.Result,
+            ReserveOwnerTenantId: reserveOwner);
         return Project(await lifecycle.AdmitAsync(command), actor, false);
     }
 

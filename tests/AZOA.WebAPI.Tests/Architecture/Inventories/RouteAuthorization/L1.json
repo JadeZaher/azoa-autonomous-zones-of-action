@@ -133,6 +133,18 @@
     ]
   },
   {
+    "route": "POST /api/admin/platform-token/partitions",
+    "controller": "PlatformTokenController",
+    "action": "DeclarePartitions",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Operator policy (class) + RecentNodeOperatorSession; asset and chain taken from the active platform-token definition, never the body; PlatformReserveService.DeclarePartitionsAsync with ReserveDrawAuthority.NodeOperator (re-declare SETS a budget); financial limiter",
+    "policies": [
+      "Operator",
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
     "route": "POST /api/admin/platform-token/creation/{id}/refresh",
     "controller": "PlatformGenesisRecoveryController",
     "action": "Refresh",

@@ -17,6 +17,7 @@ using AZOA.WebAPI.Services.Custody;
 using AZOA.WebAPI.Services.Reserve;
 using AZOA.WebAPI.Services.Signing;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using Xunit;
 using AlgorandAccount = Algorand.Algod.Model.Account;
@@ -42,6 +43,46 @@ public class PlatformReserveTests
         account.IsError.Should().BeFalse(account.Message);
         account.Result!.Address.Should().Be(harness.ExpectedAddress);
         account.Result.IsFeePayer.Should().BeTrue("the reserve carries the fee-payer role today");
+    }
+
+    /// <summary>
+    /// The dev node's real composition (shipped appsettings + Development overlay, real custody):
+    /// the Simulated reserve resolves to the declared sim: address; the shipped base config alone,
+    /// or a reseeded key that no longer matches the declaration, refuses.
+    /// </summary>
+    [Theory]
+    [InlineData(true, null, null)]
+    [InlineData(false, null, "Reserve:Chains")]
+    [InlineData(true, "a-different-simulated-seed", "does not match")]
+    public async Task GetAccountAsync_for_the_Simulated_chain_follows_the_shipped_configuration(
+        bool developmentOverlay, string? seedOverride, string? refusal)
+    {
+        var builder = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddJsonFile("appsettings.json", optional: false)
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AZOA:WalletEncryptionKey"] = "test-encryption-key-for-unit-tests-min-32-chars!!" });
+        if (developmentOverlay) builder.AddJsonFile("appsettings.Development.json", optional: false);
+        if (seedOverride is not null)
+            builder.AddInMemoryCollection(new Dictionary<string, string?> { [SimulatedPlatformKeyDerivation.ConfigPath] = seedOverride });
+        var config = builder.Build();
+        var options = config.GetSection(ReserveOptions.SectionName).Get<ReserveOptions>()!;
+        var consent = new Mock<ITenantConsentGate>();
+        consent.Setup(gate => gate.EnsureAllowedAsync(It.IsAny<SigningContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<bool>.Success(true));
+        var custody = new KeyCustodyService(Mock.Of<IWalletStore>(), new WalletKeyService(config), config, consent.Object);
+        var reserve = new PlatformReserveService(custody, Mock.Of<IBlockchainProviderFactory>(), new InMemoryReserveLedgerStore(), options);
+
+        var account = await reserve.GetAccountAsync("Simulated");
+
+        if (refusal is not null)
+        {
+            account.IsError.Should().BeTrue();
+            account.Message.Should().Contain(refusal);
+            return;
+        }
+        account.IsError.Should().BeFalse(account.Message);
+        account.Result!.Address.Should().Be(options.ExpectedAddresses["Simulated"]);
+        var provider = new AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider(config,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AZOA.WebAPI.Providers.Blockchain.Simulated.SimulatedBlockchainProvider>.Instance);
+        (await provider.ValidateAddressAsync(account.Result.Address)).Result.Should().BeTrue();
     }
 
     [Fact]

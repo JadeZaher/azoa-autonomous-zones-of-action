@@ -66,10 +66,13 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
             return AZOAResult<KycIdentity>.FailureWithCode("The verified attempt changed.", AzoaErrorCodes.Conflict);
         // raw: atomic lease + active-attempt fencing + identity membership; see AGENTS.md.
         var fence = HostedSessionLeaseFence.CreateGuard(lease);
+        // $_attempt_provider_key, not $_provider: Combine shares one parameter namespace, and
+        // BuildBindingQuery also defines $_provider (the enum name) — the clobber made this
+        // fence match zero rows on every live approval (mvp-tandem-demo F4).
         var attempt = SurrealQuery.Of("""
             LET $_attempt = (UPDATE type::record($_attempt_table, $_attempt_id)
                 SET provider_trust_revision = provider_trust_revision
-                WHERE user_id = $_user AND provider_key = $_provider AND provider_session_id = $_session
+                WHERE user_id = $_user AND provider_key = $_attempt_provider_key AND provider_session_id = $_session
                     AND (($_has_tenant AND tenant_id = $_tenant) OR (!$_has_tenant AND tenant_id = NONE))
                     AND status = $_status AND expires_at > time::now()
                     AND provider_selection_version = $_selection AND provider_trust_revision = $_trust
@@ -78,7 +81,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
             .WithParam("_attempt_table", KycSubmission.SchemaNameConst)
             .WithParam("_attempt_id", expected.Id)
             .WithParam("_user", SurrealRecordParam.Of("user", expected.UserId))
-            .WithParam("_provider", expected.ProviderKey)
+            .WithParam("_attempt_provider_key", expected.ProviderKey)
             .WithParam("_session", lease.Id)
             .WithParam("_has_tenant", expected.TenantId is not null)
             .WithParam("_tenant", SurrealRecordParam.Of("user", expected.TenantId))
@@ -115,7 +118,7 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
             .Of("""
                 UPSERT type::record($_t, $_id)
                 SET tenant_scope = $_scope,
-                    tenant_id = $_tenant,
+                    tenant_id = IF $_has_binding_tenant THEN $_binding_tenant ELSE NONE END,
                     person_key = $_person_key,
                     global_person_key = $_global_person_key,
                     person_key_version = $_key_version,
@@ -138,7 +141,11 @@ public sealed class SurrealKycIdentityStore : IKycIdentityStore
             .WithParam("_t", KycIdentity.SchemaNameConst)
             .WithParam("_id", body.Id)
             .WithParam("_scope", body.TenantScope)
-            .WithParam("_tenant", SurrealRecordParam.Of("user", candidate.TenantId))
+            // _binding_tenant, not _tenant: the fence transaction shares one parameter
+            // namespace (F4), and a first-party identity writes NONE — the column is
+            // `none | record<user>` and a NULL param fails coercion (F11).
+            .WithParam("_has_binding_tenant", !string.IsNullOrEmpty(candidate.TenantId))
+            .WithParam("_binding_tenant", SurrealRecordParam.Of("user", candidate.TenantId))
             .WithParam("_person_key", body.PersonKey)
             .WithParam("_global_person_key", body.GlobalPersonKey)
             .WithParam("_key_version", body.PersonKeyVersion)

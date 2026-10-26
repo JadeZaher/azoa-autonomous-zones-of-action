@@ -90,3 +90,39 @@ platform key door derives the right chain's key. An unstamped context takes the 
 Algorand-pinned legacy path (`KeyCustodyService.LegacyPlatformChainType`), which fails closed
 for every other chain. Stamping at the single build site means providers need no edits and
 none can drift.
+
+## §consent-scope-coverage — what a stored consent grant covers
+
+`ConsentScopeCoverage` (`Core/ConsentScopeCoverage.cs`) is the one rule every grant reader uses:
+`ConsentGrant.Covers` (so `TenantConsentGate` at the exchange edge probe AND at the custody
+decrypt seam), `ExchangeAuthorityFactory`'s grant selection, and `ExchangeAuthorityFence`'s
+row lock. A grant covers a scope iff the scope is in its stored list, **or** the scope is in
+`TenantProvisionedImpliedScopes` (`swap:sign` only) and the grant is the W3.6 tenant-provisioned
+implied participation grant (`origin = Participation`, `participation_ref` starts with the
+reserved `tenant-provisioned:v1:` prefix). Liveness (`RevokedAt`/`ExpiresAt`) stays the caller's
+and is checked first, so a revoked implied grant refuses the exchange exactly as before.
+
+**Why `swap:sign` and why only there.** The consent a custodial child gives at provisioning is
+rendered to them as "to move your funds when you back a project". Backing a project is the W5.1
+treasury-rate exchange: the node's own atomic reserve bundle (ARDA user -> project treasury,
+project units reserve -> hold/user, fees pooled) executed under the tenant's declared terms. The
+person can never click "allow" in AZOA, so without this they could never sponsor. It is still
+narrower than "spend": `transfer:sign` (arbitrary spends and payouts) and every other
+`ValueSigningScopes` member stay out, and the DEX `Swap` path cannot reach the implied coverage
+because `SigningAdmissionAuthorityFactory.SelectGrantsAsync` admits only `UserExplicit` grants.
+Child-JWT issuance (`TenantManager`) intersects the *stored* scope list, so a delegated child
+credential never carries `swap:sign` from this either.
+
+**Why check time, not a row rewrite.** Stored rows stay H4-clean (`ConsentLifecycleIdentity`
+still refuses value scopes under `Participation`), every grant created before this rule (demo
+children included) is covered with no data migration, and the rule is removed in one place.
+The prefix is not forgeable into new coverage: `SurrealConsentLifecycleStore.AdmitAsync` admits
+a participation grant only against an active `TenantProvisioned` approval for that exact
+(membership = tenant + ref, grantor), which only `AdmitProvisionedAsync` (fenced on the tenant's
+`tenant:provision` authority) creates. A logged-in user's additional participation grant on
+their own provisioned membership is therefore the same person and membership, revoked by the
+same offboard. The exchange witness records the
+selected grant's `ParticipationRef` (`SigningGrantWitness`, JSON-omitted when null so legacy
+explicit-grant witness hashes are unchanged) and the fence locks `origin` + `participation_ref`
++ the exact stored scope CSV, so a revoke or re-scope between admission and settlement throws
+`EXCHANGE_PARTICIPANT_AUTHORITY_CHANGED`.

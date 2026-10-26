@@ -152,5 +152,8 @@ public sealed partial class HoldCommandService(IHoldCommandStore store, SigningA
             MandateDraftHash: row.WorkflowMandateDraftJson is null ? null : CanonicalJson.HashCanonical(row.WorkflowMandateDraftJson)));
     }
 
-    private static AZOAResult<HoldCommandView> Refuse() => AZOAResult<HoldCommandView>.Failure("The original scoped hold operation was not found.");
+    /// <summary>A request key already admitted a different command for this same actor and tenant.</summary>
+    internal const string ReplayConflict = "This request key already carries a different hold command; replay the original intent exactly.";
+
+    private static AZOAResult<HoldCommandView> Refuse() =>AZOAResult<HoldCommandView>.Failure("The original scoped hold operation was not found.");
 }

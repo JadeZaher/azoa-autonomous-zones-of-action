@@ -5,11 +5,15 @@ namespace AZOA.WebAPI.Helpers;
 /// <summary>Canonical identity for the one platform wallet per user and chain.</summary>
 public static class WalletBootstrapIdentity
 {
+    /// <summary>The network-free chain; minting a key for it is gated on Blockchain:Mode at the wallet seam (see Managers/AGENTS.md §simulated-chain-wallets).</summary>
+    public const string SimulatedChain = "Simulated";
+
     public static string? CanonicalChain(string? chainType) => chainType?.Trim().ToLowerInvariant() switch
     {
         "algorand" => "Algorand",
         "solana" => "Solana",
         "ethereum" => "Ethereum",
+        "simulated" => SimulatedChain,
         _ => null
     };
 
