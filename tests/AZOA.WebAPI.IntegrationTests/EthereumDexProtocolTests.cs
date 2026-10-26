@@ -266,7 +266,8 @@ public sealed class EthereumDexProtocolTests : IAsyncLifetime
             => AZOAResult<IWallet>.Failure("Local protocol keys are ephemeral.");
         private async Task<AZOAResult<T>> Sign<T>(Func<byte[], Task<T>> sign)
         {
-            var bytes = owner.GetPrivateKeyAsBytes();
+            // Nethereum 4.21 returns its internal key array; zero a copy, never the fixture key itself.
+            var bytes = owner.GetPrivateKeyAsBytes().ToArray();
             try { return AZOAResult<T>.Success(await sign(bytes)); }
             finally { CryptographicOperations.ZeroMemory(bytes); }
         }

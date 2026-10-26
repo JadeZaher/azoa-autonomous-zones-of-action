@@ -144,8 +144,18 @@ public class UserControllerIntegrationTests : IntegrationTestBase
     {
         using var scope = Factory.Services.CreateScope();
         var migration = scope.ServiceProvider.GetRequiredService<WalletAuthIdentityMigrationService>();
-        await migration.SweepAsync(CancellationToken.None);
-        (await migration.GetAsync(CancellationToken.None)).Status.Should().Be("Ready");
+        // The host's WalletAuthIdentityMigrationWorker sweeps every 5 s under the same lease; while it holds the lease our
+        // sweep is a no-op and reads "Migrating". Sweep until Ready, bounded by the 2-minute lease a cancelled sweep can leave.
+        var deadline = DateTime.UtcNow.AddMinutes(2.5);
+        string status;
+        do
+        {
+            await migration.SweepAsync(CancellationToken.None);
+            status = (await migration.GetAsync(CancellationToken.None)).Status;
+            if (status is "Ready" or "Conflict") break;
+            await Task.Delay(250);
+        } while (DateTime.UtcNow < deadline);
+        status.Should().Be("Ready");
         var user = await SeedUserAsync();
         using var userClient = Factory.CreateAuthenticatedClientForUser(user.Id);
 

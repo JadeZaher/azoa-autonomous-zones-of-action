@@ -229,3 +229,15 @@ admins, root and the legacy operator token against the same operator routes (`No
 subject a real `node_operator` token can carry: operator controllers resolve their actor with
 `HttpContext.TryGetOperatorActor`, which refuses any other subject. Operator tests that assert `actor_user_id`
 therefore expect `NodeOperatorIdentity.UserId`.
+
+## §wallet-identity-migration-race
+
+Every host runs `WalletAuthIdentityMigrationWorker`, which calls `WalletAuthIdentityMigrationService.SweepAsync` every
+5 s under a lease. A test that sweeps by hand can land while the worker holds that lease; its sweep is then a no-op and
+the status reads `Migrating`. Tests that need `Ready` (e.g. `UserControllerIntegrationTests.Delete_ShouldRemoveUser`)
+sweep in a loop until `Ready`, bounded by the 2-minute lease a cancelled sweep can leave behind.
+
+## §caller-built-holon-operations
+
+`api/holon/{id}/mint` and `/exchange` are refused by design (Managers/AGENTS.md §caller-built operations, M9): 400 with
+`OPERATION_NOT_ALLOWED` and a pointer to `/api/nft/mint` or the reserve exchange. The Holon tests assert that refusal.

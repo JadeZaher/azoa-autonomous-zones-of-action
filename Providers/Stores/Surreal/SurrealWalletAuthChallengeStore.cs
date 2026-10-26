@@ -86,8 +86,12 @@ public sealed class SurrealWalletAuthChallengeStore(ISurrealExecutor executor) :
             {
                 try
                 {
-                    var creation = await executor.ExecuteAsync(SurrealWriter.Create(new WalletAuthChallengeBudget { Id = id }), ct);
-                    creation.EnsureAllOk();
+                    await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+                    {
+                        var creation = await executor.ExecuteAsync(SurrealWriter.Create(new WalletAuthChallengeBudget { Id = id }), ct);
+                        creation.EnsureAllOk();
+                        return true;
+                    }, ct);
                 }
                 catch (SurrealStatementException ex) when (SurrealIdempotencyLedger.IsUniqueViolation(ex.Message)) { }
                 continue;
@@ -107,11 +111,16 @@ public sealed class SurrealWalletAuthChallengeStore(ISurrealExecutor executor) :
             }
             if (live.Count >= 5) return false;
             live.Add(new(challenge.Nonce, new DateTimeOffset(DateTime.SpecifyKind(challenge.ExpiresAt, DateTimeKind.Utc))));
-            var result = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthChallengeBudget>(id)
-                .Where(item => item.Version == row.Version).Set(item => item.SlotsJson, JsonSerializer.Serialize(live))
-                .Set(item => item.Version, row.Version + 1).Build(), ct);
-            result.EnsureAllOk();
-            if (result.GetValues<WalletAuthChallengeBudget>(0).Any()) return true;
+            // A contended CAS can surface SurrealDB 3.x's retryable conflict; the retried loser misses its version guard and re-reads.
+            var won = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var result = await executor.ExecuteAsync(SurrealWriter.UpdateOnly<WalletAuthChallengeBudget>(id)
+                    .Where(item => item.Version == row.Version).Set(item => item.SlotsJson, JsonSerializer.Serialize(live))
+                    .Set(item => item.Version, row.Version + 1).Build(), ct);
+                result.EnsureAllOk();
+                return result.GetValues<WalletAuthChallengeBudget>(0).Any();
+            }, ct);
+            if (won) return true;
         }
         return false;
     }

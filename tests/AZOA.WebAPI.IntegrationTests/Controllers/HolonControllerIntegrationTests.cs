@@ -140,8 +140,10 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
     // BLOCKCHAIN
     // ═══════════════════════════════════════════════════════════════
 
+    // M9 (Managers/AGENTS.md §caller-built operations): these caller-built routes refuse Mint and Exchange before any
+    // claim, row or provider call; user mints go through /api/nft/mint and exchanges through the reserve exchange.
     [Fact]
-    public async Task Mint_ShouldCreateBlockchainOperation()
+    public async Task Mint_IsRefusedAndRoutedToTheNftLifecycle()
     {
         var holon = await SeedHolonAsync();
         var wallet = await SeedWalletAsync(w => w.ForUser(Guid.Parse(TestAuthHandler.DefaultUserId)));
@@ -155,14 +157,15 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
 
         var response = await Client.PostAsJsonAsync($"api/holon/{holon.Id}/mint", request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadResultAsync<BlockchainOperation>(response);
-        result!.IsError.Should().BeFalse();
-        result.Result!.OperationType.Should().Be("Mint");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<BlockchainOperationResponse>>(JsonOptions);
+        result!.IsError.Should().BeTrue();
+        result.Code.Should().Be(AzoaErrorCodes.OperationNotAllowed);
+        result.Message.Should().Contain("/api/nft/mint");
     }
 
     [Fact]
-    public async Task Exchange_ShouldCreateBlockchainOperation()
+    public async Task Exchange_IsRefusedAndRoutedToTheReserveExchange()
     {
         var holon = await SeedHolonAsync();
         var target = await SeedHolonAsync();
@@ -176,10 +179,11 @@ public class HolonControllerIntegrationTests : IntegrationTestBase
 
         var response = await Client.PostAsJsonAsync($"api/holon/{holon.Id}/exchange", request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadResultAsync<BlockchainOperation>(response);
-        result!.IsError.Should().BeFalse();
-        result.Result!.OperationType.Should().Be("Exchange");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+        var result = await response.Content.ReadFromJsonAsync<AZOAResult<BlockchainOperationResponse>>(JsonOptions);
+        result!.IsError.Should().BeTrue();
+        result.Code.Should().Be(AzoaErrorCodes.OperationNotAllowed);
+        result.Message.Should().Contain("reserve exchange");
     }
 
     // ═══════════════════════════════════════════════════════════════

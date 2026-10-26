@@ -325,3 +325,30 @@ the W5.1 reserve exchange (`ReserveExchangeManager` → `ExchangeHoldSourceServi
   lifecycle simply re-submits.
 - The asset id is numeric rather than `sim:`-prefixed so it stays shape-compatible with ASA ids (and safe inside
   derived record ids); simulated rows stay partitioned by `ChainType = "Simulated"` and the `sim:` protocol identity.
+
+## §simulated-nft
+
+`SimulatedBlockchainProvider.Nft.cs` implements `INftTransactionModule` so `Blockchain:Mode=Simulated` can run the NFT
+lifecycle (`NftLifecycleService`), and with it the workflow Grant node. Without it every mint refused with "This chain
+does not offer a verified NFT lifecycle".
+
+- **Not gated.** NFT modules are not D-7 modules on any chain (`ChainModuleActivation.TryGetGated` passes them through),
+  so the simulated one carries no activation pin. What it needs instead is a `NftFees:Policies` entry for
+  `Simulated`/`Devnet` (zero fees, revision 1): `appsettings.Development.json` carries it; the IntegrationTest
+  environment does not load that file, so `ArdanovaSimulatedFactory` sets the same entry in memory.
+- **Same intent contract, sim addresses.** Validation is `NftTransactionAuthorization.IsValid` plus `sim:` signer,
+  recipient and actor addresses, protocol identity `sim:<network>`, contract identity `sim:nft` (the analogue of
+  Algorand's `"ASA"`), currency `SIM` with 0 decimals.
+- **What stays refused.** Soulbound credentials (`CredentialAuthorityAddress` is null, so the intent factory refuses:
+  there is no simulated credential authority or clawback), the `Accept`/`Deliver`/`Revoke` stages that only those
+  credentials reach, protocol cost quotes, and any non-zero fee (a simulated rail must not pretend to collect one).
+  Supported stages: `Create`, `Transfer`, `ReturnForBurn`, `Burn`.
+- **Stateless, deterministic preparation.** The tx id is `sim:tx:` + digest of the preparation key and the canonical
+  intent hash; the "signed wire" is a marked placeholder; re-preparing yields the same candidate and submit/observe
+  re-derive it and refuse any other. `Create` mints a positive 63-bit asset id derived from the lifecycle id.
+- **Effects apply once, under one lock.** `Submit` records one outcome per tx id. A stage whose precondition fails
+  (asset unknown or burned, signer not the current owner, asset id already minted) is recorded as `FailedOnChain`,
+  never thrown. Observe is `Unseen` until submitted (the lifecycle's cue to submit), then `Confirmed`/`FailedOnChain`.
+- **In-process ledger.** Holdings live in memory like the balance ledger; after a restart `ReadNftOwnershipAsync`
+  reports the asset absent, so transfer/burn of a pre-restart asset refuses ("ownership could not be proven") rather
+  than trusting the database row.

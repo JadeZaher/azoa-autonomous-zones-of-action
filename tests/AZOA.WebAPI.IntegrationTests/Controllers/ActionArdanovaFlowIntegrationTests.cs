@@ -441,7 +441,13 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
                 ["AZOA:DefaultProvider"] = "SurrealDb",
                 // Route every chain call to the simulated provider.
                 ["Blockchain:Mode"]      = "Simulated",
-                ["Blockchain:DefaultChain"] = "Simulated"
+                ["Blockchain:DefaultChain"] = "Simulated",
+                // The zero-fee simulated NFT policy appsettings.Development.json carries; IntegrationTest does not load it.
+                ["NftFees:Policies:0:ChainType"] = "Simulated", ["NftFees:Policies:0:Network"] = "Devnet",
+                ["NftFees:Policies:0:Revision"] = "1", ["NftFees:Policies:0:TreasuryAddress"] = "",
+                ["NftFees:Policies:0:MintNativeBaseUnits"] = "0", ["NftFees:Policies:0:TransferNativeBaseUnits"] = "0",
+                ["NftFees:Policies:0:BurnNativeBaseUnits"] = "0", ["NftFees:Policies:0:RevokeNativeBaseUnits"] = "0",
+                ["NftFees:Policies:0:RefundNativeBaseUnits"] = "0"
             });
         });
 

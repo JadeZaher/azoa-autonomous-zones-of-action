@@ -25,8 +25,13 @@ public sealed class SurrealActionWorkflowAdmissionStore(ISurrealExecutor executo
         var candidate = Step(runId, nodeId, payload, DateTimeOffset.UtcNow);
         try
         {
-            var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
-            response.EnsureAllOk();
+            // Concurrent enqueues of one step can surface SurrealDB 3.x's retryable conflict; the retry resolves to the unique violation below.
+            await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
+                response.EnsureAllOk();
+                return true;
+            }, ct);
         }
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {

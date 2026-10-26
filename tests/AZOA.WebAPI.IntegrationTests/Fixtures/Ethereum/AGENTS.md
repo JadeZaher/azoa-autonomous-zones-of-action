@@ -19,3 +19,10 @@ allowance stores: quote, exact approval, policy-permitted swap, finalized settle
 allowance release from the saved confirmed stage. The DEX module pins state reads to finalized block hashes through
 EIP-1898 `{blockHash, requireCanonical}` parameters and the `finalized` tag. Ganache 7.9.2 rejected the former, so
 both fixtures moved to Hardhat 2.26.3, which honours both (probed on this tree; shared with the WTT Ethereum reads).
+
+## Fixture custody must zero a copy of the key
+
+Nethereum 4.21 `EthECKey.GetPrivateKeyAsBytes()` returns the key's internal array, not a copy. The fixtures' local
+`IKeyCustodyService` zeroes the bytes it hands to the provider (as real custody does), so it must zero
+`GetPrivateKeyAsBytes().ToArray()`; zeroing the original destroyed the fixture key after its first signature, and every
+later signature failed with "the resolved signing key is not a valid secp256k1 scalar".

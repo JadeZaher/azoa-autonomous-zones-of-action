@@ -5,6 +5,7 @@ using AZOA.WebAPI.Core;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Models.Deployments;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 
 namespace AZOA.WebAPI.IntegrationTests.Controllers;
@@ -248,12 +249,16 @@ public class DappSeriesControllerIntegrationTests : IntegrationTestBase
     {
         var series = await SeedSeriesAsync();
 
-        var response = await Client.PostAsync($"api/dapp-series/{series.Id}/generate", null);
+        // Versioned contract (AGENTS.md §bundle-deploy-contract): a well-formed target, so the refusal is the series' own.
+        var request = new DeploymentGenerateRequest(new DeploymentTarget("PlatformRuntime", "Algorand", "Devnet"));
+        var response = await Client.PostAsJsonAsync($"api/dapp-series/{series.Id}/generate", request, JsonOptions);
 
-        // Series is Draft, not Ready → GenerateAsync guards against it
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // A Draft series with no composed actions fails composition before any bundle is generated.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<object>>(JsonOptions);
         result!.IsError.Should().BeTrue();
+        var after = await ReadResultAsync<DappSeries>(await Client.GetAsync($"api/dapp-series/{series.Id}"));
+        after!.Result!.Status.Should().Be(DappSeries.StatusKind.Draft);
     }
 
     [Fact]
@@ -261,12 +266,20 @@ public class DappSeriesControllerIntegrationTests : IntegrationTestBase
     {
         var series = await SeedSeriesAsync();
 
-        var response = await Client.PostAsync($"api/dapp-series/{series.Id}/deploy", null);
+        var target = new DeploymentTarget("PlatformRuntime", "Algorand", "Devnet");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/dapp-series/{series.Id}/deploy")
+        {
+            Content = JsonContent.Create(new DeploymentStartRequest("unknown-artifact", "unknown-hash", target), options: JsonOptions),
+        };
+        request.Headers.Add("Idempotency-Key", $"series-deploy-{Guid.NewGuid():N}");
 
-        // Series is Draft → DeployAsync guards against it
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var response = await Client.SendAsync(request);
+
+        // Series is Draft → DeployAsync guards against it before touching any bundle.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<AZOAResult<object>>(JsonOptions);
         result!.IsError.Should().BeTrue();
+        result.Message.Should().Contain("generated artifact");
     }
 
     // ═══════════════════════════════════════════════════════════════
