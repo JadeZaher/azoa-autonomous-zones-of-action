@@ -114,6 +114,19 @@ services:
 
       # Delivery workers run in e2e (Services/Webhooks/AGENTS.md §activation).
       Webhooks__Enabled: "true"
+
+      # Settlement rail: the Simulated economy, pinned here rather than inherited from
+      # appsettings.Development.json alone (frontend/e2e/AGENTS.md §settlement). The seed is the
+      # committed, public dev seed; ExpectedAddresses:Simulated is the reserve it derives.
+      Blockchain__Mode: "Simulated"
+      Blockchain__DefaultNetwork: "Devnet"
+      CustodialAccounts__CustodyMode: "DevelopmentOnly"
+      AZOA__Simulated__PlatformSeed: "azoa-dev-simulated-platform-seed-not-a-secret"
+      Reserve__Chains__0: "Algorand"
+      Reserve__Chains__1: "Simulated"
+      Reserve__ExpectedAddresses__Simulated: "sim:simulated:6vigj3egiotxn7h2pmrwxbmilll44uoifzhn6he2n36udkjuzwqa"
+      Exchange__Activation__Simulated__Devnet: "true"
+      Fiat__OnRamp__ReservePartition: "on-ramp"
     ports:
       - "${AZOA_E2E_API_PORT:-5200}:5000"
     volumes:

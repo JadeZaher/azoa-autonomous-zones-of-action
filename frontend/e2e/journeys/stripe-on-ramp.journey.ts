@@ -6,9 +6,14 @@ import { completeBusinessVerification, expect, signIn, test } from '../support/f
  * the tenant integration starts the checkout; the payer's part happens in the browser.
  */
 test('a hosted card payment settles the funding intent through the signed webhook', async ({ page, api, vendors }) => {
+  // The settlement rail (e2e/AGENTS.md §settlement): a verified platform unit with an on-ramp
+  // budget, seeded first while the operator session is fresh (genesis needs a recent sign-in).
+  const platformUnit = await api.ensurePlatformUnit()
   const tenant = await api.makeTenant(await api.registerPerson('onramp'))
   await signIn(page, tenant)
   await completeBusinessVerification(page, api, vendors)
+  // A KYB-verified tenant prices its own sales: 100 base units per cent (1 unit = $0.01 at 2 decimals).
+  await api.registerTenantPrice(tenant, platformUnit, '100')
   await api.assignIdentomat(tenant)
   const subject = `payer-${Date.now().toString(36)}`
   const payer = await api.provisionMember(tenant, subject)
@@ -67,6 +72,9 @@ test('a hosted card payment settles the funding intent through the signed webhoo
   await expect
     .poll(async () => (await api.checkoutIntent(tenant, payerId, checkout.intentId)).status, { timeout: 15_000 })
     .toBe('complete')
-  const settled = await api.checkoutIntent(tenant, payerId, checkout.intentId)
-  expect(['payment_received', 'funds_applied']).toContain(settled.settlementState)
+  // funds_applied is projected only from an inbox row the on-ramp handler APPLIED, i.e. the
+  // issuance confirmed and the lot is Issued; payment_received alone would be charged-and-uncredited.
+  await expect
+    .poll(async () => (await api.checkoutIntent(tenant, payerId, checkout.intentId)).settlementState, { timeout: 15_000 })
+    .toBe('funds_applied')
 })

@@ -222,9 +222,28 @@ public partial class EthereumProvider
             || current.Network != ActiveNetwork.ToString())
             throw new InvalidOperationException("Ethereum preparation belongs to another network.");
         var response = await RpcCallAsync("eth_sendRawTransaction", new object?[] { EthereumHex.Data(wire) }, ct);
-        if (response.IsError) throw new HttpRequestException("Ethereum submission requires reconciliation: " + response.ErrorMessage);
+        if (response.IsError)
+        {
+            // Idempotent re-submit: only the node's own record of this exact hash counts (Providers/Blockchain/AGENTS.md §broadcast-outcome).
+            if (await NodeHoldsPreparedTransactionAsync(current, ct)) return;
+            throw new HttpRequestException("Ethereum submission requires reconciliation: " + response.ErrorMessage);
+        }
         if (!response.TryGetString(out var hash) || !string.Equals(hash, current.TransactionId, StringComparison.OrdinalIgnoreCase))
             throw new HttpRequestException("Ethereum node returned a mismatched transaction identity.");
+    }
+
+    /// <summary>True only when the node returns the stored transaction (same hash, sender and nonce) as pending or mined.</summary>
+    private async Task<bool> NodeHoldsPreparedTransactionAsync(EthereumPreparation current, CancellationToken ct)
+    {
+        EthRpcResult known;
+        try { known = await RpcCallAsync("eth_getTransactionByHash", new object?[] { current.TransactionId }, ct); }
+        catch (Exception) when (!ct.IsCancellationRequested) { return false; }
+        return !known.IsError && !known.IsNullResult
+            && TryReadStringProperty(known.Value, "hash", out var hash)
+            && string.Equals(hash, current.TransactionId, StringComparison.OrdinalIgnoreCase)
+            && TryReadStringProperty(known.Value, "from", out var sender) && EthereumAddress.AreSame(sender, current.Sender)
+            && TryReadQuantityProperty(known.Value, "nonce", out var nonce)
+            && nonce == BigInteger.Parse(current.Nonce, CultureInfo.InvariantCulture);
     }
 
     private async Task<AZOAResult<ChainConfirmation>> ObservePreparationAsync(EthereumPreparation preparation, CancellationToken ct)

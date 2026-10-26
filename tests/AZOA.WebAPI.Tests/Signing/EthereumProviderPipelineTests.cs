@@ -1081,9 +1081,13 @@ public class EthereumProviderPipelineTests
                     {
                         SendTransactionCount++;
                         LastSubmittedRaw = StringParam(0);
-                        SubmittedRaws.Add(LastSubmittedRaw);
-                        // Keep the pending nonce fixed to simulate node lag.
-                        KnownHashes.Add(HashOf(LastSubmittedRaw));
+                        // A JSON-RPC refusal means the node never admitted the bytes; a lost HTTP response may have.
+                        if (SendTransactionRpcError is null)
+                        {
+                            SubmittedRaws.Add(LastSubmittedRaw);
+                            // Keep the pending nonce fixed to simulate node lag.
+                            KnownHashes.Add(HashOf(LastSubmittedRaw));
+                        }
                     }
 
                     if (SendTransactionHttpStatus.HasValue)

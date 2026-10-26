@@ -95,6 +95,42 @@ public sealed class EthereumPreparedRecoveryTests
     }
 
     [Fact]
+    public async Task Resubmitting_a_mined_transaction_the_node_refuses_is_idempotent_and_still_confirms_only_from_chain()
+    {
+        using var fixture = new Fixture();
+        var prepared = (await fixture.Provider.PrepareValueTransferAsync(fixture.Intent("value:resubmit:0"), default)).Result!;
+        await fixture.Provider.SubmitValueTransferAsync(prepared, default);
+        fixture.Rpc.RejectSendWith = "Nonce too low. Expected nonce to be 1 but got 0.";
+
+        await fixture.NewProvider().SubmitValueTransferAsync(prepared, default);
+
+        fixture.Rpc.Rejected.Should().ContainSingle().Which.Should().Be(fixture.Rpc.Wires.Single(), "the re-submit re-sent the stored wire, not a new one");
+        fixture.Store.Snapshot.Single().State.Should().Be("SubmissionAuthorized", "a refused re-broadcast records nothing as landed");
+        (await fixture.Provider.ObserveValueTransferAsync(prepared, default)).Result.Should().Be(ChainConfirmation.Unknown);
+        fixture.Rpc.Finalized = true;
+        (await fixture.Provider.ObserveValueTransferAsync(prepared, default)).Result.Should().Be(ChainConfirmation.Confirmed);
+    }
+
+    public static TheoryData<string> UnvouchedRefusals => new() { "never-accepted", "lookup-error", "hash", "from", "nonce" };
+
+    [Theory]
+    [MemberData(nameof(UnvouchedRefusals))]
+    public async Task A_refused_broadcast_the_node_cannot_vouch_for_by_exact_hash_still_requires_reconciliation(string variant)
+    {
+        using var fixture = new Fixture();
+        var prepared = (await fixture.Provider.PrepareValueTransferAsync(fixture.Intent("value:unvouched:0"), default)).Result!;
+        if (variant != "never-accepted") await fixture.Provider.SubmitValueTransferAsync(prepared, default);
+        fixture.Rpc.RejectSendWith = "Nonce too low. Expected nonce to be 1 but got 0.";
+        fixture.Rpc.LookupFailsWith = variant == "lookup-error" ? "header not found" : null;
+        fixture.Rpc.LookupForgery = variant is "hash" or "from" or "nonce" ? variant : null;
+
+        var refused = await Assert.ThrowsAsync<HttpRequestException>(() => fixture.Provider.SubmitValueTransferAsync(prepared, default));
+
+        refused.Message.Should().StartWith("Ethereum submission requires reconciliation: [-32000] Nonce too low");
+        fixture.Rpc.Rejected.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Wrong_semantics_or_noncanonical_receipt_never_confirms_returned_units()
     {
         using var fixture = new Fixture();
@@ -210,6 +246,12 @@ public sealed class EthereumPreparedRecoveryTests
         public List<string> Wires { get; } = [];
         public string Authority { get; set; } = "";
         public bool FailNextSend { get; set; }
+        /// <summary>Wires the node refused with <see cref="RejectSendWith"/>; never accepted, so never findable by hash.</summary>
+        public List<string> Rejected { get; } = [];
+        public string? RejectSendWith { get; set; }
+        public string? LookupFailsWith { get; set; }
+        /// <summary>Which field of the by-hash answer to forge: "hash", "from" or "nonce".</summary>
+        public string? LookupForgery { get; set; }
         public bool Finalized { get; set; }
         public string ReceiptStatus { get; set; } = "0x1";
         public string? ReceiptGasUsed { get; set; } = "0x5208";
@@ -238,6 +280,11 @@ public sealed class EthereumPreparedRecoveryTests
                         hash = CorruptCanonicalHash ? "0x" + new string('c', 64) : BlockHash, baseFeePerGas = "0x3b9aca00" }; break;
                 case "eth_sendRawTransaction":
                     var wire = parameters[0].GetString()!;
+                    if (RejectSendWith is { } refusal)
+                    {
+                        Rejected.Add(wire);
+                        return RpcError(body, refusal);
+                    }
                     Wires.Add(wire);
                     if (FailNextSend) { FailNextSend = false; return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable); }
                     result = Hash(wire); break;
@@ -246,11 +293,13 @@ public sealed class EthereumPreparedRecoveryTests
                     result = Wires.Any(w => Hash(w) == receiptHash) ? new { transactionHash = receiptHash, blockHash = BlockHash, blockNumber = "0xa", status = ReceiptStatus, gasUsed = ReceiptGasUsed, effectiveGasPrice = "0x3b9aca00" } : null;
                     break;
                 case "eth_getTransactionByHash":
+                    if (LookupFailsWith is { } lookupFailure) return RpcError(body, lookupFailure);
                     var raw = Wires.FirstOrDefault(w => Hash(w) == parameters[0].GetString());
                     if (raw is null) { result = null; break; }
                     var tx = Transaction1559Encoder.Current.Decode(Convert.FromHexString(raw[2..]));
-                    result = new { hash = Hash(raw), from = TransactionVerificationAndRecovery.GetSenderAddress(tx), to = tx.ReceiverAddress,
-                        nonce = EthereumHex.Quantity(tx.Nonce ?? 0), value = EthereumHex.Quantity(tx.Amount ?? 0),
+                    result = new { hash = LookupForgery == "hash" ? "0x" + new string('d', 64) : Hash(raw),
+                        from = LookupForgery == "from" ? "0x3333333333333333333333333333333333333333" : TransactionVerificationAndRecovery.GetSenderAddress(tx),
+                        to = tx.ReceiverAddress, nonce = EthereumHex.Quantity((tx.Nonce ?? 0) + (LookupForgery == "nonce" ? 1 : 0)), value = EthereumHex.Quantity(tx.Amount ?? 0),
                         input = CorruptInput ? "0x1234" : string.IsNullOrEmpty(tx.Data) ? "0x" : tx.Data.StartsWith("0x", StringComparison.Ordinal) ? tx.Data : "0x" + tx.Data,
                         chainId = EthereumHex.Quantity(tx.ChainId) };
                     break;
@@ -259,5 +308,11 @@ public sealed class EthereumPreparedRecoveryTests
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new
                 { jsonrpc = "2.0", id = body.RootElement.GetProperty("id").GetInt32(), result }), Encoding.UTF8, "application/json") };
         }
+
+        /// <summary>A JSON-RPC error object on HTTP 200, the way Hardhat and geth refuse a call.</summary>
+        private static HttpResponseMessage RpcError(JsonDocument body, string message)
+            => new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new
+                { jsonrpc = "2.0", id = body.RootElement.GetProperty("id").GetInt32(), error = new { code = -32000, message } }),
+                Encoding.UTF8, "application/json") };
     }
 }

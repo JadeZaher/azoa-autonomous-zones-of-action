@@ -123,7 +123,7 @@ mocked inside the browser except the vendor's own page.
 |---|---|
 | `signup-and-identity-verification` | Register (UI) → operator issues tenant key → `/kyc` shows Identomat → member enrolled → hosted KYC (intercepted) → callback → member gate `Approved` |
 | `tenant-business-verification` | Sign in (UI) → `/business-verification` → start → hosted KYB in a popup → callback → refresh → "Business verified" |
-| `stripe-on-ramp` | Same tenant member provisioned/enrolled → tenant KYC/AML approved → member claims account → owner signs in and grants fresh consent → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `payment_received`/`funds_applied` |
+| `stripe-on-ramp` | Platform unit seeded (§settlement) → tenant KYB (UI) → tenant price registered → same tenant member provisioned/enrolled → tenant KYC/AML approved → member claims account → owner signs in and grants fresh consent → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `funds_applied` |
 | `webhook-registration` | Sign in (UI) → `/settings` → register `webhook-receiver.e2e.azoa.test` (pinned via compose `extra_hosts`, no DNS) → secret shown once → reload shows version 1 and no secret |
 
 There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
@@ -148,27 +148,32 @@ grants fresh `transfer:sign` through Settings with a bounded expiry. Provisioned
 participation alone never includes this value scope. Checkout, intent reads and
 signed settlement retain the original tenant flow and financial assertions.
 
-### Current settlement limit — candidate 67628a9c
+## §settlement — the on-ramp rail on the E2E stack (P6-19)
 
-The latest complete collection passed four journeys and failed Stripe settlement.
-The hermetic fake-vendor positive control and all three real-vendor negative
-controls passed. Stripe now clears tenant KYC/AML, real account claim, UI login,
-fresh owner consent, tenant checkout and the hosted payment. Its signed webhook
-returns 500 because no verified platform unit exists on Devnet; the unchanged
-200/202 delivery assertion correctly fails. Settlement and complete-intent
-success are not established.
+The signed `checkout.session.completed` delivery is settled by `Services/Fiat/OnRamp` on the
+Simulated chain, the same rail `tools/dev-node/dev-node-up.ps1` runs (its AGENTS.md §arda-genesis):
 
-The existing simulated provider lacks both durable fungible creation and
-recipient preparation. Those gaps and the checked settlement gates already
-exist in upstream/main; no prior passing Stripe run is
-established. A genesis call or a fabricated active platform-token row cannot
-supply the required verified issuance lineage. Further real setup also requires
-an operator-declared on-ramp budget, exact tenant price and both current KYC
-contexts selected by the settlement/allocation path. The separate open
-[hermetic settlement follow-up](../../conductor/tracks/node-admin-rbac-cli_20261018/hermetic-stripe-settlement-followup.md)
-requires design review before capability or harness implementation. Preserve the
-positive payment assertions and report this known red independently of passing
-scoped node-admin checks.
+- **Config.** `docker-compose.e2e.yml` pins the Simulated economy explicitly (`Blockchain__Mode`,
+  `AZOA__Simulated__PlatformSeed` = the committed public dev seed, `Reserve__Chains` with
+  `Simulated`, `Reserve__ExpectedAddresses__Simulated` = the address that seed derives,
+  `Exchange__Activation__Simulated__Devnet`, `Fiat__OnRamp__ReservePartition`). They equal
+  `appsettings.Development.json`, which the container also loads; pinning them means a dev-config
+  edit cannot silently take the rail away from this journey. The NFT zero-fee policy is not
+  needed by the on-ramp and stays inherited.
+- **Seed, through the public surface only.** `AzoaApi.ensurePlatformUnit()` mirrors
+  `Ensure-ArdaGenesis` + `Ensure-ArdaOnRampPartition`: operator genesis (`Simulated`/`Devnet`,
+  default definition: ARDA, 2 decimals), its own operation driven quote → accept-quote → continue →
+  refresh to `Completed`, then the `on-ramp` partition at 1,000,000,000 base units. Idempotent on a
+  kept volume (an existing unit short-circuits; re-declare SETS). `registerTenantPrice` then has the
+  KYB-verified tenant register its own exact price (`"100"` base units per cent) for that asset;
+  node-default fallback stays off. No row is written directly and no proof lineage is fabricated.
+- **Assertion.** Delivery must be owned (200/202, unchanged), the intent `complete`, and the
+  settlement state must reach `funds_applied`, which `FiatRailProvider` projects only from an inbox
+  row the handler APPLIED (issuance `Transferred` with a tx hash, lot `Issued`). `payment_received`
+  alone now means charged-and-uncredited and fails the journey.
+- **Proven only by CI's `e2e` job.** The whole chain (genesis over HTTP, price, KYC-scoped
+  allocation, Simulated recipient preparation and transfer, inbox projection) has run live on the
+  host dev node but not yet inside this compose project.
 
 ## §writing-a-journey (round 4: NFT, DEX, Hold)
 

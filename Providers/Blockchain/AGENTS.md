@@ -278,6 +278,16 @@ the message names (`OperationStatus.TransactionIdIn`) and parks. Other Algorand 
 groups, recipient preparation) and Solana still return the outcome-unknown error rather than the pending
 result; their callers must keep honouring the marker.
 
+**Ethereum idempotent re-submit (P6-23).** `EthereumProvider.SubmitPreparationAsync` re-broadcasts the stored
+signed wire, so a second submit after the first was mined draws a JSON-RPC refusal (Hardhat `[-32000] Nonce too
+low`, geth `already known`). On any JSON-RPC error it reads `eth_getTransactionByHash` for the stored
+`TransactionId` (already proven equal to keccak(wire)) and returns quietly ONLY when the node answers a transaction
+object with that hash, the prepared sender and the prepared nonce (`NodeHoldsPreparedTransactionAsync`). The error
+text is never interpreted. A null answer (the nonce went to a different transaction, or the broadcast was genuinely
+lost), a lookup error or exception, or any field mismatch keeps the old `requires reconciliation` throw. Returning
+means "submitted", not "landed": confirmation still comes only from `ObservePreparationAsync`'s receipt and finality
+checks. Transport failures (non-2xx, timeout) still throw before this branch and are replayed by recovery.
+
 ## §simulated-recipient-preparation
 
 `SimulatedBlockchainProvider.RecipientPreparation.cs` implements `IRecipientPreparationModule` so the

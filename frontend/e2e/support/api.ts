@@ -21,6 +21,28 @@ export interface Tenant extends Person {
   apiKey: string
 }
 
+/** The node's verified platform unit (`GET api/admin/platform-token` → `definition`). */
+export interface PlatformUnit {
+  chainType: string
+  network: string
+  assetId: string
+  decimals: number
+}
+
+/** A durable fungible-creation operation as `api/admin/platform-token/creation/{id}` renders it. */
+interface CreationOperation {
+  operationId: string
+  version: number
+  state: string
+  quote: { quoteId: string } | null
+}
+
+/** Mirrors `tools/dev-node/dev-node-up.ps1` §7 (`$ArdaGenesis*`, `$ArdaOnRamp*`); see `e2e/AGENTS.md` §settlement. */
+const platformUnitChain = 'Simulated'
+const platformUnitNetwork = 'Devnet'
+const onRampPartition = 'on-ramp'
+const onRampBudgetBaseUnits = '1000000000'
+
 /**
  * The stack's public HTTP surface, driven the way an operator, a tenant integration and a vendor
  * would. Only routes that exist in the API; no direct database access. See `e2e/AGENTS.md`.
@@ -131,6 +153,60 @@ export class AzoaApi {
     expect(response.status(), await response.text()).toBe(202)
   }
 
+  /**
+   * The operator's one-time platform-unit genesis on the Simulated chain, driven through its own
+   * operation's quote → accept → continue → refresh routes, then the `on-ramp` reserve budget.
+   * Idempotent: an existing unit short-circuits genesis and re-declaring SETS the budget.
+   */
+  async ensurePlatformUnit(): Promise<PlatformUnit> {
+    const headers = await this.operatorHeaders()
+    if (!(await this.platformUnit(headers))) {
+      const genesis = await this.request.post('/api/admin/platform-token/genesis', {
+        headers, data: { chainType: platformUnitChain, expectedNetwork: platformUnitNetwork, confirmIrreversible: true },
+      })
+      // 409: genesis already completed (a concurrent or earlier run); the read below decides.
+      if (genesis.status() !== 409) {
+        let operation = (await this.accepted<{ operation: CreationOperation | null }>(genesis)).operation
+        for (let step = 0; operation && operation.state !== 'Completed' && step < 12; step++) {
+          const base = `/api/admin/platform-token/creation/${operation.operationId}`
+          const next =
+            operation.state === 'AwaitingConsent'
+              ? operation.quote
+                ? await this.request.post(`${base}/accept-quote`, { headers, data: { version: operation.version, quoteId: operation.quote.quoteId } })
+                : await this.request.post(`${base}/quote`, { headers })
+              : operation.state === 'Admitted'
+                ? await this.request.post(`${base}/continue`, { headers, data: { requestId: randomUUID(), version: operation.version } })
+                : await this.request.post(`${base}/refresh`, { headers })
+          operation = await this.accepted<CreationOperation>(next)
+          expect(['Cancelled', 'FailedNoEffect'], `platform-unit genesis ended ${operation.state}`).not.toContain(operation.state)
+        }
+        expect(operation?.state ?? 'Completed', 'platform-unit genesis must complete').toBe('Completed')
+      }
+    }
+    const unit = await this.platformUnit(headers)
+    expect(unit, 'genesis must leave a readable, verified platform unit').not.toBeNull()
+    expect(unit!.chainType).toBe(platformUnitChain)
+
+    const declared = await this.ok<{ partitions: { name: string; declared: string }[] }>(
+      await this.request.post('/api/admin/platform-token/partitions', {
+        headers, data: { partitions: { [onRampPartition]: onRampBudgetBaseUnits } },
+      }),
+    )
+    expect(declared.partitions.find((partition) => partition.name === onRampPartition)?.declared).toBe(onRampBudgetBaseUnits)
+    return unit!
+  }
+
+  /** The tenant registers its own exact USD price for the platform unit (base units per cent). */
+  async registerTenantPrice(tenant: Tenant, unit: PlatformUnit, unitsPerMinorUnit: string): Promise<void> {
+    const price = await this.ok<{ assetId: string; unitsPerMinorUnit: string; status: string }>(
+      await this.request.post('/api/fiat/price-schedule', {
+        headers: this.tenantHeaders(tenant),
+        data: { chainType: unit.chainType, assetId: unit.assetId, unitsPerMinorUnit, source: 'e2e-journey' },
+      }),
+    )
+    expect(price).toMatchObject({ assetId: unit.assetId, unitsPerMinorUnit, status: 'Active' })
+  }
+
   /** The tenant starts a funding checkout for a member it is authorized to act for. */
   async startCheckout(tenant: Tenant, memberUserId: string, amountMinorUnits: number): Promise<{ intentId: string; paymentUrl: string }> {
     return this.ok(
@@ -159,6 +235,14 @@ export class AzoaApi {
     })
   }
 
+  /** The verified platform unit, or null while genesis has not run (404). */
+  private async platformUnit(headers: Record<string, string>): Promise<PlatformUnit | null> {
+    const state = await this.request.get('/api/admin/platform-token', { headers })
+    if (state.status() === 404) return null
+    const { definition } = await this.ok<{ definition: PlatformUnit }>(state)
+    return definition.assetId ? definition : null
+  }
+
   private async operatorHeaders(): Promise<Record<string, string>> {
     return { Authorization: `Bearer ${await this.operatorToken()}` }
   }
@@ -170,6 +254,15 @@ export class AzoaApi {
   private async ok<T>(response: APIResponse): Promise<T> {
     const text = await response.text()
     expect(response.status(), `${response.url()} → ${text}`).toBe(200)
+    const envelope = JSON.parse(text) as Envelope<T>
+    expect(envelope.isError, text).toBe(false)
+    return envelope.result
+  }
+
+  /** As `ok`, for durable-operation routes that answer 202 until the operation is terminal. */
+  private async accepted<T>(response: APIResponse): Promise<T> {
+    const text = await response.text()
+    expect([200, 202], `${response.url()} → ${text}`).toContain(response.status())
     const envelope = JSON.parse(text) as Envelope<T>
     expect(envelope.isError, text).toBe(false)
     return envelope.result
