@@ -234,12 +234,17 @@ public class ActionGraphBundleBuilder
             UserId = _userId
         };
 
-    public ActionGraphBundleDappGenerationRequest BuildGenerationRequest() =>
+    /// <summary>Platform-runtime target on Devnet for the builder's chain (default Algorand).</summary>
+    public AZOA.WebAPI.Models.Deployments.DeploymentTarget BuildRuntimeTarget() =>
+        new("PlatformRuntime", _targetChain ?? "Algorand", "Devnet");
+
+    /// <summary>Versioned generation request composing the given published actions, in order.</summary>
+    public ActionGraphBundleDappGenerationRequest BuildGenerationRequest(params Guid[] actionIds) =>
         new()
         {
+            Generation = new AZOA.WebAPI.Models.Deployments.DeploymentGenerateRequest(BuildRuntimeTarget(), actionIds),
             TargetChain = _targetChain ?? "Algorand",
             BoundHolonIds = new List<Guid>(_boundHolonIds),
-            Config = new Dictionary<string, string> { ["theme"] = "dark" }
         };
 }
 

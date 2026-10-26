@@ -140,7 +140,13 @@ Draft ──publish──▶ Active ──unpublish──▶ Draft
   engine-profile fan-out check as error + per-node config strict round-trip), then
   flips `Draft → Active` via the F6 compare-and-swap (see below) BEFORE persisting
   fresh `ExecutionOrder`. The CAS is the serialization point — a lost race returns
-  a publish-conflict error, never a torn double-publish.
+  a publish-conflict error, never a torn double-publish. The structural call MUST
+  pass `fanOutAsError: true`: the default profile only *warns* on Control/OnFailure
+  fan-out (that is the legacy-executor profile, AC-3b), and the durable engine
+  (`ActionWorkflowEdges` → `SuccessorKind.FanOut`) cannot run a fan-out graph, so
+  publish is the only pre-run gate. Checkpoint `3d08aced` silently dropped the flag
+  and fan-out actions became publishable; `ActionSemanticsIntegrationTests
+  .FanOutAction_Publish_Returns400_WithFanOutError` pins it.
 - **Unpublish** (`UnpublishAsync`): refused while any `ActionRun` for the action is
   non-final; otherwise flips `Active → Draft` via the same CAS (conflict on a lost
   race).

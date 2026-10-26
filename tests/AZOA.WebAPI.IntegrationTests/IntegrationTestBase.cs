@@ -3,7 +3,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Factories;
+using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Actions;
+using Microsoft.Extensions.DependencyInjection;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Providers.Stores.Surreal;
 using SurrealForge.Client;
@@ -125,6 +128,27 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
 
         await CreateTestNamespaceAsync();
         await ApplySchemasIfPresentAsync();
+        if (SeedsDefaultPrincipalUser) await SeedDefaultPrincipalUserAsync();
+    }
+
+    /// Opt-in: back <see cref="TestAuthHandler.DefaultUserId"/> with an active user row; see AGENTS.md §signing-principal.
+    protected virtual bool SeedsDefaultPrincipalUser => false;
+
+    private async Task SeedDefaultPrincipalUserAsync()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserStore>();
+        var created = await users.CreateIfAbsentAsync(new User
+        {
+            Id = Guid.Parse(TestAuthHandler.DefaultUserId),
+            Username = "testuser",
+            Email = "test@azoa.local",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N"), workFactor: 4),
+            IsActive = true,
+            DappRole = AZOA.WebAPI.Core.AzoaDappRoles.Manager,
+        });
+        if (created.IsError || created.Result is not { IsActive: true })
+            throw new InvalidOperationException($"Default principal user seed failed: {created.Message}");
     }
 
     /// Called once after all test methods in this class have run.
@@ -451,6 +475,32 @@ public abstract class IntegrationTestBase : IClassFixture<AZOATestWebApplication
         var body = await response.Content.ReadAsStringAsync();
         throw new InvalidOperationException(
             $"{what} seed failed: HTTP {(int)response.StatusCode} {response.StatusCode}. Body: {body}");
+    }
+
+    /// POST with a fresh Idempotency-Key, as run-admitting routes require; see AGENTS.md §signing-principal.
+    protected static async Task<HttpResponseMessage> PostWithRequestKeyAsync(HttpClient client, string url, string? requestKey = null)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Add("Idempotency-Key", requestKey ?? Guid.NewGuid().ToString("N"));
+        return await client.SendAsync(request);
+    }
+
+    /// Drives the saga outbox of <paramref name="host"/> until the run leaves Pending/Running (bounded, 30s);
+    /// see AGENTS.md §durable-execute.
+    protected async Task<ActionExecutionState> SettleRunAsync(HttpClient client, Guid runId, IServiceProvider? host = null)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            using (var scope = (host ?? Factory.Services).CreateScope())
+                await scope.ServiceProvider.GetRequiredService<AZOA.WebAPI.Sagas.ISagaProcessor>().ProcessDueStepsAsync(CancellationToken.None);
+            var response = await client.GetAsync($"api/action/runs/{runId}/execution-state");
+            var state = (await ReadResultAsync<ActionExecutionState>(response))!.Result!;
+            if (state.Status is not (ActionRunStatus.Pending or ActionRunStatus.Running)) return state;
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException($"Run {runId} still {state.Status} after 30s of draining.");
+            await Task.Delay(50);
+        }
     }
 
     // ── Response helpers ──────────────────────────────────────────────────────

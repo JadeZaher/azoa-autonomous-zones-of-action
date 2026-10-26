@@ -27,6 +27,67 @@ credential class, and `CreateNodeGovernClient` stamps that identity plus the
 governance capability. `CreateOperatorOnlyClient` deliberately suppresses the
 governance capability so negative policy tests remain meaningful.
 
+## §signing-principal — the default test principal is a real, signable login
+
+Every signing seam (`ActionController` execute/start-workflow, deploy, NFT, hold,
+consent, ...) first calls `SigningAdmissionAuthorityFactory.CaptureCredentialAsync`,
+which refuses unless (a) the subject is an **active row** in `IUserStore`
+("The signing user is unavailable.") and (b) the principal carries the validated
+login-token time evidence `ValidatedTokenTime.TryRead` reads: `auth_time` **and**
+`exp` (optional `iat` must sit between them). A production login JWT always has
+both, because `UserLoginTokenIssuer` only mints tokens for registered users.
+
+`TestAuthHandler` therefore stamps `auth_time`/`iat`/`exp` exactly like
+`UserLoginTokenIssuer.BuildLoginToken`. The user row is **opt-in** per class via
+`protected override bool SeedsDefaultPrincipalUser => true;` on
+`IntegrationTestBase`, which writes `TestAuthHandler.DefaultUserId` through the
+app's own `IUserStore.CreateIfAbsentAsync` (the seam production uses for fixed-id
+identities, e.g. `SeedAdminHostedService`). It is not global because suites that
+assert exact user counts (`UserControllerIntegrationTests.GetAll_AsOperator_*`
+expects 2) would see the extra row. Opt in whenever a class drives a signing seam
+as the default principal; principals minted with `X-Test-User-Id` for a random
+Guid are intentionally *not* signable and remain fine for IDOR/denial tests.
+
+Run admission is keyed: `ActionManager.StartWorkflowRunAsync` derives the run id from
+the `Idempotency-Key` header (`ActionWorkflowIdentity.RunId(action, user, tenant, key)`)
+and refuses a request without one. Success-path `execute`/`start-workflow` calls go
+through `IntegrationTestBase.PostWithRequestKeyAsync`, which mints a fresh key per
+call; two calls are two runs, and reusing a key replays the first run.
+
+## §durable-execute — `execute` admits a durable run; it does not complete it
+
+`ActionManager.ExecuteAsync` is an alias for `StartWorkflowRunAsync`: the HTTP
+response is the admitted run (`Running`) and node work happens on the saga outbox.
+A test that asserts node states (gate failure, cascade skip, Grant output) must call
+`IntegrationTestBase.SettleRunAsync(client, runId, host?)`, which drains
+`ISagaProcessor` in a fresh scope and re-reads `execution-state` until the run leaves
+Pending/Running (30s bound, then a `TimeoutException` naming the stuck status).
+Draining and polling together is deliberate: the hosted processor is always on
+(`Sagas:Enabled=false` with a registered consumer trips a boot guard), so either
+processor may run a step, and the test only cares about the settled outcome. Pass the
+owning host's `Services` when a second factory shares the namespace (the Ardanova
+simulated host owns the Simulated Grant handler and `ReadyValueAccessService`).
+Residual risk: the base host's hosted processor can still claim a simulated-host
+step on its poll. Known gap: a Grant node is now an NFT *mint* (`metadataUri`
+required, no imported `tokenId`), and `SimulatedBlockchainProvider` exposes no
+`INftTransactionModule`, so `NftLifecycleService` refuses it ("This chain does not
+offer a verified NFT lifecycle.") and the run parks in `AwaitingReconciliation`.
+`ArdanovaFlow_Tier2Grant_*` stays red until the simulated provider gains that module.
+
+## §bundle-deploy-contract — ActionGraphBundle generate/deploy are versioned
+
+`POST api/actiongraphbundle/{id}/generate` requires `Generation`
+(`DeploymentGenerateRequest`: explicit `DeploymentTarget(Kind, ChainType, Network)` +
+ordered published `ActionIds`); the legacy `TargetChain`/`Config` body is refused.
+A `PlatformRuntime` artifact needs 1–64 published sources
+(`DeploymentArtifactCompiler.Compose`), so tests publish a one-node Emit action first.
+Generation writes `DeploymentConfig = {formatVersion:2, artifactId, artifactHash,
+state:"Generated", target}` onto the bundle. `deploy` takes a `DeploymentStartRequest`
+body naming that exact artifact plus an `Idempotency-Key` header and returns a
+`DeploymentReceipt`; platform-runtime activation confirms synchronously (200,
+`State == "Confirmed"`, `InvokeUrl` set). An unknown bundle id on generate is 404
+(`ActionGraphBundleAuthorizationError.NotFound` prefix), never 400.
+
 ## §param-binding — SurrealDB 3.x HTTP `/sql` parameter binding
 
 `ExecuteSurrealSqlAsync(sql, params)` seeds data over the raw HTTP `/sql`

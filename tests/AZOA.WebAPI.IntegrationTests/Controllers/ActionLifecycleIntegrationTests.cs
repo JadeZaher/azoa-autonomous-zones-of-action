@@ -20,6 +20,8 @@ public class ActionLifecycleIntegrationTests : IntegrationTestBase
 {
     public ActionLifecycleIntegrationTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
+    protected override bool SeedsDefaultPrincipalUser => true;
+
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     /// Build a minimal valid Tier-1 action (HolonGet + Emit, no chain capability).
@@ -81,7 +83,7 @@ public class ActionLifecycleIntegrationTests : IntegrationTestBase
 
         var action = await CreateAndPublishActionAsync();
 
-        var exec = await Client.PostAsync($"api/action/{action.Id}/execute", null);
+        var exec = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/execute");
         exec.StatusCode.Should().Be(HttpStatusCode.OK, $"execute failed: {await exec.Content.ReadAsStringAsync()}");
         var run = (await ReadResultAsync<ActionRun>(exec))!.Result!;
 

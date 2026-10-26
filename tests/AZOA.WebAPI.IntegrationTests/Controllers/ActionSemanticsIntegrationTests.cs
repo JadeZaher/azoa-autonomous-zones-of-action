@@ -19,6 +19,8 @@ public class ActionSemanticsIntegrationTests : IntegrationTestBase
 {
     public ActionSemanticsIntegrationTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
+    protected override bool SeedsDefaultPrincipalUser => true;
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -129,15 +131,12 @@ public class ActionSemanticsIntegrationTests : IntegrationTestBase
         var publish = await Client.PostAsync($"api/action/{action.Id}/publish", null);
         publish.StatusCode.Should().Be(HttpStatusCode.OK, $"publish failed: {await publish.Content.ReadAsStringAsync()}");
 
-        // Execute (legacy synchronous path).
-        var exec = await Client.PostAsync($"api/action/{action.Id}/execute", null);
+        // Execute admits a durable run; drive it to its terminal state, then read it via the API.
+        var exec = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/execute");
         exec.StatusCode.Should().Be(HttpStatusCode.OK, $"execute failed: {await exec.Content.ReadAsStringAsync()}");
         var run = (await ReadResultAsync<ActionRun>(exec))!.Result!;
 
-        // Read execution state via the API.
-        var stateResp = await Client.GetAsync($"api/action/runs/{run.Id}/execution-state");
-        stateResp.StatusCode.Should().Be(HttpStatusCode.OK, $"execution-state failed: {await stateResp.Content.ReadAsStringAsync()}");
-        var execState = (await ReadResultAsync<ActionExecutionState>(stateResp))!.Result!;
+        var execState = await SettleRunAsync(Client, run.Id);
 
         var nodeExecs = execState.NodeExecutions.ToList();
         nodeExecs.Should().HaveCount(3, "all three nodes should have execution rows");

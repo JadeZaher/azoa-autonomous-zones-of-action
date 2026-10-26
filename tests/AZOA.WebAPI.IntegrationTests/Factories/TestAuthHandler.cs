@@ -73,9 +73,11 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
         var isNodeGovernor = Request.Headers.TryGetValue(NodeGovernHeaderName, out var node)
             && string.Equals(node.ToString(), "true", StringComparison.OrdinalIgnoreCase);
 
-        claims.Add(new Claim(
-            AZOA.WebAPI.Core.AzoaClaims.AuthTime,
-            DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        // Same time claims a validated login JWT carries (UserLoginTokenIssuer); see AGENTS.md §signing-principal.
+        var authenticatedAt = DateTimeOffset.UtcNow;
+        claims.Add(new Claim(AZOA.WebAPI.Core.AzoaClaims.AuthTime, UnixSeconds(authenticatedAt)));
+        claims.Add(new Claim("iat", UnixSeconds(authenticatedAt)));
+        claims.Add(new Claim("exp", UnixSeconds(authenticatedAt.Add(TokenLifetime))));
 
         if (isOperator)
         {
@@ -102,6 +104,11 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
+
+    private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(1);
+
+    private static string UnixSeconds(DateTimeOffset instant)
+        => instant.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private string ResolveUserId(string fallback)
     {

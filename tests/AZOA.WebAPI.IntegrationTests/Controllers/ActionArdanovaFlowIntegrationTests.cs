@@ -58,6 +58,8 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
         _simClient  = _simFactory.CreateAuthenticatedClient();
     }
 
+    protected override bool SeedsDefaultPrincipalUser => true;
+
     public void Dispose()
     {
         _simClient.Dispose();
@@ -151,14 +153,12 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
         publish.StatusCode.Should().Be(HttpStatusCode.OK, $"publish failed: {await publish.Content.ReadAsStringAsync()}");
 
         // 4. Execute — gate should fail because holon has no "status: FUNDED" metadata.
-        var exec = await Client.PostAsync($"api/action/{action.Id}/execute", null);
+        var exec = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/execute");
         exec.StatusCode.Should().Be(HttpStatusCode.OK, $"execute failed: {await exec.Content.ReadAsStringAsync()}");
         var run = (await ReadResultAsync<ActionRun>(exec))!.Result!;
 
-        // 5. Read execution state and assert cascade skip.
-        var stateResp = await Client.GetAsync($"api/action/runs/{run.Id}/execution-state");
-        stateResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var execState = (await ReadResultAsync<ActionExecutionState>(stateResp))!.Result!;
+        // 5. Drive the durable run to its terminal state and assert cascade skip.
+        var execState = await SettleRunAsync(Client, run.Id);
 
         var nodeExecs = execState.NodeExecutions.ToList();
         nodeExecs.Should().HaveCountGreaterThanOrEqualTo(1, "at least the gate node should have an execution row");
@@ -249,13 +249,11 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
         publish.StatusCode.Should().Be(HttpStatusCode.OK, $"publish failed: {await publish.Content.ReadAsStringAsync()}");
 
         // 4. First run — gate should FAIL because holon has no status=FUNDED metadata.
-        var exec1 = await Client.PostAsync($"api/action/{action.Id}/execute", null);
+        var exec1 = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/execute");
         exec1.StatusCode.Should().Be(HttpStatusCode.OK, $"execute1 failed: {await exec1.Content.ReadAsStringAsync()}");
         var run1 = (await ReadResultAsync<ActionRun>(exec1))!.Result!;
 
-        var state1Resp = await Client.GetAsync($"api/action/runs/{run1.Id}/execution-state");
-        state1Resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var execState1 = (await ReadResultAsync<ActionExecutionState>(state1Resp))!.Result!;
+        var execState1 = await SettleRunAsync(Client, run1.Id);
 
         var nodeExecs1 = execState1.NodeExecutions.ToList();
         nodeExecs1.Should().NotBeEmpty("first run must have at least the gate execution row");
@@ -281,13 +279,11 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
             $"holon metadata update failed: {await updateResp.Content.ReadAsStringAsync()}");
 
         // 6. Second run — gate must now PASS (holon Metadata.status == "FUNDED").
-        var exec2 = await Client.PostAsync($"api/action/{action.Id}/execute", null);
+        var exec2 = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/execute");
         exec2.StatusCode.Should().Be(HttpStatusCode.OK, $"execute2 failed: {await exec2.Content.ReadAsStringAsync()}");
         var run2 = (await ReadResultAsync<ActionRun>(exec2))!.Result!;
 
-        var state2Resp = await Client.GetAsync($"api/action/runs/{run2.Id}/execution-state");
-        state2Resp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var execState2 = (await ReadResultAsync<ActionExecutionState>(state2Resp))!.Result!;
+        var execState2 = await SettleRunAsync(Client, run2.Id);
 
         var nodeExecs2 = execState2.NodeExecutions.ToList();
         nodeExecs2.Should().NotBeEmpty();
@@ -341,7 +337,7 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
                             name        = "ArdanovaProjectShare",
                             description = "Simulated project share token",
                             chainId     = "Simulated",
-                            tokenId     = SimulatedBlockchainProvider.SimAddress("Simulated", "ardanova-project-share"),
+                            metadataUri = "ipfs://ardanova-project-share",
                             metadata    = new Dictionary<string, string> { ["simulated"] = "true" }
                         },
                         holonId = (Guid?)null
@@ -364,19 +360,19 @@ public class ActionArdanovaFlowIntegrationTests : IntegrationTestBase, IDisposab
             $"publish failed: {await publish.Content.ReadAsStringAsync()}");
 
         // 4. Execute.
-        var exec = await _simClient.PostAsync($"api/action/{action.Id}/execute", null);
+        var exec = await PostWithRequestKeyAsync(_simClient, $"api/action/{action.Id}/execute");
         var execBody = await exec.Content.ReadAsStringAsync();
         exec.StatusCode.Should().Be(HttpStatusCode.OK,
             $"Grant execute failed: {execBody}");
 
         var run = (await ReadResultAsync<ActionRun>(exec))!.Result!;
-        run.Status.Should().Be(ActionRunStatus.Succeeded,
-            "a successful simulated Grant must project a successful run");
 
-        // 5. Read execution state.
-        var stateResp = await _simClient.GetAsync($"api/action/runs/{run.Id}/execution-state");
-        stateResp.StatusCode.Should().Be(HttpStatusCode.OK);
-        var execState = (await ReadResultAsync<ActionExecutionState>(stateResp))!.Result!;
+        // 5. Drive the run on the SIMULATED host (its Grant handler) to a terminal state.
+        var execState = await SettleRunAsync(_simClient, run.Id, _simFactory.Services);
+        execState.Status.Should().Be(ActionRunStatus.Succeeded,
+            "a successful simulated Grant must project a successful run (nodes: {0})",
+            string.Join("; ", execState.NodeExecutions.Select(n =>
+                $"{n.State}/{n.RecoveryState}/{n.AdmissionRejection}/{n.Error}")));
 
         var grantExec = execState.NodeExecutions.FirstOrDefault();
         grantExec.Should().NotBeNull("Grant node must have an execution row");

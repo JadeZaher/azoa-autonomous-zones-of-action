@@ -62,3 +62,16 @@ optional personal fields and retention. Separate negative cases change the lease
 token, provider key, selection version or trust revision and require a typed
 conflict with no identity or evidence-guard partial write. This guards combined
 query parameter collisions without removing any authority predicate.
+
+## consent-expiry-race
+
+`Expiry_and_revoke_race_*` runs `RecordExpiryAsync` and `RevokeUserExplicitAsync`
+concurrently and awaits both, so there is no background delivery to wait for: the
+outcome is decided by which transaction commits first. If expiry wins it writes one
+Expired event (at the original `ExpiresAt`) and returns `true`; if revoke wins,
+expiry sees `RevokedAt` and returns `false` with no event. The test therefore asserts
+the Expired count equals `expiring.Result ? 1 : 0` and that no Expired event carries
+another time. Do not use FluentAssertions 6 `AllSatisfy` here: it fails on an empty
+collection, which is the legitimate revoke-wins outcome (the CI-only red of P6-20;
+local runs happened to always let expiry win). A poll would not help, since nothing
+is pending once both tasks complete.

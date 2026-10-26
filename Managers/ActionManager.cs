@@ -419,8 +419,8 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
             };
 
 
-        // Validate the complete graph before publishing.
-        var dagResult = _dagValidator.Validate(action);
+        // Publish uses the engine profile: fan-out is an error here (Managers/AGENTS.md §publish-lifecycle).
+        var dagResult = _dagValidator.Validate(action, fanOutAsError: true);
         if (!dagResult.IsValid)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — DAG invalid: {string.Join("; ", dagResult.Errors)}" };
 

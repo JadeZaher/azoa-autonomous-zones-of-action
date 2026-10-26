@@ -124,9 +124,10 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
         current.ExpiresAt.Should().Be(expiry);
         var notifications = await _executor.QueryAsync<Event>(SurrealQuery<Event>.From());
         notifications.Count(row => row.EventType == Event.WebhookEventType.Revoked).Should().Be(1);
-        notifications.Count(row => row.EventType == Event.WebhookEventType.Expired).Should().BeLessThanOrEqualTo(1);
-        notifications.Where(row => row.EventType == Event.WebhookEventType.Expired).Should()
-            .AllSatisfy(row => row.OccurredAt.Should().Be(expiry));
+        // Either racer may win; see Persistence/Surreal/AGENTS.md §consent-expiry-race.
+        var expired = notifications.Where(row => row.EventType == Event.WebhookEventType.Expired).ToList();
+        expired.Should().HaveCount(expiring.Result ? 1 : 0, "expiry reports true exactly when it committed its notification");
+        expired.Should().NotContain(row => row.OccurredAt != expiry, "an expiry notification carries the original expiry time");
         (await _store.RecordExpiryAsync(id)).Should().BeFalse();
     }
 

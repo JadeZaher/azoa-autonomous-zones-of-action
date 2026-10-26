@@ -1,10 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using AZOA.WebAPI.IntegrationTests.Builders;
 using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Interfaces;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Actions;
+using AZOA.WebAPI.Models.Deployments;
+using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
 
 namespace AZOA.WebAPI.IntegrationTests.Controllers;
@@ -12,6 +16,8 @@ namespace AZOA.WebAPI.IntegrationTests.Controllers;
 public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
 {
     public ActionGraphBundleControllerIntegrationTests(AZOATestWebApplicationFactory factory) : base(factory) { }
+
+    protected override bool SeedsDefaultPrincipalUser => true;
 
     // ═══════════════════════════════════════════════════════════════
     // CRUD
@@ -98,28 +104,60 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     // GENERATE
     // ═══════════════════════════════════════════════════════════════
 
+    // Generation composes published actions into an immutable artifact; see
+    // tests/AZOA.WebAPI.IntegrationTests/AGENTS.md §bundle-deploy-contract.
+    private async Task<Guid> PublishSourceActionAsync()
+    {
+        var model = new ActionCreateModel
+        {
+            Name = "BundleSource",
+            Description = "Single Emit source for bundle generation",
+            Nodes =
+            [
+                new ActionNodeCreateModel
+                {
+                    Name = "Announce", NodeType = ActionNodeType.Emit,
+                    Config = JsonSerializer.Serialize(new { payload = new { ready = true } }),
+                    IsEntry = true, IsTerminal = true
+                }
+            ],
+            Edges = []
+        };
+        var create = await Client.PostAsJsonAsync("api/action", model, JsonOptions);
+        create.StatusCode.Should().Be(HttpStatusCode.OK, $"create failed: {await create.Content.ReadAsStringAsync()}");
+        var action = (await ReadResultAsync<ActionDefinition>(create))!.Result!;
+        var publish = await Client.PostAsync($"api/action/{action.Id}/publish", null);
+        publish.StatusCode.Should().Be(HttpStatusCode.OK, $"publish failed: {await publish.Content.ReadAsStringAsync()}");
+        return action.Id;
+    }
+
     [Fact]
     public async Task Generate_ShouldSetGeneratedCode()
     {
         var bundle = await SeedActionGraphBundleAsync();
-        var request = new ActionGraphBundleBuilder().Targeting("Solana").BuildGenerationRequest();
+        var source = await PublishSourceActionAsync();
+        var request = new ActionGraphBundleBuilder().Targeting("Solana").BuildGenerationRequest(source);
 
         var response = await Client.PostAsJsonAsync($"api/actiongraphbundle/{bundle.Id}/generate", request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         var result = await ReadResultAsync<ActionGraphBundle>(response);
         result!.Result!.GeneratedCode.Should().NotBeNullOrEmpty();
         result.Result.TargetChain.Should().Be("Solana");
+        using var descriptor = JsonDocument.Parse(result.Result.DeploymentConfig!);
+        descriptor.RootElement.GetProperty("formatVersion").GetInt32().Should().Be(2);
+        descriptor.RootElement.GetProperty("state").GetString().Should().Be("Generated");
     }
 
     [Fact]
-    public async Task Generate_NonExisting_ShouldReturnBadRequest()
+    public async Task Generate_NonExisting_ShouldReturnNotFound()
     {
-        var request = new ActionGraphBundleBuilder().BuildGenerationRequest();
+        var request = new ActionGraphBundleBuilder().BuildGenerationRequest(Guid.NewGuid());
 
         var response = await Client.PostAsJsonAsync($"api/actiongraphbundle/{Guid.NewGuid()}/generate", request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "an unknown bundle id is not-found, the same answer a foreign caller gets (IDOR-resistant)");
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -127,32 +165,45 @@ public class ActionGraphBundleControllerIntegrationTests : IntegrationTestBase
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task Deploy_ShouldSetDeploymentConfig()
+    public async Task Deploy_GeneratedArtifact_ActivatesPlatformRuntime()
     {
-        // GeneratedCode is not a create-model field (ActionGraphBundleCreateModel carries only
-        // Name/Description/PublicKey/UserId) — the seed builder's WithGeneratedCode
-        // is dropped on POST. GeneratedCode is set ONLY by the generate endpoint, so
-        // deploy must be preceded by a real generate (the production flow).
         var bundle = await SeedActionGraphBundleAsync();
-        var generateRequest = new ActionGraphBundleBuilder().Targeting("Algorand").BuildGenerationRequest();
-        var generateResponse = await Client.PostAsJsonAsync($"api/actiongraphbundle/{bundle.Id}/generate", generateRequest);
-        generateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var source = await PublishSourceActionAsync();
+        var builder = new ActionGraphBundleBuilder().Targeting("Algorand");
+        var generateResponse = await Client.PostAsJsonAsync($"api/actiongraphbundle/{bundle.Id}/generate",
+            builder.BuildGenerationRequest(source));
+        generateResponse.StatusCode.Should().Be(HttpStatusCode.OK, await generateResponse.Content.ReadAsStringAsync());
+        var generated = (await ReadResultAsync<ActionGraphBundle>(generateResponse))!.Result!;
+        using var descriptor = JsonDocument.Parse(generated.DeploymentConfig!);
+        var artifactId = descriptor.RootElement.GetProperty("artifactId").GetString()!;
+        var artifactHash = descriptor.RootElement.GetProperty("artifactHash").GetString()!;
 
-        var response = await Client.PostAsync($"api/actiongraphbundle/{bundle.Id}/deploy", null);
+        using var deploy = new HttpRequestMessage(HttpMethod.Post, $"api/actiongraphbundle/{bundle.Id}/deploy")
+        {
+            Content = JsonContent.Create(new DeploymentStartRequest(artifactId, artifactHash, builder.BuildRuntimeTarget()))
+        };
+        deploy.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+        var response = await Client.SendAsync(deploy);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await ReadResultAsync<ActionGraphBundle>(response);
-        result!.Result!.DeploymentConfig.Should().NotBeNullOrEmpty();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var receipt = (await ReadResultAsync<DeploymentReceipt>(response))!.Result!;
+        receipt.ArtifactId.Should().Be(artifactId);
+        receipt.ArtifactHash.Should().Be(artifactHash);
+        receipt.State.Should().Be("Confirmed");
+        receipt.InvokeUrl.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
     public async Task Deploy_WithoutGeneration_ShouldReturnBadRequest()
     {
         var bundle = await SeedActionGraphBundleAsync();
+        var target = new ActionGraphBundleBuilder().BuildRuntimeTarget();
 
-        var response = await Client.PostAsync($"api/actiongraphbundle/{bundle.Id}/deploy", null);
+        var response = await Client.PostAsJsonAsync($"api/actiongraphbundle/{bundle.Id}/deploy",
+            new DeploymentStartRequest("unknown-artifact", "unknown-hash", target));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Generate an immutable artifact before deploying.");
     }
 
     // ═══════════════════════════════════════════════════════════════

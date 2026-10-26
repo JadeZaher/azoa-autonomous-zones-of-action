@@ -22,6 +22,8 @@ public class ActionWorkflowDurableExecutionIntegrationTests : IntegrationTestBas
 {
     public ActionWorkflowDurableExecutionIntegrationTests(AZOATestWebApplicationFactory factory) : base(factory) { }
 
+    protected override bool SeedsDefaultPrincipalUser => true;
+
     /// Two-node Tier-1 action (Emit → Emit): both nodes auto-advance and need no
     /// chain capability, so a durable run drives entry→terminal→Succeeded purely
     /// through the saga processor.
@@ -106,7 +108,7 @@ public class ActionWorkflowDurableExecutionIntegrationTests : IntegrationTestBas
         // immediately: the run enqueues its entry node as a saga step and the
         // PROCESSOR is what must dispatch it (the A1 defect: with Sagas disabled
         // the processor never ran, so the entry step sat forever).
-        var start = await Client.PostAsync($"api/action/{action.Id}/start-workflow", null);
+        var start = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/start-workflow");
         start.StatusCode.Should().Be(HttpStatusCode.OK, $"start-workflow failed: {await start.Content.ReadAsStringAsync()}");
         var run = (await ReadResultAsync<ActionRun>(start))!.Result!;
         run.ActionId.Should().Be(action.Id);
@@ -139,7 +141,7 @@ public class ActionWorkflowDurableExecutionIntegrationTests : IntegrationTestBas
 
         var action = await CreateAndPublishActionAsync();
 
-        var start = await Client.PostAsync($"api/action/{action.Id}/start-workflow", null);
+        var start = await PostWithRequestKeyAsync(Client, $"api/action/{action.Id}/start-workflow");
         start.StatusCode.Should().Be(HttpStatusCode.OK, $"start-workflow failed: {await start.Content.ReadAsStringAsync()}");
         var run = (await ReadResultAsync<ActionRun>(start))!.Result!;
 
