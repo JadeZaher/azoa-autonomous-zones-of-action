@@ -123,7 +123,7 @@ mocked inside the browser except the vendor's own page.
 |---|---|
 | `signup-and-identity-verification` | Register (UI) → operator issues tenant key → `/kyc` shows Identomat → member enrolled → hosted KYC (intercepted) → callback → member gate `Approved` |
 | `tenant-business-verification` | Sign in (UI) → `/business-verification` → start → hosted KYB in a popup → callback → refresh → "Business verified" |
-| `stripe-on-ramp` | Platform unit seeded (§settlement) → tenant KYB (UI) → tenant price registered → same tenant member provisioned/enrolled → tenant KYC/AML approved → member claims account → owner signs in and grants fresh consent → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `funds_applied` |
+| `stripe-on-ramp` | Platform unit seeded (§settlement) → tenant KYB (UI) → tenant price registered → same tenant member provisioned/enrolled → tenant KYC/AML approved → the member's implied grant read back (`units:issue`, no `transfer:sign`) → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `funds_applied` |
 | `webhook-registration` | Sign in (UI) → `/settings` → register `webhook-receiver.e2e.azoa.test` (pinned via compose `extra_hosts`, no DNS) → secret shown once → reload shows version 1 and no secret |
 
 There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
@@ -140,13 +140,25 @@ Stripe provisions and enrolls the same tenant member, asserting the canonical
 IDs match, then completes hosted KYC under that tenant's policy. The tenant status
 must be `Approved`, which also requires clear AML lineage. Node-direct personal
 KYC has different tenant provenance and cannot cover a tenant-key checkout.
-After approval, the real claim-invite and anonymous password-claim routes let
-that member take ownership. The fixture uses the server-returned synthetic email
-for normal UI login; no delegated credential stands in for owner authority.
-Claim revokes prior consent but preserves KYC/AML evidence, so the owner then
-grants fresh `transfer:sign` through Settings with a bounded expiry. Provisioned
-participation alone never includes this value scope. Checkout, intent reads and
-signed settlement retain the original tenant flow and financial assertions.
+
+The payer stays **tenant-custodial and unclaimed**, the shape the integration
+contract documents (§12.3.2: "a tenant-custodial child user never clicks
+'allow' inside AZOA") and the ArdaNova BFF drives. `POST api/tenant/users`
+(`TenantManager.ProvisionChildAsync` → `WithImpliedGrantAsync`) writes the
+implied `Participation` grant (`tenant-provisioned:v1:` ref), and
+`ConsentLifecycleIdentity.Normalize` unions the participation credit floor
+(`units:issue`) into it. Checkout probes exactly `units:issue`
+(`Controllers/AGENTS.md` §fiat-checkout-consent), so that grant covers it. The
+journey reads it back through `GET api/tenant/consent` before checkout, so a
+regression fails on the grant, not as an opaque 403.
+
+An earlier version claimed the member and had the owner grant `transfer:sign` in
+Settings; that dated from when checkout probed `transfer:sign`. Claim revokes the
+implied grant ("account claimed by owner"), and an explicit `transfer:sign` grant
+does not cover `units:issue`, so that path now gets the typed FORBIDDEN. Claimed
+self-sovereign members paying through a tenant are not a documented flow.
+Checkout, intent reads and signed settlement keep the original tenant flow and
+financial assertions.
 
 ## §settlement — the on-ramp rail on the E2E stack (P6-19)
 

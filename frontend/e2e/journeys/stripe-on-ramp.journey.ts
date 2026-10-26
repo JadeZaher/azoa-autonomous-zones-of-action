@@ -1,3 +1,4 @@
+import { tenantProvisionedRefPrefix } from '../support/api'
 import { completeBusinessVerification, expect, signIn, test } from '../support/fixtures'
 
 /**
@@ -15,9 +16,10 @@ test('a hosted card payment settles the funding intent through the signed webhoo
   // A KYB-verified tenant prices its own sales: 100 base units per cent (1 unit = $0.01 at 2 decimals).
   await api.registerTenantPrice(tenant, platformUnit, '100')
   await api.assignIdentomat(tenant)
+  // The payer is a tenant-custodial member (contract §12.3.2): provisioning writes the implied
+  // participation grant, whose credit floor carries units:issue, the scope checkout probes.
   const subject = `payer-${Date.now().toString(36)}`
-  const payer = await api.provisionMember(tenant, subject)
-  const payerId = payer.userId
+  const payerId = await api.provisionMember(tenant, subject)
   expect(await api.enrolMember(tenant, subject)).toBe(payerId)
 
   // Tenant checkout requires this tenant's current identity approval.
@@ -31,22 +33,13 @@ test('a hosted card payment settles the funding intent through the signed webhoo
   await page.getByRole('button', { name: 'Complete verification' }).click()
   await expect.poll(() => api.memberKycStatus(tenant, subject), { timeout: 15_000 }).toBe('Approved')
 
-  await api.claimMember(tenant, payer)
-  await signIn(page, payer)
-  await page.goto('/settings')
-  const permissions = page.getByRole('region', { name: 'Tenant permissions' })
-  await permissions.getByLabel('Tenant ID for consent').fill(tenant.userId)
-  await permissions.getByLabel('Consent scopes').fill('transfer:sign')
-  const expiry = await page.evaluate(() => {
-    const date = new Date(Date.now() + 60 * 60 * 1000)
-    const pad = (value: number) => value.toString().padStart(2, '0')
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  })
-  await permissions.getByLabel('Consent expiry').fill(expiry)
-  await permissions.getByRole('button', { name: 'Grant selected permissions' }).click()
-  const grant = permissions.getByRole('listitem').filter({ hasText: `Tenant: ${tenant.userId}` })
-  await expect(grant.getByText('transfer:sign', { exact: true })).toBeVisible()
-  await expect(grant.getByText(/^Expires /)).toBeVisible()
+  // A fresh tenant with one provisioned member holds exactly one grant: that member's live implied
+  // grant. It must cover the issuance (units:issue) and never a spend (transfer:sign, H4).
+  const grants = (await api.tenantConsentGrants(tenant)).filter((grant) => grant.participationRef?.startsWith(tenantProvisionedRefPrefix))
+  expect(grants, 'provisioning must write exactly one implied participation grant').toHaveLength(1)
+  expect(grants[0]).toMatchObject({ origin: 'Participation', revokedAt: null, expiresAt: null })
+  expect(grants[0].scopes).toContain('units:issue')
+  expect(grants[0].scopes).not.toContain('transfer:sign')
 
   const checkout = await api.startCheckout(tenant, payerId, 2_500)
   let paidEventStatus = 0

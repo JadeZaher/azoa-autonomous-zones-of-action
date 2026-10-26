@@ -29,6 +29,19 @@ export interface PlatformUnit {
   decimals: number
 }
 
+/** A consent grant as `api/tenant/consent` renders it (`ConsentGrantResponse`). */
+export interface TenantConsentGrant {
+  grantId: string
+  scopes: string[]
+  origin: string
+  participationRef: string | null
+  expiresAt: string | null
+  revokedAt: string | null
+}
+
+/** Reserved reference prefix of the implied provisioning grant (`Core/ConsentScopeCoverage.cs` `TenantProvisionedRefPrefix`). */
+export const tenantProvisionedRefPrefix = 'tenant-provisioned:v1:'
+
 /** A durable fungible-creation operation as `api/admin/platform-token/creation/{id}` renders it. */
 interface CreationOperation {
   operationId: string
@@ -104,30 +117,20 @@ export class AzoaApi {
     return account.userId
   }
 
-  /** Provisions a claimable member using its server-returned identity and a future owner password. */
-  async provisionMember(tenant: Tenant, subject: string): Promise<Person> {
-    const member = await this.ok<{ userId: string; externalUserId: string; username: string; email: string }>(
+  /** Provisions a tenant-custodial member (`POST api/tenant/users`, which writes its implied grant) and returns its user id. */
+  async provisionMember(tenant: Tenant, subject: string): Promise<string> {
+    const member = await this.ok<{ userId: string; externalUserId: string }>(
       await this.request.post('/api/tenant/users', {
         headers: this.tenantHeaders(tenant), data: { externalUserId: subject },
       }),
     )
     expect(member.externalUserId).toBe(subject)
-    expect(member.email).toBeTruthy()
-    return { userId: member.userId, username: member.username, email: member.email, password: `E2e-${randomUUID()}-Pass1` }
+    return member.userId
   }
 
-  /** Claims that exact member through a real tenant invitation and user-chosen password. */
-  async claimMember(tenant: Tenant, member: Person): Promise<void> {
-    const invite = await this.ok<{ claimToken: string; targetUserId: string }>(
-      await this.request.post('/api/user/claim-invite', {
-        headers: this.tenantHeaders(tenant), data: { childUserId: member.userId },
-      }),
-    )
-    expect(invite.targetUserId).toBe(member.userId)
-    const claimed = await this.ok<{ userId: string }>(await this.request.post('/api/user/claim', {
-      data: { targetUserId: member.userId, claimToken: invite.claimToken, newPassword: member.password },
-    }))
-    expect(claimed.userId).toBe(member.userId)
+  /** Consent grants made to this tenant, as `GET api/tenant/consent` lists them (grantor omitted on the wire). */
+  async tenantConsentGrants(tenant: Tenant): Promise<TenantConsentGrant[]> {
+    return this.ok(await this.request.get('/api/tenant/consent', { headers: this.tenantHeaders(tenant) }))
   }
 
   async beginMemberKyc(tenant: Tenant, subject: string): Promise<{ verificationUrl: string }> {
