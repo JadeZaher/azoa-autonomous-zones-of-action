@@ -115,6 +115,11 @@ reversible money, so nothing needs to age before they can leave.
 (`IValueRailProvider.SettlementProfile`), not a constant chosen here. If the rail cannot be
 resolved, the issuance is refused rather than issued with a window this code invented.
 
+`ClaimAsync` is create-if-absent keyed on the intent. Under concurrent redelivery SurrealDB 3.x
+can answer a racing CREATE with the retryable "Transaction conflict: Resource busy" instead of a
+unique violation; the create runs inside `SurrealTransientConflict.RetryOnConflictAsync` so the
+retry lands on the unique violation and the loser reads the winner's row, never an error.
+
 ## §retries — neither forever, nor giving up silently
 
 The failure this saga exists to prevent is a person charged with nothing credited. Two ways to

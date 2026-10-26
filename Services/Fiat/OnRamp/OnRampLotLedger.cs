@@ -110,8 +110,13 @@ public sealed class SurrealOnRampLotLedger(ISurrealExecutor executor) : IOnRampL
     {
         try
         {
-            var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
-            response.EnsureAllOk();
+            // Concurrent claims of one intent can surface SurrealDB 3.x's retryable conflict; the retry resolves to the unique violation below.
+            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var result = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
+                result.EnsureAllOk();
+                return result;
+            }, ct);
             return AZOAResult<OnRampLotClaim>.Success(new(response.GetValues<OnRampLot>(0).Single(), true));
         }
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))

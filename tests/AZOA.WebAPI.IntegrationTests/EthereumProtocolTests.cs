@@ -67,7 +67,7 @@ public sealed class EthereumProtocolTests : IAsyncLifetime
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["AZOA:Ethereum:AllocatorActivationEpoch"] = _namespace,
-                    ["AZOA:Ethereum:PlatformPrivateKey"] = _keys[0].GetPrivateKey(),
+                    ["AZOA:Ethereum:PlatformPrivateKey"] = EthereumFixtureKey.PrivateKeyHex(_keys[0]),
                     ["AZOA:Ethereum:RpcRetryMaxAttempts"] = "0",
                     ["AZOA:Ethereum:Nft:Networks:Devnet:ContractAddress"] = setup.GetProperty("address").GetString(),
                     ["AZOA:Ethereum:Nft:Networks:Devnet:RuntimeCodeHash"] = setup.GetProperty("codeHash").GetString(),
@@ -220,8 +220,8 @@ public sealed class EthereumProtocolTests : IAsyncLifetime
             => AZOAResult<IWallet>.Failure("Local protocol keys are ephemeral.");
         private static async Task<AZOAResult<T>> Sign<T>(EthECKey key, Func<byte[], Task<T>> sign)
         {
-            // Nethereum 4.21 returns its internal key array; zero a copy, never the fixture key itself.
-            var bytes = key.GetPrivateKeyAsBytes().ToArray();
+            // A fresh, left-padded 32-byte copy: zeroable, and never 31 bytes for a leading-zero key.
+            var bytes = EthereumFixtureKey.PrivateKeyBytes(key);
             try { return AZOAResult<T>.Success(await sign(bytes)); }
             finally { CryptographicOperations.ZeroMemory(bytes); }
         }

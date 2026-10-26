@@ -26,3 +26,14 @@ Nethereum 4.21 `EthECKey.GetPrivateKeyAsBytes()` returns the key's internal arra
 `IKeyCustodyService` zeroes the bytes it hands to the provider (as real custody does), so it must zero
 `GetPrivateKeyAsBytes().ToArray()`; zeroing the original destroyed the fixture key after its first signature, and every
 later signature failed with "the resolved signing key is not a valid secp256k1 scalar".
+
+## Fixture key export
+
+Hardhat hands over random 0x + 64-hex keys. Nethereum's `EthECKey(string)` stores the scalar as a big integer, and
+both `GetPrivateKeyAsBytes()` and `GetPrivateKey()` re-export it minimally — a key whose first byte is `0x00`
+(1 in 256 per key) comes back as 31 bytes, and the provider correctly refuses it ("the resolved signing key is 31
+bytes, not the 32-byte secp256k1 private key"). `EthECKey.GenerateKey()` keys are unaffected (Nethereum redraws
+until the export is 32 bytes), which is why the unit-test fixtures never flaked. Every fixture key export goes
+through `EthereumFixtureKey.PrivateKeyBytes` / `PrivateKeyHex`, which left-pad to exactly 32 bytes (never trim) and
+always return a fresh copy, so it also satisfies the zero-a-copy rule above. `EthereumFixtureKeyTests` pins a
+known leading-zero key through the padding, `SigningKeyMaterial` and the real signer back to its own address.

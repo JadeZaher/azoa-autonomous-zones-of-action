@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Space_Grotesk, IBM_Plex_Mono } from 'next/font/google'
+import localFont from 'next/font/local'
 import { NetworkProvider } from '@/lib/network-context'
 import { DebugProvider } from '@/lib/debug-context'
 import { AzoaProvider } from '@/lib/azoa-context'
@@ -7,14 +7,20 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { resolveServerApiUrl } from '@/lib/runtime-config'
 import './globals.css'
 
-const spaceGrotesk = Space_Grotesk({
-  subsets: ['latin'],
-  weight: ['400', '500', '700'],
+// Self-hosted latin subsets: `next build` makes no network call (see frontend/src/app/fonts/AGENTS.md).
+const spaceGrotesk = localFont({
+  src: './fonts/space-grotesk-latin-variable.woff2',
+  weight: '300 700',
+  display: 'swap',
   variable: '--font-sans',
 })
-const plexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
+const plexMono = localFont({
+  src: [
+    { path: './fonts/ibm-plex-mono-latin-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-latin-500.woff2', weight: '500', style: 'normal' },
+  ],
+  display: 'swap',
+  adjustFontFallback: false,
   variable: '--font-mono',
 })
 
