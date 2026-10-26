@@ -1,0 +1,14 @@
+{
+  "name": "azoa-dev-kyc-vendor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DEV ONLY: local Identomat vendor sidecar so custodial KYC/KYB can reach Approved on a Development node. See AGENTS.md.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test server.test.mjs"
+  }
+}
