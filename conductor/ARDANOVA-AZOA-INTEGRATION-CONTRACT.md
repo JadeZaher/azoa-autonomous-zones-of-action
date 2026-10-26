@@ -15,6 +15,12 @@ Both copies are byte-identical and must be kept in sync. Each repo then authors
 its **own** conductor tracks against this contract. When a clause changes, change
 it in both copies in the same commit window.
 
+**Revision 2026-10-26 (SR-02).** §12 added: the exchange-settlement, hold-command and
+consent state machines both sides were driven through live on 2026-10-25 (ArdaNova
+`conductor/tracks/mvp-tandem-demo_20261024/plan.md` §C2, F1–F31), with the owning side of
+every transition. §3 and §9 carry as-built corrections. Where §0–§11 and §12 disagree,
+§12 is the as-built record.
+
 ---
 
 ## 0. What AZOA is (the mental model)
@@ -157,6 +163,19 @@ funding intent; AZOA settles. **As-built today:** the rail seam
 (`Interfaces/IValueRailProvider.cs` — a fiat rail names itself, e.g.
 `"Fiat.USD"`) exists; no fiat provider implements it yet, so Stripe
 termination inside AZOA is scheduled, not shipped.
+
+⚠ **Corrected 2026-10-26 — the "as-built" sentence above is stale.** Stripe
+termination inside AZOA ran live in test mode on 2026-10-25: hosted checkout
+(`POST /api/fiat/checkout/{userId}`) → `checkout.session.completed` webhook at the
+node → on-ramp lot → `IssueUnits` from the platform unit's `on-ramp` reserve
+partition (ArdaNova `mvp-tandem-demo_20261024/plan.md` Step-3 milestone, F19, F21;
+AZOA `Services/Fiat/OnRamp/AGENTS.md` §lots, §retries, §authority). The consumer's
+only on-ramp adapter is `AzoaFiatRailGateway` (ArdaNova
+`Infrastructure/Azoa/AGENTS.md` "On-ramp"); it declares the genesis price once
+(`Azoa:OnRamp:UnitsPerUsdMinorUnit`, default `"100"` = 1 ARDA per $0.01, ratified
+2026-10-26, ArdaNova `mvp-readiness-loop_20261026/DECISIONS-LEDGER.md` P3-02) and
+never sees a card or a webhook. Refund, dispute, Connect transfer and payout drill
+legs are still unrun (ledger P3-13).
 
 ---
 
@@ -365,6 +384,14 @@ ArdaNova self-hosts, it remains custodian via `KeyCustodyService` rather than it
 own mnemonic; if it points at a shared node, users are custodied there. Cutover
 is **feature-flagged** so simulated/legacy paths coexist during migration.
 
+⚠ **As-built 2026-10-26.** `AzoaBackedAlgorandService` exists (`Algorand:Provider=Azoa`).
+`CreateFungibleASAAsync` is NOT a synchronous mint: it posts
+`POST /api/nft/fungible-mint` with an `Idempotency-Key` and then drives the node's
+consent lifecycle to a terminal view (§12.3.1). The minted chain is whatever the
+node's terminal view reports (`Simulated` on a `Blockchain:Mode=Simulated` node), and
+the consumer persists and reuses that chain for treasury resolve and partition
+declaration (F15, F16).
+
 ---
 
 ## 10. Track decomposition (Phase-2 — each repo authors its own)
@@ -459,3 +486,235 @@ uses a **shared node**, the node operator owns B3 (KMS custody) + P3 (fee-fundin
    no balance); the read aggregates chain truth into a render-model DTO. Surfaced
    through the SDK portfolio/balance methods and rendered by a frontend page (the
    live test harness) against the running backend.
+
+---
+
+## 12. Shared state machines (as-built, 2026-10-26)
+
+Driven end to end on the local tandem stack on 2026-10-25: real Stripe test checkout →
+ARDA issued → atomic ARDA↔project-unit exchange SETTLED → award hold → `ReleaseIntoHold`
+→ worker PAID with a window (ArdaNova `conductor/tracks/mvp-tandem-demo_20261024/plan.md`
+§C2). Paths are prefixed **AZOA:** (repo `oasis-sleek`) or **ArdaNova:** (backend paths
+relative to `ardanova-backend-api-mcp/api-server/src/`). In every table, **Owner** is the
+only side allowed to make that transition; the other side observes it and never infers it.
+
+### 12.0 Replay doctrine (binds every machine below)
+
+1. **The node commits before the consumer does.** A consumer failure after a node call
+   (local rollback, lost response) must re-read the node's state and replay the node's
+   bytes; it never re-decides. Reference implementation: ArdaNova
+   `ProjectTokenService.ResolveWorkerWindowAsync`
+   (`Application/Services/Implementations/ProjectTokenService.cs:1407`), born of F31.
+2. **Request key + whole-intent hash.** The node binds a key to the hash of the entire
+   intent. Same key, different bytes is a refusal, not a new command: hold
+   `ReplayConflict` (AZOA `Services/Hold/HoldCommandService.cs:156`,
+   `HoldCommandService.Admission.cs:25`); exchange "This Idempotency-Key already names a
+   different exchange." (AZOA `Managers/ReserveExchangeManager.cs`, `ResumeAsync`);
+   fungible creation "Creation request key belongs to a different intent". So every
+   intent field — instants above all — is decided ONCE, persisted at a precision the
+   consumer's database round-trips, and replayed verbatim. ArdaNova stores
+   `workerHoldReleasesAt` truncated to whole seconds because the column is
+   `timestamp(3)` and the node hashes to the 100 ns tick
+   (`Application/Services/Implementations/AGENTS.md` §award-window-instant).
+3. **Absence is proof only in the node's typed shape.** HTTP 404 **and** the envelope
+   `{"isError":true,"code":"NOT_FOUND"}` (AZOA `Models/Responses/AZOAResult.cs:111`).
+   Any other 404 — a proxy page, an unrouted path, an older node — is an UNKNOWN outcome.
+   ArdaNova opts each absence-sensitive read into this rule with
+   `notFoundNeedsNodeCode: true` (`Infrastructure/Azoa/AzoaNodeClient.cs:140-147`,
+   `AzoaExchangeClient.cs:116`).
+4. **Reads are scoped to the admitting API key.** An exchange source id is
+   `hash("exchange-hold-source-v1", tenant, apiKeyId, requestKey)` (AZOA
+   `Helpers/ExchangeHoldSourceIdentity.cs:10-11`) and `GET /api/exchange/receipt/{key}`
+   returns the typed NOT_FOUND when the CALLING key differs from the admitting one
+   (AZOA `Managers/ReserveExchangeManager.cs:243-253`). ⚠ **OPEN (ledger P6-03).** After
+   a value-key rotation a receipt read under the new key is a typed NOT_FOUND for a
+   source that exists, which §12.1's reopen rule would treat as proof of no effect and
+   redispatch — admitting a SECOND source under the new key. Nothing in either repo
+   guards this today. Recommended interim operator rule (not enforced): rotate the value
+   key only when no settlement is `AWAITING_RECONCILIATION`.
+
+### 12.1 Exchange settlement (sponsorship)
+
+Two coupled machines: the node's exchange **source** (AZOA-owned) and the consumer's
+**settlement + outbox** (ArdaNova-owned). The only wire between them is one
+`POST /api/exchange/{userId}` carrying an `Idempotency-Key` and one
+`GET /api/exchange/receipt/{idempotencyKey}`. ArdaNova's key is
+`{avatarId}:funding-intent:{intentId}` (`Application/Services/Implementations/FundingIntentService.cs:501-502`).
+The consumer sends token base units only; a settlement whose asset code is a fiat
+currency is refused before the call (`Infrastructure/Azoa/AzoaSettlementGateway.cs:57`,
+`:385`). Required scope: `swap:sign` (AZOA `ReserveExchangeManager.ExchangeSigningScope`, F26).
+
+**12.1.1 Node source** — AZOA `Services/Reserve/AGENTS.md` §durable-exchange. Owner: **AZOA** for every row.
+
+| State | Entered when | Notes |
+|---|---|---|
+| (none) | gates refused, or `previewOnly` | Nothing journaled; receipt read = typed NOT_FOUND. |
+| `Admitted` | every refusable gate passed; source journaled BEFORE any commitment | A replay with identical `RequestJson` resumes it; different bytes refused. |
+| `Committed` → `Preparing` → `Prepared` | `ExchangeHoldSourceService.ContinueAsync` | Idle here longer than `Exchange:UnsentSourceAbandonAfter` (default 1 h, `Services/Reserve/ExchangeHoldSourceService.cs:39-40`) → `Abandoned` / `Unsent`, commitment released. |
+| `Submitted` | first egress authorized (CAS from `Prepared`) | `ExchangeSourceReconciliationWorker` observes / rebroadcasts the identical saved bytes. A Simulated node always ends the first call here (AZOA `Providers/Blockchain/AGENTS.md` §simulated-exchange). |
+| `Completed` | finality projected | Receipt carries `operationId` = first 16 bytes of SHA-256(`"azoa-exchange-operation-v1:" + sourceId`), derived at read time (§receipt-operation-id). |
+
+**12.1.2 Consumer settlement + outbox** — ArdaNova `Domain/Models/Enums/EconomicSettlementStatus.cs`,
+`EconomicOutboxStatus.cs`; transitions in `Infrastructure/Outbox/EconomicOutboxLeaseStore.cs:133-209`
+(one guarded local transaction per finalization). Owner: **ArdaNova** for every row;
+the node's answer is the input.
+
+| Settlement | Outbox | Entered when |
+|---|---|---|
+| `PENDING_DISPATCH` | `PENDING` | authorized; terms snapshot (project, asset, partition, legs, declared rate) locked |
+| `PENDING_DISPATCH` | `LEASED` | dispatch claim: single-winner conditional update, 5-min lease (`EconomicOutboxDispatchService.cs:145`) |
+| `SUBMITTED` → `CONFIRMED` | `SUBMITTED` | gateway `Accepted` = receipt with non-empty `operationId`, `isTerminal`, `requiresReconciliation == false`; a receipt landing MORE than authorised is unreconciled, not accepted. `CONFIRMED` is written with stake, treasury receipt, gate and intent in one transaction (`FundingIntentService.cs:534-552`) |
+| `AWAITING_RECONCILIATION` | `AWAITING_RECONCILIATION` | `Unknown`: timeout, 5xx, untyped 404, local deadline. The FIRST `reconciliationRequiredAt` is kept while the row stays here |
+| `AWAITING_RECONCILIATION` | `LEASED` | reconciliation claim → `GET /api/exchange/receipt/{key}` |
+| `PENDING_DISPATCH` | `PENDING` | **no-effect reopen** (12.1.3) |
+| `PENDING_DISPATCH` | `PENDING` | dispatch refused in a way the gateway calls safely retryable |
+| `FAILED` | `FAILED` | `DispatchCeiling` ONLY: all `DefaultMaximumAttempts` (10, `EconomicOutboxDispatchService.cs:130`) dispatches refused safely-retryable; Critical alert names the reserved amount to return by hand |
+
+**12.1.3 No-effect reopen (owner decision F29, ledger P3-04, decided 2026-10-26).** A
+reconciliation read that gets the TYPED NOT_FOUND (§12.0.3) runs
+`EconomicOutboxDispatchService.NoEffectReceipt` (`:495`), in order:
+
+1. **Quiet window.** Believed only after `reconciliationRequiredAt + NoEffectQuietWindow`
+   (= the 5-min lease, `:156`): past that instant the dispatch that sent the request is
+   dead and cannot still be landing. Earlier → stays in reconciliation,
+   `AZOA_EXCHANGE_ABSENCE_UNSETTLED`, re-read at the window's end.
+2. **Reopen ceiling.** After `MaximumNoEffectReopens` (5, `:152`) → parked with
+   `AZOA_SETTLEMENT_RECONCILIATION_ATTENTION` + Critical alert. Never `FAILED`.
+3. **Dispatch ceiling.** If dispatches already spent reach the attempt ceiling → parked
+   through `ReconciliationCeiling`. Never `FAILED`.
+4. Otherwise `AZOA_EXCHANGE_NEVER_LANDED` → settlement `PENDING_DISPATCH` / outbox
+   `PENDING` under the **same** idempotency key; the request is rebuilt from the stored
+   terms snapshot, so the node's intent-hash check sees the same bytes.
+
+A reopen or quiet-window deferral is bookkeeping: its claim's attempt is refunded inside
+the same guarded update (`IsNoEffectBookkeeping`), so one attempt is spent per real
+dispatch and the reopen ceiling (5) binds before the attempt ceiling (10). The reopen
+count lives as a `[noEffectReopens=N]` trailer on the outbox `failureDetail`
+(`Infrastructure/Outbox/EconomicOutboxReopenLedger.cs`) until a DBML column lands
+(ledger P3-15). An untyped 404, 5xx or timeout stays on the reconciliation path, counts
+an attempt, and at `ReconciliationCeiling` parks `AWAITING_RECONCILIATION` (`Unknown`),
+never `FAILED` — value may have moved. Full rationale: ArdaNova
+`Infrastructure/Outbox/AGENTS.md` "Dispatch ceiling", "No-effect reopen".
+
+**Node obligation this rule rests on:** the receipt store answers by idempotency key
+from a durable journal written BEFORE commitment (12.1.1 row `Admitted`), so a typed
+NOT_FOUND under the admitting key means nothing was committed. A node change that
+journals after commitment, or answers NOT_FOUND for a journaled source under its own
+key, breaks this contract.
+
+### 12.2 Hold-command door (award holds)
+
+Wire: AZOA `HoldCommandsController` (`api/hold-commands`); ArdaNova `AzoaHoldClient`
+(value key, scope `transfer:sign`). Route allow-list: exactly `POST /api/hold-commands`,
+`GET /api/hold-commands/reserve-assets`, `GET /api/hold-commands/liabilities/{64 lowercase hex}`.
+There is no `/api/holds` route (F20). Rationale: AZOA `Services/Hold/AGENTS.md`;
+ArdaNova `Infrastructure/Azoa/AGENTS.md` "Hold commands".
+
+**12.2.1 Identity (both sides compute it; both pin the same literal vectors).**
+`holdRecordId` = SHA-256 over canonical JSON of
+`{Domain:"hold-custody-v1", ChainType, Network(ordinal), ProtocolIdentity, CustodyTenantId, OwnerUserId, HoldId}`
+— AZOA `Helpers/HoldCommandIdentity.cs` / `tests/AZOA.WebAPI.Tests/Helpers/HoldCommandIdentityContractTests.cs`;
+ArdaNova `AzoaHoldRecordIdentity` (`Infrastructure/Azoa/AzoaHoldClient.cs:468`) /
+`tests/ArdaNova.Application.Tests/Azoa/AzoaHoldClientContractTests.cs`. Either side
+drifting turns its own test red. The node's operation id is
+`hash(actor, tenant, requestKey)` and the WHOLE intent is hashed.
+
+**12.2.2 Request keys (consumer-chosen, deterministic).** `open:{holdId}`,
+`refund:{holdId}`, `release-into-hold:{holdId}:{nextHoldId}`
+(`AzoaHoldClient.cs:98`, `:196`, `:156`). ArdaNova derives `holdId` from the accepted
+bid, so a redelivered acceptance addresses the hold it already opened; a unique index on
+`TokenAllocation.holdId` enforces it under concurrency.
+
+**12.2.3 Command and liability states.**
+
+| Transition | Owner | Request | Node effect | Consumer mirror |
+|---|---|---|---|---|
+| bid accepted → **Open** | ArdaNova decides; AZOA commits | `open:{holdId}`, `fundingSource = "Reserve"`, `asset` echoed verbatim from `reserve-assets` | liability + partition `Hold` draw (`contributor` partition) + immutable receipt, one transaction | `Held` |
+| work approved → **ReleaseIntoHold** | ArdaNova decides; AZOA commits | `release-into-hold:{holdId}:{nextHoldId}`, `nextReleaseNotBefore` = the persisted window instant, `nextAutoRelease = false` | child window inherits the parent's commitment; child may never end before the parent; parent can no longer refund | `ReleasedIntoHold` (worker window) |
+| **Refund** | ArdaNova decides; AZOA commits | `refund:{holdId}` + `reason` | partition credit-back | `Refunded` |
+| same key, different intent | AZOA | — | `ReplayConflict` (named since F31; a FOREIGN actor/tenant still gets "not found") | consumer adopts the node's committed state (§12.0.1) |
+| window matures → release to wallet | AZOA (mandate worker) | requires a release **mandate** (`api/hold-release-mandates`) | — | **not built** (ledger P4-04; build by 2026-12-23, 30 days before the first window, 2027-01-23, matures) |
+
+Command state → consumer hold state (`AzoaHoldClient.cs:384-387`): `Completed` → the
+implied state above; `Cancelled` / `FailedNoEffect` → decline; anything else → `Pending`.
+Every award hold is reserve-funded, so each command is a LOCAL node transition answering
+200 `Completed` synchronously. The direct door refuses `autoRelease` / `nextAutoRelease
+= true`; ArdaNova refuses it before the wire (`AzoaHoldClient.cs:69-70`).
+
+**12.2.4 Authority.** `actorUserId` / `ownerUserId` = the tenant user owning the value key
+(`Azoa:TenantId`); `tenantId` / `custodyTenantId` are null because a plain tenant key
+carries no acting-tenant claim, and the node refuses an intent whose tenant differs from
+the captured credential's. A plain tenant key draws only its OWN partition
+(`credential.TenantId ?? (reserve.TenantId == ActorUserId ? ActorUserId : null)`, AZOA
+`Services/Hold/AGENTS.md` §tenant-key-draw, F18); another tenant's row and the platform
+unit refuse it. `holdRecordId` candidates: one per network the tenant's reserve exposes;
+a 404 moves to the next candidate, any other failure stops.
+
+### 12.3 Consent lifecycle
+
+**12.3.1 Fungible creation (project-token genesis).** `POST /api/nft/fungible-mint`
+admits a durable creation and answers `202` with `FungibleTokenResult.operation`
+(a `FungibleCreationView`), usually `AwaitingConsent`; it no longer returns a finished
+asset (AZOA `NftController.FungibleMint` → `FungibleTokenManager.CreateCoreAsync`;
+`Services/Fungible/AGENTS.md`). Every step requires `token:create:sign`
+(AZOA `Controllers/NftController.cs:102`, `FungibleCreationController.cs:73-91`).
+The node owns the state; the consumer drives the steps.
+
+| View state | Owner of the next move | Consumer step (`api/fungible-creation/{operationId}/…`) |
+|---|---|---|
+| `AwaitingConsent`, no `quote` | consumer | `quote` |
+| `AwaitingConsent`, `quote` set | consumer (accepts the native network-cost quote) | `accept-quote` `{ version, quoteId }` |
+| `Admitted` / `Preparing` / `Prepared` | consumer (interactive continuation authorizes preparation + first submission) | `continue` `{ requestId, version }` — `requestId` = SHA-256-derived Guid of `(operationId, version)` |
+| `Submitted`, `NeedsOperator`, `ProjectionPending`, other non-terminal | node (observe / rebroadcast identical wire; recovery worker) | `refresh` after a poll delay |
+| `Completed` | terminal (node) | read the asset id and `chainType` from THIS view |
+| `Cancelled` / `FailedNoEffect` | terminal (node) | failure; nothing created |
+
+Consumer obligations (ArdaNova `Infrastructure/Azoa/AGENTS.md` "Fungible-mint consent
+lifecycle"): a non-blank `Idempotency-Key` on the mint (node 400s a blank one);
+ArdaNova uses `project-token-genesis:{config.id}` (`ProjectTokenService.cs:519`), so a
+retry resumes the same operation mid-lifecycle; a bounded budget (30 s total, 1 s poll)
+whose exhaustion names the last state and says a retry resumes. A re-declaration after a
+half-finished creation is refused by the node ("Creation request key belongs to a
+different intent") — deliberately; freeing a stuck key (node cancel, then a new key) is
+owed, not built. Reserve ownership: the reserve row is stamped
+`TenantId ?? ReserveOwnerTenantId`, a server-set principal tenant the body cannot supply
+(AZOA `Services/Fungible/AGENTS.md` §reserve-owner, F17), so the minting tenant may
+declare partitions on its own stake. After `Completed` the consumer resolves the project
+treasury (`POST /api/projects/treasury/resolve`) and declares the `investor` and
+`contributor` partitions on the reported chain (ArdaNova `ProjectTokenService.cs:29-32`).
+
+**12.3.2 Participant consent: the tenant-provisioned implied grant.** A tenant-custodial
+child user never clicks "allow" inside AZOA. At provisioning the tenant obtains a
+`Participation`-origin grant whose `participation_ref` carries the reserved
+`tenant-provisioned:v1:` prefix (AZOA `Core/ConsentScopeCoverage.cs:7`), admitted only
+against an active `TenantProvisioned` approval fenced on the tenant's `tenant:provision`
+authority. Coverage is computed at check time (AZOA `Core/AGENTS.md`
+§consent-scope-coverage): a grant covers a scope iff the scope is stored on it, or the
+scope is in `TenantProvisionedImpliedScopes` = {`swap:sign`} and the grant is that
+implied grant (`ConsentScopeCoverage.cs:10-24`). Liveness (`RevokedAt` / `ExpiresAt`) is
+checked first, so a revoked grant refuses; the exchange fence locks origin + ref +
+scope list, so a revoke between admission and settlement throws
+`EXCHANGE_PARTICIPANT_AUTHORITY_CHANGED`. `transfer:sign` is never implied; the DEX
+`Swap` path and child-JWT issuance cannot reach implied coverage.
+
+| Transition | Owner |
+|---|---|
+| grant created at provisioning | AZOA, on the consumer's `tenant:provision` call |
+| grant covers an effect | AZOA, at check time, per the rule above |
+| grant revoked / tenant offboarded | the user (revoke) or the consumer (offboard); AZOA enforces on the next check |
+
+**12.3.3 Invariant: the consent probe checks the scope the effect signs under.** Two
+live defects came from a probe checking a different scope than the effect it guards:
+fiat checkout probed `transfer:sign` while the on-ramp settlement signs `IssueUnits`
+under `units:issue` (fixed: AZOA `Controllers/FiatCheckoutController.cs:230-233`, F19);
+the exchange probe asked for `swap:sign`, which the implied grant did not yet cover
+(fixed by 12.3.2, F27). Any new value door must probe exactly its own signing scope.
+
+### 12.4 What each side may assume
+
+| The consumer may assume | The node may assume |
+|---|---|
+| A typed NOT_FOUND under the admitting key = nothing committed (§12.0.3–4). | The consumer replays a key with byte-identical intent, or not at all (§12.0.2). |
+| A `Completed` hold command / creation view / terminal receipt is final. | The consumer never sends a fiat amount to the exchange or a hold (§12.1). |
+| A replay of the same hold request key and bytes returns the saved receipt, even after the admitting authority lapsed (AZOA `Services/Hold/AGENTS.md` §command-model). | The consumer derives `holdRecordId` with the pinned vectors (§12.2.1) and echoes `asset` verbatim from `reserve-assets`. |
+| KYC on value doors is the node's Identomat-backed approval, never a manual one (decision A-4); value doors fail closed without it. | The consumer treats `AwaitingReconciliation` / `Submitted` as non-terminal and polls instead of re-deciding (§7, §12.1.2). |
