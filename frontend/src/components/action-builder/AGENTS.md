@@ -1,5 +1,43 @@
 # components/action-builder — design notes
 
+## Inspector accessibility and canvas controls
+
+NodeInspector uses one stable React instance ID for its distinct Name and Config
+label/control pairs, so multiple builders cannot cross-label each other. Type is
+informational text. Selection tests edit through accessible names and retain
+values after changing selection; the inspector test checks multiple instances,
+native label focus and stable IDs across node changes.
+
+Canvas controls occupy a wrapping, nonshrinking row outside the ReactFlow
+viewport. Fit view, pan/zoom, hit-testing and screen-to-flow drop coordinates use
+only that viewport; toolbar height is reserved by flex layout rather than node
+offsets or refit effects. `action-canvas.module.css` stacks full-width panels by
+default, then uses a named inline-size container query for three columns only
+when the actual editor width can fit useful graph space. Panel scroll areas have
+bounded heights; normal page scrolling retains access in the stack. Unsupported
+container-query browsers keep the stacked layout. One mounted flow and its
+selection/history callbacks remain; no resize state or refit effect is involved.
+
+Real-browser proof must check first/middle/last selection, wrapping and
+magnification; jsdom cannot establish geometry or contrast. A long disconnected
+row may still need ordinary panning at minimum zoom; this layout does not promise
+all-node framing. Shared focus/color/enable-state rules live in `../ui/AGENTS.md`.
+
+EdgeInspector's Conditional input also has an instance-unique associated label;
+Edge Type is informational text above its native controls. This omission was
+identified from source during pass06 triage, not a newly observed pass06 failure.
+Its focused test drives label focus, actual edits and required-state clearing.
+
+## AI workflow interview
+
+`workflow-designer.tsx` is a tenant authoring assistant beside the existing canvas. It requests disclosure before consent and sends the entered brief, fact/scope choices and latest eight interview turns. All response wording and graph configurations are server-owned; the model selects closed category IDs only. The parent keys the builder by authenticated subject so account change discards interview and imported graph; async replies check mount liveness. Intake or scope changes invalidate the prior proposal; follow-up edits clear its review acknowledgment.
+
+Interview-only is the default. Explicit planning/data-only opt-in precedes a proposal. The private Emit-only graph records canonical planning/manual-external-handoff notes. It does not implement two-person approval, eligibility, caps, deadlines, refunds, payouts or settlement and moves no funds. Scope, review and import copy state these limits; the manual builder remains available for actual controls. Operational gaps block a proposal; professional questions are a separate nonblocking checklist requiring determination before operation. Fact confirmation is not compliance approval.
+
+Import does not execute nodes. A later explicit run can enqueue webhook notifications to a configured tenant registration and requires an active registration. Checkpoints neither wait for nor prove review or approval. The scope choice, proposal copy and review acknowledgment disclose this actual Emit behavior; no notification-free/inert-when-run claim is made.
+
+The SDK guard requires consistent `DraftReady` state, readiness flag and a nonempty private Emit graph. Import additionally requires unchanged planning scope, facts, tenant, consent and review acknowledgment, replacing the canvas via `initialPreset`; it invokes no save, publish, run or money APIs. The preset remains memoized and applied through a cleanup-guarded microtask for StrictMode. The editable canvas and ordinary authoring validation remain the final save path. The UI forbids signing material/personal records and labels IRS/FinCEN/SEC links as US reading guides, not conclusion citations. No model statutory rates/thresholds or arbitrary narrative enter this contract. Server controls live in `Services/Actions/Designer/AGENTS.md`.
+
 The Action DAG authoring surface: a React Flow canvas with a node palette on the
 left and an inspector on the right, plus the read-only run views that reuse the
 same node card. `action-canvas.tsx` is a composition root only — every piece of
@@ -56,7 +94,7 @@ others. Rules of thumb when extending:
   `useActionGraphState` therefore takes `setSelectedNodeId` / `setSelectedEdgeId`,
   not the whole selection controller.
 - Panels take data + callbacks. `ActionFlowCanvas` and `InspectorPanel` accept
-  `children` for their overlay/footer so the root never re-creates their wrapper
+  `children` for their controls row/footer so the root never re-creates their wrapper
   markup.
 - New backend-mirroring rules belong in `dag-warnings.ts` (or a helper in
   `dag-analysis.ts`), never inside a hook — they must stay unit-testable without React.

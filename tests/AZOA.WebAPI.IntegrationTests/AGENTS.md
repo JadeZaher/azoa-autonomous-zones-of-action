@@ -1,5 +1,12 @@
 # AZOA.WebAPI.IntegrationTests — module notes
 
+All four independent `WebApplicationFactory<Program>` roots explicitly set
+`OpenTelemetry:ExportEnabled=false` before host registration. Their derived HTTP
+flow and Development composition factories inherit it. Trace and metric providers,
+instrumentation and correlation remain active; only remote OTLP processors/readers
+are absent, so fixture disposal does not wait on an external collector. See
+`Observability/AGENTS.md` for the pinned SDK contract and default-enabled behavior.
+
 ## §factory-bootstrap-order — create isolation before host startup
 
 `WebApplicationFactory.CreateClient()` starts application hosted services. Test
@@ -134,6 +141,13 @@ proved nothing about the transport the app actually uses. See
   reads back `record` — checked over a raw HTTP/JSON fixture, outside
   SurrealForge, so the library cannot grade its own output. A green suite that
   quietly fell back to the JSON transport is exactly what it exists to catch.
+
+The shared factory pins **both** `SurrealDb` and `SurrealRuntime` to its generated
+namespace and `test` database, using the same local endpoint and root fixture
+credentials. `DevelopmentCompositionFactory` selects the Development config,
+which already contains `SurrealRuntime`; pinning only the legacy section lets the
+eager SDK binding escape into the shared `azoa` namespace. Apply identical values
+with `UseSetting` before registration and the late in-memory provider.
 
 ## §node-admin-real-auth — `NodeAdmin/NodeAdminWebApplicationFactory`
 

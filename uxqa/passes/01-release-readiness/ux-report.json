@@ -1,0 +1,558 @@
+{
+ "pass": "01-release-readiness",
+ "frictionVersion": 1,
+ "generatedAt": "2026-10-19T00:45:02.279Z",
+ "runs": 9,
+ "uxRuns": 8,
+ "probeRuns": 1,
+ "coverage": {
+  "framework": "next-app",
+  "pageRoutes": 57,
+  "visited": 11,
+  "unvisited": [
+   "/operator/wallet-identities",
+   "/admin/fiat-reversals",
+   "/operator/deployments",
+   "/operator/parked-runs",
+   "/admin/fiat-payouts",
+   "/admin/key-rotation",
+   "/operator/reversals",
+   "/admin/parked-runs",
+   "/operator/exchange",
+   "/operator/actions",
+   "/operator/genesis",
+   "/operator/payouts",
+   "/operator/reviews",
+   "/operator/chains",
+   "/operator/money",
+   "/operator/sagas",
+   "/operator/fees",
+   "/admin/roles",
+   "/admin/sagas",
+   "/business-verification",
+   "/action-graph-bundle",
+   "/node-transparency",
+   "/linked-accounts",
+   "/payout-balance",
+   "/fungible-mint",
+   "/architecture",
+   "/holon-query",
+   "/blockchain",
+   "/federation",
+   "/analytics",
+   "/user-nfts",
+   "/callback",
+   "/register",
+   "/api-keys",
+   "/cash-out",
+   "/actions",
+   "/bridge",
+   "/holons",
+   "/search",
+   "/funds",
+   "/holds",
+   "/tests",
+   "/users",
+   "/nfts",
+   "/swap",
+   "/kyc"
+  ],
+  "unmatchedPaths": [],
+  "api": {
+   "declared": 3,
+   "hit": 2,
+   "unhit": [
+    "/api/health"
+   ],
+   "observedOps": {
+    "GET /api/operator/session": 4,
+    "GET /api/operator/overview": 2,
+    "GET /api/operator/kyc/audit": 2,
+    "GET /api/operator/kyc/providers": 2,
+    "GET /api/operator/tenants": 1,
+    "GET /api/operator/hosted-sessions/reconciliation": 1
+   }
+  }
+ },
+ "outcomes": {
+  "PARTIAL": 1,
+  "COMPLETED": 6,
+  "ABANDONED": 1
+ },
+ "totals": {
+  "clicks": 17,
+  "deadClicks": 0,
+  "rageClicks": 0,
+  "workarounds": 0,
+  "httpErrors": 2,
+  "consoleErrors": 15,
+  "failedAttempts": 2,
+  "axeViolations": 26,
+  "friction": 74
+ },
+ "frictionPerJourney": 9.25,
+ "heatmap": [
+  {
+   "route": "/",
+   "abandons": 1,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 9,
+   "deadClicks": 0,
+   "axe": 4,
+   "revisits": 3,
+   "friction": 32
+  },
+  {
+   "route": "/overview",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 4,
+   "deadClicks": 0,
+   "axe": 4,
+   "revisits": 2,
+   "friction": 12
+  },
+  {
+   "route": "/operator/audit",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 4,
+   "deadClicks": 0,
+   "axe": 2,
+   "revisits": 2,
+   "friction": 10
+  },
+  {
+   "route": "/verify-identity",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 2,
+   "deadClicks": 0,
+   "axe": 3,
+   "revisits": 0,
+   "friction": 7
+  },
+  {
+   "route": "/login",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 2,
+   "deadClicks": 0,
+   "axe": 1,
+   "revisits": 1,
+   "friction": 5
+  },
+  {
+   "route": "/wallets",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 3,
+   "revisits": 0,
+   "friction": 3
+  },
+  {
+   "route": "/settings",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 3,
+   "revisits": 0,
+   "friction": 3
+  },
+  {
+   "route": "/operator/login",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 3,
+   "revisits": 1,
+   "friction": 3
+  },
+  {
+   "route": "/operator",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 1,
+   "revisits": 2,
+   "friction": 1
+  },
+  {
+   "route": "/operator/tenants",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 1,
+   "revisits": 0,
+   "friction": 1
+  },
+  {
+   "route": "/operator/providers",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 1,
+   "revisits": 0,
+   "friction": 1
+  }
+ ],
+ "tasks": [
+  {
+   "persona": "qa-uxqa-gold-member",
+   "task": "gold-member-settings",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-gold-member--gold-member-settings",
+   "outcome": "PARTIAL",
+   "seconds": 4,
+   "clicks": 1,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 3,
+   "distinctPages": 2,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 1,
+   "apiCalls": 0,
+   "friction": 1
+  },
+  {
+   "persona": "qa-uxqa-keyboard",
+   "task": "keyboard-account",
+   "mode": "ui-only",
+   "constraints": [
+    "keyboard"
+   ],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-keyboard--keyboard-account",
+   "outcome": "COMPLETED",
+   "seconds": 90,
+   "clicks": 4,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 6,
+   "distinctPages": 5,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 5,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 4,
+   "apiCalls": 0,
+   "friction": 14
+  },
+  {
+   "persona": "qa-uxqa-mobile",
+   "task": "gold-operator-recovery",
+   "mode": "ui-only",
+   "constraints": [
+    "mobile"
+   ],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-mobile--gold-operator-recovery",
+   "outcome": "COMPLETED",
+   "seconds": 3,
+   "clicks": 0,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 3,
+   "distinctPages": 2,
+   "revisits": 1,
+   "httpErrors": 1,
+   "consoleErrors": 1,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 1,
+   "apiCalls": 1,
+   "friction": 5
+  },
+  {
+   "persona": "qa-uxqa-mobile",
+   "task": "mobile-comprehension",
+   "mode": "ui-only",
+   "constraints": [
+    "mobile"
+   ],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-mobile--mobile-comprehension",
+   "outcome": "ABANDONED",
+   "seconds": 32,
+   "clicks": 0,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 2,
+   "distinctPages": 1,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 3,
+   "failedAttempts": 2,
+   "workarounds": 0,
+   "abandoned": {
+    "name": "find sign in from public page",
+    "path": "/",
+    "afterTries": 2
+   },
+   "axeViolations": 2,
+   "apiCalls": 0,
+   "friction": 22
+  },
+  {
+   "persona": "qa-uxqa-mobile",
+   "task": "mobile-comprehension-corrected",
+   "mode": "ui-only",
+   "constraints": [
+    "mobile"
+   ],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-mobile--mobile-comprehension-corrected",
+   "outcome": "COMPLETED",
+   "seconds": 30,
+   "clicks": 2,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 7,
+   "distinctPages": 4,
+   "revisits": 3,
+   "httpErrors": 1,
+   "consoleErrors": 3,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 4,
+   "apiCalls": 1,
+   "friction": 12
+  },
+  {
+   "persona": "qa-uxqa-operator",
+   "task": "gold-operator-audit",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-operator--gold-operator-audit",
+   "outcome": "COMPLETED",
+   "seconds": 3,
+   "clicks": 1,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 3,
+   "distinctPages": 2,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 1,
+   "apiCalls": 3,
+   "friction": 1
+  },
+  {
+   "persona": "qa-uxqa-operator",
+   "task": "operator-readiness",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-operator--operator-readiness",
+   "outcome": "COMPLETED",
+   "seconds": 82,
+   "clicks": 3,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 5,
+   "distinctPages": 4,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 4,
+   "apiCalls": 7,
+   "friction": 4
+  },
+  {
+   "persona": "qa-uxqa-probe",
+   "task": "anonymous-node-admin-probe",
+   "mode": "probe",
+   "constraints": [],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-probe--anonymous-node-admin-probe",
+   "outcome": "COMPLETED",
+   "seconds": 4,
+   "clicks": 0,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 2,
+   "distinctPages": 1,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 2,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 0,
+   "apiCalls": 0,
+   "friction": 4
+  },
+  {
+   "persona": "qa-uxqa-zoom",
+   "task": "zoom-slow-account",
+   "mode": "ui-only",
+   "constraints": [
+    "zoom200",
+    "slow"
+   ],
+   "runDir": "passes\\01-release-readiness\\runs\\qa-uxqa-zoom--zoom-slow-account",
+   "outcome": "COMPLETED",
+   "seconds": 87,
+   "clicks": 6,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 5,
+   "distinctPages": 4,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 3,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 9,
+   "apiCalls": 0,
+   "friction": 15
+  }
+ ],
+ "axeRules": [
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "pages": [
+    "/overview",
+    "/",
+    "/wallets",
+    "/settings",
+    "/verify-identity",
+    "/operator/login",
+    "/login",
+    "/operator/audit",
+    "/operator",
+    "/operator/tenants",
+    "/operator/providers"
+   ]
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "help": "Buttons must have discernible text",
+   "pages": [
+    "/overview",
+    "/wallets",
+    "/verify-identity",
+    "/settings"
+   ]
+  },
+  {
+   "id": "scrollable-region-focusable",
+   "impact": "serious",
+   "help": "Scrollable region must have keyboard access",
+   "pages": [
+    "/overview"
+   ]
+  }
+ ],
+ "goldTrend": {
+  "gold-member-settings": {
+   "01-release-readiness": {
+    "runs": 1,
+    "successRate": 0,
+    "medianClicks": 1,
+    "medianSeconds": 4,
+    "medianFriction": 1
+   }
+  },
+  "gold-operator-recovery": {
+   "01-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 0,
+    "medianSeconds": 3,
+    "medianFriction": 5
+   }
+  },
+  "gold-operator-audit": {
+   "01-release-readiness": {
+    "runs": 1,
+    "successRate": 1,
+    "medianClicks": 1,
+    "medianSeconds": 3,
+    "medianFriction": 1
+   }
+  }
+ },
+ "frictionByPass": {
+  "00-setup": 1,
+  "01-release-readiness": 9.25
+ },
+ "exitChecks": {
+  "goldSuccess": {
+   "target": 0.8,
+   "missing": [],
+   "below": [
+    "gold-member-settings"
+   ],
+   "ok": false
+  },
+  "frictionTrend": {
+   "previousPass": "00-setup",
+   "previous": 1,
+   "current": 9.25,
+   "tolerance": 0.1,
+   "ok": false
+  },
+  "newHigh": {
+   "target": 0,
+   "count": null,
+   "ok": null
+  },
+  "routeCoverage": {
+   "target": 0.2,
+   "ratio": 0.19298245614035087,
+   "ok": false
+  }
+ }
+}

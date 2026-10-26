@@ -6,6 +6,8 @@ using AZOA.WebAPI.IntegrationTests.Factories;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Services.Auth;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AZOA.WebAPI.IntegrationTests.Controllers;
 
@@ -140,12 +142,17 @@ public class UserControllerIntegrationTests : IntegrationTestBase
     [Fact]
     public async Task Delete_ShouldRemoveUser()
     {
+        using var scope = Factory.Services.CreateScope();
+        var migration = scope.ServiceProvider.GetRequiredService<WalletAuthIdentityMigrationService>();
+        await migration.SweepAsync(CancellationToken.None);
+        (await migration.GetAsync(CancellationToken.None)).Status.Should().Be("Ready");
         var user = await SeedUserAsync();
         using var userClient = Factory.CreateAuthenticatedClientForUser(user.Id);
 
         var response = await userClient.DeleteAsync($"api/user/{user.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await userClient.GetAsync($"api/user/{user.Id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

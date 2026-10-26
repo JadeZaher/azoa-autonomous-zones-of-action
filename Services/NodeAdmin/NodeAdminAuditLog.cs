@@ -30,6 +30,10 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
     public const string OutcomeOk = "ok";
     public const string OutcomeDenied = "denied";
     public const string OutcomeFailed = "failed";
+
+    /// <summary>A node-admin read of personal or financial data (D-M2); never preceded by an intent row.</summary>
+    public const string OutcomeRead = "read";
+
     public const string GenesisHash = "0000000000000000000000000000000000000000000000000000000000000000";
     private const string HeadMarker = "NODE_ADMIN_AUDIT_HEAD_MOVED";
     private const int MaxAppendAttempts = 16;
@@ -109,13 +113,11 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
     public Task<NodeAdminAuditHead?> GetHeadAsync(CancellationToken ct)
         => executor.QuerySingleAsync<NodeAdminAuditHead>(SurrealQuery<NodeAdminAuditHead>.Key(NodeAdminAuditHead.SingletonId), ct);
 
-    /// <summary>
-    /// Recomputes hashes and links from <paramref name="fromSeq"/> to the head and checks the head matches the last row. A window
-    /// anchors on row fromSeq-1, whose own hash is recomputed first.
-    /// </summary>
+    /// <summary>Verifies a window through the captured audit head; see <c>AGENTS.md</c> §audit.</summary>
     public async Task<NodeAdminAuditVerification> VerifyAsync(long fromSeq, CancellationToken ct)
     {
         var head = await GetHeadAsync(ct);
+        var throughSeq = head?.Seq ?? 0;
         var expectedPrev = GenesisHash;
         var expectedSeq = Math.Max(1, fromSeq);
         if (expectedSeq > 1)
@@ -126,9 +128,11 @@ public sealed class NodeAdminAuditLog(ISurrealExecutor executor, ILogger<NodeAdm
                 return new NodeAdminAuditVerification(false, expectedSeq - 1, head?.Hash ?? GenesisHash, expectedSeq - 1);
             expectedPrev = anchor.Hash;
         }
-        while (true)
+        while (expectedSeq <= throughSeq)
         {
-            var page = await ListAsync(expectedSeq - 1, 500, ct);
+            var afterSeq = expectedSeq - 1;
+            var page = await executor.QueryAsync<NodeAdminAudit>(SurrealQuery<NodeAdminAudit>.From()
+                .Where(row => row.Seq > afterSeq && row.Seq <= throughSeq).OrderBy(row => row.Seq).Limit(500), ct);
             if (page.Count == 0) break;
             foreach (var row in page)
             {

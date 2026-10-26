@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
 import { runAdminsActivate, runAdminsCreate, runAdminsList, runAdminsReactivate, runAdminsRevoke, runAdminsRevokeSessions, runAdminsSetRoles, runAdminsShow, runAdminsSuspend } from "./commands/admins.js";
 import { runApi } from "./commands/api.js";
 import { runAuditTail, runAuditVerify } from "./commands/audit.js";
@@ -16,10 +16,11 @@ import { runSessionRevoke, runSessionsList } from "./commands/sessions.js";
 import { runWhoami } from "./commands/whoami.js";
 import { AzoaCliError, EXIT_CODES } from "./errors.js";
 
-// H1 security fix: there is no global --node override. A profile's node origin is pinned at
-// `profile add`/`enroll` time and never changeable per-invocation — see src/context.ts.
+// Profiles pin the node origin; see src/AGENTS.md.
 const program = new Command();
 program
+  .exitOverride()
+  .allowExcessArguments(false)
   .name("azoa-node")
   .description("Azoa node admin identity, RBAC, MFA and break-glass root CLI")
   .option("--profile <name>", "profile to use (defaults to the current profile)")
@@ -33,13 +34,7 @@ function profileFlag(cmd: Command): string | undefined {
   return cmd.optsWithGlobals<{ profile?: string }>().profile;
 }
 
-/**
- * Every command action below is registered through this wrapper. Commander
- * always calls the action with `(...positionalArgs, localOptions, command)`
- * — the last element is always the Command instance, which is what lets us
- * resolve global --profile/--json (declared on `program`, not on the leaf
- * subcommand) via `optsWithGlobals()`.
- */
+/** Reports command errors using the inherited output and exit-code settings. */
 function action<Args extends unknown[]>(fn: (...args: Args) => Promise<void> | void) {
   return async (...args: Args) => {
     const cmd = args[args.length - 1] as Command;
@@ -303,11 +298,9 @@ program
     await runApi(method.toUpperCase(), path, { profile: profileFlag(cmd), data: opts.data, json: jsonFlag(cmd) });
   }));
 
-program.exitOverride((err) => {
-  if (err.code === "commander.helpDisplayed" || err.code === "commander.version") {
-    process.exit(0);
-  }
-  process.exitCode = EXIT_CODES.USAGE;
-});
-
-await program.parseAsync(process.argv);
+try {
+  await program.parseAsync(process.argv);
+} catch (error) {
+  if (!(error instanceof CommanderError)) throw error;
+  process.exitCode = error.exitCode === 0 ? 0 : EXIT_CODES.USAGE;
+}

@@ -793,6 +793,7 @@ public class AllocationManagerTests
             {
                 broadcastOp = op;
                 op.Parameters["TxHash"] = "algo_tx_transfer_initiator";
+                op.Status = OperationStatus.Transferred;
                 return new AZOAResult<IBlockchainOperation> { Result = op };
             });
         var request = new AllocationRequest

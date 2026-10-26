@@ -1,0 +1,468 @@
+{
+  "type": "UX Triage Ledger",
+  "passId": "01-release-readiness",
+  "status": "PENDING_COORDINATOR_REVIEW",
+  "releaseVerdict": "NOT_READY",
+  "evidenceKind": "agent QA and independent agent panel; not human research",
+  "humanSessionsExecuted": 0,
+  "severityPolicy": "Existing panel bands retained; repeated scan nodes are deduplicated. Future unobserved AI/offer questions remain unrated.",
+  "newHighGate": {
+    "target": 0,
+    "confirmedHighFindingsInLedger": 0,
+    "finalGateStatus": "PENDING_COORDINATOR_ADVERSARIAL_REVIEW"
+  },
+  "sourcePathBase": ".worktrees/node-admin-release",
+  "findings": [
+    {
+      "id": "FIX-MENU",
+      "disposition": "FIX",
+      "severity": "MEDIUM",
+      "score": 9,
+      "panelIds": [
+        "A11Y-01",
+        "CD-02",
+        "SD-03"
+      ],
+      "routes": [
+        "/overview",
+        "/wallets",
+        "/verify-identity",
+        "/settings"
+      ],
+      "heuristics": [
+        4,
+        6
+      ],
+      "job": "Discover the collapsed navigation and reach an account destination.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/zoom-slow-account.md",
+        "uxqa/passes/01-release-readiness/runs/qa-uxqa-zoom--zoom-slow-account/ux.json"
+      ],
+      "confirmedSource": [
+        "frontend/src/components/layout/sidebar.tsx:233"
+      ],
+      "change": "Named Open navigation trigger; decorative icon hidden; 44px minimum target.",
+      "status": "SOURCE_FIXED_FOLLOWUP_SCANS_CLEAR",
+      "verificationLimit": "Pass02 has no button-name detections; real screen-reader validation remains open."
+    },
+    {
+      "id": "FIX-CONTRAST",
+      "disposition": "FIX",
+      "severity": "MEDIUM",
+      "score": 12,
+      "panelIds": [
+        "A11Y-02",
+        "SD-02"
+      ],
+      "routes": [
+        "/",
+        "/login",
+        "/operator/login",
+        "/overview",
+        "/wallets",
+        "/verify-identity",
+        "/settings",
+        "/operator",
+        "/operator/audit",
+        "/operator/tenants",
+        "/operator/providers"
+      ],
+      "heuristics": [
+        1,
+        4
+      ],
+      "job": "Read navigation, account state and operator recovery/status text.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/ux-report.json",
+        "uxqa/passes/01-release-readiness/fix-batch.md"
+      ],
+      "confirmedSource": [
+        "frontend/src/app/globals.css:14",
+        "frontend/src/app/globals.css:50",
+        "frontend/src/components/landing/chrome.tsx:16",
+        "frontend/src/app/operator/login/page.tsx:83"
+      ],
+      "change": "Theme-specific primary/foreground pairs, paper landing accent and scoped light operator login.",
+      "status": "PARTIALLY_VERIFIED_FOLLOWUP_OPEN",
+      "verificationLimit": "Pass02 retains four routes with color-contrast; shared style instances are not unique defects."
+    },
+    {
+      "id": "FIX-SCROLL",
+      "disposition": "FIX",
+      "severity": "LOW",
+      "score": 1,
+      "provisional": true,
+      "panelIds": [
+        "A11Y-03"
+      ],
+      "routes": [
+        "/overview"
+      ],
+      "heuristics": [
+        7
+      ],
+      "job": "Read the overflowing main region using the keyboard.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/zoom-slow-account.md",
+        "uxqa/passes/01-release-readiness/runs/qa-uxqa-zoom--zoom-slow-account/ux.json"
+      ],
+      "confirmedSource": [
+        "frontend/src/app/(dashboard)/layout.tsx:38"
+      ],
+      "change": "Focusable main region with visible focus outline.",
+      "status": "SOURCE_FIXED_FOLLOWUP_SCANS_CLEAR",
+      "verificationLimit": "No pass02 scroll-focusability detection; direct functional keyboard scrolling and human exclusion unproved."
+    },
+    {
+      "id": "FIX-CHAIN-COPY",
+      "disposition": "FIX",
+      "severity": "MEDIUM",
+      "score": 8,
+      "panelIds": [
+        "CD-01",
+        "SD-01",
+        "TB-03"
+      ],
+      "routes": [
+        "/overview"
+      ],
+      "heuristics": [
+        1,
+        2,
+        9
+      ],
+      "job": "Bound unavailable chain information without inferring balance loss.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/keyboard-account.md",
+        "uxqa/passes/01-release-readiness/zoom-slow-account.md"
+      ],
+      "confirmedSource": [
+        "frontend/src/app/(dashboard)/overview/page.tsx:27"
+      ],
+      "change": "Named chain cards retain honest unavailable-details copy.",
+      "status": "SOURCE_FIXED_HUMAN_COMPREHENSION_OPEN",
+      "verificationLimit": "No claim about network failure cause, balances or operational chain transactions; pass02 zoom narration has a stale note."
+    },
+    {
+      "id": "FIX-PROVIDER-UNSET",
+      "disposition": "FIX",
+      "severity": "LOW",
+      "score": 2,
+      "panelIds": [
+        "CD-04",
+        "SD-04",
+        "TB-04"
+      ],
+      "routes": [
+        "/operator/providers"
+      ],
+      "heuristics": [
+        1,
+        2
+      ],
+      "job": "Distinguish never configured from an old saved provider policy.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/operator-readiness.md"
+      ],
+      "confirmedSource": [
+        "Services/Kyc/KycProviderRegistry.cs:273",
+        "frontend/src/app/operator/(console)/providers/page.tsx:151"
+      ],
+      "change": "Version-zero built-ins report policy not configured; persisted policy dates retained.",
+      "status": "SOURCE_FIXED_HUMAN_COMPREHENSION_OPEN",
+      "verificationLimit": "Read-only replay completed; not evidence of provider readiness or human freshness interpretation."
+    },
+    {
+      "id": "RQ-NAV",
+      "severity": "LOW",
+      "score": 1,
+      "panelIds": [
+        "A11Y-04",
+        "SD-05"
+      ],
+      "routes": [
+        "/settings",
+        "/verify-identity"
+      ],
+      "heuristics": [
+        2,
+        6,
+        7
+      ],
+      "job": "Reach repeated account/identity destinations efficiently.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/keyboard-account.md"
+      ],
+      "hypothesis": "52 navigation keys and split verification/provider labels may add effort; all destinations completed.",
+      "segment": [
+        "Keyboard-only developers",
+        "Screen-reader developers"
+      ],
+      "falsifier": "Independent full access and efficient repeated access through available bypass/focus mechanisms.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-RECOVERY",
+      "severity": "LOW",
+      "score": 4,
+      "panelIds": [
+        "CD-05",
+        "SD-06",
+        "TB-01",
+        "TB-02"
+      ],
+      "routes": [
+        "/login",
+        "/operator/login"
+      ],
+      "heuristics": [
+        2,
+        3,
+        9,
+        10
+      ],
+      "job": "Recover the correct access through the responsible owner.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/mobile-comprehension.md"
+      ],
+      "hypothesis": "An interrupted non-deployer may reach the right form yet lack an actionable handoff; existing role-specific links are counterevidence.",
+      "segment": [
+        "Mobile newcomers",
+        "Interrupted operators"
+      ],
+      "falsifier": "All five in each segment identify correct authority, safe contact and next action without unrelated credentials.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-SCOPE",
+      "severity": "MEDIUM",
+      "score": 8,
+      "panelIds": [
+        "CD-03",
+        "TB-05"
+      ],
+      "routes": [
+        "/settings",
+        "/operator"
+      ],
+      "heuristics": [
+        2,
+        5,
+        6
+      ],
+      "job": "Choose an account or integration control with the intended scope.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/keyboard-account.md",
+        "uxqa/passes/01-release-readiness/zoom-slow-account.md",
+        "uxqa/passes/01-release-readiness/operator-readiness.md"
+      ],
+      "hypothesis": "Mixed personal/tenant settings and session controls may confuse scope; no mistaken edit was observed.",
+      "segment": [
+        "Keyboard-only developers",
+        "Screen-reader developers",
+        "Low-vision returning members",
+        "Interrupted operators"
+      ],
+      "falsifier": "Correct unaided control selection and explanation of account/tenant/browser/global scope.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-STATUS",
+      "severity": "MEDIUM",
+      "score": 8,
+      "panelIds": [
+        "CD-01",
+        "SD-01",
+        "TB-03"
+      ],
+      "routes": [
+        "/overview"
+      ],
+      "heuristics": [
+        1,
+        2,
+        9
+      ],
+      "job": "Decide whether to continue when chain details cannot load.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/keyboard-account.md",
+        "uxqa/passes/01-release-readiness/zoom-slow-account.md"
+      ],
+      "hypothesis": "Members may infer total service failure or lost balances; both original agents continued.",
+      "segment": [
+        "Low-vision returning members"
+      ],
+      "falsifier": "Accurately bounded outage and safe continuation without coaching; no unsupported balance inference.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-FRESHNESS",
+      "severity": "LOW",
+      "score": 2,
+      "panelIds": [
+        "CD-04",
+        "SD-04",
+        "TB-04"
+      ],
+      "routes": [
+        "/operator/providers"
+      ],
+      "heuristics": [
+        1,
+        2,
+        5
+      ],
+      "job": "Read policy freshness and readiness before attempting repair.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/operator-readiness.md"
+      ],
+      "hypothesis": "Unset/stale/disabled states may still be confused after source correction; no human interpretation collected.",
+      "segment": [
+        "Interrupted operators"
+      ],
+      "falsifier": "All five distinguish untouched defaults, saved updates and disabled state without unnecessary repair intent.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-CONSENT",
+      "severity": "MEDIUM",
+      "score": 8,
+      "panelIds": [
+        "TB-06"
+      ],
+      "routes": [
+        "/verify-identity"
+      ],
+      "heuristics": [
+        1,
+        5,
+        10
+      ],
+      "job": "Make a deliberate identity-disclosure decision.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/keyboard-account.md",
+        "uxqa/passes/01-release-readiness/zoom-slow-account.md"
+      ],
+      "hypothesis": "The reader may not know who receives documents or what starting does; submission was not exercised.",
+      "segment": [
+        "Members new to identity verification"
+      ],
+      "falsifier": "All five explain recipient, next step and disclosure boundary and can find enough information for their own decision.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-OFFER",
+      "severity": "UNRATED",
+      "score": null,
+      "panelIds": [],
+      "routes": [
+        "/"
+      ],
+      "heuristics": [
+        2,
+        6
+      ],
+      "job": "Explain the product offer before choosing sign-in.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/panel-content-designer.md"
+      ],
+      "hypothesis": "Specialist vocabulary may hinder newcomers; corrected agent sign-in success is not comprehension evidence.",
+      "segment": [
+        "Mobile newcomers"
+      ],
+      "falsifier": "All five explain the offer coherently and find ordinary sign-in without costly detours.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    },
+    {
+      "id": "RQ-AI-DRAFT",
+      "severity": "UNRATED",
+      "score": null,
+      "panelIds": [],
+      "routes": [
+        "/actions"
+      ],
+      "heuristics": [
+        1,
+        2,
+        5,
+        10
+      ],
+      "job": "Understand an AI proposal as an unverified draft with missing jurisdiction facts and no execution.",
+      "evidence": [
+        "uxqa/passes/01-release-readiness/panel-content-designer.md",
+        "uxqa/passes/01-release-readiness/panel-trust-behavioural.md",
+        "uxqa/fixtures/tenant-designer.md"
+      ],
+      "hypothesis": "Future tenant authors may mistake generated drafts/legal-tax warnings for verified advice or execution authority. This surface was not a scored journey in either pass.",
+      "segment": [
+        "Tenant workflow authors"
+      ],
+      "falsifier": "All five distinguish model consent, uncertain facts, human review, import/save/publish/execute and draft-only boundaries unaided.",
+      "disposition": "RESEARCH_QUESTION",
+      "status": "OPEN_NOT_HUMAN_VALIDATED",
+      "confirmedSource": [],
+      "validationPlan": "uxqa/human-validation.md",
+      "sessionsPerSegment": 5
+    }
+  ],
+  "evidenceQuality": [
+    {
+      "id": "EQ-MOBILE",
+      "type": "AUTOMATION_LIMIT",
+      "evidence": "uxqa/passes/01-release-readiness/mobile-comprehension.md",
+      "detail": "First strict-locator ambiguity before any click retained as ABANDONED; separate corrected run completed. Not human abandonment."
+    },
+    {
+      "id": "EQ-GOLD",
+      "type": "AUTOMATION_LIMIT",
+      "evidence": "uxqa/passes/01-release-readiness/runs/qa-uxqa-gold-member--gold-member-settings/ux.json",
+      "detail": "Pass01 PARTIAL despite successful attempt; corrected waiting in pass02. Original outcome retained."
+    },
+    {
+      "id": "EQ-OPERATOR-HISTORY",
+      "type": "ARTIFACT_LIMIT",
+      "evidence": "uxqa/passes/01-release-readiness/operator-readiness.md",
+      "detail": "Disclosed initial no-TTY blocked run overwritten by later same-task UI restart."
+    },
+    {
+      "id": "EQ-SMOKE",
+      "type": "COMPARISON_LIMIT",
+      "evidence": "uxqa/passes/00-setup/ux-report.json",
+      "detail": "Setup smoke is not a comparable usability/friction baseline."
+    },
+    {
+      "id": "EQ-ZOOM-NOTE",
+      "type": "STALE_NARRATION",
+      "evidence": "uxqa/passes/02-release-readiness/runs/qa-uxqa-zoom--zoom-slow-account/ux.json",
+      "detail": "Pass02 note retains pass01 raw-error/unnamed-menu wording despite empty pass02 axe arrays. Preserve and flag, not a new confirmed defect."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "personas": [
+    {
+      "handle": "qa-uxqa-ai-tenant",
+      "role": "member",
+      "patience": 3,
+      "constraints": {},
+      "goal": "Explore a synthetic economic workflow interview and review its private draft without publishing or running it."
+    }
+  ]
+}

@@ -62,6 +62,16 @@ kept as `EgressProbe.csx` because the repo-root `AZOA.WebAPI.csproj` compiles ev
 script copies it to `Program.cs` and publishes it inside `mcr.microsoft.com/dotnet/sdk:10.0`, and
 compose mounts the output at `/e2e/probe`.
 
+The runner awaits an asynchronous `execFile` subprocess for the probe, bounded
+to 120 seconds and 1 MiB of output per stream. Runtime discovery uses the same
+non-shell API with a five-second bound per candidate. The Node event loop must
+remain free: this same process hosts the fake HTTPS vendors that the positive
+control calls, so a synchronous subprocess wait prevents the vendor from
+answering and creates a false timeout. Numeric probe failures retain the control
+report; launch, signal, timeout and output-limit errors still abort setup and
+close the vendors. The configured Node child-process types document the
+asynchronous callback, `timeout`, `maxBuffer` and direct executable semantics.
+
 Executed locally in `aspnet:10.0` containers (2026-10-16): with both variables the probe reported
 "certificate not trusted" for both Identomat hosts; with only `SSL_CERT_FILE` (the first-pass
 configuration) `widget.identomat.com` answered a trusted response, which is why both are set.
@@ -113,11 +123,52 @@ mocked inside the browser except the vendor's own page.
 |---|---|
 | `signup-and-identity-verification` | Register (UI) → operator issues tenant key → `/kyc` shows Identomat → member enrolled → hosted KYC (intercepted) → callback → member gate `Approved` |
 | `tenant-business-verification` | Sign in (UI) → `/business-verification` → start → hosted KYB in a popup → callback → refresh → "Business verified" |
-| `stripe-on-ramp` | Member KYC approved → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `payment_received`/`funds_applied` |
+| `stripe-on-ramp` | Same tenant member provisioned/enrolled → tenant KYC/AML approved → member claims account → owner signs in and grants fresh consent → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `payment_received`/`funds_applied` |
 | `webhook-registration` | Sign in (UI) → `/settings` → register `webhook-receiver.e2e.azoa.test` (pinned via compose `extra_hosts`, no DNS) → secret shown once → reload shows version 1 and no secret |
 
 There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
 tenant API exactly as an integration would; the browser covers every screen that exists.
+
+`completeBusinessVerification` reuses the hosted KYB journey before either
+custodial-member enrollment flow. The tenant owner completes the real UI and
+authoritative fake-vendor callback; a provider assignment alone grants no KYB
+approval. A later member KYC interception deliberately registers the latest
+handler for the same hosted-widget route. The webhook secret assertion selects
+the exact textbox role/name: a broad label also matches the rotation checkbox.
+
+Stripe provisions and enrolls the same tenant member, asserting the canonical
+IDs match, then completes hosted KYC under that tenant's policy. The tenant status
+must be `Approved`, which also requires clear AML lineage. Node-direct personal
+KYC has different tenant provenance and cannot cover a tenant-key checkout.
+After approval, the real claim-invite and anonymous password-claim routes let
+that member take ownership. The fixture uses the server-returned synthetic email
+for normal UI login; no delegated credential stands in for owner authority.
+Claim revokes prior consent but preserves KYC/AML evidence, so the owner then
+grants fresh `transfer:sign` through Settings with a bounded expiry. Provisioned
+participation alone never includes this value scope. Checkout, intent reads and
+signed settlement retain the original tenant flow and financial assertions.
+
+### Current settlement limit — candidate 67628a9c
+
+The latest complete collection passed four journeys and failed Stripe settlement.
+The hermetic fake-vendor positive control and all three real-vendor negative
+controls passed. Stripe now clears tenant KYC/AML, real account claim, UI login,
+fresh owner consent, tenant checkout and the hosted payment. Its signed webhook
+returns 500 because no verified platform unit exists on Devnet; the unchanged
+200/202 delivery assertion correctly fails. Settlement and complete-intent
+success are not established.
+
+The existing simulated provider lacks both durable fungible creation and
+recipient preparation. Those gaps and the checked settlement gates already
+exist in upstream/main; no prior passing Stripe run is
+established. A genesis call or a fabricated active platform-token row cannot
+supply the required verified issuance lineage. Further real setup also requires
+an operator-declared on-ramp budget, exact tenant price and both current KYC
+contexts selected by the settlement/allocation path. The separate open
+[hermetic settlement follow-up](../../conductor/tracks/node-admin-rbac-cli_20261018/hermetic-stripe-settlement-followup.md)
+requires design review before capability or harness implementation. Preserve the
+positive payment assertions and report this known red independently of passing
+scoped node-admin checks.
 
 ## §writing-a-journey (round 4: NFT, DEX, Hold)
 

@@ -21,6 +21,13 @@
 - Mutation check: a scan of a file holding a live-format Stripe key still reports a leak with the
   config applied.
 
+The node-admin release range adds five exact reviewed values for seven historical
+findings: two deterministic challenge-codec seeds used only in in-memory test
+configuration, the published RFC 6238 secret represented in its expected base32
+provisioning URI, and two Ed25519 public keys used with a fake Railway executable
+and spawn. The public-key values contain no private signing material. Their
+anchored value entries preserve every default rule and add no path exclusion.
+
 ## §schema-upgrade — the in-place upgrade check (RV-L1-02)
 
 Goldens are `DEFINE … IF NOT EXISTS` and the deploy path runs `surrealforge up --no-reconcile`, so an edit to an

@@ -7,7 +7,7 @@
 
 -- ── Enums ─────────────────────────────────────────────────
 
-DEFINE PARAM IF NOT EXISTS $node_admin_audit_outcome VALUE ["intent", "ok", "denied", "failed"];
+DEFINE PARAM IF NOT EXISTS $node_admin_audit_outcome VALUE ["intent", "ok", "denied", "failed", "read"];
 
 DEFINE TABLE IF NOT EXISTS node_admin_audit SCHEMAFULL;
 

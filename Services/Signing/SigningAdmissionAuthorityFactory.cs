@@ -82,25 +82,14 @@ public sealed class SigningAdmissionAuthorityFactory(IUserStore users, IWalletSt
             || !ValidatedTokenTime.TryRead(principal, out var issued, out var expires)
             || issued > DateTimeOffset.UtcNow || expires <= DateTimeOffset.UtcNow)
             return failure;
-        OperatorActor actor;
-        NodeAdminAuthorityWitness evidence;
-        if (subject.StartsWith(NodeAdminClaims.AdminPrincipalPrefix, StringComparison.Ordinal)
-            && Guid.TryParseExact(subject[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out var adminId)
-            && TryLong(principal, NodeAdminClaims.AdminRevision, out var adminRevision)
-            && TryLong(principal, NodeAdminClaims.SessionRevision, out var sessionRevision))
-        {
-            actor = OperatorActor.Admin(adminId);
-            evidence = new(subject, sessionRecordId, adminRevision, sessionRevision, null, null);
-        }
-        else if (subject.StartsWith(NodeAdminClaims.RootPrincipalPrefix, StringComparison.Ordinal)
-            && NodeAdminCrypto.IsFingerprint(subject[NodeAdminClaims.RootPrincipalPrefix.Length..])
-            && TryLong(principal, NodeAdminClaims.RootKeyRevision, out var keyRevision)
-            && TryLong(principal, NodeAdminClaims.RootSessionRevision, out var rootSessionRevision))
-        {
-            actor = OperatorActor.Root(subject[NodeAdminClaims.RootPrincipalPrefix.Length..]);
-            evidence = new(subject, sessionRecordId, null, null, keyRevision, rootSessionRevision);
-        }
-        else return failure;
+        // Root never carries operator signing authority (M3, L-4): only a named admin's session is captured.
+        if (!subject.StartsWith(NodeAdminClaims.AdminPrincipalPrefix, StringComparison.Ordinal)
+            || !Guid.TryParseExact(subject[NodeAdminClaims.AdminPrincipalPrefix.Length..], "D", out var adminId)
+            || !TryLong(principal, NodeAdminClaims.AdminRevision, out var adminRevision)
+            || !TryLong(principal, NodeAdminClaims.SessionRevision, out var sessionRevision))
+            return failure;
+        var actor = OperatorActor.Admin(adminId);
+        var evidence = new NodeAdminAuthorityWitness(subject, sessionRecordId, adminRevision, sessionRevision, null, null);
         var user = await users.GetByIdAsync(actor.SubjectUserId, ct);
         if (user.IsError || user.Result is not { IsActive: true }) return AZOAResult<SigningCredentialWitness>.Failure("The node operator subject is unavailable.");
         return AZOAResult<SigningCredentialWitness>.Success(new(1, "Jwt", actor.SubjectUserId, null, Utc(user.Result.AuthNotBefore), issued, expires,

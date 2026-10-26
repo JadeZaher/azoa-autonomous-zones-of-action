@@ -55,11 +55,14 @@ public sealed class SurrealDeploymentRecoveryLinkTests : IAsyncLifetime
             .Set(row => row.ReplacesOperationId, ids[0]).Build());
         link.EnsureAllOk(); head = (await _store.GetAsync(head.Id))!;
         for (var index = 0; index < ids.Length; index++)
-            await _store.ClaimAsync(new DeploymentOperation { Id = ids[index], ParentOperationId = parent.Id,
+            (await _executor.ExecuteAsync(SurrealWriter.Create(new DeploymentOperation { Id = ids[index], ParentOperationId = parent.Id,
                 ActorUserId = parent.ActorUserId, TenantId = parent.TenantId, State = "Prepared", RequestJson = "{}",
                 IntentHash = "retained-intent-" + index, PreparedJson = "never-authorized-candidate",
                 ReplacedByOperationId = index == 0 ? head.Id : ids[index - 1],
-                ReplacesOperationId = index + 1 == ids.Length ? null : ids[index + 1] });
+                ReplacesOperationId = index + 1 == ids.Length ? null : ids[index + 1] }))).EnsureAllOk();
+        var retained = (await _store.GetAsync(ids[0]))!;
+        retained.SubmissionAuthorized = true;
+        (await _store.UpdateAsync(retained, retained.Version)).Should().BeNull("a retained predecessor is not the parent's live recovery child");
         var audits = new SurrealDeploymentRecoveryAuditStore(_executor);
         var audit = await audits.ClaimAsync(parent, head);
         var page = (await audits.AdvanceAsync(audit.Id, audit.Version))!;

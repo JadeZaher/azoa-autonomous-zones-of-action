@@ -7,6 +7,33 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const CLI_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "cli.js");
 
+describe("command-line parser exit codes", () => {
+  it.each([
+    ["--unknown-flag"],
+    ["keygen", "--unknown-flag"],
+    ["keygen"],
+    ["api", "GET"],
+    ["unknown-command"],
+    ["whoami", "--bogus"],
+    ["whoami", "extra"],
+    ["root", "env", "--bogus"],
+  ])("rejects invalid arguments with usage exit 2: %j", (...args: string[]) => {
+    const result = spawnSync(process.execPath, [CLI_PATH, ...args], { encoding: "utf8", input: "", timeout: 10_000 });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/error:/);
+    expect(result.stderr).not.toMatch(/CommanderError|node:internal|at Command\./);
+    expect(result.stdout).toBe("");
+  });
+
+  it("prints help successfully", () => {
+    const result = spawnSync(process.execPath, [CLI_PATH, "--help"], { encoding: "utf8", timeout: 10_000 });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Usage:");
+    expect(result.stderr).toBe("");
+  });
+});
+
 /**
  * Real-process coverage for the join-report.md FIFO stdin fix: `readSecret`/`readPipedStdin`
  * used to slurp the ENTIRE piped stream on their first call, starving every later prompt in the

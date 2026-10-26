@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { resolveServerApiUrl } from '@/lib/runtime-config'
+import { resolveInternalApiUrl } from '@/lib/runtime-config'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,7 @@ const responseHeaders = { 'Cache-Control': 'no-store' }
 
 export async function GET() {
   try {
-    const apiUrl = resolveServerApiUrl()
+    const apiUrl = resolveInternalApiUrl()
     const response = await fetch(new URL('/health', apiUrl), {
       cache: 'no-store',
       headers: { Accept: 'application/json' },

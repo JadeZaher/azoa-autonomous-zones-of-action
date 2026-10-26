@@ -14,7 +14,7 @@ public partial class ActionRecoveryAudit : ISurrealRecord
     [Id] public string Id { get; set; } = string.Empty;
     public string OperatorId { get; set; } = string.Empty;
     /// <summary>Real operator actor: <c>legacy-operator</c> | <c>admin:&lt;id&gt;</c> | <c>root:&lt;fingerprint&gt;</c>; NONE on rows written before named node admins.</summary>
-    public string? Actor { get; set; }
+    [ReadOnly] public string? Actor { get; set; }
     public string ExecutionId { get; set; } = string.Empty;
     public string RunId { get; set; } = string.Empty;
     public string NodeId { get; set; } = string.Empty;

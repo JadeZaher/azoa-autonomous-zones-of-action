@@ -15,11 +15,12 @@ test('a tenant registers a webhook destination and sees the secret only once', a
   await panel.getByLabel('Registration change reason').fill('Register the journey test receiver.')
   await save.click()
 
-  const secret = panel.getByLabel('New signing secret')
+  const secret = panel.getByRole('textbox', { name: 'New signing secret', exact: true })
   await expect(secret).not.toHaveValue('')
   await expect(panel.getByText('Version 1; destination 1; signing secret 1.')).toBeVisible()
 
   await page.reload()
   await expect(page.getByRole('region', { name: 'Webhook registration' }).getByText('Version 1; destination 1; signing secret 1.')).toBeVisible()
-  await expect(page.getByLabel('New signing secret')).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Webhook registration' })
+    .getByRole('textbox', { name: 'New signing secret', exact: true })).toHaveCount(0)
 })

@@ -1,0 +1,11 @@
+[
+  {
+    "route": "POST /api/action-designer/interview",
+    "controller": "ActionDesignerController",
+    "action": "Interview",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "DappDevelop; authenticated nondelegated owner equals selected tenant; TenantAuthority.CheckAsync proves active owner and live provisioning credential; explicit provider egress consent; canonical tenant-owner request budget; model has no tools, save, publish, run or monetary execution dependency",
+    "policies": ["DappDevelop"]
+  }
+]

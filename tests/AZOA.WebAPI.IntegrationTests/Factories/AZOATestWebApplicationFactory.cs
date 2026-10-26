@@ -12,26 +12,7 @@ using AZOA.WebAPI.Services.Auth;
 
 namespace AZOA.WebAPI.IntegrationTests.Factories;
 
-/// <summary>
-/// Test host for integration tests against a real SurrealDB container.
-///
-/// Design:
-///   - NO EF InMemory swap. NO AZOADbContext.
-///   - NO db.Database.Migrate() (that was a relational-only boot path, removed here).
-///   - Authentication is replaced by the test-only TestAuthHandler so tests
-///     can exercise auth-gated endpoints without real JWT tokens.
-///   - The SurrealDB connection defaults to
-///     the developer's local SurrealDB instance on 127.0.0.1:8020 (see appsettings.Development.json).
-///   - Per-test namespace isolation is owned by IntegrationTestBase — the
-///     factory itself is shared across the test class collection (IClassFixture).
-///
-/// Storage backend wiring:
-///   When the SurrealDB adapter (Worker B: ISurrealDbRepository) exists it will
-///   be registered in Program.cs via the IStorageProvider seam. Until then the
-///   existing EF-backed adapters remain wired from Program.cs — that is fine
-///   because the factory does NOT swap the storage, only the auth scheme.
-///   The adapter swap is wave 2 (tasks 5–8 of the migration plan).
-/// </summary>
+/// <summary>Isolated real-SurrealDB host with test authentication; see the integration directory's AGENTS.md.</summary>
 public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
 {
     /// <summary>
@@ -69,6 +50,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
+        builder.UseSetting("OpenTelemetry:ExportEnabled", "false");
 
         // ── Surreal connection settings must land in HOST configuration ──────
         // SurrealForge 1.0.0's AddSurrealForgeSdk takes a concrete options
@@ -99,6 +81,7 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 ["Jwt:Key"]      = "super-secret-test-key-that-is-long-enough!",
                 ["Jwt:Issuer"]   = "test",
                 ["Jwt:Audience"] = "test",
+                ["OpenTelemetry:ExportEnabled"] = "false",
 
                 // Keep the AZOA provider key so Program.cs provider-selection code
                 // (if any) doesn't throw on missing config.
@@ -151,9 +134,6 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 options.ForwardChallenge = TestAuthHandler.SchemeName;
             });
 
-            // Wave 2 placeholder: when Worker B's ISurrealDbRepository is
-            // registered in Program.cs, add any test-overrides here.
-            // For now the EF-backed adapters from Program.cs remain wired.
         });
     }
 
@@ -175,6 +155,13 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
         ["SurrealDb:Password"]  = SurrealTestDefaults.Password,
         ["SurrealDb:Namespace"] = TestNamespace,
         ["SurrealDb:Database"]  = TestDatabase,
+        ["SurrealDb:AuthenticationScope"] = "Root",
+        ["SurrealRuntime:Endpoint"] = SurrealTestDefaults.Endpoint,
+        ["SurrealRuntime:User"] = SurrealTestDefaults.User,
+        ["SurrealRuntime:Password"] = SurrealTestDefaults.Password,
+        ["SurrealRuntime:Namespace"] = TestNamespace,
+        ["SurrealRuntime:Database"] = TestDatabase,
+        ["SurrealRuntime:AuthenticationScope"] = "Root",
     };
 
     /// Create an HTTP client pre-configured with the test-auth header.

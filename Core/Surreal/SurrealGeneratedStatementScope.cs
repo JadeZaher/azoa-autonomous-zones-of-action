@@ -3,7 +3,7 @@ using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.Core.Surreal;
 
-/// <summary>Scopes bound parameters in one trusted typed-generated statement before transaction composition.</summary>
+/// <summary>Scopes bound parameters in one trusted typed-generated statement; see AGENTS.md.</summary>
 public static class SurrealGeneratedStatementScope
 {
     /// <summary>Captures one scoped typed-generated result for a surrounding atomic transaction.</summary>

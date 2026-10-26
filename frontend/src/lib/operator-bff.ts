@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveServerApiUrl } from "@/lib/runtime-config";
+import { resolveInternalApiUrl } from "@/lib/runtime-config";
 import {
     OPERATOR_REQUEST_HEADER,
     type AzoaEnvelope,
@@ -231,7 +231,7 @@ export async function createOperatorSession(
 ): Promise<NextResponse> {
     try {
         const response = await fetch(
-            new URL("/api/operator/session", resolveServerApiUrl()),
+            new URL("/api/operator/session", resolveInternalApiUrl()),
             {
                 method: "POST",
                 cache: "no-store",
@@ -331,7 +331,7 @@ export async function operatorUpstreamFetch(
         || /^platform-token\/creation\/[0-9a-f]{32}(?:\/(?:quote|accept-quote|continue|replace|refresh))?$/i.test(path);
     // Round-4 console routes arrive as an exact upstream `/api/...` path from `operator-routes.ts`.
     const upstreamPath = path.startsWith("/api/") ? path : `/api/${platformGenesis ? "admin" : "operator"}/${path}`;
-    return fetch(new URL(upstreamPath, resolveServerApiUrl()), {
+    return fetch(new URL(upstreamPath, resolveInternalApiUrl()), {
         method: init?.method ?? "GET",
         cache: "no-store",
         redirect: "error",

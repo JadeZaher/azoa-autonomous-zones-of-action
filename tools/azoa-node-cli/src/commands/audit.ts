@@ -61,10 +61,11 @@ const MAX_AUDIT_PAGE_SIZE = 500;
 async function fetchRowsSince(
   client: { call: <T>(method: string, path: string) => Promise<{ data: T }> },
   afterSeq: number,
+  throughSeq: number,
 ): Promise<AuditRow[]> {
   const rows: AuditRow[] = [];
   let cursor = afterSeq;
-  for (;;) {
+  while (cursor < throughSeq) {
     const { data } = await client.call<AuditPage>("GET", `/api/node-admin/audit?afterSeq=${cursor}&limit=${MAX_AUDIT_PAGE_SIZE}`);
     if (data.rows.length === 0) break;
     const lastSeq = data.rows[data.rows.length - 1]!.seq;
@@ -73,7 +74,7 @@ async function fetchRowsSince(
       // advance the cursor would otherwise spin this loop forever.
       throw AzoaCliError.network(`Audit page did not advance past seq ${cursor} — refusing to loop.`);
     }
-    rows.push(...data.rows);
+    rows.push(...data.rows.filter((row) => row.seq <= throughSeq));
     cursor = lastSeq;
     if (data.rows.length < MAX_AUDIT_PAGE_SIZE) break;
   }
@@ -91,16 +92,6 @@ export async function runAuditVerify(options: AuditVerifyOptions): Promise<void>
   requireSession(resolved);
   const client = httpClientFor(resolved);
   const pin = loadAuditPin(resolved.name);
-
-  const rows = await fetchRowsSince(client, pin?.seq ?? 0);
-
-  const local = verifyChain(rows, pin);
-  if (!local.ok) {
-    throw AzoaCliError.auditIntegrity(
-      `AUDIT INTEGRITY ALERT: local recompute detected a broken chain at seq ${local.firstBrokenSeq} ` +
-        `(profile '${resolved.name}'). Do not trust this node's audit log until investigated.`,
-    );
-  }
 
   // lane A1 §contract-deviations #14: fromSeq defaults to the pin so the server-side verify stays
   // incremental too; --full ignores the pin and asks the server to re-walk the whole chain
@@ -122,10 +113,19 @@ export async function runAuditVerify(options: AuditVerifyOptions): Promise<void>
 
   const serverHead: PinnedState = { seq: serverVerify.verifiedThroughSeq, hash: serverVerify.headHash };
 
+  const rows = await fetchRowsSince(client, options.full ? 0 : pin?.seq ?? 0, serverHead.seq);
+  const local = verifyChain(rows, options.full ? null : pin);
+  if (!local.ok) {
+    throw AzoaCliError.auditIntegrity(
+      `AUDIT INTEGRITY ALERT: local recompute detected a broken chain at seq ${local.firstBrokenSeq} ` +
+        `(profile '${resolved.name}'). Do not trust this node's audit log until investigated.`,
+    );
+  }
+
   // M2: the server's own verify endpoint and our independent local recompute must agree on where
   // the chain actually is — a server that passes its own (possibly compromised) verify check but
   // disagrees with what we just recomputed from the raw rows is exactly the scenario this guards.
-  if (rows.length > 0 && (local.verifiedThroughSeq !== serverVerify.verifiedThroughSeq || local.headHash !== serverVerify.headHash)) {
+  if (local.verifiedThroughSeq !== serverVerify.verifiedThroughSeq || local.headHash !== serverVerify.headHash) {
     throw AzoaCliError.auditIntegrity(
       `AUDIT INTEGRITY ALERT: local recompute (seq ${local.verifiedThroughSeq}, hash ${local.headHash}) disagrees with ` +
         `the server's /audit/verify (seq ${serverVerify.verifiedThroughSeq}, hash ${serverVerify.headHash}).`,

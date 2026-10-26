@@ -12,8 +12,8 @@ using SurrealForge.Client.Query;
 
 namespace AZOA.WebAPI.IntegrationTests.NodeAdmin;
 
-/// <summary>Operator authority exercised by a named admin or root is re-proven inside the economic transaction: the signing fence
-/// locks the live session and admin/root revisions exactly as it locks the legacy operator's credential revisions
+/// <summary>Operator authority exercised by a named admin is re-proven inside the economic transaction: the signing fence locks the
+/// live session and admin revisions exactly as it locks the legacy operator's credential revisions; root is refused outright
 /// (Services/NodeAdmin/AGENTS.md §operator-actor).</summary>
 public sealed class NodeAdminOperatorFenceTests(NodeAdminOperatorRoutesFactory factory)
     : NodeAdminHttpTestBase(factory), IClassFixture<NodeAdminOperatorRoutesFactory>
@@ -37,15 +37,27 @@ public sealed class NodeAdminOperatorFenceTests(NodeAdminOperatorRoutesFactory f
     }
 
     [Fact]
-    public async Task Root_operator_witness_aborts_once_root_sessions_are_revoked()
+    public async Task Root_never_yields_an_operator_witness_and_a_forged_root_witness_is_refused_by_the_fence()
     {
         var root = await RootLoginAsync();
-        var witness = await CaptureAsync(root);
-        witness.NodeAdmin!.RootKeyRevision.Should().Be(1);
+        var admin = await CreateActiveAdminAsync(root, root, "fence-shape", "node-owner");
 
-        (await RunFenceAsync(witness)).Should().BeNull();
-        (await SendAsync(HttpMethod.Post, "/root/revoke-sessions", token: root)).Status.Should().Be(HttpStatusCode.OK);
-        (await RunFenceAsync(witness)).Should().Contain(SigningAuthorityFence.FailureMarker, "the root session revision moved");
+        // L-4: root holds no operator grant (M3), so the capture refuses it rather than relying on the route map alone.
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(new JwtSecurityTokenHandler().ReadJwtToken(root).Claims, "Bearer"));
+        using (var scope = Factory.Services.CreateScope())
+            (await scope.ServiceProvider.GetRequiredService<SigningAdmissionAuthorityFactory>().CaptureCredentialAsync(principal))
+                .IsError.Should().BeTrue("a root session never carries operator signing authority");
+
+        // A root-shaped witness (e.g. hand-built or replayed from an older build) is refused by every operator-credential check.
+        var adminWitness = await CaptureAsync(admin.Token);
+        var rootWitness = adminWitness with
+        {
+            NodeAdmin = new AZOA.WebAPI.Models.Signing.NodeAdminAuthorityWitness("root:" + Factory.RootKey.Fingerprint,
+                adminWitness.NodeAdmin!.SessionRecordId, null, null, 1, 0),
+        };
+        OperatorActor.IsOperatorCredential(rootWitness).Should().BeFalse();
+        SigningAuthorityFence.ForRunAdmission(rootWitness, "fence_test").Should().BeNull("the fence refuses a root witness structurally");
+        (await RunFenceAsync(adminWitness)).Should().BeNull("the same evidence under the admin principal still commits");
     }
 
     private async Task<AZOA.WebAPI.Models.Signing.SigningCredentialWitness> CaptureAsync(string token)

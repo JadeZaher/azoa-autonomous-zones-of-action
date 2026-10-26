@@ -1,0 +1,23 @@
+{
+  "type": "UX Triage Ledger",
+  "passId": "04-release-readiness",
+  "status": "REVIEWED_PARTIAL_EVIDENCE",
+  "releaseVerdict": "NOT_READY",
+  "humanSessionsExecuted": 0,
+  "runs": {"raw":9,"ui":8,"probe":1,"completedUi":7,"partialUi":1},
+  "modelRequests": {"observed":1,"budget":1,"genericHarnessCoverage":0,"cumulativeBridgeAccepted":3,"bridgeMaximum":4},
+  "findings": [
+    {"id":"AI-TAX-CURRENCY","severity":"HIGH","disposition":"PRIOR_FIX_OBSERVATION","status":"NOT_REPRODUCED_IN_ONE_CORRECTED_RESPONSE","observation":"Closed-catalog response presented server-owned issue prompts without generated statutory thresholds/rates. Pass03 remains a recorded failure; no legal accuracy certification."},
+    {"id":"AI-PHANTOM-DRAFT","severity":"MEDIUM","disposition":"PRIOR_FIX_OBSERVATION","status":"NOT_REPRODUCED_IN_ONE_CORRECTED_RESPONSE","observation":"Reply truthfully withheld a draft; no graph/review/import was offered. Import correctness remains unverified."},
+    {"id":"RQ-AI-FOLLOWUP","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Two broad category questions appear repeated; two others seek finer operational detail. One-call ceiling does not establish second-turn failure.","panels":["SD04-1","CD04-1","A04-ACCESS-02","TB04-1"],"plan":"human-validation.md RQ-AI-DRAFT/RQ-AI-FOLLOWUP"},
+    {"id":"RQ-AI-SCOPE","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Dense scope explanation and public automation expectations may obscure planning/import, later webhook notification and external implementation boundaries. Consent and issue prompts may be misunderstood as clearance.","panels":["SD04-2","CD04-2","CD04-4","A04-ACCESS-01","TB04-2","TB04-3"],"plan":"human-validation.md RQ-AI-SCOPE"},
+    {"id":"RQ-AI-ADVISER","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Digital-asset-oriented US example links may not help a fiat-only author find relevant local qualified review.","panels":["CD04-3"],"plan":"human-validation.md RQ-AI-ADVISER"},
+    {"id":"RQ-AI-CONTINUITY","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Interruption, adviser handoff and unnecessary repeated disclosure have not been tested with humans.","panels":["SD04-3"],"plan":"human-validation.md RQ-AI-CONTINUITY"},
+    {"id":"RQ-RECOVERY","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Visible unavailable-authority copy may still leave novices without an actionable next contact.","panels":["CD04-5","TB04-4"],"plan":"human-validation.md RQ-RECOVERY/RQ-SCOPE"},
+    {"id":"RQ-AI-ACCESS","severity":null,"disposition":"RESEARCH_QUESTION","status":"UNTESTED","observation":"AI keyboard/screen-reader, mobile/reflow, reply status, graph import and interruption accessibility remain uncovered.","panels":["C04-ACCESS-01","C04-ACCESS-02"],"plan":"human-validation.md RQ-AI-ACCESS"},
+    {"id":"RQ-STATUS","severity":null,"disposition":"RESEARCH_QUESTION","status":"UNTESTED","observation":"Settled axe and heading navigation do not prove initial contrast or final loaded/error/empty audit states.","panels":["C04-ACCESS-03"],"plan":"human-validation.md RQ-STATUS"},
+    {"id":"RQ-FRESHNESS","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Operator readiness/session scope comprehension remains untested with humans.","panels":["TB04-5"],"plan":"human-validation.md RQ-FRESHNESS/RQ-SCOPE"}
+  ],
+  "exit": {"gold":true,"coverage":true,"frictionTrend":true,"newHigh":true,"adversarialApproval":true,"adversarialScope":"Checked truthfulness, triage and limited navigation/research evidence; no full-release approval","twoConsecutivePassingStudies":false},
+  "limits": ["AI journey PARTIAL: no graph/import","Synthetic agent evidence; zero humans","Source-free panel hypotheses do not establish code defects","One request cannot establish a second-turn failure","Settled axe method differs from pass03","Full E2E4/5 and wider integration backlog remain open","Generic API instrumentation misses interview POST"]
+}

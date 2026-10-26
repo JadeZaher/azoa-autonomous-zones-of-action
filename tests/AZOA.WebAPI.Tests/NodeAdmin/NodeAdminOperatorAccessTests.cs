@@ -19,7 +19,9 @@ public sealed class NodeAdminOperatorAccessTests
     public static TheoryData<string, string, string, string[], bool, int, string?> Cases => new()
     {
         // label, verb, template, caller permissions, root?, session age (minutes), expected code (null = admitted)
-        { "governance admin writes the fee schedule", "PUT", "api/node-governance/fee-schedule", Governance, false, 30, null },
+        { "governance admin writes the fee schedule", "PUT", "api/node-governance/fee-schedule", Governance, false, 2, null },
+        { "a node-admin write needs step-up even where legacy does not (D-M1)", "PUT", "api/node-governance/fee-schedule", Governance, false, 11, NodeAdminErrorCodes.StepUpRequired },
+        { "a non-step-up read ignores session age", "GET", "api/node-governance/fee-schedule", Governance, false, 30, null },
         { "compliance admin cannot write the fee schedule", "PUT", "api/node-governance/fee-schedule", [NodeAdminPermissions.KycDecide], false, 1, NodeAdminErrorCodes.PermissionDenied },
         { "step-up route with a stale session", "POST", "api/operator/kyc/submissions/{id:guid}/decision", [NodeAdminPermissions.KycDecide], false, 11, NodeAdminErrorCodes.StepUpRequired },
         { "step-up route with a recent session", "POST", "api/operator/kyc/submissions/{id:guid}/decision", [NodeAdminPermissions.KycDecide], false, 2, null },

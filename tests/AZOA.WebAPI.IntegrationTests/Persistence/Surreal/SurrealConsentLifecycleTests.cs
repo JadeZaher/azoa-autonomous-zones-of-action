@@ -125,7 +125,8 @@ public sealed partial class SurrealConsentLifecycleTests : IAsyncLifetime
         var notifications = await _executor.QueryAsync<Event>(SurrealQuery<Event>.From());
         notifications.Count(row => row.EventType == Event.WebhookEventType.Revoked).Should().Be(1);
         notifications.Count(row => row.EventType == Event.WebhookEventType.Expired).Should().BeLessThanOrEqualTo(1);
-        notifications.Where(row => row.EventType == Event.WebhookEventType.Expired).Should().OnlyContain(row => row.OccurredAt == expiry);
+        notifications.Where(row => row.EventType == Event.WebhookEventType.Expired).Should()
+            .AllSatisfy(row => row.OccurredAt.Should().Be(expiry));
         (await _store.RecordExpiryAsync(id)).Should().BeFalse();
     }
 

@@ -1,0 +1,180 @@
+{
+ "pass": "00-setup",
+ "frictionVersion": 1,
+ "generatedAt": "2026-10-19T00:11:38.453Z",
+ "runs": 1,
+ "uxRuns": 1,
+ "probeRuns": 0,
+ "coverage": {
+  "framework": "next-app",
+  "pageRoutes": 57,
+  "visited": 1,
+  "unvisited": [
+   "/operator/wallet-identities",
+   "/admin/fiat-reversals",
+   "/operator/deployments",
+   "/operator/parked-runs",
+   "/admin/fiat-payouts",
+   "/admin/key-rotation",
+   "/operator/providers",
+   "/operator/reversals",
+   "/admin/parked-runs",
+   "/operator/exchange",
+   "/operator/actions",
+   "/operator/genesis",
+   "/operator/payouts",
+   "/operator/reviews",
+   "/operator/tenants",
+   "/operator/chains",
+   "/operator/audit",
+   "/operator/money",
+   "/operator/sagas",
+   "/operator/login",
+   "/operator/fees",
+   "/admin/roles",
+   "/admin/sagas",
+   "/business-verification",
+   "/action-graph-bundle",
+   "/node-transparency",
+   "/linked-accounts",
+   "/verify-identity",
+   "/payout-balance",
+   "/fungible-mint",
+   "/architecture",
+   "/holon-query",
+   "/blockchain",
+   "/federation",
+   "/analytics",
+   "/user-nfts",
+   "/callback",
+   "/register",
+   "/api-keys",
+   "/cash-out",
+   "/overview",
+   "/settings",
+   "/operator",
+   "/actions",
+   "/wallets",
+   "/bridge",
+   "/holons",
+   "/search",
+   "/funds",
+   "/holds",
+   "/tests",
+   "/users",
+   "/nfts",
+   "/swap",
+   "/kyc",
+   "/"
+  ],
+  "unmatchedPaths": [],
+  "api": {
+   "declared": 3,
+   "hit": 0,
+   "unhit": [
+    "/api/operator/session",
+    "/api/health",
+    "/api/operator/[...path]"
+   ],
+   "observedOps": {}
+  }
+ },
+ "outcomes": {
+  "COMPLETED": 1
+ },
+ "totals": {
+  "clicks": 0,
+  "deadClicks": 0,
+  "rageClicks": 0,
+  "workarounds": 0,
+  "httpErrors": 0,
+  "consoleErrors": 0,
+  "failedAttempts": 0,
+  "axeViolations": 1,
+  "friction": 1
+ },
+ "frictionPerJourney": 1,
+ "heatmap": [
+  {
+   "route": "/login",
+   "abandons": 0,
+   "workarounds": 0,
+   "rageClicks": 0,
+   "errors": 0,
+   "deadClicks": 0,
+   "axe": 1,
+   "revisits": 1,
+   "friction": 1
+  }
+ ],
+ "tasks": [
+  {
+   "persona": "qa-uxqa-smoke",
+   "task": "setup-smoke",
+   "mode": "ui-only",
+   "constraints": [],
+   "runDir": "passes\\00-setup\\runs\\qa-uxqa-smoke--setup-smoke",
+   "outcome": "COMPLETED",
+   "seconds": 3,
+   "clicks": 0,
+   "deadClicks": 0,
+   "rageClicks": 0,
+   "inputs": 0,
+   "validationErrors": 0,
+   "pageViews": 2,
+   "distinctPages": 1,
+   "revisits": 1,
+   "httpErrors": 0,
+   "consoleErrors": 0,
+   "failedAttempts": 0,
+   "workarounds": 0,
+   "abandoned": null,
+   "axeViolations": 1,
+   "apiCalls": 0,
+   "friction": 1
+  }
+ ],
+ "axeRules": [
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "pages": [
+    "/login"
+   ]
+  }
+ ],
+ "goldTrend": {},
+ "frictionByPass": {
+  "00-setup": 1
+ },
+ "exitChecks": {
+  "goldSuccess": {
+   "target": 0.8,
+   "missing": [
+    "gold-operator-recovery",
+    "gold-member-settings",
+    "gold-operator-audit"
+   ],
+   "below": [],
+   "ok": false
+  },
+  "frictionTrend": {
+   "previousPass": null,
+   "previous": null,
+   "current": 1,
+   "tolerance": 0.1,
+   "ok": null
+  },
+  "newHigh": {
+   "target": 0,
+   "count": null,
+   "ok": null
+  },
+  "routeCoverage": {
+   "target": 0.2,
+   "ratio": 0.017543859649122806,
+   "ok": false
+  }
+ }
+}

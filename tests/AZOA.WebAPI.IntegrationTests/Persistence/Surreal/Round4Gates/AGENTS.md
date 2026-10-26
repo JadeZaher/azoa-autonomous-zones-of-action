@@ -38,6 +38,10 @@ keeps every `tenant_payout_*` write inside `CommitAsync` / `RecordCreditAsync` /
 `ClientSigning/ClientSigningTransitionRaceTests` (D-3): the operation-row status CAS lets one transition leave
 `AwaitingSignature` — two submits, or a submit racing the stuck-row reconcile.
 
+After that race, a submission winner remains `PendingConfirmation` and belongs
+to the stuck-row reconciliation page once old enough; a terminal failure does not.
+The fixture preserves exactly one transition, winner payload and completion stamps.
+
 ## §fence-allow-paths
 `Inventory/FenceAllowPathInventoryTests`: every `*Fence.cs` names a real-DB test whose success path commits
 through it (a fence whose guards never pass fails closed silently; only an allow-path fixture notices). A new fence

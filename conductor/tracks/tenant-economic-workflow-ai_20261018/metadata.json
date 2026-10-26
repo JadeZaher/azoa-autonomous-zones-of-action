@@ -1,0 +1,11 @@
+{
+  "track_id": "tenant-economic-workflow-ai_20261018",
+  "title": "Tenant economic workflow AI designer",
+  "type": "feature",
+  "status": "in_progress",
+  "created_at": "2026-10-18",
+  "updated_at": "2026-10-18",
+  "branch": "feat/tenant-economic-workflow-ai",
+  "base_commit": "649d501c",
+  "integration_owner": "node-admin-rbac-cli release session"
+}

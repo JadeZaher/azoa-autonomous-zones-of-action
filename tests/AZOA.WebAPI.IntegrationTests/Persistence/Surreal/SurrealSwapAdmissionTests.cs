@@ -158,7 +158,8 @@ public sealed partial class SurrealSwapAdmissionTests : IAsyncLifetime
     public async Task TenantMustRetainExactExplicitLiveSigningGrant(string change)
     {
         var (quote, terms, authority) = await SeedAsync(true);
-        var update = SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grants.Single().Id.ToString("N"));
+        var update = SurrealWriter.UpdateOnly<ConsentGrant>(authority.Grants.Single().Id.ToString("N"))
+            .Where(row => row.Origin == "UserExplicit" && row.Scopes == "swap:sign" && row.RevokedAt == null);
         switch (change)
         {
             case "revoked": update = update.Set(row => row.RevokedAt, DateTimeOffset.UtcNow); break;

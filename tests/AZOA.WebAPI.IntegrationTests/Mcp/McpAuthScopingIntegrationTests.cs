@@ -107,6 +107,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("IntegrationTest");
+            builder.UseSetting("OpenTelemetry:ExportEnabled", "false");
 
             // Surreal settings go into HOST configuration: Program.cs binds the
             // section eagerly (AddSurrealForgeSdk needs the endpoint at
@@ -126,6 +127,7 @@ public class McpAuthScopingIntegrationTests : IntegrationTestBase
                     ["Jwt:Key"]      = "super-secret-test-key-that-is-long-enough!",
                     ["Jwt:Issuer"]   = "test",
                     ["Jwt:Audience"] = "test",
+                    ["OpenTelemetry:ExportEnabled"] = "false",
                     ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
                     ["SurrealDb:User"]     = SurrealTestDefaults.User,
                     ["SurrealDb:Password"] = SurrealTestDefaults.Password,

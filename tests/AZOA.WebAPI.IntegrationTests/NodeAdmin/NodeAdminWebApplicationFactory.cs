@@ -10,6 +10,9 @@ public class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
 {
     public const string Audience = "https://node.example.test";
 
+    /// <summary>The host's <c>Jwt:Key</c>, so a flow can re-sign a captured token.</summary>
+    public const string JwtKey = "node-admin-integration-test-signing-key-0123456789";
+
     private static readonly string[] Tables =
     [
         "admin_bootstrap_state", "saga_steps", "user", "api_key", "node_admin", "node_admin_audit", "node_admin_audit_head", "node_admin_challenge",
@@ -31,6 +34,7 @@ public class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("IntegrationTest");
+        builder.UseSetting("OpenTelemetry:ExportEnabled", "false");
         foreach (var (key, value) in new Dictionary<string, string>
         {
             ["SurrealDb:Endpoint"] = SurrealTestDefaults.Endpoint,
@@ -38,7 +42,7 @@ public class NodeAdminWebApplicationFactory : WebApplicationFactory<Program>
             ["SurrealDb:Password"] = SurrealTestDefaults.Password,
             ["SurrealDb:Namespace"] = TestNamespace,
             ["SurrealDb:Database"] = "test",
-            ["Jwt:Key"] = "node-admin-integration-test-signing-key-0123456789",
+            ["Jwt:Key"] = JwtKey,
             ["Jwt:Issuer"] = "test",
             ["Jwt:Audience"] = "test",
             ["NodeAdmin:RootPublicKeys"] = RootKey.PublicKey,

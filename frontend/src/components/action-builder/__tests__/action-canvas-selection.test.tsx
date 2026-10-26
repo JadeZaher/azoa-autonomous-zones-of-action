@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
   addNodeFromPalette,
@@ -36,6 +36,25 @@ describe('ActionCanvas selection', () => {
     clickFlowNode('Create Holon')
 
     expect(screen.getByText('Node Config')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Create Holon')
+    expect(screen.getByRole('textbox', { name: 'Config (JSON)' })).toBeEnabled()
+  })
+
+  it('edits the selected node through its named inspector controls', () => {
+    renderActionCanvas()
+    addNodeFromPalette('Create Holon')
+    clickFlowNode('Create Holon')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Reviewed request' } })
+    const config = '{"name":"Reviewed request"}'
+    fireEvent.change(screen.getByRole('textbox', { name: 'Config (JSON)' }), { target: { value: config } })
+    addNodeFromPalette('Get Holon')
+    clickFlowNode('Get Holon')
+    clickFlowNode('Reviewed request')
+
+    expect(isNodeSelected('Reviewed request')).toBe(true)
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Reviewed request')
+    expect(screen.getByRole('textbox', { name: 'Config (JSON)' })).toHaveValue(config)
   })
 
   it('enables Copy once a node is selected', () => {

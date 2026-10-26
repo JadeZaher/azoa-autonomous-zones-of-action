@@ -1,0 +1,42 @@
+.container {
+  container-name: action-editor;
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.palette,
+.flow,
+.inspector {
+  min-width: 0;
+}
+
+.palette {
+  height: 16rem;
+}
+
+.flow {
+  display: flex;
+  height: 40rem;
+}
+
+.inspector {
+  height: 28rem;
+}
+
+@container action-editor (min-width: 56rem) {
+  .layout {
+    grid-template-columns: 14rem minmax(20rem, 1fr) 18rem;
+  }
+
+  .palette,
+  .flow,
+  .inspector {
+    height: 40rem;
+  }
+}

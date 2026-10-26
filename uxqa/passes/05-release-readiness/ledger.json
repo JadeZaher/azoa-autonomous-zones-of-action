@@ -1,0 +1,22 @@
+{
+  "type": "UX Triage Ledger",
+  "passId": "05-release-readiness",
+  "status": "REVIEWED_RECORDED_FAILURE",
+  "releaseVerdict": "NOT_READY",
+  "humanSessionsExecuted": 0,
+  "runs": {"raw":9,"ui":8,"probe":1,"completedUi":8,"partialUi":0},
+  "modelRequests": {"observed":1,"budget":1,"genericHarnessCoverage":0,"cumulativeBridgeAccepted":4,"bridgeMaximum":4,"remaining":0},
+  "functionalPlanningImport": {"completed":true,"nodes":9,"edges":8,"persisted":false,"executed":false,"economicRuleEnforcement":false},
+  "findings": [
+    {"id":"EDITOR-LABELS","severity":"MEDIUM","disposition":"FIX","status":"OPEN","observation":"Name and Config(JSON) editable fields lack programmatic labels; two axe label nodes.","cause":"frontend/src/components/action-builder/panels/node-inspector.tsx:38 and77: Label has no htmlFor association to input/textarea.","evidence":"flows/tenant-workflow-ai/axe-details-visible.json; selected inspector screenshot; A05-ACCESS-01,CD05-1,SD05-1","acceptance":"Distinct stable programmatic names; reversible name/config edits still patch the correct selected node; browser label scan clear."},
+    {"id":"DESTRUCTIVE-CONTRAST","severity":"LOW","disposition":"FIX","status":"OPEN","observation":"Delete Node normal text3.34:1, below4.5:1.","cause":"frontend/src/components/ui/button.tsx:19: destructive text token over alpha destructive background.","evidence":"flows/tenant-workflow-ai/axe-details-visible.json; A05-ACCESS-02,CD05-4","acceptance":"Normal/hover destructive text has adequate contrast on supported light/dark surfaces; no deletion required by study."},
+    {"id":"ENABLED-OPACITY","severity":"MEDIUM","disposition":"FIX","status":"OPEN","observation":"Separate coordinator diagnostic reproduced enabled audit controls at opacity0.5 during fade;4.48:1 and2.75:1. Frozen gold retains one unidentified contrast node.","cause":"frontend/src/components/ui/button.tsx:8: transition-all animates disabled opacity after native disabled is removed.","evidence":"runs/qa-uxqa-operator--gold-operator-audit/ux.json; separate .omc/research/ux05-audit-contrast-diagnostic.json","acceptance":"Re-enabled buttons immediately use full opacity; preserve native disabled behavior; actual loading-to-ready contrast clear without extending a study wait."},
+    {"id":"CANVAS-TOOLBAR","severity":"LOW","disposition":"FIX","status":"OPEN","observation":"Floating toolbar overlaps first imported node at1366x900; normal click timed out outside scored attempts.","cause":"frontend/src/components/action-builder/panels/canvas-toolbar.tsx:76 absolute overlay; action-flow-canvas.tsx:59 shares graph bounds with overlay.","evidence":"flows/tenant-workflow-ai/lane-report.md; imported-canvas-initial.png; SD05-4,CD05-4","acceptance":"Toolbar has reserved layout space; graph selection/fit and toolbar actions remain usable; no forced click or hidden overlay workaround."},
+    {"id":"RQ-AI-HANDOFF","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Generic graph omits detailed decisions; real implementer/reviewer handoff and continuity untested.","plan":"human-validation.md RQ-AI-CONTINUITY / RQ-AI-HANDOFF"},
+    {"id":"RQ-AI-SCOPE","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Diagram order, dense JSON acknowledgment, staged consent and imported-versus-saved state may be misunderstood.","plan":"human-validation.md RQ-AI-SCOPE / RQ-AI-DRAFT"},
+    {"id":"RQ-AI-ACCESS","severity":null,"disposition":"RESEARCH_QUESTION","status":"UNTESTED","observation":"AI graph keyboard/screen-reader/reflow traversal and independent review remain untested with humans.","plan":"human-validation.md RQ-AI-ACCESS"},
+    {"id":"RQ-AI-ADVISER","severity":"LOW","disposition":"RESEARCH_QUESTION","status":"OPEN","observation":"Fiat-author relevance of US digital-asset reading examples remains untested.","plan":"human-validation.md RQ-AI-ADVISER"}
+  ],
+  "exit": {"gold":true,"coverage":true,"frictionTrend":false,"newHigh":true,"mediumFixesComplete":false,"adversarialApproval":false,"twoConsecutivePassingStudies":false},
+  "limits": ["Functional import is planning-only and unsaved","Zero human sessions","Unscored first-node click detour retained in prose","Separate diagnostic does not rewrite raw gold result","No full E2E/CI/settlement/legal/release approval"]
+}

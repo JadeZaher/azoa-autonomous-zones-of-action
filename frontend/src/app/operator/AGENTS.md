@@ -1,5 +1,20 @@
 # Node operator console
 
+## Overview contrast surfaces
+
+The Runtime eyebrow uses the semantic primary token, matching other small
+operator headings. Its previous fixed orange produced only 4.10:1 on the dark
+runtime card. Session security is an opaque pale-red warning surface and applies
+`azoa-light-surface` with `text-foreground`, as the operator login already does
+for paper surfaces. The light token set keeps inherited outline controls coherent
+inside the dark console. The final confirmation button explicitly pairs white
+text with opaque red-800, or red-900 on hover, in both normal and dark variants;
+ancestor dark styles must not restore the shared translucent destructive variant.
+A translucent pale panel
+previously mixed into gray while retaining dark-red text, producing 1.24–3.13:1
+in the guarded pass-02 diagnostic. Source changes still require a refreshed-image
+browser rerun; these measurements describe the failing image.
+
 ## Trust boundary
 
 The operator console is deliberately separate from the ordinary Azoa account
@@ -161,3 +176,7 @@ refusal `code` with fixed copy (`FORWARDED_UPSTREAM_CODES` in `lib/operator-bff.
 `ETHEREUM_RECOVERY_UNAVAILABLE` (409, no Ethereum rail on the node; QA M2): `useOperatorResource`
 exposes it as `errorCode`, and the Ethereum recovery panel shows it as a neutral state and hides the
 signer controls instead of an error with a retry button.
+
+## Provider policy freshness
+
+`KycProviderRegistry.BuiltIn` returns version-zero defaults with Unix epoch timestamps until an operator persists a policy. The provider page names that state “Policy has not been configured yet” rather than formatting the sentinel as a 1969/1970 update. Persisted policies, including disabled ones, retain their real update timestamp. This display rule changes no authority, provider enablement or backend timestamp data.

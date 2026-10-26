@@ -91,3 +91,7 @@ plainly that it needs the operator session (the BFF deliberately does not proxy 
 - `GET /api/user` (the directory) is operator-only; no account page lists users.
 - `actions`: a 403 on authoring explains the DApp developer role; My Actions loads on mount and the
   builder confirms a created draft.
+
+## Overview status
+
+Network transport failures leave the Algorand/Solana card identity visible with an unavailable-details state. The overview does not render SDK/JavaScript exception strings, infer that the whole node is down, or infer anything about balances. Session status remains independent. A returned network snapshot is shown only when present; unavailable status is not a successful chain operation.

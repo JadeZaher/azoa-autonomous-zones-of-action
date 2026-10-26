@@ -50,8 +50,9 @@ public sealed record OperatorActor
 
     public override string ToString() => AuditActor;
 
-    /// <summary>True for a credential witness carrying node-operator authority (legacy operator token or node-admin session).</summary>
+    /// <summary>True for a credential witness carrying node-operator authority (legacy operator token or a named admin's session);
+    /// a root witness never does (M3 ceiling enforced here, not only by the route map; L-4).</summary>
     public static bool IsOperatorCredential(SigningCredentialWitness credential)
         => credential.TokenUse == AzoaClaims.TokenUseNodeOperator
-            || (credential.TokenUse == NodeAdminClaims.TokenUseNodeAdmin && credential.NodeAdmin is not null);
+            || (credential.TokenUse == NodeAdminClaims.TokenUseNodeAdmin && credential.NodeAdmin is { RootKeyRevision: null, AdminRevision: not null });
 }

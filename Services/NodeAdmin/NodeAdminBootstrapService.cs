@@ -6,15 +6,27 @@ using SurrealForge.Client.Query;
 namespace AZOA.WebAPI.Services.NodeAdmin;
 
 /// <summary>Seeds the directory, root-state watermark and built-in roles idempotently at boot; never refuses boot (M5).</summary>
-public sealed class NodeAdminBootstrapService(
-    IServiceScopeFactory scopes,
-    NodeAdminRuntime runtime,
-    ILogger<NodeAdminBootstrapService> logger) : IHostedService, IDisposable
+public sealed class NodeAdminBootstrapService : IHostedService, IDisposable
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(30);
-    private readonly CancellationTokenSource _stopping = new();
+    private readonly IServiceScopeFactory scopes;
+    private readonly NodeAdminRuntime runtime;
+    private readonly ILogger<NodeAdminBootstrapService> logger;
+    private CancellationTokenSource? _stopping;
+    private readonly CancellationToken _stoppingToken;
     private Task? _retry;
 
+    public NodeAdminBootstrapService(IServiceScopeFactory scopes, NodeAdminRuntime runtime, ILogger<NodeAdminBootstrapService> logger)
+    {
+        this.scopes = scopes;
+        this.runtime = runtime;
+        this.logger = logger;
+        var stopping = new CancellationTokenSource();
+        _stopping = stopping;
+        _stoppingToken = stopping.Token;
+    }
+
+    /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         try
@@ -24,18 +36,47 @@ public sealed class NodeAdminBootstrapService(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogError(exception, "Node-admin bootstrap failed; retrying in the background. Node-admin sign-in fails closed until it succeeds.");
-            _retry = RetryAsync(_stopping.Token);
+            _retry = RetryAsync(_stoppingToken);
         }
     }
 
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _stopping.CancelAsync();
-        if (_retry is not null)
-            await Task.WhenAny(_retry, Task.Delay(Timeout.Infinite, cancellationToken));
+        var stopping = Interlocked.Exchange(ref _stopping, null);
+        var cancellation = stopping is null ? Task.CompletedTask : CancelAndDisposeAsync(stopping);
+        var shutdown = Task.WhenAll(cancellation, _retry ?? Task.CompletedTask);
+        await Task.WhenAny(shutdown, Task.Delay(Timeout.Infinite, cancellationToken));
+        if (shutdown.IsCompleted)
+            await shutdown;
     }
 
-    public void Dispose() => _stopping.Dispose();
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        var stopping = Interlocked.Exchange(ref _stopping, null);
+        if (stopping is null) return;
+        try
+        {
+            stopping.Cancel();
+        }
+        finally
+        {
+            stopping.Dispose();
+        }
+    }
+
+    private static async Task CancelAndDisposeAsync(CancellationTokenSource stopping)
+    {
+        try
+        {
+            await stopping.CancelAsync();
+        }
+        finally
+        {
+            stopping.Dispose();
+        }
+    }
 
     private async Task RetryAsync(CancellationToken ct)
     {

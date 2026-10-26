@@ -1,9 +1,13 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Text;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Services.Admin;
 using AZOA.WebAPI.Services.NodeAdmin;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using SurrealForge.Client;
 using SurrealForge.Client.Query;
 
@@ -120,6 +124,104 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
     }
 
     [Fact]
+    public async Task Node_admin_writes_require_step_up_even_where_the_legacy_operator_does_not()
+    {
+        var root = await RootLoginAsync();
+        var operations = await CreateActiveAdminAsync(root, root, "ops-stale", "operations");
+        await AgeSessionAsync(operations.Token, TimeSpan.FromMinutes(11));
+        var refund = $"/api/admin/on-ramp-lots/intents/{Guid.NewGuid()}/refund";
+
+        // D-M1: on-ramp refund carries only the legacy Operator policy, yet a node admin needs a recent session for it.
+        var stale = await SendToAsync(HttpMethod.Post, refund, new { reason = "customer asked for a refund" }, operations.Token);
+        stale.Status.Should().Be(HttpStatusCode.Forbidden);
+        stale.Code.Should().Be(NodeAdminErrorCodes.StepUpRequired);
+        stale.AuthRequirement.Should().Be(NodeAdminErrorCodes.RecentNodeAdminLogin);
+
+        // A valid stale login must be newer than the operator's credential watermark.
+        var legacy = await LegacyTokenAsync(authAge: TimeSpan.FromMinutes(30));
+        (await SendToAsync(HttpMethod.Post, refund, new { reason = "before credential cut" }, legacy))
+            .Status.Should().Be(HttpStatusCode.Unauthorized, "a token before the seeded credential watermark must remain invalid");
+        using var scope = Factory.Services.CreateScope();
+        var executor = scope.ServiceProvider.GetRequiredService<ISurrealExecutor>();
+        var operatorId = NodeOperatorIdentity.UserId.ToString("N");
+        var original = await executor.QuerySingleAsync<User>(SurrealQuery<User>.Key(operatorId), CancellationToken.None);
+        original.Should().NotBeNull();
+        var watermark = original!.AuthNotBefore;
+        (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operatorId).Where(row => true)
+            .Set(row => row.AuthNotBefore, DateTimeOffset.UtcNow.AddHours(-1)).Build(), CancellationToken.None)).EnsureAllOk();
+        try
+        {
+            var legacyRefund = await SendToAsync(HttpMethod.Post, refund, new { reason = "customer asked for a refund" }, legacy);
+            legacyRefund.Status.Should().NotBe(HttpStatusCode.Forbidden, legacyRefund.Body.ToString())
+                .And.NotBe(HttpStatusCode.Unauthorized, "the legacy Operator policy has no step-up; the domain answers the unknown intent");
+            (await SendToAsync(HttpMethod.Post, $"/api/operator/kyc/submissions/{Guid.NewGuid()}/decision", new { decision = "approve" }, legacy))
+                .Status.Should().Be(HttpStatusCode.Forbidden, "the same valid stale login still fails a legacy recent-login policy");
+        }
+        finally
+        {
+            (await executor.ExecuteAsync(SurrealWriter.UpdateOnly<User>(operatorId).Where(row => true)
+                .Set(row => row.AuthNotBefore, watermark).Build(), CancellationToken.None)).EnsureAllOk();
+        }
+    }
+
+    [Fact]
+    public async Task Session_revocations_require_step_up_and_denial_leaves_the_original_session_live()
+    {
+        var root = await RootLoginAsync();
+        var me = await SendAsync(HttpMethod.Get, "/me", token: root);
+        var handle = me.Result.GetProperty("session").GetProperty("handle").GetString()!;
+        await AgeSessionAsync(root, TimeSpan.FromMinutes(11));
+
+        foreach (var path in new[] { "/auth/revoke", $"/sessions/{handle}/revoke" })
+        {
+            var stale = await SendAsync(HttpMethod.Post, path, token: root);
+            stale.Status.Should().Be(HttpStatusCode.Forbidden);
+            stale.Code.Should().Be(NodeAdminErrorCodes.StepUpRequired);
+            stale.AuthRequirement.Should().Be(NodeAdminErrorCodes.RecentNodeAdminLogin);
+        }
+        (await SendAsync(HttpMethod.Get, "/me", token: root)).Status.Should().Be(HttpStatusCode.OK);
+
+        var recent = await RootLoginAsync();
+        (await SendAsync(HttpMethod.Post, $"/sessions/{handle}/revoke", token: recent)).Status.Should().Be(HttpStatusCode.OK);
+        (await SendAsync(HttpMethod.Get, "/me", token: root)).Status.Should().Be(HttpStatusCode.Unauthorized);
+        (await SendAsync(HttpMethod.Get, "/me", token: recent)).Status.Should().Be(HttpStatusCode.OK,
+            "revoking by the original handle preserves the replacement session");
+    }
+
+    [Fact]
+    public async Task Node_admin_reads_of_kyc_data_are_chained_as_read_rows_naming_the_admin_without_query_values()
+    {
+        var root = await RootLoginAsync();
+        var compliance = await CreateActiveAdminAsync(root, root, "kyc-reader", "compliance");
+        const string probe = "pii-probe@example.test";
+
+        (await SendToAsync(HttpMethod.Get, $"/api/operator/kyc/submissions?status=pending&limit=10&probe={Uri.EscapeDataString(probe)}",
+            token: compliance.Token)).Status.Should().Be(HttpStatusCode.OK);
+        (await SendToAsync(HttpMethod.Get, FeeAudit, token: root)).Status.Should().Be(HttpStatusCode.OK);
+        (await SendToAsync(HttpMethod.Get, "/api/user", token: compliance.Token)).Status.Should().Be(HttpStatusCode.OK);
+        await AgeSessionAsync(compliance.Token, TimeSpan.FromMinutes(11));
+        (await SendToAsync(HttpMethod.Post, "/api/search/operator", new { query = probe, entityTypes = 1 }, compliance.Token))
+            .Status.Should().Be(HttpStatusCode.OK, "the allow-listed body-carried query remains a read even with an old session");
+
+        var rows = await AuditRowsAsync(root);
+        var read = rows.Should().ContainSingle(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
+            && row.GetProperty("action").GetString() == "GET /api/operator/kyc/submissions").Subject;
+        read.GetProperty("outcome").GetString().Should().Be(NodeAdminAuditLog.OutcomeRead, "a read gets one read row, never an intent row");
+        var detail = read.GetProperty("detail").GetString()!;
+        detail.Should().Be("""{"status":200,"permission":"kyc.read","query":["limit","probe","status"]}""");
+        detail.Should().NotContain("pii-probe").And.NotContain("pending", "query values never reach the chain");
+        var searchRead = rows.Should().ContainSingle(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
+            && row.GetProperty("action").GetString() == "POST /api/Search/operator").Subject;
+        searchRead.GetProperty("outcome").GetString().Should().Be(NodeAdminAuditLog.OutcomeRead);
+        searchRead.GetProperty("detail").GetString().Should().NotContain(probe, "body values never reach read-audit metadata");
+        rows.Should().Contain(row => row.GetProperty("actor").GetString() == "admin:" + compliance.Id
+            && row.GetProperty("action").GetString()!.ToLowerInvariant() == "get /api/user" && row.GetProperty("outcome").GetString() == NodeAdminAuditLog.OutcomeRead);
+
+        rows.Should().NotContain(row => row.GetProperty("action").GetString() == "GET /api/node-governance/fee-audit",
+            "audit.read reads are not chained (they would only audit the audit)");
+    }
+
+    [Fact]
     public async Task Legacy_operator_token_keeps_working_on_every_operator_policy_and_audits_as_legacy_operator()
     {
         var login = await SendToAsync(HttpMethod.Post, "/api/operator/session", new
@@ -164,6 +266,21 @@ public sealed class NodeAdminOperatorRouteFlowTests(NodeAdminOperatorRoutesFacto
         var auditor = await CreateActiveAdminAsync(root, root, "audit-roles", "auditor");
         (await SendToAsync(HttpMethod.Put, $"/api/user/{developer.Id}/dapp-role", new { role = AzoaDappRoles.User }, auditor.Token))
             .Code.Should().Be(NodeAdminErrorCodes.PermissionDenied);
+    }
+
+    /// <summary>A real legacy operator token re-signed with an older <c>auth_time</c> (same claims, revisions and signing key).</summary>
+    private async Task<string> LegacyTokenAsync(TimeSpan authAge)
+    {
+        var login = await SendToAsync(HttpMethod.Post, "/api/operator/session", new
+        {
+            username = NodeAdminOperatorRoutesFactory.OperatorUsername,
+            password = NodeAdminOperatorRoutesFactory.OperatorPassword,
+        });
+        login.Status.Should().Be(HttpStatusCode.OK, login.Body.ToString());
+        var payload = new JwtSecurityTokenHandler().ReadJwtToken(login.Result.GetProperty("accessToken").GetString()!).Payload;
+        payload[AzoaClaims.AuthTime] = (DateTimeOffset.UtcNow - authAge).ToUnixTimeSeconds();
+        var signing = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(NodeAdminWebApplicationFactory.JwtKey)), SecurityAlgorithms.HmacSha256);
+        return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(new JwtHeader(signing), payload));
     }
 
     private async Task AgeSessionAsync(string token, TimeSpan age)

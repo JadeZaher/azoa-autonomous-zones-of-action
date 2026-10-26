@@ -1,0 +1,17 @@
+---
+type: UX Pass Scenario
+---
+
+# Refreshed release verification
+
+## Tenant AI interview and stable target
+
+This new pass begins only after the coordinator finishes the pass-02 verdict, rebuilds the reviewed complete contrast/backend source, configures the exact local API privately, and proves both guards again. Configuration is a coordinator action between passes. The fixed `qa-uxqa-ai-tenant` fixture already proved its developer role and live owner provisioning authority through the real HTTP policies. No new privilege mutation is authorized inside this UI lane.
+
+The coordinator authorizes at most two synthetic model requests in pass 03 and at most four total across passes 03 and 04. Count actual interview requests; retries consume the same budget. Earlier three service diagnostics are separate recorded calls. Provider credentials remain in the local server's container environment, delivered through memory/stdin, without a repository key file, command argument or browser key. The provider is OpenRouter with the previously verified Sonnet 4.6 model. The tester must use visible consent before any egress.
+
+Use a fictional Colorado cooperative coordinating adult participants and capped cleanup bounties. First explore genuinely unknown jurisdiction/economic facts and the follow-up questions. Then supply explicit synthetic countries/tax residence, participant roles, amounts/assets/custody, allocation/recordkeeping, approvals and refund/dispute/failure choices. The purpose is a private design exercise: do not submit personal identifiers, account numbers, signing keys or real resource IDs. Observe whether legal/tax concerns have clear geographic limits and whether a draft is withheld for missing decisions. Any offered graph may be reviewed and imported into the editable canvas only. Never save, publish, run, transfer value, issue a notification, start verification, alter authority or change environment from a UI lane. Import is not proof of settlement or compliance. Record a refusal or additional questions honestly if the budget expires before a draft.
+
+Use the separate private `ai-sessions.json` through the plugin's documented `UXQA_SESSIONS_FILE` override for this lane. The original six-persona journeys use their existing session file. All seven personas are planned; model-tier labels describe planned roles, while coordinator regression replays are automation evidence rather than independent human studies. The anonymous node-admin capability probe remains separate from UI metrics. Add the observed Actions route without changing the 20% coverage target. Correct the old zoom narration in new runs; preserve pass-02's raw stale note and its erratum.
+
+Repeat the four original constrained journeys and all three gold tasks against the coordinator-proved refreshed local image. Retain initial observations and compare actual outcomes. Gold task drives wait for observed navigation and visible destination content before returning. In the four constrained journey replays, any failed attempt prevents a completed outcome; gold outcomes follow the plugin predicates. The named menu is exercised by its visible accessible name. No source/API shortcuts, value execution, notification triggers or administrative mutation are allowed. Review an additional Actions route through visible navigation to meet the original coverage target without changing it. The tenant AI interview requires a separately proved tenant fixture and provider path; record it as blocked until those prerequisites are established.

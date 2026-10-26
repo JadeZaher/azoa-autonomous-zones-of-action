@@ -80,14 +80,14 @@ export default function OperatorLoginPage() {
     }
 
     return (
-        <main className="grid min-h-screen bg-[#F2EDE3] lg:grid-cols-[minmax(20rem,0.85fr)_minmax(28rem,1.15fr)]">
+        <main className="azoa-light-surface grid min-h-screen bg-[#F2EDE3] text-foreground lg:grid-cols-[minmax(20rem,0.85fr)_minmax(28rem,1.15fr)]">
             <section className="hidden border-r border-[#363028] bg-[#16120D] p-10 text-[#F2EDE3] lg:flex lg:flex-col lg:justify-between">
                 <div>
                     <Link
                         href="/"
                         className="inline-flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8501E]"
                     >
-                        <span className="flex h-9 w-9 items-center justify-center bg-[#C8501E] font-bold">
+                        <span className="flex h-9 w-9 items-center justify-center bg-primary text-primary-foreground font-bold">
                             A
                         </span>
                         <span className="font-bold tracking-[0.14em]">
@@ -105,7 +105,7 @@ export default function OperatorLoginPage() {
                         person.
                     </p>
                 </div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-[#80776a]">
+                <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-[#b7ad9c]">
                     Dedicated operator authority · short-lived session
                 </p>
             </section>
@@ -123,7 +123,7 @@ export default function OperatorLoginPage() {
                         className="h-9 w-9 text-[#C8501E]"
                         aria-hidden="true"
                     />
-                    <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.2em] text-[#C8501E]">
+                    <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.2em] text-primary">
                         Node operator
                     </p>
                     <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#16120D]">
@@ -219,7 +219,7 @@ export default function OperatorLoginPage() {
                                 : "Enter operator console"}
                         </Button>
                     </form>
-                    <p className="mt-6 text-xs leading-5 text-[#80776a]">
+                    <p className="mt-6 text-xs leading-5 text-muted-foreground">
                         Lost credentials are reset through the deployment&apos;s
                         secret store, not in this console.
                     </p>

@@ -195,12 +195,14 @@ async function waitFor(url, label) {
  */
 function stackEnvironment() {
   const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).stdout.trim()
+  const settings = { ...readEnvironmentFile(), ...process.env }
   return {
     SOURCE_REVISION: revision,
     AZOA_E2E_FRONTEND_PORT: '3200',
     AZOA_E2E_API_PORT: '5200',
-    ...readEnvironmentFile(),
-    ...process.env,
+    ...settings,
+    AZOA_E2E_IDENTOMAT_UPSTREAM_PORT: settings.AZOA_E2E_IDENTOMAT_UPSTREAM_PORT ?? settings.AZOA_E2E_IDENTOMAT_PORT ?? '9443',
+    AZOA_E2E_STRIPE_UPSTREAM_PORT: settings.AZOA_E2E_STRIPE_UPSTREAM_PORT ?? settings.AZOA_E2E_STRIPE_PORT ?? '9444',
   }
 }
 
