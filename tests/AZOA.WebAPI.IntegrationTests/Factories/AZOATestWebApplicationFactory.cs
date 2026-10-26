@@ -87,6 +87,12 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 // (if any) doesn't throw on missing config.
                 ["AZOA:DefaultProvider"] = "SurrealDb",
 
+                // WalletKeyService refuses an empty key at construction, and the
+                // ValueRailStartup boot guard constructs it in every host; random
+                // per factory, in memory only (base appsettings.json leaves it empty).
+                ["AZOA:WalletEncryptionKey"] = Convert.ToHexString(
+                    System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)),
+
                 // Treasury routing validates the requested provider even while this
                 // host remains in Live mode; register its network-only test provider.
                 ["Blockchain:Chains:3:ChainType"] = "Simulated",
