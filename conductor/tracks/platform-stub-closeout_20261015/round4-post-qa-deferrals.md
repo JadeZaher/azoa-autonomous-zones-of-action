@@ -108,3 +108,30 @@ Evidence: `qa-live-2026-10-18.md` § Re-run (0de1b99d). Screenshots `20-*`, `21-
 | NEW-2 | **NEW · LOW** | Fee schedule "Publish" of an unchanged all-zero schedule returns 200 but the page stays at "version 0" with "No recorded changes". Unclear whether that is an intended no-op. Confirm, or say "nothing changed" |
 | SEARCH | **FIXED-VERIFIED** live on `9c2f4580` (2026-10-18) | Owner decision: users appear in others' user search only with the `Discoverable` profile opt-in (default false); node admins (operator-console sessions) always find everyone via `POST /api/search/operator` (`Operator` policy); API keys never bypass. Live: 8 users backfilled (`discoverable = NONE` → 0); SMOKE can't see EMAIL1 → EMAIL1 opts in → visible → opts out → hidden; SMOKE setting EMAIL1's flag → 404; SMOKE on operator route → 403; node-operator session on operator route sees `qa_email1_r4`, `qa_smoke_r4` (both hidden) and gets 401 on the ordinary route. Open LOWs: facet total still counts hidden users; exact-username "already taken" probe; operator console has no user-search page yet (BFF allowlist `operator-routes.ts` lacks `/api/search/operator`); `SearchManager` loads all users then filters in memory (pre-existing, scale concern) |
 | NEW-3 | **NEW · INFO** | `/operator/chains` WTT stage-key keyring shows DEGRADED ("New stage-key transfers are refused until the keyring is ready"). The refusal is honest. Owner to provision before `Wtt:Enabled` |
+
+## Bridge 2026-10-26 — integration suite composes again; onboarding flows green
+
+- **Root cause of the deferred-CI red found and fixed:** the L1 remediation's boot
+  guard (`ValueRailStartup.GuardAccountPauseWired`) constructs `WalletKeyService`
+  in every host, and the IntegrationTest environment left `AZOA:WalletEncryptionKey`
+  empty — every factory-booted integration test died at Program boot. All three
+  test factories now share one random per-process key
+  (`AZOATestWebApplicationFactory.TestWalletEncryptionKey`; shared because
+  `ArdanovaSimulatedFactory` and the MCP factory write the same namespace, so rows
+  encrypted by one host must decrypt in another).
+- **Onboarding flow coverage of the Identomat drill is green in-process (36/36):**
+  KycOrphanRecovery (the 3 deferred reds), KycFirstParty (approve/abandon/reject/
+  replay/lost-callback-poll/operator-refresh), IdentityVerification,
+  BusinessVerification (KYB), HostedSessionReconciliation, UserController. The
+  LIVE vendor drill remains blocked on the Identomat trial account (unchanged).
+- **Unit suite 5509/5509:** the architecture scanners no longer read
+  `.worktrees/**` (`CSharpSource.ExcludedDirectories`), closing the 5 local-only
+  reds; CI never saw them (clean checkout).
+- **`Category=LocalChain`** quarantines the Solana/Algorand local-validator
+  protocol drills (no CI step provisions a validator); the CI integration filter
+  excludes it. Ethereum protocol tests stay in CI (contracts built there; the
+  same build now mirrored locally).
+- **Local full-assembly runs saturate the shared dev SurrealDB** (it also serves
+  the live dev node) and time out data-churny suites at their 8s client budget;
+  the integrated verdict is GitHub Actions' dedicated-container run. Local
+  proof: green per-family subsets + the unit suite.

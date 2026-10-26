@@ -8,6 +8,8 @@ using Solnet.Wallet;
 
 namespace AZOA.WebAPI.IntegrationTests.Deployments;
 
+// LocalChain: needs a pinned local Solana validator (AZOA_SOLANA_LOCAL_GENESIS); excluded in CI.
+[Trait("Category", "LocalChain")]
 public sealed class SolanaNativeProtocolTests
 {
     [Fact]

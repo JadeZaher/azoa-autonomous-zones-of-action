@@ -5,7 +5,7 @@ namespace AZOA.WebAPI.Tests.Architecture;
 /// <summary>Lightweight C# source model for architecture rules: string literals, comment-free code and line lookup; see Architecture/AGENTS.md §surrealql-source-rules.</summary>
 internal sealed class CSharpSource
 {
-    private static readonly string[] ExcludedDirectories = ["tests", "bin", "obj", "node_modules", "frontend", "sdk", "contracts", ".git", ".omc", "conductor", "docs"];
+    private static readonly string[] ExcludedDirectories = ["tests", "bin", "obj", "node_modules", "frontend", "sdk", "contracts", ".git", ".omc", ".worktrees", "conductor", "docs"];
     private readonly int[] _lineStarts;
 
     private CSharpSource(string relativePath, string text)

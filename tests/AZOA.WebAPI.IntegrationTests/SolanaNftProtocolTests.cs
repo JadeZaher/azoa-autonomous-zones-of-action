@@ -22,6 +22,8 @@ using Account = Solnet.Wallet.Account;
 
 namespace AZOA.WebAPI.IntegrationTests;
 
+// LocalChain: needs the local Solana validator rail (:18899); excluded in CI.
+[Trait("Category", "LocalChain")]
 public sealed class SolanaNftProtocolTests
 {
     [Fact]

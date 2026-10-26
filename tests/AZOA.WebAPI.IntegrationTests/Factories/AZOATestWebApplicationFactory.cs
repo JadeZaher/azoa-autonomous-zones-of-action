@@ -38,6 +38,14 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
     /// the real ApiKey handler and everything else to TestAuthHandler.</summary>
     private const string TestAuthForwardScheme = "TestAuthForward";
 
+    /// <summary>
+    /// One wallet-encryption key per test PROCESS, random, in memory only. Independent
+    /// hosts (ArdanovaSimulatedFactory, the MCP auth factory) share a namespace with
+    /// this factory's host, so rows encrypted by one must decrypt in the other.
+    /// </summary>
+    public static string TestWalletEncryptionKey { get; } =
+        Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+
     /// <summary>Creates the isolated namespace before application hosted services start.</summary>
     protected override IHost CreateHost(IHostBuilder builder)
     {
@@ -88,10 +96,9 @@ public class AZOATestWebApplicationFactory : WebApplicationFactory<Program>
                 ["AZOA:DefaultProvider"] = "SurrealDb",
 
                 // WalletKeyService refuses an empty key at construction, and the
-                // ValueRailStartup boot guard constructs it in every host; random
-                // per factory, in memory only (base appsettings.json leaves it empty).
-                ["AZOA:WalletEncryptionKey"] = Convert.ToHexString(
-                    System.Security.Cryptography.RandomNumberGenerator.GetBytes(24)),
+                // ValueRailStartup boot guard constructs it in every host; see
+                // TestWalletEncryptionKey for why every test host shares one key.
+                ["AZOA:WalletEncryptionKey"] = TestWalletEncryptionKey,
 
                 // Treasury routing validates the requested provider even while this
                 // host remains in Live mode; register its network-only test provider.

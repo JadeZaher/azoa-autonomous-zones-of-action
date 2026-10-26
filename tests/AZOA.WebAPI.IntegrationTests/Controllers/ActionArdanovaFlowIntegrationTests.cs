@@ -435,6 +435,8 @@ internal sealed class ArdanovaSimulatedFactory : WebApplicationFactory<Program>
                 ["Jwt:Key"]              = "super-secret-test-key-that-is-long-enough!",
                 ["Jwt:Issuer"]           = "test",
                 ["Jwt:Audience"]         = "test",
+                // Boot guard constructs WalletKeyService; shared key, see the base factory.
+                ["AZOA:WalletEncryptionKey"] = AZOATestWebApplicationFactory.TestWalletEncryptionKey,
                 ["SurrealDb:Endpoint"]   = SurrealTestDefaults.Endpoint,
                 ["SurrealDb:User"]       = SurrealTestDefaults.User,
                 ["SurrealDb:Password"]   = SurrealTestDefaults.Password,

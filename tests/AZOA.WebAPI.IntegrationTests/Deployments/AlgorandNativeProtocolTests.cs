@@ -26,6 +26,8 @@ using AlgoAccount = Algorand.Algod.Model.Account;
 
 namespace AZOA.WebAPI.IntegrationTests.Deployments;
 
+// LocalChain: needs a pinned local Algorand node (AZOA_ALGORAND_LOCAL_GENESIS); excluded in CI.
+[Trait("Category", "LocalChain")]
 public sealed class AlgorandNativeProtocolTests
 {
     [Fact]
