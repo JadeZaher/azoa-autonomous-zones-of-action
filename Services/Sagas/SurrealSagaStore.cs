@@ -215,7 +215,10 @@ public sealed class SurrealSagaStore : ISagaStore
         return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
             var response = await _executor.ExecuteAsync(q, ct);
-            if (response.Count == 0 || !response[0].IsOk)
+            // A conflict must THROW so the wrapper retries; a silent null here would
+            // make every contender (winner included) report "lost the race" (G2).
+            response.EnsureAllOk();
+            if (response.Count == 0)
                 return (SagaStepRecord?)null;
 
             // At most one row should match a given (correlation, gate) park; if more
@@ -282,9 +285,12 @@ public sealed class SurrealSagaStore : ISagaStore
         // retryable transaction conflict. Retry so the batch scan doesn't throw —
         // on retry the losing tick's predicate simply mutates the already-updated
         // rows to a no-op and the SELECT still returns the due ids.
-        var response = await SurrealTransientConflict.RetryOnConflictAsync(
-            () => _executor.ExecuteAsync(combined, ct), ct);
-        response.EnsureAllOk();
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var executed = await _executor.ExecuteAsync(combined, ct);
+            executed.EnsureAllOk(); // throw INSIDE the closure or the wrapper retries nothing
+            return executed;
+        }, ct);
 
         // Statement [2]: SELECT id projects to { "id": <thing> }; thing
         // serialization renders as a string of the form "saga_steps:<hex>" or
@@ -338,7 +344,12 @@ public sealed class SurrealSagaStore : ISagaStore
         return await SurrealTransientConflict.RetryOnConflictAsync(async () =>
         {
             var response = await _executor.ExecuteAsync(q, ct);
-            if (response.Count == 0 || !response[0].IsOk)
+            // A conflict must THROW so the wrapper retries. Swallowing it as null
+            // starved G2's 20-claimer race to ZERO winners on CI (2026-10-26):
+            // the engine aborts every contending transaction, so without the
+            // rethrow nobody ever lands the conditional UPDATE.
+            response.EnsureAllOk();
+            if (response.Count == 0)
                 return (SagaStepRecord?)null;
 
             var affected = response[0].AffectedCount();
