@@ -41,3 +41,12 @@ the owner resets the Railway SurrealDB volume before that deploy). Different gen
 skip the check with a notice. Otherwise the fix is a forward migration whose `DEFINE`s use `OVERWRITE`
 (`SurrealQlSourceRulesTests.Forward_migrations_change_definitions_with_OVERWRITE`; shipped migrations are exempt
 because their bytes are checksum-ledgered). Generation 2 is the round-4 reset.
+
+### Review 2026-10-26 (CI run 40263034250)
+
+Five history-only commits allowlisted (`[allowlist].commits`): QA LiveTests
+session recordings (`tests/AZOA.WebAPI.LiveTests/live-tests/*.jsonl`, legacy
+`OASIS.WebAPI.*` paths) that captured test-session API keys minted against
+throwaway local dev nodes. Files gone or superseded at HEAD; keys dead by
+construction (node-local, short-lived). Commit-scoped so any NEW leak in the
+same paths still fails the scan.
