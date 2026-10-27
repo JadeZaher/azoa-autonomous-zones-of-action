@@ -302,8 +302,8 @@ public partial class OffRampTests
         var ownHistory = await harness.Service.ListForUserAsync(SubjectUserId, 25, tenantOne);
 
         original.IsError.Should().BeFalse();
-        otherTenant.Code.Should().Be(AzoaErrorCodes.Conflict);
-        firstParty.Code.Should().Be(AzoaErrorCodes.Conflict);
+        otherTenant.Code.Should().Be(FiatConsumerErrors.RequestKeyInUseCode);
+        firstParty.Code.Should().Be(FiatConsumerErrors.RequestKeyInUseCode);
         otherHistory.Result.Should().BeEmpty();
         ownHistory.Result.Should().ContainSingle().Which.Id.Should().Be(original.Result!.Id);
         harness.SagasStarted.Should().Be(1);

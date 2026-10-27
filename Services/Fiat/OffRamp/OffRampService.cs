@@ -386,7 +386,7 @@ public sealed partial class OffRampService : IOffRamp
             return DroveBy(claim.Result.Row, request.TenantId)
                 ? AZOAResult<CashOutView>.Success(CashOutView.From(claim.Result.Row), "Success")
                 : AZOAResult<CashOutView>.FailureWithCode(
-                    "That request key is already in use.", AzoaErrorCodes.Conflict);
+                    "That request key is already in use.", FiatConsumerErrors.RequestKeyInUseCode);
 
         var row = claim.Result.Row;
 

@@ -598,12 +598,12 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             _logger.LogWarning(
                 "A funding intent was requested with an admission key already claimed by another account.");
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "That request key is already in use.", AzoaErrorCodes.Conflict);
+                "That request key is already in use.", FiatConsumerErrors.RequestKeyInUseCode);
         }
 
         if (HostedSessionStates.IsTerminal(session.State))
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This payment is already finished.", AzoaErrorCodes.Conflict);
+                "This payment is already finished.", FiatConsumerErrors.IntentFinishedCode);
 
         // A live claim that already carries a page is resumed verbatim: the whole point of the
         // admission key is that a refresh does not open a second payment.
@@ -611,8 +611,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             && !string.IsNullOrWhiteSpace(session.RedirectUrl)
             && (session.ExpiresAt is null || session.ExpiresAt > now))
         {
-            return AZOAResult<FiatCheckoutIntent>.Success(
-                await ProjectAsync(scope, session, resumed: true, ct), "Success");
+            return await ProjectAsync(scope, session, resumed: true, ct);
         }
 
         // D1 creation fence: exactly one Stripe create per claim incarnation, keyed by its durable
@@ -622,13 +621,13 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         {
             case FiatCreationVerdict.Attached:
                 return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                    "This payment page has expired. Start a new payment.", AzoaErrorCodes.Conflict);
+                    "This payment page has expired. Start a new payment.", FiatConsumerErrors.IntentExpiredCode);
             case FiatCreationVerdict.NeedsOperator:
                 _logger.LogError(
                     "Funding intent {IntentId} has an unattached payment page the node can no longer replay; operator reconciliation is required.",
                     session.Id);
                 return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                    "This payment needs a manual check before it can continue.", AzoaErrorCodes.Conflict);
+                    "This payment needs a manual check before it can continue.", FiatConsumerErrors.IntentNeedsReviewCode);
             case FiatCreationVerdict.Busy:
                 return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
         }
@@ -639,7 +638,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         var expiresAt = PinnedCheckoutExpiry(session.CreationStartedAt ?? now, checkout.SessionExpiryMinutes);
         if (expiresAt - now < StripeMinimumCheckoutLifetime)
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This payment page has expired. Start a new payment.", AzoaErrorCodes.Conflict);
+                "This payment page has expired. Start a new payment.", FiatConsumerErrors.IntentExpiredCode);
         var created = await _gateway.CreateCheckoutSessionAsync(
             _options.CredentialsFor(_environment),
             new StripeCheckoutSessionRequest
@@ -695,14 +694,12 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             var reread = await store.GetByIdAsync(sessionId, ct);
             if (!reread.IsError && reread.Result is not null && !string.IsNullOrWhiteSpace(reread.Result.RedirectUrl)
                 && string.Equals(reread.Result.ProviderSessionId, created.Result.SessionId, StringComparison.Ordinal))
-                return AZOAResult<FiatCheckoutIntent>.Success(
-                    await ProjectAsync(scope, reread.Result, resumed: true, ct), "Success");
+                return await ProjectAsync(scope, reread.Result, resumed: true, ct);
 
             return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
         }
 
-        return AZOAResult<FiatCheckoutIntent>.Success(
-            await ProjectAsync(scope, attached.Result, resumed: false, ct), "Success");
+        return await ProjectAsync(scope, attached.Result, resumed: false, ct);
     }
 
     /// <inheritdoc />
@@ -732,8 +729,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
                 "That payment could not be found.", AzoaErrorCodes.NotFound);
         }
 
-        return AZOAResult<FiatCheckoutIntent>.Success(
-            await ProjectAsync(scope, found.Result, resumed: true, ct), "Success");
+        return await ProjectAsync(scope, found.Result, resumed: true, ct);
     }
 
     // ─── IValueRailProvider: read ───
@@ -885,8 +881,11 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
     /// <summary>
     /// Projects one durable intent, adding the two facts only an external read can supply: what
     /// actually cleared (from the provider) and whether the funds have landed (from the inbox).
+    /// Fails outright, rather than answering with an invented <c>not_started</c>, when the
+    /// provider re-read cannot confirm what actually happened; see
+    /// <c>Providers/Fiat/AGENTS.md</c> §settlement-read-failure.
     /// </summary>
-    private async Task<FiatCheckoutIntent> ProjectAsync(
+    private async Task<AZOAResult<FiatCheckoutIntent>> ProjectAsync(
         IServiceScope scope, HostedSession session, bool resumed, CancellationToken ct)
     {
         long? amountPaid = null;
@@ -897,19 +896,31 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         {
             var fetched = await _gateway.GetCheckoutSessionAsync(
                 _options.CredentialsFor(_environment), session.ProviderSessionId!, ct);
-            if (!fetched.IsError && fetched.Result is not null)
+            if (fetched.IsError || fetched.Result is null)
             {
-                currency = fetched.Result.Currency;
-                var confirmation = ClassifySession(fetched.Result);
-                if (confirmation == ChainConfirmation.Confirmed)
-                {
-                    amountPaid = fetched.Result.AmountTotalMinorUnits;
-                    settlement = FiatSettlementStates.PaymentReceived;
-                }
-                else if (confirmation == ChainConfirmation.FailedOnChain)
-                {
-                    settlement = FiatSettlementStates.PaymentFailed;
-                }
+                // A session this node knows it created, but cannot currently read back, might
+                // already be a paid, closed intent. Reporting it would otherwise fall through to
+                // the NotStarted default above and lie "waiting for your payment" to a payer who
+                // already paid — inviting a second charge. Fail the whole read instead: the client
+                // treats this as transient and retries, never as "no payment yet".
+                _logger.LogWarning(
+                    "Funding intent {IntentId}'s provider session could not be re-read; refusing to report its settlement state.",
+                    session.Id);
+                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    "Your payment status could not be confirmed right now. Try again shortly.",
+                    AzoaErrorCodes.DependencyUnavailable);
+            }
+
+            currency = fetched.Result.Currency;
+            var confirmation = ClassifySession(fetched.Result);
+            if (confirmation == ChainConfirmation.Confirmed)
+            {
+                amountPaid = fetched.Result.AmountTotalMinorUnits;
+                settlement = FiatSettlementStates.PaymentReceived;
+            }
+            else if (confirmation == ChainConfirmation.FailedOnChain)
+            {
+                settlement = FiatSettlementStates.PaymentFailed;
             }
         }
 
@@ -927,7 +938,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             }
         }
 
-        return new FiatCheckoutIntent
+        return AZOAResult<FiatCheckoutIntent>.Success(new FiatCheckoutIntent
         {
             IntentId = TryParseIntentId(session.Id, out var projectedId) ? projectedId : Guid.Empty,
             AdmissionKey = session.AdmissionKey,
@@ -940,7 +951,7 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             AmountPaidMinorUnits = amountPaid,
             Currency = currency,
             ExpiresAt = session.ExpiresAt,
-        };
+        }, "Success");
     }
 }
 

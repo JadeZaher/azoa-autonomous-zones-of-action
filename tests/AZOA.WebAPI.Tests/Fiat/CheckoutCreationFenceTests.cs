@@ -45,7 +45,7 @@ public sealed class CheckoutCreationFenceTests
         harness.Clock.Advance(TimeSpan.FromMinutes(10));
         var replay = await harness.BeginAsync();
 
-        replay.Code.Should().Be(AzoaErrorCodes.Conflict);
+        replay.Code.Should().Be(FiatConsumerErrors.IntentExpiredCode);
         harness.Stripe.CreateCalls.Should().Be(1, "a create Stripe would refuse is never sent");
     }
 

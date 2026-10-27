@@ -469,6 +469,25 @@ public static class FiatConsumerErrors
     /// <summary>Wire code for a node that has no payment provider configured at all (QA M3): not transient, nothing to retry.</summary>
     public const string PaymentsNotConfiguredCode = "PAYMENTS_NOT_CONFIGURED";
 
+    /// <summary>
+    /// Same-key replay codes for a hosted checkout (and the cash-out claim that shares the
+    /// REQUEST_KEY_IN_USE situation). A persisted idempotency key resent after a lost answer
+    /// hits one of these 409s; the code tells the caller which one so it can stop polling,
+    /// start fresh, or keep waiting, instead of treating every 409 alike. The HTTP status (409)
+    /// and the human message stay exactly as they were — only this discriminator is new. These
+    /// four strings are a wire contract with the SDK and the ArdaNova BFF: never rename them.
+    /// </summary>
+    public const string RequestKeyInUseCode = "REQUEST_KEY_IN_USE";
+
+    /// <summary>The claim this key names has already reached a terminal state.</summary>
+    public const string IntentFinishedCode = "INTENT_FINISHED";
+
+    /// <summary>The hosted payment page this key named can no longer be replayed; start a new payment.</summary>
+    public const string IntentExpiredCode = "INTENT_EXPIRED";
+
+    /// <summary>The send outcome for this key can no longer be replayed safely; an operator must reconcile it.</summary>
+    public const string IntentNeedsReviewCode = "INTENT_NEEDS_REVIEW";
+
     private const string NotConfiguredMessage =
         "Adding funds is not configured on this node.";
 

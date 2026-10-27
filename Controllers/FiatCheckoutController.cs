@@ -131,6 +131,12 @@ public sealed class FiatCheckoutController : ControllerBase
         {
             AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
             AzoaErrorCodes.Conflict => Conflict(result),
+            // Same-key replay codes (F-?: replay-state machine codes): distinct situations, same
+            // 409 the caller always got; the new `code` field is what lets it tell them apart.
+            FiatConsumerErrors.RequestKeyInUseCode => Conflict(result),
+            FiatConsumerErrors.IntentFinishedCode => Conflict(result),
+            FiatConsumerErrors.IntentExpiredCode => Conflict(result),
+            FiatConsumerErrors.IntentNeedsReviewCode => Conflict(result),
             AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             FiatConsumerErrors.RailUnavailableCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             FiatConsumerErrors.PaymentsNotConfiguredCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
@@ -162,6 +168,13 @@ public sealed class FiatCheckoutController : ControllerBase
         var result = await rail!.GetIntentAsync(userId, intentId, actingTenantId, HttpContext.RequestAborted);
         if (!result.IsError)
             return Ok(result);
+
+        // A read whose settlement state could not be confirmed (the provider re-read failed) FAILS
+        // outright rather than answering 200 with an invented `not_started`; see
+        // FiatRailProvider.ProjectAsync and Providers/Fiat/AGENTS.md §settlement-read-failure. The
+        // client is expected to treat this as transient and retry, never as "no payment yet".
+        if (result.Code == AzoaErrorCodes.DependencyUnavailable)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, result);
 
         return result.Code == AzoaErrorCodes.NotFound ? NotFound(result) : BadRequest(result);
     }

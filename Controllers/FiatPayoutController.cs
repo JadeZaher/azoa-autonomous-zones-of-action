@@ -268,6 +268,9 @@ public sealed class FiatPayoutController : ControllerBase
         AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
         AzoaErrorCodes.NotFound => NotFound(result),
         AzoaErrorCodes.Conflict => Conflict(result),
+        // Same situation as the fiat checkout same-key replay: another driver reusing this key. Same
+        // 409 as always, now carrying the shared discriminator instead of the generic CONFLICT code.
+        FiatConsumerErrors.RequestKeyInUseCode => Conflict(result),
         AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
         FiatPayoutErrors.PayoutUnavailableCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
         FiatPayoutErrors.PayoutBusyCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),

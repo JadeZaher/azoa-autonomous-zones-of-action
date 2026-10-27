@@ -75,3 +75,33 @@ With no Connect secret (or the same value, as `stripe listen --forward-connect-t
 single platform secret verifies both. Register both endpoints in the Stripe dashboard: the platform
 endpoint for `checkout.session.*`, `charge.*`, `transfer.*`; the Connect endpoint for `payout.*` and
 `account.updated`. Both URLs are `POST /api/fiat/webhook/stripe`.
+
+## §same-key-replay-codes — telling one 409 from another
+
+A persisted idempotency key gets resent after a lost answer, and `BeginCheckoutAsync` (and the
+cash-out claim in `Services/Fiat/OffRamp/OffRampService.cs`) answers several different situations
+with the same HTTP 409 — a caller that only reads the status cannot tell "finished, start fresh"
+from "still in flight, keep waiting" from "wrong account". Each situation now carries a stable
+`code` on the existing `AZOAResult` envelope (`FiatConsumerErrors`), with the HTTP status and human
+message unchanged so this is additive for any caller that still only reads those:
+
+- `REQUEST_KEY_IN_USE` — a different account's `OwnedBy`/`DrivenBy` check failed on this key.
+- `INTENT_FINISHED` — `HostedSessionStates.IsTerminal` on the claimed row; nothing left to resume.
+- `INTENT_EXPIRED` — `FiatHostedCreation` reports the claim `Attached` with no resumable page, or
+  the pinned expiry (§expiry-pin) is inside the 31-minute floor.
+- `INTENT_NEEDS_REVIEW` — `FiatCreationVerdict.NeedsOperator`: the 23-hour replay window elapsed, or
+  the row is quarantined, with no provider session ever attached.
+
+These four strings are a wire contract with the SDK (`sdk/azoa-wallet`) and the ArdaNova BFF; never
+rename or repurpose them once shipped.
+
+## §settlement-read-failure — a read that cannot confirm state must fail, not guess
+
+`FiatRailProvider.ProjectAsync` re-reads Stripe to report `SettlementState`. When that re-read
+errors, the claim may already be a paid, closed intent — reporting the `NotStarted` default would
+tell a payer who already paid "waiting for your payment", inviting a second charge. `ProjectAsync`
+instead fails the whole projection with `AzoaErrorCodes.DependencyUnavailable` (503), so
+`BeginCheckoutAsync` and `GetIntentAsync` (and therefore `FiatCheckoutController.Start`/`Get`) answer
+with a retryable failure rather than a lying 200. The oasis-sleek frontend's
+`isDefiniteRefusal` (`frontend/src/lib/persisted-request-key.ts`) already treats every 5xx as "keep
+the saved key and retry", so this needs no frontend change to stop being unsafe.
