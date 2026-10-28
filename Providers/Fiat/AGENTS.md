@@ -87,13 +87,40 @@ message unchanged so this is additive for any caller that still only reads those
 
 - `REQUEST_KEY_IN_USE` — a different account's `OwnedBy`/`DrivenBy` check failed on this key.
 - `INTENT_FINISHED` — `HostedSessionStates.IsTerminal` on the claimed row; nothing left to resume.
-- `INTENT_EXPIRED` — `FiatHostedCreation` reports the claim `Attached` with no resumable page, or
-  the pinned expiry (§expiry-pin) is inside the 31-minute floor.
+- `INTENT_EXPIRED` — see the proof rule below; nothing else may emit it.
 - `INTENT_NEEDS_REVIEW` — `FiatCreationVerdict.NeedsOperator`: the 23-hour replay window elapsed, or
   the row is quarantined, with no provider session ever attached.
 
 These four strings are a wire contract with the SDK (`sdk/azoa-wallet`) and the ArdaNova BFF; never
 rename or repurpose them once shipped.
+
+**The proof rule.** Clients treat all four codes as FINAL: they release the request key and unlock
+the form. So a final code may be sent only when the code path that emits it can PROVE nothing was or
+can be paid under that key. Anything it cannot prove gets a non-final answer — a 200 projection, a
+503, or the generic 409 `CONFLICT` — because a final code on a payment that is clearing is a double
+charge (the person pays again on a fresh key). The full same-key resend contract for checkout begin
+(`FiatRailProvider.BeginCheckoutAsync`; the SDK emulator mirrors this table):
+
+| situation (key already admitted) | answer |
+|---|---|
+| page attached, open and inside its lifetime | 200, resumed, `paymentUrl` set |
+| Stripe says the session is `complete` (paid OR unpaid), or the intent is `AwaitingOutcome` / `Resuming` | 200, resumed, the projection, `paymentUrl: null` |
+| the Stripe re-read fails | 503 `DEPENDENCY_UNAVAILABLE` (§settlement-read-failure) |
+| intent terminal | 409 `INTENT_FINISHED` |
+| page attached + past expiry AND intent `AwaitingSubject` AND a FRESH Stripe read says not complete (`expired` unpaid, or `open` past its own `expires_at`) | 409 `INTENT_EXPIRED` — the only case |
+| no page ever created and the pinned expiry is inside the 31-minute floor (§expiry-pin) | 409 `INTENT_EXPIRED` (nothing was ever payable) |
+| needs operator | 409 `INTENT_NEEDS_REVIEW` |
+| key bound to another account | 409 `REQUEST_KEY_IN_USE` |
+| Stripe answers 409 / `idempotency_key_in_use` (a same-key request still in flight) | 409 `CONFLICT` (`FiatConsumerErrors.RequestInFlight`) — keep the key, retry |
+
+Where it lives: the `FiatCreationVerdict.Attached` branch calls `ResumeAttachedAsync`, which re-reads
+Stripe BEFORE deciding and returns `INTENT_EXPIRED` only when `ProvesNothingPaid` holds; otherwise it
+answers with `ProjectAsync`. The fence's verdict alone is not proof — it only says a Stripe session
+exists, which is exactly when something may have been paid. `ProjectAsync` hands back `paymentUrl`
+only while the intent is `awaiting_payment` and Stripe reads `open`, and reports `processing` once
+Stripe says `complete` even if the webhook has not moved the claim yet. `StripeGateway.SendAsync`
+maps every Stripe 409 (and the `idempotency_key_in_use` code) to the non-final `CONFLICT`, never to
+`RAIL_REFUSED`/400, which clients treat as final.
 
 ## §settlement-read-failure — a read that cannot confirm state must fail, not guess
 

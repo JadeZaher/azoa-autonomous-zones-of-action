@@ -103,6 +103,9 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
     /// <summary>Named <see cref="IHttpClientFactory"/> client for the Stripe REST surface.</summary>
     public const string HttpClientName = "stripe";
 
+    /// <summary>Stripe's <c>error.code</c> for a request whose idempotency key is held by a concurrent in-flight request.</summary>
+    public const string IdempotencyKeyInUseErrorCode = "idempotency_key_in_use";
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<StripeGateway> _logger;
 
@@ -243,15 +246,20 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
 
             if (!response.IsSuccessStatusCode)
             {
+                var stripeErrorCode = ReadErrorCode(body);
                 _logger.LogError(
-                    "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId}",
-                    attemptedAction, (int)response.StatusCode, correlationId);
+                    "Stripe refused an attempt to {AttemptedAction} ({Status}, {StripeErrorCode}). correlationId={CorrelationId}",
+                    attemptedAction, (int)response.StatusCode, stripeErrorCode ?? "none", correlationId);
 
-                // 429 and 5xx are the rail being busy; anything else is a request this node
-                // built wrongly, which a consumer cannot fix by retrying.
-                return (int)response.StatusCode is 429 or >= 500
-                    ? FiatConsumerErrors.RailBusy<T>(correlationId)
-                    : FiatConsumerErrors.RailRefused<T>(correlationId);
+                // 429 and 5xx are the rail being busy. A 409 / idempotency_key_in_use is a same-key
+                // request still IN FLIGHT, so it must stay non-final (see Providers/Fiat/AGENTS.md
+                // §same-key-replay-codes). Anything else is a request this node built wrongly.
+                var status = (int)response.StatusCode;
+                if (status is 429 or >= 500)
+                    return FiatConsumerErrors.RailBusy<T>(correlationId);
+                if (status == 409 || string.Equals(stripeErrorCode, IdempotencyKeyInUseErrorCode, StringComparison.Ordinal))
+                    return FiatConsumerErrors.RequestInFlight<T>(correlationId);
+                return FiatConsumerErrors.RailRefused<T>(correlationId);
             }
 
             var parsed = parse(body);
@@ -310,6 +318,27 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
                 ExpiresAt = ReadUnixSeconds(root, "expires_at"),
                 ClientReferenceId = ReadString(root, "client_reference_id"),
             };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Stripe's machine <c>error.code</c> from an error body, or null. Never the message text.</summary>
+    private static string? ReadErrorCode(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.Object
+                    ? ReadString(error, "code")
+                    : null;
         }
         catch (JsonException)
         {
@@ -500,6 +529,9 @@ public static class FiatConsumerErrors
     private const string RefusedMessage =
         "This payment could not be started. Nothing was charged.";
 
+    private const string InFlightMessage =
+        "This payment request is still being processed. Keep this request and try again shortly.";
+
     public static AZOAResult<T> RailUnavailable<T>() =>
         AZOAResult<T>.FailureWithCode(UnavailableMessage, RailUnavailableCode);
 
@@ -515,6 +547,10 @@ public static class FiatConsumerErrors
 
     public static AZOAResult<T> RailRefused<T>(string? correlationId = null) =>
         AZOAResult<T>.FailureWithCode(WithReference(RefusedMessage, correlationId), RailRefusedCode);
+
+    /// <summary>A same-key request is still in flight at the rail: the generic, NON-final 409 <see cref="AzoaErrorCodes.Conflict"/>.</summary>
+    public static AZOAResult<T> RequestInFlight<T>(string? correlationId = null) =>
+        AZOAResult<T>.FailureWithCode(WithReference(InFlightMessage, correlationId), AzoaErrorCodes.Conflict);
 
     private static string WithReference(string message, string? correlationId) =>
         string.IsNullOrWhiteSpace(correlationId) ? message : $"{message} Reference: {correlationId}.";

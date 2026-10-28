@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 
+using System.Net;
 using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
 using AZOA.WebAPI.Controllers;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces;
@@ -20,61 +23,157 @@ using Moq;
 namespace AZOA.WebAPI.Tests.Fiat;
 
 /// <summary>
-/// A resent idempotency key used to collapse every same-key situation into one indistinguishable
-/// 409 (plain <see cref="AzoaErrorCodes.Conflict"/>). These drive each situation through
-/// <see cref="FiatCheckoutController"/> backed by the real <see cref="FiatRailProvider"/> and
-/// in-memory hosted-session store — only Stripe HTTP is faked — and assert the specific wire code a
-/// client now gets to tell "finished" from "still in flight" from "needs a new payment", with the
-/// same 409 and the same human message as before.
+/// The same-key resend contract for checkout begin (Providers/Fiat/AGENTS.md §same-key-replay-codes),
+/// driven through <see cref="FiatCheckoutController"/>, the real <see cref="FiatRailProvider"/>, the
+/// real <see cref="StripeGateway"/> and the in-memory hosted-session store. Only Stripe's HTTP is fake.
 /// </summary>
 public sealed class FiatCheckoutSameKeyReplayTests
 {
+    private static readonly string[] FinalCodes =
+    {
+        FiatConsumerErrors.RequestKeyInUseCode, FiatConsumerErrors.IntentFinishedCode,
+        FiatConsumerErrors.IntentExpiredCode, FiatConsumerErrors.IntentNeedsReviewCode,
+    };
+
+    /// <summary>One row of the contract: what Stripe and the node know when the key is resent, and the answer owed.</summary>
+    public sealed record Situation(
+        string? StripeStatus,
+        string? StripePaymentStatus,
+        string? LocalState,
+        TimeSpan ResendAfter,
+        bool StripeReadFails,
+        int ExpectedHttp,
+        string? ExpectedCode,
+        string? ExpectedStatus = null,
+        string? ExpectedSettlement = null,
+        bool ExpectPaymentUrl = false);
+
+    private static readonly TimeSpan WithinLifetime = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan PastExpiry = TimeSpan.FromMinutes(40);
+
+    private static readonly Dictionary<string, Situation> Contract = new()
+    {
+        ["page open and inside its lifetime"] = new(null, null, null, WithinLifetime, false,
+            200, null, FiatIntentStatuses.AwaitingPayment, FiatSettlementStates.NotStarted, ExpectPaymentUrl: true),
+        ["bank debit clearing (AwaitingOutcome), page past expiry"] = new("complete", "unpaid", HostedSessionStates.AwaitingOutcome, PastExpiry, false,
+            200, null, FiatIntentStatuses.Processing, FiatSettlementStates.NotStarted),
+        ["node parked it as clearing while Stripe still reads open, page past expiry"] = new("open", "unpaid", HostedSessionStates.AwaitingOutcome, PastExpiry, false,
+            200, null, FiatIntentStatuses.Processing, FiatSettlementStates.NotStarted),
+        ["settlement resuming, page past expiry"] = new("complete", "paid", HostedSessionStates.Resuming, PastExpiry, false,
+            200, null, FiatIntentStatuses.Processing, FiatSettlementStates.PaymentReceived),
+        ["card paid at Stripe, webhook not yet processed, page past expiry"] = new("complete", "paid", null, PastExpiry, false,
+            200, null, FiatIntentStatuses.Processing, FiatSettlementStates.PaymentReceived),
+        ["card paid at Stripe, page still inside its lifetime"] = new("complete", "paid", null, WithinLifetime, false,
+            200, null, FiatIntentStatuses.Processing, FiatSettlementStates.PaymentReceived),
+        ["bank debit submitted at Stripe, webhook not yet processed, page past expiry"] = new("complete", "unpaid", null, PastExpiry, false,
+            200, null, FiatIntentStatuses.Processing, FiatSettlementStates.NotStarted),
+        ["Stripe re-read fails, page past expiry"] = new(null, null, null, PastExpiry, true,
+            503, AzoaErrorCodes.DependencyUnavailable),
+        ["Stripe re-read fails, page inside its lifetime"] = new(null, null, null, WithinLifetime, true,
+            503, AzoaErrorCodes.DependencyUnavailable),
+        ["intent completed"] = new("complete", "paid", HostedSessionStates.Completed, WithinLifetime, false,
+            409, FiatConsumerErrors.IntentFinishedCode),
+        ["Stripe expired the unpaid session"] = new("expired", "unpaid", null, PastExpiry, false,
+            409, FiatConsumerErrors.IntentExpiredCode),
+        ["Stripe still reads open but unpaid, page past expiry"] = new("open", "unpaid", null, PastExpiry, false,
+            409, FiatConsumerErrors.IntentExpiredCode),
+    };
+
+    public static TheoryData<string> ContractRows()
+    {
+        var rows = new TheoryData<string>();
+        foreach (var row in Contract.Keys)
+            rows.Add(row);
+        return rows;
+    }
+
+    [Theory]
+    [MemberData(nameof(ContractRows))]
+    public async Task A_resent_key_gets_the_answer_the_same_key_contract_owes(string row)
+    {
+        var situation = Contract[row];
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+
+        var opened = Unwrap(await harness.StartAsync(subject, "resend-key"));
+        opened.Http.Should().Be(200);
+        var first = opened.Body.Result!;
+        first.PaymentUrl.Should().NotBeNull();
+
+        if (situation.StripeStatus is not null)
+            harness.Stripe.Settle(first.IntentId, situation.StripeStatus, situation.StripePaymentStatus!);
+        if (situation.LocalState is not null)
+            await harness.TransitionAsync(first.IntentId, situation.LocalState);
+        harness.Clock.Advance(situation.ResendAfter);
+        harness.Stripe.FailNextGet = situation.StripeReadFails;
+
+        var (http, body) = Unwrap(await harness.StartAsync(subject, "resend-key"));
+
+        http.Should().Be(situation.ExpectedHttp, row);
+        body.Code.Should().Be(situation.ExpectedCode, row);
+        harness.Stripe.SessionsCreated.Should().Be(1, "a resend never opens a second payment page");
+        if (situation.ExpectedHttp != 200)
+        {
+            body.Result.Should().BeNull();
+            return;
+        }
+
+        var resumed = body.Result!;
+        resumed.Resumed.Should().BeTrue();
+        resumed.IntentId.Should().Be(first.IntentId);
+        resumed.Status.Should().Be(situation.ExpectedStatus, row);
+        resumed.SettlementState.Should().Be(situation.ExpectedSettlement, row);
+        if (situation.ExpectPaymentUrl)
+            resumed.PaymentUrl.Should().Be(first.PaymentUrl);
+        else
+            resumed.PaymentUrl.Should().BeNull("a page that can no longer take a payment is never handed back");
+        resumed.AmountPaidMinorUnits.Should().Be(
+            situation.ExpectedSettlement == FiatSettlementStates.PaymentReceived ? (long?)1_000 : null);
+    }
+
     [Fact]
-    public async Task Each_same_key_situation_answers_409_with_its_own_code_and_unchanged_message()
+    public async Task Stripe_idempotency_key_in_use_is_a_non_final_409_and_the_retry_resumes_the_same_page()
+    {
+        var harness = new Harness();
+        var subject = Guid.NewGuid();
+        harness.Stripe.NextCreateCollidesWithInFlightRequest = true;
+
+        var collided = await harness.StartAsync(subject, "in-flight-key");
+
+        collided.Result.Should().BeOfType<ConflictObjectResult>("a same-key request still in flight is not a refusal");
+        var (http, body) = Unwrap(collided);
+        http.Should().Be(StatusCodes.Status409Conflict);
+        body.Code.Should().Be(AzoaErrorCodes.Conflict);
+        FinalCodes.Should().NotContain(body.Code, "clients release the key on a final code");
+
+        var retried = Unwrap(await harness.StartAsync(subject, "in-flight-key"));
+        retried.Http.Should().Be(200);
+        retried.Body.Result!.PaymentUrl.Should().Be(harness.Stripe.UrlOf(retried.Body.Result.IntentId));
+        harness.Stripe.SessionsCreated.Should().Be(1, "keeping the key let the retry find the in-flight request's page");
+    }
+
+    [Fact]
+    public async Task Another_accounts_key_and_an_unreplayable_create_answer_their_own_409_codes()
     {
         var harness = new Harness();
 
-        // REQUEST_KEY_IN_USE: a second account replaying the FIRST account's literal admission
-        // key. The controller always folds the caller's own subject into the key it builds, so
-        // this collision can only be produced by calling the rail directly with an explicit
-        // shared key — exactly what a caller who ignored namespacing (or a bug upstream) would
-        // send. The other three situations below are single-caller replays and go through the
-        // full controller, which exercises the same status-mapping switch this code shares.
-        var owner = Guid.NewGuid();
-        var intruder = Guid.NewGuid();
+        // REQUEST_KEY_IN_USE: only reachable on the rail with an explicit shared admission key; the
+        // controller always folds the caller's own subject into the key it builds.
         const string sharedKey = "shared-admission-key";
-        (await harness.Rail.BeginCheckoutAsync(harness.Request(owner, sharedKey))).IsError.Should().BeFalse();
-        var keyInUse = await harness.Rail.BeginCheckoutAsync(harness.Request(intruder, sharedKey));
-        keyInUse.IsError.Should().BeTrue();
+        (await harness.Rail.BeginCheckoutAsync(harness.Request(Guid.NewGuid(), sharedKey))).IsError.Should().BeFalse();
+        var keyInUse = await harness.Rail.BeginCheckoutAsync(harness.Request(Guid.NewGuid(), sharedKey));
         keyInUse.Code.Should().Be(FiatConsumerErrors.RequestKeyInUseCode);
         keyInUse.Message.Should().Be("That request key is already in use.");
 
-        // INTENT_FINISHED: the claim this key names already reached a terminal state.
-        var finishedSubject = Guid.NewGuid();
-        var opened = await harness.StartAsync(finishedSubject, "finished-key");
-        opened.Result.Should().BeOfType<OkObjectResult>();
-        var openedIntent = ((AZOAResult<FiatCheckoutIntent>)((OkObjectResult)opened.Result!).Value!).Result!;
-        await harness.CompleteAsync(openedIntent.IntentId);
-        var finished = await harness.StartAsync(finishedSubject, "finished-key");
-        AssertConflict(finished, FiatConsumerErrors.IntentFinishedCode, "This payment is already finished.");
-
-        // INTENT_EXPIRED: the claim's hosted page outlived its pinned lifetime (D8), so
-        // FiatHostedCreation reports the claim Attached with nothing left it can replay.
-        var expiredSubject = Guid.NewGuid();
-        (await harness.StartAsync(expiredSubject, "expired-key")).Result.Should().BeOfType<OkObjectResult>();
-        harness.Clock.Advance(TimeSpan.FromMinutes(40));
-        var expired = await harness.StartAsync(expiredSubject, "expired-key");
-        AssertConflict(expired, FiatConsumerErrors.IntentExpiredCode, "This payment page has expired. Start a new payment.");
-
-        // INTENT_NEEDS_REVIEW: the creation fence's 23-hour replay window elapsed with no
-        // provider session ever attached; only an operator can reconcile from here.
+        // INTENT_NEEDS_REVIEW: the 23-hour replay window elapsed with no provider session attached.
         var reviewSubject = Guid.NewGuid();
         harness.Stripe.LoseNextCreateResponse = true;
-        var lost = await harness.StartAsync(reviewSubject, "review-key");
-        lost.Result.Should().NotBeOfType<OkObjectResult>("the lost create response must not look like a success");
+        Unwrap(await harness.StartAsync(reviewSubject, "review-key")).Http.Should().Be(503);
         harness.Clock.Advance(TimeSpan.FromHours(24));
-        var needsReview = await harness.StartAsync(reviewSubject, "review-key");
-        AssertConflict(needsReview, FiatConsumerErrors.IntentNeedsReviewCode, "This payment needs a manual check before it can continue.");
+        var (http, body) = Unwrap(await harness.StartAsync(reviewSubject, "review-key"));
+        http.Should().Be(409);
+        body.Code.Should().Be(FiatConsumerErrors.IntentNeedsReviewCode);
+        body.Message.Should().Be("This payment needs a manual check before it can continue.");
     }
 
     [Fact]
@@ -86,37 +185,24 @@ public sealed class FiatCheckoutSameKeyReplayTests
         var opened = await harness.Rail.BeginCheckoutAsync(harness.Request(subject, "reread-key"));
         opened.IsError.Should().BeFalse(opened.Message);
 
-        // Stripe is reachable for creation but the re-read this GET depends on fails: exactly the
-        // "may already be a paid, closed intent" situation FIX 2 covers.
         harness.Stripe.FailNextGet = true;
-        var read = await harness.Controller(subject).Get(subject, opened.Result!.IntentId);
+        var (http, body) = Unwrap(await harness.Controller(subject).Get(subject, opened.Result!.IntentId));
 
-        read.Result.Should().BeOfType<ObjectResult>(
-            "a read that cannot confirm settlement state must fail outright, never answer 200 with an invented not_started");
-        var failure = (ObjectResult)read.Result!;
-        failure.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-        var body = failure.Value.Should().BeOfType<AZOAResult<FiatCheckoutIntent>>().Subject;
-        body.IsError.Should().BeTrue();
+        http.Should().Be(StatusCodes.Status503ServiceUnavailable);
         body.Code.Should().Be(AzoaErrorCodes.DependencyUnavailable);
         body.Result.Should().BeNull("a failed read must not hand back any settlement state, invented or otherwise");
     }
 
-    private static void AssertConflict(
-        ActionResult<AZOAResult<FiatCheckoutIntent>> result, string code, string message)
+    private static (int Http, AZOAResult<FiatCheckoutIntent> Body) Unwrap(ActionResult<AZOAResult<FiatCheckoutIntent>> result)
     {
-        result.Result.Should().BeOfType<ConflictObjectResult>();
-        var conflict = (ConflictObjectResult)result.Result!;
-        conflict.StatusCode.Should().Be(StatusCodes.Status409Conflict);
-        var body = conflict.Value.Should().BeOfType<AZOAResult<FiatCheckoutIntent>>().Subject;
-        body.IsError.Should().BeTrue();
-        body.Code.Should().Be(code);
-        body.Message.Should().Be(message);
+        var answer = result.Result.Should().BeAssignableTo<ObjectResult>().Subject;
+        return (answer.StatusCode ?? 200, answer.Value.Should().BeOfType<AZOAResult<FiatCheckoutIntent>>().Subject);
     }
 
     private sealed class Harness
     {
         public ManualClock Clock { get; } = new(new DateTimeOffset(2026, 10, 17, 12, 0, 0, TimeSpan.Zero));
-        public ReplayStripe Stripe { get; } = new();
+        public FakeStripeHttp Stripe { get; }
         public FiatRailProvider Rail { get; }
         private readonly FiatOptions _options;
         private readonly IValueRailProviderFactory _factory;
@@ -133,6 +219,11 @@ public sealed class FiatCheckoutSameKeyReplayTests
             _options.Checkout.DefaultSuccessUrl = "https://app.example/funds/done";
             _options.Checkout.DefaultCancelUrl = "https://app.example/funds";
 
+            Stripe = new FakeStripeHttp();
+            var httpClients = new Mock<IHttpClientFactory>();
+            httpClients.Setup(factory => factory.CreateClient(StripeGateway.HttpClientName)).Returns(new HttpClient(Stripe));
+            var gateway = new StripeGateway(httpClients.Object, NullLogger<StripeGateway>.Instance);
+
             var kyc = new Mock<IRealValueKycGate>();
             kyc.Setup(gate => gate.RequireCurrentApprovalAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(AZOAResult<bool>.Success(true));
@@ -142,7 +233,7 @@ public sealed class FiatCheckoutSameKeyReplayTests
                 .AddSingleton(kyc.Object)
                 .BuildServiceProvider();
 
-            Rail = new FiatRailProvider(_options, Stripe, services.GetRequiredService<IServiceScopeFactory>(),
+            Rail = new FiatRailProvider(_options, gateway, services.GetRequiredService<IServiceScopeFactory>(),
                 NullLogger<FiatRailProvider>.Instance, Clock);
             _factory = new SingleRailFactory(Rail);
         }
@@ -170,13 +261,12 @@ public sealed class FiatCheckoutSameKeyReplayTests
         public Task<ActionResult<AZOAResult<FiatCheckoutIntent>>> StartAsync(Guid subject, string requestKey) =>
             Controller(subject).Start(subject, new FiatCheckoutStartRequest { RequestKey = requestKey, AmountMinorUnits = 1_000 });
 
-        /// <summary>Drives a claim straight to a terminal state, as a settlement handler would, without a real webhook.</summary>
-        public async Task CompleteAsync(Guid intentId)
+        /// <summary>Moves the claim as the webhook inbox / settlement handler would, without a real delivery.</summary>
+        public async Task TransitionAsync(Guid intentId, string state)
         {
             var row = (await _store.GetByIdAsync(intentId)).Result!;
-            var transitioned = await _store.TryTransitionAsync(
-                intentId, row.StateVersion, HostedSessionStates.Completed, null, null, null);
-            transitioned.IsError.Should().BeFalse();
+            var transitioned = await _store.TryTransitionAsync(intentId, row.StateVersion, state, null, null, null);
+            transitioned.Result.Should().NotBeNull();
         }
     }
 
@@ -203,69 +293,150 @@ public sealed class FiatCheckoutSameKeyReplayTests
     }
 
     /// <summary>
-    /// Stripe's idempotency contract (same key + same parameters -> same object) plus two
-    /// one-shot failure toggles: a lost create response, and a re-read that cannot be confirmed.
+    /// Stripe's Checkout Sessions HTTP surface: same idempotency key + same form → the same session,
+    /// plus scripted faults (a lost create response, an unreachable re-read, a same-key request
+    /// still in flight) and a way to move a session the way a payer's actions at Stripe would.
     /// </summary>
-    private sealed class ReplayStripe : IStripeGateway
+    private sealed class FakeStripeHttp : HttpMessageHandler
     {
-        private readonly Dictionary<string, (string Fingerprint, StripeCheckoutSession Session)> _byKey = new();
+        private readonly Dictionary<string, (string Form, StripeSessionState Session)> _byKey = new();
         private readonly object _gate = new();
-        private int _sessionsCreated;
 
+        public int SessionsCreated { get; private set; }
         public bool LoseNextCreateResponse { get; set; }
         public bool FailNextGet { get; set; }
+        public bool NextCreateCollidesWithInFlightRequest { get; set; }
 
-        public Task<AZOAResult<StripeCheckoutSession>> CreateCheckoutSessionAsync(
-            StripeCredentials credentials, StripeCheckoutSessionRequest request, CancellationToken ct = default)
+        /// <summary>Moves the session Stripe holds for <paramref name="intentId"/>, as the payer's actions there would.</summary>
+        public void Settle(Guid intentId, string status, string paymentStatus)
         {
             lock (_gate)
             {
-                var fingerprint = $"{request.IntentId}|{request.AmountMinorUnits}|{request.Currency}|{request.ExpiresAt:O}|{request.SuccessUrl}|{request.CancelUrl}";
-                if (_byKey.TryGetValue(request.IdempotencyKey, out var existing))
-                {
-                    return Task.FromResult(existing.Fingerprint == fingerprint
-                        ? AZOAResult<StripeCheckoutSession>.Success(existing.Session)
-                        : AZOAResult<StripeCheckoutSession>.Failure("idempotency_error: parameters differ for this key"));
-                }
+                var session = SessionFor(intentId);
+                session.Status = status;
+                session.PaymentStatus = paymentStatus;
+            }
+        }
 
-                _sessionsCreated++;
-                var session = new StripeCheckoutSession
+        public string UrlOf(Guid intentId)
+        {
+            lock (_gate)
+                return SessionFor(intentId).Url;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (request.Method == HttpMethod.Post && path == "/v1/checkout/sessions")
+            {
+                var form = await request.Content!.ReadAsStringAsync(cancellationToken);
+                var key = request.Headers.TryGetValues("Idempotency-Key", out var keys) ? keys.Single() : string.Empty;
+                return Create(key, form);
+            }
+
+            if (request.Method == HttpMethod.Get && path.StartsWith("/v1/checkout/sessions/", StringComparison.Ordinal))
+                return Read(Uri.UnescapeDataString(path["/v1/checkout/sessions/".Length..]));
+
+            return Error(HttpStatusCode.NotFound, "resource_missing");
+        }
+
+        private HttpResponseMessage Create(string idempotencyKey, string form)
+        {
+            lock (_gate)
+            {
+                if (_byKey.TryGetValue(idempotencyKey, out var existing))
+                    return existing.Form == form
+                        ? Json(HttpStatusCode.OK, existing.Session.ToJson())
+                        : Error(HttpStatusCode.BadRequest, "idempotency_error");
+
+                SessionsCreated++;
+                var fields = ParseForm(form);
+                var session = new StripeSessionState
                 {
-                    SessionId = $"cs_test_{_sessionsCreated}",
-                    Url = $"https://checkout.stripe.example/cs_test_{_sessionsCreated}",
-                    Status = "open",
-                    PaymentStatus = "unpaid",
-                    ExpiresAt = request.ExpiresAt,
-                    ClientReferenceId = request.IntentId,
+                    Id = $"cs_test_{SessionsCreated}",
+                    Url = $"https://checkout.stripe.example/cs_test_{SessionsCreated}",
+                    AmountTotal = long.Parse(fields["line_items[0][price_data][unit_amount]"]),
+                    Currency = fields["line_items[0][price_data][currency]"],
+                    ExpiresAt = fields.TryGetValue("expires_at", out var expires) ? long.Parse(expires) : null,
+                    ClientReferenceId = fields["client_reference_id"],
                 };
-                _byKey[request.IdempotencyKey] = (fingerprint, session);
+                _byKey[idempotencyKey] = (form, session);
+
+                if (NextCreateCollidesWithInFlightRequest)
+                {
+                    // Another request holding this key is still running at Stripe; it will finish
+                    // and own the session, but THIS request is told the key is busy.
+                    NextCreateCollidesWithInFlightRequest = false;
+                    return Error(HttpStatusCode.Conflict, StripeGateway.IdempotencyKeyInUseErrorCode);
+                }
 
                 if (LoseNextCreateResponse)
                 {
                     LoseNextCreateResponse = false;
-                    return Task.FromResult(AZOAResult<StripeCheckoutSession>.Failure("The response was lost."));
+                    throw new HttpRequestException("The connection was reset after Stripe created the session.");
                 }
 
-                return Task.FromResult(AZOAResult<StripeCheckoutSession>.Success(session));
+                return Json(HttpStatusCode.OK, session.ToJson());
             }
         }
 
-        public Task<AZOAResult<StripeCheckoutSession>> GetCheckoutSessionAsync(
-            StripeCredentials credentials, string sessionId, CancellationToken ct = default)
+        private HttpResponseMessage Read(string sessionId)
         {
             lock (_gate)
             {
                 if (FailNextGet)
                 {
                     FailNextGet = false;
-                    return Task.FromResult(AZOAResult<StripeCheckoutSession>.Failure("Stripe could not be reached."));
+                    throw new HttpRequestException("Stripe could not be reached.");
                 }
 
-                var found = _byKey.Values.Select(entry => entry.Session).FirstOrDefault(session => session.SessionId == sessionId);
-                return Task.FromResult(found is null
-                    ? AZOAResult<StripeCheckoutSession>.Failure("No such session.")
-                    : AZOAResult<StripeCheckoutSession>.Success(found));
+                var found = _byKey.Values.Select(entry => entry.Session).FirstOrDefault(session => session.Id == sessionId);
+                return found is null ? Error(HttpStatusCode.NotFound, "resource_missing") : Json(HttpStatusCode.OK, found.ToJson());
             }
         }
+
+        private StripeSessionState SessionFor(Guid intentId) =>
+            _byKey.Values.Select(entry => entry.Session).Single(session => session.ClientReferenceId == intentId.ToString("N"));
+
+        private static Dictionary<string, string> ParseForm(string form) => form
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split('=', 2))
+            .ToDictionary(
+                parts => Uri.UnescapeDataString(parts[0].Replace('+', ' ')),
+                parts => parts.Length > 1 ? Uri.UnescapeDataString(parts[1].Replace('+', ' ')) : string.Empty);
+
+        private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
+            new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+        private static HttpResponseMessage Error(HttpStatusCode status, string code) => Json(status, JsonSerializer.Serialize(new
+        {
+            error = new { code, type = "invalid_request_error", message = "Stripe-side detail that must never reach a consumer." },
+        }));
+    }
+
+    private sealed class StripeSessionState
+    {
+        public string Id { get; init; } = string.Empty;
+        public string Url { get; init; } = string.Empty;
+        public string Status { get; set; } = "open";
+        public string PaymentStatus { get; set; } = "unpaid";
+        public long AmountTotal { get; init; }
+        public string Currency { get; init; } = "usd";
+        public long? ExpiresAt { get; init; }
+        public string ClientReferenceId { get; init; } = string.Empty;
+
+        public string ToJson() => JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["id"] = Id,
+            ["object"] = "checkout.session",
+            ["url"] = Status == "open" ? Url : null,
+            ["status"] = Status,
+            ["payment_status"] = PaymentStatus,
+            ["amount_total"] = AmountTotal,
+            ["currency"] = Currency,
+            ["livemode"] = false,
+            ["expires_at"] = ExpiresAt,
+            ["client_reference_id"] = ClientReferenceId,
+        });
     }
 }

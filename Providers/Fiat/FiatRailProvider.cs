@@ -620,8 +620,9 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         switch (turn.Verdict)
         {
             case FiatCreationVerdict.Attached:
-                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                    "This payment page has expired. Start a new payment.", FiatConsumerErrors.IntentExpiredCode);
+                // A Stripe session exists, so something may have been paid on it: re-read Stripe
+                // FIRST, then decide; see Providers/Fiat/AGENTS.md §same-key-replay-codes.
+                return await ResumeAttachedAsync(scope, turn.Session!, now, ct);
             case FiatCreationVerdict.NeedsOperator:
                 _logger.LogError(
                     "Funding intent {IntentId} has an unattached payment page the node can no longer replay; operator reconciliation is required.",
@@ -888,34 +889,102 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
     private async Task<AZOAResult<FiatCheckoutIntent>> ProjectAsync(
         IServiceScope scope, HostedSession session, bool resumed, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(session.ProviderSessionId))
+            return await ProjectAsync(scope, session, provider: null, resumed, ct);
+
+        var read = await ReadProviderSessionAsync(session, ct);
+        return read.IsError || read.Result is null
+            ? AZOAResult<FiatCheckoutIntent>.FailureWithCode(read.Message, read.Code ?? AzoaErrorCodes.DependencyUnavailable)
+            : await ProjectAsync(scope, session, read.Result, resumed, ct);
+    }
+
+    /// <summary>
+    /// The same-key resend of a claim that already carries a Stripe session but no resumable page.
+    /// INTENT_EXPIRED only when a fresh read proves nothing was or can be paid; see
+    /// <c>Providers/Fiat/AGENTS.md</c> §same-key-replay-codes.
+    /// </summary>
+    private async Task<AZOAResult<FiatCheckoutIntent>> ResumeAttachedAsync(
+        IServiceScope scope, HostedSession session, DateTimeOffset now, CancellationToken ct)
+    {
+        // The fence may have re-read a row a webhook terminalised between the claim and now.
+        if (HostedSessionStates.IsTerminal(session.State))
+            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                "This payment is already finished.", FiatConsumerErrors.IntentFinishedCode);
+
+        var read = await ReadProviderSessionAsync(session, ct);
+        if (read.IsError || read.Result is null)
+            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                read.Message, read.Code ?? AzoaErrorCodes.DependencyUnavailable);
+
+        if (ProvesNothingPaid(session, read.Result, now))
+            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                "This payment page has expired. Start a new payment.", FiatConsumerErrors.IntentExpiredCode);
+
+        // Paid, clearing, or not provably dead: the projection, never a final code.
+        return await ProjectAsync(scope, session, read.Result, resumed: true, ct);
+    }
+
+    /// <summary>
+    /// True only when the claim is still awaiting its payer, its page is past expiry, AND the fresh
+    /// Stripe read shows an unpaid session that can no longer take a payment.
+    /// </summary>
+    private static bool ProvesNothingPaid(HostedSession session, StripeCheckoutSession provider, DateTimeOffset now)
+    {
+        // AwaitingOutcome / Resuming: the node already saw a payment clearing on this key.
+        if (!string.Equals(session.State, HostedSessionStates.AwaitingSubject, StringComparison.Ordinal))
+            return false;
+        if (session.ExpiresAt is not { } expiresAt || expiresAt > now)
+            return false;
+        if (IsPaid(provider))
+            return false;
+
+        if (string.Equals(provider.Status, "expired", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Stripe has not flipped the status yet; its own expires_at must have passed too.
+        return string.Equals(provider.Status, "open", StringComparison.OrdinalIgnoreCase)
+            && (provider.ExpiresAt is null || provider.ExpiresAt <= now);
+    }
+
+    private static bool IsPaid(StripeCheckoutSession provider) =>
+        string.Equals(provider.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(provider.PaymentStatus, "no_payment_required", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Re-reads the claim's Stripe session. A failed read is DEPENDENCY_UNAVAILABLE (503), never a
+    /// guess; see <c>Providers/Fiat/AGENTS.md</c> §settlement-read-failure.
+    /// </summary>
+    private async Task<AZOAResult<StripeCheckoutSession>> ReadProviderSessionAsync(
+        HostedSession session, CancellationToken ct)
+    {
+        var fetched = await _gateway.GetCheckoutSessionAsync(
+            _options.CredentialsFor(_environment), session.ProviderSessionId!, ct);
+        if (!fetched.IsError && fetched.Result is not null)
+            return fetched;
+
+        _logger.LogWarning(
+            "Funding intent {IntentId}'s provider session could not be re-read; refusing to report its settlement state.",
+            session.Id);
+        return AZOAResult<StripeCheckoutSession>.FailureWithCode(
+            "Your payment status could not be confirmed right now. Try again shortly.",
+            AzoaErrorCodes.DependencyUnavailable);
+    }
+
+    /// <summary>Builds the projection from an already-fetched Stripe session (null when none is attached).</summary>
+    private async Task<AZOAResult<FiatCheckoutIntent>> ProjectAsync(
+        IServiceScope scope, HostedSession session, StripeCheckoutSession? provider, bool resumed, CancellationToken ct)
+    {
         long? amountPaid = null;
         string? currency = null;
         var settlement = FiatSettlementStates.NotStarted;
 
-        if (!string.IsNullOrWhiteSpace(session.ProviderSessionId))
+        if (provider is not null)
         {
-            var fetched = await _gateway.GetCheckoutSessionAsync(
-                _options.CredentialsFor(_environment), session.ProviderSessionId!, ct);
-            if (fetched.IsError || fetched.Result is null)
-            {
-                // A session this node knows it created, but cannot currently read back, might
-                // already be a paid, closed intent. Reporting it would otherwise fall through to
-                // the NotStarted default above and lie "waiting for your payment" to a payer who
-                // already paid — inviting a second charge. Fail the whole read instead: the client
-                // treats this as transient and retries, never as "no payment yet".
-                _logger.LogWarning(
-                    "Funding intent {IntentId}'s provider session could not be re-read; refusing to report its settlement state.",
-                    session.Id);
-                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                    "Your payment status could not be confirmed right now. Try again shortly.",
-                    AzoaErrorCodes.DependencyUnavailable);
-            }
-
-            currency = fetched.Result.Currency;
-            var confirmation = ClassifySession(fetched.Result);
+            currency = provider.Currency;
+            var confirmation = ClassifySession(provider);
             if (confirmation == ChainConfirmation.Confirmed)
             {
-                amountPaid = fetched.Result.AmountTotalMinorUnits;
+                amountPaid = provider.AmountTotalMinorUnits;
                 settlement = FiatSettlementStates.PaymentReceived;
             }
             else if (confirmation == ChainConfirmation.FailedOnChain)
@@ -923,6 +992,18 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
                 settlement = FiatSettlementStates.PaymentFailed;
             }
         }
+
+        var status = FiatIntentStatuses.FromSessionState(session.State);
+        var stripeComplete = string.Equals(provider?.Status, "complete", StringComparison.OrdinalIgnoreCase);
+
+        // Stripe finished the page before the webhook moved the claim: the payer is done, not waiting.
+        if (stripeComplete && status is FiatIntentStatuses.Starting or FiatIntentStatuses.AwaitingPayment)
+            status = FiatIntentStatuses.Processing;
+
+        // The page is handed back only while Stripe would still take a payment on it; a terminal,
+        // clearing or completed intent that echoed a URL invites a second payment against one claim.
+        var payable = status == FiatIntentStatuses.AwaitingPayment
+            && string.Equals(provider?.Status, "open", StringComparison.OrdinalIgnoreCase);
 
         // "Funds applied" is asserted ONLY by an inbox row that a handler actually applied. With
         // no issuance handler registered this stays "payment received" forever, which is the
@@ -942,11 +1023,9 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         {
             IntentId = TryParseIntentId(session.Id, out var projectedId) ? projectedId : Guid.Empty,
             AdmissionKey = session.AdmissionKey,
-            Status = FiatIntentStatuses.FromSessionState(session.State),
+            Status = status,
             SettlementState = settlement,
-            // The payment page is only handed back while the intent can still be paid; a terminal
-            // intent that still echoed a live URL invites a second payment against one claim.
-            PaymentUrl = HostedSessionStates.IsTerminal(session.State) ? null : session.RedirectUrl,
+            PaymentUrl = payable ? session.RedirectUrl : null,
             Resumed = resumed,
             AmountPaidMinorUnits = amountPaid,
             Currency = currency,
