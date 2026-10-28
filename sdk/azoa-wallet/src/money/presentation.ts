@@ -10,12 +10,12 @@ export interface CheckoutState {
 
 const TERMINAL_CHECKOUT_STATUSES: readonly string[] = ["complete", "failed", "expired"];
 
-/** The node will never reopen this intent (a same-key resend is refused), so its saved key may be forgotten. Not "settled". */
+/** The node will never reopen this intent (a same-key resend cannot charge again). Not "settled": its money may still be landing. */
 export function isTerminalCheckout(intent: CheckoutState): boolean {
   return TERMINAL_CHECKOUT_STATUSES.includes(intent.status) || isSettledCheckout(intent);
 }
 
-/** The money outcome is final, so polling may stop: funds applied, payment failed, or a failed/expired intent where nothing cleared. Unknown values are never final. */
+/** The money outcome is final (funds applied; or provably unpaid and closed), so polling stops and only now may a saved key be forgotten. Unknown values are never final. */
 export function isSettledCheckout(intent: CheckoutState): boolean {
   if (intent.settlementState === "funds_applied" || intent.settlementState === "payment_failed") return true;
   return intent.settlementState === "not_started" && (intent.status === "failed" || intent.status === "expired");
@@ -102,9 +102,16 @@ export function formatBaseUnits(baseUnits: string, decimals: number): string {
   return `${(value / scale).toLocaleString()}${fraction ? `.${fraction}` : ""}`;
 }
 
+/** The hosted-page origins the AZOA node hands out: Stripe Checkout, Stripe Connect onboarding, the Identomat KYC widget. See `src/money/AGENTS.md` §presentation. */
+export const DEFAULT_REDIRECT_ORIGINS: readonly string[] = Object.freeze([
+  "https://checkout.stripe.com",
+  "https://connect.stripe.com",
+  "https://widget.identomat.com",
+]);
+
 /** Where a hosted page (payment, verification, payout setup) may send the person. */
 export interface RedirectPolicy {
-  /** Exact origins (e.g. `https://checkout.stripe.com`) a redirect or link may go to; omitted means any `https:` origin, empty means none. */
+  /** Exact origins admitted on top of `DEFAULT_REDIRECT_ORIGINS` (a Stripe custom domain, a Veriff or hosted-KYC origin, your own pages). */
   allowedOrigins?: readonly string[];
   /** Development only: also admit `http:` on loopback (`localhost`, `127.0.0.1`, `[::1]`). */
   allowLoopbackHttp?: boolean;
@@ -112,7 +119,7 @@ export interface RedirectPolicy {
 
 const LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
 
-/** The parsed, normalized URL when `policy` admits it, else null; a transport answer can never hand `javascript:` to a link. */
+/** The parsed, normalized URL when `policy` admits it, else null; only listed provider origins pass, so an answer can never send a person elsewhere. */
 export function safeRedirectUrl(url: string | null | undefined, policy: RedirectPolicy = {}): string | null {
   if (typeof url !== "string" || url === "") return null;
   let parsed: URL;
@@ -121,13 +128,13 @@ export function safeRedirectUrl(url: string | null | undefined, policy: Redirect
   } catch {
     return null;
   }
-  const secure = parsed.protocol === "https:";
-  const devLoopback = policy.allowLoopbackHttp === true && parsed.protocol === "http:" && LOOPBACK_HOSTS.includes(parsed.hostname);
-  if (!secure && !devLoopback) return null;
   // `https://trusted@elsewhere` reads as the trusted host to a person and goes to `elsewhere`.
   if (parsed.username || parsed.password) return null;
-  if (policy.allowedOrigins && !policy.allowedOrigins.some(origin => originOf(origin) === parsed.origin)) return null;
-  return parsed.href;
+  const devLoopback = policy.allowLoopbackHttp === true && parsed.protocol === "http:" && LOOPBACK_HOSTS.includes(parsed.hostname);
+  if (devLoopback) return parsed.href;
+  if (parsed.protocol !== "https:") return null;
+  const admitted = [...DEFAULT_REDIRECT_ORIGINS, ...(policy.allowedOrigins ?? [])];
+  return admitted.some(origin => originOf(origin) === parsed.origin) ? parsed.href : null;
 }
 
 function originOf(candidate: string): string | null {
@@ -153,7 +160,7 @@ export interface MoneyMessages {
     invalidAmount: string; outOfRange: (minimum: string, maximum: string) => string; resumedFinished: string;
   };
   checkout: {
-    title: string; loading: string; expired: string; confirming: string; openPaymentPage: string; check: string;
+    title: string; loading: string; expired: string; confirming: string; clearing: string; cannotConfirm: string; openPaymentPage: string; check: string;
     paid: (amount: string) => string; expires: (date: string) => string;
   };
   pending: {
@@ -164,8 +171,12 @@ export interface MoneyMessages {
     resume: Record<PendingKind, string>;
     discard: string;
     discarded: string;
-    /** The saved request changed in another window before this one resent it; nothing was sent. */
+    /** The saved request was resolved or discarded in another window before this one resent it; nothing was sent. */
     superseded: string;
+    /** Another window saved a different request in its place before this one resent it; nothing was sent. */
+    replaced: string;
+    /** Re-asks about a request the server holds for review (same key, so it cannot charge twice). */
+    checkAgain: string;
   };
   cashOut: {
     title: string; amountLabel: string; submit: string; cashableLabel: string; onHoldLabel: string; availableFromLabel: string;
@@ -205,6 +216,7 @@ export const defaultMoneyMessages: MoneyMessages = {
     payments_not_configured: "Payments are not set up here yet, so nothing can be charged. Nothing was charged.",
     rail_busy: "The payment service is busy. Nothing was moved; try again shortly.",
     unconfirmed: "The answer did not arrive, so it is not known whether this went through. Resuming it cannot charge or pay twice.",
+    needs_review: "This payment needs a manual check before it can continue — we'll follow up.",
     unauthenticated: "Your session expired. Sign in again.",
   },
   gate: {
@@ -258,6 +270,8 @@ export const defaultMoneyMessages: MoneyMessages = {
     loading: "Reading the payment…",
     expired: "The payment page expired. Nothing was charged.",
     confirming: "Your payment page is finished. Confirming the payment with the provider…",
+    clearing: "Your payment is still clearing. The funds are added once it clears; nothing more is needed from you.",
+    cannotConfirm: "We can't confirm where this payment stands right now. We'll keep checking, and nothing new will be charged.",
     openPaymentPage: "Continue to the payment page",
     check: "Check payment",
     paid: amount => `Paid: ${amount}`,
@@ -278,7 +292,9 @@ export const defaultMoneyMessages: MoneyMessages = {
     resume: { checkout: "Resume that payment", cashOut: "Resume that cash-out", sale: "Resume that sale" },
     discard: "Discard it and start a new request",
     discarded: "The unconfirmed request was discarded. Enter an amount to start a new one.",
-    superseded: "That request was already settled in another window, so nothing was sent again.",
+    superseded: "That request was resolved or discarded in another window, so nothing was sent from here.",
+    replaced: "Another window replaced that request with a new one, so nothing was sent from here.",
+    checkAgain: "Check again",
   },
   cashOut: {
     title: "Cash out",
@@ -353,7 +369,9 @@ export function describeSettlement(view: Pick<CheckoutView, "status" | "settleme
   if (settlement === "not_started") {
     if (status === "failed") return messages.settlement.payment_failed;
     if (status === "awaiting_payment" || status === "starting") return messages.settlement.not_started;
+    // AwaitingOutcome / Resuming: the person finished paying with a method that clears later (e.g. ACH).
+    if (status === "processing") return messages.checkout.clearing;
   }
-  // `complete`/`processing` with nothing cleared yet (or a value this SDK does not know): never "waiting for your payment".
+  // `complete` with nothing cleared yet (or a value this SDK does not know): never "waiting for your payment".
   return messages.checkout.confirming;
 }

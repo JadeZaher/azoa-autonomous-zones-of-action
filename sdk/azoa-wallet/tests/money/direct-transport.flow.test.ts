@@ -14,10 +14,10 @@ import {
   startCashOut,
   startCheckout,
 } from "../../src/money/index.js";
-import type { AzoaMoneyTransport, CheckoutView, CustodialAccountView, KeyStorage } from "../../src/money/index.js";
+import type { AzoaMoneyTransport, CheckoutAttempt, CheckoutView, CustodialAccountView, KeyStorage } from "../../src/money/index.js";
 import { runMoneyTransportContract } from "../../src/money/testing/index.js";
 import { CASH_OUT_START, createNodeEmulator } from "./node-emulator.js";
-import type { NodeEmulator, NodeEmulatorOptions } from "./node-emulator.js";
+import type { CheckoutEvent, NodeEmulator, NodeEmulatorOptions } from "./node-emulator.js";
 
 /** One page load: a real AzoaApiClient on the person's own session, the direct transport and a key store over the device's storage. */
 function pageLoad(node: NodeEmulator, storage: KeyStorage) {
@@ -33,6 +33,30 @@ function freshNode(options?: NodeEmulatorOptions): NodeEmulator {
 }
 
 const directTransport = (node: NodeEmulator) => createDirectMoneyTransport(new AzoaApiClient({ baseUrl: node.baseUrl, token: node.token }), node.userId);
+const checkoutPosts = (node: NodeEmulator) => node.requests.filter(request => request.method === "POST");
+
+/** A FIFO Web Locks stand-in shared by every tab of the device: one holder per name; a waiter whose signal aborts is never granted. */
+function webLocks() {
+  const tails = new Map<string, Promise<void>>();
+  return {
+    request<T>(name: string, options: { signal?: AbortSignal }, callback: () => Promise<T>): Promise<T> {
+      const previous = tails.get(name) ?? Promise.resolve();
+      let release!: () => void;
+      tails.set(name, new Promise<void>(resolve => (release = resolve)));
+      return new Promise<T>((resolve, reject) => {
+        let granted = false;
+        options.signal?.addEventListener("abort", () => {
+          if (!granted) reject(options.signal!.reason);
+        }, { once: true });
+        void previous.then(() => {
+          if (options.signal?.aborted) return release();
+          granted = true;
+          callback().then(resolve, reject).finally(release);
+        });
+      });
+    },
+  };
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -87,21 +111,20 @@ describe("money over the direct transport (P0 flows)", () => {
   });
 });
 
-describe("same-key 409s (M1): resending the key of a page that lapsed", () => {
-  /** A lost answer, then the page lapses before the person comes back to resume it. */
-  async function lapsedResume(conflictCodes: "typed" | "legacy") {
-    const node = freshNode({ conflictCodes });
-    const device = memoryStorage();
-    const visit = pageLoad(node, device);
+describe("same-key 409s for a lost answer (the key names no intent yet, so the node's code decides)", () => {
+  /** A lost answer, then the timeline moves on before the person comes back to resume it. */
+  async function resumeLostAnswer(...events: CheckoutEvent[]) {
+    const node = freshNode();
+    const visit = pageLoad(node, memoryStorage());
     node.loseNextResponse();
     await startCheckout(visit.transport, visit.keyStore, 25_00);
-    node.apply(node.admissions[0]!.intentId, "pageLapsed");
+    node.apply(node.admissions[0]!.intentId, ...events);
     const saved = readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!;
     return { node, visit, attempt: await sendCheckout(visit.transport, visit.keyStore, saved) };
   }
 
-  it("INTENT_EXPIRED is a final answer: the key is released with the node's sentence and a fresh payment opens", async () => {
-    const { node, visit, attempt } = await lapsedResume("typed");
+  it("INTENT_EXPIRED (a fresh Stripe read proved the lapsed page unpaid) releases the key and a fresh payment opens", async () => {
+    const { node, visit, attempt } = await resumeLostAnswer("pageLapsed");
 
     expect(attempt).toEqual({
       kind: "refused",
@@ -114,24 +137,86 @@ describe("same-key 409s (M1): resending the key of a page that lapsed", () => {
     expect(node.admissions).toHaveLength(2);
   });
 
-  it("today's untyped CONFLICT keeps the key: it is not known whether the request is still being admitted", async () => {
-    const { node, visit, attempt } = await lapsedResume("legacy");
+  it("a generic 409 CONFLICT (Stripe still has the same-key request in flight) keeps the key, and the next resend resumes it", async () => {
+    const { node, visit, attempt } = await resumeLostAnswer("creationInFlight");
 
     expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.requestKey).toBe(node.admissions[0]!.requestKey);
     expect((await startCheckout(visit.transport, visit.keyStore, 10_00)).kind).toBe("pending");
+    node.apply(node.admissions[0]!.intentId, "creationSettled");
+    expect((await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!)).kind).toBe("opened");
+    expect(node.admissions).toHaveLength(1);
   });
 
-  it("INTENT_FINISHED on a resend of a completed payment's key releases it", async () => {
-    const node = freshNode({ conflictCodes: "typed" });
+  it("INTENT_NEEDS_REVIEW keeps the key and marks it held for review; once the operator reopens it, the answer naming the intent clears the mark (MEDIUM-3)", async () => {
+    const { node, visit, attempt } = await resumeLostAnswer("needsOperator");
+
+    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "needs_review" }, kept: { needsReview: true } });
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toMatchObject({ requestKey: node.admissions[0]!.requestKey, needsReview: true });
+
+    node.apply(node.admissions[0]!.intentId, "operatorResumed");
+    const reopened = await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!);
+
+    expect(reopened.kind).toBe("opened");
+    // A later visit must offer it as an ordinary open payment, not "needs a manual check".
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toEqual({
+      requestKey: node.admissions[0]!.requestKey, amountMinorUnits: 25_00, serverId: node.admissions[0]!.intentId,
+    });
+  });
+});
+
+describe("a key that already names its intent is decided by that intent's state, never by a refusal code (HIGH-1, LOW-1)", () => {
+  const railOff = (node: NodeEmulator) => node.disablePayments();
+  // [situation, the node's answer to the resend, node, timeline before the resend, node-wide change, attempt kind, settlement shown, key kept]
+  it.each<[string, string, NodeEmulatorOptions, CheckoutEvent[], ((node: NodeEmulator) => void) | null, CheckoutAttempt["kind"], string | null, boolean]>([
+    ["card paid, funds not landed yet", "409 INTENT_FINISHED", {}, ["pay", "webhook"], null, "finished", "payment_received", true],
+    ["card paid and the funds landed", "409 INTENT_FINISHED", {}, ["pay", "webhook", "applyFunds"], null, "finished", "funds_applied", false],
+    ["Stripe expired the open page (provably unpaid)", "409 INTENT_FINISHED", {}, ["expire"], null, "finished", "payment_failed", false],
+    ["ACH still clearing past the page's expiry (node lane's first cut)", "409 INTENT_EXPIRED", { expiryBeforeStripeRead: true }, ["payAsync", "webhook", "pageLapsed"], null, "opened", "not_started", true],
+    ["the payment rail was switched off while the page is open", "503 PAYMENTS_NOT_CONFIGURED", {}, [], railOff, "opened", "not_started", true],
+    ["the node cannot read Stripe at all", "503 DEPENDENCY_UNAVAILABLE, and on the read", {}, ["stripeDown"], null, "refused", null, true],
+  ])("%s: resend answered %s", async (_situation, _answer, options, events, before, kind, settlement, kept) => {
+    const node = freshNode(options);
     const visit = pageLoad(node, memoryStorage());
-    node.loseNextResponse();
-    await startCheckout(visit.transport, visit.keyStore, 25_00);
-    node.apply(node.admissions[0]!.intentId, "pay", "webhook");
+    const opened = await startCheckout(visit.transport, visit.keyStore, 25_00);
+    if (opened.kind !== "opened") throw new Error(`expected the first payment to open, got ${opened.kind}`);
+    const intentId = opened.view.intentId;
+    node.apply(intentId, ...events);
+    before?.(node);
 
     const attempt = await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!);
 
-    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "definite", message: "This payment is already finished." }, kept: null });
+    expect(attempt.kind).toBe(kind);
+    if (attempt.kind === "opened" || attempt.kind === "finished") expect(attempt.view.settlementState).toBe(settlement);
+    // A refused send never hands out a payment page by itself.
+    expect(attempt.kind === "opened" ? attempt.paymentUrl : null).toBeNull();
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.serverId === intentId).toBe(kept);
+    // A kept key still blocks a second, different payment on this device.
+    if (kept) expect((await startCheckout(visit.transport, visit.keyStore, 10_00)).kind).toBe("pending");
+    expect(node.admissions).toHaveLength(1);
+  });
+});
+
+describe("a hung send cannot freeze the page or other tabs (LOW-2)", () => {
+  it("the send times out as unconfirmed with its key kept, a tab waiting on the lock gives up without sending, and the next try resumes the one key", async () => {
+    vi.stubGlobal("navigator", { locks: webLocks() });
+    const node = freshNode();
+    const device = memoryStorage();
+    const tabA = pageLoad(node, device);
+    const tabB = pageLoad(node, device);
+    const hung: AzoaMoneyTransport = { ...tabA.transport, checkout: { ...tabA.transport.checkout, begin: () => new Promise(() => undefined) } };
+
+    const [first, second] = await Promise.all([
+      startCheckout(hung, tabA.keyStore, 25_00, { sendTimeoutMs: 80 }),
+      startCheckout(tabB.transport, tabB.keyStore, 25_00, { lockTimeoutMs: 20 }),
+    ]);
+
+    expect(first).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" }, kept: { amountMinorUnits: 25_00 } });
+    expect(second).toMatchObject({ kind: "refused", refusal: { code: "rail_busy" } });
+    expect(checkoutPosts(node)).toEqual([]);
+    const keptKey = readSavedRequest(tabB.keyStore, MONEY_SCOPES.checkout)?.requestKey;
+    expect((await startCheckout(tabB.transport, tabB.keyStore, 25_00)).kind).toBe("opened");
+    expect(node.admissions.map(admission => admission.requestKey)).toEqual([keptKey]);
   });
 });
 
@@ -219,18 +304,6 @@ describe("two tabs share one device (L8)", () => {
       };
     };
     return { tab };
-  }
-
-  /** A FIFO Web Locks stand-in: one holder per name, across every tab of the device. */
-  function webLocks() {
-    const tails = new Map<string, Promise<unknown>>();
-    return {
-      request<T>(name: string, callback: () => Promise<T>): Promise<T> {
-        const run = (tails.get(name) ?? Promise.resolve()).then(callback);
-        tails.set(name, run.catch(() => undefined));
-        return run;
-      },
-    };
   }
 
   async function bothTabsPay() {

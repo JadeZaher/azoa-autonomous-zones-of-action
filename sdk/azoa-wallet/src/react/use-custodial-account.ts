@@ -4,7 +4,7 @@ import type { ConsentRevocationView, CustodialAccountView, KycSessionView, Money
 import type { AccountSnapshot } from "./account-store.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
-import { callHost, redirectTo, useMoneyEvents, useMounted } from "./internal.js";
+import { callHost, redirectTo, useMoneyEvents, useMounted, usePerson } from "./internal.js";
 
 export interface CustodialAccountState extends AccountSnapshot {
   /** Whether a host `onRedirect` exists; without one, components render plain links instead. */
@@ -22,26 +22,32 @@ export function useCustodialAccount(options: MoneyEventProps = {}): CustodialAcc
   const snapshot = useSyncExternalStore(accountStore.subscribe, accountStore.getSnapshot, accountStore.getSnapshot);
   const events = useMoneyEvents(options);
   const mounted = useMounted();
+  // The snapshot is already per person (one store each); this only stops a late answer acting for the next person.
+  const person = usePerson(() => undefined);
   useEffect(() => accountStore.load(), [accountStore]);
 
   const ensure = useCallback(async () => {
+    const sentFor = person.current;
     const result = await accountStore.ensure();
-    if (!result.ok) callHost(() => events.current.onRefusal?.(result.refusal));
+    if (!result.ok && person.current === sentFor) callHost(() => events.current.onRefusal?.(result.refusal));
     return result;
-  }, [accountStore, events]);
+  }, [accountStore, events, person]);
 
   const beginKyc = useCallback(async () => {
+    const sentFor = person.current;
     const result = await accountStore.beginKyc();
+    if (person.current !== sentFor) return result;
     if (result.ok) redirectTo(events, mounted, result.value.verificationUrl, "kyc", redirectPolicy);
     else callHost(() => events.current.onRefusal?.(result.refusal));
     return result;
-  }, [accountStore, events, mounted, redirectPolicy]);
+  }, [accountStore, events, mounted, redirectPolicy, person]);
 
   const revokeConsent = useCallback(async () => {
+    const sentFor = person.current;
     const result = await accountStore.revokeConsent();
-    if (!result.ok) callHost(() => events.current.onRefusal?.(result.refusal));
+    if (!result.ok && person.current === sentFor) callHost(() => events.current.onRefusal?.(result.refusal));
     return result;
-  }, [accountStore, events]);
+  }, [accountStore, events, person]);
 
   return {
     ...snapshot,

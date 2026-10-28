@@ -4,7 +4,7 @@ import { MONEY_SCOPES, clearSavedRequest, isCashOutOnTrack, moneyRefusal, readSa
 import type { CashOutAttempt, CashOutQuoteView, CashOutView, MoneyRefusal, PayoutDestinationView, SavedRequest } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
-import { callHost, redirectTo, settleMoney, useMoneyEvents, useMounted, useStorageChange } from "./internal.js";
+import { callHost, redirectTo, settleMoney, useMoneyEvents, useMounted, usePerson, useStorageChange } from "./internal.js";
 
 export interface CashOutOptions extends MoneyEventProps {
   /** A cash-out was accepted (never a refused one); its `status` says how far it got. */
@@ -33,7 +33,7 @@ export interface CashOutState {
 }
 
 export function useCashOut(options: CashOutOptions = {}): CashOutState {
-  const { transport, keyStore, messages, events: providerEvents, redirectPolicy } = useMoneyContext();
+  const { transport, keyStore, messages, events: providerEvents, redirectPolicy, identity } = useMoneyContext();
   const events = useMoneyEvents(options);
   const mounted = useMounted();
   const [quote, setQuote] = useState<CashOutQuoteView | null>(null);
@@ -45,45 +45,47 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<CashOutState["noticeTone"]>("info");
   const [busy, setBusy] = useState(false);
-  const sending = useRef(false);
-  // Bumped per subject; reads and answers that belong to an older one are dropped.
-  const epoch = useRef(0);
+  // The person whose send is in flight: a same-tick double click is dropped, another person's send is not this one's.
+  const sending = useRef<object | null>(null);
+  // A same-tab user switch never shows the last person's cash-outs, even for one paint; their late answers are dropped.
+  const person = usePerson(() => {
+    setQuote(null);
+    setDestination(null);
+    setHistory([]);
+    setPending(null);
+    setRefusal(null);
+    setDestinationRefusal(null);
+    setNotice(null);
+    setBusy(false);
+  });
 
   const reload = useCallback(async () => {
-    const readIn = epoch.current;
+    const readFor = person.current;
     const [available, payoutDestination, rows] = await Promise.all([
       settleMoney(transport.cashOut.availability()),
       settleMoney(transport.cashOut.destination()),
       settleMoney(transport.cashOut.history()),
     ]);
-    if (!mounted.current || epoch.current !== readIn) return;
+    if (!mounted.current || person.current !== readFor) return;
     if (available.ok) setQuote(available.value);
     else setRefusal(available.refusal);
     if (payoutDestination.ok) setDestination(payoutDestination.value);
     if (rows.ok && Array.isArray(rows.value)) setHistory(rows.value);
-  }, [transport, mounted]);
+  }, [transport, mounted, person]);
 
   useEffect(() => {
-    epoch.current += 1;
-    // A same-tab user switch never shows the last person's cash-outs, even for a moment.
-    setQuote(null);
-    setDestination(null);
-    setHistory([]);
-    setRefusal(null);
-    setDestinationRefusal(null);
-    setNotice(null);
     setPending(readSavedRequest(keyStore, MONEY_SCOPES.cashOut));
     void reload();
-  }, [keyStore, reload]);
+  }, [keyStore, reload, identity]);
 
   useStorageChange(() => {
-    if (!sending.current) setPending(readSavedRequest(keyStore, MONEY_SCOPES.cashOut));
+    if (sending.current !== person.current) setPending(readSavedRequest(keyStore, MONEY_SCOPES.cashOut));
   });
 
   const run = useCallback(async (send: () => Promise<CashOutAttempt>) => {
-    if (sending.current) return;
-    sending.current = true;
-    const sentIn = epoch.current;
+    const sentFor = person.current;
+    if (sending.current === sentFor) return;
+    sending.current = sentFor;
     setBusy(true);
     setRefusal(null);
     setNotice(null);
@@ -94,12 +96,12 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
       } catch {
         attempt = { kind: "refused", refusal: moneyRefusal("unconfirmed"), kept: readSavedRequest(keyStore, MONEY_SCOPES.cashOut) };
       }
-      if (epoch.current !== sentIn) return;
+      if (person.current !== sentFor) return;
       if (attempt.kind === "pending") setPending(attempt.pending);
       else if (attempt.kind === "superseded") {
         setPending(attempt.current);
         setNoticeTone("info");
-        setNotice(messages.pending.superseded);
+        setNotice(attempt.current ? messages.pending.replaced : messages.pending.superseded);
       } else if (attempt.kind === "accepted") {
         setPending(null);
         setNoticeTone(isCashOutOnTrack(attempt.view) ? "success" : "warning");
@@ -107,16 +109,17 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
         callHost(() => events.current.onSettled?.(attempt.view));
       } else {
         setPending(attempt.kept);
-        setRefusal(attempt.refusal);
+        // A request held for review is explained by its own notice.
+        if (!attempt.kept?.needsReview) setRefusal(attempt.refusal);
         callHost(() => events.current.onRefusal?.(attempt.refusal));
       }
       // History is re-read after every attempt, so a claim whose answer was lost is visible before the person decides.
       if (attempt.kind !== "pending") await reload();
     } finally {
-      sending.current = false;
-      setBusy(false);
+      if (sending.current === sentFor) sending.current = null;
+      if (person.current === sentFor) setBusy(false);
     }
-  }, [events, keyStore, reload, messages]);
+  }, [events, keyStore, reload, messages, person]);
 
   const start = useCallback((amountMinorUnits: number) => run(() => startCashOut(transport, keyStore, amountMinorUnits)), [run, transport, keyStore]);
 
@@ -125,17 +128,22 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
   }, [run, transport, keyStore, pending]);
 
   const discard = useCallback(() => {
-    if (pending) clearSavedRequest(keyStore, MONEY_SCOPES.cashOut, pending.requestKey);
+    // The node holds a reviewed request for an operator: it is never swapped for a fresh one from here.
+    if (!pending || pending.needsReview) return;
+    clearSavedRequest(keyStore, MONEY_SCOPES.cashOut, pending.requestKey);
     setPending(null);
     setNoticeTone("info");
     setNotice(messages.pending.discarded);
   }, [keyStore, pending, messages]);
 
   const beginDestinationSetup = useCallback(async () => {
+    const sentFor = person.current;
     setBusy(true);
     setDestinationRefusal(null);
     try {
       const result = await settleMoney(transport.cashOut.beginDestinationSetup());
+      // The previous person's setup page is never opened for the next one.
+      if (person.current !== sentFor) return;
       if (result.ok) {
         setDestination(result.value);
         redirectTo(events, mounted, result.value.setupUrl, "payout-setup", redirectPolicy);
@@ -146,7 +154,7 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
     } finally {
       setBusy(false);
     }
-  }, [transport, events, mounted, redirectPolicy]);
+  }, [transport, events, mounted, redirectPolicy, person]);
 
   return {
     quote,

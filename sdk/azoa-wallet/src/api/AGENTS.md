@@ -86,11 +86,10 @@ are normalized to a list at this boundary. `GET /api/fungible-creation` is a bar
 
 A tenant API key is a server-only credential: in a page or a worker it ships to every visitor. The
 `AzoaApiClient` constructor therefore **throws** when `apiKey` is truthy and the runtime is a browser (a
-`document`, or a `WorkerGlobalScope` with `importScripts`), unless the caller passes the loudly named
-`dangerouslyAllowApiKeyInBrowser: true` (a trusted, non-public runtime: an internal kiosk, a test harness).
-Server runtimes (Node, Deno 2, Bun, edge workers without a `document`) are unaffected. React Native has no
-`document` and is not detected; a key in a mobile bundle is equally extractable, so do not ship one there
-either.
+`document`, or a `WorkerGlobalScope` with `importScripts`) or React Native (`navigator.product ===
+"ReactNative"`: no `document`, and a key in an app bundle is just as extractable), unless the caller passes
+the loudly named `dangerouslyAllowApiKeyInBrowser: true` (a trusted, non-public runtime: an internal kiosk, a
+test harness). Server runtimes (Node, Deno 2, Bun, edge workers without a `document`) are unaffected.
 
 The constructor **copies** its config, so a key assigned to the caller's object after construction can
 neither slip past the guard nor change what is sent. `hasApiKey()` uses the same truthiness

@@ -41,20 +41,25 @@ onboard right now, or any other refusal).
 ## §refusals
 
 Closed vocabulary, mapped from node bodies by `refusalFromSdkError` (verified against the controllers on
-2026-10-26, and `FiatRailProvider.BeginCheckoutAsync` on 2026-10-27):
+2026-10-26, and the same-key resend contract of `FiatRailProvider.BeginCheckoutAsync`, oasis-sleek branch
+feat/fiat-replay-codes `cee103bd`, on 2026-10-27):
 
 | code | node evidence | key |
 | :-- | :-- | :-- |
-| `consent_revoked` | 403 whose message names consent (`TenantConsentGate.Deny`) | released |
-| `account_holder_required` | 403 "…only be done by the account holder" (F-H8, payout setup) | released |
-| `kyb_required` | `KYB_REQUIRED` code on 400/403/422, or the prefix on a definite status (D-6) | released |
-| `setup_required` | "KYC verification required" (`KycAuthorizationError`) | released |
-| `under_review` | definite refusal mentioning "under review" (AML review) | released |
-| `payments_not_configured` | `PAYMENTS_NOT_CONFIGURED` code on 400/422/503 (QA M3) | released |
-| `definite` | 409 `INTENT_FINISHED` / `INTENT_EXPIRED` / `REQUEST_KEY_IN_USE`; any other 400/403/404/422; a client guard that threw before egress | released |
-| `rail_busy` | `RAIL_BUSY`, `RAIL_UNAVAILABLE`, 429 | **kept** |
-| `unconfirmed` | network loss, timeout, 409 without a final code (incl. today's `CONFLICT`, `INTENT_NEEDS_REVIEW`), 5xx | **kept** |
+| `consent_revoked` | 403 whose message names consent (`TenantConsentGate.Deny`) | released* |
+| `account_holder_required` | 403 "…only be done by the account holder" (F-H8, payout setup) | released* |
+| `kyb_required` | `KYB_REQUIRED` code on 400/403/422, or the prefix on a definite status (D-6) | released* |
+| `setup_required` | "KYC verification required" (`KycAuthorizationError`) | released* |
+| `under_review` | definite refusal mentioning "under review" (AML review) | released* |
+| `payments_not_configured` | `PAYMENTS_NOT_CONFIGURED` code on 400/422/503 (QA M3) | released* |
+| `definite` | 409 `INTENT_FINISHED` / `INTENT_EXPIRED` / `REQUEST_KEY_IN_USE`; any other 400/403/404/422; a client guard that threw before egress | released* |
+| `rail_busy` | `RAIL_BUSY`, `RAIL_UNAVAILABLE`, 429; another tab held the send lock past `lockTimeoutMs` | **kept** |
+| `unconfirmed` | network loss, timeout (incl. `sendTimeoutMs`), 409 without a final code (`CONFLICT`: Stripe still has the same-key request in flight), 5xx (incl. 503 `DEPENDENCY_UNAVAILABLE`, the node's failed Stripe re-read) | **kept** |
+| `needs_review` | 409 `INTENT_NEEDS_REVIEW` (`FiatCreationVerdict.NeedsOperator`) | **kept**, marked |
 | `unauthenticated` | 401 / `AUTH_EXPIRED` | **kept** |
+
+\* Only for a key that names no intent yet (a lost answer). **A saved request with a `serverId` is never
+released by a refusal code** — see §flows "decide by state".
 
 **Order matters** (each step only runs when the previous did not decide): not an `SdkError` → `unconfirmed`;
 401 → `unauthenticated`; no HTTP status → `definite` for a client guard, else `unconfirmed`; the envelope's
@@ -63,10 +68,18 @@ on a 500 is still `unconfirmed`); 429 → `rail_busy`; any status that is not 40
 **whatever the message says**; only then message text. That last rule is why a 503 whose text says
 `KYB_REQUIRED:` keeps the key (L6): text is evidence only inside a definite status.
 
-The same-key 409 codes (`INTENT_*`, `REQUEST_KEY_IN_USE`) are the parallel node lane's; until it lands, the
-node sends `CONFLICT` for every same-key 409 and those stay `unconfirmed` (the key survives; the person can
-discard it explicitly). That is the safe side: a lapsed page then needs one "discard" click instead of
-risking a second charge.
+The same-key 409 codes (`INTENT_*`, `REQUEST_KEY_IN_USE`) follow the node's proof rule: a final code only when
+the node can prove nothing was or can be paid under the key (`INTENT_EXPIRED` only after a fresh Stripe read
+says the lapsed page is not complete). The SDK still does not trust them where it can check: the 409 bodies
+carry no intent id, so for a lost answer the code is all there is, but a key that names its intent is decided
+by reading that intent. Known gap: `INTENT_FINISHED` on a lost answer releases the key while a card payment's
+funds may still be landing (nothing more can be charged under that key; a person who then pays again does so
+deliberately on a fresh key). An intent id in the 409 body would close it.
+
+`needs_review` (MEDIUM-3) is not "the answer did not arrive": the node answered, and it holds the request
+for an operator. The key is kept and `markNeedsReview` flags the saved request, so the UI shows "needs a
+manual check — we'll follow up" with no resume prompt and no fresh payment, on this visit and later ones; the
+only action is a same-key "check again", which cannot charge twice.
 
 `releasesRequestKey` encodes the last column as an **allowlist** of the seven key-releasing codes: host
 transports deserialize JSON at runtime, so a typo, a capitalized code, `"server_error"`, `"timeout"`, a
@@ -89,10 +102,13 @@ Lifted from the AZOA frontend's `lib/persisted-request-key.ts` (rules: `frontend
   `definite` refusal: nothing was sent).
 - **An unresolved key is never replaced silently.** A saved key for a different amount (or a different
   `reference`, e.g. another sale quote) returns `pending`: resume that exact request or explicitly discard it.
-- **Resolved by state, not by landing page.** `rememberServerId` stores the intent id beside the key;
-  `resolveCheckoutByState` forgets the key only when that intent is terminal (`isTerminalCheckout`; its money
-  may still be settling, see §presentation). `clearSavedRequest(store,
-  scope, requestKey)` clears only while that key is still the saved one (another tab may have replaced it).
+- **The key is the lock against a second payment.** `rememberServerId` stores the intent id beside the key;
+  `resolveCheckoutByState` forgets the key only when that intent is **settled** (`isSettledCheckout`: funds
+  applied, or provably unpaid and closed). A terminal intent whose money is still landing keeps it, so a
+  reload cannot offer a second payment while the first is in flight. `clearSavedRequest(store, scope,
+  requestKey)` clears only while that key is still the saved one (another tab may have replaced it).
+- **Held for review.** `markNeedsReview` sets `needsReview: true` on the saved request (a `needs_review`
+  answer); `rememberServerId` drops it once an answer names the server's record.
 - **Per subject.** `createKeyStore({ subject, storage? })` hashes the subject (cyrb53, namespacing only)
   into every storage key, so two people on one device never see each other's pending payments. It throws on
   an empty subject rather than share a slot. Default storage is `localStorage`; with none (SSR, sandboxed
@@ -103,12 +119,22 @@ Lifted from the AZOA frontend's `lib/persisted-request-key.ts` (rules: `frontend
 
 `startCheckout` / `sendCheckout` / `startCashOut` / `sendCashOut` / `startSale` / `sendSale` are the
 state machine both the React hooks and any non-React host run: lock → claim → persist → send → resolve the
-key by the answer. They **never reject**: a transport that rejects, or resolves to anything but a
-well-formed `MoneyResult` whose `value` is a view (e.g. `{ ok: true, value: null }`), is `unconfirmed` and
-the key survives (L4). `sendCheckout` saves the intent id **before** returning `opened`, so a host that
-navigates to `paymentUrl` immediately cannot lose it; `paymentUrl` is set only while the intent is open
-(`isOpenCheckout`) and admitted by the caller's `redirectPolicy`. A same-key answer that is already
-terminal returns `finished` (the key is cleared; its money may still be settling, so poll it).
+key by the answer. They **never reject**: a transport that rejects, resolves to anything but a well-formed
+`MoneyResult` whose `value` is a view (e.g. `{ ok: true, value: null }`), or takes longer than
+`sendTimeoutMs` (default 45 s), is `unconfirmed` and the key survives (L4, LOW-2). `sendCheckout` saves the
+intent id **before** returning `opened`, so a host that navigates to `paymentUrl` immediately cannot lose it;
+`paymentUrl` is set only while the intent is open (`isOpenCheckout`) and admitted by the caller's
+`redirectPolicy`. Every checkout view goes through one rule: settled → the key is cleared, `finished`;
+terminal but unsettled → the key is kept, `finished` (nothing new can be charged; poll it); otherwise the key
+is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `processing`).
+
+- **Decide by state (HIGH-1, LOW-1).** When the saved request already has a `serverId`, **no refusal from
+  `begin` releases its key**: not `INTENT_EXPIRED`/`INTENT_FINISHED`, not `PAYMENTS_NOT_CONFIGURED`, not
+  anything. `decideByState` reads the intent and applies the rule above to what it sees, and a refused send
+  never hands out a payment page (an open one is shown, not navigated to). If the read fails too, the
+  attempt is `refused` with the read's refusal and `kept` = the request: the key stays and the intent stays
+  watched. This is why the node lane's first cut (`769494f1`, `INTENT_EXPIRED` on any lapsed page) cannot
+  release the key of an ACH payment that is still clearing.
 
 - **Resend re-reads storage (L1).** `send*` re-reads the saved request inside the lock and sends only when
   its key is still the saved one; otherwise it returns `superseded` with what is saved now and sends
@@ -118,8 +144,10 @@ terminal returns `finished` (the key is cleared; its money may still be settling
   when the runtime has Web Locks, so the second tab claims only after the first persisted (it then reuses
   that key, or sees `pending`). The lock is held across the send so the first tab's write has propagated.
   Without Web Locks (old browsers, SSR, jsdom) it runs unlocked; a runtime that throws on `request` before
-  running the task falls back to running it once. Watch-out: a host transport that never settles holds the
-  lock, so other tabs' money requests wait; transports must time out (the direct transport does, 30 s).
+  running the task falls back to running it once. The lock is requested with a timeout signal
+  (`AbortSignal.timeout(lockTimeoutMs)`, default 60 s, longer than one send): a tab that cannot get it in time
+  answers `rail_busy` ("another window is still sending; nothing was sent from here") without claiming or
+  sending. Together with `sendTimeoutMs` this bounds how long a hung host transport can hold every tab (LOW-2).
 - **A refused cash-out replay is a refusal (L2).** `OffRampService` claims the row first and refuses it
   durably; a same-key retry then answers **200 with the `Refused` row**. `sendCashOut` (and `sendSale`)
   treat a view whose `status` is `refused` (any case) as a `definite` refusal carrying its
@@ -127,21 +155,24 @@ terminal returns `finished` (the key is cleared; its money may still be settling
 
 ## §presentation
 
-**Checkout states (H2).** "The key may be forgotten" and "the money is settled" are different facts, so
-there are two predicates. The real node (`FiatRailProvider.ProjectAsync`) sends `complete` +
+**Checkout states (H2, HIGH-1).** "Nothing new can be charged" and "the money is settled" are different
+facts, so there are two predicates. The real node (`FiatRailProvider.ProjectAsync`) sends `complete` +
 `payment_received` once the webhook marks the session complete, and `funds_applied` only later, from a
-separate applied inbox row; it sends `complete` + `not_started` when its Stripe re-read fails, and
-`expired` + `payment_failed` when Stripe expired the page.
+separate applied inbox row; `processing` while an asynchronous method (ACH) clears; `expired` +
+`payment_failed` when Stripe expired the page. When its Stripe re-read fails it now answers 503
+`DEPENDENCY_UNAVAILABLE` (never a 200 `not_started`); older nodes sent `complete` + `not_started`.
 
 | predicate | true for | used for |
 | :-- | :-- | :-- |
-| `isTerminalCheckout` | status `complete`/`failed`/`expired`, or settled | forgetting the saved key (a same-key resend is refused now) |
-| `isSettledCheckout` | settlement `funds_applied`/`payment_failed`, or `failed`/`expired` with `not_started` | stopping the poll, `onSettled` |
+| `isTerminalCheckout` | status `complete`/`failed`/`expired`, or settled | `finished` (a same-key resend cannot charge again) |
+| `isSettledCheckout` | settlement `funds_applied`/`payment_failed`, or `failed`/`expired` with `not_started` (funds applied, or provably unpaid and closed) | forgetting the saved key, stopping the poll, `onSettled`, unlocking the add-funds form |
 | `isOpenCheckout` | `awaiting_payment` + `not_started` | offering the payment page |
 
 An unrecognized status or settlement value is never terminal, settled or open (allowlists again).
-`describeSettlement` never says "waiting for your payment" unless the page is still open: `complete` (or
-`processing`) with nothing cleared says `checkout.confirming`; only `funds_applied` says the balance moved.
+`describeSettlement` never says "waiting for your payment" unless the page is still open: `processing` says
+`checkout.clearing` ("still clearing"), `complete` with nothing cleared says `checkout.confirming`; only
+`funds_applied` says the balance moved. `checkout.cannotConfirm` is for a read that failed (see
+`src/react/AGENTS.md` §checkout-status).
 
 **Amounts (L5).** `currencyMinorDigits(code)` is the ISO 4217 minor unit (an embedded table: List One,
 2025; 0 for JPY/KRW/..., 3 for KWD/BHD/..., 4 for CLF/UYW, 2 for the rest), or null for a code the SDK does
@@ -150,10 +181,21 @@ not know. `toMinorUnits(text, currency)` parses with those digits and returns nu
 null for an unknown currency; `minorUnitsToText` is the plain text the field parses back. Grouping is
 `en-US` so it never mixes with the `.` separator. `toBaseUnits` / `formatBaseUnits` use BigInt only.
 
-**Redirects (L3).** `safeRedirectUrl(url, policy?)` returns the parsed `href` (never the raw string) when the
-URL is `https:` without userinfo (`https://trusted@elsewhere` reads as trusted and goes elsewhere), and, with
-`policy.allowedOrigins`, only for an exact listed origin (an empty list admits nothing). `http:` on loopback
-needs `policy.allowLoopbackHttp` (a development flag); it is never admitted by default.
+**Redirects (L3, LOW-6).** `safeRedirectUrl(url, policy?)` returns the parsed `href` (never the raw string)
+only for an `https:` URL without userinfo (`https://trusted@elsewhere` reads as trusted and goes elsewhere)
+whose exact origin is in `DEFAULT_REDIRECT_ORIGINS` or `policy.allowedOrigins`. **The default is safe**: with
+no policy, only the hosted pages the AZOA node actually hands out pass. `allowedOrigins` **extends** the
+list (a Stripe Checkout custom domain, a Veriff or generic hosted-KYC origin, the host's own account page);
+it never replaces it. `http:` on loopback needs `policy.allowLoopbackHttp` (a development flag).
+
+| built-in origin | what the node returns there | evidence (oasis-sleek, read-only) |
+| :-- | :-- | :-- |
+| `https://checkout.stripe.com` | checkout `paymentUrl` (Stripe Checkout Session `url`) | `Providers/Fiat/StripeGateway.cs` reads the session `url` → `FiatRailProvider` `PaymentUrl`; Stripe API docs, Checkout Session object (`url: https://checkout.stripe.com/c/pay/cs_test_…`) |
+| `https://connect.stripe.com` | payout `setupUrl` (Stripe Connect Account Link `url`) | `Providers/Fiat/StripeConnectGateway.cs` `CreateAccountLinkAsync` (`/v1/account_links`) → `PayoutAccountService` `SetupUrl`; Stripe API docs, Account Link object (`url: https://connect.stripe.com/setup/c/…`). Dormant once Option C (platform-collected setup, `setupUrl` always null) lands |
+| `https://widget.identomat.com` | KYC `verificationUrl` (Identomat `/begin` `url`) | `Providers/Kyc/IdentomatKycProviderService.cs` (`RedirectUrl` → `VerificationUrl`); `appsettings.json` `Kyc:Provider: identomat`, `ResultBaseUrl`; `.omc/research/identomat-api-2026-10-15.md` (`"url": "https://widget.identomat.com/?session_token=…"`) |
+
+Not built in, because the node pins them per deployment: Veriff (`Kyc:VeriffRedirectOrigins`) and the
+generic hosted adapter (`Kyc:Hosted:RedirectOrigins`). A host using either lists that origin.
 
 `defaultMoneyMessages` is the full copy map; `mergeMoneyMessages` merges a host override section by section.
 `pending.summary[kind](amount)` gets `null` when the currency is unknown, and the default copy then names no
@@ -177,7 +219,8 @@ inside async methods) become refusals.
 
 `azoa-sdk/money/testing`: `moneyTransportContractCases(factory)` (one case per test in any runner) and
 `runMoneyTransportContract(factory, { requireAll })` (a report). Cases: every read resolves to a
-well-formed `MoneyResult`; no view carries subject/tenant keys — checked over **every** call, mutations
+well-formed `MoneyResult` whose refusal code is in the closed vocabulary (now including `needs_review`; a host
+BFF must map the node's `INTENT_NEEDS_REVIEW` to it, never to `unconfirmed` or `definite`); no view carries subject/tenant keys — checked over **every** call, mutations
 included (`checkout.begin`, `account.ensure`, `account.beginKyc`, `cashOut.beginDestinationSetup`,
 `cashOut.start`, `sale.quote`, `sale.sell`, and `account.revokeConsent` last so it cannot gate the
 others; each case builds its own fixture); same key → same checkout (`resumed: true`)

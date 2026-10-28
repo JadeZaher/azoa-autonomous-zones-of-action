@@ -120,6 +120,8 @@ describe("<WithdrawForm>", () => {
     });
 
     await screen.findByText(copy.pending.superseded);
+    // It may have been discarded there, so nothing claims it settled (LOW-5).
+    expect(screen.queryByText(/settled/)).toBeNull();
     expect(cashOutPosts(node)).toHaveLength(before);
   });
 });
@@ -130,7 +132,8 @@ describe("<PayoutDestinationStep> through a tenant BFF (F-H8)", () => {
     const bff = createTenantBff({ ada: {} });
     const redirects: [string, MoneyRedirectKind][] = [];
     render(
-      <AzoaMoneyProvider transport={bff.transport} subject="ada" onRedirect={(url, kind) => redirects.push([url, kind])}>
+      // The host's own account page is not a provider origin, so the host lists it.
+      <AzoaMoneyProvider transport={bff.transport} subject="ada" allowedRedirectOrigins={["https://app.azoa.example"]} onRedirect={(url, kind) => redirects.push([url, kind])}>
         <PayoutDestinationStep accountHolderSetupUrl="https://app.azoa.example/payouts" />
       </AzoaMoneyProvider>,
     );

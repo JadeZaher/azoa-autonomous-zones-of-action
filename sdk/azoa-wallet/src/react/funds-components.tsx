@@ -7,12 +7,13 @@ import {
   formatMinorUnits,
   isOpenCheckout,
   isSettledCheckout,
-  isTerminalCheckout,
   minorUnitsToText,
+  moneyRefusal,
+  releasesRequestKey,
   safeRedirectUrl,
   toMinorUnits,
 } from "../money/index.js";
-import type { CheckoutView, PendingKind, SavedRequest } from "../money/index.js";
+import type { CheckoutView, MoneyMessages, MoneyRefusal, PendingKind, SavedRequest } from "../money/index.js";
 import type { MoneyComponentProps } from "./account-components.js";
 import { useMoneyContext } from "./context.js";
 import { displayAmount, formatDateTime, redirectTo, useMoneyEvents, useMounted, useSlots } from "./internal.js";
@@ -33,11 +34,21 @@ export interface PendingRequestNoticeProps {
   className?: string;
 }
 
-/** An unresolved saved request blocks a new one until the person resumes or explicitly discards it. */
+/** An unresolved saved request blocks a new one until the person resumes or explicitly discards it; one held for review offers neither. */
 export function PendingRequestNotice({ kind, pending, currencyCode, busy, onResume, onDiscard, slots, className }: PendingRequestNoticeProps) {
   const { messages } = useMoneyContext();
   const { Alert, Button } = useSlots(slots);
   const summary = messages.pending.summary[kind](formatMinorUnits(pending.amountMinorUnits, currencyCode));
+  if (pending.needsReview) {
+    // The node holds it for an operator: no resume, no discard into a fresh request; only a same-key re-ask.
+    return (
+      <Alert tone="warning" className={className}>
+        <p>{messages.pending.notConfirmed(summary)}</p>
+        <p>{describeRefusal(moneyRefusal("needs_review"), messages)}</p>
+        <Button variant="secondary" onClick={onResume} disabled={busy}>{messages.pending.checkAgain}</Button>
+      </Alert>
+    );
+  }
   return (
     <Alert tone="warning" className={className}>
       <p>{messages.pending.notConfirmed(summary)}</p>
@@ -67,26 +78,34 @@ function CheckoutStatusCard(props: MoneyComponentProps & { status: CheckoutStatu
   const view = status.view;
   if (!view) {
     return (
-      <Alert tone={status.refusal ? "error" : "info"} className={props.className}>
-        {status.refusal ? describeRefusal(status.refusal, messages) : messages.checkout.loading}
+      <Alert tone={status.refusal ? (releasesRequestKey(status.refusal) ? "error" : "warning") : "info"} className={props.className}>
+        {status.refusal ? readProblem(status.refusal, messages) : messages.checkout.loading}
       </Alert>
     );
   }
+  // The last read failed after this view (LOW-4): it may be stale, so nothing is offered as if it were current.
+  const stale = status.refusal !== null && !isSettledCheckout(view);
   // Only a page the person can still pay on is offered; a paid-but-unsettled intent never shows one.
-  const open = isOpenCheckout(view);
+  const open = !stale && isOpenCheckout(view);
   const paymentUrl = open ? safeRedirectUrl(view.paymentUrl, redirectPolicy) : null;
   const canRedirect = Boolean(props.onRedirect ?? providerEvents.onRedirect);
   const paid = view.amountPaidMinorUnits !== null ? formatMinorUnits(view.amountPaidMinorUnits, view.currency) : null;
+  const sentence = stale ? messages.checkout.cannotConfirm : describeSettlement(view, messages);
   return (
-    <Card title={messages.checkout.title} description={<span role="status">{describeSettlement(view, messages)}</span>} className={props.className}>
+    <Card title={messages.checkout.title} description={<span role="status">{sentence}</span>} className={props.className}>
       {paid ? <p>{messages.checkout.paid(paid)}</p> : null}
       {open && view.expiresAt ? <p>{messages.checkout.expires(formatDateTime(view.expiresAt))}</p> : null}
-      {status.refusal ? <Alert tone="warning">{describeRefusal(status.refusal, messages)}</Alert> : null}
+      {status.refusal && status.refusal.code !== "unconfirmed" ? <Alert tone="warning">{describeRefusal(status.refusal, messages)}</Alert> : null}
       {paymentUrl && canRedirect ? <Button onClick={() => redirectTo(events, mounted, paymentUrl, "checkout", redirectPolicy)}>{messages.checkout.openPaymentPage}</Button> : null}
       {paymentUrl && !canRedirect ? <a href={paymentUrl}>{messages.checkout.openPaymentPage}</a> : null}
       <Button variant="secondary" onClick={status.refresh} disabled={status.polling}>{messages.checkout.check}</Button>
     </Card>
   );
+}
+
+/** A failed read in words: an unanswered one is "can't confirm right now", never "it may not have gone through". */
+function readProblem(refusal: MoneyRefusal, messages: MoneyMessages): string {
+  return refusal.code === "unconfirmed" ? messages.checkout.cannotConfirm : describeRefusal(refusal, messages);
 }
 
 export interface AddFundsFormProps extends MoneyComponentProps {
@@ -123,8 +142,11 @@ export function AddFundsForm(props: AddFundsFormProps) {
   const digits = currencyMinorDigits(currency);
   const currencyKnown = digits !== null;
   const unavailable = funds.capabilities !== null && !funds.capabilities.available;
-  // Paid (terminal) but the funds have not landed: a second payment now would be a real second charge.
-  const settling = status.view !== null && status.view.intentId === funds.intentId && isTerminalCheckout(status.view) && !isSettledCheckout(status.view);
+  const trackedView = status.view !== null && status.view.intentId === funds.intentId ? status.view : null;
+  // The node definitively will not show this intent (e.g. a stale `?intent=` link): there is nothing it could still charge.
+  const definitelyUnreadable = status.refusal !== null && releasesRequestKey(status.refusal);
+  // A watched intent without a settled read (open, clearing, paid but not landed, unreadable) could still take money (HIGH-1).
+  const settling = funds.intentId !== null && !(trackedView !== null && isSettledCheckout(trackedView)) && !definitelyUnreadable;
   const locked = funds.busy || unavailable || settling;
 
   const submit = () => {

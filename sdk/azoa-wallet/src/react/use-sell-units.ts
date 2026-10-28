@@ -4,7 +4,7 @@ import { MONEY_SCOPES, clearSavedRequest, moneyRefusal, readSavedRequest, sendSa
 import type { MoneyRefusal, SaleAttempt, SaleQuoteView, SaleView, SavedRequest, SellableView } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
-import { callHost, settleMoney, useMoneyEvents, useMounted, useStorageChange } from "./internal.js";
+import { callHost, settleMoney, useMoneyEvents, useMounted, usePerson, useStorageChange } from "./internal.js";
 
 export interface SellUnitsOptions extends MoneyEventProps {
   /** A sale was accepted (never a refused one). */
@@ -29,7 +29,7 @@ export interface SellUnitsState {
 }
 
 export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
-  const { transport, keyStore, messages } = useMoneyContext();
+  const { transport, keyStore, messages, identity } = useMoneyContext();
   const events = useMoneyEvents(options);
   const mounted = useMounted();
   const sale = transport.sale;
@@ -39,40 +39,45 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
   const [refusal, setRefusal] = useState<MoneyRefusal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const sending = useRef(false);
-  // Bumped per subject; reads and answers that belong to an older one are dropped.
-  const epoch = useRef(0);
+  // The person whose send is in flight: a same-tick double click is dropped, another person's send is not this one's.
+  const sending = useRef<object | null>(null);
+  // A new person starts from nothing, from their first paint; reads and answers for the previous one are dropped.
+  const person = usePerson(() => {
+    setSellable(null);
+    setQuote(null);
+    setPending(null);
+    setRefusal(null);
+    setNotice(null);
+    setBusy(false);
+  });
 
   const reload = useCallback(async () => {
     if (!sale) return;
-    const readIn = epoch.current;
+    const readFor = person.current;
     const result = await settleMoney(sale.sellable());
-    if (!mounted.current || epoch.current !== readIn) return;
+    if (!mounted.current || person.current !== readFor) return;
     if (result.ok) setSellable(result.value);
     else setRefusal(result.refusal);
-  }, [sale, mounted]);
+  }, [sale, mounted, person]);
 
   useEffect(() => {
-    epoch.current += 1;
-    setSellable(null);
-    setQuote(null);
-    setRefusal(null);
-    setNotice(null);
     setPending(sale ? readSavedRequest(keyStore, MONEY_SCOPES.sale) : null);
     if (sale) void reload();
-  }, [sale, keyStore, reload]);
+  }, [sale, keyStore, reload, identity]);
 
   useStorageChange(() => {
-    if (sale && !sending.current) setPending(readSavedRequest(keyStore, MONEY_SCOPES.sale));
+    if (sale && sending.current !== person.current) setPending(readSavedRequest(keyStore, MONEY_SCOPES.sale));
   });
 
   const requestQuote = useCallback(async (quantityBaseUnits: string) => {
     if (!sale) return;
+    const sentFor = person.current;
     setBusy(true);
     setRefusal(null);
     setNotice(null);
     try {
       const result = await settleMoney(sale.quote({ quantityBaseUnits }));
+      if (person.current !== sentFor) return;
       if (result.ok) setQuote(result.value);
       else {
         setQuote(null);
@@ -82,12 +87,12 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
     } finally {
       setBusy(false);
     }
-  }, [sale, events]);
+  }, [sale, events, person]);
 
   const run = useCallback(async (send: () => Promise<SaleAttempt>) => {
-    if (sending.current) return;
-    sending.current = true;
-    const sentIn = epoch.current;
+    const sentFor = person.current;
+    if (sending.current === sentFor) return;
+    sending.current = sentFor;
     setBusy(true);
     setRefusal(null);
     setNotice(null);
@@ -98,11 +103,11 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
       } catch {
         attempt = { kind: "refused", refusal: moneyRefusal("unconfirmed"), kept: readSavedRequest(keyStore, MONEY_SCOPES.sale) };
       }
-      if (epoch.current !== sentIn) return;
+      if (person.current !== sentFor) return;
       if (attempt.kind === "pending") setPending(attempt.pending);
       else if (attempt.kind === "superseded") {
         setPending(attempt.current);
-        setNotice(messages.pending.superseded);
+        setNotice(attempt.current ? messages.pending.replaced : messages.pending.superseded);
       } else if (attempt.kind === "accepted") {
         setPending(null);
         setQuote(null);
@@ -110,15 +115,16 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
         callHost(() => events.current.onSettled?.(attempt.view));
       } else {
         setPending(attempt.kept);
-        setRefusal(attempt.refusal);
+        // A request held for review is explained by its own notice.
+        if (!attempt.kept?.needsReview) setRefusal(attempt.refusal);
         callHost(() => events.current.onRefusal?.(attempt.refusal));
       }
       if (attempt.kind !== "pending") await reload();
     } finally {
-      sending.current = false;
-      setBusy(false);
+      if (sending.current === sentFor) sending.current = null;
+      if (person.current === sentFor) setBusy(false);
     }
-  }, [events, keyStore, reload, messages]);
+  }, [events, keyStore, reload, messages, person]);
 
   const sell = useCallback(async () => {
     if (quote) await run(() => startSale(transport, keyStore, quote));
@@ -129,7 +135,9 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
   }, [run, transport, keyStore, pending]);
 
   const discard = useCallback(() => {
-    if (pending) clearSavedRequest(keyStore, MONEY_SCOPES.sale, pending.requestKey);
+    // A request the host holds for review is never swapped for a fresh one from here.
+    if (!pending || pending.needsReview) return;
+    clearSavedRequest(keyStore, MONEY_SCOPES.sale, pending.requestKey);
     setPending(null);
     setNotice(messages.pending.discarded);
   }, [keyStore, pending, messages]);

@@ -1,10 +1,10 @@
 // Add-funds state machine: saved key first, resume before new, resolve by state. See `src/react/AGENTS.md` §add-funds.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MONEY_SCOPES, clearSavedRequest, isTerminalCheckout, moneyRefusal, readSavedRequest, sendCheckout, startCheckout } from "../money/index.js";
+import { MONEY_SCOPES, clearSavedRequest, moneyRefusal, readSavedRequest, resolveCheckoutByState, sendCheckout, startCheckout } from "../money/index.js";
 import type { CheckoutAttempt, CheckoutCapabilitiesView, CheckoutView, MoneyRefusal, SavedRequest } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
-import { callHost, redirectTo, settleMoney, useMoneyEvents, useMounted, useStorageChange } from "./internal.js";
+import { callHost, redirectTo, settleMoney, useMoneyEvents, useMounted, usePerson, useStorageChange } from "./internal.js";
 
 export interface AddFundsOptions extends MoneyEventProps {
   /** The intent id the payment page returned with (e.g. `?intent=`); resolved by its state before anything new is offered. */
@@ -13,9 +13,9 @@ export interface AddFundsOptions extends MoneyEventProps {
 
 export interface AddFundsState {
   capabilities: CheckoutCapabilitiesView | null;
-  /** An unresolved saved payment: offer `resume()` (or `discard()`) before any new payment. */
+  /** An unresolved saved payment: offer `resume()` (or `discard()`) before any new payment; `needsReview` means only "check again". */
   pending: SavedRequest | null;
-  /** The intent to show and poll. */
+  /** The intent to show and poll; while it has no settled read, no new payment is offered. */
   intentId: string | null;
   /** The intent as `begin` answered it, before the first poll. */
   initialView: CheckoutView | null;
@@ -28,11 +28,12 @@ export interface AddFundsState {
   start(amountMinorUnits: number): Promise<void>;
   /** Re-sends the pending payment with its original key, unless another tab already changed it. */
   resume(): Promise<void>;
+  /** Forgets the pending payment (never one held for review) and stops watching its intent. */
   discard(): void;
 }
 
 export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
-  const { transport, keyStore, messages, events: providerEvents, redirectPolicy } = useMoneyContext();
+  const { transport, keyStore, messages, events: providerEvents, redirectPolicy, identity } = useMoneyContext();
   const events = useMoneyEvents(options);
   const mounted = useMounted();
   const returnedIntentId = options.returnedIntentId ?? null;
@@ -43,17 +44,21 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
   const [refusal, setRefusal] = useState<MoneyRefusal | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const sending = useRef(false);
-  // Bumped when the subject's key store (or the transport) changes; an answer sent under an older epoch is dropped.
-  const epoch = useRef(0);
-
-  useEffect(() => {
-    epoch.current += 1;
-  }, [transport, keyStore]);
+  // The person whose send is in flight: a same-tick double click is dropped, another person's send is not this one's.
+  const sending = useRef<object | null>(null);
+  // A new person starts from nothing, from their first paint; answers sent for the previous one are dropped.
+  const person = usePerson(() => {
+    setCapabilities(null);
+    setPending(null);
+    setIntentId(returnedIntentId);
+    setInitialView(null);
+    setRefusal(null);
+    setNotice(null);
+    setBusy(false);
+  });
 
   useEffect(() => {
     let cancelled = false;
-    // Everything shown belongs to this key store's subject: a same-tab user switch starts from nothing.
     setPending(null);
     setInitialView(null);
     setRefusal(null);
@@ -66,28 +71,24 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
     });
     const saved = readSavedRequest(keyStore, MONEY_SCOPES.checkout);
     if (saved && !saved.serverId) {
-      // The answer to this request was lost: it may have been admitted, so it is offered for resume first.
+      // The answer to this request was lost (or the node holds it for review): it is offered before any new payment.
       setPending(saved);
     } else if (saved?.serverId && saved.serverId !== returnedIntentId) {
       if (!returnedIntentId) setIntentId(saved.serverId);
       void settleMoney(transport.checkout.get(saved.serverId)).then(read => {
         if (cancelled) return;
-        if (read.ok && isTerminalCheckout(read.value)) {
-          // With no return id the status poller shows it (and forgets the key); otherwise it is forgotten here.
-          if (returnedIntentId) clearSavedRequest(keyStore, MONEY_SCOPES.checkout, saved.requestKey);
-        } else {
-          setPending(saved);
-        }
+        // Only a settled read lets the key go; an unsettled or unreadable intent keeps it, offered for resume.
+        if (!(read.ok && resolveCheckoutByState(keyStore, read.value))) setPending(saved);
       });
     }
     return () => {
       cancelled = true;
     };
-  }, [transport, keyStore, returnedIntentId]);
+  }, [transport, keyStore, returnedIntentId, identity]);
 
   // Another tab resolved, replaced or lost the saved payment: follow storage instead of offering a stale resume.
   useStorageChange(() => {
-    if (sending.current) return;
+    if (sending.current === person.current) return;
     const saved = readSavedRequest(keyStore, MONEY_SCOPES.checkout);
     if (saved && !saved.serverId) setPending(saved);
     else if (pending && pending.requestKey !== saved?.requestKey) setPending(null);
@@ -105,7 +106,7 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
       case "superseded":
         setPending(attempt.current && !attempt.current.serverId ? attempt.current : null);
         if (attempt.current?.serverId) setIntentId(attempt.current.serverId);
-        setNotice(messages.pending.superseded);
+        setNotice(attempt.current ? messages.pending.replaced : messages.pending.superseded);
         return;
       case "opened":
         setPending(null);
@@ -121,8 +122,10 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
         if (attempt.view.resumed) setNotice(messages.addFunds.resumedFinished);
         return;
       case "refused":
+        // A kept request replaces the form with its notice, so no second payment is offered meanwhile.
         setPending(attempt.kept);
-        setRefusal(attempt.refusal);
+        // A request held for review is explained by its own notice.
+        if (!attempt.kept?.needsReview) setRefusal(attempt.refusal);
         callHost(() => events.current.onRefusal?.(attempt.refusal));
         return;
     }
@@ -130,9 +133,9 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
 
   const run = useCallback(async (send: () => Promise<CheckoutAttempt>) => {
     // A double click must not send twice (or redirect twice) before the busy state renders.
-    if (sending.current) return;
-    sending.current = true;
-    const sentIn = epoch.current;
+    const sentFor = person.current;
+    if (sending.current === sentFor) return;
+    sending.current = sentFor;
     setBusy(true);
     setRefusal(null);
     setNotice(null);
@@ -144,12 +147,12 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
         attempt = { kind: "refused", refusal: moneyRefusal("unconfirmed"), kept: readSavedRequest(keyStore, MONEY_SCOPES.checkout) };
       }
       // Host callbacks run through `callHost`, so a throwing `onRedirect` can never turn into a fake "unconfirmed".
-      if (epoch.current === sentIn) apply(attempt);
+      if (person.current === sentFor) apply(attempt);
     } finally {
-      sending.current = false;
-      setBusy(false);
+      if (sending.current === sentFor) sending.current = null;
+      if (person.current === sentFor) setBusy(false);
     }
-  }, [apply, keyStore]);
+  }, [apply, keyStore, person]);
 
   const start = useCallback(
     (amountMinorUnits: number) => run(() => startCheckout(transport, keyStore, amountMinorUnits, { redirectPolicy })),
@@ -161,11 +164,18 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
   }, [run, transport, keyStore, pending, redirectPolicy]);
 
   const discard = useCallback(() => {
-    if (pending) clearSavedRequest(keyStore, MONEY_SCOPES.checkout, pending.requestKey);
+    // The node holds a reviewed request for an operator: it is never swapped for a fresh payment from here.
+    if (!pending || pending.needsReview) return;
+    clearSavedRequest(keyStore, MONEY_SCOPES.checkout, pending.requestKey);
+    // The person chose a separate payment, so the discarded intent no longer holds the form.
+    if (pending.serverId && pending.serverId === intentId) {
+      setIntentId(null);
+      setInitialView(null);
+    }
     setPending(null);
     setRefusal(null);
     setNotice(messages.pending.discarded);
-  }, [keyStore, pending, messages]);
+  }, [keyStore, pending, intentId, messages]);
 
   return {
     capabilities,

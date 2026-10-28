@@ -5,7 +5,7 @@ import type { MoneyRefusal, MoneyRefusalCode } from "./types.js";
 
 const REFUSAL_CODES: readonly MoneyRefusalCode[] = [
   "setup_required", "under_review", "consent_revoked", "account_holder_required", "kyb_required",
-  "payments_not_configured", "rail_busy", "definite", "unconfirmed", "unauthenticated",
+  "payments_not_configured", "rail_busy", "definite", "unconfirmed", "needs_review", "unauthenticated",
 ];
 
 /** The only codes that are a definite answer for a request key. An allowlist: an unknown, misspelled or future code keeps the key. */
@@ -19,12 +19,13 @@ const SERVER_CODE_RULES = new Map<string, { refusal: MoneyRefusalCode; statuses?
   ["PAYMENTS_NOT_CONFIGURED", { refusal: "payments_not_configured", statuses: [400, 422, 503] }],
   ["RAIL_BUSY", { refusal: "rail_busy" }],
   ["RAIL_UNAVAILABLE", { refusal: "rail_busy" }],
-  // Same-key 409s from `FiatRailProvider.BeginCheckoutAsync`: final answers for this key.
+  // Same-key 409s from `FiatRailProvider.BeginCheckoutAsync`. Final only for a key that names no intent yet;
+  // a saved request with a `serverId` is decided by that intent's state instead (see `flows.ts`).
   ["INTENT_FINISHED", { refusal: "definite", statuses: [409] }],
   ["INTENT_EXPIRED", { refusal: "definite", statuses: [409] }],
   ["REQUEST_KEY_IN_USE", { refusal: "definite", statuses: [409] }],
-  // The intent owes an operator decision and may still complete: the key must survive.
-  ["INTENT_NEEDS_REVIEW", { refusal: "unconfirmed" }],
+  // The node holds the request for an operator's decision and it may still complete: the key must survive.
+  ["INTENT_NEEDS_REVIEW", { refusal: "needs_review", statuses: [409] }],
 ]);
 
 const FALLBACK_MESSAGE: Record<MoneyRefusalCode, string> = {
@@ -37,6 +38,7 @@ const FALLBACK_MESSAGE: Record<MoneyRefusalCode, string> = {
   rail_busy: "The payment service is busy. Nothing was moved; try again shortly.",
   definite: "That request was refused. Nothing was moved.",
   unconfirmed: "The answer did not arrive, so it is not known whether this went through.",
+  needs_review: "This payment needs a manual check before it can continue — we'll follow up.",
   unauthenticated: "Your session expired. Sign in again.",
 };
 

@@ -45,7 +45,8 @@ describe("describeSettlement", () => {
   it.each([
     ["awaiting_payment", "not_started", copy.settlement.not_started],
     ["complete", "not_started", copy.checkout.confirming],
-    ["processing", "not_started", copy.checkout.confirming],
+    ["processing", "not_started", copy.checkout.clearing], // ACH submitted, still clearing: never "waiting"
+    ["processing", "payment_received", copy.settlement.payment_received],
     ["complete", "payment_received", copy.settlement.payment_received],
     ["complete", "funds_applied", copy.settlement.funds_applied],
     ["expired", "payment_failed", copy.checkout.expired],
@@ -61,24 +62,32 @@ describe("describeSettlement", () => {
   });
 });
 
-describe("safeRedirectUrl", () => {
+describe("safeRedirectUrl (LOW-6: only the node's provider origins by default)", () => {
   it.each([
-    ["https://checkout.stripe.com/pay/cs_1", {}, "https://checkout.stripe.com/pay/cs_1"],
+    // The built-in list: the hosted pages the node hands out.
+    ["https://checkout.stripe.com/c/pay/cs_test_1", {}, "https://checkout.stripe.com/c/pay/cs_test_1"],
+    ["https://connect.stripe.com/setup/c/acct_1/abc", {}, "https://connect.stripe.com/setup/c/acct_1/abc"],
+    ["https://widget.identomat.com/?session_token=s1", {}, "https://widget.identomat.com/?session_token=s1"],
     ["HTTPS://Checkout.Stripe.com/pay", {}, "https://checkout.stripe.com/pay"], // the parsed href, not the raw string
+    // Safe default: any other https origin is refused until the host lists it.
+    ["https://evil.example/pay", {}, null],
+    ["https://checkout.stripe.com.evil.example/pay", {}, null],
+    ["https://pay.example.com/c/pay/cs_1", {}, null],
+    ["https://pay.example.com/c/pay/cs_1", { allowedOrigins: ["https://pay.example.com"] }, "https://pay.example.com/c/pay/cs_1"],
+    ["https://checkout.stripe.com/pay", { allowedOrigins: ["https://pay.example.com"] }, "https://checkout.stripe.com/pay"], // extends, never replaces
+    ["https://evil.example/pay", { allowedOrigins: ["https://pay.example.com"] }, null],
     ["javascript:alert(1)", {}, null],
     ["data:text/html,<script>", {}, null],
-    ["http://evil.example/pay", {}, null],
+    ["http://checkout.stripe.com/pay", {}, null],
+    ["http://pay.example.com/c/pay/cs_1", { allowedOrigins: ["http://pay.example.com"] }, null], // a host cannot list plain http
     ["//evil.example/pay", {}, null],
     ["/relative/path", {}, null],
     ["https://checkout.stripe.com@evil.example/pay", {}, null], // userinfo that reads as a trusted host
+    ["https://user@checkout.stripe.com/pay", {}, null],
     ["http://localhost:3000/return", {}, null], // loopback http only behind the dev flag
     ["http://localhost:3000/return", { allowLoopbackHttp: true }, "http://localhost:3000/return"],
     ["http://[::1]:3000/return", { allowLoopbackHttp: true }, "http://[::1]:3000/return"],
     ["http://evil.example/pay", { allowLoopbackHttp: true }, null],
-    ["https://checkout.stripe.com/pay", { allowedOrigins: ["https://checkout.stripe.com"] }, "https://checkout.stripe.com/pay"],
-    ["https://evil.example/pay", { allowedOrigins: ["https://checkout.stripe.com"] }, null],
-    ["https://checkout.stripe.com/pay", { allowedOrigins: [] }, null], // an empty allowlist admits nothing
-    ["http://localhost:3000/r", { allowedOrigins: ["https://checkout.stripe.com"], allowLoopbackHttp: true }, null],
   ])("%s with %o", (url, policy, expected) => {
     expect(safeRedirectUrl(url, policy)).toBe(expected);
   });

@@ -52,6 +52,38 @@ The breaking change below is why this is a minor bump; everything under "Added (
 - Every view has an allowlist `to*View`; the direct transport narrows cash-out, payout and capability
   answers, and the contract's forbidden-key case covers every call, mutations included.
 
+### Second fix round (pre-publish re-review, 2026-10-27)
+Guiding rule: the saved request key is the lock against a second payment; only proof that nothing was or can
+be paid under it may release it.
+- A saved checkout that already names its intent (`serverId`) is **decided by state**: no `begin` refusal
+  (`INTENT_EXPIRED`, `INTENT_FINISHED`, `PAYMENTS_NOT_CONFIGURED`, anything) releases its key; the flow reads
+  the intent and releases only on a settled view. A refused send never hands out a payment page.
+- `resolveCheckoutByState` and every checkout answer release the key only when the intent is **settled**
+  (`isSettledCheckout`); a terminal intent whose funds are still landing keeps it (`finished`, key kept).
+- `<AddFundsForm>` locks new payments while it watches any intent without a settled read (open, `processing`,
+  `payment_received`, unreadable); `discard()` also stops watching the discarded intent.
+- New refusal code `needs_review` (409 `INTENT_NEEDS_REVIEW`): keeps the key, marks the saved request
+  `needsReview` (`markNeedsReview`), and the UI shows "needs a manual check — we'll follow up" with no resume
+  prompt and no fresh payment, only a same-key "Check again".
+- A failed status read after a good one shows `checkout.cannotConfirm` and no payment page instead of the
+  stale "Waiting for your payment"; `processing` says `checkout.clearing`.
+- Flows take `MoneyFlowOptions` (`sendTimeoutMs`, default 45 s; `lockTimeoutMs`, default 60 s): a hung host
+  transport is `unconfirmed` with the key kept, and a tab that cannot get the Web Lock in time answers
+  `rail_busy` without sending. `startCashOut`/`sendCashOut`/`startSale`/`sendSale` gained the optional
+  options argument.
+- The provider exposes an `identity` token (transport + key store + subject); hooks reset during render, so
+  a new person's first paint has none of the previous person's state, even with a stable `keyStore` prop, and
+  late answers for the previous person never apply or redirect.
+- `pending.superseded` no longer claims the request settled; `pending.replaced` covers a request another
+  window replaced.
+- `AzoaApiClient` also refuses an `apiKey` in React Native (`navigator.product === "ReactNative"`).
+- **Redirect default is now safe** (behavior change, not breaking in practice: no host has shipped on 0.6.0
+  yet). Without `allowedRedirectOrigins` / `policy.allowedOrigins`, only `DEFAULT_REDIRECT_ORIGINS` pass
+  (`https://checkout.stripe.com`, `https://connect.stripe.com`, `https://widget.identomat.com`, the hosted
+  pages the node returns); the option now **extends** that list instead of replacing "any https origin". Hosts
+  on a Stripe custom domain, Veriff or a generic hosted-KYC provider must list that origin, and
+  `PayoutDestinationStep`'s `accountHolderSetupUrl` must be on a listed origin.
+
 ### Breaking
 - `ApiKeyInfo.scopes` and `ApiKeyCreateResult.scopes` are now `string[]`, normalized from the
   comma-separated string the API stores (`normalizeApiKeyScopes`). An empty list means legacy full

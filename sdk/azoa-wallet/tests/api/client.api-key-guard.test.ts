@@ -22,6 +22,8 @@ describe("AzoaApiClient refuses a tenant API key in a browser (M3)", () => {
   it.each([
     ["a page", { window: { document: {} }, document: {} }],
     ["a dedicated worker", { WorkerGlobalScope: function WorkerGlobalScope() {}, importScripts: () => undefined }],
+    // LOW-6: no `document` there, and an app bundle is just as extractable.
+    ["a React Native app", { navigator: { product: "ReactNative" } }],
   ])("throws in %s", (_label, browserGlobals) => {
     for (const [name, value] of Object.entries(browserGlobals)) vi.stubGlobal(name, value);
 

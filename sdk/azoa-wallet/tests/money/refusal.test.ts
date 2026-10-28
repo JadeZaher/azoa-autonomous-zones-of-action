@@ -25,13 +25,15 @@ describe("refusalFromSdkError", () => {
     ["lost on the wire", nodeError(undefined), "unconfirmed", false],
     ["expired session", nodeError(401, "Invalid token."), "unauthenticated", false],
     ["client guard before egress", new SdkError(SdkErrorCode.INVALID_INPUT, "intentId must be a UUID"), "definite", true],
-    // M1: the node's same-key 409s. Only a typed final answer releases the key.
+    // M1: the node's same-key 409s. Only a typed final answer releases the key (and with a serverId, flows decide by state).
     ["409 without a code (still being admitted)", nodeError(409, "A payment for this request is still being admitted."), "unconfirmed", false],
-    ["409 legacy CONFLICT code", nodeError(409, "This payment is already finished.", "CONFLICT"), "unconfirmed", false],
+    ["409 generic CONFLICT (Stripe request still in flight)", nodeError(409, "A payment for this request is still being set up.", "CONFLICT"), "unconfirmed", false],
     ["409 INTENT_FINISHED", nodeError(409, "This payment is already finished.", "INTENT_FINISHED"), "definite", true],
     ["409 INTENT_EXPIRED", nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED"), "definite", true],
     ["409 REQUEST_KEY_IN_USE", nodeError(409, "That request key is already in use.", "REQUEST_KEY_IN_USE"), "definite", true],
-    ["409 INTENT_NEEDS_REVIEW", nodeError(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW"), "unconfirmed", false],
+    // MEDIUM-3: held for an operator, not "the answer did not arrive"; the key survives.
+    ["409 INTENT_NEEDS_REVIEW", nodeError(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW"), "needs_review", false],
+    ["503 DEPENDENCY_UNAVAILABLE (the node's Stripe re-read failed)", nodeError(503, "The payment provider could not be reached.", "DEPENDENCY_UNAVAILABLE"), "unconfirmed", false],
     // L6: status before message text; a code counts only on the status the node sends it with.
     ["503 whose text says KYB_REQUIRED", nodeError(503, "KYB_REQUIRED: upstream verification service unavailable."), "unconfirmed", false],
     ["503 whose text says payments are not configured", nodeError(503, "Payments are not configured upstream (proxy)."), "unconfirmed", false],
@@ -62,7 +64,7 @@ describe("releasesRequestKey (an allowlist)", () => {
   it.each([
     ["definite", true], ["setup_required", true], ["under_review", true], ["consent_revoked", true],
     ["account_holder_required", true], ["kyb_required", true], ["payments_not_configured", true],
-    ["unconfirmed", false], ["rail_busy", false], ["unauthenticated", false],
+    ["unconfirmed", false], ["rail_busy", false], ["unauthenticated", false], ["needs_review", false],
     // Host transports deserialize JSON at runtime: anything unknown must keep the key.
     ["Definite", false], ["DEFINITE", false], ["server_error", false], ["timeout", false], ["", false], [" definite", false],
     [undefined, false], [null, false], [403, false],

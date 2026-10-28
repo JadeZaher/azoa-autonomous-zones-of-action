@@ -19,7 +19,7 @@ import { workflowStartQuery } from "../workflow/start-options.js";
 export interface AzoaApiConfig {
   baseUrl: string;
   token?: string;
-  /** Tenant API key: server-only. Refused in a browser page or worker unless `dangerouslyAllowApiKeyInBrowser`. See `src/api/AGENTS.md` §api-key-in-browser. */
+  /** Tenant API key: server-only. Refused in a browser page, worker or React Native app unless `dangerouslyAllowApiKeyInBrowser`. See `src/api/AGENTS.md` §api-key-in-browser. */
   apiKey?: string;
   /** Lets a browser runtime hold `apiKey` anyway; only for a trusted, non-public runtime (an internal kiosk, a test harness). */
   dangerouslyAllowApiKeyInBrowser?: boolean;
@@ -2224,7 +2224,7 @@ export class AzoaApiClient {
     if (Boolean(config.apiKey) && isBrowserRuntime() && config.dangerouslyAllowApiKeyInBrowser !== true) {
       throw new SdkError(
         SdkErrorCode.INVALID_INPUT,
-        "AzoaApiClient refuses an apiKey in a browser: a tenant API key in a page or worker ships to every visitor. Call AZOA with the key from your server instead.",
+        "AzoaApiClient refuses an apiKey in a browser or mobile app: a tenant API key in a page, worker or app bundle ships to every user. Call AZOA with the key from your server instead.",
       );
     }
     // A copy: the credential cannot be swapped in (or out) behind the guard after construction.
@@ -4661,10 +4661,14 @@ export class AzoaApiClient {
   }
 }
 
-/** A browser page (a `document`) or a browser worker: anywhere a bundled credential reaches every visitor. */
+/** A browser page (a `document`), a browser worker or React Native: anywhere a bundled credential reaches every user's device. */
 function isBrowserRuntime(): boolean {
-  const scope = globalThis as { window?: { document?: unknown }; document?: unknown; WorkerGlobalScope?: unknown; importScripts?: unknown };
+  const scope = globalThis as {
+    window?: { document?: unknown }; document?: unknown; WorkerGlobalScope?: unknown; importScripts?: unknown; navigator?: { product?: unknown };
+  };
   if (typeof scope.document !== "undefined" || typeof scope.window?.document !== "undefined") return true;
+  // React Native has no `document`, and an app bundle is as extractable as a page.
+  if (scope.navigator?.product === "ReactNative") return true;
   return typeof scope.WorkerGlobalScope === "function" && typeof scope.importScripts === "function";
 }
 

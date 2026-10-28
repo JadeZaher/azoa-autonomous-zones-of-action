@@ -46,7 +46,8 @@ import { AzoaMoneyProvider, MoneyGate, AddFundsForm } from "azoa-sdk/react";
 <AzoaMoneyProvider
   transport={transport}
   subject={session.userId}
-  allowedRedirectOrigins={["https://checkout.stripe.com", "https://connect.stripe.com"]}
+  // Stripe Checkout, Stripe Connect and the Identomat widget are admitted by default; list any other page you use.
+  allowedRedirectOrigins={["https://app.example.com"]}
   onRedirect={url => router.push(url)}
 >
   <MoneyGate require="ready">

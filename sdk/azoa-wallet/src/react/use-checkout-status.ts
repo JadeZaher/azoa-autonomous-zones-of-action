@@ -1,9 +1,9 @@
-// Polls one checkout until its money settles, forgetting the saved key once the intent is terminal. See `src/react/AGENTS.md` §checkout-status.
+// Polls one checkout until its money settles, forgetting the saved key only then. See `src/react/AGENTS.md` §checkout-status.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MONEY_SCOPES, isSettledCheckout, readSavedRequest, releasesRequestKey, resolveCheckoutByState } from "../money/index.js";
 import type { CheckoutView, MoneyRefusal } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
-import { callHost, settleMoney } from "./internal.js";
+import { callHost, settleMoney, usePerson } from "./internal.js";
 
 export interface CheckoutStatusOptions {
   /** A view already in hand (e.g. from `begin`), shown before the first read; ignored unless it is this intent. */
@@ -18,6 +18,7 @@ export interface CheckoutStatusOptions {
 
 export interface CheckoutStatusState {
   view: CheckoutView | null;
+  /** The last read's refusal; while set, `view` may be out of date. */
   refusal: MoneyRefusal | null;
   polling: boolean;
   /** Reads again now and restarts polling. */
@@ -26,7 +27,7 @@ export interface CheckoutStatusState {
 
 /** Reads `intentId` until it is settled (or definitely refused). `null` reads nothing. */
 export function useCheckoutStatus(intentId: string | null, options: CheckoutStatusOptions = {}): CheckoutStatusState {
-  const { transport, keyStore } = useMoneyContext();
+  const { transport, keyStore, identity } = useMoneyContext();
   const [view, setView] = useState<CheckoutView | null>(() => viewFor(options.initialView, intentId));
   const [refusal, setRefusal] = useState<MoneyRefusal | null>(null);
   const [polling, setPolling] = useState(false);
@@ -37,6 +38,10 @@ export function useCheckoutStatus(intentId: string | null, options: CheckoutStat
     setView(viewFor(options.initialView, intentId));
     setRefusal(null);
   }
+  const person = usePerson(() => {
+    setView(null);
+    setRefusal(null);
+  });
   const onSettled = useRef(options.onSettled);
   onSettled.current = options.onSettled;
   const initialView = useRef(options.initialView);
@@ -58,12 +63,13 @@ export function useCheckoutStatus(intentId: string | null, options: CheckoutStat
       // Whether this device holds the saved key for this intent, read before this answer can forget it.
       const heldKey = readSavedRequest(keyStore, MONEY_SCOPES.checkout)?.serverId === intentId;
       const result = await settleMoney(transport.checkout.get(intentId));
-      if (cancelled) return;
+      // An answer read for a previous person never reaches the next one, even before this effect is cleaned up.
+      if (cancelled || person.current !== identity) return;
       polls += 1;
       if (result.ok) {
         setView(result.value);
         setRefusal(null);
-        // A terminal intent's key is forgotten here, though its money may not have settled yet.
+        // The key is forgotten only on a settled read; a terminal but unsettled intent keeps it.
         if (resolveCheckoutByState(keyStore, result.value) || heldKey) waitedFor.current = intentId;
         if (isSettledCheckout(result.value)) {
           setPolling(false);
@@ -93,7 +99,7 @@ export function useCheckoutStatus(intentId: string | null, options: CheckoutStat
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [intentId, transport, keyStore, interval, maxPolls, generation]);
+  }, [intentId, transport, keyStore, interval, maxPolls, generation, identity, person]);
 
   const refresh = useCallback(() => setGeneration(value => value + 1), []);
   return { view, refusal, polling, refresh };

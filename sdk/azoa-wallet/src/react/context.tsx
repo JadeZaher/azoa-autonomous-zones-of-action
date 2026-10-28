@@ -28,11 +28,11 @@ export interface AzoaMoneyProviderProps extends MoneyEventProps {
   transport: AzoaMoneyTransport;
   /** Where saved request keys live; defaults to `createKeyStore({ subject })` over `localStorage`. Bind it to one subject. */
   keyStore?: KeyStore;
-  /** The host session's subject (e.g. its user id); required when `keyStore` is omitted. Changing it resets every money view. */
+  /** The host session's subject (e.g. its user id); required when `keyStore` is omitted. Changing it resets every money view, even with a stable `keyStore`. */
   subject?: string;
   messages?: MoneyMessagesOverride;
   slots?: Partial<MoneySlots>;
-  /** Exact origins redirects and links may go to (your payment, verification and payout providers); omitted means any `https:` origin. */
+  /** Exact origins redirects and links may also go to, on top of `DEFAULT_REDIRECT_ORIGINS` (a Stripe custom domain, your Veriff or hosted-KYC origin, your own pages). */
   allowedRedirectOrigins?: readonly string[];
   /** Development only: also admit `http:` redirects to loopback (`localhost`, `127.0.0.1`, `[::1]`). */
   allowLoopbackRedirects?: boolean;
@@ -47,6 +47,8 @@ export interface MoneyContextValue {
   events: MoneyEventProps;
   accountStore: AccountStore;
   redirectPolicy: RedirectPolicy;
+  /** A fresh token whenever the person changes (transport, key store or subject); hooks reset on it and drop older answers. */
+  identity: object;
 }
 
 const MoneyContext = createContext<MoneyContextValue | null>(null);
@@ -55,8 +57,10 @@ export function AzoaMoneyProvider(props: AzoaMoneyProviderProps) {
   const { transport, keyStore, subject, messages, slots, onRedirect, onRefusal, allowedRedirectOrigins, allowLoopbackRedirects, children } = props;
   // Without a subject there is no safe place for keys: createKeyStore throws rather than share them across users.
   const resolvedKeyStore = useMemo(() => keyStore ?? createKeyStore({ subject: subject ?? "" }), [keyStore, subject]);
-  // A new subject is a new person: the store (wallet address, a live verification link) is rebuilt, never carried over.
-  const accountStore = useMemo(() => new AccountStore(transport), [transport, resolvedKeyStore, subject]);
+  // A new subject is a new person even when the host keeps one session-aware `keyStore` object (LOW-3).
+  const identity = useMemo(() => ({}), [transport, resolvedKeyStore, subject]);
+  // The store (wallet address, a live verification link) is rebuilt per person, never carried over.
+  const accountStore = useMemo(() => new AccountStore(transport), [transport, identity]);
   const originsKey = allowedRedirectOrigins?.join(" ");
   const redirectPolicy = useMemo<RedirectPolicy>(
     () => ({ ...(allowedRedirectOrigins ? { allowedOrigins: [...allowedRedirectOrigins] } : {}), allowLoopbackHttp: allowLoopbackRedirects === true }),
@@ -71,7 +75,8 @@ export function AzoaMoneyProvider(props: AzoaMoneyProviderProps) {
     events: { onRedirect, onRefusal },
     accountStore,
     redirectPolicy,
-  }), [transport, resolvedKeyStore, messages, slots, onRedirect, onRefusal, accountStore, redirectPolicy]);
+    identity,
+  }), [transport, resolvedKeyStore, messages, slots, onRedirect, onRefusal, accountStore, redirectPolicy, identity]);
   return <MoneyContext.Provider value={value}>{children}</MoneyContext.Provider>;
 }
 

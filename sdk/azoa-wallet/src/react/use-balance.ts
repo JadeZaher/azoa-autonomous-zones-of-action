@@ -1,8 +1,8 @@
 // The person's money balance. See `src/react/AGENTS.md` §hooks.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { BalanceView, MoneyRefusal } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
-import { settleMoney, useMounted } from "./internal.js";
+import { settleMoney, useMounted, usePerson } from "./internal.js";
 
 export interface BalanceState {
   balance: BalanceView | null;
@@ -12,19 +12,22 @@ export interface BalanceState {
 }
 
 export function useBalance(): BalanceState {
-  const { transport, keyStore } = useMoneyContext();
+  const { transport, identity } = useMoneyContext();
   const mounted = useMounted();
   const [balance, setBalance] = useState<BalanceView | null>(null);
   const [refusal, setRefusal] = useState<MoneyRefusal | null>(null);
   const [busy, setBusy] = useState(false);
-  // Bumped per subject; a read that belongs to an older one is dropped.
-  const epoch = useRef(0);
+  // A new person never sees the previous one's balance, even for one paint; a read for the previous one is dropped.
+  const person = usePerson(() => {
+    setBalance(null);
+    setRefusal(null);
+  });
 
   const refresh = useCallback(async () => {
-    const readIn = epoch.current;
+    const readFor = person.current;
     setBusy(true);
     const result = await settleMoney(transport.balance.get());
-    if (!mounted.current || epoch.current !== readIn) return;
+    if (!mounted.current || person.current !== readFor) return;
     setBusy(false);
     if (result.ok) {
       setBalance(result.value);
@@ -32,14 +35,11 @@ export function useBalance(): BalanceState {
     } else {
       setRefusal(result.refusal);
     }
-  }, [transport, mounted]);
+  }, [transport, mounted, person]);
 
   useEffect(() => {
-    epoch.current += 1;
-    setBalance(null);
-    setRefusal(null);
     void refresh();
-  }, [refresh, keyStore]);
+  }, [refresh, identity]);
 
   return { balance, refusal, busy, refresh };
 }

@@ -6,6 +6,7 @@ export {
   memoryStorage,
   claimRequestKey,
   rememberServerId,
+  markNeedsReview,
   readSavedRequest,
   clearSavedRequest,
   newRequestKey,
@@ -24,6 +25,7 @@ export {
   toBaseUnits,
   formatBaseUnits,
   safeRedirectUrl,
+  DEFAULT_REDIRECT_ORIGINS,
   defaultMoneyMessages,
   mergeMoneyMessages,
   describeRefusal,
@@ -50,6 +52,6 @@ export {
   FORBIDDEN_VIEW_KEYS,
 } from "./views.js";
 export { startCheckout, sendCheckout, resolveCheckoutByState, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
-export type { CheckoutAttempt, CashOutAttempt, SaleAttempt, PendingAttempt, RefusedAttempt, SupersededAttempt, CheckoutFlowOptions } from "./flows.js";
+export type { CheckoutAttempt, CashOutAttempt, SaleAttempt, PendingAttempt, RefusedAttempt, SupersededAttempt, CheckoutFlowOptions, MoneyFlowOptions } from "./flows.js";
 export { createDirectMoneyTransport } from "./direct-transport.js";
 export type { DirectMoneyTransportOptions } from "./direct-transport.js";

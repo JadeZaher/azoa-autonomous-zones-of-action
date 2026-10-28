@@ -85,7 +85,7 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
       beginKyc: () => answer("account.beginKyc", () => {
         if (!me().opened) return refuse("setup_required", "No account exists for you yet.");
         if (me().kycStatus === "Unknown") me().kycStatus = "Pending";
-        return { ok: true, value: { verificationUrl: `https://verify.example/session/${user}`, expiresAt: null, instructions: null, developmentSimulation: false } };
+        return { ok: true, value: { verificationUrl: `https://widget.identomat.com/?session_token=${user}`, expiresAt: null, instructions: null, developmentSimulation: false } };
       }),
       revokeConsent: async () => {
         calls.push(`account.revokeConsent(${user})`);
@@ -101,7 +101,7 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
         const intentId = randomUUID();
         const intent = {
           intentId, owner: user, requestKey: request.requestKey, status: "awaiting_payment" as const, settlementState: "not_started" as const,
-          paymentUrl: `https://checkout.stripe.test/pay/${intentId}`, resumed: false, amountPaidMinorUnits: null, currency: "usd", expiresAt: null,
+          paymentUrl: `https://checkout.stripe.com/c/pay/cs_test_${intentId}`, resumed: false, amountPaidMinorUnits: null, currency: "usd", expiresAt: null,
         };
         intents.set(intentId, intent);
         return { ok: true, value: strip(intent) };

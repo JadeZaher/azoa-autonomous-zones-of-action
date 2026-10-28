@@ -25,6 +25,8 @@ export interface SavedRequest {
   reference?: string;
   /** The server's id for this key (e.g. a checkout intent id), once an answer named it. */
   serverId?: string;
+  /** The server holds this request for an operator's decision (`needs_review`): neither resumed as if lost nor replaced. */
+  needsReview?: true;
 }
 
 /** `ready`: send with this key. `pending`: an unresolved key for a different request must be resolved first. */
@@ -88,7 +90,16 @@ export function claimRequestKey(store: KeyStore, scope: string, amountMinorUnits
 /** Records the server id an answer gave for the saved key, so a later visit can resolve it by state. */
 export function rememberServerId(store: KeyStore, scope: string, requestKey: string, serverId: string): void {
   const saved = readSavedRequest(store, scope);
-  if (saved?.requestKey === requestKey) store.write(scope, JSON.stringify({ ...saved, serverId }));
+  if (saved?.requestKey !== requestKey) return;
+  // An answer that names the server's record supersedes an earlier "held for review".
+  const { needsReview: _held, ...rest } = saved;
+  store.write(scope, JSON.stringify({ ...rest, serverId }));
+}
+
+/** Records that the server holds the saved key's request for an operator's decision, so later visits do not offer it as lost. */
+export function markNeedsReview(store: KeyStore, scope: string, requestKey: string): void {
+  const saved = readSavedRequest(store, scope);
+  if (saved?.requestKey === requestKey) store.write(scope, JSON.stringify({ ...saved, needsReview: true }));
 }
 
 export function readSavedRequest(store: KeyStore, scope: string): SavedRequest | null {
@@ -101,6 +112,7 @@ export function readSavedRequest(store: KeyStore, scope: string): SavedRequest |
           amountMinorUnits: parsed.amountMinorUnits as number,
           ...(typeof parsed.reference === "string" ? { reference: parsed.reference } : {}),
           ...(typeof parsed.serverId === "string" ? { serverId: parsed.serverId } : {}),
+          ...(parsed.needsReview === true ? { needsReview: true as const } : {}),
         }
       : null;
   } catch {

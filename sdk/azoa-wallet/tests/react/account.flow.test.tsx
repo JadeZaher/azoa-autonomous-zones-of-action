@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MONEY_SCOPES, claimRequestKey, createKeyStore, defaultMoneyMessages } from "../../src/money/index.js";
-import type { MoneyRedirectKind } from "../../src/money/index.js";
+import type { AzoaMoneyTransport, KeyStore, MoneyRedirectKind } from "../../src/money/index.js";
 import { AddFundsForm, AzoaMoneyProvider, ConsentStatus, CustodialAccountCard, KycStep, MoneyGate } from "../../src/react/index.js";
 import type { AzoaMoneyProviderProps } from "../../src/react/index.js";
 import { createTenantBff } from "./tenant-bff.js";
@@ -55,7 +56,7 @@ describe("<MoneyGate> and the onboarding steps", () => {
 
     await user.click(await screen.findByRole("button", { name: copy.kyc.start }));
 
-    await waitFor(() => expect(redirects).toEqual([["https://verify.example/session/ada", "kyc"]]));
+    await waitFor(() => expect(redirects).toEqual([["https://widget.identomat.com/?session_token=ada", "kyc"]]));
     expect(bff.calls.filter(call => call.startsWith("account.ensure") || call.startsWith("account.beginKyc"))).toEqual(["account.ensure(ada)", "account.beginKyc(ada)"]);
     await user.click(screen.getByRole("button", { name: copy.kyc.checkAgain }));
     await screen.findByText(copy.kycStatus.Pending);
@@ -106,7 +107,7 @@ describe("a same-tab user switch (M2): same transport object, new subject", () =
     await screen.findByText("A payment of 25.00 USD has not been confirmed yet.");
     await user.click(screen.getByRole("button", { name: copy.kyc.continue }));
     const aliceLink = await screen.findByRole("link", { name: copy.kyc.openVerification });
-    expect(aliceLink.getAttribute("href")).toBe("https://verify.example/session/alice");
+    expect(aliceLink.getAttribute("href")).toBe("https://widget.identomat.com/?session_token=alice");
 
     bff.signIn("bob");
     view.rerender(page("bob"));
@@ -118,3 +119,65 @@ describe("a same-tab user switch (M2): same transport object, new subject", () =
     expect((screen.getByRole("button", { name: "Continue to payment" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe("a host keeps one session-aware keyStore object across a user switch (LOW-3)", () => {
+  it("the next person's first paint has none of the previous person's state, and the previous person's late answer never applies or redirects", async () => {
+    const user = userEvent.setup();
+    const bff = createTenantBff({ alice: {}, bob: {} }, "alice");
+    let signedIn = "alice";
+    const storeFor = () => createKeyStore({ subject: signedIn });
+    // One object for the whole app that routes to whoever is signed in now, so the provider's key store never changes.
+    const sessionKeyStore: KeyStore = {
+      read: scope => storeFor().read(scope),
+      write: (scope, value) => storeFor().write(scope, value),
+      remove: scope => storeFor().remove(scope),
+    };
+    // Alice lost the answer to a payment on this device earlier.
+    claimRequestKey(storeFor(), MONEY_SCOPES.checkout, 25_00);
+    let answerAlice!: () => void;
+    const aliceAnswered = new Promise<void>(resolve => (answerAlice = resolve));
+    const transport: AzoaMoneyTransport = {
+      ...bff.transport,
+      // Alice's resend is admitted at once (as alice), but its answer is held on the wire.
+      checkout: { ...bff.transport.checkout, begin: request => {
+        const answer = bff.transport.checkout.begin(request);
+        return aliceAnswered.then(() => answer);
+      } },
+    };
+    const redirects: Redirect[] = [];
+    const paints: [subject: string, text: string][] = [];
+    const page = (subject: string) => (
+      <AzoaMoneyProvider transport={transport} keyStore={sessionKeyStore} subject={subject} onRedirect={(url, kind) => redirects.push([url, kind])}>
+        <AddFundsForm currencyCode="usd" />
+        <PaintProbe subject={subject} paints={paints} />
+      </AzoaMoneyProvider>
+    );
+    const view = render(page("alice"));
+    await user.click(await screen.findByRole("button", { name: "Resume that payment" }));
+
+    signedIn = "bob";
+    bff.signIn("bob");
+    view.rerender(page("bob"));
+
+    const [subject, firstPaint] = paints.at(-1)!;
+    expect(subject).toBe("bob");
+    expect(firstPaint).not.toContain("has not been confirmed yet");
+    expect((screen.getByRole("button", { name: "Continue to payment" }) as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => {
+      answerAlice();
+      await aliceAnswered;
+    });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(redirects).toEqual([]);
+    expect(screen.queryByText(copy.settlement.not_started)).toBeNull();
+    expect((screen.getByRole("button", { name: "Continue to payment" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+/** Records the page's text at the commit where `subject` first renders: layout effects run before any passive effect could reset state. */
+function PaintProbe({ subject, paints }: { subject: string; paints: [string, string][] }) {
+  useLayoutEffect(() => {
+    paints.push([subject, document.body.textContent ?? ""]);
+  }, [subject, paints]);
+  return null;
+}

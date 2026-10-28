@@ -1,5 +1,5 @@
 // Shared plumbing for the money hooks and components. See `src/react/AGENTS.md`.
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import { formatMinorUnits, safeRedirectUrl } from "../money/index.js";
 import type { MoneyMessages, MoneyRedirectKind, RedirectPolicy } from "../money/index.js";
@@ -15,6 +15,24 @@ export function useMoneyEvents<Extra extends object = object>(local: MoneyEventP
   const ref = useRef(merged);
   ref.current = merged;
   return ref;
+}
+
+/** `useLayoutEffect` in a browser, `useEffect` during SSR (React 18 warns about layout effects on the server). */
+const useCommitEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+/** The provider's current person: state resets during render (before a new person's first paint); the ref names the committed person. See `src/react/AGENTS.md` §provider. */
+export function usePerson(onChange: () => void): MutableRefObject<object> {
+  const { identity } = useMoneyContext();
+  const [shownFor, setShownFor] = useState(identity);
+  if (shownFor !== identity) {
+    setShownFor(identity);
+    onChange();
+  }
+  const current = useRef(identity);
+  useCommitEffect(() => {
+    current.current = identity;
+  }, [identity]);
+  return current;
 }
 
 /** False once the component unmounts, so a late answer never navigates a page the person already left. */

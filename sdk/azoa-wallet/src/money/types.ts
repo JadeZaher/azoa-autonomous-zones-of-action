@@ -22,6 +22,7 @@ export type MoneyRefusalCode =
   | "rail_busy"
   | "definite"
   | "unconfirmed"
+  | "needs_review"
   | "unauthenticated";
 
 /** Why a money call did not happen; `message` is one sentence for a person, never rail or credential detail. */
