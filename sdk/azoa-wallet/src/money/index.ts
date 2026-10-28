@@ -12,10 +12,15 @@ export {
 } from "./request-key.js";
 export type { KeyStorage, KeyStore, KeyStoreOptions, SavedRequest, RequestClaim } from "./request-key.js";
 export {
-  isFinishedCheckout,
+  isTerminalCheckout,
+  isSettledCheckout,
+  isOpenCheckout,
+  isCashOutOnTrack,
   isDefiniteRefusal,
+  currencyMinorDigits,
   toMinorUnits,
   formatMinorUnits,
+  minorUnitsToText,
   toBaseUnits,
   formatBaseUnits,
   safeRedirectUrl,
@@ -24,10 +29,27 @@ export {
   describeRefusal,
   describeSettlement,
 } from "./presentation.js";
-export type { MoneyMessages, MoneyMessagesOverride, PendingKind } from "./presentation.js";
-export { refusalFromSdkError, releasesRequestKey, isMoneyRefusalCode } from "./refusal.js";
-export { toCheckoutView, toCustodialAccountView, deriveAccountGate, findForbiddenViewKeys, FORBIDDEN_VIEW_KEYS } from "./views.js";
+export type { CheckoutState, MoneyMessages, MoneyMessagesOverride, PendingKind, RedirectPolicy } from "./presentation.js";
+export { refusalFromSdkError, releasesRequestKey, isMoneyRefusalCode, moneyRefusal } from "./refusal.js";
+export {
+  toCheckoutView,
+  toCustodialAccountView,
+  toAccountCapabilitiesView,
+  toCheckoutCapabilitiesView,
+  toKycSessionView,
+  toConsentRevocationView,
+  toCashOutQuoteView,
+  toPayoutDestinationView,
+  toCashOutView,
+  toBalanceView,
+  toSellableView,
+  toSaleQuoteView,
+  toSaleView,
+  deriveAccountGate,
+  findForbiddenViewKeys,
+  FORBIDDEN_VIEW_KEYS,
+} from "./views.js";
 export { startCheckout, sendCheckout, resolveCheckoutByState, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
-export type { CheckoutAttempt, CashOutAttempt, SaleAttempt, PendingAttempt, RefusedAttempt } from "./flows.js";
+export type { CheckoutAttempt, CashOutAttempt, SaleAttempt, PendingAttempt, RefusedAttempt, SupersededAttempt, CheckoutFlowOptions } from "./flows.js";
 export { createDirectMoneyTransport } from "./direct-transport.js";
 export type { DirectMoneyTransportOptions } from "./direct-transport.js";

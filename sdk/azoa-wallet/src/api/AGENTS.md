@@ -81,3 +81,19 @@ anonymously, so a stale token never rides along. Only an authenticated route's 4
 a string `detail`; the server text is kept on `SdkError.serverMessage`, and `userFacingMessage()`
 is the copy for people (no method/path prefix). API key `scopes` cross the wire as a CSV string and
 are normalized to a list at this boundary. `GET /api/fungible-creation` is a bare array.
+
+## §api-key-in-browser
+
+A tenant API key is a server-only credential: in a page or a worker it ships to every visitor. The
+`AzoaApiClient` constructor therefore **throws** when `apiKey` is truthy and the runtime is a browser (a
+`document`, or a `WorkerGlobalScope` with `importScripts`), unless the caller passes the loudly named
+`dangerouslyAllowApiKeyInBrowser: true` (a trusted, non-public runtime: an internal kiosk, a test harness).
+Server runtimes (Node, Deno 2, Bun, edge workers without a `document`) are unaffected. React Native has no
+`document` and is not detected; a key in a mobile bundle is equally extractable, so do not ship one there
+either.
+
+The constructor **copies** its config, so a key assigned to the caller's object after construction can
+neither slip past the guard nor change what is sent. `hasApiKey()` uses the same truthiness
+(`Boolean(apiKey)`) `fetchWithAuth` uses to attach `X-Api-Key`, so the two can never disagree (a non-string
+truthy key from runtime JSON used to be sent while `hasApiKey()` said false). `createDirectMoneyTransport`
+still refuses a keyed client as defense in depth (`src/money/AGENTS.md` §direct-transport).

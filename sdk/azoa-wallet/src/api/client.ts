@@ -19,7 +19,10 @@ import { workflowStartQuery } from "../workflow/start-options.js";
 export interface AzoaApiConfig {
   baseUrl: string;
   token?: string;
+  /** Tenant API key: server-only. Refused in a browser page or worker unless `dangerouslyAllowApiKeyInBrowser`. See `src/api/AGENTS.md` §api-key-in-browser. */
   apiKey?: string;
+  /** Lets a browser runtime hold `apiKey` anyway; only for a trusted, non-public runtime (an internal kiosk, a test harness). */
+  dangerouslyAllowApiKeyInBrowser?: boolean;
   onTokenRefresh?: () => Promise<string>;
   timeoutMs?: number;
   /**
@@ -2218,7 +2221,14 @@ export class AzoaApiClient {
       if (e instanceof SdkError) throw e;
       throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid baseUrl: ${config.baseUrl}`);
     }
-    this.config = config;
+    if (Boolean(config.apiKey) && isBrowserRuntime() && config.dangerouslyAllowApiKeyInBrowser !== true) {
+      throw new SdkError(
+        SdkErrorCode.INVALID_INPUT,
+        "AzoaApiClient refuses an apiKey in a browser: a tenant API key in a page or worker ships to every visitor. Call AZOA with the key from your server instead.",
+      );
+    }
+    // A copy: the credential cannot be swapped in (or out) behind the guard after construction.
+    this.config = { ...config };
   }
 
   /** Clear the cached token. Forces the next request to use onTokenRefresh. */
@@ -2233,7 +2243,8 @@ export class AzoaApiClient {
 
   /** True when this client carries a tenant API key: a privileged, server-only credential that must never reach a browser. */
   hasApiKey(): boolean {
-    return typeof this.config.apiKey === "string" && this.config.apiKey.length > 0;
+    // Same truthiness `fetchWithAuth` uses to send `X-Api-Key`, so the two can never disagree.
+    return Boolean(this.config.apiKey);
   }
 
   /**
@@ -4648,6 +4659,13 @@ export class AzoaApiClient {
     }
     return this.fail(new SdkError(SdkErrorCode.NETWORK_ERROR, `${method} ${path}: network request failed`, { method, path, cause: e as Error }));
   }
+}
+
+/** A browser page (a `document`) or a browser worker: anywhere a bundled credential reaches every visitor. */
+function isBrowserRuntime(): boolean {
+  const scope = globalThis as { window?: { document?: unknown }; document?: unknown; WorkerGlobalScope?: unknown; importScripts?: unknown };
+  if (typeof scope.document !== "undefined" || typeof scope.window?.document !== "undefined") return true;
+  return typeof scope.WorkerGlobalScope === "function" && typeof scope.importScripts === "function";
 }
 
 function isWorkflowDesignerInterview(path: string): boolean {

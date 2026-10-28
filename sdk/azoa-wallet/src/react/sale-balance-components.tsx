@@ -1,10 +1,10 @@
 // Host-priced sale form and the balance summary. See `src/react/AGENTS.md` §components.
 import { useId, useState } from "react";
-import { describeRefusal, formatBaseUnits, formatMinorUnits, toBaseUnits } from "../money/index.js";
+import { describeRefusal, formatBaseUnits, toBaseUnits } from "../money/index.js";
 import type { SaleView } from "../money/index.js";
 import type { MoneyComponentProps } from "./account-components.js";
 import { useMoneyContext } from "./context.js";
-import { formatDateTime, useSlots } from "./internal.js";
+import { displayAmount, formatDateTime, useSlots } from "./internal.js";
 import { PendingRequestNotice } from "./funds-components.js";
 import { useBalance } from "./use-balance.js";
 import { useSellUnits } from "./use-sell-units.js";
@@ -70,7 +70,7 @@ export function SellUnitsForm(props: SellUnitsFormProps) {
           <p>
             {messages.sale.quoteSummary(
               `${formatBaseUnits(sale.quote.quantityBaseUnits, sellable.decimals)} ${sellable.unitName}`,
-              formatMinorUnits(sale.quote.proceedsMinorUnits, sale.quote.currencyCode),
+              displayAmount(sale.quote.proceedsMinorUnits, sale.quote.currencyCode, messages),
             )}
           </p>
           {sale.quote.expiresAt ? <p>{messages.sale.quoteExpires(formatDateTime(sale.quote.expiresAt))}</p> : null}
@@ -92,9 +92,9 @@ export function BalanceSummary(props: MoneyComponentProps) {
       {balance ? (
         <dl>
           <dt>{messages.balance.availableLabel}</dt>
-          <dd>{formatMinorUnits(balance.availableMinorUnits, balance.currencyCode)}</dd>
+          <dd>{displayAmount(balance.availableMinorUnits, balance.currencyCode, messages)}</dd>
           <dt>{messages.balance.onHoldLabel}</dt>
-          <dd>{formatMinorUnits(balance.onHoldMinorUnits, balance.currencyCode)}</dd>
+          <dd>{displayAmount(balance.onHoldMinorUnits, balance.currencyCode, messages)}</dd>
         </dl>
       ) : null}
       {balance?.availableFrom && balance.onHoldMinorUnits > 0 ? <p>{messages.balance.availableFrom(formatDateTime(balance.availableFrom))}</p> : null}

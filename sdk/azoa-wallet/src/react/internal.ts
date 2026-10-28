@@ -1,8 +1,8 @@
 // Shared plumbing for the money hooks and components. See `src/react/AGENTS.md`.
 import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
-import { safeRedirectUrl } from "../money/index.js";
-import type { MoneyRedirectKind } from "../money/index.js";
+import { formatMinorUnits, safeRedirectUrl } from "../money/index.js";
+import type { MoneyMessages, MoneyRedirectKind, RedirectPolicy } from "../money/index.js";
 import type { MoneySlots } from "./slots.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
@@ -29,19 +29,51 @@ export function useMounted(): MutableRefObject<boolean> {
   return mounted;
 }
 
-/** Hands a safe URL to the host's `onRedirect`; false when there is no handler, no safe URL, or the component is gone. */
-export function redirectTo(events: MutableRefObject<MoneyEventProps>, mounted: MutableRefObject<boolean>, url: string | null | undefined, kind: MoneyRedirectKind): boolean {
-  const safe = safeRedirectUrl(url);
+/** Runs a host callback; if it throws, the error is logged and the hook's own state (busy, pending) is unaffected. */
+export function callHost(run: () => void): void {
+  try {
+    run();
+  } catch (error) {
+    console.error("azoa-sdk/react: a host callback threw; the money state is unaffected.", error);
+  }
+}
+
+/** Hands a policy-admitted URL to the host's `onRedirect`; false when there is no handler, no admitted URL, or the component is gone. */
+export function redirectTo(
+  events: MutableRefObject<MoneyEventProps>,
+  mounted: MutableRefObject<boolean>,
+  url: string | null | undefined,
+  kind: MoneyRedirectKind,
+  policy?: RedirectPolicy,
+): boolean {
+  const safe = safeRedirectUrl(url, policy);
   const handler = events.current.onRedirect;
   if (!safe || !handler || !mounted.current) return false;
-  handler(safe, kind);
+  callHost(() => handler(safe, kind));
   return true;
+}
+
+/** Re-runs `onChange` when another tab writes storage (`storage` events fire only in the other tabs). */
+export function useStorageChange(onChange: () => void): void {
+  const latest = useRef(onChange);
+  latest.current = onChange;
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+    const listener = () => latest.current();
+    window.addEventListener("storage", listener);
+    return () => window.removeEventListener("storage", listener);
+  }, []);
 }
 
 /** Slots from the provider, overridden per component. */
 export function useSlots(local?: Partial<MoneySlots>): MoneySlots {
   const { slots } = useMoneyContext();
   return local ? { ...slots, ...local } : slots;
+}
+
+/** An amount for display; the copy map's placeholder when the currency is unknown (never a guessed decimal point). */
+export function displayAmount(minorUnits: number, currencyCode: string | null | undefined, messages: MoneyMessages): string {
+  return formatMinorUnits(minorUnits, currencyCode) ?? messages.common.amountUnavailable;
 }
 
 /** Locale date-time for display; the raw text when it does not parse. */

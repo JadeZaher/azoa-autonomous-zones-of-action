@@ -1,10 +1,10 @@
 // Cash-out components: payout destination setup and the keyed withdraw form. See `src/react/AGENTS.md` §components.
 import { useId, useState } from "react";
-import { describeRefusal, formatMinorUnits, safeRedirectUrl, toMinorUnits } from "../money/index.js";
+import { currencyMinorDigits, describeRefusal, safeRedirectUrl, toMinorUnits } from "../money/index.js";
 import type { CashOutView } from "../money/index.js";
 import type { MoneyComponentProps } from "./account-components.js";
 import { useMoneyContext } from "./context.js";
-import { formatDateTime, useSlots } from "./internal.js";
+import { callHost, displayAmount, formatDateTime, useSlots } from "./internal.js";
 import { PendingRequestNotice } from "./funds-components.js";
 import { useCashOut } from "./use-cash-out.js";
 import type { CashOutState } from "./use-cash-out.js";
@@ -21,13 +21,13 @@ export function PayoutDestinationStep(props: PayoutDestinationStepProps) {
 }
 
 function PayoutDestinationPanel(props: PayoutDestinationStepProps & { cashOut: CashOutState }) {
-  const { messages, events: providerEvents } = useMoneyContext();
+  const { messages, events: providerEvents, redirectPolicy } = useMoneyContext();
   const { Card, Button, Alert } = useSlots(props.slots);
   const { destination, destinationRefusal, busy, canRedirect } = props.cashOut;
   // F-H8: the node refuses tenant-initiated payout setup; that is a route to the account holder, not an error.
   const holderOnly = destinationRefusal?.code === "account_holder_required";
-  const setupUrl = safeRedirectUrl(destination?.setupUrl);
-  const holderUrl = safeRedirectUrl(props.accountHolderSetupUrl);
+  const setupUrl = safeRedirectUrl(destination?.setupUrl, redirectPolicy);
+  const holderUrl = safeRedirectUrl(props.accountHolderSetupUrl, redirectPolicy);
   const onRedirect = props.onRedirect ?? providerEvents.onRedirect;
   return (
     <Card title={messages.destination.title} description={destination?.statusMessage} className={props.className}>
@@ -39,7 +39,7 @@ function PayoutDestinationPanel(props: PayoutDestinationStepProps & { cashOut: C
         </Button>
       ) : null}
       {setupUrl && !canRedirect ? <a href={setupUrl}>{messages.destination.openSetupPage}</a> : null}
-      {holderOnly && holderUrl && onRedirect ? <Button onClick={() => onRedirect(holderUrl, "payout-setup")}>{messages.destination.accountHolderAction}</Button> : null}
+      {holderOnly && holderUrl && onRedirect ? <Button onClick={() => callHost(() => onRedirect(holderUrl, "payout-setup"))}>{messages.destination.accountHolderAction}</Button> : null}
       {holderOnly && holderUrl && !onRedirect ? <a href={holderUrl}>{messages.destination.accountHolderAction}</a> : null}
       {destination && destination.outstandingRequirementCount > 0 ? <p>{messages.destination.outstanding(destination.outstandingRequirementCount)}</p> : null}
     </Card>
@@ -47,7 +47,7 @@ function PayoutDestinationPanel(props: PayoutDestinationStepProps & { cashOut: C
 }
 
 export interface WithdrawFormProps extends PayoutDestinationStepProps {
-  /** A cash-out was accepted; its `status` says how far it got. */
+  /** A cash-out was accepted (never a refused one); its `status` says how far it got. */
   onSettled?: (view: CashOutView) => void;
 }
 
@@ -63,11 +63,18 @@ export function WithdrawForm(props: WithdrawFormProps) {
   const ready = Boolean(quote?.available && quote.accountReady);
 
   const submit = () => {
-    if (!quote) return;
+    if (!quote || cashOut.busy) return;
+    if (currencyMinorDigits(quote.currencyCode) === null) {
+      setInputError(messages.common.unknownCurrency);
+      return;
+    }
     const ceiling = Math.min(quote.maximumAmountMinorUnits, quote.cashableMinorUnits);
-    const minorUnits = toMinorUnits(amountText);
+    const minorUnits = toMinorUnits(amountText, quote.currencyCode);
     if (minorUnits === null || minorUnits < quote.minimumAmountMinorUnits || minorUnits > ceiling) {
-      setInputError(messages.cashOut.outOfRange(formatMinorUnits(quote.minimumAmountMinorUnits, quote.currencyCode), formatMinorUnits(ceiling, quote.currencyCode)));
+      setInputError(messages.cashOut.outOfRange(
+        displayAmount(quote.minimumAmountMinorUnits, quote.currencyCode, messages),
+        displayAmount(ceiling, quote.currencyCode, messages),
+      ));
       return;
     }
     setInputError(null);
@@ -77,16 +84,16 @@ export function WithdrawForm(props: WithdrawFormProps) {
   return (
     <Card title={messages.cashOut.title} description={quote?.statusMessage} className={props.className}>
       {cashOut.refusal ? <Alert tone="error">{describeRefusal(cashOut.refusal, messages)}</Alert> : null}
-      {cashOut.notice ? <Alert tone="success">{cashOut.notice}</Alert> : null}
+      {cashOut.notice ? <Alert tone={cashOut.noticeTone}>{cashOut.notice}</Alert> : null}
       {cashOut.destination && !cashOut.destination.readyToReceive ? (
         <PayoutDestinationPanel slots={props.slots} onRedirect={props.onRedirect} onRefusal={props.onRefusal} accountHolderSetupUrl={props.accountHolderSetupUrl} cashOut={cashOut} />
       ) : null}
       {quote ? (
         <dl>
           <dt>{messages.cashOut.cashableLabel}</dt>
-          <dd>{formatMinorUnits(quote.cashableMinorUnits, quote.currencyCode)}</dd>
+          <dd>{displayAmount(quote.cashableMinorUnits, quote.currencyCode, messages)}</dd>
           <dt>{messages.cashOut.onHoldLabel}</dt>
-          <dd>{formatMinorUnits(quote.onHoldMinorUnits, quote.currencyCode)}</dd>
+          <dd>{displayAmount(quote.onHoldMinorUnits, quote.currencyCode, messages)}</dd>
           {quote.availableFrom ? (
             <>
               <dt>{messages.cashOut.availableFromLabel}</dt>
@@ -127,7 +134,7 @@ export function WithdrawForm(props: WithdrawFormProps) {
         <ul>
           {cashOut.history.map(row => (
             <li key={row.id}>
-              <span>{formatMinorUnits(row.amountMinorUnits, row.currencyCode)}</span> <span>{row.statusMessage}</span>{" "}
+              <span>{displayAmount(row.amountMinorUnits, row.currencyCode, messages)}</span> <span>{row.statusMessage}</span>{" "}
               <span>{formatDateTime(row.requestedAt)}</span>
             </li>
           ))}

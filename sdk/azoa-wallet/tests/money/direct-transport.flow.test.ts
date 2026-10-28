@@ -9,13 +9,15 @@ import {
   memoryStorage,
   newRequestKey,
   readSavedRequest,
+  sendCashOut,
   sendCheckout,
+  startCashOut,
   startCheckout,
 } from "../../src/money/index.js";
-import type { AzoaMoneyTransport, CheckoutView, KeyStorage } from "../../src/money/index.js";
+import type { AzoaMoneyTransport, CheckoutView, CustodialAccountView, KeyStorage } from "../../src/money/index.js";
 import { runMoneyTransportContract } from "../../src/money/testing/index.js";
-import { createNodeEmulator } from "./node-emulator.js";
-import type { NodeEmulator } from "./node-emulator.js";
+import { CASH_OUT_START, createNodeEmulator } from "./node-emulator.js";
+import type { NodeEmulator, NodeEmulatorOptions } from "./node-emulator.js";
 
 /** One page load: a real AzoaApiClient on the person's own session, the direct transport and a key store over the device's storage. */
 function pageLoad(node: NodeEmulator, storage: KeyStorage) {
@@ -24,11 +26,13 @@ function pageLoad(node: NodeEmulator, storage: KeyStorage) {
 }
 
 /** A fresh node with the global fetch pointed at it. */
-function freshNode(): NodeEmulator {
-  const node = createNodeEmulator();
+function freshNode(options?: NodeEmulatorOptions): NodeEmulator {
+  const node = createNodeEmulator(options);
   vi.stubGlobal("fetch", node.fetch);
   return node;
 }
+
+const directTransport = (node: NodeEmulator) => createDirectMoneyTransport(new AzoaApiClient({ baseUrl: node.baseUrl, token: node.token }), node.userId);
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -40,7 +44,7 @@ describe("money over the direct transport (P0 flows)", () => {
     const device = memoryStorage();
 
     const firstVisit = pageLoad(node, device);
-    node.loseNextAdmissionResponse();
+    node.loseNextResponse();
     const lost = await startCheckout(firstVisit.transport, firstVisit.keyStore, 25_00);
     expect(lost).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
     expect(node.admissions).toHaveLength(1);
@@ -81,12 +85,219 @@ describe("money over the direct transport (P0 flows)", () => {
     const tenantClient = new AzoaApiClient({ baseUrl: node.baseUrl, token: node.token, apiKey: "azoa_live_tenant_key" });
     expect(() => createDirectMoneyTransport(tenantClient, node.userId)).toThrow(/apiKey/);
   });
+});
 
-  it("passes the reusable transport contract with every case reached", async () => {
-    const report = await runMoneyTransportContract(() => {
-      const node = freshNode();
-      return createDirectMoneyTransport(new AzoaApiClient({ baseUrl: node.baseUrl, token: node.token }), node.userId);
-    }, { requireAll: true });
+describe("same-key 409s (M1): resending the key of a page that lapsed", () => {
+  /** A lost answer, then the page lapses before the person comes back to resume it. */
+  async function lapsedResume(conflictCodes: "typed" | "legacy") {
+    const node = freshNode({ conflictCodes });
+    const device = memoryStorage();
+    const visit = pageLoad(node, device);
+    node.loseNextResponse();
+    await startCheckout(visit.transport, visit.keyStore, 25_00);
+    node.apply(node.admissions[0]!.intentId, "pageLapsed");
+    const saved = readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!;
+    return { node, visit, attempt: await sendCheckout(visit.transport, visit.keyStore, saved) };
+  }
+
+  it("INTENT_EXPIRED is a final answer: the key is released with the node's sentence and a fresh payment opens", async () => {
+    const { node, visit, attempt } = await lapsedResume("typed");
+
+    expect(attempt).toEqual({
+      kind: "refused",
+      refusal: { code: "definite", message: "This payment page has expired. Start a new payment." },
+      kept: null,
+    });
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toBeNull();
+    const fresh = await startCheckout(visit.transport, visit.keyStore, 25_00);
+    expect(fresh.kind).toBe("opened");
+    expect(node.admissions).toHaveLength(2);
+  });
+
+  it("today's untyped CONFLICT keeps the key: it is not known whether the request is still being admitted", async () => {
+    const { node, visit, attempt } = await lapsedResume("legacy");
+
+    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.requestKey).toBe(node.admissions[0]!.requestKey);
+    expect((await startCheckout(visit.transport, visit.keyStore, 10_00)).kind).toBe("pending");
+  });
+
+  it("INTENT_FINISHED on a resend of a completed payment's key releases it", async () => {
+    const node = freshNode({ conflictCodes: "typed" });
+    const visit = pageLoad(node, memoryStorage());
+    node.loseNextResponse();
+    await startCheckout(visit.transport, visit.keyStore, 25_00);
+    node.apply(node.admissions[0]!.intentId, "pay", "webhook");
+
+    const attempt = await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!);
+
+    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "definite", message: "This payment is already finished." }, kept: null });
+  });
+});
+
+describe("resending re-reads storage first (L1)", () => {
+  it("a request another tab already resolved is not sent again", async () => {
+    const node = freshNode();
+    const device = memoryStorage();
+    const tabA = pageLoad(node, device);
+    const tabB = pageLoad(node, device);
+    node.loseNextResponse();
+    await startCheckout(tabA.transport, tabA.keyStore, 25_00);
+    const stale = readSavedRequest(tabA.keyStore, MONEY_SCOPES.checkout)!;
+    // Tab B resumes and the page opens; then the person discards it there and starts another amount.
+    await sendCheckout(tabB.transport, tabB.keyStore, stale);
+    tabB.keyStore.remove(MONEY_SCOPES.checkout);
+    await startCheckout(tabB.transport, tabB.keyStore, 10_00);
+    const postsBefore = node.requests.filter(request => request.method === "POST").length;
+
+    const attempt = await sendCheckout(tabA.transport, tabA.keyStore, stale);
+
+    expect(attempt).toEqual({ kind: "superseded", current: readSavedRequest(tabA.keyStore, MONEY_SCOPES.checkout) });
+    expect(node.requests.filter(request => request.method === "POST")).toHaveLength(postsBefore);
+  });
+});
+
+describe("cash-out answers (L2, L4)", () => {
+  it("a same-key replay of a refused cash-out (the node answers 200 with the refused row) is a refusal, not a success", async () => {
+    const node = freshNode({ balanceMinorUnits: 50_00 });
+    const visit = pageLoad(node, memoryStorage());
+    // The node claims the row, refuses it durably, and that refusal's answer is lost.
+    node.loseNextResponse(CASH_OUT_START);
+    const lost = await startCashOut(visit.transport, visit.keyStore, 80_00);
+    expect(lost).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
+    expect(node.cashOuts[0]?.status).toBe("Refused");
+
+    const replay = await sendCashOut(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.cashOut)!);
+
+    expect(replay).toEqual({
+      kind: "refused",
+      refusal: { code: "definite", message: "That is more than you have available to cash out." },
+      kept: null,
+    });
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.cashOut)).toBeNull();
+  });
+
+  it.each([
+    ["rejects", () => Promise.reject(new Error("tRPC exploded"))],
+    ["resolves ok with no view", () => Promise.resolve({ ok: true, value: null })],
+    ["resolves junk", () => Promise.resolve("oops")],
+  ])("a host transport that %s is unconfirmed and the key survives", async (_label, start) => {
+    const node = freshNode();
+    const direct = directTransport(node);
+    const keyStore = createKeyStore({ subject: node.userId, storage: memoryStorage() });
+    const broken = { ...direct, cashOut: { ...direct.cashOut, start } } as unknown as AzoaMoneyTransport;
+
+    const attempt = await startCashOut(broken, keyStore, 10_00);
+
+    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
+    expect(attempt.kind === "refused" && attempt.kept?.amountMinorUnits).toBe(10_00);
+    expect(readSavedRequest(keyStore, MONEY_SCOPES.cashOut)?.amountMinorUnits).toBe(10_00);
+  });
+});
+
+describe("two tabs share one device (L8)", () => {
+  /**
+   * Cross-tab `localStorage` is not atomic: each tab sees its own writes at once and the other tab's a few
+   * milliseconds later. This models that, so two tabs that claim in the same instant both see an empty slot.
+   */
+  function sharedDevice() {
+    const shared = new Map<string, string>();
+    const tab = (): KeyStorage => {
+      const own = new Map<string, string | null>();
+      const propagate = (key: string, value: string | null) => {
+        own.set(key, value);
+        setTimeout(() => {
+          if (value === null) shared.delete(key);
+          else shared.set(key, value);
+          own.delete(key);
+        }, 5);
+      };
+      return {
+        getItem: key => (own.has(key) ? own.get(key)! : shared.get(key) ?? null),
+        setItem: (key, value) => propagate(key, value),
+        removeItem: key => propagate(key, null),
+      };
+    };
+    return { tab };
+  }
+
+  /** A FIFO Web Locks stand-in: one holder per name, across every tab of the device. */
+  function webLocks() {
+    const tails = new Map<string, Promise<unknown>>();
+    return {
+      request<T>(name: string, callback: () => Promise<T>): Promise<T> {
+        const run = (tails.get(name) ?? Promise.resolve()).then(callback);
+        tails.set(name, run.catch(() => undefined));
+        return run;
+      },
+    };
+  }
+
+  async function bothTabsPay() {
+    const node = freshNode({ latencyMs: 20 });
+    const device = sharedDevice();
+    const tabA = pageLoad(node, device.tab());
+    const tabB = pageLoad(node, device.tab());
+    const answers = await Promise.all([startCheckout(tabA.transport, tabA.keyStore, 25_00), startCheckout(tabB.transport, tabB.keyStore, 25_00)]);
+    return { node, answers };
+  }
+
+  it("with Web Locks, two tabs paying the same amount at once open one payment", async () => {
+    vi.stubGlobal("navigator", { locks: webLocks() });
+
+    const { node, answers } = await bothTabsPay();
+
+    expect(node.admissions).toHaveLength(1);
+    expect(answers.map(answer => answer.kind)).toEqual(["opened", "opened"]);
+  });
+
+  it("control: without Web Locks the same race mints two keys (the hazard the lock removes)", async () => {
+    vi.stubGlobal("navigator", {});
+
+    const { node } = await bothTabsPay();
+
+    expect(node.admissions).toHaveLength(2);
+  });
+});
+
+describe("browser-safe views (L7)", () => {
+  // A node that later adds identifying fields to every body must not leak them through any view.
+  const future = { subjectUserId: "u-1", connectedAccountId: "acct_1", stripeAccountId: "acct_2", internalNote: "x" };
+
+  it("every direct-transport view is allowlist-narrowed, mutations included", async () => {
+    const node = freshNode({ extraFields: future });
+    const transport = directTransport(node);
+
+    const begun = await transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: 25_00 });
+    const views = {
+      begin: begun,
+      capabilities: await transport.checkout.capabilities(),
+      kyc: await transport.account.beginKyc(),
+      quote: await transport.cashOut.availability(),
+      destination: await transport.cashOut.destination(),
+      setup: await transport.cashOut.beginDestinationSetup(),
+      start: await transport.cashOut.start({ requestKey: newRequestKey(), amountMinorUnits: 10_00 }),
+      history: await transport.cashOut.history(),
+    };
+
+    const keys = (result: { ok: boolean; value?: unknown }) => (result.ok ? Object.keys(Array.isArray(result.value) ? result.value[0] : result.value as object).sort() : null);
+    expect(keys(views.begin)).toEqual(["amountPaidMinorUnits", "currency", "expiresAt", "intentId", "paymentUrl", "resumed", "settlementState", "status"]);
+    expect(keys(views.capabilities)).toEqual(["available", "unavailableReason"]);
+    expect(keys(views.kyc)).toEqual(["developmentSimulation", "expiresAt", "instructions", "verificationUrl"]);
+    expect(keys(views.quote)).toEqual([
+      "accountReady", "available", "availableFrom", "cashableMinorUnits", "currencyCode", "maximumAmountMinorUnits", "minimumAmountMinorUnits",
+      "onHoldMinorUnits", "statusMessage",
+    ]);
+    const destinationKeys = ["accountOpened", "available", "detailsSubmitted", "outstandingRequirementCount", "readyToReceive", "setupUrl", "setupUrlExpiresAt", "statusMessage"];
+    expect(keys(views.destination)).toEqual(destinationKeys);
+    expect(keys(views.setup)).toEqual(destinationKeys);
+    const cashOutKeys = ["amountMinorUnits", "currencyCode", "id", "paidAt", "requestedAt", "reversedAt", "status", "statusMessage"];
+    expect(keys(views.start)).toEqual(cashOutKeys);
+    expect(keys(views.history)).toEqual(cashOutKeys);
+  });
+
+  it("passes the reusable transport contract with every case reached, against a node that adds fields", async () => {
+    const report = await runMoneyTransportContract(() => directTransport(freshNode({ extraFields: future })), { requireAll: true });
 
     expect(report.failed).toEqual([]);
     expect(report.skipped).toEqual([]);
@@ -95,8 +306,7 @@ describe("money over the direct transport (P0 flows)", () => {
 
   it("the contract fails a transport that opens a second checkout per key and leaks the admission key", async () => {
     const broken = (): AzoaMoneyTransport => {
-      const node = freshNode();
-      const direct = createDirectMoneyTransport(new AzoaApiClient({ baseUrl: node.baseUrl, token: node.token }), node.userId);
+      const direct = directTransport(freshNode());
       return {
         ...direct,
         checkout: {
@@ -116,5 +326,33 @@ describe("money over the direct transport (P0 flows)", () => {
       "no view carries subject or tenant identifiers",
       "checkout.begin resumes the same intent for the same request key",
     ]));
+  });
+
+  it.each([
+    ["account.ensure", (direct: AzoaMoneyTransport): AzoaMoneyTransport => ({
+      ...direct,
+      account: {
+        ...direct.account,
+        ensure: async () => {
+          const result = await direct.account.ensure();
+          return result.ok ? { ok: true, value: { ...result.value, userId: "u-1" } as CustodialAccountView } : result;
+        },
+      },
+    })],
+    ["cashOut.start", (direct: AzoaMoneyTransport): AzoaMoneyTransport => ({
+      ...direct,
+      cashOut: {
+        ...direct.cashOut,
+        start: async request => {
+          const result = await direct.cashOut.start(request);
+          return result.ok ? { ok: true, value: { ...result.value, connectedAccountId: "acct_1" } } : result;
+        },
+      },
+    })],
+  ])("the contract checks %s for leaked identifiers too", async (label, leak) => {
+    const report = await runMoneyTransportContract(() => leak(directTransport(freshNode())));
+
+    const failure = report.failed.find(entry => entry.name === "no view carries subject or tenant identifiers");
+    expect(failure?.reason).toContain(label);
   });
 });

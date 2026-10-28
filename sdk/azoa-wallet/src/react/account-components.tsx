@@ -57,11 +57,11 @@ export function MoneyGate(props: MoneyGateProps) {
 /** Identity verification (and account completion) for an account that is not ready yet. */
 export function KycStep(props: MoneyComponentProps) {
   const account = useCustodialAccount(props);
-  const { messages } = useMoneyContext();
+  const { messages, redirectPolicy } = useMoneyContext();
   const { Card, Button, Alert } = useSlots(props.slots);
   const status = account.account?.kycStatus ?? "Unknown";
   const finishSetup = status === "Approved" && account.account !== null && !account.account.walletReady;
-  const verificationUrl = safeRedirectUrl(account.kycSession?.verificationUrl);
+  const verificationUrl = safeRedirectUrl(account.kycSession?.verificationUrl, redirectPolicy);
   return (
     <Card title={messages.kyc.title} description={messages.kycStatus[status]} className={props.className}>
       {account.refusal ? <Alert tone="error">{describeRefusal(account.refusal, messages)}</Alert> : null}

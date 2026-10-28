@@ -1,5 +1,5 @@
 // Maps node `SdkError`s into the closed `MoneyRefusal` vocabulary. See `src/money/AGENTS.md` §refusals.
-import { SdkError, SdkErrorCode, isKybRequired, userFacingMessage } from "../core/errors.js";
+import { KYB_REQUIRED, SdkError, SdkErrorCode, isKybRequired, userFacingMessage } from "../core/errors.js";
 import { isDefiniteRefusal } from "./presentation.js";
 import type { MoneyRefusal, MoneyRefusalCode } from "./types.js";
 
@@ -8,8 +8,24 @@ const REFUSAL_CODES: readonly MoneyRefusalCode[] = [
   "payments_not_configured", "rail_busy", "definite", "unconfirmed", "unauthenticated",
 ];
 
-/** Codes that leave the request possibly admitted: the saved key must survive them. */
-const KEY_KEEPING_CODES: ReadonlySet<MoneyRefusalCode> = new Set(["unconfirmed", "rail_busy", "unauthenticated"]);
+/** The only codes that are a definite answer for a request key. An allowlist: an unknown, misspelled or future code keeps the key. */
+const KEY_RELEASING_CODES: ReadonlySet<string> = new Set<MoneyRefusalCode>([
+  "definite", "setup_required", "under_review", "consent_revoked", "account_holder_required", "kyb_required", "payments_not_configured",
+]);
+
+/** Node envelope codes (`AZOAResult.code`) with a fixed meaning; a key-releasing code counts only on the statuses the node sends it with. */
+const SERVER_CODE_RULES = new Map<string, { refusal: MoneyRefusalCode; statuses?: readonly number[] }>([
+  [KYB_REQUIRED, { refusal: "kyb_required", statuses: [400, 403, 422] }],
+  ["PAYMENTS_NOT_CONFIGURED", { refusal: "payments_not_configured", statuses: [400, 422, 503] }],
+  ["RAIL_BUSY", { refusal: "rail_busy" }],
+  ["RAIL_UNAVAILABLE", { refusal: "rail_busy" }],
+  // Same-key 409s from `FiatRailProvider.BeginCheckoutAsync`: final answers for this key.
+  ["INTENT_FINISHED", { refusal: "definite", statuses: [409] }],
+  ["INTENT_EXPIRED", { refusal: "definite", statuses: [409] }],
+  ["REQUEST_KEY_IN_USE", { refusal: "definite", statuses: [409] }],
+  // The intent owes an operator decision and may still complete: the key must survive.
+  ["INTENT_NEEDS_REVIEW", { refusal: "unconfirmed" }],
+]);
 
 const FALLBACK_MESSAGE: Record<MoneyRefusalCode, string> = {
   setup_required: "Finish verifying your identity first.",
@@ -28,35 +44,38 @@ export function isMoneyRefusalCode(value: unknown): value is MoneyRefusalCode {
   return typeof value === "string" && (REFUSAL_CODES as readonly string[]).includes(value);
 }
 
-/** True when the refusal is a definite answer, so the saved request key may be forgotten. */
-export function releasesRequestKey(refusal: MoneyRefusal): boolean {
-  return !KEY_KEEPING_CODES.has(refusal.code);
+/** True only when the refusal is a definite answer, so the saved request key may be forgotten; junk or unknown codes keep it. */
+export function releasesRequestKey(refusal: MoneyRefusal | null | undefined): boolean {
+  const code: unknown = refusal?.code;
+  return typeof code === "string" && KEY_RELEASING_CODES.has(code);
+}
+
+/** A refusal with `message` (or the code's fixed fallback sentence when it is blank). */
+export function moneyRefusal(code: MoneyRefusalCode, message = ""): MoneyRefusal {
+  return { code, message: message.trim() || FALLBACK_MESSAGE[code] };
 }
 
 /** Translates an AZOA node failure (or anything a client call threw) into a refusal. Use it server-side in a host BFF too. */
 export function refusalFromSdkError(error: unknown): MoneyRefusal {
-  if (!(error instanceof SdkError)) return refusal("unconfirmed", "");
+  if (!(error instanceof SdkError)) return moneyRefusal("unconfirmed");
+  const status = error.status;
+  if (error.code === SdkErrorCode.AUTH_EXPIRED || status === 401) return moneyRefusal("unauthenticated");
+  // No HTTP answer: a client guard that threw before egress is definite; a lost or timed-out request may have been admitted.
+  if (status === undefined) return moneyRefusal(error.code === SdkErrorCode.INVALID_INPUT ? "definite" : "unconfirmed");
   const text = personText(error);
-  if (error.code === SdkErrorCode.AUTH_EXPIRED || error.status === 401) return refusal("unauthenticated", "");
-  if (isKybRequired(error)) return refusal("kyb_required", text);
-  if (error.serverCode === "PAYMENTS_NOT_CONFIGURED") return refusal("payments_not_configured", text);
-  if (error.serverCode === "RAIL_BUSY" || error.serverCode === "RAIL_UNAVAILABLE" || error.status === 429) return refusal("rail_busy", text);
-  // Thrown by the client's own guards before any request left (e.g. a malformed intent id from a return URL).
-  if (error.code === SdkErrorCode.INVALID_INPUT) return refusal("definite", "");
-  if (isDefiniteRefusal(error.status)) {
-    const raw = error.serverMessage ?? error.message;
-    if (error.status === 403 && /account holder/i.test(raw)) return refusal("account_holder_required", text);
-    if (error.status === 403 && /consent/i.test(raw)) return refusal("consent_revoked", text);
-    if (/under review/i.test(raw)) return refusal("under_review", text);
-    if (/KYC verification required/i.test(raw)) return refusal("setup_required", text);
-    return refusal("definite", text);
-  }
-  // Network loss, timeouts, 409 (in progress) and 5xx: the request may have been admitted.
-  return refusal("unconfirmed", text);
-}
-
-function refusal(code: MoneyRefusalCode, message: string): MoneyRefusal {
-  return { code, message: message || FALLBACK_MESSAGE[code] };
+  // The envelope's machine code outranks status and message text.
+  const rule = error.serverCode === undefined ? undefined : SERVER_CODE_RULES.get(error.serverCode);
+  if (rule && (!rule.statuses || rule.statuses.includes(status))) return moneyRefusal(rule.refusal, text);
+  if (status === 429) return moneyRefusal("rail_busy", text);
+  // 409 without a known code, 408, 5xx: the request may have been admitted, whatever the message says.
+  if (!isDefiniteRefusal(status)) return moneyRefusal("unconfirmed", text);
+  const raw = error.serverMessage ?? error.message;
+  if (isKybRequired(error)) return moneyRefusal("kyb_required", text);
+  if (status === 403 && /account holder/i.test(raw)) return moneyRefusal("account_holder_required", text);
+  if (status === 403 && /consent/i.test(raw)) return moneyRefusal("consent_revoked", text);
+  if (/under review/i.test(raw)) return moneyRefusal("under_review", text);
+  if (/KYC verification required/i.test(raw)) return moneyRefusal("setup_required", text);
+  return moneyRefusal("definite", text);
 }
 
 /** The server's own sentence without wire-code prefixes (`KYB_REQUIRED: `) or configuration key names (QA L2); never SDK-generated text. */

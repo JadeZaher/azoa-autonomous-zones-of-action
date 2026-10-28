@@ -25,6 +25,33 @@ The breaking change below is why this is a minor bump; everything under "Added (
   (`onRedirect`); the SDK never sets `location`.
 - `AzoaApiClient.hasApiKey()`.
 
+### Security fix round (pre-publish review, 2026-10-27)
+- `releasesRequestKey` is an allowlist: only `definite`, `setup_required`, `under_review`, `consent_revoked`,
+  `account_holder_required`, `kyb_required` and `payments_not_configured` forget a saved key; any other or
+  unknown code keeps it.
+- Checkout state is two facts: `isTerminalCheckout` (the key may be forgotten) and `isSettledCheckout` (the
+  money outcome is final). `complete` + `payment_received` and `complete` + `not_started` keep polling until
+  `funds_applied`/`payment_failed`; `onSettled` fires only then. `isFinishedCheckout` is removed.
+  `isOpenCheckout` gates the payment link; "waiting for your payment" is shown only for an open page.
+- `refusalFromSdkError` reads the node envelope `code` before status and text: 409 `INTENT_FINISHED`,
+  `INTENT_EXPIRED`, `REQUEST_KEY_IN_USE` are `definite`; `INTENT_NEEDS_REVIEW` and any other 409 stay
+  `unconfirmed`; message text counts only on a definite status (a 503 saying `KYB_REQUIRED:` keeps the key).
+- `AzoaApiClient` refuses an `apiKey` in a browser unless `dangerouslyAllowApiKeyInBrowser: true`, copies its
+  config, and `hasApiKey()` uses `Boolean(apiKey)`.
+- The provider rebuilds its account store and every hook resets per-person state when the subject or key
+  store changes; answers for the previous person are dropped.
+- Flows hold a Web Lock around claim-and-send where available, re-read the saved request before a resend
+  (`superseded` when another tab changed it), never reject, and treat `{ ok: true, value: null }` as
+  `unconfirmed`. A same-key replay of a refused cash-out (200 + `Refused` row) is a `definite` refusal.
+- Host callbacks run through a guard and every form resets `busy` in a `finally`.
+- `safeRedirectUrl(url, policy?)` returns the parsed `href`, refuses userinfo, admits loopback `http:` only
+  with `allowLoopbackHttp`, and honors `allowedOrigins`; the provider takes `allowedRedirectOrigins` and
+  `allowLoopbackRedirects`.
+- Amounts use the currency's ISO 4217 minor units (`currencyMinorDigits`); `toMinorUnits(text, currency)`
+  and `formatMinorUnits` return null for an unknown currency. `AddFundsForm` now requires `currencyCode`.
+- Every view has an allowlist `to*View`; the direct transport narrows cash-out, payout and capability
+  answers, and the contract's forbidden-key case covers every call, mutations included.
+
 ### Breaking
 - `ApiKeyInfo.scopes` and `ApiKeyCreateResult.scopes` are now `string[]`, normalized from the
   comma-separated string the API stores (`normalizeApiKeyScopes`). An empty list means legacy full

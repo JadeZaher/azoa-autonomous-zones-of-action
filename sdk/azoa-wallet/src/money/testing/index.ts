@@ -40,6 +40,7 @@ export class MoneyContractViolation extends Error {
 /** The contract as separate cases, for registering one test per case in any runner. */
 export function moneyTransportContractCases(factory: MoneyTransportFactory, options: MoneyTransportContractOptions = {}): MoneyTransportContractCase[] {
   const amount = options.amountMinorUnits ?? 25_00;
+  // Each case builds its own fixture: the forbidden-key and amount cases call every action, consent withdrawal included.
   const cases: MoneyTransportContractCase[] = [
     {
       name: "every read resolves to a MoneyResult with a known refusal code, never a rejection",
@@ -53,8 +54,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
       name: "no view carries subject or tenant identifiers",
       async run() {
         const transport = await factory();
-        const begun = await resolved("checkout.begin", transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: amount }));
-        for (const [label, result] of [["checkout.begin", begun] as const, ...(await readAll(transport))]) {
+        for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
           if (!result.ok) continue;
           const leaked = findForbiddenViewKeys(result.value);
           check(leaked.length === 0, `${label} leaked ${leaked.join(", ")}`);
@@ -124,7 +124,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
       name: "money amounts are integer minor units and unit quantities are base-unit strings",
       async run() {
         const transport = await factory();
-        for (const [label, result] of await readAll(transport)) {
+        for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
           if (!result.ok) continue;
           for (const [path, value] of amountFields(result.value)) {
             check(typeof value === "number" ? Number.isSafeInteger(value) : value === null, `${label} ${path} must be an integer number of minor units`);
@@ -172,9 +172,42 @@ function readsOf(transport: AzoaMoneyTransport): Read[] {
   return reads;
 }
 
-async function readAll(transport: AzoaMoneyTransport): Promise<(readonly [string, MoneyResult<unknown>])[]> {
-  const results: (readonly [string, MoneyResult<unknown>])[] = [];
+type Labelled = readonly [string, MoneyResult<unknown>];
+
+async function readAll(transport: AzoaMoneyTransport): Promise<Labelled[]> {
+  const results: Labelled[] = [];
   for (const [label, read] of readsOf(transport)) results.push([label, await resolved(label, read())]);
+  return results;
+}
+
+/** Every read, then every action a person can take (consent withdrawn last, so it cannot gate the others). */
+async function callAll(transport: AzoaMoneyTransport, amount: number, cashOutAmount?: number): Promise<Labelled[]> {
+  const results = await readAll(transport);
+  const record = async (label: string, pending: Promise<MoneyResult<unknown>>) => {
+    const result = await resolved(label, pending);
+    results.push([label, result]);
+    return result;
+  };
+  await record("checkout.begin", transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: amount }));
+  await record("account.ensure", transport.account.ensure());
+  await record("account.beginKyc", transport.account.beginKyc());
+  await record("cashOut.beginDestinationSetup", transport.cashOut.beginDestinationSetup());
+  const quote = await resolved("cashOut.availability", transport.cashOut.availability());
+  if (quote.ok) {
+    const amountToCashOut = cashOutAmount ?? quote.value.minimumAmountMinorUnits;
+    await record("cashOut.start", transport.cashOut.start({ requestKey: newRequestKey(), amountMinorUnits: amountToCashOut }));
+  }
+  const sale = transport.sale;
+  if (sale) {
+    const sellable = await resolved("sale.sellable", sale.sellable());
+    const quantity = sellable.ok && /^[1-9]\d*$/.test(sellable.value.availableBaseUnits) ? "1" : "0";
+    const saleQuote = await record("sale.quote", sale.quote({ quantityBaseUnits: quantity }));
+    if (saleQuote.ok) {
+      const { quoteId } = saleQuote.value as { quoteId: string };
+      await record("sale.sell", sale.sell({ requestKey: newRequestKey(), quoteId }));
+    }
+  }
+  await record("account.revokeConsent", transport.account.revokeConsent());
   return results;
 }
 

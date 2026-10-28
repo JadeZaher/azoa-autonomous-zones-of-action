@@ -43,9 +43,14 @@ key) and injects it. Components are unstyled (`slots`, `className`) and never na
 ```tsx
 import { AzoaMoneyProvider, MoneyGate, AddFundsForm } from "azoa-sdk/react";
 
-<AzoaMoneyProvider transport={transport} subject={session.userId} onRedirect={url => router.push(url)}>
+<AzoaMoneyProvider
+  transport={transport}
+  subject={session.userId}
+  allowedRedirectOrigins={["https://checkout.stripe.com", "https://connect.stripe.com"]}
+  onRedirect={url => router.push(url)}
+>
   <MoneyGate require="ready">
-    <AddFundsForm presets={[10_00, 25_00]} returnedIntentId={searchParams.get("intent")} />
+    <AddFundsForm currencyCode="usd" presets={[10_00, 25_00]} returnedIntentId={searchParams.get("intent")} />
   </MoneyGate>
 </AzoaMoneyProvider>
 ```

@@ -4,7 +4,7 @@ import type { ConsentRevocationView, CustodialAccountView, KycSessionView, Money
 import type { AccountSnapshot } from "./account-store.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
-import { redirectTo, useMoneyEvents, useMounted } from "./internal.js";
+import { callHost, redirectTo, useMoneyEvents, useMounted } from "./internal.js";
 
 export interface CustodialAccountState extends AccountSnapshot {
   /** Whether a host `onRedirect` exists; without one, components render plain links instead. */
@@ -18,7 +18,7 @@ export interface CustodialAccountState extends AccountSnapshot {
 
 /** The shared account read: `gate` is `ready` | `setup` | `review` | `revoked` | `unavailable` (or `loading`). */
 export function useCustodialAccount(options: MoneyEventProps = {}): CustodialAccountState {
-  const { accountStore, events: providerEvents } = useMoneyContext();
+  const { accountStore, events: providerEvents, redirectPolicy } = useMoneyContext();
   const snapshot = useSyncExternalStore(accountStore.subscribe, accountStore.getSnapshot, accountStore.getSnapshot);
   const events = useMoneyEvents(options);
   const mounted = useMounted();
@@ -26,20 +26,20 @@ export function useCustodialAccount(options: MoneyEventProps = {}): CustodialAcc
 
   const ensure = useCallback(async () => {
     const result = await accountStore.ensure();
-    if (!result.ok) events.current.onRefusal?.(result.refusal);
+    if (!result.ok) callHost(() => events.current.onRefusal?.(result.refusal));
     return result;
   }, [accountStore, events]);
 
   const beginKyc = useCallback(async () => {
     const result = await accountStore.beginKyc();
-    if (result.ok) redirectTo(events, mounted, result.value.verificationUrl, "kyc");
-    else events.current.onRefusal?.(result.refusal);
+    if (result.ok) redirectTo(events, mounted, result.value.verificationUrl, "kyc", redirectPolicy);
+    else callHost(() => events.current.onRefusal?.(result.refusal));
     return result;
-  }, [accountStore, events, mounted]);
+  }, [accountStore, events, mounted, redirectPolicy]);
 
   const revokeConsent = useCallback(async () => {
     const result = await accountStore.revokeConsent();
-    if (!result.ok) events.current.onRefusal?.(result.refusal);
+    if (!result.ok) callHost(() => events.current.onRefusal?.(result.refusal));
     return result;
   }, [accountStore, events]);
 

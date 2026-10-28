@@ -17,8 +17,10 @@ export interface AzoaClientConfig {
   apiUrl: string;
   /** JWT token (if already authenticated) */
   token?: string;
-  /** API key for server-to-server auth (sent as X-Api-Key header) */
+  /** API key for server-to-server auth (sent as X-Api-Key header); refused in a browser, see `AzoaApiConfig.apiKey`. */
   apiKey?: string;
+  /** Passed through to `AzoaApiConfig.dangerouslyAllowApiKeyInBrowser`. */
+  dangerouslyAllowApiKeyInBrowser?: boolean;
   /** API request timeout in ms */
   timeoutMs?: number;
   /**
@@ -137,6 +139,7 @@ export class AzoaClient {
       baseUrl: config.apiUrl,
       token: config.token,
       apiKey: config.apiKey,
+      dangerouslyAllowApiKeyInBrowser: config.dangerouslyAllowApiKeyInBrowser,
       timeoutMs: config.timeoutMs,
       debug: config.debug,
       debugLogger: config.debugLogger,
