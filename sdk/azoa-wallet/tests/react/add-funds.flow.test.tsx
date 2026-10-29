@@ -11,13 +11,14 @@ import {
   createDirectMoneyTransport,
   createKeyStore,
   defaultMoneyMessages,
+  findForbiddenViewKeys,
   newRequestKey,
   readSavedRequest,
 } from "../../src/money/index.js";
-import type { AzoaMoneyTransport, CheckoutView, MoneyRedirectKind } from "../../src/money/index.js";
+import type { AzoaMoneyTransport, CheckoutView, MoneyRedirectKind, MoneyRefusal } from "../../src/money/index.js";
 import { AddFundsForm, AzoaMoneyProvider, useAddFunds } from "../../src/react/index.js";
 import type { AddFundsFormProps, AzoaMoneyProviderProps } from "../../src/react/index.js";
-import { createNodeEmulator } from "../money/node-emulator.js";
+import { CHECKOUT_VOID, createNodeEmulator } from "../money/node-emulator.js";
 import type { CheckoutEvent, NodeEmulator, NodeEmulatorOptions } from "../money/node-emulator.js";
 
 type Redirect = [url: string, kind: MoneyRedirectKind];
@@ -134,12 +135,10 @@ describe("<AddFundsForm> (P1 flows)", () => {
   });
 
   // HIGH-1: the saved key names its intent, so the resend is decided by that intent's state, whatever the node's code says.
-  it.each<[string, NodeEmulatorOptions, CheckoutEvent[], string, CheckoutEvent[]]>([
-    ["an ACH payment still clearing after its page lapsed (the node resumes it)", {}, ["payAsync", "webhook", "pageLapsed"], copy.checkout.clearing, ["asyncCleared", "webhook", "applyFunds"]],
-    ["the same on the node lane's first cut, which answers 409 INTENT_EXPIRED", { expiryBeforeStripeRead: true }, ["payAsync", "webhook", "pageLapsed"], copy.checkout.clearing, ["asyncCleared", "webhook", "applyFunds"]],
-    ["a card payment whose funds have not landed (409 INTENT_FINISHED)", {}, ["pay", "webhook"], copy.settlement.payment_received, ["applyFunds"]],
-  ])("resuming %s keeps the key and the form locked, shows the real state, then settles once", async (_label, options, timeline, shown, settle) => {
-    useNode(options);
+  it.each<[string, CheckoutEvent[], string, CheckoutEvent[]]>([
+    ["an ACH payment still clearing after its page lapsed (the node resumes it)", ["payAsync", "webhook", "pageLapsed"], copy.checkout.clearing, ["asyncCleared", "webhook", "applyFunds"]],
+    ["a card payment whose funds have not landed (409 INTENT_FINISHED)", ["pay", "webhook"], copy.settlement.payment_received, ["applyFunds"]],
+  ])("resuming %s keeps the key and the form locked, shows the real state, then settles once", async (_label, timeline, shown, settle) => {
     const user = userEvent.setup();
     const redirects: Redirect[] = [];
     const intentId = await openCheckout(node, redirects);
@@ -232,32 +231,51 @@ describe("<AddFundsForm> (P1 flows)", () => {
     await waitFor(() => expect(redirects).toEqual([[node.admissions[1]!.paymentUrl, "checkout"]]));
   });
 
-  it("a payment the node holds for review keeps its key and is neither resumed nor replaced, on this visit or the next; checking again after the operator closes it frees the form (MEDIUM-3)", async () => {
+  /** Submits 25 whose first Stripe create fails (503 RAIL_BUSY): an unattached claim, offered for resume. */
+  async function submitWithFailedCreate(redirects: Redirect[], props: Partial<AddFundsFormProps> = {}) {
     const user = userEvent.setup();
-    const redirects: Redirect[] = [];
-    const firstVisit = visitFundsPage(node, redirects);
+    const visit = visitFundsPage(node, redirects, props);
     await user.type(await screen.findByLabelText("Amount"), "25");
-    node.loseNextResponse();
+    node.failNextCreate();
     await user.click(submitButton());
-    const resume = await screen.findByRole("button", { name: "Resume that payment" });
-    node.apply(node.admissions[0]!.intentId, "needsOperator");
+    await screen.findByRole("button", { name: "Resume that payment" });
+    return { user, visit, intentId: node.admissions[0]!.intentId, requestKey: node.admissions[0]!.requestKey };
+  }
 
-    await user.click(resume);
+  it("a payment the node holds for review keeps its key and is never resumed as lost or replaced, on this visit or the next; its Discard asks the node, which keeps it held on 33168340, and checking again after the operator closes it frees the form (MEDIUM-3, M2b)", async () => {
+    useNode({ unreplayableClaimVoid: "needsReview" });
+    const redirects: Redirect[] = [];
+    const refusals: MoneyRefusal[] = [];
+    const { user, visit, intentId, requestKey } = await submitWithFailedCreate(redirects, { onRefusal: refusal => refusals.push(refusal) });
+    node.apply(intentId, "needsOperator");
+
+    await user.click(screen.getByRole("button", { name: "Resume that payment" }));
 
     const heldForReview = async () => {
       await screen.findByText(copy.refusal.needs_review!);
       expect(screen.queryByRole("button", { name: "Resume that payment" })).toBeNull();
-      expect(screen.queryByRole("button", { name: copy.pending.discard })).toBeNull();
+      // Never without an exit: discarding stays offered, and the node's void decides it (M2b).
+      expect((screen.getByRole("button", { name: copy.pending.discard }) as HTMLButtonElement).disabled).toBe(false);
       expect(screen.queryByRole("button", { name: "Continue to payment" })).toBeNull();
       expect(screen.queryByText(/The answer did not arrive/)).toBeNull();
-      expect(savedCheckout()).toMatchObject({ requestKey: node.admissions[0]!.requestKey, needsReview: true });
+      expect(savedCheckout()).toMatchObject({ requestKey, needsReview: true });
     };
     await heldForReview();
-    firstVisit.unmount();
+    await user.click(screen.getByRole("button", { name: copy.pending.discard }));
+    await waitFor(() => expect(node.answers.at(-1)).toMatchObject({ status: 409, code: "INTENT_NEEDS_REVIEW", path: expect.stringMatching(CHECKOUT_VOID) }));
+    await heldForReview();
+    expect(screen.queryByText(copy.pending.discardUnconfirmed)).toBeNull();
+    expect(node.isVoided(intentId)).toBe(false);
+    // Both review answers named the intent; neither handed the host its admission key (subject + tenant ids, M1).
+    expect(refusals.map(refusal => refusal.code)).toEqual(["rail_busy", "needs_review", "needs_review"]);
+    expect(refusals[1]!.serverResult).toMatchObject({ intentId, status: "starting", paymentUrl: null });
+    expect(refusals[2]!.serverResult).toMatchObject({ outcome: "revealed", intent: { intentId, status: "starting" } });
+    expect(findForbiddenViewKeys(refusals)).toEqual([]);
+    visit.unmount();
     visitFundsPage(node, redirects);
     await heldForReview();
 
-    node.apply(node.admissions[0]!.intentId, "operatorClosed");
+    node.apply(intentId, "operatorClosed");
     await user.click(screen.getByRole("button", { name: copy.pending.checkAgain }));
 
     // INTENT_FINISHED alone is not proof, but its own projection here already shows closed and unpaid
@@ -267,6 +285,93 @@ describe("<AddFundsForm> (P1 flows)", () => {
     expect(submitButton().disabled).toBe(false);
     expect(savedCheckout()).toBeNull();
     expect(node.admissions).toHaveLength(1);
+  });
+
+  it("an unattached claim past its 23-hour replay window is held for review, and Discard is the node's void: it abandons the claim (voided), so the key goes and a fresh payment can start (B10, M2b)", async () => {
+    const redirects: Redirect[] = [];
+    const { user, intentId } = await submitWithFailedCreate(redirects);
+    node.apply(intentId, "replayWindowLapsed");
+    await user.click(screen.getByRole("button", { name: "Resume that payment" }));
+    await screen.findByText(copy.refusal.needs_review!);
+
+    await user.click(screen.getByRole("button", { name: copy.pending.discard }));
+
+    await screen.findByText(copy.pending.voided);
+    expect(node.isVoided(intentId)).toBe(true);
+    expect(savedCheckout()).toBeNull();
+    expect(screen.queryByText(copy.refusal.needs_review!)).toBeNull();
+    expect(submitButton().disabled).toBe(false);
+    await user.clear(screen.getByLabelText("Amount"));
+    await user.type(screen.getByLabelText("Amount"), "40");
+    await user.click(submitButton());
+    await waitFor(() => expect(redirects).toEqual([[node.admissions[1]!.paymentUrl, "checkout"]]));
+    expect(node.admissions.map(admission => admission.amountMinorUnits)).toEqual([25_00, 40_00]);
+  });
+
+  it("an unattached claim resent minutes later meets INTENT_EXPIRED on a `starting` claim: it says the payment never started and nothing was charged, releases the key and offers a fresh payment (B9, M2a)", async () => {
+    const redirects: Redirect[] = [];
+    const { user, visit, intentId } = await submitWithFailedCreate(redirects);
+    visit.unmount();
+    node.apply(intentId, "creationLapsed");
+
+    visitFundsPage(node, redirects);
+    await user.click(await screen.findByRole("button", { name: "Resume that payment" }));
+
+    await screen.findByText(copy.pending.neverStarted);
+    // Never "waiting for your payment" for a page that never existed, and nothing left to resume or discard.
+    expect(screen.queryByText(copy.settlement.not_started)).toBeNull();
+    expect(screen.queryByRole("button", { name: copy.pending.discard })).toBeNull();
+    expect(screen.queryByRole("button", { name: copy.checkout.check })).toBeNull();
+    expect(savedCheckout()).toBeNull();
+    expect(submitButton().disabled).toBe(false);
+    expect(posts(node).filter(request => CHECKOUT_VOID.test(request.path))).toEqual([]);
+    await user.clear(screen.getByLabelText("Amount"));
+    await user.type(screen.getByLabelText("Amount"), "25");
+    await user.click(submitButton());
+    await waitFor(() => expect(redirects).toEqual([[node.admissions[1]!.paymentUrl, "checkout"]]));
+    expect(node.admissions).toHaveLength(2);
+  });
+
+  it("a paid payment whose funds never land (a node without an issuance handler) can be acknowledged: the key goes, it says the payment was received and the funds are still being added, the form unlocks, and nothing new is started (M3)", async () => {
+    const user = userEvent.setup();
+    const redirects: Redirect[] = [];
+    const intentId = await openCheckout(node, redirects);
+    node.apply(intentId, "pay", "webhook");
+    const settled: CheckoutView[] = [];
+    visitFundsPage(node, redirects, { returnedIntentId: intentId, pollIntervalMs: 30, onSettled: view => settled.push(view) });
+    await screen.findByText(copy.settlement.payment_received);
+    expect(submitButton().disabled).toBe(true);
+    const postsBefore = posts(node).length;
+
+    await user.click(screen.getByRole("button", { name: copy.checkout.acknowledge }));
+
+    await screen.findByText(copy.checkout.acknowledged("25.00 USD"));
+    expect(screen.queryByText(copy.settlement.funds_applied)).toBeNull();
+    expect(screen.queryByRole("button", { name: copy.checkout.check })).toBeNull();
+    expect(savedCheckout()).toBeNull();
+    expect(submitButton().disabled).toBe(false);
+    const readsAfter = node.readsOf(intentId);
+    await sleep(90);
+    expect(node.readsOf(intentId)).toBe(readsAfter);
+    expect(posts(node)).toHaveLength(postsBefore);
+    expect(redirects).toHaveLength(1);
+    expect(settled).toEqual([]);
+    expect(node.admissions).toHaveLength(1);
+  });
+
+  it("a payment paid at Stripe but not yet closed (processing) offers nothing to acknowledge: polling continues, the key is kept and the form stays locked (M3)", async () => {
+    const redirects: Redirect[] = [];
+    const intentId = await openCheckout(node, redirects);
+    node.apply(intentId, "pay");
+    visitFundsPage(node, redirects, { returnedIntentId: intentId, pollIntervalMs: 30 });
+    await screen.findByText(copy.settlement.payment_received);
+    const reads = node.readsOf(intentId);
+
+    await waitFor(() => expect(node.readsOf(intentId)).toBeGreaterThan(reads));
+
+    expect(screen.queryByRole("button", { name: copy.checkout.acknowledge })).toBeNull();
+    expect(submitButton().disabled).toBe(true);
+    expect(savedCheckout()?.serverId).toBe(intentId);
   });
 
   it("resuming a payment another window replaced says it was replaced, never that it settled, and sends nothing (LOW-5)", async () => {

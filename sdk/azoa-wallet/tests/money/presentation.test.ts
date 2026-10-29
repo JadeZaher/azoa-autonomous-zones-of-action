@@ -4,6 +4,7 @@ import {
   defaultMoneyMessages,
   describeSettlement,
   formatMinorUnits,
+  isAwaitingFundsCheckout,
   isOpenCheckout,
   isSettledCheckout,
   isTerminalCheckout,
@@ -15,27 +16,30 @@ import {
 import type { CheckoutView } from "../../src/money/index.js";
 
 describe("checkout state: terminal (key may go) is not settled (polling may stop)", () => {
-  // [status, settlement, terminal, settled, open] — pairings the real node produces (FiatRailProvider.ProjectAsync).
+  // [status, settlement, terminal, settled, open, awaiting funds (may be acknowledged)] — pairings the real node produces (FiatRailProvider.ProjectAsync).
   it.each([
-    ["awaiting_payment", "not_started", false, false, true],
-    ["awaiting_payment", "payment_received", false, false, false], // paid, webhook not delivered yet
-    ["awaiting_payment", "payment_failed", true, true, false], // page lapsed at Stripe, no webhook yet
-    ["processing", "not_started", false, false, false], // async method still clearing
-    ["complete", "payment_received", true, false, false], // webhook marked it complete; funds applied later
-    ["complete", "not_started", true, false, false], // complete, but the node's Stripe re-read failed
-    ["complete", "funds_applied", true, true, false],
-    ["complete", "payment_failed", true, true, false],
-    ["failed", "not_started", true, true, false],
-    ["expired", "not_started", true, true, false],
-    ["expired", "payment_failed", true, true, false],
-    ["failed", "payment_received", true, false, false],
-    ["complete", "funds_landing", true, false, false], // a settlement value this SDK does not know is never final
-    ["paid_out", "not_started", false, false, false], // nor is an unknown status terminal
-  ])("%s + %s", (status, settlementState, terminal, settled, open) => {
+    ["awaiting_payment", "not_started", false, false, true, false],
+    ["awaiting_payment", "payment_received", false, false, false, false], // paid, webhook not delivered yet
+    ["processing", "payment_received", false, false, false, false], // paid at Stripe, the webhook has not closed it: keep polling
+    ["awaiting_payment", "payment_failed", true, true, false, false], // page lapsed at Stripe, no webhook yet
+    ["processing", "not_started", false, false, false, false], // async method still clearing
+    ["complete", "payment_received", true, false, false, true], // webhook marked it complete; funds applied later (or never: M3)
+    ["complete", "not_started", true, false, false, false], // complete, but the node's Stripe re-read failed
+    ["complete", "funds_applied", true, true, false, false],
+    ["complete", "payment_failed", true, true, false, false],
+    ["failed", "not_started", true, true, false, false],
+    ["expired", "not_started", true, true, false, false],
+    ["expired", "payment_failed", true, true, false, false],
+    ["failed", "payment_received", true, false, false, false],
+    ["starting", "not_started", false, false, false, false], // a claim with no page yet
+    ["complete", "funds_landing", true, false, false, false], // a settlement value this SDK does not know is never final
+    ["paid_out", "not_started", false, false, false, false], // nor is an unknown status terminal
+  ])("%s + %s", (status, settlementState, terminal, settled, open, awaitingFunds) => {
     const intent = { status, settlementState };
     expect(isTerminalCheckout(intent)).toBe(terminal);
     expect(isSettledCheckout(intent)).toBe(settled);
     expect(isOpenCheckout(intent)).toBe(open);
+    expect(isAwaitingFundsCheckout(intent)).toBe(awaitingFunds);
   });
 });
 

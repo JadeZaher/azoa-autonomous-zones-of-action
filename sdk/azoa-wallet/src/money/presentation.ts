@@ -21,6 +21,11 @@ export function isSettledCheckout(intent: CheckoutState): boolean {
   return intent.settlementState === "not_started" && (intent.status === "failed" || intent.status === "expired");
 }
 
+/** Paid and closed (`complete` + `payment_received`) but its funds have not landed: nothing more can be charged under its key, so the person may acknowledge it. */
+export function isAwaitingFundsCheckout(intent: CheckoutState): boolean {
+  return intent.status === "complete" && intent.settlementState === "payment_received";
+}
+
 /** The person still holds a page they can pay on. */
 export function isOpenCheckout(intent: CheckoutState): boolean {
   return intent.status === "awaiting_payment" && intent.settlementState === "not_started";
@@ -162,6 +167,10 @@ export interface MoneyMessages {
   checkout: {
     title: string; loading: string; expired: string; confirming: string; clearing: string; cannotConfirm: string; openPaymentPage: string; check: string;
     paid: (amount: string) => string; expires: (date: string) => string;
+    /** Acknowledges a paid payment whose funds have not landed (`isAwaitingFundsCheckout`), freeing the form. */
+    acknowledge: string;
+    /** After acknowledging: received, funds not landed yet. `amount` is null when the currency is unknown. */
+    acknowledged: (amount: string | null) => string;
   };
   pending: {
     notConfirmed: (summary: string) => string;
@@ -177,6 +186,8 @@ export interface MoneyMessages {
     revealed: string;
     /** Checkout discard: the node could not decide (provider unreadable, busy), so the key was kept. */
     discardUnconfirmed: string;
+    /** Checkout resume: the node proved no payment page was ever created under the key (`INTENT_EXPIRED` on a `starting` claim). */
+    neverStarted: string;
     /** The saved request was resolved or discarded in another window before this one resent it; nothing was sent. */
     superseded: string;
     /** Another window saved a different request in its place before this one resent it; nothing was sent. */
@@ -282,6 +293,9 @@ export const defaultMoneyMessages: MoneyMessages = {
     check: "Check payment",
     paid: amount => `Paid: ${amount}`,
     expires: date => `The payment page works until ${date}.`,
+    acknowledge: "Got it",
+    acknowledged: amount =>
+      `Your payment${amount ? ` of ${amount}` : ""} was received. The funds are still being added to your balance — if they don't appear soon, contact support.`,
   },
   pending: {
     notConfirmed: summary => `${summary} has not been confirmed yet.`,
@@ -301,6 +315,7 @@ export const defaultMoneyMessages: MoneyMessages = {
     voided: "That payment was cancelled with the payment service, so nothing can be paid under it. Enter an amount to start a new one.",
     revealed: "That payment may already have gone through, so it was kept instead of discarded. Nothing new will be charged; its status is below.",
     discardUnconfirmed: "That payment could not be checked with the payment service right now, so it was kept. Nothing new was started; try discarding it again shortly.",
+    neverStarted: "That payment never started. Nothing was charged. Enter an amount to start a new one.",
     superseded: "That request was resolved or discarded in another window, so nothing was sent from here.",
     replaced: "Another window replaced that request with a new one, so nothing was sent from here.",
     checkAgain: "Check again",

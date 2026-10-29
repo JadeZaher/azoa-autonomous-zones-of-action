@@ -99,8 +99,9 @@ is saved before `onRedirect` fires.
 
 **The add-funds form lock (HIGH-1, MEDIUM-2).** `<AddFundsForm>` keeps the new-payment form disabled
 whenever it watches an intent that has **no settled read**: an open page, `processing` (ACH clearing),
-`payment_received`, and while reads fail (503, or no view at all). Only a settled view, or a read the node
-definitively refuses (e.g. a stale `?intent=` link: "That payment could not be found."), frees it. The
+`payment_received`, and while reads fail (503, or no view at all). Only a settled view, a read the node
+definitively refuses (e.g. a stale `?intent=` link: "That payment could not be found."), or the person's
+acknowledgement of a paid intent whose funds have not landed (M3, below) frees it. The
 saved key is the durable lock (it survives a reload); this is the in-page one.
 
 - **`discard()` is the node's decision (round 3).** It runs `discardCheckout` (void-or-reveal, see
@@ -112,15 +113,27 @@ saved key is the durable lock (it survives a reload); this is the in-page one.
     `onSettled` fires once for it); `pending.revealed` ("may already have gone through, so it was kept") unless
     the revealed view is already settled, in which case the status card says it.
   - `refused` → the key stays and the pending notice stays; `pending.discardUnconfirmed` ("could not be checked
-    right now, so it was kept"), or the review notice for `needs_review`. `onRefusal` fires. A refusal's own
-    copy ("Nothing was moved") is not shown here: a void that could not decide cannot say that.
+    right now, so it was kept") unless the void itself answered `needs_review`, which the review notice
+    already says. `onRefusal` fires. A refusal's own copy ("Nothing was moved") is not shown here: a void that
+    could not decide cannot say that.
   - `pending.detail.checkout` now says discarding cancels with the payment service first. Cash-out and sale
     discards are still local (`pending.discarded`): the node has no void for them yet.
-- **Held for review (MEDIUM-3).** A `needs_review` answer keeps the key, marked `needsReview`.
-  `PendingRequestNotice` then renders "needs a manual check before it can continue — we'll follow up" with
-  only a same-key "Check again" (no "Resume that payment", no "Discard", and no form), on this visit and
-  every later one, until an answer that is not `needs_review` arrives. `discard()` refuses a reviewed
-  request. The hooks do not also set `refusal` for it (the notice says it once).
+- **Held for review (MEDIUM-3, M2b).** A `needs_review` answer keeps the key, marked `needsReview`.
+  `PendingRequestNotice` then renders "needs a manual check before it can continue — we'll follow up" with a
+  same-key "Check again" and, **for a checkout only**, "Discard" (no "Resume that payment" and no form), on
+  this visit and every later one, until an answer that is not `needs_review` arrives. Discard runs the same
+  void-or-reveal as any discard: the node voids an unattached claim it can no longer replay (`voided` →
+  released), or answers 409 `INTENT_NEEDS_REVIEW` / `revealed` (kept). Cash-out and sale discards are local,
+  so a reviewed one is never offered (a local discard proves nothing). The hooks do not also set `refusal` for
+  it (the notice says it once).
+- **Never started (M2a).** A `neverStarted` attempt (the node's `INTENT_EXPIRED` on a claim that never got a
+  page, `src/money/AGENTS.md` §flows) clears the pending request and the watched intent and shows
+  `pending.neverStarted`; the form is free, and nothing new is sent until the person submits.
+- **Acknowledge (M3).** `<AddFundsForm>`'s status card offers `checkout.acknowledge` ("Got it") while the
+  watched intent reads `complete` + `payment_received` (and the read is not stale). `acknowledge(view)` runs
+  `acknowledgeCheckout`, stops watching the intent, frees the form and shows `checkout.acknowledged(amount)`
+  ("received … still being added … contact support"); `onSettled` does not fire (the funds did not land). The
+  standalone `<CheckoutStatus>` never offers it: it does not own the key or the form lock.
 - **Superseded (LOW-5).** A resend another window got to first says `pending.superseded` ("resolved or
   discarded in another window") when nothing is saved now, and `pending.replaced` when a different request
   is; neither claims it settled.

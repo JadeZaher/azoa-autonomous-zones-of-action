@@ -70,8 +70,8 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
       async run() {
         const { transport } = await build(factory);
         for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
-          if (!result.ok) continue;
-          const leaked = findForbiddenViewKeys(result.value);
+          // Refusals too: a same-key 409's `serverResult` reaches the page like any view.
+          const leaked = findForbiddenViewKeys(result.ok ? result.value : result.refusal);
           check(leaked.length === 0, `${label} leaked ${leaked.join(", ")}`);
         }
         return "passed";

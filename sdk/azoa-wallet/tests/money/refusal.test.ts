@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SdkError, SdkErrorCode } from "../../src/core/errors.js";
-import { deriveAccountGate, refusalFromSdkError, releasesRequestKey, toBaseUnits } from "../../src/money/index.js";
+import { deriveAccountGate, findForbiddenViewKeys, refusalFromSdkError, releasesRequestKey, toBaseUnits } from "../../src/money/index.js";
 import type { MoneyRefusal, MoneyRefusalCode } from "../../src/money/index.js";
 
 /** A node failure as `AzoaApiClient` surfaces it. */
@@ -61,11 +61,32 @@ describe("refusalFromSdkError", () => {
       .toBe("This payment page has expired. Start a new payment.");
   });
 
-  it("surfaces the node's own projection on a same-key 409 that carries one, for the money flows to decide by that state instead of a void round trip", () => {
-    const projection = { intentId: "intent-1", status: "awaiting_payment", settlementState: "payment_failed", paymentUrl: null };
-    expect(refusalFromSdkError(nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED", projection)).serverResult).toEqual(projection);
-    // A code the node never attaches a result to (REQUEST_KEY_IN_USE carries `result: null`) surfaces nothing to decide by.
-    expect(refusalFromSdkError(nodeError(409, "That request key is already in use.", "REQUEST_KEY_IN_USE")).serverResult).toBeUndefined();
+  describe("a same-key 409's `result` reaches a refusal only for the three codes that name the key's intent, and only narrowed (M1)", () => {
+    // The node's projection as serialized: `admissionKey` is `{subject}:{tenant}:{key}`, and a later node may add more.
+    const projection = {
+      intentId: "8b4f1f2e-2f1d-4c1b-9d4e-6d1c9f3b2a10", admissionKey: "subject:tenant:key", subjectUserId: "u-1", status: "starting",
+      settlementState: "not_started", paymentUrl: null, resumed: true, amountPaidMinorUnits: null, currency: null, expiresAt: null,
+    };
+    const { admissionKey: _admissionKey, subjectUserId: _subjectUserId, ...browserSafe } = projection;
+    const revealedShape = { outcome: "revealed", intentId: projection.intentId, tenantId: "t-1", intent: projection };
+    // [node code, the envelope's result, what the refusal carries]
+    it.each<[string, unknown, unknown]>([
+      ["INTENT_EXPIRED", projection, browserSafe],
+      ["INTENT_FINISHED", { ...projection, status: "complete", settlementState: "payment_received" }, { ...browserSafe, status: "complete", settlementState: "payment_received" }],
+      ["INTENT_NEEDS_REVIEW", projection, browserSafe],
+      ["INTENT_NEEDS_REVIEW", revealedShape, { outcome: "revealed", intent: browserSafe }],
+      // A code the node attaches no result to never surfaces one, whatever a proxy put there.
+      ["REQUEST_KEY_IN_USE", projection, undefined],
+      ["REQUEST_VOIDED", projection, undefined],
+      // Not a projection: nothing to decide by, and nothing raw passes through.
+      ["INTENT_FINISHED", { admissionKey: "subject:tenant:key" }, undefined],
+      ["INTENT_FINISHED", [projection], undefined],
+      ["INTENT_NEEDS_REVIEW", { outcome: "voided", intentId: null }, undefined],
+    ])("%s with %j", (code, result, carried) => {
+      const refusal = refusalFromSdkError(nodeError(409, "Same-key answer.", code, result));
+      expect(refusal.serverResult).toEqual(carried);
+      expect(findForbiddenViewKeys(refusal)).toEqual([]);
+    });
   });
 });
 

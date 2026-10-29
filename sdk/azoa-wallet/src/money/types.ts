@@ -30,9 +30,12 @@ export interface MoneyRefusal {
   code: MoneyRefusalCode;
   message: string;
   retryAfterSeconds?: number;
-  /** The server's own `result` on a final same-key 409 (e.g. `INTENT_FINISHED`'s projection); unnarrowed, see `src/money/AGENTS.md` §flows "decide by state". */
-  serverResult?: unknown;
+  /** What a final same-key 409 named (`INTENT_FINISHED` / `INTENT_EXPIRED` / `INTENT_NEEDS_REVIEW` only), allowlist-narrowed; see `src/money/AGENTS.md` §refusals. */
+  serverResult?: RefusalServerResult;
 }
+
+/** A same-key 409's `result`, narrowed: the key's intent as `GET` projects it, or (the void's `INTENT_NEEDS_REVIEW`) the revealed intent. */
+export type RefusalServerResult = CheckoutView | Extract<CheckoutVoidView, { outcome: "revealed" }>;
 
 /** Every transport method resolves to this; a transport never throws for a refusal. */
 export type MoneyResult<T> = { ok: true; value: T } | { ok: false; refusal: MoneyRefusal };

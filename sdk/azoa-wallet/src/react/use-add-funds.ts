@@ -2,7 +2,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MONEY_SCOPES,
+  acknowledgeCheckout,
   discardCheckout,
+  formatMinorUnits,
+  isAwaitingFundsCheckout,
   isSettledCheckout,
   moneyRefusal,
   readSavedRequest,
@@ -22,7 +25,7 @@ export interface AddFundsOptions extends MoneyEventProps {
 
 export interface AddFundsState {
   capabilities: CheckoutCapabilitiesView | null;
-  /** An unresolved saved payment: offer `resume()` (or `discard()`) before any new payment; `needsReview` means only "check again". */
+  /** An unresolved saved payment: offer `resume()` (or `discard()`) before any new payment; `needsReview` means "check again" instead of resume. */
   pending: SavedRequest | null;
   /** The intent to show and poll; while it has no settled read, no new payment is offered. */
   intentId: string | null;
@@ -37,8 +40,10 @@ export interface AddFundsState {
   start(amountMinorUnits: number): Promise<void>;
   /** Re-sends the pending payment with its original key, unless another tab already changed it. */
   resume(): Promise<void>;
-  /** Asks the node to void the pending payment (never one held for review); its key goes only when the node voids it. */
+  /** Asks the node to void the pending payment (one held for review too); its key goes only when the node voids it. */
   discard(): Promise<void>;
+  /** The person acknowledges the watched intent, paid but with funds not landed (`isAwaitingFundsCheckout`): its key goes and the form frees; nothing new starts. */
+  acknowledge(view: CheckoutView): void;
 }
 
 export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
@@ -130,6 +135,13 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
         setIntentId(attempt.view.intentId);
         if (attempt.view.resumed) setNotice(messages.addFunds.resumedFinished);
         return;
+      case "neverStarted":
+        // The node proved no page ever existed under the key: nothing was charged, and a fresh payment may start (M2a).
+        setPending(null);
+        setIntentId(watched => (watched === attempt.intentId ? null : watched));
+        setInitialView(null);
+        setNotice(messages.pending.neverStarted);
+        return;
       case "refused":
         // A kept request replaces the form with its notice, so no second payment is offered meanwhile.
         setPending(attempt.kept);
@@ -164,8 +176,8 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
         return;
       case "refused":
         setPending(attempt.kept);
-        // A request held for review is explained by its own notice.
-        if (!attempt.kept?.needsReview) setNotice(messages.pending.discardUnconfirmed);
+        // A void still held for review is explained by the review notice; any other refusal could not be checked.
+        if (attempt.refusal.code !== "needs_review") setNotice(messages.pending.discardUnconfirmed);
         callHost(() => events.current.onRefusal?.(attempt.refusal));
         return;
     }
@@ -204,10 +216,21 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
   }, [run, apply, transport, keyStore, pending, redirectPolicy]);
 
   const discard = useCallback(async () => {
-    // The node holds a reviewed request for an operator: it is never swapped for a fresh payment from here.
-    if (!pending || pending.needsReview) return;
-    await run(() => discardCheckout(transport, keyStore, pending), applyDiscard);
+    // A request held for review is never without an exit: the node's void decides it like any other (M2b).
+    if (pending) await run(() => discardCheckout(transport, keyStore, pending), applyDiscard);
   }, [run, applyDiscard, transport, keyStore, pending]);
+
+  const acknowledge = useCallback((view: CheckoutView) => {
+    if (sending.current === person.current || view.intentId !== intentId || !isAwaitingFundsCheckout(view)) return;
+    // Terminal and paid: nothing more can be charged under its key, so the person may let it go (M3).
+    acknowledgeCheckout(keyStore, view);
+    setPending(current => (current?.serverId === view.intentId ? null : current));
+    setIntentId(null);
+    setInitialView(null);
+    setRefusal(null);
+    const amount = view.amountPaidMinorUnits === null ? null : formatMinorUnits(view.amountPaidMinorUnits, view.currency);
+    setNotice(messages.checkout.acknowledged(amount));
+  }, [intentId, keyStore, messages, person]);
 
   return {
     capabilities,
@@ -221,5 +244,6 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
     start,
     resume,
     discard,
+    acknowledge,
   };
 }

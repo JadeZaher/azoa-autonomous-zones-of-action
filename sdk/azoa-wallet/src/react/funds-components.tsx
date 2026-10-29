@@ -5,6 +5,7 @@ import {
   describeRefusal,
   describeSettlement,
   formatMinorUnits,
+  isAwaitingFundsCheckout,
   isOpenCheckout,
   isSettledCheckout,
   minorUnitsToText,
@@ -34,18 +35,19 @@ export interface PendingRequestNoticeProps {
   className?: string;
 }
 
-/** An unresolved saved request blocks a new one until the person resumes or explicitly discards it; one held for review offers neither. */
+/** An unresolved saved request blocks a new one until the person resumes or explicitly discards it; one held for review is re-asked, not resumed. */
 export function PendingRequestNotice({ kind, pending, currencyCode, busy, onResume, onDiscard, slots, className }: PendingRequestNoticeProps) {
   const { messages } = useMoneyContext();
   const { Alert, Button } = useSlots(slots);
   const summary = messages.pending.summary[kind](formatMinorUnits(pending.amountMinorUnits, currencyCode));
   if (pending.needsReview) {
-    // The node holds it for an operator: no resume, no discard into a fresh request; only a same-key re-ask.
+    // Held for an operator: a same-key re-ask, and for a checkout the node's void-or-reveal (a cash-out or sale discard is local, so none).
     return (
       <Alert tone="warning" className={className}>
         <p>{messages.pending.notConfirmed(summary)}</p>
         <p>{describeRefusal(moneyRefusal("needs_review"), messages)}</p>
         <Button variant="secondary" onClick={onResume} disabled={busy}>{messages.pending.checkAgain}</Button>
+        {kind === "checkout" ? <Button variant="secondary" onClick={onDiscard} disabled={busy}>{messages.pending.discard}</Button> : null}
       </Alert>
     );
   }
@@ -69,7 +71,8 @@ export function CheckoutStatus(props: CheckoutStatusProps) {
   return <CheckoutStatusCard {...props} status={status} />;
 }
 
-function CheckoutStatusCard(props: MoneyComponentProps & { status: CheckoutStatusState }) {
+/** `onAcknowledge`: offered only by `AddFundsForm`, which owns the key and the form lock. */
+function CheckoutStatusCard(props: MoneyComponentProps & { status: CheckoutStatusState; onAcknowledge?: (view: CheckoutView) => void }) {
   const { messages, events: providerEvents, redirectPolicy } = useMoneyContext();
   const { Card, Button, Alert } = useSlots(props.slots);
   const events = useMoneyEvents(props);
@@ -91,6 +94,8 @@ function CheckoutStatusCard(props: MoneyComponentProps & { status: CheckoutStatu
   const canRedirect = Boolean(props.onRedirect ?? providerEvents.onRedirect);
   const paid = view.amountPaidMinorUnits !== null ? formatMinorUnits(view.amountPaidMinorUnits, view.currency) : null;
   const sentence = stale ? messages.checkout.cannotConfirm : describeSettlement(view, messages);
+  // Paid and closed, funds not landed: an exit instead of a form locked until they do (M3).
+  const onAcknowledge = !stale && isAwaitingFundsCheckout(view) ? props.onAcknowledge : undefined;
   return (
     <Card title={messages.checkout.title} description={<span role="status">{sentence}</span>} className={props.className}>
       {paid ? <p>{messages.checkout.paid(paid)}</p> : null}
@@ -98,6 +103,7 @@ function CheckoutStatusCard(props: MoneyComponentProps & { status: CheckoutStatu
       {status.refusal && status.refusal.code !== "unconfirmed" ? <Alert tone="warning">{describeRefusal(status.refusal, messages)}</Alert> : null}
       {paymentUrl && canRedirect ? <Button onClick={() => redirectTo(events, mounted, paymentUrl, "checkout", redirectPolicy)}>{messages.checkout.openPaymentPage}</Button> : null}
       {paymentUrl && !canRedirect ? <a href={paymentUrl}>{messages.checkout.openPaymentPage}</a> : null}
+      {onAcknowledge ? <Button onClick={() => onAcknowledge(view)}>{messages.checkout.acknowledge}</Button> : null}
       <Button variant="secondary" onClick={status.refresh} disabled={status.polling}>{messages.checkout.check}</Button>
     </Card>
   );
@@ -212,7 +218,7 @@ export function AddFundsForm(props: AddFundsFormProps) {
           <Button type="submit" disabled={locked}>{messages.addFunds.submit}</Button>
         </form>
       )}
-      {funds.intentId ? <CheckoutStatusCard status={status} onRedirect={props.onRedirect} slots={props.slots} /> : null}
+      {funds.intentId ? <CheckoutStatusCard status={status} onRedirect={props.onRedirect} slots={props.slots} onAcknowledge={funds.acknowledge} /> : null}
     </Card>
   );
 }

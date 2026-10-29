@@ -1,12 +1,12 @@
 // Framework-free keyed money flows: lock → claim → persist → send → resolve the key by the answer. See `src/money/AGENTS.md` §flows.
 import { SdkError } from "../core/errors.js";
-import { isOpenCheckout, isSettledCheckout, isTerminalCheckout, safeRedirectUrl } from "./presentation.js";
+import { isAwaitingFundsCheckout, isOpenCheckout, isSettledCheckout, isTerminalCheckout, safeRedirectUrl } from "./presentation.js";
 import type { RedirectPolicy } from "./presentation.js";
 import { moneyRefusal, releasesRequestKey } from "./refusal.js";
 import { MONEY_SCOPES, claimRequestKey, clearSavedRequest, markNeedsReview, readSavedRequest, rememberServerId } from "./request-key.js";
 import type { KeyStore, SavedRequest } from "./request-key.js";
 import type { AzoaMoneyTransport, CashOutView, CheckoutView, CheckoutVoidView, MoneyRefusal, MoneyResult, SaleQuoteView, SaleView } from "./types.js";
-import { toCheckoutView } from "./views.js";
+import { toRefusalServerResult } from "./views.js";
 
 /** A refused attempt; `kept` is the saved request whenever its key survives (resume it, never replace it). */
 export type RefusedAttempt = { kind: "refused"; refusal: MoneyRefusal; kept: SavedRequest | null };
@@ -20,12 +20,14 @@ export type SupersededAttempt = { kind: "superseded"; current: SavedRequest | nu
 /**
  * `opened`: the key now names this intent; pay at `paymentUrl` when it is set, otherwise watch the intent (it may be clearing).
  * `finished`: the intent is terminal, so nothing new can be charged; its key is kept until the money settles.
+ * `neverStarted`: the node proved no payment page was ever created under the key, so nothing was charged and the key is forgotten.
  */
 export type CheckoutAttempt =
   | PendingAttempt
   | SupersededAttempt
   | { kind: "opened"; view: CheckoutView; paymentUrl: string | null }
   | { kind: "finished"; view: CheckoutView }
+  | { kind: "neverStarted"; intentId: string }
   | RefusedAttempt;
 
 /**
@@ -100,6 +102,15 @@ export function resolveCheckoutByState(keyStore: KeyStore, view: CheckoutView): 
   return true;
 }
 
+/** The person acknowledged a paid intent whose funds have not landed: forgets its saved key (true when it did); starts nothing. See `src/money/AGENTS.md` §flows. */
+export function acknowledgeCheckout(keyStore: KeyStore, view: CheckoutView): boolean {
+  if (!isAwaitingFundsCheckout(view)) return false;
+  const saved = readSavedRequest(keyStore, MONEY_SCOPES.checkout);
+  if (saved?.serverId !== view.intentId) return false;
+  clearSavedRequest(keyStore, MONEY_SCOPES.checkout, saved.requestKey);
+  return true;
+}
+
 /** Claims (or reuses) a cash-out key, persists it, then starts the cash-out. */
 export function startCashOut(transport: AzoaMoneyTransport, keyStore: KeyStore, amountMinorUnits: number, options: MoneyFlowOptions = {}): Promise<CashOutAttempt> {
   return withRequestLock(keyStore, MONEY_SCOPES.cashOut, options, async () => {
@@ -144,21 +155,30 @@ async function beginCheckout(transport: AzoaMoneyTransport, keyStore: KeyStore, 
   const refusal = result.ok ? moneyRefusal("unconfirmed") : result.refusal;
   // A resent key's final-looking refusal (INTENT_FINISHED, REQUEST_KEY_IN_USE, a gate) is not proof for the earlier send: ask the node.
   if (resend && releasesRequestKey(refusal)) {
-    // A final 409 whose envelope already names the key's own intent (INTENT_FINISHED / INTENT_EXPIRED)
-    // decides by that state directly -- the same thing the void's `revealed` would tell us, without the
-    // round trip. `applyCheckoutView` still only releases the key once the view is settled, never on a
-    // merely terminal one (an unlanded ACH payment keeps it).
+    // A final 409 whose envelope already names the key's own intent decides by that state directly (no
+    // void round trip); `applyCheckoutView` still releases only a settled view. See `src/money/AGENTS.md` §flows.
     const projection = checkoutProjectionFrom(refusal);
+    if (projection && isNeverStartedClaim(projection)) {
+      // Only INTENT_EXPIRED is definite on a `starting` claim: no page was ever created, so nothing was ever payable (M2a).
+      clearSavedRequest(keyStore, MONEY_SCOPES.checkout, request.requestKey);
+      return { kind: "neverStarted", intentId: projection.intentId };
+    }
     if (projection) return applyCheckoutView(keyStore, request, projection, options, false);
     return releaseOnVoid(transport, keyStore, request, refusal, options);
   }
   return refused(keyStore, MONEY_SCOPES.checkout, request, refusal);
 }
 
-/** The server's own projection on a final 409 (`refusal.serverResult`), allowlist-narrowed; null when the answer carried none. */
+/** The key's own intent from a definite final 409 (`INTENT_FINISHED` / `INTENT_EXPIRED`), re-narrowed; null for any other refusal (LOW-2). */
 function checkoutProjectionFrom(refusal: MoneyRefusal): CheckoutView | null {
-  const raw = refusal.serverResult;
-  return isRecord(raw) && typeof raw.intentId === "string" ? toCheckoutView(raw as unknown as Parameters<typeof toCheckoutView>[0]) : null;
+  if (refusal.code !== "definite") return null;
+  const narrowed = toRefusalServerResult(refusal.serverResult);
+  return narrowed && !("outcome" in narrowed) ? narrowed : null;
+}
+
+/** A claim that never got a payment page: `starting`, nothing cleared, no page, nothing paid. Proof only inside a definite 409. */
+function isNeverStartedClaim(view: CheckoutView): boolean {
+  return view.status === "starting" && view.settlementState === "not_started" && !view.paymentUrl && view.amountPaidMinorUnits === null;
 }
 
 /** Forgets the key only when the node voids it; a revealed payment is followed by its state and never navigated to. */

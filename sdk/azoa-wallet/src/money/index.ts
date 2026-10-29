@@ -15,6 +15,7 @@ export type { KeyStorage, KeyStore, KeyStoreOptions, SavedRequest, RequestClaim 
 export {
   isTerminalCheckout,
   isSettledCheckout,
+  isAwaitingFundsCheckout,
   isOpenCheckout,
   isCashOutOnTrack,
   isDefiniteRefusal,
@@ -36,6 +37,7 @@ export { refusalFromSdkError, releasesRequestKey, isMoneyRefusalCode, moneyRefus
 export {
   toCheckoutView,
   toCheckoutVoidView,
+  toRefusalServerResult,
   toCustodialAccountView,
   toAccountCapabilitiesView,
   toCheckoutCapabilitiesView,
@@ -52,7 +54,7 @@ export {
   findForbiddenViewKeys,
   FORBIDDEN_VIEW_KEYS,
 } from "./views.js";
-export { startCheckout, sendCheckout, discardCheckout, resolveCheckoutByState, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
+export { startCheckout, sendCheckout, discardCheckout, resolveCheckoutByState, acknowledgeCheckout, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
 export type {
   CheckoutAttempt,
   CheckoutDiscardAttempt,

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AzoaApiClient } from "../../src/api/client.js";
 import {
   MONEY_SCOPES,
+  acknowledgeCheckout,
   claimRequestKey,
   createDirectMoneyTransport,
   createKeyStore,
@@ -11,6 +12,7 @@ import {
   memoryStorage,
   newRequestKey,
   readSavedRequest,
+  rememberServerId,
   sendCashOut,
   sendCheckout,
   startCashOut,
@@ -133,6 +135,7 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     // projection to decide by and still goes to the void).
     expect(node.requests.filter(request => CHECKOUT_VOID.test(request.path))).toHaveLength(0);
     expect(attempt).toMatchObject({ kind: "finished", view: { status: "awaiting_payment", settlementState: "payment_failed", paymentUrl: null } });
+    expect(findForbiddenViewKeys(attempt)).toEqual([]);
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toBeNull();
     const fresh = await startCheckout(visit.transport, visit.keyStore, 25_00);
     expect(fresh.kind).toBe("opened");
@@ -153,6 +156,7 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     expect(node.answers.filter(answer => answer.method === "POST").map(answer => answer.code)).toEqual(calledVoid ? [null, code, code] : [null, code]);
     expect(node.requests.filter(request => CHECKOUT_VOID.test(request.path))).toHaveLength(calledVoid ? 1 : 0);
     expect(attempt.kind).toBe(kind);
+    expect(findForbiddenViewKeys(attempt)).toEqual([]);
     if (attempt.kind === "finished") expect(attempt.view.settlementState).toBe(settlement);
     if (attempt.kind === "refused") expect(attempt.refusal.code).toBe("unconfirmed");
     // Never released on INTENT_FINISHED unless that projection is settled (the unlanded card payment keeps it).
@@ -178,49 +182,108 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.serverId).toBe(intentId);
     expect(node.admissions).toHaveLength(1);
   });
+});
 
-  it("a generic 409 CONFLICT (Stripe still has the same-key request in flight) keeps the key, and the next resend resumes it", async () => {
-    const { node, visit, attempt } = await resumeLostAnswer("creationInFlight");
+describe("an unattached claim: its first Stripe create failed, so no page ever left the node (B9, B10)", () => {
+  /** The first begin claims the row, then Stripe's create fails: the key is kept with no intent id. */
+  async function unattachedClaim(options?: NodeEmulatorOptions, how?: "busy" | "inFlight") {
+    const node = freshNode(options);
+    const visit = pageLoad(node, memoryStorage());
+    node.failNextCreate(how);
+    const first = await startCheckout(visit.transport, visit.keyStore, 25_00);
+    expect(first).toMatchObject({ kind: "refused", refusal: { code: how === "inFlight" ? "unconfirmed" : "rail_busy" }, kept: { amountMinorUnits: 25_00 } });
+    const { intentId, requestKey } = node.admissions[0]!;
+    const saved = () => readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout);
+    const resend = () => sendCheckout(visit.transport, visit.keyStore, saved()!);
+    const voids = () => node.requests.filter(request => CHECKOUT_VOID.test(request.path)).length;
+    return { node, visit, intentId, requestKey, resend, saved, voids };
+  }
 
-    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
-    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.requestKey).toBe(node.admissions[0]!.requestKey);
+  it("Stripe still has the claim-keyed create in flight (409 CONFLICT): the key is kept, and once it settles the resend opens the one page", async () => {
+    const { node, visit, intentId, requestKey, resend, saved } = await unattachedClaim({}, "inFlight");
+
+    expect(await resend()).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" } });
+    expect(node.answers.at(-1)).toMatchObject({ status: 409, code: "CONFLICT" });
+    expect(saved()?.requestKey).toBe(requestKey);
     expect((await startCheckout(visit.transport, visit.keyStore, 10_00)).kind).toBe("pending");
-    node.apply(node.admissions[0]!.intentId, "creationSettled");
-    expect((await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!)).kind).toBe("opened");
+    node.apply(intentId, "creationSettled");
+
+    expect(await resend()).toMatchObject({ kind: "opened", paymentUrl: node.admissions[0]!.paymentUrl });
     expect(node.admissions).toHaveLength(1);
   });
 
-  it("INTENT_NEEDS_REVIEW keeps the key and marks it held for review; once the operator reopens it, the answer naming the intent clears the mark (MEDIUM-3)", async () => {
-    const { node, visit, attempt } = await resumeLostAnswer("needsOperator");
+  it("minutes later the resend meets 409 INTENT_EXPIRED on a `starting` claim: nothing was ever payable, so the key goes with no void round trip and a fresh payment opens (B9, M2a)", async () => {
+    const { node, visit, intentId, resend, saved, voids } = await unattachedClaim();
+    node.apply(intentId, "creationLapsed");
 
-    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "needs_review" }, kept: { needsReview: true } });
-    // An unattached claim never has a page to hand out, whatever the live Stripe fields might otherwise say.
-    if (attempt.kind === "refused") expect(attempt.refusal.serverResult).toMatchObject({ paymentUrl: null });
-    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toMatchObject({ requestKey: node.admissions[0]!.requestKey, needsReview: true });
+    const attempt = await resend();
 
-    node.apply(node.admissions[0]!.intentId, "operatorResumed");
-    const reopened = await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!);
+    expect(node.answers.at(-1)).toMatchObject({ status: 409, code: "INTENT_EXPIRED" });
+    expect(attempt).toEqual({ kind: "neverStarted", intentId });
+    expect(saved()).toBeNull();
+    expect(voids()).toBe(0);
+    const fresh = await startCheckout(visit.transport, visit.keyStore, 25_00);
+    expect(fresh).toMatchObject({ kind: "opened", paymentUrl: node.admissions[1]!.paymentUrl });
+    expect(node.admissions).toHaveLength(2);
+  });
 
-    expect(reopened.kind).toBe("opened");
+  it("past the 23-hour replay window the resend is held for review (kept, marked, its projection narrowed), and discarding it is the node's void, whose voided answer releases it (B10, M2b)", async () => {
+    const { node, visit, intentId, resend, saved } = await unattachedClaim();
+    node.apply(intentId, "replayWindowLapsed");
+
+    const held = await resend();
+
+    expect(held).toMatchObject({ kind: "refused", refusal: { code: "needs_review", serverResult: { intentId, status: "starting", paymentUrl: null } }, kept: { needsReview: true } });
+    expect(findForbiddenViewKeys(held)).toEqual([]);
+    const discarded = await discardCheckout(visit.transport, visit.keyStore, saved()!);
+    expect(discarded).toMatchObject({ kind: "discarded", intentId });
+    expect(node.isVoided(intentId)).toBe(true);
+    expect(saved()).toBeNull();
+    expect((await startCheckout(visit.transport, visit.keyStore, 25_00)).kind).toBe("opened");
+    expect(node.admissions).toHaveLength(2);
+  });
+
+  it("on node 33168340 that void answers 409 INTENT_NEEDS_REVIEW in the revealed shape: narrowed, and the key stays held", async () => {
+    const extraFields = { subjectUserId: "u-1", connectedAccountId: "acct_1" };
+    const { node, visit, intentId, resend, saved } = await unattachedClaim({ unreplayableClaimVoid: "needsReview", extraFields });
+    node.apply(intentId, "replayWindowLapsed");
+    await resend();
+
+    const attempt = await discardCheckout(visit.transport, visit.keyStore, saved()!);
+
+    expect(node.answers.at(-1)).toMatchObject({ status: 409, code: "INTENT_NEEDS_REVIEW", path: expect.stringMatching(CHECKOUT_VOID) });
+    expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "needs_review", serverResult: { outcome: "revealed", intent: { intentId, status: "starting" } } } });
+    expect(findForbiddenViewKeys(attempt)).toEqual([]);
+    expect(saved()).toMatchObject({ requestKey: node.admissions[0]!.requestKey, needsReview: true });
+    expect(node.isVoided(intentId)).toBe(false);
+  });
+
+  it("quarantined by an operator it is held for review; once the operator reconciles it, the answer naming the intent clears the mark (MEDIUM-3)", async () => {
+    const { node, intentId, requestKey, resend, saved } = await unattachedClaim();
+    node.apply(intentId, "needsOperator");
+
+    expect(await resend()).toMatchObject({ kind: "refused", refusal: { code: "needs_review" }, kept: { needsReview: true } });
+    node.apply(intentId, "operatorResumed");
+    const reopened = await resend();
+
+    expect(reopened).toMatchObject({ kind: "opened", view: { intentId, status: "awaiting_payment" } });
     // A later visit must offer it as an ordinary open payment, not "needs a manual check".
-    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toEqual({
-      requestKey: node.admissions[0]!.requestKey, amountMinorUnits: 25_00, serverId: node.admissions[0]!.intentId,
-    });
+    expect(saved()).toEqual({ requestKey, amountMinorUnits: 25_00, serverId: intentId });
   });
 });
 
 describe("a key that already names its intent is decided by that intent's state, never by a refusal code (HIGH-1, LOW-1)", () => {
   const railOff = (node: NodeEmulator) => node.disablePayments();
-  // [situation, the node's answer to the resend, node, timeline before the resend, node-wide change, attempt kind, settlement shown, key kept]
-  it.each<[string, string, NodeEmulatorOptions, CheckoutEvent[], ((node: NodeEmulator) => void) | null, CheckoutAttempt["kind"], string | null, boolean]>([
-    ["card paid, funds not landed yet", "409 INTENT_FINISHED", {}, ["pay", "webhook"], null, "finished", "payment_received", true],
-    ["card paid and the funds landed", "409 INTENT_FINISHED", {}, ["pay", "webhook", "applyFunds"], null, "finished", "funds_applied", false],
-    ["Stripe expired the open page (provably unpaid)", "409 INTENT_FINISHED", {}, ["expire"], null, "finished", "payment_failed", false],
-    ["ACH still clearing past the page's expiry (node lane's first cut)", "409 INTENT_EXPIRED", { expiryBeforeStripeRead: true }, ["payAsync", "webhook", "pageLapsed"], null, "opened", "not_started", true],
-    ["the payment rail was switched off while the page is open", "503 PAYMENTS_NOT_CONFIGURED", {}, [], railOff, "opened", "not_started", true],
-    ["the node cannot read Stripe at all", "503 DEPENDENCY_UNAVAILABLE, and on the read", {}, ["stripeDown"], null, "refused", null, true],
-  ])("%s: resend answered %s", async (_situation, _answer, options, events, before, kind, settlement, kept) => {
-    const node = freshNode(options);
+  // [situation, the node's answer to the resend, timeline before the resend, node-wide change, attempt kind, settlement shown, key kept]
+  it.each<[string, string, CheckoutEvent[], ((node: NodeEmulator) => void) | null, CheckoutAttempt["kind"], string | null, boolean]>([
+    ["card paid, funds not landed yet", "409 INTENT_FINISHED", ["pay", "webhook"], null, "finished", "payment_received", true],
+    ["card paid and the funds landed", "409 INTENT_FINISHED", ["pay", "webhook", "applyFunds"], null, "finished", "funds_applied", false],
+    ["Stripe expired the open page (provably unpaid)", "409 INTENT_FINISHED", ["expire"], null, "finished", "payment_failed", false],
+    ["ACH still clearing past the page's expiry", "200 resumed, processing, no page", ["payAsync", "webhook", "pageLapsed"], null, "opened", "not_started", true],
+    ["the payment rail was switched off while the page is open", "503 PAYMENTS_NOT_CONFIGURED", [], railOff, "opened", "not_started", true],
+    ["the node cannot read Stripe at all", "503 DEPENDENCY_UNAVAILABLE, and on the read", ["stripeDown"], null, "refused", null, true],
+  ])("%s: resend answered %s", async (_situation, _answer, events, before, kind, settlement, kept) => {
+    const node = freshNode();
     const visit = pageLoad(node, memoryStorage());
     const opened = await startCheckout(visit.transport, visit.keyStore, 25_00);
     if (opened.kind !== "opened") throw new Error(`expected the first payment to open, got ${opened.kind}`);
@@ -231,6 +294,7 @@ describe("a key that already names its intent is decided by that intent's state,
     const attempt = await sendCheckout(visit.transport, visit.keyStore, readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)!);
 
     expect(attempt.kind).toBe(kind);
+    expect(findForbiddenViewKeys(attempt)).toEqual([]);
     if (attempt.kind === "opened" || attempt.kind === "finished") expect(attempt.view.settlementState).toBe(settlement);
     // A refused send never hands out a payment page by itself.
     expect(attempt.kind === "opened" ? attempt.paymentUrl : null).toBeNull();
@@ -262,6 +326,7 @@ describe("the same-key resend's expire-first classifier once a page's clock has 
     if (resend.ok) return;
     expect(resend.refusal).toMatchObject({ code: "definite", message: "This payment page has expired. Start a new payment." });
     expect(resend.refusal.serverResult).toMatchObject({ intentId, status: "awaiting_payment", settlementState: "payment_failed", paymentUrl: null });
+    expect(findForbiddenViewKeys(resend)).toEqual([]);
     // The clock alone never proves it; the Stripe session itself is what closed, not a void write.
     expect(node.isVoided(intentId)).toBe(false);
   });
@@ -389,7 +454,6 @@ describe("discarding a key is the node's decision: void-or-reveal by request key
     ["Stripe refuses the expire and a fresh read still says open", "503 DEPENDENCY_UNAVAILABLE", (node, intentId) => node.apply(intentId, "expireFails"), "unconfirmed"],
     // `payments_not_configured` releases a begin's key; from a void it proves nothing, so the flow keeps it.
     ["the payment rail was switched off", "503 PAYMENTS_NOT_CONFIGURED", node => node.disablePayments(), "unconfirmed"],
-    ["the unattached claim needs an operator", "409 INTENT_NEEDS_REVIEW", (node, intentId) => node.apply(intentId, "needsOperator"), "needs_review"],
   ])("a void the node cannot decide keeps the key (%s: %s)", async (_situation, answer, arrange, code) => {
     const node = freshNode();
     const visit = pageLoad(node, memoryStorage());
@@ -401,7 +465,8 @@ describe("discarding a key is the node's decision: void-or-reveal by request key
     const [status, wireCode] = answer.split(" ");
     expect(node.answers.at(-1)).toMatchObject({ status: Number(status), code: wireCode });
     expect(attempt).toMatchObject({ kind: "refused", refusal: { code }, kept: { requestKey: saved.requestKey } });
-    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toMatchObject({ requestKey: saved.requestKey, ...(code === "needs_review" ? { needsReview: true } : {}) });
+    expect(findForbiddenViewKeys(attempt)).toEqual([]);
+    expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.requestKey).toBe(saved.requestKey);
     expect(node.isVoided(node.admissions[0]!.intentId)).toBe(false);
   });
 
@@ -423,6 +488,52 @@ describe("discarding a key is the node's decision: void-or-reveal by request key
 
     expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "unconfirmed" }, kept: { requestKey: saved.requestKey } });
     expect(readSavedRequest(keyStore, MONEY_SCOPES.checkout)?.requestKey).toBe(saved.requestKey);
+  });
+});
+
+describe("a paid intent whose funds never land (no issuance handler, or crediting dead-lettered) is let go only when the person acknowledges it (M3)", () => {
+  it("resuming finds it finished and keeps the key, discarding reveals it and keeps the key, and acknowledging releases it without starting anything", async () => {
+    const node = freshNode();
+    const visit = pageLoad(node, memoryStorage());
+    const opened = await startCheckout(visit.transport, visit.keyStore, 25_00);
+    if (opened.kind !== "opened") throw new Error(`expected the first payment to open, got ${opened.kind}`);
+    const { intentId } = opened.view;
+    node.apply(intentId, "pay", "webhook");
+    const saved = () => readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout);
+
+    expect(await sendCheckout(visit.transport, visit.keyStore, saved()!)).toMatchObject({ kind: "finished", view: { status: "complete", settlementState: "payment_received" } });
+    const discarded = await discardCheckout(visit.transport, visit.keyStore, saved()!);
+    if (discarded.kind !== "revealed") throw new Error(`expected the paid payment to be revealed, got ${discarded.kind}`);
+    expect(saved()?.serverId).toBe(intentId);
+    const postsBefore = checkoutPosts(node).length;
+
+    expect(acknowledgeCheckout(visit.keyStore, discarded.view)).toBe(true);
+
+    expect(saved()).toBeNull();
+    expect(checkoutPosts(node)).toHaveLength(postsBefore);
+    expect(node.isVoided(intentId)).toBe(false);
+    // The person may now start a separate payment on purpose; the paid one can never be charged again under its key.
+    expect((await startCheckout(visit.transport, visit.keyStore, 25_00)).kind).toBe("opened");
+    expect(node.admissions).toHaveLength(2);
+  });
+
+  // [the watched intent as last read, is it this saved key's intent, released]
+  it.each<[string, Partial<CheckoutView>, boolean, boolean]>([
+    ["complete + payment_received (paid, funds not landed)", { status: "complete", settlementState: "payment_received" }, true, true],
+    ["processing + payment_received (paid at Stripe, not closed yet: keep polling)", { status: "processing", settlementState: "payment_received" }, true, false],
+    ["complete + not_started (an older node that could not read Stripe)", { status: "complete", settlementState: "not_started" }, true, false],
+    ["awaiting_payment (an open page)", { status: "awaiting_payment", settlementState: "not_started" }, true, false],
+    ["complete + payment_received, but another intent than the saved key names", { status: "complete", settlementState: "payment_received" }, false, false],
+  ])("acknowledging %s", (_label, state, ownIntent, released) => {
+    const keyStore = createKeyStore({ subject: "person-1", storage: memoryStorage() });
+    const claimed = claimRequestKey(keyStore, MONEY_SCOPES.checkout, 25_00);
+    if (claimed.kind !== "ready") throw new Error("expected a fresh key");
+    const intentId = newRequestKey();
+    rememberServerId(keyStore, MONEY_SCOPES.checkout, claimed.request.requestKey, intentId);
+    const view = { intentId: ownIntent ? intentId : newRequestKey(), paymentUrl: null, resumed: true, amountPaidMinorUnits: 25_00, currency: "usd", expiresAt: null, ...state } as CheckoutView;
+
+    expect(acknowledgeCheckout(keyStore, view)).toBe(released);
+    expect(readSavedRequest(keyStore, MONEY_SCOPES.checkout) === null).toBe(released);
   });
 });
 

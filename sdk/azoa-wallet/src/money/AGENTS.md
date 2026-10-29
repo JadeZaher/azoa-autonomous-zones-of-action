@@ -34,6 +34,8 @@ leak by default; the direct transport runs each answer through one, and host BFF
 flags (`ready`, `available`, `accountReady`, `readyToReceive`, ...) must be literally `true`: a host
 transport that sends `"false"` gets a closed gate, not an open one. `findForbiddenViewKeys` is the deep
 check the contract runs (subject/tenant ids plus provider account ids and `missingConfigurationKeys`).
+`toRefusalServerResult(result)` narrows a same-key 409's `result` (a projection, or the void's `revealed`
+shape) for `MoneyRefusal.serverResult`, and returns null for anything else (§refusals, M1).
 
 `deriveAccountGate`: `ready` (the only state that moves value) | `setup` (verify identity / finish the
 account; also a `setup_required` refusal, e.g. no account yet) | `review` (`UnderReview`: verified, a
@@ -84,10 +86,24 @@ funds were still landing): the carried or revealed intent decides it and the key
 the code (`checkoutProjectionFrom` in `flows.ts`; never releases on `INTENT_FINISHED` unless that projection
 is settled -- see `isSettledCheckout`, §presentation).
 
+**`serverResult` is narrowed at the source (M1).** The node's 409 `result` is the GET projection, and the
+projection carries `admissionKey` (`{subject}:{tenant}:{key}`), so the raw object must never reach a page.
+`refusalFromSdkError` attaches `serverResult` **only** for `INTENT_FINISHED` / `INTENT_EXPIRED` /
+`INTENT_NEEDS_REVIEW` (`RESULT_CARRYING_CODES`), and only through `toRefusalServerResult` (§views): a
+projection becomes `toCheckoutView(result)`, the void's `{ outcome: "revealed", intent }` becomes
+`{ outcome: "revealed", intent: toCheckoutView(intent) }`, anything else is dropped. Narrowing happens once,
+here, so a host BFF that builds its refusals with `refusalFromSdkError` is safe by construction; the contract
+(§contract) checks refusals for forbidden keys too. Flows only ever *read* it through `checkoutProjectionFrom`,
+which re-narrows and trusts it only on a `definite` refusal (LOW-2: after M1 that means `INTENT_FINISHED` /
+`INTENT_EXPIRED`; `needs_review` never decides by projection).
+
 `needs_review` (MEDIUM-3) is not "the answer did not arrive": the node answered, and it holds the request
 for an operator. The key is kept and `markNeedsReview` flags the saved request, so the UI shows "needs a
-manual check — we'll follow up" with no resume prompt and no fresh payment, on this visit and later ones; the
-only action is a same-key "check again", which cannot charge twice.
+manual check — we'll follow up" with no resume prompt, on this visit and later ones. Its actions are a
+same-key "check again", which cannot charge twice, and (checkout only, M2b) **Discard**, which is the node's
+void like any other (§void): `voided` releases it, `revealed` or a 409 keeps it. A held checkout is never left
+without an exit: after the 23 h replay window the node's begin can only answer `INTENT_NEEDS_REVIEW`, so a
+disabled Discard was a permanent trap.
 
 `releasesRequestKey` encodes the last column as an **allowlist** of the seven key-releasing codes: host
 transports deserialize JSON at runtime, so a typo, a capitalized code, `"server_error"`, `"timeout"`, a
@@ -157,6 +173,24 @@ is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `p
   redirect); anything else → kept. A key's first send still releases on such a refusal directly: nothing
   else was ever sent under it.
 
+- **Never started (M2a, B9).** A claim whose first Stripe create failed has no page (status `starting`). From
+  4 min to 23 h after its creation fence began, the node's resend answers 409 `INTENT_EXPIRED` with that
+  `starting` projection: the pinned expiry is inside Stripe's 31-minute floor, so no page can ever be created,
+  and none ever left the node. Applying it as an ordinary view showed "Waiting for your payment" with the form
+  locked and no Discard. So `beginCheckout` checks `isNeverStartedClaim` (`starting`, `not_started`, no
+  `paymentUrl`, nothing paid) on the definite projection first: the key is cleared and the attempt is
+  `neverStarted` (copy `pending.neverStarted`: "That payment never started. Nothing was charged."; the form is
+  free for a fresh payment, none is started). `starting` proves this **only** inside a definite 409: a GET or a
+  `needs_review` answer with the same projection keeps the key (a create may still attach).
+
+- **Acknowledge (M3).** `complete` + `payment_received` is terminal (a same-key resend can never charge it
+  again) but not settled, so on a node whose funds never land (no issuance handler, crediting dead-lettered)
+  the key used to be kept forever: resume → `finished`, kept; discard → `revealed`, kept. `acknowledgeCheckout(keyStore,
+  view)` is the person's exit: it forgets the saved key only when `isAwaitingFundsCheckout(view)` and the key
+  names `view.intentId`, and starts nothing. The UI says the payment was received and the funds are still
+  being added (`checkout.acknowledged`), never that they landed. Anything non-terminal (`processing`, paid at
+  Stripe but not closed) is not acknowledgeable and keeps polling.
+
 - **Resend re-reads storage (L1).** `send*` re-reads the saved request inside the lock and sends only when
   its key is still the saved one; otherwise it returns `superseded` with what is saved now and sends
   nothing (another tab resolved, discarded or replaced it).
@@ -188,7 +222,8 @@ after the client forgot the key. The node's answer is void-or-reveal by request 
 | 200 `voided`, `intentId` (unattached claim abandoned, or an open page expired at Stripe, then abandoned) | `{ outcome: "voided", intentId }` | **released** |
 | 200 `revealed` + `intent` (Stripe paid/complete, clearing, or terminal) | `{ outcome: "revealed", intent }` (narrowed: no `admissionKey`) | follows the intent: kept unless settled |
 | 503 `DEPENDENCY_UNAVAILABLE` / `RAIL_BUSY` / `PAYMENTS_NOT_CONFIGURED` / `RAIL_UNAVAILABLE`, 409 `REQUEST_KEY_IN_USE`, 400, 403, lost | a refusal | **kept** (whatever its code) |
-| 409 `INTENT_NEEDS_REVIEW` | `needs_review` | **kept**, marked |
+| 409 `INTENT_NEEDS_REVIEW` (33168340: an unattached claim past its replay window or quarantined) | `needs_review` | **kept**, marked |
+| 200 `voided` for that same claim (the node lane's announced change: any unattached `CLAIMED` row is abandoned) | `{ outcome: "voided", intentId }` | **released** |
 
 Voiding twice gives the same answer; a voided intent reads `status: "expired"` (settled).
 
@@ -220,6 +255,7 @@ separate applied inbox row; `processing` while an asynchronous method (ACH) clea
 | :-- | :-- | :-- |
 | `isTerminalCheckout` | status `complete`/`failed`/`expired`, or settled | `finished` (a same-key resend cannot charge again) |
 | `isSettledCheckout` | settlement `funds_applied`/`payment_failed`, or `failed`/`expired` with `not_started` (funds applied, or provably unpaid and closed) | forgetting the saved key, stopping the poll, `onSettled`, unlocking the add-funds form |
+| `isAwaitingFundsCheckout` | `complete` + `payment_received` (paid and closed, funds not landed) | offering the person's acknowledgement (`acknowledgeCheckout`, §flows) |
 | `isOpenCheckout` | `awaiting_payment` + `not_started` | offering the payment page |
 
 An unrecognized status or settlement value is never terminal, settled or open (allowlists again).
@@ -274,7 +310,8 @@ wrapped so the client's own guards (which throw inside async methods) become ref
 `azoa-sdk/money/testing`: `moneyTransportContractCases(factory)` (one case per test in any runner) and
 `runMoneyTransportContract(factory, { requireAll })` (a report). Cases: every read resolves to a
 well-formed `MoneyResult` whose refusal code is in the closed vocabulary (now including `needs_review`; a host
-BFF must map the node's `INTENT_NEEDS_REVIEW` to it, never to `unconfirmed` or `definite`); no view carries subject/tenant keys — checked over **every** call, mutations
+BFF must map the node's `INTENT_NEEDS_REVIEW` to it, never to `unconfirmed` or `definite`); no view **or
+refusal** carries subject/tenant keys (a refusal's `serverResult` reaches the page like a view, M1) — checked over **every** call, mutations
 included (`checkout.begin`, `account.ensure`, `account.beginKyc`, `cashOut.beginDestinationSetup`,
 `cashOut.start`, `sale.quote`, `sale.sell`, and `account.revokeConsent` last so it cannot gate the
 others; each case builds its own fixture); same key → same checkout (`resumed: true`)

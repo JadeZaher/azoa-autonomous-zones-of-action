@@ -14,6 +14,7 @@ import type {
   KycSessionView,
   MoneyResult,
   PayoutDestinationView,
+  RefusalServerResult,
   SaleQuoteView,
   SaleView,
   SellableView,
@@ -47,6 +48,21 @@ export function toCheckoutVoidView(answer: FiatCheckoutVoidResult | CheckoutVoid
     return { outcome: "revealed", intent: toCheckoutView(raw.intent as FiatCheckoutIntent) };
   }
   throw new TypeError("Not a request-key void answer.");
+}
+
+/** Narrows a same-key 409's `result` (an intent projection, or the void's `{ outcome: "revealed", intent }`); null for anything else, never the raw object. */
+export function toRefusalServerResult(result: unknown): RefusalServerResult | null {
+  if (!isRecord(result)) return null;
+  if (result.outcome === "revealed") return isCheckoutProjection(result.intent) ? { outcome: "revealed", intent: toCheckoutView(result.intent) } : null;
+  return isCheckoutProjection(result) ? toCheckoutView(result) : null;
+}
+
+function isCheckoutProjection(value: unknown): value is FiatCheckoutIntent {
+  return isRecord(value) && typeof value.intentId === "string" && typeof value.status === "string" && typeof value.settlementState === "string";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Copies only the browser-safe custodial account fields; readiness flags must be literally `true`. */

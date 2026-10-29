@@ -52,6 +52,24 @@ The breaking change below is why this is a minor bump; everything under "Added (
 - Every view has an allowlist `to*View`; the direct transport narrows cash-out, payout and capability
   answers, and the contract's forbidden-key case covers every call, mutations included.
 
+### Fifth round: release-gate fixes (pre-publish, 2026-10-28)
+- **M1** `MoneyRefusal.serverResult` is now `RefusalServerResult` (was `unknown`) and is attached only for
+  `INTENT_FINISHED` / `INTENT_EXPIRED` / `INTENT_NEEDS_REVIEW`, narrowed by the new `toRefusalServerResult`; the
+  node's raw `result` (whose `admissionKey` embeds subject and tenant ids) no longer reaches attempts, hook state
+  or `onRefusal`. The contract's forbidden-key case now checks refusals too. Decide-by-projection trusts only a
+  `definite` refusal's projection (LOW-2).
+- **M2** A claim whose first Stripe create failed no longer traps the person. A resend answered `INTENT_EXPIRED`
+  on a `starting` claim (no page ever existed) releases the key as the new `CheckoutAttempt` kind `neverStarted`
+  (copy `pending.neverStarted`). A request held for review keeps **Discard** for checkouts: the node's void
+  decides (`voided` releases; `revealed` / 409 keeps), so `useAddFunds().discard()` no longer refuses it.
+- **M3** A paid intent whose funds never land can be acknowledged: `acknowledgeCheckout(keyStore, view)` and
+  `isAwaitingFundsCheckout` (`complete` + `payment_received`), `useAddFunds().acknowledge(view)`, and a "Got it"
+  button in `<AddFundsForm>`'s status card (copy `checkout.acknowledge` / `checkout.acknowledged`). It releases the
+  key and starts nothing; non-terminal states keep polling as before.
+- `tests/money/node-emulator.ts` models unattached claims (`starting` projections, the creation fence, the
+  pinned-expiry floor, the 23 h replay window, `failNextCreate`), and the announced void change behind
+  `unreplayableClaimVoid`; the `expiryBeforeStripeRead` first-cut mode is gone.
+
 ### Fourth round: expire-first resend, decide by projection (pre-publish, 2026-10-28)
 Synced to the node's fiat branch at `33168340`: a same-key resend on a page past its clock expiry no longer
 trusts the clock alone (the node's lane-one bug this SDK already guarded against) -- the node expires the

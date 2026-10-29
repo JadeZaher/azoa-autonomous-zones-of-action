@@ -2,6 +2,7 @@
 import { KYB_REQUIRED, SdkError, SdkErrorCode, isKybRequired, userFacingMessage } from "../core/errors.js";
 import { isDefiniteRefusal } from "./presentation.js";
 import type { MoneyRefusal, MoneyRefusalCode } from "./types.js";
+import { toRefusalServerResult } from "./views.js";
 
 const REFUSAL_CODES: readonly MoneyRefusalCode[] = [
   "setup_required", "under_review", "consent_revoked", "account_holder_required", "kyb_required",
@@ -29,6 +30,9 @@ const SERVER_CODE_RULES = new Map<string, { refusal: MoneyRefusalCode; statuses?
   // The node holds the request for an operator's decision and it may still complete: the key must survive.
   ["INTENT_NEEDS_REVIEW", { refusal: "needs_review", statuses: [409] }],
 ]);
+
+/** The only node codes whose `result` names the key's intent (`FinalConflict`, the void's `NeedsReviewAsync`); no other answer's `result` is surfaced. */
+const RESULT_CARRYING_CODES: ReadonlySet<string> = new Set(["INTENT_FINISHED", "INTENT_EXPIRED", "INTENT_NEEDS_REVIEW"]);
 
 const FALLBACK_MESSAGE: Record<MoneyRefusalCode, string> = {
   setup_required: "Finish verifying your identity first.",
@@ -71,9 +75,9 @@ export function refusalFromSdkError(error: unknown): MoneyRefusal {
   const rule = error.serverCode === undefined ? undefined : SERVER_CODE_RULES.get(error.serverCode);
   if (rule && (!rule.statuses || rule.statuses.includes(status))) {
     const refusal = moneyRefusal(rule.refusal, text);
-    // Only these same-key codes ever carry a result (the node's own projection); surfacing it lets a
-    // caller decide by that state instead of a second round trip (see flows.ts `beginCheckout`).
-    return error.serverResult === undefined ? refusal : { ...refusal, serverResult: error.serverResult };
+    // The raw `result` carries `admissionKey` (subject + tenant ids): only narrowed, only for these codes (M1).
+    const serverResult = RESULT_CARRYING_CODES.has(error.serverCode!) ? toRefusalServerResult(error.serverResult) : null;
+    return serverResult ? { ...refusal, serverResult } : refusal;
   }
   if (status === 429) return moneyRefusal("rail_busy", text);
   // 409 without a known code, 408, 5xx: the request may have been admitted, whatever the message says.
