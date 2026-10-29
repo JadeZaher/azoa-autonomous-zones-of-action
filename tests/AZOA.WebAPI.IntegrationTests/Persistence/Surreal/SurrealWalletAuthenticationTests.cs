@@ -65,18 +65,30 @@ public sealed class SurrealWalletAuthenticationTests : IAsyncLifetime
         var expected = await InviteAsync(userId, tenantId);
         var other = await InviteAsync(userId, tenantId);
 
-        var found = await tokens.GetByTokenAsync(expected.Token);
+        var found = await tokens.GetByTokenHashAsync(expected.TokenHash);
         found.IsError.Should().BeFalse();
         found.Result.Should().NotBeNull();
         found.Result!.Id.Should().Be(expected.Id);
-        found.Result.Token.Should().Be(expected.Token);
+        found.Result.TokenHash.Should().Be(expected.TokenHash);
         found.Result.TargetUserId.Should().Be(userId);
         found.Result.TenantId.Should().Be(tenantId);
         found.Result.ConsumedAt.Should().BeNull();
-        (await tokens.GetByTokenAsync(other.Token)).Result!.Id.Should().Be(other.Id);
-        var missing = await tokens.GetByTokenAsync(Guid.NewGuid().ToString("N"));
+        (await tokens.GetByTokenHashAsync(other.TokenHash)).Result!.Id.Should().Be(other.Id);
+        var missing = await tokens.GetByTokenHashAsync(OpaqueTokenDigest.Compute(Guid.NewGuid().ToString("N")));
         missing.IsError.Should().BeFalse();
         missing.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Claim_token_store_never_persists_a_plaintext_token()
+    {
+        var tokens = new SurrealWalletAuthClaimTokenStore(_executor);
+        var plaintext = new AZOA.WebAPI.Models.WalletAuthClaimToken { TokenHash = Guid.NewGuid().ToString("N"),
+            TargetUserId = Guid.NewGuid(), TenantId = Guid.NewGuid(), ExpiresAt = DateTime.UtcNow.AddMinutes(5) };
+
+        (await tokens.CreateAsync(plaintext)).IsError.Should().BeTrue();
+
+        (await _executor.QueryAsync<WalletAuthClaimToken>(SurrealQuery<WalletAuthClaimToken>.From())).Should().BeEmpty();
     }
 
     [Fact]
@@ -260,7 +272,7 @@ public sealed class SurrealWalletAuthenticationTests : IAsyncLifetime
         await claim.Should().ThrowAsync<InvalidDataException>();
         var unchanged = (await _users.GetByIdAsync(child.Id)).Result!;
         unchanged.OwnerTenantId.Should().Be(tenant.Id); unchanged.PasswordHash.Should().Be("hash");
-        (await new SurrealWalletAuthClaimTokenStore(_executor).GetByTokenAsync(invite.Token)).Result!.ConsumedAt.Should().BeNull();
+        (await new SurrealWalletAuthClaimTokenStore(_executor).GetByTokenHashAsync(invite.TokenHash)).Result!.ConsumedAt.Should().BeNull();
         (await _executor.QueryAsync<ConsentWebhookEvent>(SurrealQuery<ConsentWebhookEvent>.From())).Should().BeEmpty();
     }
 
@@ -276,10 +288,10 @@ public sealed class SurrealWalletAuthenticationTests : IAsyncLifetime
         var stale = await _users.TryClaimAuthenticationAsync(child, null, null, tenant.Id, DateTime.UtcNow.AddDays(-1), invite);
         stale.IsError.Should().BeTrue();
         var tokens = new SurrealWalletAuthClaimTokenStore(_executor);
-        (await tokens.GetByTokenAsync(invite.Token)).Result!.ConsumedAt.Should().BeNull();
+        (await tokens.GetByTokenHashAsync(invite.TokenHash)).Result!.ConsumedAt.Should().BeNull();
         (await _users.GetByIdAsync(child.Id)).Result!.OwnerTenantId.Should().Be(tenant.Id);
         (await _users.TryClaimAuthenticationAsync(child, null, null, tenant.Id, null, invite)).IsError.Should().BeFalse();
-        (await tokens.GetByTokenAsync(invite.Token)).Result!.ConsumedAt.Should().NotBeNull();
+        (await tokens.GetByTokenHashAsync(invite.TokenHash)).Result!.ConsumedAt.Should().NotBeNull();
         child.PasswordHash = "replay-secret";
         (await _users.TryClaimAuthenticationAsync(child, null, null, tenant.Id, null, invite)).IsError.Should().BeTrue();
         (await _users.GetByIdAsync(child.Id)).Result!.PasswordHash.Should().Be("claimant-hash");
@@ -287,7 +299,7 @@ public sealed class SurrealWalletAuthenticationTests : IAsyncLifetime
 
     private async Task<AZOA.WebAPI.Models.WalletAuthClaimToken> InviteAsync(Guid userId, Guid tenantId)
     {
-        var invite = new AZOA.WebAPI.Models.WalletAuthClaimToken { Token = Guid.NewGuid().ToString("N"),
+        var invite = new AZOA.WebAPI.Models.WalletAuthClaimToken { TokenHash = OpaqueTokenDigest.Compute(Guid.NewGuid().ToString("N")),
             TargetUserId = userId, TenantId = tenantId, ExpiresAt = DateTime.UtcNow.AddMinutes(5) };
         return (await new SurrealWalletAuthClaimTokenStore(_executor).CreateAsync(invite)).Result!;
     }

@@ -1120,8 +1120,10 @@ directly when no effect authorization (and so no BEGIN/COMMIT fence) is needed â
 
 ## wallet-claim-query-binding
 
-`SurrealWalletAuthClaimTokenStore.GetByTokenAsync` scopes its typed equality
-query through `SurrealGeneratedStatementScope.Apply` with `claim_lookup`.
+`SurrealWalletAuthClaimTokenStore.GetByTokenHashAsync` scopes its typed equality
+query through `SurrealGeneratedStatementScope.Apply` with `claim_lookup`. The
+`token` column holds the `h1:` digest, never the raw token; the store refuses to
+create or look up anything else (Services/Auth/AGENTS.md Â§claim-invites).
 SurrealForge 1.3 derives parameters from column names, so renaming a captured
 local cannot avoid the protected `$token` variable. The shared helper renames
 only generated parameter tokens and bindings; exact equality and LIMIT remain.

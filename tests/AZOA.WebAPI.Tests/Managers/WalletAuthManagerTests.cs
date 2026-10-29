@@ -25,6 +25,9 @@ public class WalletAuthManagerTests
 
     private static readonly string Addr = new Algorand.Address(new byte[32]).ToString();
     private const string Chain = "algorand";
+    private const string ClaimToken = "claim-token-abc";
+    private static readonly string ClaimTokenHash = OpaqueTokenDigest.Compute(ClaimToken);
+    private readonly Guid _tenant = Guid.NewGuid();
 
     public WalletAuthManagerTests()
     {
@@ -165,13 +168,12 @@ public class WalletAuthManagerTests
     /// </summary>
     private Guid GivenClaimTokenHappyPath()
     {
-        var token = "claim-token-abc";
         var targetId = Guid.NewGuid();
-        var tenant = Guid.NewGuid();
-        _claimTokens.Setup(t => t.GetByTokenAsync(token, It.IsAny<CancellationToken>()))
+        var tenant = _tenant;
+        _claimTokens.Setup(t => t.GetByTokenHashAsync(ClaimTokenHash, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AZOAResult<WalletAuthClaimToken>
             {
-                Result = new WalletAuthClaimToken { Token = token, TargetUserId = targetId, TenantId = tenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }
+                Result = new WalletAuthClaimToken { TokenHash = ClaimTokenHash, TargetUserId = targetId, TenantId = tenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }
             });
         // The tenant-provisioned user still has a tenant owner pre-claim.
         _users.Setup(a => a.GetByIdAsync(targetId, It.IsAny<CancellationToken>()))
@@ -204,9 +206,9 @@ public class WalletAuthManagerTests
     {
         var id = GivenClaimTokenHappyPath();
         if (condition == "consumed")
-            _claimTokens.Setup(store => store.GetByTokenAsync("claim-token-abc", It.IsAny<CancellationToken>()))
+            _claimTokens.Setup(store => store.GetByTokenHashAsync(ClaimTokenHash, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(AZOAResult<WalletAuthClaimToken>.Success(new WalletAuthClaimToken {
-                    TargetUserId = id, Token = "claim-token-abc", TenantId = Guid.NewGuid(),
+                    TargetUserId = id, TokenHash = ClaimTokenHash, TenantId = Guid.NewGuid(),
                     ConsumedAt = DateTime.UtcNow, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }));
         var result = await _mgr.ClaimAsync(condition == "identity" ? Guid.NewGuid() : id,
             condition == "missing" ? null : "claim-token-abc", condition == "credentials" ? null : "new-password", null, null, null, null);
@@ -226,8 +228,8 @@ public class WalletAuthManagerTests
         var oldPassword = BCrypt.Net.BCrypt.HashPassword("tenant-known-password");
         var child = new User { Id = id, OwnerTenantId = oldTenant, PasswordHash = oldPassword, AuthWalletAddress = oldWallet, AuthWalletChainType = Chain };
         _users.Setup(store => store.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(AZOAResult<IUser>.Success(child));
-        _claimTokens.Setup(store => store.GetByTokenAsync("claim-token-abc", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(AZOAResult<WalletAuthClaimToken>.Success(new WalletAuthClaimToken { Token = "claim-token-abc", TargetUserId = id, TenantId = oldTenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }));
+        _claimTokens.Setup(store => store.GetByTokenHashAsync(ClaimTokenHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<WalletAuthClaimToken>.Success(new WalletAuthClaimToken { TokenHash = ClaimTokenHash, TargetUserId = id, TenantId = oldTenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5) }));
         if (walletClaim)
         {
             GivenLiveChallengeAndValidSignature();
@@ -242,5 +244,24 @@ public class WalletAuthManagerTests
         child.AuthWalletAddress.Should().Be(walletClaim ? Addr : null);
         child.AuthWalletChainType.Should().Be(walletClaim ? Chain : null);
         _users.Verify(store => store.TryClaimAuthenticationAsync(child, oldWallet, Chain, oldTenant, null, It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>The manager's digest check is the authority, not the lookup: a pre-hashing row holding the raw token never authorizes, however it was found.</summary>
+    [Fact]
+    public async Task Claim_refuses_a_legacy_plaintext_invite_even_when_a_lookup_surfaces_it()
+    {
+        var id = GivenClaimTokenHappyPath();
+        _claimTokens.Setup(store => store.GetByTokenHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<WalletAuthClaimToken>.Success(new WalletAuthClaimToken
+            {
+                TokenHash = ClaimToken, TargetUserId = id, TenantId = _tenant, ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            }));
+
+        var result = await _mgr.ClaimAsync(id, ClaimToken, "member-chosen-password", null, null, null, null);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("Invalid or expired claim token");
+        _users.Verify(store => store.TryClaimAuthenticationAsync(It.IsAny<IUser>(), It.IsAny<string?>(),
+            It.IsAny<string?>(), It.IsAny<Guid>(), It.IsAny<DateTime?>(), It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

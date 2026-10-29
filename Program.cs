@@ -1007,6 +1007,9 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthChallengeSto
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthChallengeStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletAuthClaimTokenStore>();
+// Bound from the final configuration; resolved once after Build so a bad Lifetime fails the boot.
+builder.Services.AddSingleton(sp => AZOA.WebAPI.Services.Auth.ClaimInviteOptions.FromConfiguration(
+    sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletOwnershipProofStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletOwnershipProofStore>();
 // Phase 1B federated sign-in: the (tenant_scope, provider, subject) binding and the
@@ -1917,6 +1920,9 @@ AZOA.WebAPI.Providers.Fiat.FiatRailStartup.Validate(
                 .IsAssignableFrom(descriptor.ImplementationType)));
 
 var app = builder.Build();
+
+// Tenant:ClaimInvites validation (lifetime ≤ 7 days) must stop the boot, not the first invite.
+app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.ClaimInviteOptions>();
 
 // The second half of the money-path capability proof. Validate above counts what is in the
 // SERVICE COLLECTION; this resolves what is in the CONTAINER, because a live rail also needs a

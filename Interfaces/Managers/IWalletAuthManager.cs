@@ -53,9 +53,9 @@ public interface IWalletAuthManager
         Guid userId, Guid walletId, string address, string chainType, string signature, string? message, CancellationToken ct = default);
 
     /// <summary>
-    /// AC4: a tenant mints a single-use, short-TTL claim token for a child it owns
-    /// (ownership asserted; cross-tenant/unowned target → NotFound). The token alone
-    /// never sets a credential (M1).
+    /// AC4: a tenant mints a single-use claim invite for a child it owns (ownership asserted;
+    /// cross-tenant/unowned target → NotFound). Only the token's digest is stored and the raw
+    /// token is withheld from the tenant; see Services/Auth/AGENTS.md §claim-invites.
     /// </summary>
     Task<AZOAResult<ClaimInviteResponse>> CreateClaimInviteAsync(
         Guid tenantId, Guid childUserId, CancellationToken ct = default);

@@ -6,6 +6,7 @@ using AZOA.WebAPI.Interfaces.Stores;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Services.Admin;
+using AZOA.WebAPI.Services.Auth;
 
 namespace AZOA.WebAPI.Managers;
 
@@ -18,8 +19,6 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(5);
 
-    private static readonly TimeSpan ClaimTokenLifetime = TimeSpan.FromMinutes(15);
-
     private const int MaxLiveChallengesPerAddress = 5;
 
     private readonly IWalletAuthChallengeStore _challenges;
@@ -28,6 +27,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
     private readonly IWalletSignatureVerifier _signatureVerifier;
     private readonly IConfiguration _config;
     private readonly IHostEnvironment? _environment;
+    private readonly ClaimInviteOptions _claimInvites;
 
     public WalletAuthManager(
         IWalletAuthChallengeStore challenges,
@@ -35,7 +35,8 @@ public sealed class WalletAuthManager : IWalletAuthManager
         IUserStore userStore,
         IWalletSignatureVerifier signatureVerifier,
         IConfiguration config,
-        IHostEnvironment? environment = null)
+        IHostEnvironment? environment = null,
+        ClaimInviteOptions? claimInvites = null)
     {
         _challenges = challenges ?? throw new ArgumentNullException(nameof(challenges));
         _claimTokens = claimTokens ?? throw new ArgumentNullException(nameof(claimTokens));
@@ -43,6 +44,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _environment = environment;
+        _claimInvites = claimInvites ?? ClaimInviteOptions.FromConfiguration(config);
     }
 
 
@@ -289,11 +291,13 @@ public sealed class WalletAuthManager : IWalletAuthManager
         }
 
         var now = DateTime.UtcNow;
-        var expiresAt = now.Add(ClaimTokenLifetime);
-        var token = new WalletAuthClaimToken
+        var expiresAt = now.Add(_claimInvites.Lifetime);
+        // The raw token lives only here and in the member's delivered link; storage holds its digest.
+        var rawToken = Crypto.GenerateNonce();
+        var invite = new WalletAuthClaimToken
         {
             Id = Guid.NewGuid(),
-            Token = Crypto.GenerateNonce(),
+            TokenHash = OpaqueTokenDigest.Compute(rawToken),
             TargetUserId = childUserId,
             TenantId = tenantId,
             ExpiresAt = expiresAt,
@@ -301,7 +305,7 @@ public sealed class WalletAuthManager : IWalletAuthManager
             CreatedAt = now,
         };
 
-        var created = await _claimTokens.CreateAsync(token, ct);
+        var created = await _claimTokens.CreateAsync(invite, ct);
         if (created.IsError || created.Result is null)
         {
             result.IsError = true;
@@ -312,7 +316,8 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         result.Result = new ClaimInviteResponse
         {
-            ClaimToken = token.Token,
+            // A tenant holding the token could claim the member's account with a password it chose.
+            ClaimToken = _claimInvites.ReturnTokenToTenant ? rawToken : null,
             TargetUserId = childUserId,
             ExpiresAt = expiresAt,
         };
@@ -337,9 +342,11 @@ public sealed class WalletAuthManager : IWalletAuthManager
 
         if (string.IsNullOrWhiteSpace(claimToken))
             return AZOAResult<WalletAuthTokenResponse>.Failure("A live claim invite is required.");
-        var tokenRow = await _claimTokens.GetByTokenAsync(claimToken.Trim(), ct);
+        var presentedToken = claimToken.Trim();
+        var tokenRow = await _claimTokens.GetByTokenHashAsync(OpaqueTokenDigest.Compute(presentedToken), ct);
         if (tokenRow.IsError) return AZOAResult<WalletAuthTokenResponse>.Failure(tokenRow.Message);
-        if (tokenRow.Result is not { } invite || !invite.IsLiveAt(now))
+        // Matches is the authority, not the lookup: it refuses legacy plaintext rows and compares in constant time.
+        if (tokenRow.Result is not { } invite || !OpaqueTokenDigest.Matches(invite.TokenHash, presentedToken) || !invite.IsLiveAt(now))
             return AZOAResult<WalletAuthTokenResponse>.Failure(TenantAuthorizationError.NotFound + "Invalid or expired claim token.");
         if (expectedUserId == Guid.Empty || invite.TargetUserId != expectedUserId)
             return AZOAResult<WalletAuthTokenResponse>.Failure(TenantAuthorizationError.NotFound + "Invalid or expired claim token.");

@@ -196,7 +196,7 @@ public sealed class SurrealUserStore : IUserStore
         Guid expectedTenant, DateTime? expectedAuthNotBefore, AZOA.WebAPI.Models.WalletAuthClaimToken invite,
         CancellationToken ct = default)
     {
-        if (invite is null || invite.Id == Guid.Empty || string.IsNullOrWhiteSpace(invite.Token)
+        if (invite is null || invite.Id == Guid.Empty || !AZOA.WebAPI.Helpers.OpaqueTokenDigest.IsV1Digest(invite.TokenHash)
             || invite.TargetUserId != user.Id || invite.TenantId != expectedTenant || !invite.IsLiveAt(DateTime.UtcNow))
             return Task.FromResult(AZOAResult<IUser>.FailureWithCode("Invalid or expired claim token.", AzoaErrorCodes.Conflict));
         return UpdateAuthenticationAsync(user, expectedAddress, expectedChain, expectedTenant, expectedAuthNotBefore, invite, ct);
@@ -240,7 +240,7 @@ public sealed class SurrealUserStore : IUserStore
                     SurrealQuery.Of("IF $_claim_expiry <= time::now() { THROW 'CONSENT_CLAIM_CHANGED' }")
                         .WithParam("_claim_expiry", inviteExpiry),
                     SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.WalletAuthClaimToken>(SurrealId.ToSurrealId(invite.Id))
-                        .Where(row => row.Token == invite.Token && row.TargetUserId == targetLink
+                        .Where(row => row.Token == invite.TokenHash && row.TargetUserId == targetLink
                             && row.TenantId == tenantLink && row.ConsumedAt == null
                             && row.ExpiresAt == inviteExpiry)
                         .Set(row => row.ConsumedAt, candidate.AuthNotBefore.Value).Build(), "claim_invite", "_claim_invite"),

@@ -416,8 +416,8 @@
   },
   {
     "store": "IWalletAuthClaimTokenStore",
-    "method": "GetByTokenAsync",
-    "tenantCheck": "token-scoped: single-use bearer token; target user and tenant re-checked in the claim transaction"
+    "method": "GetByTokenHashAsync",
+    "tenantCheck": "token-scoped: lookup by the v1 digest of a single-use bearer token (raw token never stored); WalletAuthManager re-verifies the digest in constant time; target user and tenant re-checked in the claim transaction"
   },
   {
     "store": "IWalletOwnershipProofStore",

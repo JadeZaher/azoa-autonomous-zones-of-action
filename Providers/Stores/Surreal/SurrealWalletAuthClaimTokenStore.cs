@@ -14,6 +14,8 @@ public sealed class SurrealWalletAuthClaimTokenStore(ISurrealExecutor executor) 
     /// <inheritdoc/>
     public async Task<AZOAResult<WalletAuthClaimToken>> CreateAsync(WalletAuthClaimToken token, CancellationToken ct = default)
     {
+        if (!OpaqueTokenDigest.IsV1Digest(token.TokenHash))
+            return AZOAResult<WalletAuthClaimToken>.Failure("A claim invite persists only the v1 digest of its token.");
         if (token.Id == Guid.Empty) token.Id = Guid.NewGuid();
         var result = await executor.ExecuteAsync(SurrealWriter.Create(FromDomain(token)), ct);
         result.EnsureAllOk();
@@ -21,10 +23,11 @@ public sealed class SurrealWalletAuthClaimTokenStore(ISurrealExecutor executor) 
     }
 
     /// <inheritdoc/>
-    public async Task<AZOAResult<WalletAuthClaimToken>> GetByTokenAsync(string token, CancellationToken ct = default)
+    public async Task<AZOAResult<WalletAuthClaimToken>> GetByTokenHashAsync(string tokenHash, CancellationToken ct = default)
     {
+        if (!OpaqueTokenDigest.IsV1Digest(tokenHash)) return new AZOAResult<WalletAuthClaimToken>();
         var query = SurrealGeneratedStatementScope.Apply(SurrealQuery<WalletAuthClaimTokenPoco>.From()
-            .Where(row => row.Token == token).Limit(1), "claim_lookup");
+            .Where(row => row.Token == tokenHash).Limit(1), "claim_lookup");
         var row = await executor.QuerySingleAsync<WalletAuthClaimTokenPoco>(query, ct);
         return new AZOAResult<WalletAuthClaimToken> { Result = row is null ? null : ToDomain(row) };
     }
@@ -32,7 +35,7 @@ public sealed class SurrealWalletAuthClaimTokenStore(ISurrealExecutor executor) 
     private static WalletAuthClaimTokenPoco FromDomain(WalletAuthClaimToken t) => new()
     {
         Id             = SurrealId.ToSurrealId(t.Id),
-        Token          = t.Token,
+        Token          = t.TokenHash,
         TargetUserId = SurrealLink.ToLink("user", SurrealId.ToSurrealId(t.TargetUserId)) ?? string.Empty,
         TenantId       = SurrealLink.ToLink("user", SurrealId.ToSurrealId(t.TenantId)) ?? string.Empty,
         ExpiresAt      = new DateTimeOffset(DateTime.SpecifyKind(t.ExpiresAt, DateTimeKind.Utc)),
@@ -45,7 +48,7 @@ public sealed class SurrealWalletAuthClaimTokenStore(ISurrealExecutor executor) 
     private static WalletAuthClaimToken ToDomain(WalletAuthClaimTokenPoco p) => new()
     {
         Id             = SurrealId.FromSurrealId(p.Id),
-        Token          = p.Token,
+        TokenHash      = p.Token,
         TargetUserId = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TargetUserId)!),
         TenantId       = SurrealId.FromSurrealId(SurrealLink.FromLink(p.TenantId)!),
         ExpiresAt      = p.ExpiresAt.UtcDateTime,

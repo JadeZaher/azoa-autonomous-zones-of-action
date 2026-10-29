@@ -163,3 +163,18 @@ would have let anyone register a generated handle ahead of its owner — the wal
 deterministic from public inputs — and break that person's first sign-in at the `user_username` UNIQUE
 index. So the generated prefixes are reserved: registration, tenant provisioning and a profile RENAME
 refuse them, while a user who already holds a generated handle may keep resending it.
+
+## §opaque-token-digest
+
+`OpaqueTokenDigest` is the at-rest form of a bearer token a person redeems (claim invites today; the
+later consent-request and hosted-page links are meant to reuse it): `"h1:" + lowercase hex SHA-256`
+of the UTF-8 token. A store holds only the digest, so reading the table yields nothing redeemable —
+and because the presented value is always hashed before comparison, presenting a stored digest fails
+too. SHA-256 without a salt or KDF is correct here because the input is a 256-bit random nonce, not a
+human secret; a password would need BCrypt.
+
+`Matches` is the authority and runs in constant time (`CryptographicOperations.FixedTimeEquals`). It
+refuses any stored value that is not a well-formed v1 digest, so a row written before hashing (the raw
+token itself) is never compared in plaintext — the right outcome for legacy claim invites, which lived
+15 minutes. The `h1:` tag leaves room for a future `h2:` (e.g. a keyed HMAC) without ambiguity; a new
+version must keep refusing unknown tags rather than falling back.
