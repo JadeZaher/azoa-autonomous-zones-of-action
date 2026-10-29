@@ -63,6 +63,8 @@ export type {
   HostedSessionCapabilities,
   FiatCheckoutStartParams,
   FiatCheckoutIntent,
+  FiatCheckoutVoidOutcome,
+  FiatCheckoutVoidResult,
   // Fiat off-ramp / cash-out types (FiatPayoutController)
   CashOutQuote,
   PayoutAccountStatus,

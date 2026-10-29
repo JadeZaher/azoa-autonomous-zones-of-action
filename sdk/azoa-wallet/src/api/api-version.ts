@@ -198,6 +198,9 @@ export const API_PATHS = {
   FIAT_CHECKOUT_CAPABILITIES: "/api/fiat/checkout/capabilities",
   FIAT_CHECKOUT_START: (userId: string) => `/api/fiat/checkout/${userId}`,
   FIAT_CHECKOUT_GET: (userId: string, intentId: string) => `/api/fiat/checkout/${userId}/${intentId}`,
+  // The raw request key is one path segment; the node refuses a key containing '/' (400).
+  FIAT_CHECKOUT_VOID_REQUEST: (userId: string, requestKey: string) =>
+    `/api/fiat/checkout/${userId}/requests/${encodeURIComponent(requestKey)}/void`,
 
   // Fiat off-ramp / cash-out (FiatPayoutController). The subject is always the
   // route userId — no body field can redirect a cash-out to a different account.

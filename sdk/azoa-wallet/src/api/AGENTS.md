@@ -67,6 +67,11 @@ retired exchange rows; wallet-identity conflicts; DEX settle-review; WTT operato
 stage keys; and `reconcileParkedRuns` returning `{ scanned, results, errors, hardStuck }` — zero
 scanned or any error is never a success.
 
+`voidFiatCheckoutRequest(userId, requestKey)` → `POST /api/fiat/checkout/{userId}/requests/{requestKey}/void`
+(the raw key as one `encodeURIComponent` segment, no body; the node refuses a key containing `/` with 400)
+returns `FiatCheckoutVoidResult` (`outcome: "voided" | "revealed"`, `intentId`, `intent` on revealed). Only
+`voided` lets a caller forget the key; `src/money/AGENTS.md` §void has the full answer table.
+
 §tenant-payout-float — `getTenantPayoutBalance` (tenant) and `getTenantPayoutFloats` (operator)
 return one `TenantPayoutFloatView` per currency/environment, mirroring the D-8 implementation;
 `startTenantPayoutTopUp` returns the Checkout intent. `deficitMinorUnits > 0` means a charged-back
@@ -81,3 +86,18 @@ anonymously, so a stale token never rides along. Only an authenticated route's 4
 a string `detail`; the server text is kept on `SdkError.serverMessage`, and `userFacingMessage()`
 is the copy for people (no method/path prefix). API key `scopes` cross the wire as a CSV string and
 are normalized to a list at this boundary. `GET /api/fungible-creation` is a bare array.
+
+## §api-key-in-browser
+
+A tenant API key is a server-only credential: in a page or a worker it ships to every visitor. The
+`AzoaApiClient` constructor therefore **throws** when `apiKey` is truthy and the runtime is a browser (a
+`document`, or a `WorkerGlobalScope` with `importScripts`) or React Native (`navigator.product ===
+"ReactNative"`: no `document`, and a key in an app bundle is just as extractable), unless the caller passes
+the loudly named `dangerouslyAllowApiKeyInBrowser: true` (a trusted, non-public runtime: an internal kiosk, a
+test harness). Server runtimes (Node, Deno 2, Bun, edge workers without a `document`) are unaffected.
+
+The constructor **copies** its config, so a key assigned to the caller's object after construction can
+neither slip past the guard nor change what is sent. `hasApiKey()` uses the same truthiness
+(`Boolean(apiKey)`) `fetchWithAuth` uses to attach `X-Api-Key`, so the two can never disagree (a non-string
+truthy key from runtime JSON used to be sent while `hasApiKey()` said false). `createDirectMoneyTransport`
+still refuses a keyed client as defense in depth (`src/money/AGENTS.md` §direct-transport).

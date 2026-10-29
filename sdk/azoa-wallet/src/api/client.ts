@@ -19,7 +19,10 @@ import { workflowStartQuery } from "../workflow/start-options.js";
 export interface AzoaApiConfig {
   baseUrl: string;
   token?: string;
+  /** Tenant API key: server-only. Refused in a browser page, worker or React Native app unless `dangerouslyAllowApiKeyInBrowser`. See `src/api/AGENTS.md` §api-key-in-browser. */
   apiKey?: string;
+  /** Lets a browser runtime hold `apiKey` anyway; only for a trusted, non-public runtime (an internal kiosk, a test harness). */
+  dangerouslyAllowApiKeyInBrowser?: boolean;
   onTokenRefresh?: () => Promise<string>;
   timeoutMs?: number;
   /**
@@ -1651,6 +1654,21 @@ export interface FiatCheckoutIntent {
   expiresAt: string | null;
 }
 
+/** The two 200 answers a request-key void can give (mirrors `FiatVoidOutcomes`); wire values. */
+export type FiatCheckoutVoidOutcome = "voided" | "revealed";
+
+/**
+ * Body of a 200 from the request-key void (mirrors `FiatCheckoutVoidResult`). `voided`: nothing was or
+ * can be paid under the key. `revealed`: something was or may be paid; follow `intent`.
+ */
+export interface FiatCheckoutVoidResult {
+  outcome: FiatCheckoutVoidOutcome;
+  /** The intent admitted under the key; null when nothing ever was. */
+  intentId: string | null;
+  /** On `revealed` only: the projection `getFiatCheckoutIntent` returns. */
+  intent?: FiatCheckoutIntent;
+}
+
 // ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
 // The "cash out" surface: set up where a person's money should go, see what
 // they can take out, and take it out. A first-party login may only cash out
@@ -2218,7 +2236,14 @@ export class AzoaApiClient {
       if (e instanceof SdkError) throw e;
       throw new SdkError(SdkErrorCode.INVALID_INPUT, `Invalid baseUrl: ${config.baseUrl}`);
     }
-    this.config = config;
+    if (Boolean(config.apiKey) && isBrowserRuntime() && config.dangerouslyAllowApiKeyInBrowser !== true) {
+      throw new SdkError(
+        SdkErrorCode.INVALID_INPUT,
+        "AzoaApiClient refuses an apiKey in a browser or mobile app: a tenant API key in a page, worker or app bundle ships to every user. Call AZOA with the key from your server instead.",
+      );
+    }
+    // A copy: the credential cannot be swapped in (or out) behind the guard after construction.
+    this.config = { ...config };
   }
 
   /** Clear the cached token. Forces the next request to use onTokenRefresh. */
@@ -2229,6 +2254,12 @@ export class AzoaApiClient {
   /** The AZOA API base URL this client is pointed at. */
   getBaseUrl(): string {
     return this.config.baseUrl;
+  }
+
+  /** True when this client carries a tenant API key: a privileged, server-only credential that must never reach a browser. */
+  hasApiKey(): boolean {
+    // Same truthiness `fetchWithAuth` uses to send `X-Api-Key`, so the two can never disagree.
+    return Boolean(this.config.apiKey);
   }
 
   /**
@@ -3294,6 +3325,20 @@ export class AzoaApiClient {
     assertUuid(userId, "userId");
     assertUuid(intentId, "intentId");
     return this.request<FiatCheckoutIntent>("GET", API_PATHS.FIAT_CHECKOUT_GET(userId, intentId));
+  }
+
+  /**
+   * Voids `requestKey` so nothing can ever be paid under it, or reveals the payment already made
+   * under it. Only a 200 `voided` lets the caller forget the key; anything else means keep it.
+   * Idempotent. Same principal rules as {@link startFiatCheckout}.
+   */
+  async voidFiatCheckoutRequest(
+    userId: string,
+    requestKey: string
+  ): Promise<Result<FiatCheckoutVoidResult, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(requestKey, "requestKey");
+    return this.request<FiatCheckoutVoidResult>("POST", API_PATHS.FIAT_CHECKOUT_VOID_REQUEST(userId, requestKey));
   }
 
   // ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
@@ -4444,6 +4489,7 @@ export class AzoaApiClient {
           message: data.message ?? data.error,
           detail: data.detail,
           code: data.code,
+          result: typeof data.result === "object" && data.result !== null ? data.result : undefined,
         }));
       }
 
@@ -4503,7 +4549,7 @@ export class AzoaApiClient {
    */
   private async parseErrorBody(
     resp: Response
-  ): Promise<{ message?: string; detail?: SdkErrorDetail; code?: string }> {
+  ): Promise<{ message?: string; detail?: SdkErrorDetail; code?: string; result?: unknown }> {
     try {
       const body = (await resp.json()) as {
         message?: string;
@@ -4511,6 +4557,7 @@ export class AzoaApiClient {
         detail?: SdkErrorDetail | string;
         errors?: Record<string, unknown>;
         code?: string;
+        result?: unknown;
       };
       const message = body.message ?? body.error ?? validationErrorsText(body.errors)
         ?? (typeof body.detail === "string" ? body.detail : undefined);
@@ -4518,6 +4565,9 @@ export class AzoaApiClient {
         message,
         detail: typeof body.detail === "object" && body.detail !== null ? body.detail : undefined,
         code: typeof body.code === "string" ? body.code : undefined,
+        // A final same-key 409 (INTENT_FINISHED / INTENT_EXPIRED / INTENT_NEEDS_REVIEW) carries the
+        // intent's own projection here; most error bodies leave `result` null, which stays unset.
+        result: typeof body.result === "object" && body.result !== null ? body.result : undefined,
       };
     } catch {
       return {}; // non-JSON / empty body (e.g. a bare 500 with no body)
@@ -4528,7 +4578,7 @@ export class AzoaApiClient {
     method: string,
     path: string,
     status: number,
-    parsed: { message?: string; detail?: SdkErrorDetail; code?: string }
+    parsed: { message?: string; detail?: SdkErrorDetail; code?: string; result?: unknown }
   ): SdkError {
     const message = parsed.message
       ? `${method} ${path}: ${parsed.message}`
@@ -4540,6 +4590,7 @@ export class AzoaApiClient {
       detail: parsed.detail,
       serverCode: parsed.code,
       serverMessage: parsed.message,
+      serverResult: parsed.result,
     });
   }
 
@@ -4643,6 +4694,17 @@ export class AzoaApiClient {
     }
     return this.fail(new SdkError(SdkErrorCode.NETWORK_ERROR, `${method} ${path}: network request failed`, { method, path, cause: e as Error }));
   }
+}
+
+/** A browser page (a `document`), a browser worker or React Native: anywhere a bundled credential reaches every user's device. */
+function isBrowserRuntime(): boolean {
+  const scope = globalThis as {
+    window?: { document?: unknown }; document?: unknown; WorkerGlobalScope?: unknown; importScripts?: unknown; navigator?: { product?: unknown };
+  };
+  if (typeof scope.document !== "undefined" || typeof scope.window?.document !== "undefined") return true;
+  // React Native has no `document`, and an app bundle is as extractable as a page.
+  if (scope.navigator?.product === "ReactNative") return true;
+  return typeof scope.WorkerGlobalScope === "function" && typeof scope.importScripts === "function";
 }
 
 function isWorkflowDesignerInterview(path: string): boolean {

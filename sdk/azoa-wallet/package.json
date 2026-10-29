@@ -1,7 +1,7 @@
 {
   "name": "azoa-sdk",
-  "version": "0.5.0",
-  "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, holons, durable DEX swaps and workflow runs",
+  "version": "0.6.0",
+  "description": "Cross-platform AZOA SDK — client-side signing, multi-chain wallets, holons, durable DEX swaps, workflow runs and host-transport money UI",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -36,6 +36,21 @@
       "types": "./dist/workflow/index.d.ts",
       "import": "./dist/workflow/index.js",
       "require": "./dist/workflow/index.cjs"
+    },
+    "./money": {
+      "types": "./dist/money/index.d.ts",
+      "import": "./dist/money/index.js",
+      "require": "./dist/money/index.cjs"
+    },
+    "./money/testing": {
+      "types": "./dist/money/testing/index.d.ts",
+      "import": "./dist/money/testing/index.js",
+      "require": "./dist/money/testing/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
     }
   },
   "files": [
@@ -60,7 +75,8 @@
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.90.0",
     "algosdk": "^3.0.0",
-    "react-native-get-random-values": "^1.11.0"
+    "react-native-get-random-values": "^1.11.0",
+    "react": ">=18.2 <20"
   },
   "peerDependenciesMeta": {
     "algosdk": {
@@ -77,10 +93,21 @@
     },
     "react-native-get-random-values": {
       "optional": true
+    },
+    "react": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^20.0.0",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "jsdom": "^26.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^2.0.0"

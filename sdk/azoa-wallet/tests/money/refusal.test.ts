@@ -1,0 +1,140 @@
+import { describe, expect, it } from "vitest";
+import { SdkError, SdkErrorCode } from "../../src/core/errors.js";
+import { deriveAccountGate, findForbiddenViewKeys, refusalFromSdkError, releasesRequestKey, toBaseUnits } from "../../src/money/index.js";
+import type { MoneyRefusal, MoneyRefusalCode } from "../../src/money/index.js";
+
+/** A node failure as `AzoaApiClient` surfaces it. */
+function nodeError(status: number | undefined, serverMessage?: string, serverCode?: string, serverResult?: unknown): SdkError {
+  const code = status === undefined ? SdkErrorCode.NETWORK_ERROR : SdkErrorCode.API_ERROR;
+  return new SdkError(code, serverMessage ? `POST /api/fiat/checkout/x: ${serverMessage}` : "POST /api/fiat/checkout/x failed", { status, serverMessage, serverCode, serverResult });
+}
+
+describe("refusalFromSdkError", () => {
+  // [node answer, refusal code, may the saved key be forgotten?]
+  const cases: [string, SdkError, MoneyRefusalCode, boolean][] = [
+    ["consent gate 403", nodeError(403, "No live consent grant covers this tenant-driven signing action; the action was denied.", "FORBIDDEN"), "consent_revoked", true],
+    ["F-H8 payout setup 403", nodeError(403, "Payout account setup can only be done by the account holder.", "FORBIDDEN"), "account_holder_required", true],
+    ["D-6 KYB via the consent gate", nodeError(403, "KYB_REQUIRED: this tenant must complete business verification first."), "kyb_required", true],
+    ["KYC gate", nodeError(403, "KYC_FORBIDDEN: KYC verification required. Complete identity verification to unlock this feature."), "setup_required", true],
+    ["AML review", nodeError(400, "Identity verification is complete and an additional compliance check is under review."), "under_review", true],
+    ["no payment provider", nodeError(503, "Adding funds is not configured on this node.", "PAYMENTS_NOT_CONFIGURED"), "payments_not_configured", true],
+    ["busy rail", nodeError(503, "The payment service is busy. Nothing was charged; try again shortly.", "RAIL_BUSY"), "rail_busy", false],
+    ["rate limited", nodeError(429), "rail_busy", false],
+    ["typed validation refusal", nodeError(422, "The amount is below the minimum."), "definite", true],
+    ["server fault", nodeError(500), "unconfirmed", false],
+    ["lost on the wire", nodeError(undefined), "unconfirmed", false],
+    ["expired session", nodeError(401, "Invalid token."), "unauthenticated", false],
+    ["client guard before egress", new SdkError(SdkErrorCode.INVALID_INPUT, "intentId must be a UUID"), "definite", true],
+    // M1: the node's same-key 409s. Only a typed final answer releases the key (and with a serverId, flows decide by state).
+    ["409 without a code (still being admitted)", nodeError(409, "A payment for this request is still being admitted."), "unconfirmed", false],
+    ["409 generic CONFLICT (Stripe request still in flight)", nodeError(409, "A payment for this request is still being set up.", "CONFLICT"), "unconfirmed", false],
+    ["409 INTENT_FINISHED", nodeError(409, "This payment is already finished.", "INTENT_FINISHED"), "definite", true],
+    ["409 INTENT_EXPIRED", nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED"), "definite", true],
+    ["409 REQUEST_KEY_IN_USE", nodeError(409, "That request key is already in use.", "REQUEST_KEY_IN_USE"), "definite", true],
+    // The node voided the key (§request-void): its emitter proves nothing was or can be paid under it.
+    ["409 REQUEST_VOIDED", nodeError(409, "This payment request was cancelled and nothing can be paid under it. Start a new payment.", "REQUEST_VOIDED"), "definite", true],
+    ["500 with a REQUEST_VOIDED code", nodeError(500, "This payment request was cancelled.", "REQUEST_VOIDED"), "unconfirmed", false],
+    // MEDIUM-3: held for an operator, not "the answer did not arrive"; the key survives.
+    ["409 INTENT_NEEDS_REVIEW", nodeError(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW"), "needs_review", false],
+    ["503 DEPENDENCY_UNAVAILABLE (the node's Stripe re-read failed)", nodeError(503, "The payment provider could not be reached.", "DEPENDENCY_UNAVAILABLE"), "unconfirmed", false],
+    // L6: status before message text; a code counts only on the status the node sends it with.
+    ["503 whose text says KYB_REQUIRED", nodeError(503, "KYB_REQUIRED: upstream verification service unavailable."), "unconfirmed", false],
+    ["503 whose text says payments are not configured", nodeError(503, "Payments are not configured upstream (proxy)."), "unconfirmed", false],
+    ["503 with a KYB_REQUIRED code", nodeError(503, "Verification could not be checked.", "KYB_REQUIRED"), "unconfirmed", false],
+    ["500 with an INTENT_FINISHED code", nodeError(500, "This payment is already finished.", "INTENT_FINISHED"), "unconfirmed", false],
+    ["a 403 KYB_REQUIRED code beats consent wording", nodeError(403, "Consent is fine; business verification lapsed.", "KYB_REQUIRED"), "kyb_required", true],
+  ];
+
+  it.each(cases)("%s", (_label, error, code, releasesKey) => {
+    const refusal = refusalFromSdkError(error);
+    expect(refusal.code).toBe(code);
+    expect(releasesRequestKey(refusal)).toBe(releasesKey);
+    expect(refusal.message.trim()).not.toBe("");
+  });
+
+  it("keeps the server's sentence but never wire codes, configuration key names or SDK request text", () => {
+    expect(refusalFromSdkError(nodeError(403, "KYB_REQUIRED: this tenant must complete business verification first.")).message)
+      .toBe("this tenant must complete business verification first.");
+    expect(refusalFromSdkError(nodeError(422, "Payments are paused. Missing configuration: Fiat:Stripe:SecretKey")).message).toBe("Payments are paused.");
+    expect(refusalFromSdkError(nodeError(500)).message).not.toMatch(/POST|\/api\//);
+    expect(refusalFromSdkError(nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED")).message)
+      .toBe("This payment page has expired. Start a new payment.");
+  });
+
+  describe("a same-key 409's `result` reaches a refusal only for the three codes that name the key's intent, and only narrowed (M1)", () => {
+    // The node's projection as serialized: `admissionKey` is `{subject}:{tenant}:{key}`, and a later node may add more.
+    const projection = {
+      intentId: "8b4f1f2e-2f1d-4c1b-9d4e-6d1c9f3b2a10", admissionKey: "subject:tenant:key", subjectUserId: "u-1", status: "starting",
+      settlementState: "not_started", paymentUrl: null, resumed: true, amountPaidMinorUnits: null, currency: null, expiresAt: null,
+    };
+    const { admissionKey: _admissionKey, subjectUserId: _subjectUserId, ...browserSafe } = projection;
+    const revealedShape = { outcome: "revealed", intentId: projection.intentId, tenantId: "t-1", intent: projection };
+    // [node code, the envelope's result, what the refusal carries]
+    it.each<[string, unknown, unknown]>([
+      ["INTENT_EXPIRED", projection, browserSafe],
+      ["INTENT_FINISHED", { ...projection, status: "complete", settlementState: "payment_received" }, { ...browserSafe, status: "complete", settlementState: "payment_received" }],
+      ["INTENT_NEEDS_REVIEW", projection, browserSafe],
+      ["INTENT_NEEDS_REVIEW", revealedShape, { outcome: "revealed", intent: browserSafe }],
+      // A code the node attaches no result to never surfaces one, whatever a proxy put there.
+      ["REQUEST_KEY_IN_USE", projection, undefined],
+      ["REQUEST_VOIDED", projection, undefined],
+      // Not a projection: nothing to decide by, and nothing raw passes through.
+      ["INTENT_FINISHED", { admissionKey: "subject:tenant:key" }, undefined],
+      ["INTENT_FINISHED", [projection], undefined],
+      ["INTENT_NEEDS_REVIEW", { outcome: "voided", intentId: null }, undefined],
+    ])("%s with %j", (code, result, carried) => {
+      const refusal = refusalFromSdkError(nodeError(409, "Same-key answer.", code, result));
+      expect(refusal.serverResult).toEqual(carried);
+      expect(findForbiddenViewKeys(refusal)).toEqual([]);
+    });
+  });
+});
+
+describe("releasesRequestKey (an allowlist)", () => {
+  const refusalWith = (code: unknown) => ({ code, message: "x" }) as unknown as MoneyRefusal;
+  it.each([
+    ["definite", true], ["setup_required", true], ["under_review", true], ["consent_revoked", true],
+    ["account_holder_required", true], ["kyb_required", true], ["payments_not_configured", true],
+    ["unconfirmed", false], ["rail_busy", false], ["unauthenticated", false], ["needs_review", false],
+    // Host transports deserialize JSON at runtime: anything unknown must keep the key.
+    ["Definite", false], ["DEFINITE", false], ["server_error", false], ["timeout", false], ["", false], [" definite", false],
+    [undefined, false], [null, false], [403, false],
+  ])("%s → %s", (code, releases) => {
+    expect(releasesRequestKey(refusalWith(code))).toBe(releases);
+  });
+
+  it("keeps the key for a missing refusal", () => {
+    expect(releasesRequestKey(undefined)).toBe(false);
+    expect(releasesRequestKey(null)).toBe(false);
+  });
+});
+
+describe("deriveAccountGate", () => {
+  const account = { walletId: null, walletAddress: null, identityReady: true, kycReady: true, walletReady: true, unavailableReason: null, reviewDueAt: null };
+  it.each([
+    ["ready account", { ok: true as const, value: { ...account, kycStatus: "Approved" as const, ready: true } }, "ready"],
+    ["compliance review", { ok: true as const, value: { ...account, kycStatus: "UnderReview" as const, ready: false } }, "review"],
+    ["unverified", { ok: true as const, value: { ...account, kycStatus: "Unknown" as const, ready: false } }, "setup"],
+    ["node cannot onboard", { ok: true as const, value: { ...account, kycStatus: "Unknown" as const, ready: false, kycReady: false } }, "unavailable"],
+    ["a truthy non-boolean ready is not ready", { ok: true as const, value: { ...account, kycStatus: "Unknown" as const, ready: "false" as unknown as boolean } }, "setup"],
+    ["consent withdrawn", { ok: false as const, refusal: { code: "consent_revoked" as const, message: "x" } }, "revoked"],
+    ["no account yet", { ok: false as const, refusal: { code: "setup_required" as const, message: "x" } }, "setup"],
+    ["lapsed KYB", { ok: false as const, refusal: { code: "kyb_required" as const, message: "x" } }, "unavailable"],
+  ])("%s", (_label, result, gate) => {
+    expect(deriveAccountGate(result)).toBe(gate);
+  });
+});
+
+describe("toBaseUnits", () => {
+  it.each([
+    ["1.5", 6, "1500000"],
+    ["0.000001", 6, "1"],
+    ["123456789012345678901234567890", 0, "123456789012345678901234567890"],
+    ["1.0000001", 6, null],
+    ["1.", 2, null],
+    ["-1", 2, null],
+    ["1e3", 2, null],
+  ])("%s at %i decimals", (text, decimals, expected) => {
+    expect(toBaseUnits(text, decimals)).toBe(expected);
+  });
+});

@@ -39,6 +39,8 @@ export interface SdkErrorOptions {
   serverCode?: string;
   /** The server's own message without the method/path prefix, when it sent one. */
   serverMessage?: string;
+  /** The envelope's own `result` payload, when a final answer carries one (e.g. a same-key 409's intent projection). Unnarrowed; callers must run it through the relevant `to*View`. */
+  serverResult?: unknown;
 }
 
 export class SdkError extends Error {
@@ -51,6 +53,7 @@ export class SdkError extends Error {
   readonly detail?: SdkErrorDetail;
   readonly serverCode?: string;
   readonly serverMessage?: string;
+  readonly serverResult?: unknown;
 
   constructor(
     code: SdkErrorCode,
@@ -68,6 +71,7 @@ export class SdkError extends Error {
     this.detail = options?.detail;
     this.serverCode = options?.serverCode;
     this.serverMessage = options?.serverMessage;
+    this.serverResult = options?.serverResult;
   }
 
   /**
@@ -75,6 +79,8 @@ export class SdkError extends Error {
    * non-enumerable, so a plain `JSON.stringify(err)` silently drops them —
    * which is why raw error dumps previously showed only `{name, code}`. This
    * guarantees structured logs and error dumps carry the real diagnostics.
+   * `serverResult` is left out: unnarrowed, it can carry the node's `admissionKey`
+   * (subject + tenant ids), and a log line is not where those belong.
    */
   toJSON(): Record<string, unknown> {
     return {

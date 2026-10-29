@@ -54,6 +54,20 @@ describe("SdkError", () => {
     expect(json.path).toBe("/api/bridge/history");
   });
 
+  it("toJSON leaves out the raw serverResult, whose admissionKey embeds subject and tenant ids", () => {
+    const error = new SdkError(SdkErrorCode.API_ERROR, "POST /api/fiat/checkout/x: This payment is already finished.", {
+      status: 409,
+      serverCode: "INTENT_FINISHED",
+      serverResult: { intentId: "i-1", admissionKey: "subject:tenant:key", status: "complete" },
+    });
+
+    const logged = JSON.stringify(error);
+
+    expect(logged).not.toContain("admissionKey");
+    expect(JSON.parse(logged)).toMatchObject({ status: 409, serverCode: "INTENT_FINISHED" });
+    expect(error.serverResult).toMatchObject({ intentId: "i-1" });
+  });
+
   it("debugString renders the server exception chain", () => {
     const error = new SdkError(SdkErrorCode.API_ERROR, "GET /api/x: failed", {
       status: 500,
