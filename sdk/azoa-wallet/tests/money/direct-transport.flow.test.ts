@@ -125,35 +125,37 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     return { node, visit, attempt: await sendCheckout(visit.transport, visit.keyStore, saved) };
   }
 
-  it("INTENT_EXPIRED (a fresh Stripe read proved the lapsed page unpaid) releases the key and a fresh payment opens", async () => {
+  it("INTENT_EXPIRED whose envelope already names the lapsed page's own projection decides by that state directly, releasing the key with no void round trip", async () => {
     const { node, visit, attempt } = await resumeLostAnswer("pageLapsed");
 
-    expect(attempt).toEqual({
-      kind: "refused",
-      refusal: { code: "definite", message: "This payment page has expired. Start a new payment." },
-      kept: null,
-    });
+    // The 409's own projection already proves it closed and unpaid, so the flow decides it directly:
+    // the node's void-or-reveal is never called (compare the `otherAccount` row below, which has no
+    // projection to decide by and still goes to the void).
+    expect(node.requests.filter(request => CHECKOUT_VOID.test(request.path))).toHaveLength(0);
+    expect(attempt).toMatchObject({ kind: "finished", view: { status: "awaiting_payment", settlementState: "payment_failed", paymentUrl: null } });
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toBeNull();
     const fresh = await startCheckout(visit.transport, visit.keyStore, 25_00);
     expect(fresh.kind).toBe("opened");
     expect(node.admissions).toHaveLength(2);
   });
 
-  // [situation, timeline after the lost answer, the resend's 409 code, attempt kind, settlement shown, key kept]
-  it.each<[string, CheckoutEvent[], string, CheckoutAttempt["kind"], string | null, boolean]>([
-    ["the card was paid on that page, funds not landed yet", ["pay", "webhook"], "INTENT_FINISHED", "finished", "payment_received", true],
-    ["Stripe expired that page and the webhook closed it", ["expire"], "INTENT_FINISHED", "finished", "payment_failed", false],
-    ["the admission row belongs to another account", ["otherAccount"], "REQUEST_KEY_IN_USE", "refused", null, true],
-  ])("%s: %s is not proof, so the node's void decides and nothing is paid twice", async (_situation, events, code, kind, settlement, kept) => {
+  // [situation, timeline after the lost answer, the resend's 409 code, attempt kind, settlement shown, key kept, the void round trip still happens]
+  it.each<[string, CheckoutEvent[], string, CheckoutAttempt["kind"], string | null, boolean, boolean]>([
+    ["the card was paid on that page, funds not landed yet", ["pay", "webhook"], "INTENT_FINISHED", "finished", "payment_received", true, false],
+    ["Stripe expired that page and the webhook closed it", ["expire"], "INTENT_FINISHED", "finished", "payment_failed", false, false],
+    ["the admission row belongs to another account", ["otherAccount"], "REQUEST_KEY_IN_USE", "refused", null, true, true],
+  ])("%s: %s is decided by its own projection when the 409 carries one, else the node's void decides, and nothing is paid twice", async (_situation, events, code, kind, settlement, kept, calledVoid) => {
     const { node, visit, attempt } = await resumeLostAnswer(...events);
     const requestKey = node.admissions[0]!.requestKey;
 
-    // The resend met the final-looking code, then asked the node to void or reveal the key.
-    expect(node.answers.filter(answer => answer.method === "POST").map(answer => answer.code)).toEqual([null, code, code === "REQUEST_KEY_IN_USE" ? code : null]);
-    expect(node.requests.filter(request => CHECKOUT_VOID.test(request.path))).toHaveLength(1);
+    // INTENT_FINISHED's own projection is proof enough to decide by (no void round trip); REQUEST_KEY_IN_USE
+    // carries none, so the resend still asks the node to void or reveal the key.
+    expect(node.answers.filter(answer => answer.method === "POST").map(answer => answer.code)).toEqual(calledVoid ? [null, code, code] : [null, code]);
+    expect(node.requests.filter(request => CHECKOUT_VOID.test(request.path))).toHaveLength(calledVoid ? 1 : 0);
     expect(attempt.kind).toBe(kind);
     if (attempt.kind === "finished") expect(attempt.view.settlementState).toBe(settlement);
     if (attempt.kind === "refused") expect(attempt.refusal.code).toBe("unconfirmed");
+    // Never released on INTENT_FINISHED unless that projection is settled (the unlanded card payment keeps it).
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.requestKey === requestKey).toBe(kept);
     // A paid or undecidable key still blocks a second, different payment; the revealed intent is never voided.
     if (kept) expect((await startCheckout(visit.transport, visit.keyStore, 10_00)).kind).toBe("pending");
@@ -161,7 +163,7 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     expect(node.admissions).toHaveLength(1);
   });
 
-  it("re-submitting the same amount after a lost answer reuses the key, so it is a resend too: INTENT_FINISHED goes to the void", async () => {
+  it("re-submitting the same amount after a lost answer reuses the key, so it is a resend too: INTENT_FINISHED's own projection decides it", async () => {
     const node = freshNode();
     const visit = pageLoad(node, memoryStorage());
     node.loseNextResponse();
@@ -172,6 +174,7 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     const again = await startCheckout(visit.transport, visit.keyStore, 25_00);
 
     expect(again).toMatchObject({ kind: "finished", view: { intentId, settlementState: "payment_received" } });
+    expect(node.requests.filter(request => CHECKOUT_VOID.test(request.path))).toHaveLength(0);
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)?.serverId).toBe(intentId);
     expect(node.admissions).toHaveLength(1);
   });
@@ -191,6 +194,8 @@ describe("same-key 409s for a lost answer (the key names no intent yet, so a fin
     const { node, visit, attempt } = await resumeLostAnswer("needsOperator");
 
     expect(attempt).toMatchObject({ kind: "refused", refusal: { code: "needs_review" }, kept: { needsReview: true } });
+    // An unattached claim never has a page to hand out, whatever the live Stripe fields might otherwise say.
+    if (attempt.kind === "refused") expect(attempt.refusal.serverResult).toMatchObject({ paymentUrl: null });
     expect(readSavedRequest(visit.keyStore, MONEY_SCOPES.checkout)).toMatchObject({ requestKey: node.admissions[0]!.requestKey, needsReview: true });
 
     node.apply(node.admissions[0]!.intentId, "operatorResumed");
@@ -233,6 +238,71 @@ describe("a key that already names its intent is decided by that intent's state,
     // A kept key still blocks a second, different payment on this device.
     if (kept) expect((await startCheckout(visit.transport, visit.keyStore, 10_00)).kind).toBe("pending");
     expect(node.admissions).toHaveLength(1);
+  });
+});
+
+describe("the same-key resend's expire-first classifier once a page's clock has lapsed but Stripe still reads open (§stripe-session-verdict)", () => {
+  /** Admits a fresh checkout, then lapses its clock while Stripe itself still reports the page `open` (a payer mid-3DS). */
+  async function pastExpiryStillOpen(node: NodeEmulator) {
+    const transport = directTransport(node);
+    const begun = await transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: 25_00 });
+    if (!begun.ok) throw new Error("expected the first begin to open");
+    const { requestKey, intentId } = node.admissions[0]!;
+    node.apply(intentId, "pageLapsedMidConfirmation");
+    return { transport, requestKey, intentId };
+  }
+
+  it("Stripe still says open past the clock: the node expires it there first, then answers INTENT_EXPIRED whose own projection releases the key", async () => {
+    const node = freshNode();
+    const { transport, requestKey, intentId } = await pastExpiryStillOpen(node);
+
+    const resend = await transport.checkout.begin({ requestKey, amountMinorUnits: 25_00 });
+
+    expect(resend.ok).toBe(false);
+    if (resend.ok) return;
+    expect(resend.refusal).toMatchObject({ code: "definite", message: "This payment page has expired. Start a new payment." });
+    expect(resend.refusal.serverResult).toMatchObject({ intentId, status: "awaiting_payment", settlementState: "payment_failed", paymentUrl: null });
+    // The clock alone never proves it; the Stripe session itself is what closed, not a void write.
+    expect(node.isVoided(intentId)).toBe(false);
+  });
+
+  it("the payer finishes mid-3DS exactly as the node's expire call reaches Stripe: the fallback read proves it paid, so the resend resumes it as processing with no page and the key kept", async () => {
+    const node = freshNode();
+    const { transport, requestKey, intentId } = await pastExpiryStillOpen(node);
+    node.apply(intentId, "payDuringExpire");
+
+    const resend = await transport.checkout.begin({ requestKey, amountMinorUnits: 25_00 });
+
+    expect(resend).toMatchObject({
+      ok: true,
+      value: { intentId, status: "processing", settlementState: "payment_received", paymentUrl: null, resumed: true },
+    });
+  });
+
+  it("the node cannot settle it at all (Stripe refuses the expire and a fresh read still says open): a retryable refusal keeps the key", async () => {
+    const node = freshNode();
+    const { transport, requestKey, intentId } = await pastExpiryStillOpen(node);
+    node.apply(intentId, "expireFails");
+
+    const resend = await transport.checkout.begin({ requestKey, amountMinorUnits: 25_00 });
+
+    expect(resend).toMatchObject({ ok: false, refusal: { code: "unconfirmed" } });
+    expect(node.answers.at(-1)).toMatchObject({ status: 503, code: "DEPENDENCY_UNAVAILABLE" });
+    expect(node.isVoided(intentId)).toBe(false);
+  });
+
+  it("a finished intent whose Stripe read fails answers 503, never a bodiless 409 (its own projection could not be built)", async () => {
+    const node = freshNode();
+    const transport = directTransport(node);
+    const begun = await transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: 25_00 });
+    if (!begun.ok) throw new Error("expected the first begin to open");
+    const { requestKey } = node.admissions[0]!;
+    node.apply(begun.value.intentId, "pay", "webhook", "stripeDown");
+
+    const resend = await transport.checkout.begin({ requestKey, amountMinorUnits: 25_00 });
+
+    expect(resend).toMatchObject({ ok: false, refusal: { code: "unconfirmed" } });
+    expect(node.answers.at(-1)).toMatchObject({ status: 503, code: "DEPENDENCY_UNAVAILABLE" });
   });
 });
 

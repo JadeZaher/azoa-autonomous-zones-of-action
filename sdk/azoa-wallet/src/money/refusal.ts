@@ -69,7 +69,12 @@ export function refusalFromSdkError(error: unknown): MoneyRefusal {
   const text = personText(error);
   // The envelope's machine code outranks status and message text.
   const rule = error.serverCode === undefined ? undefined : SERVER_CODE_RULES.get(error.serverCode);
-  if (rule && (!rule.statuses || rule.statuses.includes(status))) return moneyRefusal(rule.refusal, text);
+  if (rule && (!rule.statuses || rule.statuses.includes(status))) {
+    const refusal = moneyRefusal(rule.refusal, text);
+    // Only these same-key codes ever carry a result (the node's own projection); surfacing it lets a
+    // caller decide by that state instead of a second round trip (see flows.ts `beginCheckout`).
+    return error.serverResult === undefined ? refusal : { ...refusal, serverResult: error.serverResult };
+  }
   if (status === 429) return moneyRefusal("rail_busy", text);
   // 409 without a known code, 408, 5xx: the request may have been admitted, whatever the message says.
   if (!isDefiniteRefusal(status)) return moneyRefusal("unconfirmed", text);

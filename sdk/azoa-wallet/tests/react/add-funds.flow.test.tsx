@@ -207,7 +207,7 @@ describe("<AddFundsForm> (P1 flows)", () => {
     expect(screen.getAllByText(copy.settlement.not_started)).toHaveLength(1);
   });
 
-  it("a 409 INTENT_EXPIRED for a lost answer (no intent id saved) releases the key, shows the node's sentence and offers a fresh payment", async () => {
+  it("a 409 INTENT_EXPIRED for a lost answer (no intent id saved) decides by its own projection, releases the key and offers a fresh payment", async () => {
     const user = userEvent.setup();
     const redirects: Redirect[] = [];
     const firstVisit = visitFundsPage(node, redirects);
@@ -217,11 +217,15 @@ describe("<AddFundsForm> (P1 flows)", () => {
     await screen.findByRole("button", { name: "Resume that payment" });
     firstVisit.unmount();
     node.apply(node.admissions[0]!.intentId, "pageLapsed");
+    const before = posts(node).length;
 
     visitFundsPage(node, redirects);
     await user.click(await screen.findByRole("button", { name: "Resume that payment" }));
 
-    await screen.findByText("This payment page has expired. Start a new payment.");
+    // The 409's own projection already proves it closed and unpaid; the form shows that settlement
+    // state directly, with no void round trip to learn it (one resend POST, not a second for the void).
+    await screen.findByText(copy.settlement.payment_failed);
+    expect(posts(node)).toHaveLength(before + 1);
     expect(screen.queryByRole("button", { name: "Resume that payment" })).toBeNull();
     await user.type(screen.getByLabelText("Amount"), "25");
     await user.click(submitButton());
@@ -256,7 +260,8 @@ describe("<AddFundsForm> (P1 flows)", () => {
     node.apply(node.admissions[0]!.intentId, "operatorClosed");
     await user.click(screen.getByRole("button", { name: copy.pending.checkAgain }));
 
-    // INTENT_FINISHED alone is not proof; the node's void reveals the intent, closed and unpaid, and that state frees the key.
+    // INTENT_FINISHED alone is not proof, but its own projection here already shows closed and unpaid
+    // (the operator's close, not a payment), so that state frees the key with no void round trip needed.
     await screen.findByText(copy.checkout.expired);
     expect(screen.queryByText("This payment is already finished.")).toBeNull();
     expect(submitButton().disabled).toBe(false);
@@ -403,7 +408,7 @@ describe("<AddFundsForm> (P1 flows)", () => {
     expect(node.isVoided(intentId)).toBe(true);
   });
 
-  it("resuming a lost answer whose payment was made meets INTENT_FINISHED; the node's void reveals the payment, so the key and the lock stay and nothing is charged twice", async () => {
+  it("resuming a lost answer whose payment was made meets INTENT_FINISHED; its own unsettled projection decides it directly, so the key and the lock stay and nothing is charged twice", async () => {
     const user = userEvent.setup();
     const redirects: Redirect[] = [];
     const settled: CheckoutView[] = [];

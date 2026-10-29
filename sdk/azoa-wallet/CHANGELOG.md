@@ -52,6 +52,20 @@ The breaking change below is why this is a minor bump; everything under "Added (
 - Every view has an allowlist `to*View`; the direct transport narrows cash-out, payout and capability
   answers, and the contract's forbidden-key case covers every call, mutations included.
 
+### Fourth round: expire-first resend, decide by projection (pre-publish, 2026-10-28)
+Synced to the node's fiat branch at `33168340`: a same-key resend on a page past its clock expiry no longer
+trusts the clock alone (the node's lane-one bug this SDK already guarded against) -- the node expires the
+page AT STRIPE first, same idempotency key as the void, then decides from a fresh read.
+- Final same-key 409s (`INTENT_FINISHED`, `INTENT_EXPIRED`, `INTENT_NEEDS_REVIEW`) now carry the GET
+  projection in the envelope's `result`; `SdkError.serverResult` (and `MoneyRefusal.serverResult`) surface it,
+  unnarrowed, additive.
+- `beginCheckout`'s resent-key branch decides by that projection directly (`checkoutProjectionFrom`, narrowed
+  with `toCheckoutView`) instead of a void round trip when the 409 carries one; falls back to void-or-reveal
+  when it does not (`REQUEST_KEY_IN_USE`, `REQUEST_VOIDED` still carry none). Never releases the key on
+  `INTENT_FINISHED` unless that projection is settled -- the same rule `applyCheckoutView` already enforced.
+- A terminal intent whose Stripe re-read fails now answers 503 `DEPENDENCY_UNAVAILABLE` (previously a bodiless
+  409); `tests/money/node-emulator.ts` rebuilt to mirror both.
+
 ### Third round: void-or-reveal (pre-publish, 2026-10-28)
 Discarding a saved checkout key is now the node's decision (oasis-sleek f2cb4fe8, `Providers/Fiat/AGENTS.md`
 §request-void): a key is released only when the node answers `voided`.

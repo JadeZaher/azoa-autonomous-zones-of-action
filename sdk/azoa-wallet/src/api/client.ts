@@ -4489,6 +4489,7 @@ export class AzoaApiClient {
           message: data.message ?? data.error,
           detail: data.detail,
           code: data.code,
+          result: typeof data.result === "object" && data.result !== null ? data.result : undefined,
         }));
       }
 
@@ -4548,7 +4549,7 @@ export class AzoaApiClient {
    */
   private async parseErrorBody(
     resp: Response
-  ): Promise<{ message?: string; detail?: SdkErrorDetail; code?: string }> {
+  ): Promise<{ message?: string; detail?: SdkErrorDetail; code?: string; result?: unknown }> {
     try {
       const body = (await resp.json()) as {
         message?: string;
@@ -4556,6 +4557,7 @@ export class AzoaApiClient {
         detail?: SdkErrorDetail | string;
         errors?: Record<string, unknown>;
         code?: string;
+        result?: unknown;
       };
       const message = body.message ?? body.error ?? validationErrorsText(body.errors)
         ?? (typeof body.detail === "string" ? body.detail : undefined);
@@ -4563,6 +4565,9 @@ export class AzoaApiClient {
         message,
         detail: typeof body.detail === "object" && body.detail !== null ? body.detail : undefined,
         code: typeof body.code === "string" ? body.code : undefined,
+        // A final same-key 409 (INTENT_FINISHED / INTENT_EXPIRED / INTENT_NEEDS_REVIEW) carries the
+        // intent's own projection here; most error bodies leave `result` null, which stays unset.
+        result: typeof body.result === "object" && body.result !== null ? body.result : undefined,
       };
     } catch {
       return {}; // non-JSON / empty body (e.g. a bare 500 with no body)
@@ -4573,7 +4578,7 @@ export class AzoaApiClient {
     method: string,
     path: string,
     status: number,
-    parsed: { message?: string; detail?: SdkErrorDetail; code?: string }
+    parsed: { message?: string; detail?: SdkErrorDetail; code?: string; result?: unknown }
   ): SdkError {
     const message = parsed.message
       ? `${method} ${path}: ${parsed.message}`
@@ -4585,6 +4590,7 @@ export class AzoaApiClient {
       detail: parsed.detail,
       serverCode: parsed.code,
       serverMessage: parsed.message,
+      serverResult: parsed.result,
     });
   }
 

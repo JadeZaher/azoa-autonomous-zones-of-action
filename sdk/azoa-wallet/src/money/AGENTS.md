@@ -43,8 +43,8 @@ onboard right now, or any other refusal).
 ## §refusals
 
 Closed vocabulary, mapped from node bodies by `refusalFromSdkError` (verified against the controllers on
-2026-10-26, and the same-key resend contract of `FiatRailProvider.BeginCheckoutAsync`, oasis-sleek branch
-feat/fiat-replay-codes `cee103bd`, on 2026-10-27):
+2026-10-26, and the same-key resend contract of `FiatRailProvider.BeginCheckoutAsync` + `ResumeAttachedAsync`,
+oasis-sleek branch feat/fiat-replay-codes, `cee103bd` on 2026-10-27 and `33168340` on 2026-10-28):
 
 | code | node evidence | key |
 | :-- | :-- | :-- |
@@ -62,7 +62,8 @@ feat/fiat-replay-codes `cee103bd`, on 2026-10-27):
 
 \* Directly only for a key's **first** send. **A saved request with a `serverId` is never released by a
 refusal code** (§flows "decide by state"), and a **resent** key without one (a lost answer) is released only
-when the node's void answers `voided` (§void).
+by the key's own state: the 409's own projection (`serverResult`, when the node's envelope carries one) if
+present, else the node's void answering `voided` (§void and §flows "decide by state").
 
 **Order matters** (each step only runs when the previous did not decide): not an `SdkError` → `unconfirmed`;
 401 → `unauthenticated`; no HTTP status → `definite` for a client guard, else `unconfirmed`; the envelope's
@@ -74,10 +75,14 @@ on a 500 is still `unconfirmed`); 429 → `rail_busy`; any status that is not 40
 The same-key 409 codes (`INTENT_*`, `REQUEST_KEY_IN_USE`, `REQUEST_VOIDED`) follow the node's proof rule, but
 only `INTENT_EXPIRED` (after a fresh Stripe read) and `REQUEST_VOIDED` (the node voided the key) are proof that
 nothing was or can be paid; `INTENT_FINISHED` is "terminal" (paid, failed or expired) and `REQUEST_KEY_IN_USE`
-names another account's row. All four map to `definite`, so the flows never trust the code where they can ask:
-a key that names its intent is decided by reading it, and a resent key that names none is put to the void
-(§void). That closes round 2's gap (`INTENT_FINISHED` on a lost answer released the key while a card payment's
-funds were still landing): the void reveals that intent and the key follows it.
+names another account's row. All four map to `definite`, so the flows never trust the code alone where they
+can ask: a key that names its intent is decided by reading it. A resent key that names none is decided
+directly from the 409's own `serverResult` (round 4, `33168340`: `INTENT_FINISHED` / `INTENT_EXPIRED` now
+carry the GET projection) when the node sent one, else put to the void (§void) -- same decision, no round
+trip. That closes round 2's gap (`INTENT_FINISHED` on a lost answer released the key while a card payment's
+funds were still landing): the carried or revealed intent decides it and the key follows that state, never
+the code (`checkoutProjectionFrom` in `flows.ts`; never releases on `INTENT_FINISHED` unless that projection
+is settled -- see `isSettledCheckout`, §presentation).
 
 `needs_review` (MEDIUM-3) is not "the answer did not arrive": the node answered, and it holds the request
 for an operator. The key is kept and `markNeedsReview` flags the saved request, so the UI shows "needs a
@@ -139,13 +144,18 @@ is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `p
   watched. This is why the node lane's first cut (`769494f1`, `INTENT_EXPIRED` on any lapsed page) cannot
   release the key of an ACH payment that is still clearing.
 
-- **A resent key's final-looking refusal is put to the void (round 3).** When `beginCheckout` resends a key
-  (`sendCheckout`, or `startCheckout` reusing a saved key: `claimKey` reports `resent`) that names no intent,
-  a refusal `releasesRequestKey` would accept (`INTENT_FINISHED`, `REQUEST_KEY_IN_USE`, a gate that appeared
-  since the first send, ...) proves nothing about the **earlier** send, so `releaseOnVoid` asks the node:
-  `voided` → the key goes and the attempt is the original refusal; `revealed` → the key follows that intent
-  (`applyCheckoutView`, no redirect); anything else → kept. A key's first send still releases on such a
-  refusal directly: nothing else was ever sent under it.
+- **A resent key's final-looking refusal is decided by state, not the code (round 3, round 4).** When
+  `beginCheckout` resends a key (`sendCheckout`, or `startCheckout` reusing a saved key: `claimKey` reports
+  `resent`) that names no intent, a refusal `releasesRequestKey` would accept (`INTENT_FINISHED`,
+  `REQUEST_KEY_IN_USE`, a gate that appeared since the first send, ...) proves nothing about the **earlier**
+  send by itself. `checkoutProjectionFrom` first checks whether the 409's own envelope already carries that
+  intent's projection (`serverResult`, allowlist-narrowed with `toCheckoutView`): when it does (round 4,
+  `33168340`'s `INTENT_FINISHED` / `INTENT_EXPIRED`), `applyCheckoutView` decides it directly -- no round
+  trip, and still never releases the key unless that state is **settled** (an unlanded card payment keeps
+  it). Only when no projection is present does `releaseOnVoid` ask the node: `voided` → the key goes and the
+  attempt is the original refusal; `revealed` → the key follows that intent (`applyCheckoutView`, no
+  redirect); anything else → kept. A key's first send still releases on such a refusal directly: nothing
+  else was ever sent under it.
 
 - **Resend re-reads storage (L1).** `send*` re-reads the saved request inside the lock and sends only when
   its key is still the saved one; otherwise it returns `superseded` with what is saved now and sends

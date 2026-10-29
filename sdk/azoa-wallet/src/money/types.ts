@@ -30,6 +30,8 @@ export interface MoneyRefusal {
   code: MoneyRefusalCode;
   message: string;
   retryAfterSeconds?: number;
+  /** The server's own `result` on a final same-key 409 (e.g. `INTENT_FINISHED`'s projection); unnarrowed, see `src/money/AGENTS.md` §flows "decide by state". */
+  serverResult?: unknown;
 }
 
 /** Every transport method resolves to this; a transport never throws for a refusal. */

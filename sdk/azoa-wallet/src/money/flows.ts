@@ -6,6 +6,7 @@ import { moneyRefusal, releasesRequestKey } from "./refusal.js";
 import { MONEY_SCOPES, claimRequestKey, clearSavedRequest, markNeedsReview, readSavedRequest, rememberServerId } from "./request-key.js";
 import type { KeyStore, SavedRequest } from "./request-key.js";
 import type { AzoaMoneyTransport, CashOutView, CheckoutView, CheckoutVoidView, MoneyRefusal, MoneyResult, SaleQuoteView, SaleView } from "./types.js";
+import { toCheckoutView } from "./views.js";
 
 /** A refused attempt; `kept` is the saved request whenever its key survives (resume it, never replace it). */
 export type RefusedAttempt = { kind: "refused"; refusal: MoneyRefusal; kept: SavedRequest | null };
@@ -142,8 +143,22 @@ async function beginCheckout(transport: AzoaMoneyTransport, keyStore: KeyStore, 
   if (request.serverId) return decideByState(transport, keyStore, request, request.serverId, options);
   const refusal = result.ok ? moneyRefusal("unconfirmed") : result.refusal;
   // A resent key's final-looking refusal (INTENT_FINISHED, REQUEST_KEY_IN_USE, a gate) is not proof for the earlier send: ask the node.
-  if (resend && releasesRequestKey(refusal)) return releaseOnVoid(transport, keyStore, request, refusal, options);
+  if (resend && releasesRequestKey(refusal)) {
+    // A final 409 whose envelope already names the key's own intent (INTENT_FINISHED / INTENT_EXPIRED)
+    // decides by that state directly -- the same thing the void's `revealed` would tell us, without the
+    // round trip. `applyCheckoutView` still only releases the key once the view is settled, never on a
+    // merely terminal one (an unlanded ACH payment keeps it).
+    const projection = checkoutProjectionFrom(refusal);
+    if (projection) return applyCheckoutView(keyStore, request, projection, options, false);
+    return releaseOnVoid(transport, keyStore, request, refusal, options);
+  }
   return refused(keyStore, MONEY_SCOPES.checkout, request, refusal);
+}
+
+/** The server's own projection on a final 409 (`refusal.serverResult`), allowlist-narrowed; null when the answer carried none. */
+function checkoutProjectionFrom(refusal: MoneyRefusal): CheckoutView | null {
+  const raw = refusal.serverResult;
+  return isRecord(raw) && typeof raw.intentId === "string" ? toCheckoutView(raw as unknown as Parameters<typeof toCheckoutView>[0]) : null;
 }
 
 /** Forgets the key only when the node voids it; a revealed payment is followed by its state and never navigated to. */

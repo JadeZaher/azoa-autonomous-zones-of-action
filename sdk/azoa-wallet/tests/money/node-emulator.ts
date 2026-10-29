@@ -3,12 +3,14 @@ import type { CashOutView, FiatCheckoutIntent, FiatCheckoutStatus, FiatSettlemen
 
 /**
  * A fetch-level fake of the AZOA node's first-party money routes, rebuilt from the node's own code paths
- * (read-only, oasis-sleek branch feat/fiat-replay-codes, re-checked at f2cb4fe8): checkout status/settlement from
- * `FiatRailProvider.ProjectAsync` + `ClassifySession`, the same-key resend contract of `BeginCheckoutAsync` (the table
- * in `Providers/Fiat/AGENTS.md` §same-key-replay-codes), the request-key void of `FiatRailProvider.Void.cs`
- * (§request-void), webhook transitions from `StripeWebhookInbox.ApplyAsync`, cash-out claims from
- * `OffRampService.StartAsync`. Envelopes are `AZOAResult` as serialized: camelCase, `code` omitted when null, `detail`
- * always present. Only the process edge (HTTP) is fake.
+ * (read-only, oasis-sleek branch feat/fiat-replay-codes, re-checked at 33168340): checkout status/settlement from
+ * `FiatRailProvider.ProjectAsync` + `ClassifySession`, the same-key resend contract of `BeginCheckoutAsync` +
+ * `ResumeAttachedAsync` (the table in `Providers/Fiat/AGENTS.md` §same-key-replay-codes), the request-key void of
+ * `FiatRailProvider.Void.cs` (§request-void), the expire-first classifier both share
+ * (`FiatRailProvider.SessionVerdict.cs` §stripe-session-verdict: `judgeCheckoutSession` / `settleCheckoutSession`
+ * below), webhook transitions from `StripeWebhookInbox.ApplyAsync`, cash-out claims from `OffRampService.StartAsync`.
+ * Envelopes are `AZOAResult` as serialized: camelCase, `code` omitted when null, `detail` always present, `result`
+ * null unless a final answer names one. Only the process edge (HTTP) is fake.
  */
 export interface NodeEmulator {
   baseUrl: string;
@@ -64,6 +66,10 @@ export type CheckoutEvent =
   | "expire"
   /** The page's expires_at passed and no webhook has arrived yet (an open page expires at Stripe; a complete one stays complete). */
   | "pageLapsed"
+  /** The page's expires_at passed, but Stripe keeps the session `open` because its PaymentIntent is still
+   * confirming (a payer mid-3DS, or a slow confirm) -- the exception `pageLapsed` does not model. Only an
+   * expire call at Stripe (§stripe-session-verdict), not the clock, can settle a page in this state. */
+  | "pageLapsedMidConfirmation"
   /** The settlement inbox row was applied by the issuance handler (a separate row, later than the webhook). */
   | "applyFunds"
   /** The node's Stripe re-read starts failing: reads, same-key resends and voids answer 503 DEPENDENCY_UNAVAILABLE. */
@@ -71,6 +77,10 @@ export type CheckoutEvent =
   | "stripeUp"
   /** Stripe refuses or loses every expire for this page (a Stripe 500 replayed under the expire's idempotency key). */
   | "expireFails"
+  /** One-shot: the payer's confirmation lands exactly as the node's own expire call reaches Stripe during a
+   * same-key resend or void past the page's expiry, so the expire is refused (the session is no longer
+   * `open`) and the fallback fresh read sees it paid instead; `SettleCheckoutSessionAsync` §stripe-session-verdict. */
+  | "payDuringExpire"
   /** `FiatCreationVerdict.NeedsOperator`: the creation fence cannot decide; an operator must. */
   | "needsOperator"
   /** The operator closed the reviewed intent (nothing was ever payable): it is terminal. */
@@ -107,6 +117,8 @@ interface HostedSession {
   stripe: { status: "open" | "complete" | "expired"; paymentStatus: "unpaid" | "paid" };
   stripeReadable: boolean;
   expireFails: boolean;
+  /** One-shot `payDuringExpire` latch; consumed the next time `settleCheckoutSession` would call Stripe's expire. */
+  payerFinishesDuringExpire: boolean;
   fundsApplied: boolean;
   needsOperator: boolean;
   creationInFlight: boolean;
@@ -166,7 +178,9 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     return value !== null && typeof value === "object" ? { ...value, ...options.extraFields } : value;
   };
   const ok = (result: unknown, message = "Success") => json(200, { isError: false, message, result: withExtras(result), detail: null });
-  const fail = (status: number, message: string, code?: string) => json(status, { isError: true, message, result: null, ...(code ? { code } : {}), detail: null });
+  /** `result` defaults to `null`: only a final same-key 409 (INTENT_FINISHED / INTENT_EXPIRED / INTENT_NEEDS_REVIEW) ever names one. */
+  const fail = (status: number, message: string, code?: string, result: unknown = null) =>
+    json(status, { isError: true, message, result: withExtras(result), ...(code ? { code } : {}), detail: null });
   /** §settlement-read-failure: a projection whose Stripe re-read failed is a retryable 503, never a 200 `not_started`. */
   const dependencyUnavailable = () => fail(503, "Your payment status could not be confirmed right now. Try again shortly.", "DEPENDENCY_UNAVAILABLE");
   const requestVoided = () => fail(409, "This payment request was cancelled and nothing can be paid under it. Start a new payment.", "REQUEST_VOIDED");
@@ -335,6 +349,7 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
       stripe: { status: "open", paymentStatus: "unpaid" },
       stripeReadable: true,
       expireFails: false,
+      payerFinishesDuringExpire: false,
       fundsApplied: false,
       needsOperator: false,
       creationInFlight: false,
@@ -347,22 +362,32 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     return ok(project(session, false));
   }
 
-  /** The same-key resend contract, in the node's order; only a provably unpaid and closed page answers INTENT_EXPIRED. */
+  /**
+   * The same-key resend contract (`BeginCheckoutAsync` + `ResumeAttachedAsync`), in the node's order; only a
+   * provably unpaid and closed page answers INTENT_EXPIRED, and the three final codes that can prove anything
+   * (INTENT_FINISHED, INTENT_EXPIRED, INTENT_NEEDS_REVIEW) carry the GET projection in `result`.
+   */
   function resend(session: HostedSession): Response {
     if (session.owner !== userId) return keyInUse();
     // Before the terminal check, which would otherwise call a voided key "finished".
     if (session.voided) return requestVoided();
-    if (session.needsOperator) return needsReview();
-    if (isTerminal(session.state)) return fail(409, "This payment is already finished.", "INTENT_FINISHED");
+    if (session.needsOperator) return needsReviewOnBegin(session);
+    if (isTerminal(session.state)) return finishedConflict(session);
     if (session.creationInFlight) return fail(409, "A payment for this request is still being set up.", "CONFLICT");
     const pastExpiry = session.expiresAt <= Date.now();
+    // The node lane's first cut (769494f1): INTENT_EXPIRED on the clock alone, bodiless, no Stripe read.
     if (options.expiryBeforeStripeRead && pastExpiry && session.state === "AwaitingSubject") return expiredPage();
     if (!session.stripeReadable) return dependencyUnavailable();
-    // Paid or unpaid, a completed session (or a clearing intent) is resumed with its real projection and no page.
-    if (session.stripe.status === "complete" || session.state === "AwaitingOutcome") return ok(project(session, true));
-    if (!pastExpiry && session.stripe.status === "open") return ok(project(session, true));
-    if (pastExpiry && session.state === "AwaitingSubject") return expiredPage();
-    return ok(project(session, true));
+    // Inside its lifetime, or Stripe already moved the claim past "open" (clearing, complete, or resuming):
+    // resumed verbatim with its real projection and no page.
+    if (!pastExpiry || session.state !== "AwaitingSubject") return ok(project(session, true));
+    // Past expiry, still awaiting the payer: the clock proves nothing (Stripe keeps a page `open` for a payer
+    // mid-3DS) -- expire it AT STRIPE first, then decide from a fresh read; never assumed. The same classifier
+    // the void uses (§stripe-session-verdict), so "voided" and INTENT_EXPIRED cannot disagree again.
+    const settled = settleCheckoutSession(session);
+    if (settled === "dead") return expiredConflict(session);
+    if (settled === "paidOrClearing") return ok(project(session, true));
+    return dependencyUnavailable();
   }
 
   /** `VoidRequestAsync` + `TryVoidAdmittedAsync`: `voided` only on proof; anything paid, clearing or terminal is revealed; Stripe unreadable is 503. */
@@ -377,17 +402,13 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     if (session.voided) return voided(session.admission.intentId);
     if (isTerminal(session.state) || session.state === "AwaitingOutcome") return revealed(session);
     // An unattached claim: unreplayable → an operator decides; replayable → abandoned before its page could leave the node.
-    if (session.needsOperator) return needsReview();
+    if (session.needsOperator) return needsReviewOnVoid(session);
     if (session.creationInFlight) return abandon(session);
     if (!session.stripeReadable) return dependencyUnavailable();
-    const verdict = judgeForVoid(session);
-    if (verdict === "paidOrClearing") return revealed(session);
-    if (verdict === "dead") return abandon(session);
-    // An open page is expired at Stripe first; a refused or lost expire is settled by a fresh read, never assumed.
-    if (!session.expireFails) session.stripe.status = "expired";
-    const after = judgeForVoid(session);
-    if (after === "dead") return abandon(session);
-    if (after === "paidOrClearing") return revealed(session);
+    // The same expire-first classifier the same-key resume uses (§stripe-session-verdict).
+    const settled = settleCheckoutSession(session);
+    if (settled === "dead") return abandon(session);
+    if (settled === "paidOrClearing") return revealed(session);
     return fail(503, "Your payment status could not be confirmed right now. Keep this request and try again shortly.", "DEPENDENCY_UNAVAILABLE");
   }
 
@@ -410,10 +431,35 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     return ok({ outcome: "revealed", intentId: intent.intentId, intent: withExtras(intent) }, REVEALED_MESSAGE);
   }
 
-  function needsReview(): Response {
-    return fail(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW");
+  /** `FinalConflict`'s terminal branch: a 409 whose own projection failed to build is the projection's 503, never a bodiless 409. */
+  function finishedConflict(session: HostedSession): Response {
+    if (!session.stripeReadable) return dependencyUnavailable();
+    return fail(409, "This payment is already finished.", "INTENT_FINISHED", project(session, true));
   }
 
+  /** `ResumeAttachedAsync`'s `Dead` branch: the GET projection, settled by `settleCheckoutSession` first. */
+  function expiredConflict(session: HostedSession): Response {
+    return fail(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED", project(session, true));
+  }
+
+  /** `NeedsOperator` is always an unattached claim in the real node (`ProjectAsync` is called with `provider: null`), so nothing is ever payable here regardless of the live Stripe fields. */
+  function needsReviewProjection(session: HostedSession): FiatCheckoutIntent {
+    return { ...project(session, true), paymentUrl: null };
+  }
+
+  /** `BeginCheckoutAsync`'s `NeedsOperator` branch: the plain projection, not key-releasing. */
+  function needsReviewOnBegin(session: HostedSession): Response {
+    return fail(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW", needsReviewProjection(session));
+  }
+
+  /** `NeedsReviewAsync`: the void's 409 wraps the projection in the `revealed` shape, never `voided`. */
+  function needsReviewOnVoid(session: HostedSession): Response {
+    const intent = needsReviewProjection(session);
+    return fail(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW",
+      { outcome: "revealed", intentId: intent.intentId, intent: withExtras(intent) });
+  }
+
+  /** The node lane's first cut (769494f1): bodiless, since this predates the 409 `result` feature. */
   function expiredPage(): Response {
     return fail(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED");
   }
@@ -480,6 +526,13 @@ function applyEvent(session: HostedSession, event: CheckoutEvent): void {
       if (session.stripe.status === "open") session.stripe.status = "expired";
       session.expiresAt = Date.now() - 1;
       return;
+    case "pageLapsedMidConfirmation":
+      // Unlike "pageLapsed", Stripe's own status is left untouched: it is still "open" past the clock.
+      session.expiresAt = Date.now() - 1;
+      return;
+    case "payDuringExpire":
+      session.payerFinishesDuringExpire = true;
+      return;
     case "applyFunds":
       session.fundsApplied = true;
       return;
@@ -520,10 +573,32 @@ function classify(session: HostedSession): "confirmed" | "failed" | "pending" {
   return session.stripe.status === "expired" ? "failed" : "pending";
 }
 
-/** `FiatRailProvider.JudgeForVoid`: paid, or Stripe-complete (paid or still clearing), is never dead. */
-function judgeForVoid(session: HostedSession): "paidOrClearing" | "dead" | "payable" {
+/** `FiatRailProvider.SessionVerdict.cs` `JudgeCheckoutSession`: paid, or Stripe-complete (paid or still clearing), is never dead. */
+function judgeCheckoutSession(session: HostedSession): "paidOrClearing" | "dead" | "payable" {
   if (session.stripe.paymentStatus === "paid" || session.stripe.status === "complete") return "paidOrClearing";
   return session.stripe.status === "expired" ? "dead" : "payable";
+}
+
+/**
+ * `SettleCheckoutSessionAsync`: expires an open page AT STRIPE first (the void's own idempotency key), then
+ * decides from a fresh read; never returns "payable". Shared by the void and the same-key resend past expiry
+ * (§stripe-session-verdict), so "voided" and `INTENT_EXPIRED` cannot mean different things again.
+ */
+function settleCheckoutSession(session: HostedSession): "paidOrClearing" | "dead" | "unknown" {
+  const verdict = judgeCheckoutSession(session);
+  if (verdict !== "payable") return verdict;
+  // A payer who finishes exactly as the expire call reaches Stripe gets the expire refused there (the
+  // session is no longer `open`); the node's fallback fresh read is what actually proves it paid.
+  if (session.payerFinishesDuringExpire) {
+    session.payerFinishesDuringExpire = false;
+    session.stripe = { status: "complete", paymentStatus: "paid" };
+    return "paidOrClearing";
+  }
+  // Any other refused or lost expire (Stripe busy, a connection reset) is settled by a fresh read, never
+  // assumed: `expireFails` leaves `stripe.status` exactly as the payer left it.
+  if (!session.expireFails) session.stripe.status = "expired";
+  const after = judgeCheckoutSession(session);
+  return after === "payable" ? "unknown" : after;
 }
 
 /** `FiatRailProvider.ProjectAsync` (Stripe readable): settlement re-read from Stripe; `funds_applied` only from an applied inbox row. */

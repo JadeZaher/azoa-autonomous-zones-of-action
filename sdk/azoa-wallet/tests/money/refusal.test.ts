@@ -4,9 +4,9 @@ import { deriveAccountGate, refusalFromSdkError, releasesRequestKey, toBaseUnits
 import type { MoneyRefusal, MoneyRefusalCode } from "../../src/money/index.js";
 
 /** A node failure as `AzoaApiClient` surfaces it. */
-function nodeError(status: number | undefined, serverMessage?: string, serverCode?: string): SdkError {
+function nodeError(status: number | undefined, serverMessage?: string, serverCode?: string, serverResult?: unknown): SdkError {
   const code = status === undefined ? SdkErrorCode.NETWORK_ERROR : SdkErrorCode.API_ERROR;
-  return new SdkError(code, serverMessage ? `POST /api/fiat/checkout/x: ${serverMessage}` : "POST /api/fiat/checkout/x failed", { status, serverMessage, serverCode });
+  return new SdkError(code, serverMessage ? `POST /api/fiat/checkout/x: ${serverMessage}` : "POST /api/fiat/checkout/x failed", { status, serverMessage, serverCode, serverResult });
 }
 
 describe("refusalFromSdkError", () => {
@@ -59,6 +59,13 @@ describe("refusalFromSdkError", () => {
     expect(refusalFromSdkError(nodeError(500)).message).not.toMatch(/POST|\/api\//);
     expect(refusalFromSdkError(nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED")).message)
       .toBe("This payment page has expired. Start a new payment.");
+  });
+
+  it("surfaces the node's own projection on a same-key 409 that carries one, for the money flows to decide by that state instead of a void round trip", () => {
+    const projection = { intentId: "intent-1", status: "awaiting_payment", settlementState: "payment_failed", paymentUrl: null };
+    expect(refusalFromSdkError(nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED", projection)).serverResult).toEqual(projection);
+    // A code the node never attaches a result to (REQUEST_KEY_IN_USE carries `result: null`) surfaces nothing to decide by.
+    expect(refusalFromSdkError(nodeError(409, "That request key is already in use.", "REQUEST_KEY_IN_USE")).serverResult).toBeUndefined();
   });
 });
 

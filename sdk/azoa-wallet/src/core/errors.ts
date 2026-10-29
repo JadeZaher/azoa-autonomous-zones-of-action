@@ -39,6 +39,8 @@ export interface SdkErrorOptions {
   serverCode?: string;
   /** The server's own message without the method/path prefix, when it sent one. */
   serverMessage?: string;
+  /** The envelope's own `result` payload, when a final answer carries one (e.g. a same-key 409's intent projection). Unnarrowed; callers must run it through the relevant `to*View`. */
+  serverResult?: unknown;
 }
 
 export class SdkError extends Error {
@@ -51,6 +53,7 @@ export class SdkError extends Error {
   readonly detail?: SdkErrorDetail;
   readonly serverCode?: string;
   readonly serverMessage?: string;
+  readonly serverResult?: unknown;
 
   constructor(
     code: SdkErrorCode,
@@ -68,6 +71,7 @@ export class SdkError extends Error {
     this.detail = options?.detail;
     this.serverCode = options?.serverCode;
     this.serverMessage = options?.serverMessage;
+    this.serverResult = options?.serverResult;
   }
 
   /**
@@ -88,6 +92,7 @@ export class SdkError extends Error {
       ...(this.detail !== undefined ? { detail: this.detail } : {}),
       ...(this.serverCode !== undefined ? { serverCode: this.serverCode } : {}),
       ...(this.serverMessage !== undefined ? { serverMessage: this.serverMessage } : {}),
+      ...(this.serverResult !== undefined ? { serverResult: this.serverResult } : {}),
       ...(this.cause !== undefined
         ? { cause: { name: this.cause.name, message: this.cause.message } }
         : {}),
