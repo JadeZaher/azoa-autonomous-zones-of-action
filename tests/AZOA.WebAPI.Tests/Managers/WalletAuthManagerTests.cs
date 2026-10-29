@@ -246,6 +246,23 @@ public class WalletAuthManagerTests
         _users.Verify(store => store.TryClaimAuthenticationAsync(child, oldWallet, Chain, oldTenant, null, It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>N1: default node config never hands the raw claim token to the minting tenant (account-takeover guard; see ClaimInviteOptionsTests for the Program.cs boot-guard counterpart).</summary>
+    [Fact]
+    public async Task CreateClaimInviteAsync_WithDefaultOptions_WithholdsTheRawTokenFromTheTenant()
+    {
+        var childUserId = Guid.NewGuid();
+        _users.Setup(a => a.GetByIdAsync(childUserId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser> { Result = new User { Id = childUserId, OwnerTenantId = _tenant } });
+        _claimTokens.Setup(t => t.CreateAsync(It.IsAny<WalletAuthClaimToken>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((WalletAuthClaimToken token, CancellationToken _) => new AZOAResult<WalletAuthClaimToken> { Result = token });
+
+        var result = await _mgr.CreateClaimInviteAsync(_tenant, childUserId);
+
+        result.IsError.Should().BeFalse();
+        result.Result!.ClaimToken.Should().BeNull(
+            "a tenant holding the raw token could claim the member's account itself; only ReturnTokenToTenant=true (IntegrationTest/Development only) may echo it");
+    }
+
     /// <summary>The manager's digest check is the authority, not the lookup: a pre-hashing row holding the raw token never authorizes, however it was found.</summary>
     [Fact]
     public async Task Claim_refuses_a_legacy_plaintext_invite_even_when_a_lookup_surfaces_it()
