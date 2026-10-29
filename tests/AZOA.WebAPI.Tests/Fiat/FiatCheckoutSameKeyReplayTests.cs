@@ -214,6 +214,29 @@ public sealed class FiatCheckoutSameKeyReplayTests
         body.Result.PaymentUrl.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData(HostedSessionStates.Abandoned, "paid", FiatIntentStatuses.Processing)]
+    [InlineData(HostedSessionStates.Abandoned, "unpaid", FiatIntentStatuses.Processing)]
+    [InlineData(HostedSessionStates.Failed, "paid", FiatIntentStatuses.Processing)]
+    // async_payment_failed leaves Stripe at complete + unpaid: the row is what recorded how that page ended.
+    [InlineData(HostedSessionStates.Failed, "unpaid", FiatIntentStatuses.Failed)]
+    [InlineData(HostedSessionStates.Completed, "paid", FiatIntentStatuses.Complete)]
+    public async Task A_fresh_Stripe_complete_reads_processing_unless_the_row_recorded_how_the_page_ended(
+        string rowState, string stripePaymentStatus, string expectedStatus)
+    {
+        var harness = new FiatCheckoutHarness();
+        var subject = Guid.NewGuid();
+        var opened = Unwrap(await harness.StartAsync(subject, "complete-key")).Body.Result!;
+        harness.Stripe.Settle(opened.IntentId, "complete", stripePaymentStatus);
+        await harness.TransitionAsync(opened.IntentId, rowState);
+
+        var (http, body) = Unwrap(await harness.Controller(subject).Get(subject, opened.IntentId));
+
+        http.Should().Be(200);
+        body.Result!.Status.Should().Be(expectedStatus, "clients read expired/failed as settled and unpaid, and release the key");
+        body.Result.PaymentUrl.Should().BeNull();
+    }
+
     [Fact]
     public async Task A_failed_provider_reread_fails_the_read_instead_of_reporting_not_started()
     {

@@ -158,12 +158,13 @@ public sealed partial class FiatRailProvider
 
         if (string.IsNullOrWhiteSpace(session.ProviderSessionId))
         {
-            if (!string.Equals(session.State, HostedSessionStates.Claimed, StringComparison.Ordinal)
-                || FiatHostedCreation.IsUnreplayable(session, _clock.GetUtcNow()))
+            // Unattached but no longer CLAIMED: a shape no begin produces, so nothing here can decide it.
+            if (!string.Equals(session.State, HostedSessionStates.Claimed, StringComparison.Ordinal))
                 return await NeedsReviewAsync(scope, session, ct);
 
             // No page attached: a page URL leaves this node only after the attach CAS, and that CAS
-            // needs this row CLAIMED at its current version -- which the abandon below takes away.
+            // needs this row CLAIMED (even a quarantined one) -- which the abandon below takes away. So
+            // this is safe at ANY age, replayable or not, quarantined or not (§request-void, M2).
             return await AbandonAsync(store, session, intentId, ct);
         }
 
@@ -232,12 +233,12 @@ public sealed partial class FiatRailProvider
                 },
                 "A payment under this request key may already have been made; follow it instead of starting a new one.");
 
-    /// <summary>409 INTENT_NEEDS_REVIEW whose <c>result</c> reveals the intent (never <c>voided</c>), so the caller keeps the key and can name it.</summary>
+    /// <summary>409 INTENT_NEEDS_REVIEW for an unattached row that is no longer CLAIMED; <c>result</c> reveals the intent (never <c>voided</c>).</summary>
     private async Task<AZOAResult<FiatCheckoutVoidResult>> NeedsReviewAsync(
         IServiceScope scope, HostedSession session, CancellationToken ct)
     {
         _logger.LogError(
-            "Funding intent {IntentId} could not be voided: its unattached payment page needs operator reconciliation.",
+            "Funding intent {IntentId} could not be voided: it has no payment page but is no longer claimed, and needs operator reconciliation.",
             session.Id);
         var projection = await ProjectAsync(scope, session, provider: null, resumed: true, ct);
         return AZOAResult<FiatCheckoutVoidResult>.FailureWithCode(

@@ -1027,8 +1027,11 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
         var status = FiatIntentStatuses.FromSessionState(session.State);
         var stripeComplete = string.Equals(provider?.Status, "complete", StringComparison.OrdinalIgnoreCase);
 
-        // Stripe finished the page before the webhook moved the claim: the payer is done, not waiting.
-        if (stripeComplete && status is FiatIntentStatuses.Starting or FiatIntentStatuses.AwaitingPayment)
+        // A fresh Stripe "complete" outranks the row's word (even "expired") unless the row already recorded
+        // how this page ended; see Providers/Fiat/AGENTS.md §same-key-replay-codes (LOW-3).
+        var rowRecordedTheEnd = status == FiatIntentStatuses.Complete
+            || (status == FiatIntentStatuses.Failed && settlement != FiatSettlementStates.PaymentReceived);
+        if (stripeComplete && !rowRecordedTheEnd)
             status = FiatIntentStatuses.Processing;
 
         // The page is handed back only while Stripe would still take a payment on it; a terminal,

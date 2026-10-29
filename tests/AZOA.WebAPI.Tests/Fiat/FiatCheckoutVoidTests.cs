@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Fiat.OffRamp;
 using FluentAssertions;
@@ -110,6 +111,9 @@ public sealed class FiatCheckoutVoidTests
             200, FiatVoidOutcomes.Revealed, null, FiatIntentStatuses.Failed, FiatSettlementStates.NotStarted, ExpectedStripeStatusAfter: "complete"),
         ["page expired and recorded by the webhook"] = new("expired", "unpaid", HostedSessionStates.Abandoned, PastExpiry, false, ExpireFault.None,
             200, FiatVoidOutcomes.Revealed, null, FiatIntentStatuses.Expired, FiatSettlementStates.PaymentFailed, ExpectedStripeStatusAfter: "expired"),
+        // LOW-3: "expired" would read as settled-and-unpaid; a fresh Stripe "complete" outranks the row.
+        ["row recorded expired but a fresh Stripe read says the payer completed it"] = new("complete", "paid", HostedSessionStates.Abandoned, PastExpiry, false, ExpireFault.None,
+            200, FiatVoidOutcomes.Revealed, null, FiatIntentStatuses.Processing, FiatSettlementStates.PaymentReceived, ExpectedStripeStatusAfter: "complete"),
         ["Stripe cannot be read"] = new(null, null, null, WithinLifetime, true, ExpireFault.None,
             503, null, AzoaErrorCodes.DependencyUnavailable),
         ["expire never reached Stripe and Stripe still reads open"] = new(null, null, null, WithinLifetime, false, ExpireFault.Unreachable,
@@ -188,28 +192,118 @@ public sealed class FiatCheckoutVoidTests
         intent.Should().BeEquivalentTo(read, "revealed carries the very projection GET returns");
     }
 
-    [Fact]
-    public async Task An_unattached_claim_past_its_replay_window_needs_review_and_is_left_alone()
+    /// <summary>Why no begin may replay an unattached claim's lost create any more.</summary>
+    public enum UnreplayableCause
+    {
+        /// <summary>The creation fence began more than 23 hours ago; Stripe may have pruned its idempotency key.</summary>
+        PastReplayWindow,
+
+        /// <summary>An operator quarantined the claim because its create may have reached Stripe.</summary>
+        Quarantined,
+    }
+
+    [Theory]
+    [InlineData(UnreplayableCause.PastReplayWindow)]
+    [InlineData(UnreplayableCause.Quarantined)]
+    public async Task An_unattached_claim_no_begin_can_replay_is_voided_and_a_later_begin_gets_REQUEST_VOIDED(UnreplayableCause cause)
     {
         var harness = new FiatCheckoutHarness();
         var subject = Guid.NewGuid();
         harness.Stripe.LoseNextCreateResponse = true;
         Unwrap(await harness.StartAsync(subject, "stale-key")).Http.Should().Be(503);
-        var claim = (await harness.RowForKeyAsync(subject, "stale-key"))!;
-        harness.Clock.Advance(TimeSpan.FromHours(24));
+        await MakeUnreplayableAsync(harness, (await harness.RowForKeyAsync(subject, "stale-key"))!, cause);
+        var stuck = Unwrap(await harness.StartAsync(subject, "stale-key"));
+        stuck.Body.Code.Should().Be(FiatConsumerErrors.IntentNeedsReviewCode, "begin still refuses to resume a create it cannot prove");
 
-        var voided = await harness.VoidAsync(subject, "stale-key");
+        var (http, body) = Unwrap(await harness.VoidAsync(subject, "stale-key"));
 
-        voided.Result.Should().BeOfType<ConflictObjectResult>();
-        var (http, body) = Unwrap(voided);
-        http.Should().Be(409);
-        body.Code.Should().Be(FiatConsumerErrors.IntentNeedsReviewCode);
-        body.Result!.Outcome.Should().Be(FiatVoidOutcomes.Revealed, "a 409 body must never read as voided");
-        body.Result.IntentId.Should().Be(Guid.ParseExact(claim.Id, "N"));
-        body.Result.Intent!.Status.Should().Be(FiatIntentStatuses.Starting);
-        var after = await harness.RowAsync(Guid.ParseExact(claim.Id, "N"));
-        after.State.Should().Be(HostedSessionStates.Claimed);
-        after.StateVersion.Should().Be(claim.StateVersion, "a void that needs an operator writes nothing");
+        http.Should().Be(200, "the void is the key holder's only exit; a 409 here traps the key forever");
+        body.Result!.Outcome.Should().Be(FiatVoidOutcomes.Voided);
+        var intentId = Guid.ParseExact((await harness.RowForKeyAsync(subject, "stale-key"))!.Id, "N");
+        body.Result.IntentId.Should().Be(intentId);
+        var row = await harness.RowAsync(intentId);
+        FiatCheckoutVoid.IsVoided(row).Should().BeTrue();
+        row.ProviderSessionId.Should().BeNull("nothing was ever attached, so no page URL ever left the node");
+        var resend = Unwrap(await harness.StartAsync(subject, "stale-key"));
+        resend.Http.Should().Be(409);
+        resend.Body.Code.Should().Be(FiatConsumerErrors.RequestVoidedCode);
+        resend.Body.Result.Should().BeNull();
+        harness.Stripe.SessionsCreated.Should().Be(1, "the lost create is never replayed");
+    }
+
+    public static TheoryData<UnreplayableCause, bool> LateAttachRaces() => new()
+    {
+        { UnreplayableCause.PastReplayWindow, false },
+        { UnreplayableCause.PastReplayWindow, true },
+        { UnreplayableCause.Quarantined, false },
+        { UnreplayableCause.Quarantined, true },
+    };
+
+    [Theory]
+    [MemberData(nameof(LateAttachRaces))]
+    public async Task A_late_attach_that_beats_the_void_on_an_unreplayable_claim_makes_the_void_re_decide_on_the_handed_out_page(
+        UnreplayableCause cause, bool payerPaysDuringTheExpire)
+    {
+        var harness = new FiatCheckoutHarness();
+        var subject = Guid.NewGuid();
+        var voidReachedItsCas = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseVoid = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<ActionResult<AZOAResult<FiatCheckoutVoidResult>>>? voiding = null;
+        harness.Store.BeforeTransition = async () =>
+        {
+            voidReachedItsCas.SetResult();
+            await releaseVoid.Task;
+        };
+        harness.Store.BeforeAttach = async () =>
+        {
+            // The create is in flight when the claim turns unreplayable; the void reads it unattached
+            // and stops at its abandon CAS, so the late original response attaches first.
+            await MakeUnreplayableAsync(harness, (await harness.RowForKeyAsync(subject, "late-key"))!, cause);
+            voiding = Task.Run(() => harness.VoidAsync(subject, "late-key"));
+            // A void that answers without trying its CAS must fail the test, not hang it.
+            await Task.WhenAny(voidReachedItsCas.Task, voiding);
+        };
+
+        var begin = Unwrap(await harness.StartAsync(subject, "late-key"));
+        harness.Stripe.NextExpireFault = payerPaysDuringTheExpire ? ExpireFault.PayerCompletesFirst : ExpireFault.None;
+        releaseVoid.SetResult();
+        var (voidHttp, voidBody) = Unwrap(await voiding!);
+
+        begin.Http.Should().Be(200, "the late original response won the attach");
+        var opened = begin.Body.Result!;
+        opened.PaymentUrl.Should().NotBeNull("the page was handed out");
+        voidHttp.Should().Be(200);
+        voidBody.Result!.IntentId.Should().Be(opened.IntentId);
+        harness.Stripe.ExpireExecutions.Should().Be(1, "the void lost its CAS, re-read the attached row and expired its page at Stripe");
+        var row = await harness.RowAsync(opened.IntentId);
+        if (payerPaysDuringTheExpire)
+        {
+            voidBody.Result.Outcome.Should().Be(FiatVoidOutcomes.Revealed, "a page that took a payment is never voided");
+            voidBody.Result.Intent!.Status.Should().Be(FiatIntentStatuses.Processing);
+            voidBody.Result.Intent.SettlementState.Should().Be(FiatSettlementStates.PaymentReceived);
+            FiatCheckoutVoid.IsVoided(row).Should().BeFalse();
+            return;
+        }
+
+        voidBody.Result.Outcome.Should().Be(FiatVoidOutcomes.Voided);
+        harness.Stripe.StatusOf(opened.IntentId).Should().Be("expired", "voided only once the handed-out page can no longer be paid");
+        FiatCheckoutVoid.IsVoided(row).Should().BeTrue();
+        Unwrap(await harness.StartAsync(subject, "late-key")).Body.Code.Should().Be(FiatConsumerErrors.RequestVoidedCode);
+    }
+
+    /// <summary>Turns an unattached claim into one <see cref="FiatHostedCreation.IsUnreplayable"/> refuses.</summary>
+    private static async Task MakeUnreplayableAsync(FiatCheckoutHarness harness, HostedSession claim, UnreplayableCause cause)
+    {
+        if (cause == UnreplayableCause.PastReplayWindow)
+        {
+            harness.Clock.Advance(FiatHostedCreation.ReplayWindow + TimeSpan.FromHours(1));
+            return;
+        }
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(10));
+        var quarantined = await harness.Store.ReconcileAdmissionAsync(
+            claim, Guid.NewGuid(), "create may have reached Stripe", providerSession: null, harness.Clock.GetUtcNow());
+        quarantined.Result!.CreationQuarantinedAt.Should().NotBeNull();
     }
 
     [Fact]

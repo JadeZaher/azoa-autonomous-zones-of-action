@@ -248,6 +248,27 @@ surrealforge migrate status
 Reads the `schema_migration` ledger. `dev-up` does this implicitly on every
 run; repeat invocations are no-ops when the ledger matches the on-disk files.
 
+**Critical: "A checkout.session.completed delivery reached funding intent …, which is voided/abandoned"**
+(`StripeWebhookInbox.FlagPaymentOnAbandonedIntent`). A paid-type Stripe event arrived for a checkout
+intent that is already `ABANDONED` — voided by its request key, or expired. The intent row is terminal
+and will not move, and the client was told the key is dead, so the person may have paid again on a
+fresh key. Do not assume whether the money was credited: the settlement handlers read the payment,
+not the intent's state.
+1. **Find the payment at Stripe.** Search the Dashboard for the intent id from the log: it is the
+   Checkout Session's `client_reference_id` and the PaymentIntent's `metadata.azoa_intent_id`
+   (`metadata.azoa_user_id` is the payer). Note whether it is `paid` or still clearing.
+2. **See what the node did.** `GET /api/operator/on-ramp-lots/intents/{intentId}` (Operator policy):
+   - `Issued` — units were credited. Look for a double payment in
+     `GET /api/operator/on-ramp-lots/accounts/{userId}/issued`; to give one back, refund it in the
+     Stripe Dashboard and the reversal pipeline takes back its units (`Services/Fiat/Reversal/AGENTS.md`).
+   - parked (listed by `GET /api/operator/on-ramp-lots`) — nothing was credited: refund or credit it
+     with `POST …/intents/{intentId}/refund` or `…/resume` and a reason (`Services/Fiat/OnRamp/AGENTS.md`).
+   - 404 — no lot: still clearing (wait for `async_payment_succeeded`), or a tenant float top-up
+     (admission key `payout-float:`; check the tenant's payout float). If nothing credited it, refund
+     it in the Stripe Dashboard or credit the account by hand, and record why.
+3. Record the intent id, Stripe payment id and decision. A voided or expired key should never take a
+   payment, so each occurrence is also a bug against `Providers/Fiat/AGENTS.md` §request-void.
+
 ---
 
 ## 4. Where to look for what

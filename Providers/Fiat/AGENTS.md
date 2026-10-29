@@ -47,7 +47,8 @@ record the fiat path never writes), so payout-account setups have their own Stri
 see `Services/Fiat/OffRamp/AGENTS.md` §account-recovery). Connected accounts carry
 `metadata[azoa_payout_claim]=<rowId>` and `metadata[azoa_user_id]` so that exit can find the one Stripe opened.
 Checkout claims have no operator exit: a new request key opens a new claim, and a Stripe session a lost response
-created expires unpaid (RV-L1-01). The key holder's own exit is the request-key void (§request-void).
+created expires unpaid (RV-L1-01). The key holder's own exit is the request-key void (§request-void), which
+abandons an unattached claim at any age — past the replay window and quarantined included.
 
 ## §expiry-pin — checkout `expires_at` is fixed per claim (D8, round 4)
 
@@ -88,8 +89,9 @@ message unchanged so this is additive for any caller that still only reads those
 - `REQUEST_KEY_IN_USE` — a different account's `OwnedBy`/`DrivenBy` check failed on this key.
 - `INTENT_FINISHED` — `HostedSessionStates.IsTerminal` on the claimed row; nothing left to resume.
 - `INTENT_EXPIRED` — see the proof rule below; nothing else may emit it.
-- `INTENT_NEEDS_REVIEW` — `FiatCreationVerdict.NeedsOperator`: the 23-hour replay window elapsed, or
-  the row is quarantined, with no provider session ever attached.
+- `INTENT_NEEDS_REVIEW` — `FiatCreationVerdict.NeedsOperator` on begin: the 23-hour replay window
+  elapsed, or the row is quarantined, with no provider session ever attached. (The void closes such a
+  claim instead; §request-void.)
 - `REQUEST_VOIDED` — the key was voided (§request-void); nothing was or can be paid under it.
 
 These five strings are a wire contract with the SDK (`sdk/azoa-wallet`) and the ArdaNova BFF; never
@@ -100,10 +102,11 @@ rename or repurpose them once shipped. Every controller switch that can see one 
 `INTENT_EXPIRED`, `REQUEST_VOIDED`: clients release the request key and unlock the form. So one of
 them may be sent only when the code path that emits it can PROVE the key's outcome is settled —
 nothing was or can be paid under it, or (`INTENT_FINISHED`) the intent is terminal and its `result`
-says exactly what was paid. `INTENT_NEEDS_REVIEW` is final for the request (stop resending) but NOT
-key-releasing: the unattached claim may still have a Stripe session behind it (a lost create
-response) that reconciliation can attach, so nothing proves the key dead; the client keeps the key
-and shows the intent named in `result`. Anything the node cannot prove gets a non-final answer — a
+says exactly what was paid. `INTENT_NEEDS_REVIEW` is final for the begin (stop resending) but NOT
+key-releasing: begin cannot prove the lost create never reached Stripe, so nothing proves the key
+dead; the client keeps the key and shows the intent named in `result`. Its exit is the void, which
+CAN close that claim — a page never attached can never be handed out — and answers `voided`
+(§request-void). Anything the node cannot prove gets a non-final answer — a
 200 projection, a 503, or the generic 409 `CONFLICT` — because a key-releasing code on a payment that
 is clearing is a double charge (the person pays again on a fresh key). The full same-key resend
 contract for checkout begin (`FiatRailProvider.BeginCheckoutAsync`; the SDK emulator mirrors this table):
@@ -127,7 +130,8 @@ envelope's `result`, exactly the `FiatCheckoutIntent` projection `GET /api/fiat/
 returns (`intentId`, `status`, `settlementState`, `paymentUrl: null`, `amountPaidMinorUnits`, ...), so a
 client that lost its first answer can tell a `complete`/`payment_received` intent from a failed one.
 `code`, HTTP status and `message` are unchanged; the field is additive (`FiatRailProvider.FinalConflict`).
-The void route's 409 `INTENT_NEEDS_REVIEW` carries `{outcome:"revealed", intentId, intent}` — never
+The void route answers 409 `INTENT_NEEDS_REVIEW` only for an unattached row that is no longer `CLAIMED`
+(a shape no begin produces); its body carries `{outcome:"revealed", intentId, intent}` — never
 `voided`. `REQUEST_VOIDED` and `REQUEST_KEY_IN_USE` stay `result: null`.
 
 Where it lives: the `FiatCreationVerdict.Attached` branch calls `ResumeAttachedAsync`, which re-reads
@@ -135,8 +139,17 @@ Stripe BEFORE deciding and, for a past-expiry `AwaitingSubject` page, settles it
 `SettleCheckoutSessionAsync` — the same expire-first classifier the void uses. The fence's verdict
 alone is not proof — it only says a Stripe session exists, which is exactly when something may have
 been paid. `ProjectAsync` hands back `paymentUrl` only while the intent is `awaiting_payment` and
-Stripe reads `open`, and reports `processing` once Stripe says `complete` even if the webhook has not
-moved the claim yet. `StripeGateway.SendAsync` maps every Stripe 409 (and the `idempotency_key_in_use`
+Stripe reads `open`.
+
+**A fresh `complete` outranks the row (LOW-3).** `ProjectAsync` reports `processing` whenever a fresh
+Stripe read says `complete` (paid OR unpaid), whatever the row says — including `expired`, which
+clients read as settled-and-unpaid and release the key on. Two row words survive it, because each
+already records how that page ended: `complete` (the webhook saw it paid; `settlementState` says
+whether the funds landed) and `failed` on an unpaid page (`checkout.session.async_payment_failed`
+leaves Stripe at exactly `complete` + `unpaid`, so overriding it would park a failed bank debit at
+`processing` forever). A `failed` row Stripe reads as paid contradicts itself and reads `processing`.
+
+`StripeGateway.SendAsync` maps every Stripe 409 (and the `idempotency_key_in_use`
 code) to the non-final `CONFLICT`, never to `RAIL_REFUSED`/400, which clients treat as final.
 
 ## §stripe-session-verdict — one classifier for "can anything still be paid on this page?"
@@ -198,20 +211,33 @@ state-version CAS — the same one begin already relies on.
 |---|---|---|
 | nothing admitted | tombstone written | 200 `{outcome:"voided", intentId:null}` |
 | already voided (tombstone / voided intent) | none | the same 200 as the first void (idempotent) |
-| `CLAIMED`, no page attached, replayable | CAS → `ABANDONED`/`VOIDED` | 200 `{outcome:"voided", intentId}` |
+| `CLAIMED`, no page attached — any age: replayable, past the replay window, quarantined or tokenless | CAS → `ABANDONED`/`VOIDED` | 200 `{outcome:"voided", intentId}` |
+| `CLAIMED`, no page attached, and a late attach wins the version race | the void re-reads and decides the attached row below | as for that row |
 | page attached, fresh Stripe read `expired` | CAS → `ABANDONED`/`VOIDED` | 200 voided |
 | page attached, fresh Stripe read `open` | expire at Stripe, then CAS → `ABANDONED`/`VOIDED` | 200 voided |
 | expire refused or lost, and a fresh read then says `complete`/`paid` | none | 200 `{outcome:"revealed", intentId, intent}` |
 | Stripe says `complete` (paid OR unpaid) or `paid` | none | 200 revealed |
 | intent `AWAITING_OUTCOME`, `RESUMING`, or terminal (not voided) | none | 200 revealed |
 | Stripe unreadable; expire failed and the re-read still says `open`; unknown status | none | 503 `DEPENDENCY_UNAVAILABLE` |
-| unattached claim quarantined, tokenless or past the replay window (`FiatHostedCreation.IsUnreplayable`) | none | 409 `INTENT_NEEDS_REVIEW`, `result: {outcome:"revealed", intentId, intent}` |
+| no page attached and the row is not `CLAIMED` (a shape no begin produces) | none | 409 `INTENT_NEEDS_REVIEW`, `result: {outcome:"revealed", intentId, intent}` |
 | key bound to another account | none | 409 `REQUEST_KEY_IN_USE` |
 
 `intent` on `revealed` is exactly the projection `GET /api/fiat/checkout/{userId}/{intentId}` returns.
-An unattached `CLAIMED` row is voidable even with its creation fence begun: the abandon CAS makes the
-attach impossible, so the page Stripe may hold for it is one nobody was or can be handed, and it
-lapses unpaid at its pinned `expires_at` (§expiry-pin).
+
+**Why an unattached claim is voidable at any age (M2).** A page URL leaves the node only after a won
+attach, and the attach (`TryAttachProviderSessionAsync`, both stores) requires `State == CLAIMED` —
+even on a quarantined row, where it otherwise skips the caller's version so a late original response
+can resolve the quarantine. The abandon CAS takes `CLAIMED` away, so after it no page can be attached
+and no URL can leave; a page Stripe may hold for the claim (a lost create response) is one nobody was
+or can be handed, and it lapses unpaid at its pinned `expires_at` (§expiry-pin). If the attach wins
+instead, the abandon loses its version CAS and the void re-decides the now-attached row with the single
+classifier (expire at Stripe, then void or reveal), so it never answers `voided` while a handed-out
+page is payable. The replay window and quarantine stay on BEGIN only: begin's job is to hand out a
+page, and past the window (or under quarantine) it cannot replay the create without risking a second
+Stripe object, nor prove the first one never landed — so it answers `INTENT_NEEDS_REVIEW`. The void
+needs neither proof because it hands nothing out. Before this, both begin and void answered 409 for
+such a claim, and the operator route (`HostedSessionReconciliationController`) refuses rows without a
+KYC attempt, so the key — and the person's device — was trapped forever.
 
 **Stripe expire.** `POST /v1/checkout/sessions/{id}/expire` with Idempotency-Key
 `azoa-fiat-checkout-expire-<intentId>-<stripeSessionId>` (`FiatCheckoutVoid.ExpireIdempotencyKey`),
@@ -221,6 +247,11 @@ settled by a fresh read, never assumed: `expired` → void, `complete`/`paid` �
 → 503. This is `SettleCheckoutSessionAsync` (§stripe-session-verdict), shared with the same-key resume. Liveness caveat: Stripe replays a stored answer for a reused key, so if the first expire
 drew a Stripe 500 the void keeps answering 503 (key kept, safe) until the page lapses at its pinned
 expiry, after which the read says `expired` and the void succeeds.
+
+**A payment on a voided or expired intent.** `StripeWebhookInbox` logs Critical ("… reached funding
+intent …, which is voided/abandoned") and leaves the terminal row alone. The on-ramp and tenant
+top-up handlers credit from the payment, not the intent's state, so the money may or may not have
+been credited; the operator steps are in `RUNBOOK.md` §3 (Common diagnostics).
 
 ## §settlement-read-failure — a read that cannot confirm state must fail, not guess
 
