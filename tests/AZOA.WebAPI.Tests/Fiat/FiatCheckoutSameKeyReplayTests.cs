@@ -147,6 +147,88 @@ public sealed class FiatCheckoutSameKeyReplayTests
         resumed.Should().BeEquivalentTo(read, "the resend carries the very projection GET returns");
     }
 
+    /// <summary>Past the 4-minute floor (35-minute pinned lifetime, 31-minute Stripe minimum) a claim can no longer be sent.</summary>
+    private static readonly TimeSpan PastTheCreationFloor = TimeSpan.FromMinutes(5);
+
+    [Fact]
+    public async Task A_resend_past_the_creation_floor_closes_the_claim_before_INTENT_EXPIRED_so_a_stalled_attach_hands_out_nothing()
+    {
+        var harness = new FiatCheckoutHarness();
+        var subject = Guid.NewGuid();
+        ActionResult<AZOAResult<FiatCheckoutIntent>>? resend = null;
+        harness.Store.BeforeAttach = async () =>
+        {
+            // The first send fenced at T0 and Stripe created its page, but its attach stalls past the floor.
+            harness.Clock.Advance(PastTheCreationFloor);
+            resend = await harness.StartAsync(subject, "stalled-key");
+        };
+
+        var stalled = Unwrap(await harness.StartAsync(subject, "stalled-key"));
+        var (resendHttp, resendBody) = Unwrap(resend!);
+
+        resendHttp.Should().Be(409);
+        resendBody.Code.Should().Be(FiatConsumerErrors.IntentExpiredCode);
+        resendBody.Result!.Status.Should().Be(FiatIntentStatuses.Starting, "the claim as the abandon found it: no page ever attached");
+        resendBody.Result.PaymentUrl.Should().BeNull();
+        stalled.Http.Should().Be(409, "the stalled attach lost to the abandon");
+        stalled.Body.Code.Should().Be(FiatConsumerErrors.RequestVoidedCode);
+        stalled.Body.Result.Should().BeNull("no page URL may leave the node for a key the client has released");
+        var row = (await harness.RowForKeyAsync(subject, "stalled-key"))!;
+        FiatCheckoutVoid.IsVoided(row).Should().BeTrue();
+        row.ProviderSessionId.Should().BeNull();
+        harness.Stripe.SessionsCreated.Should().Be(1);
+        harness.Stripe.StatusesFor(row.Id).Should().Equal(new[] { "expired" }, "the orphaned page nobody was handed is closed at Stripe");
+        Unwrap(await harness.StartAsync(subject, "stalled-key")).Body.Code.Should().Be(FiatConsumerErrors.RequestVoidedCode);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_stalled_attach_that_beats_the_floor_resends_abandon_makes_it_settle_the_handed_out_page_at_Stripe(bool payerPaysDuringTheExpire)
+    {
+        var harness = new FiatCheckoutHarness();
+        var subject = Guid.NewGuid();
+        var resendReachedItsCas = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<ActionResult<AZOAResult<FiatCheckoutIntent>>>? resending = null;
+        harness.Store.BeforeTransition = async () =>
+        {
+            resendReachedItsCas.SetResult();
+            await releaseResend.Task;
+        };
+        harness.Store.BeforeAttach = async () =>
+        {
+            // The resend finds the claim lapsed and stops at its abandon CAS; the stalled attach goes first.
+            harness.Clock.Advance(PastTheCreationFloor);
+            resending = Task.Run(() => harness.StartAsync(subject, "late-attach-key"));
+            // A resend that answers without trying its CAS must fail the test, not hang it.
+            await Task.WhenAny(resendReachedItsCas.Task, resending);
+        };
+
+        var stalled = Unwrap(await harness.StartAsync(subject, "late-attach-key"));
+        harness.Stripe.NextExpireFault = payerPaysDuringTheExpire ? ExpireFault.PayerCompletesFirst : ExpireFault.None;
+        releaseResend.SetResult();
+        var (resendHttp, resendBody) = Unwrap(await resending!);
+
+        stalled.Http.Should().Be(200, "the stalled attach won the version race");
+        var opened = stalled.Body.Result!;
+        opened.PaymentUrl.Should().NotBeNull();
+        harness.Stripe.ExpireExecutions.Should().Be(1, "the resend re-read the attached row and expired its page at Stripe before deciding");
+        if (payerPaysDuringTheExpire)
+        {
+            resendHttp.Should().Be(200, "a page that took a payment is never answered INTENT_EXPIRED");
+            resendBody.Result!.Status.Should().Be(FiatIntentStatuses.Processing);
+            resendBody.Result.SettlementState.Should().Be(FiatSettlementStates.PaymentReceived);
+            resendBody.Result.PaymentUrl.Should().BeNull();
+            return;
+        }
+
+        resendHttp.Should().Be(409);
+        resendBody.Code.Should().Be(FiatConsumerErrors.IntentExpiredCode);
+        resendBody.Result!.SettlementState.Should().Be(FiatSettlementStates.PaymentFailed);
+        harness.Stripe.StatusOf(opened.IntentId).Should().Be("expired", "INTENT_EXPIRED only once the handed-out page can no longer be paid");
+    }
+
     [Fact]
     public async Task A_fresh_begin_answers_from_the_create_itself_so_a_failing_read_cannot_503_an_opened_page()
     {

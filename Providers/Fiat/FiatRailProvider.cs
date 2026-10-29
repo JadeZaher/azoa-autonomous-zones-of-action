@@ -658,8 +658,7 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
         // claim-keyed create sends identical parameters; see Providers/Fiat/AGENTS.md §expiry-pin.
         var expiresAt = PinnedCheckoutExpiry(session.CreationStartedAt ?? now, checkout.SessionExpiryMinutes);
         if (expiresAt - now < StripeMinimumCheckoutLifetime)
-            return FinalConflict(await ProjectAsync(scope, session, provider: null, resumed: true, ct),
-                ExpiredMessage, FiatConsumerErrors.IntentExpiredCode);
+            return await CloseLapsedClaimAsync(scope, store, session, sessionId, now, ct);
         var created = await _gateway.CreateCheckoutSessionAsync(
             _options.CredentialsFor(_environment),
             new StripeCheckoutSessionRequest
@@ -934,7 +933,7 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
     /// there first); see <c>Providers/Fiat/AGENTS.md</c> §same-key-replay-codes.
     /// </summary>
     private async Task<AZOAResult<FiatCheckoutIntent>> ResumeAttachedAsync(
-        IServiceScope scope, HostedSession session, DateTimeOffset now, CancellationToken ct)
+        IServiceScope scope, HostedSession session, DateTimeOffset now, CancellationToken ct, bool claimLapsed = false)
     {
         // The fence may have re-read a row a webhook terminalised between the claim and now.
         if (HostedSessionStates.IsTerminal(session.State))
@@ -945,10 +944,11 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 read.Message, read.Code ?? AzoaErrorCodes.DependencyUnavailable);
 
-        // Only a page still awaiting its payer and past expiry can earn INTENT_EXPIRED. AwaitingOutcome /
-        // Resuming: the node already saw a payment clearing. Inside its lifetime: the page is live.
-        if (!string.Equals(session.State, HostedSessionStates.AwaitingSubject, StringComparison.Ordinal)
-            || session.ExpiresAt is not { } expiresAt || expiresAt > now)
+        // Only a page still awaiting its payer and past expiry (or whose claim lapsed under this request,
+        // claimLapsed) can earn INTENT_EXPIRED. AwaitingOutcome / Resuming: the node already saw a payment
+        // clearing. Inside its lifetime: the page is live.
+        var pastExpiry = claimLapsed || session.ExpiresAt is { } expiresAt && expiresAt <= now;
+        if (!string.Equals(session.State, HostedSessionStates.AwaitingSubject, StringComparison.Ordinal) || !pastExpiry)
             return await ProjectAsync(scope, session, read.Result, resumed: true, ct);
 
         // ExpiresAt IS Stripe's expires_at, so a clock past it proves nothing: a payer mid-3DS keeps the
@@ -964,6 +964,51 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
                 settled.Message ?? "Your payment status could not be confirmed right now. Try again shortly.",
                 AzoaErrorCodes.DependencyUnavailable),
         };
+    }
+
+    /// <summary>
+    /// An unattached claim whose pinned expiry is inside Stripe's floor: closed with the void's abandon CAS
+    /// BEFORE INTENT_EXPIRED, so an earlier send's stalled attach loses; see <c>Providers/Fiat/AGENTS.md</c> §expiry-pin.
+    /// </summary>
+    private async Task<AZOAResult<FiatCheckoutIntent>> CloseLapsedClaimAsync(
+        IServiceScope scope, IHostedSessionStore store, HostedSession session, Guid intentId, DateTimeOffset now, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < VoidAttempts; attempt++)
+        {
+            var abandoned = await TryAbandonAsync(store, session, intentId, ct);
+            if (abandoned.IsError)
+                return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
+            if (abandoned.Result is not null)
+            {
+                _logger.LogInformation(
+                    "Funding intent {IntentId} lapsed before its payment page could be created; its claim was closed.", session.Id);
+                // The claim as the abandon found it (`starting`, no page): the proof a client reads as "never started".
+                return FinalConflict(await ProjectAsync(scope, session, provider: null, resumed: true, ct),
+                    ExpiredMessage, FiatConsumerErrors.IntentExpiredCode);
+            }
+
+            // Lost the version CAS to a stalled attach, a webhook or a void: decide again on the row it left.
+            var reread = await store.GetByIdAsync(intentId, ct);
+            if (reread.IsError || reread.Result is null)
+                return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
+            session = reread.Result;
+
+            if (FiatCheckoutVoid.IsVoided(session))
+                return FiatConsumerErrors.RequestVoided<FiatCheckoutIntent>();
+            if (HostedSessionStates.IsTerminal(session.State))
+                return FinalConflict(await ProjectAsync(scope, session, resumed: true, ct), FinishedMessage, FiatConsumerErrors.IntentFinishedCode);
+
+            // The stalled attach won, so its page may be out: expire it at Stripe first (§stripe-session-verdict).
+            if (!string.IsNullOrWhiteSpace(session.ProviderSessionId))
+                return await ResumeAttachedAsync(scope, session, now, ct, claimLapsed: true);
+
+            // Unattached but no longer CLAIMED: a shape no begin produces (the void answers the same).
+            if (!string.Equals(session.State, HostedSessionStates.Claimed, StringComparison.Ordinal))
+                return FinalConflict(await ProjectAsync(scope, session, provider: null, resumed: true, ct),
+                    NeedsReviewMessage, FiatConsumerErrors.IntentNeedsReviewCode);
+        }
+
+        return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
     }
 
     /// <summary>

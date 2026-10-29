@@ -63,6 +63,21 @@ reject the short lifetime — so the node answers "This payment page has expired
 payment." (Conflict) instead of looping on a create Stripe refuses. A new request key opens a new
 claim; a Stripe session the lost response did create simply expires unpaid (nobody holds its URL).
 
+**Close before answering (LOW-1, final gate).** `INTENT_EXPIRED` is key-releasing, so that answer may
+not be a read. An earlier send of the same claim can still be mid-create — fenced at T0, its Stripe
+create landed, its attach stalled past the floor — and an attach at the unchanged version would hand
+out a payable page for a key the client has just released. `CloseLapsedClaimAsync` therefore runs the
+void's abandon CAS (`TryAbandonAsync`, the same write as §request-void) on the fenced `CLAIMED` row
+first, and answers `INTENT_EXPIRED` only when it wins; the stalled attach then fails its CAS and takes
+begin's existing expire-the-orphan path (`REQUEST_VOIDED`, page expired at Stripe). If the abandon
+loses, the row is re-read and decided: voided → `REQUEST_VOIDED`; terminal → `INTENT_FINISHED`; a page
+attached (the stalled attach won) → `ResumeAttachedAsync(claimLapsed: true)`, i.e. expire it at Stripe
+and decide with the single classifier (§stripe-session-verdict) whatever the clock says; unattached
+but not `CLAIMED` → `INTENT_NEEDS_REVIEW`; still an unattached claim at a new version → retry (bounded,
+then `RAIL_BUSY`). The winning answer's `result` is the claim as the abandon found it (`starting`, no
+page), which is the "never started" proof clients key on; a later GET reads the same row `expired`, and
+a later resend gets `REQUEST_VOIDED`.
+
 ## §webhook-secrets — platform and Connect endpoints (F-M2, round 4)
 
 Stripe signs connected-account events (`payout.*`, `account.*` with an `account` field) on a
@@ -119,7 +134,7 @@ contract for checkout begin (`FiatRailProvider.BeginCheckoutAsync`; the SDK emul
 | intent terminal | 409 `INTENT_FINISHED`, `result` = the projection (503 if that projection's Stripe read fails) |
 | page attached + past expiry, intent `AwaitingSubject`, fresh read `expired` unpaid | 409 `INTENT_EXPIRED`, `result` = the projection |
 | page attached + past expiry, intent `AwaitingSubject`, fresh read still `open` | expire it AT STRIPE first (§stripe-session-verdict), then: `expired` → 409 `INTENT_EXPIRED`; `complete`/`paid` → 200 projection, `paymentUrl: null`; expire failed and the re-read still `open`, unknown status, or unreadable → 503 `DEPENDENCY_UNAVAILABLE` |
-| no page ever created and the pinned expiry is inside the 31-minute floor (§expiry-pin) | 409 `INTENT_EXPIRED` (nothing was ever payable), `result` = the projection |
+| no page ever attached and the pinned expiry is inside the 31-minute floor (§expiry-pin) | the void's abandon CAS first; won → 409 `INTENT_EXPIRED` (nothing was or can be payable), `result` = the claim's projection as the abandon found it (`starting`); lost to a stalled attach → that page is settled at Stripe as in the row above |
 | needs operator | 409 `INTENT_NEEDS_REVIEW` (not key-releasing), `result` = the projection |
 | key voided (tombstone or voided intent), including a void that won the race against this begin | 409 `REQUEST_VOIDED`, `result: null` |
 | key bound to another account | 409 `REQUEST_KEY_IN_USE`, `result: null` (never the other account's intent) |
@@ -200,7 +215,8 @@ state-version CAS — the same one begin already relies on.
    `CLAIMED` at the observed version. The void's only write on an admitted row is
    `TryTransitionAsync(→ ABANDONED, VOIDED, VOIDED_AFTER_ADMISSION)` at the version it read. Exactly
    one lands; the loser re-reads. A void that loses re-decides on the new row (bounded attempts, then
-   503 `RAIL_BUSY`).
+   503 `RAIL_BUSY`). Begin's lapsed-claim path (§expiry-pin) makes the very same write before it answers
+   `INTENT_EXPIRED`.
 3. Begin checks `FiatCheckoutVoid.IsVoided` after the claim, after the fence verdict, and after a lost
    attach. In the last case its Stripe create already ran; the page was never handed out (a URL leaves
    only after a won attach), and begin expires it at Stripe best-effort.

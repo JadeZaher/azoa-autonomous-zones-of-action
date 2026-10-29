@@ -186,14 +186,7 @@ public sealed partial class FiatRailProvider
     private async Task<AZOAResult<FiatCheckoutVoidResult>?> AbandonAsync(
         IHostedSessionStore store, HostedSession session, Guid intentId, CancellationToken ct)
     {
-        var abandoned = await store.TryTransitionAsync(
-            intentId,
-            session.StateVersion,
-            HostedSessionStates.Abandoned,
-            FiatCheckoutVoid.VoidedOutcome,
-            FiatCheckoutVoid.VoidedAfterAdmission,
-            resumeTargetId: null,
-            ct);
+        var abandoned = await TryAbandonAsync(store, session, intentId, ct);
         if (abandoned.IsError)
             return VoidBusy();
         if (abandoned.Result is null)
@@ -202,6 +195,18 @@ public sealed partial class FiatRailProvider
         _logger.LogInformation("Funding intent {IntentId} was voided by its request key.", session.Id);
         return Voided(intentId);
     }
+
+    /// <summary>The abandon CAS itself (→ ABANDONED / VOIDED / VOIDED_AFTER_ADMISSION at the read version); a null result lost the race.</summary>
+    private static Task<AZOAResult<HostedSession>> TryAbandonAsync(
+        IHostedSessionStore store, HostedSession session, Guid intentId, CancellationToken ct) =>
+        store.TryTransitionAsync(
+            intentId,
+            session.StateVersion,
+            HostedSessionStates.Abandoned,
+            FiatCheckoutVoid.VoidedOutcome,
+            FiatCheckoutVoid.VoidedAfterAdmission,
+            resumeTargetId: null,
+            ct);
 
     /// <summary>Begin's cleanup when a void abandoned its claim mid-create: expire the page nobody was handed.</summary>
     private async Task ExpireOrphanedPageAsync(string intentId, string providerSessionId, CancellationToken ct)
