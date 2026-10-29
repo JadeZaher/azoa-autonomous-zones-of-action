@@ -19,11 +19,14 @@ public sealed class ClaimInviteReturnTokenToTenantStartupTests
     private const string RefusalMessage =
         "Tenant:ClaimInvites:ReturnTokenToTenant is refused outside Development/IntegrationTest.";
 
-    /// <summary>The released service runs as Staging (never IsProduction()), so Staging must be refused too, not only Production.</summary>
+    /// <summary>
+    /// The released service runs as Staging, the environment the guard must catch. Production takes the same
+    /// branch, but this factory can't reach it there: Production's SurrealDB auth-scope check
+    /// (Program.cs, AddSurrealForge) refuses the test endpoint first.
+    /// </summary>
     [Theory]
     [InlineData("Staging")]
-    [InlineData("Production")]
-    public async Task A_staging_or_production_host_refuses_to_boot_with_the_token_returned(string environmentName)
+    public async Task A_staging_host_refuses_to_boot_with_the_token_returned(string environmentName)
     {
         var factory = new ReturnTokenEnabledFactory(environmentName);
         try
@@ -40,11 +43,14 @@ public sealed class ClaimInviteReturnTokenToTenantStartupTests
         }
     }
 
-    /// <summary>The e2e compose stack runs as Development with this flag set; a developer's local run does too. Neither must regress.</summary>
+    /// <summary>
+    /// IntegrationTest must keep booting with the flag set. Development with the flag is proven by the CI e2e job:
+    /// docker-compose.e2e.yml runs as Development with it on. This factory can't boot Development, because the
+    /// fiat rail requires Fiat:Test:SecretKey there.
+    /// </summary>
     [Theory]
-    [InlineData("Development")]
     [InlineData("IntegrationTest")]
-    public async Task A_development_or_integration_test_host_boots_with_the_token_returned(string environmentName)
+    public async Task An_integration_test_host_boots_with_the_token_returned(string environmentName)
     {
         var factory = new ReturnTokenEnabledFactory(environmentName);
         try
