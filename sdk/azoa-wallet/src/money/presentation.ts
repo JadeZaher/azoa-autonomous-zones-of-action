@@ -171,6 +171,12 @@ export interface MoneyMessages {
     resume: Record<PendingKind, string>;
     discard: string;
     discarded: string;
+    /** Checkout discard: the node voided the key, so nothing can be paid under it. */
+    voided: string;
+    /** Checkout discard: the node says a payment was or may be made under the key, so it was kept and is shown. */
+    revealed: string;
+    /** Checkout discard: the node could not decide (provider unreadable, busy), so the key was kept. */
+    discardUnconfirmed: string;
     /** The saved request was resolved or discarded in another window before this one resent it; nothing was sent. */
     superseded: string;
     /** Another window saved a different request in its place before this one resent it; nothing was sent. */
@@ -285,13 +291,16 @@ export const defaultMoneyMessages: MoneyMessages = {
       sale: amount => (amount ? `A sale for ${amount}` : "A sale"),
     },
     detail: {
-      checkout: "Resuming reopens that same payment instead of starting a second one. Discard it only if you want a separate payment; a payment page you already completed still counts.",
+      checkout: "Resuming reopens that same payment instead of starting a second one. Discarding cancels it with the payment service first; if it may already have been paid, it is kept and shown to you instead.",
       cashOut: "Resuming sends the same request again, and it is paid at most once. If it is already in the history, it was received. Discard it only if you want a separate cash-out.",
       sale: "Resuming sends the same sale again; it completes at most once. Discard it only if you want a separate sale.",
     },
     resume: { checkout: "Resume that payment", cashOut: "Resume that cash-out", sale: "Resume that sale" },
     discard: "Discard it and start a new request",
     discarded: "The unconfirmed request was discarded. Enter an amount to start a new one.",
+    voided: "That payment was cancelled with the payment service, so nothing can be paid under it. Enter an amount to start a new one.",
+    revealed: "That payment may already have gone through, so it was kept instead of discarded. Nothing new will be charged; its status is below.",
+    discardUnconfirmed: "That payment could not be checked with the payment service right now, so it was kept. Nothing new was started; try discarding it again shortly.",
     superseded: "That request was resolved or discarded in another window, so nothing was sent from here.",
     replaced: "Another window replaced that request with a new one, so nothing was sent from here.",
     checkAgain: "Check again",

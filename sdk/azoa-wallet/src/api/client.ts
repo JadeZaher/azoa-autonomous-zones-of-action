@@ -1654,6 +1654,21 @@ export interface FiatCheckoutIntent {
   expiresAt: string | null;
 }
 
+/** The two 200 answers a request-key void can give (mirrors `FiatVoidOutcomes`); wire values. */
+export type FiatCheckoutVoidOutcome = "voided" | "revealed";
+
+/**
+ * Body of a 200 from the request-key void (mirrors `FiatCheckoutVoidResult`). `voided`: nothing was or
+ * can be paid under the key. `revealed`: something was or may be paid; follow `intent`.
+ */
+export interface FiatCheckoutVoidResult {
+  outcome: FiatCheckoutVoidOutcome;
+  /** The intent admitted under the key; null when nothing ever was. */
+  intentId: string | null;
+  /** On `revealed` only: the projection `getFiatCheckoutIntent` returns. */
+  intent?: FiatCheckoutIntent;
+}
+
 // ─── Fiat off-ramp / cash-out (FiatPayoutController) ───
 // The "cash out" surface: set up where a person's money should go, see what
 // they can take out, and take it out. A first-party login may only cash out
@@ -3310,6 +3325,20 @@ export class AzoaApiClient {
     assertUuid(userId, "userId");
     assertUuid(intentId, "intentId");
     return this.request<FiatCheckoutIntent>("GET", API_PATHS.FIAT_CHECKOUT_GET(userId, intentId));
+  }
+
+  /**
+   * Voids `requestKey` so nothing can ever be paid under it, or reveals the payment already made
+   * under it. Only a 200 `voided` lets the caller forget the key; anything else means keep it.
+   * Idempotent. Same principal rules as {@link startFiatCheckout}.
+   */
+  async voidFiatCheckoutRequest(
+    userId: string,
+    requestKey: string
+  ): Promise<Result<FiatCheckoutVoidResult, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(requestKey, "requestKey");
+    return this.request<FiatCheckoutVoidResult>("POST", API_PATHS.FIAT_CHECKOUT_VOID_REQUEST(userId, requestKey));
   }
 
   // ─── Fiat off-ramp / cash-out (FiatPayoutController) ───

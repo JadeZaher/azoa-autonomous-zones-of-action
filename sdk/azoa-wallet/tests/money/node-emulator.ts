@@ -3,27 +3,33 @@ import type { CashOutView, FiatCheckoutIntent, FiatCheckoutStatus, FiatSettlemen
 
 /**
  * A fetch-level fake of the AZOA node's first-party money routes, rebuilt from the node's own code paths
- * (read-only, oasis-sleek): checkout status/settlement from `FiatRailProvider.ProjectAsync` + `ClassifySession`,
- * the same-key resend contract of `FiatRailProvider.BeginCheckoutAsync` (the table in `Providers/Fiat/AGENTS.md`,
- * branch feat/fiat-replay-codes, cee103bd), webhook transitions from `StripeWebhookInbox.ApplyAsync`, cash-out
- * claims from `OffRampService.StartAsync`. Only the process edge (HTTP) is fake.
+ * (read-only, oasis-sleek branch feat/fiat-replay-codes, re-checked at f2cb4fe8): checkout status/settlement from
+ * `FiatRailProvider.ProjectAsync` + `ClassifySession`, the same-key resend contract of `BeginCheckoutAsync` (the table
+ * in `Providers/Fiat/AGENTS.md` §same-key-replay-codes), the request-key void of `FiatRailProvider.Void.cs`
+ * (§request-void), webhook transitions from `StripeWebhookInbox.ApplyAsync`, cash-out claims from
+ * `OffRampService.StartAsync`. Envelopes are `AZOAResult` as serialized: camelCase, `code` omitted when null, `detail`
+ * always present. Only the process edge (HTTP) is fake.
  */
 export interface NodeEmulator {
   baseUrl: string;
   token: string;
   userId: string;
   fetch: typeof fetch;
-  /** Every checkout the node admitted (a reused request key never adds one). */
+  /** Every checkout the node admitted (a reused request key never adds one; a void's tombstone is not one). */
   readonly admissions: readonly Admission[];
   /** Every cash-out row the node claimed, newest first (refused ones included, as the ledger keeps them). */
   readonly cashOuts: readonly CashOutView[];
   /** Every request that reached the node. */
   readonly requests: readonly { method: string; path: string; body: Record<string, unknown> }[];
+  /** Every answer the node gave, in order (whether or not it reached the caller). */
+  readonly answers: readonly { method: string; path: string; status: number; code: string | null }[];
   /** The next POST whose path matches is processed, then its response is lost on the wire; defaults to a checkout start. */
   loseNextResponse(path?: RegExp): void;
+  /** The next POST whose path matches waits on the wire, before the node sees it, until the returned release is called. */
+  holdNextRequest(path?: RegExp): () => void;
   /** The person's consent for the acting tenant is gone: fiat routes answer the consent gate's 403. */
   revokeConsent(): void;
-  /** The operator switched the payment rail off: checkout begin answers 503 `PAYMENTS_NOT_CONFIGURED`; existing intents still read. */
+  /** The operator switched the payment rail off: checkout begin and void answer 503 `PAYMENTS_NOT_CONFIGURED`; existing intents still read. */
   disablePayments(): void;
   /** Applies payment-timeline events to one intent now. */
   apply(intentId: string, ...events: CheckoutEvent[]): void;
@@ -31,6 +37,8 @@ export interface NodeEmulator {
   scriptReads(intentId: string, steps: CheckoutEvent[][]): void;
   /** How many times `intentId` was read. */
   readsOf(intentId: string): number;
+  /** Whether a void closed `intentId` (its row is ABANDONED with `authoritative_outcome=VOIDED`). */
+  isVoided(intentId: string): boolean;
 }
 
 export interface Admission {
@@ -42,7 +50,7 @@ export interface Admission {
 
 /** One step of the real payment timeline. */
 export type CheckoutEvent =
-  /** The person paid by card: Stripe's session is complete + paid; no webhook yet (the node still says awaiting_payment). */
+  /** The person paid by card: Stripe's session is complete + paid; no webhook yet (the node projects `processing`). */
   | "pay"
   /** The person finished with an asynchronous method (ACH): complete + unpaid. */
   | "payAsync"
@@ -58,24 +66,28 @@ export type CheckoutEvent =
   | "pageLapsed"
   /** The settlement inbox row was applied by the issuance handler (a separate row, later than the webhook). */
   | "applyFunds"
-  /** The node's Stripe re-read starts failing: reads and same-key resends answer 503 DEPENDENCY_UNAVAILABLE. */
+  /** The node's Stripe re-read starts failing: reads, same-key resends and voids answer 503 DEPENDENCY_UNAVAILABLE. */
   | "stripeDown"
   | "stripeUp"
+  /** Stripe refuses or loses every expire for this page (a Stripe 500 replayed under the expire's idempotency key). */
+  | "expireFails"
   /** `FiatCreationVerdict.NeedsOperator`: the creation fence cannot decide; an operator must. */
   | "needsOperator"
   /** The operator closed the reviewed intent (nothing was ever payable): it is terminal. */
   | "operatorClosed"
   /** The operator cleared the review and the intent's page can be paid again. */
   | "operatorResumed"
-  /** Stripe answers `idempotency_key_in_use`: a same-key creation request is still in flight. */
+  /** Stripe answers `idempotency_key_in_use`: a same-key creation request is still in flight (no page attached yet). */
   | "creationInFlight"
-  | "creationSettled";
+  | "creationSettled"
+  /** The admission row under this key belongs to another account (`OwnedBy`/`DrivenBy` fail). `BuildAdmissionKey` embeds the subject, so this is unreachable in practice; it exercises the code. */
+  | "otherAccount";
 
 export interface NodeEmulatorOptions {
   baseUrl?: string;
   /** Milliseconds every answer takes. */
   latencyMs?: number;
-  /** Fields merged into every result object, as a node that later adds fields would send them. */
+  /** Fields merged into every result object (and a revealed void's `intent`), as a node that later adds fields would send them. */
   extraFields?: Record<string, unknown>;
   /** What the person may cash out, in minor units. */
   balanceMinorUnits?: number;
@@ -89,19 +101,29 @@ type HostedState = "AwaitingSubject" | "AwaitingOutcome" | "Completed" | "Failed
 
 interface HostedSession {
   admission: Admission;
+  /** The subject the admission row belongs to. */
+  owner: string;
   state: HostedState;
   stripe: { status: "open" | "complete" | "expired"; paymentStatus: "unpaid" | "paid" };
   stripeReadable: boolean;
+  expireFails: boolean;
   fundsApplied: boolean;
   needsOperator: boolean;
   creationInFlight: boolean;
+  /** A void closed this row (ABANDONED, VOIDED_AFTER_ADMISSION); no begin may resume it. */
+  voided: boolean;
   expiresAt: number;
 }
 
 const TENANT_ID = "7a1d3a52-5a4c-4c3e-9a51-0d6c1f0b9e21";
+const VOIDED_MESSAGE = "Nothing can be paid under this request key.";
+const REVEALED_MESSAGE = "A payment under this request key may already have been made; follow it instead of starting a new one.";
 
 /** `POST /api/fiat/checkout/{userId}`. */
 export const CHECKOUT_START = /^\/api\/fiat\/checkout\/[^/]+$/;
+
+/** `POST /api/fiat/checkout/{userId}/requests/{requestKey}/void`. */
+export const CHECKOUT_VOID = /^\/api\/fiat\/checkout\/([^/]+)\/requests\/([^/]+)\/void$/;
 
 /** `POST /api/fiat/payouts/{userId}` (not the payout-account setup under it). */
 export const CASH_OUT_START = /^\/api\/fiat\/payouts\/[^/]+$/;
@@ -124,13 +146,17 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
   const paymentOrigin = options.paymentOrigin ?? "https://checkout.stripe.com";
   const sessionsByKey = new Map<string, HostedSession>();
   const sessionsById = new Map<string, HostedSession>();
+  /** Keys a void claimed before anything was admitted (VOIDED_BEFORE_ADMISSION). */
+  const tombstones = new Set<string>();
   const admissions: Admission[] = [];
   const cashOutsByKey = new Map<string, CashOutView>();
   const cashOuts: CashOutView[] = [];
   const scripts = new Map<string, CheckoutEvent[][]>();
   const reads = new Map<string, number>();
   const requests: { method: string; path: string; body: Record<string, unknown> }[] = [];
+  const answers: { method: string; path: string; status: number; code: string | null }[] = [];
   let loseNextFor: RegExp | null = null;
+  let holdNextFor: { path: RegExp; gate: Promise<void> } | null = null;
   let consentRevoked = false;
   let paymentsDisabled = false;
 
@@ -139,10 +165,12 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     if (Array.isArray(value)) return value.map(withExtras);
     return value !== null && typeof value === "object" ? { ...value, ...options.extraFields } : value;
   };
-  const ok = (result: unknown) => json(200, { isError: false, message: "Success", result: withExtras(result) });
-  const fail = (status: number, message: string, code?: string) => json(status, { isError: true, message, ...(code ? { code } : {}) });
+  const ok = (result: unknown, message = "Success") => json(200, { isError: false, message, result: withExtras(result), detail: null });
+  const fail = (status: number, message: string, code?: string) => json(status, { isError: true, message, result: null, ...(code ? { code } : {}), detail: null });
   /** §settlement-read-failure: a projection whose Stripe re-read failed is a retryable 503, never a 200 `not_started`. */
-  const dependencyUnavailable = () => fail(503, "The payment provider could not be reached. Try again shortly.", "DEPENDENCY_UNAVAILABLE");
+  const dependencyUnavailable = () => fail(503, "Your payment status could not be confirmed right now. Try again shortly.", "DEPENDENCY_UNAVAILABLE");
+  const requestVoided = () => fail(409, "This payment request was cancelled and nothing can be paid under it. Start a new payment.", "REQUEST_VOIDED");
+  const keyInUse = () => fail(409, "That request key is already in use.", "REQUEST_KEY_IN_USE");
 
   const apply = (intentId: string, ...events: CheckoutEvent[]) => {
     const session = sessionsById.get(intentId);
@@ -176,6 +204,20 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
       return ok([{ id: randomUUID(), userId, chainType: "algorand", address: "ALGOADDRESS", isDefault: true }]);
     }
 
+    // `FiatCheckoutController.VoidRequest`, in its order: key checks, rail resolution, then the subject gates Start uses.
+    const voidRoute = method === "POST" ? CHECKOUT_VOID.exec(path) : null;
+    if (voidRoute) {
+      const rawKey = voidRoute[2]!;
+      // Routing leaves an encoded '/' as "%2F", which would name a different key than begin stored.
+      if (/%2F/i.test(rawKey)) return fail(400, "A request key containing '/' cannot be voided through this route.", "INVALID_REQUEST");
+      const requestKey = decodeURIComponent(rawKey);
+      if (requestKey.trim() === "") return fail(400, "A request key is required.", "INVALID_REQUEST");
+      if (paymentsDisabled) return fail(503, "Adding funds is not configured on this node.", "PAYMENTS_NOT_CONFIGURED");
+      if (voidRoute[1] !== userId) return fail(403, "You can only add funds to your own account.", "FORBIDDEN");
+      if (consentRevoked) return consentGateRefusal();
+      return voidRequest(requestKey);
+    }
+
     const checkout = /^\/api\/fiat\/checkout\/([^/]+)(?:\/([^/]+))?$/.exec(path);
     if (checkout) {
       if (checkout[1] !== userId) return fail(403, "You can only add funds to your own account.", "FORBIDDEN");
@@ -185,7 +227,7 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
       reads.set(intentId, (reads.get(intentId) ?? 0) + 1);
       const session = sessionsById.get(intentId);
       // GetIntentAsync: one refusal for "no such intent" and "somebody else's".
-      if (!session) return fail(404, "That payment could not be found.", "NOT_FOUND");
+      if (!session || session.owner !== userId) return fail(404, "That payment could not be found.", "NOT_FOUND");
       for (const event of scripts.get(intentId)?.shift() ?? []) applyEvent(session, event);
       if (!session.stripeReadable) return dependencyUnavailable();
       return ok(project(session, true));
@@ -216,10 +258,18 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
   };
 
   const fetchStub = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    const path = new URL(String(input)).pathname;
+    if (method === "POST" && holdNextFor?.path.test(path)) {
+      const { gate } = holdNextFor;
+      holdNextFor = null;
+      await gate;
+    }
     if (options.latencyMs) await new Promise(resolve => setTimeout(resolve, options.latencyMs));
     const response = await handle(input, init);
-    const path = new URL(String(input)).pathname;
-    if ((init?.method ?? "GET").toUpperCase() === "POST" && loseNextFor?.test(path)) {
+    const envelope = (await response.clone().json()) as { code?: unknown };
+    answers.push({ method, path, status: response.status, code: typeof envelope.code === "string" ? envelope.code : null });
+    if (method === "POST" && loseNextFor?.test(path)) {
       loseNextFor = null;
       throw new TypeError("fetch failed");
     }
@@ -240,8 +290,16 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     get requests() {
       return requests;
     },
+    get answers() {
+      return answers;
+    },
     loseNextResponse(path = CHECKOUT_START) {
       loseNextFor = path;
+    },
+    holdNextRequest(path = CHECKOUT_START) {
+      let release!: () => void;
+      holdNextFor = { path, gate: new Promise<void>(resolve => (release = resolve)) };
+      return release;
     },
     revokeConsent() {
       consentRevoked = true;
@@ -256,23 +314,31 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     readsOf(intentId) {
       return reads.get(intentId) ?? 0;
     },
+    isVoided(intentId) {
+      return sessionsById.get(intentId)?.voided === true;
+    },
   };
 
   /** `FiatRailProvider.BeginCheckoutAsync` for a first-party login (the admission key embeds the subject). */
   function beginCheckout(requestKey: string, amountMinorUnits: number): Response {
     if (paymentsDisabled) return fail(503, "Adding funds is not configured on this node.", "PAYMENTS_NOT_CONFIGURED");
+    // The claim finds the void's tombstone: a void that won the race against this begin decided the key.
+    if (tombstones.has(requestKey)) return requestVoided();
     const existing = sessionsByKey.get(requestKey);
-    if (existing) return resend(existing, amountMinorUnits);
+    if (existing) return resend(existing);
     const intentId = randomUUID();
     const admission: Admission = { intentId, requestKey, amountMinorUnits, paymentUrl: `${paymentOrigin}/c/pay/cs_test_${intentId.replace(/-/g, "")}` };
     const session: HostedSession = {
       admission,
+      owner: userId,
       state: "AwaitingSubject",
       stripe: { status: "open", paymentStatus: "unpaid" },
       stripeReadable: true,
+      expireFails: false,
       fundsApplied: false,
       needsOperator: false,
       creationInFlight: false,
+      voided: false,
       expiresAt: Date.now() + 3_600_000,
     };
     sessionsByKey.set(requestKey, session);
@@ -282,9 +348,11 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
   }
 
   /** The same-key resend contract, in the node's order; only a provably unpaid and closed page answers INTENT_EXPIRED. */
-  function resend(session: HostedSession, amountMinorUnits: number): Response {
-    if (session.admission.amountMinorUnits !== amountMinorUnits) return fail(409, "That request key is already in use.", "REQUEST_KEY_IN_USE");
-    if (session.needsOperator) return fail(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW");
+  function resend(session: HostedSession): Response {
+    if (session.owner !== userId) return keyInUse();
+    // Before the terminal check, which would otherwise call a voided key "finished".
+    if (session.voided) return requestVoided();
+    if (session.needsOperator) return needsReview();
     if (isTerminal(session.state)) return fail(409, "This payment is already finished.", "INTENT_FINISHED");
     if (session.creationInFlight) return fail(409, "A payment for this request is still being set up.", "CONFLICT");
     const pastExpiry = session.expiresAt <= Date.now();
@@ -295,6 +363,55 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     if (!pastExpiry && session.stripe.status === "open") return ok(project(session, true));
     if (pastExpiry && session.state === "AwaitingSubject") return expiredPage();
     return ok(project(session, true));
+  }
+
+  /** `VoidRequestAsync` + `TryVoidAdmittedAsync`: `voided` only on proof; anything paid, clearing or terminal is revealed; Stripe unreadable is 503. */
+  function voidRequest(requestKey: string): Response {
+    const session = sessionsByKey.get(requestKey);
+    if (!session) {
+      // The tombstone IS the admission candidate (create-if-absent), so voiding twice gives the same answer.
+      tombstones.add(requestKey);
+      return voided(null);
+    }
+    if (session.owner !== userId) return keyInUse();
+    if (session.voided) return voided(session.admission.intentId);
+    if (isTerminal(session.state) || session.state === "AwaitingOutcome") return revealed(session);
+    // An unattached claim: unreplayable → an operator decides; replayable → abandoned before its page could leave the node.
+    if (session.needsOperator) return needsReview();
+    if (session.creationInFlight) return abandon(session);
+    if (!session.stripeReadable) return dependencyUnavailable();
+    const verdict = judgeForVoid(session);
+    if (verdict === "paidOrClearing") return revealed(session);
+    if (verdict === "dead") return abandon(session);
+    // An open page is expired at Stripe first; a refused or lost expire is settled by a fresh read, never assumed.
+    if (!session.expireFails) session.stripe.status = "expired";
+    const after = judgeForVoid(session);
+    if (after === "dead") return abandon(session);
+    if (after === "paidOrClearing") return revealed(session);
+    return fail(503, "Your payment status could not be confirmed right now. Keep this request and try again shortly.", "DEPENDENCY_UNAVAILABLE");
+  }
+
+  /** The void's only write: CAS → ABANDONED / VOIDED_AFTER_ADMISSION. */
+  function abandon(session: HostedSession): Response {
+    session.state = "Abandoned";
+    session.voided = true;
+    session.creationInFlight = false;
+    return voided(session.admission.intentId);
+  }
+
+  function voided(intentId: string | null): Response {
+    return ok({ outcome: "voided", intentId }, VOIDED_MESSAGE);
+  }
+
+  /** `Revealed(ProjectAsync(...))`: the projection GET returns; a projection whose Stripe read fails is the 503 instead. */
+  function revealed(session: HostedSession): Response {
+    if (!session.stripeReadable) return dependencyUnavailable();
+    const intent = project(session, true);
+    return ok({ outcome: "revealed", intentId: intent.intentId, intent: withExtras(intent) }, REVEALED_MESSAGE);
+  }
+
+  function needsReview(): Response {
+    return fail(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW");
   }
 
   function expiredPage(): Response {
@@ -372,6 +489,9 @@ function applyEvent(session: HostedSession, event: CheckoutEvent): void {
     case "stripeUp":
       session.stripeReadable = true;
       return;
+    case "expireFails":
+      session.expireFails = true;
+      return;
     case "needsOperator":
       session.needsOperator = true;
       return;
@@ -388,6 +508,9 @@ function applyEvent(session: HostedSession, event: CheckoutEvent): void {
     case "creationSettled":
       session.creationInFlight = false;
       return;
+    case "otherAccount":
+      session.owner = randomUUID();
+      return;
   }
 }
 
@@ -395,6 +518,12 @@ function applyEvent(session: HostedSession, event: CheckoutEvent): void {
 function classify(session: HostedSession): "confirmed" | "failed" | "pending" {
   if (session.stripe.status === "complete") return session.stripe.paymentStatus === "paid" ? "confirmed" : "pending";
   return session.stripe.status === "expired" ? "failed" : "pending";
+}
+
+/** `FiatRailProvider.JudgeForVoid`: paid, or Stripe-complete (paid or still clearing), is never dead. */
+function judgeForVoid(session: HostedSession): "paidOrClearing" | "dead" | "payable" {
+  if (session.stripe.paymentStatus === "paid" || session.stripe.status === "complete") return "paidOrClearing";
+  return session.stripe.status === "expired" ? "dead" : "payable";
 }
 
 /** `FiatRailProvider.ProjectAsync` (Stripe readable): settlement re-read from Stripe; `funds_applied` only from an applied inbox row. */
@@ -408,14 +537,18 @@ function project(session: HostedSession, resumed: boolean): FiatCheckoutIntent {
   } else if (confirmation === "failed") {
     settlementState = "payment_failed";
   }
+  let status = STATUS_OF[session.state];
+  // Stripe finished the page before the webhook moved the claim: the payer is done, not waiting.
+  if (session.stripe.status === "complete" && status === "awaiting_payment") status = "processing";
+  // The page is handed back only while Stripe would still take a payment on it.
+  const payable = status === "awaiting_payment" && session.stripe.status === "open";
   return {
     intentId: session.admission.intentId,
     // The node's real admission key embeds the subject and tenant ids; the browser view must drop it.
-    admissionKey: `${TENANT_ID}:${session.admission.requestKey}`,
-    status: STATUS_OF[session.state],
+    admissionKey: `${session.owner}:${TENANT_ID}:${session.admission.requestKey}`,
+    status,
     settlementState,
-    // Only an open page inside its lifetime is payable; a completed session or a terminal intent names none.
-    paymentUrl: isTerminal(session.state) || session.stripe.status !== "open" ? null : session.admission.paymentUrl,
+    paymentUrl: payable ? session.admission.paymentUrl : null,
     resumed,
     amountPaidMinorUnits,
     currency: "usd",

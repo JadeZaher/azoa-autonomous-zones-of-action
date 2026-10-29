@@ -38,6 +38,14 @@ export type MoneyResult<T> = { ok: true; value: T } | { ok: false; refusal: Mone
 /** A checkout as the browser may see it: `admissionKey` embeds the subject and tenant ids, so it stays server-side. */
 export type CheckoutView = Omit<FiatCheckoutIntent, "admissionKey">;
 
+/**
+ * The node's answer to voiding a checkout request key. `voided`: nothing was or can be paid under it, so it may be
+ * forgotten. `revealed`: a payment was or may be made under it; keep the key and follow `intent`. See `src/money/AGENTS.md` §void.
+ */
+export type CheckoutVoidView =
+  | { outcome: "voided"; intentId: string | null }
+  | { outcome: "revealed"; intent: CheckoutView };
+
 /** The custodial account as the browser may see it: no tenant, subject or AZOA user ids. */
 export type CustodialAccountView = Omit<TenantCustodialAccountStatus, "tenantId" | "externalSubject" | "ardanovaUserId" | "userId">;
 
@@ -131,6 +139,8 @@ export interface CheckoutTransport {
   capabilities(): Promise<MoneyResult<CheckoutCapabilitiesView>>;
   begin(request: MoneyRequest): Promise<MoneyResult<CheckoutView>>;
   get(intentId: string): Promise<MoneyResult<CheckoutView>>;
+  /** Voids `requestKey` (later begins under it are refused) or reveals the payment made under it; idempotent. Any refusal means keep the key. */
+  void(requestKey: string): Promise<MoneyResult<CheckoutVoidView>>;
 }
 
 export interface CashOutTransport {

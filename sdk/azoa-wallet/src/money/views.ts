@@ -1,5 +1,5 @@
 // Runtime allowlist narrowing of node DTOs into browser-safe views, and the account gate. See `src/money/AGENTS.md` §views.
-import type { FiatCheckoutIntent, TenantCustodialAccountStatus } from "../api/client.js";
+import type { FiatCheckoutIntent, FiatCheckoutVoidResult, TenantCustodialAccountStatus } from "../api/client.js";
 import type {
   AccountCapabilitiesView,
   AccountGateState,
@@ -8,6 +8,7 @@ import type {
   CashOutView,
   CheckoutCapabilitiesView,
   CheckoutView,
+  CheckoutVoidView,
   ConsentRevocationView,
   CustodialAccountView,
   KycSessionView,
@@ -36,6 +37,16 @@ export function toCheckoutView(intent: FiatCheckoutIntent | CheckoutView): Check
     currency: intent.currency ?? null,
     expiresAt: intent.expiresAt ?? null,
   };
+}
+
+/** Narrows a void answer: only the literal `voided` / `revealed` (with an intent) count, and `intent` is allowlist-narrowed; anything else throws. */
+export function toCheckoutVoidView(answer: FiatCheckoutVoidResult | CheckoutVoidView): CheckoutVoidView {
+  const raw = answer as { outcome?: unknown; intentId?: unknown; intent?: { intentId?: unknown } | null };
+  if (raw.outcome === "voided") return { outcome: "voided", intentId: typeof raw.intentId === "string" ? raw.intentId : null };
+  if (raw.outcome === "revealed" && typeof raw.intent?.intentId === "string") {
+    return { outcome: "revealed", intent: toCheckoutView(raw.intent as FiatCheckoutIntent) };
+  }
+  throw new TypeError("Not a request-key void answer.");
 }
 
 /** Copies only the browser-safe custodial account fields; readiness flags must be literally `true`. */

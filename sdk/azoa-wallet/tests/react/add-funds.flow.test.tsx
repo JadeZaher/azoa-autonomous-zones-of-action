@@ -256,7 +256,9 @@ describe("<AddFundsForm> (P1 flows)", () => {
     node.apply(node.admissions[0]!.intentId, "operatorClosed");
     await user.click(screen.getByRole("button", { name: copy.pending.checkAgain }));
 
-    await screen.findByText("This payment is already finished.");
+    // INTENT_FINISHED alone is not proof; the node's void reveals the intent, closed and unpaid, and that state frees the key.
+    await screen.findByText(copy.checkout.expired);
+    expect(screen.queryByText("This payment is already finished.")).toBeNull();
     expect(submitButton().disabled).toBe(false);
     expect(savedCheckout()).toBeNull();
     expect(node.admissions).toHaveLength(1);
@@ -283,19 +285,149 @@ describe("<AddFundsForm> (P1 flows)", () => {
     expect(posts(node)).toHaveLength(before);
   });
 
-  it("discarding a saved payment whose page is still open stops watching it, so a separate payment can start", async () => {
+  it("discarding a payment another window already replaced voids nothing, so that window's new payment survives", async () => {
+    const user = userEvent.setup();
+    visitFundsPage(node, []);
+    await user.type(await screen.findByLabelText("Amount"), "25");
+    node.loseNextResponse();
+    await user.click(submitButton());
+    const discard = await screen.findByRole("button", { name: copy.pending.discard });
+    // Another window discarded it and saved a different payment, and this one heard no storage event.
+    const otherWindow = createKeyStore({ subject: node.userId });
+    otherWindow.remove(MONEY_SCOPES.checkout);
+    const replacement = claimRequestKey(otherWindow, MONEY_SCOPES.checkout, 40_00);
+
+    await user.click(discard);
+
+    await screen.findByText(copy.pending.replaced);
+    expect(posts(node).filter(request => request.path.endsWith("/void"))).toEqual([]);
+    expect(savedCheckout()?.requestKey).toBe(replacement.kind === "ready" ? replacement.request.requestKey : null);
+  });
+
+  /** A saved payment offered as pending: its answer was lost (no intent id saved), or its page opened and the person left. */
+  async function savePendingPayment(lostAnswer: boolean, redirects: Redirect[]) {
+    const user = userEvent.setup();
+    if (lostAnswer) {
+      visitFundsPage(node, redirects);
+      await user.type(await screen.findByLabelText("Amount"), "25");
+      node.loseNextResponse();
+      await user.click(submitButton());
+    } else {
+      await openCheckout(node, redirects);
+      visitFundsPage(node, redirects);
+    }
+    await screen.findByRole("button", { name: copy.pending.discard });
+    return { user, intentId: node.admissions[0]!.intentId };
+  }
+
+  it.each([["whose answer was lost", true], ["whose page opened", false]])(
+    "discarding an unpaid payment %s: the node expires its page and voids the key, the payment stops being shown, and a separate payment can start",
+    async (_label, lostAnswer) => {
+      const redirects: Redirect[] = [];
+      const { user, intentId } = await savePendingPayment(lostAnswer, redirects);
+      const redirectsBefore = redirects.length;
+
+      await user.click(screen.getByRole("button", { name: copy.pending.discard }));
+
+      await screen.findByText(copy.pending.voided);
+      expect(node.isVoided(intentId)).toBe(true);
+      expect(savedCheckout()).toBeNull();
+      expect(screen.queryByRole("button", { name: copy.checkout.check })).toBeNull();
+      expect(submitButton().disabled).toBe(false);
+      await user.clear(screen.getByLabelText("Amount"));
+      await user.type(screen.getByLabelText("Amount"), "40");
+      await user.click(submitButton());
+
+      await waitFor(() => expect(redirects).toHaveLength(redirectsBefore + 1));
+      expect(redirects.at(-1)).toEqual([node.admissions[1]!.paymentUrl, "checkout"]);
+      expect(node.admissions.map(admission => admission.amountMinorUnits)).toEqual([25_00, 40_00]);
+    },
+  );
+
+  it.each([["whose answer was lost", true], ["whose page opened", false]])(
+    "discarding a payment %s that was already paid reveals it: the key stays, the form stays locked, and funds_applied is announced once",
+    async (_label, lostAnswer) => {
+      const redirects: Redirect[] = [];
+      const settled: CheckoutView[] = [];
+      const user = userEvent.setup();
+      if (lostAnswer) {
+        visitFundsPage(node, redirects, { pollIntervalMs: 30, onSettled: view => settled.push(view) });
+        await user.type(await screen.findByLabelText("Amount"), "25");
+        node.loseNextResponse();
+        await user.click(submitButton());
+        // The person paid on that page anyway (e.g. from another device that got it); no webhook yet.
+        node.apply(node.admissions[0]!.intentId, "pay");
+      } else {
+        const opened = await openCheckout(node, redirects);
+        node.apply(opened, "pay");
+        visitFundsPage(node, redirects, { pollIntervalMs: 30, onSettled: view => settled.push(view) });
+      }
+      const intentId = node.admissions[0]!.intentId;
+
+      await user.click(await screen.findByRole("button", { name: copy.pending.discard }));
+
+      await screen.findByText(copy.pending.revealed);
+      expect(node.isVoided(intentId)).toBe(false);
+      expect(savedCheckout()?.serverId).toBe(intentId);
+      expect(submitButton().disabled).toBe(true);
+      expect(screen.getAllByText(copy.settlement.payment_received)).toHaveLength(1);
+      expect(settled).toEqual([]);
+
+      node.apply(intentId, "webhook", "applyFunds");
+      await screen.findByText(copy.settlement.funds_applied);
+      await waitFor(() => expect(submitButton().disabled).toBe(false));
+      await sleep(90);
+      expect(settled.map(view => [view.intentId, view.settlementState])).toEqual([[intentId, "funds_applied"]]);
+      expect(savedCheckout()).toBeNull();
+      expect(node.admissions).toHaveLength(1);
+    },
+  );
+
+  it("a discard the node cannot decide (it cannot read Stripe) keeps the payment and says so; once Stripe is readable again, discarding voids it", async () => {
+    const redirects: Redirect[] = [];
+    const { user, intentId } = await savePendingPayment(true, redirects);
+    node.apply(intentId, "stripeDown");
+
+    await user.click(screen.getByRole("button", { name: copy.pending.discard }));
+
+    await screen.findByText(copy.pending.discardUnconfirmed);
+    expect(screen.getByRole("button", { name: "Resume that payment" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue to payment" })).toBeNull();
+    expect(savedCheckout()?.requestKey).toBe(node.admissions[0]!.requestKey);
+    expect(node.isVoided(intentId)).toBe(false);
+
+    node.apply(intentId, "stripeUp");
+    await user.click(screen.getByRole("button", { name: copy.pending.discard }));
+    await screen.findByText(copy.pending.voided);
+    expect(savedCheckout()).toBeNull();
+    expect(node.isVoided(intentId)).toBe(true);
+  });
+
+  it("resuming a lost answer whose payment was made meets INTENT_FINISHED; the node's void reveals the payment, so the key and the lock stay and nothing is charged twice", async () => {
     const user = userEvent.setup();
     const redirects: Redirect[] = [];
-    await openCheckout(node, redirects);
-    visitFundsPage(node, redirects);
-
-    await user.click(await screen.findByRole("button", { name: copy.pending.discard }));
-    await screen.findByText(copy.pending.discarded);
-    await user.type(screen.getByLabelText("Amount"), "40");
+    const settled: CheckoutView[] = [];
+    visitFundsPage(node, redirects, { pollIntervalMs: 30, onSettled: view => settled.push(view) });
+    await user.type(await screen.findByLabelText("Amount"), "25");
+    node.loseNextResponse();
     await user.click(submitButton());
+    const intentId = node.admissions[0]!.intentId;
+    node.apply(intentId, "pay", "webhook");
 
-    await waitFor(() => expect(redirects).toHaveLength(2));
-    expect(node.admissions.map(admission => admission.amountMinorUnits)).toEqual([25_00, 40_00]);
+    await user.click(await screen.findByRole("button", { name: "Resume that payment" }));
+
+    await screen.findByText(copy.settlement.payment_received);
+    expect(screen.queryByText("This payment is already finished.")).toBeNull();
+    expect(savedCheckout()?.serverId).toBe(intentId);
+    expect(submitButton().disabled).toBe(true);
+    expect(redirects).toEqual([]);
+
+    node.apply(intentId, "applyFunds");
+    await screen.findByText(copy.settlement.funds_applied);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(settled.map(view => view.settlementState)).toEqual(["funds_applied"]);
+    expect(savedCheckout()).toBeNull();
+    expect(node.admissions).toHaveLength(1);
   });
 
   it("a return link naming a payment the node does not know does not lock the form", async () => {

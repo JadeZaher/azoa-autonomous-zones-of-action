@@ -35,6 +35,7 @@ export type { CheckoutState, MoneyMessages, MoneyMessagesOverride, PendingKind, 
 export { refusalFromSdkError, releasesRequestKey, isMoneyRefusalCode, moneyRefusal } from "./refusal.js";
 export {
   toCheckoutView,
+  toCheckoutVoidView,
   toCustodialAccountView,
   toAccountCapabilitiesView,
   toCheckoutCapabilitiesView,
@@ -51,7 +52,17 @@ export {
   findForbiddenViewKeys,
   FORBIDDEN_VIEW_KEYS,
 } from "./views.js";
-export { startCheckout, sendCheckout, resolveCheckoutByState, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
-export type { CheckoutAttempt, CashOutAttempt, SaleAttempt, PendingAttempt, RefusedAttempt, SupersededAttempt, CheckoutFlowOptions, MoneyFlowOptions } from "./flows.js";
+export { startCheckout, sendCheckout, discardCheckout, resolveCheckoutByState, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
+export type {
+  CheckoutAttempt,
+  CheckoutDiscardAttempt,
+  CashOutAttempt,
+  SaleAttempt,
+  PendingAttempt,
+  RefusedAttempt,
+  SupersededAttempt,
+  CheckoutFlowOptions,
+  MoneyFlowOptions,
+} from "./flows.js";
 export { createDirectMoneyTransport } from "./direct-transport.js";
 export type { DirectMoneyTransportOptions } from "./direct-transport.js";

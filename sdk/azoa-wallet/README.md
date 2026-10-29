@@ -56,8 +56,10 @@ import { AzoaMoneyProvider, MoneyGate, AddFundsForm } from "azoa-sdk/react";
 </AzoaMoneyProvider>
 ```
 
-Verify a transport with `runMoneyTransportContract` from `azoa-sdk/money/testing`. Design notes:
-`src/money/AGENTS.md`, `src/react/AGENTS.md`.
+A host transport forwards `checkout.void(requestKey)` to the node's void-or-reveal route: discarding a saved
+payment releases its key only when the node answers `voided`. Verify a transport with
+`runMoneyTransportContract` from `azoa-sdk/money/testing`. Design notes: `src/money/AGENTS.md`,
+`src/react/AGENTS.md`.
 
 ---
 

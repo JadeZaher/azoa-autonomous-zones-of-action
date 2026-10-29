@@ -31,6 +31,9 @@ describe("refusalFromSdkError", () => {
     ["409 INTENT_FINISHED", nodeError(409, "This payment is already finished.", "INTENT_FINISHED"), "definite", true],
     ["409 INTENT_EXPIRED", nodeError(409, "This payment page has expired. Start a new payment.", "INTENT_EXPIRED"), "definite", true],
     ["409 REQUEST_KEY_IN_USE", nodeError(409, "That request key is already in use.", "REQUEST_KEY_IN_USE"), "definite", true],
+    // The node voided the key (§request-void): its emitter proves nothing was or can be paid under it.
+    ["409 REQUEST_VOIDED", nodeError(409, "This payment request was cancelled and nothing can be paid under it. Start a new payment.", "REQUEST_VOIDED"), "definite", true],
+    ["500 with a REQUEST_VOIDED code", nodeError(500, "This payment request was cancelled.", "REQUEST_VOIDED"), "unconfirmed", false],
     // MEDIUM-3: held for an operator, not "the answer did not arrive"; the key survives.
     ["409 INTENT_NEEDS_REVIEW", nodeError(409, "This payment needs a manual check before it can continue.", "INTENT_NEEDS_REVIEW"), "needs_review", false],
     ["503 DEPENDENCY_UNAVAILABLE (the node's Stripe re-read failed)", nodeError(503, "The payment provider could not be reached.", "DEPENDENCY_UNAVAILABLE"), "unconfirmed", false],

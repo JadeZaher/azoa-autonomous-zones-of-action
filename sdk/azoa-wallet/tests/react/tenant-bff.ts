@@ -43,6 +43,8 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
     opened: true, kycStatus: "Approved", walletAddress: `${user.toUpperCase()}-WALLET`, consentRevoked: false, reviewDueAt: null, identityReady: true, ...person,
   }]));
   const intents = new Map<string, CheckoutView & { owner: string; requestKey: string }>();
+  /** `${owner}:${requestKey}` for every key the node voided; begin under one is refused (REQUEST_VOIDED). */
+  const voidedKeys = new Set<string>();
   const cashOuts = new Map<string, CashOutView & { owner: string }>();
   const quotes = new Map<string, SaleQuoteView>();
   const sales: (SaleView & { quoteId: string; requestKey: string; owner: string })[] = [];
@@ -96,6 +98,7 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
     checkout: {
       capabilities: () => answer("checkout.capabilities", () => ({ ok: true, value: { available: true, unavailableReason: null } })),
       begin: request => answer("checkout.begin", () => {
+        if (voidedKeys.has(`${user}:${request.requestKey}`)) return refuse("definite", "This payment request was cancelled and nothing can be paid under it. Start a new payment.");
         const existing = [...intents.values()].find(intent => intent.owner === user && intent.requestKey === request.requestKey);
         if (existing) return { ok: true, value: { ...strip(existing), resumed: true } };
         const intentId = randomUUID();
@@ -109,6 +112,13 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
       get: intentId => answer("checkout.get", () => {
         const intent = intents.get(intentId);
         return intent && intent.owner === user ? { ok: true, value: strip(intent) } : refuse("definite", "That payment could not be found.");
+      }),
+      // Every intent here is an open, unpaid page, so the node always voids it (expiring the page).
+      void: requestKey => answer("checkout.void", () => {
+        voidedKeys.add(`${user}:${requestKey}`);
+        const intent = [...intents.values()].find(candidate => candidate.owner === user && candidate.requestKey === requestKey);
+        if (intent) Object.assign(intent, { status: "expired", paymentUrl: null });
+        return { ok: true, value: { outcome: "voided", intentId: intent?.intentId ?? null } };
       }),
     },
     cashOut: {

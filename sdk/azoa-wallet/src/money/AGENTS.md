@@ -16,6 +16,8 @@ holder of the tenant API key. Components consume a transport, never a token.
   still guards against a buggy transport that does.)
 - `checkout.begin` / `cashOut.start` take only `{ requestKey, amountMinorUnits }`. Return URLs, purpose and
   pricing are the host's server-side decision, so a browser cannot redirect a payment to another origin.
+- `checkout.void(requestKey)` is required (0.6.0): the node's void-or-reveal (§void). A host BFF forwards it to
+  `POST /api/fiat/checkout/{userId}/requests/{requestKey}/void` and narrows `revealed.intent` with `toCheckoutView`.
 - `sale` is optional and host-priced: `quote` pins quantity and proceeds under a `quoteId`; `sell` sends
   `{ requestKey, quoteId }`. Unit quantities are base-unit decimal strings, never JavaScript numbers.
 - Keep the transport object referentially stable; the React provider keys its account store on it.
@@ -52,14 +54,15 @@ feat/fiat-replay-codes `cee103bd`, on 2026-10-27):
 | `setup_required` | "KYC verification required" (`KycAuthorizationError`) | released* |
 | `under_review` | definite refusal mentioning "under review" (AML review) | released* |
 | `payments_not_configured` | `PAYMENTS_NOT_CONFIGURED` code on 400/422/503 (QA M3) | released* |
-| `definite` | 409 `INTENT_FINISHED` / `INTENT_EXPIRED` / `REQUEST_KEY_IN_USE`; any other 400/403/404/422; a client guard that threw before egress | released* |
+| `definite` | 409 `INTENT_FINISHED` / `INTENT_EXPIRED` / `REQUEST_KEY_IN_USE` / `REQUEST_VOIDED`; any other 400/403/404/422; a client guard that threw before egress | released* |
 | `rail_busy` | `RAIL_BUSY`, `RAIL_UNAVAILABLE`, 429; another tab held the send lock past `lockTimeoutMs` | **kept** |
 | `unconfirmed` | network loss, timeout (incl. `sendTimeoutMs`), 409 without a final code (`CONFLICT`: Stripe still has the same-key request in flight), 5xx (incl. 503 `DEPENDENCY_UNAVAILABLE`, the node's failed Stripe re-read) | **kept** |
 | `needs_review` | 409 `INTENT_NEEDS_REVIEW` (`FiatCreationVerdict.NeedsOperator`) | **kept**, marked |
 | `unauthenticated` | 401 / `AUTH_EXPIRED` | **kept** |
 
-\* Only for a key that names no intent yet (a lost answer). **A saved request with a `serverId` is never
-released by a refusal code** — see §flows "decide by state".
+\* Directly only for a key's **first** send. **A saved request with a `serverId` is never released by a
+refusal code** (§flows "decide by state"), and a **resent** key without one (a lost answer) is released only
+when the node's void answers `voided` (§void).
 
 **Order matters** (each step only runs when the previous did not decide): not an `SdkError` → `unconfirmed`;
 401 → `unauthenticated`; no HTTP status → `definite` for a client guard, else `unconfirmed`; the envelope's
@@ -68,13 +71,13 @@ on a 500 is still `unconfirmed`); 429 → `rail_busy`; any status that is not 40
 **whatever the message says**; only then message text. That last rule is why a 503 whose text says
 `KYB_REQUIRED:` keeps the key (L6): text is evidence only inside a definite status.
 
-The same-key 409 codes (`INTENT_*`, `REQUEST_KEY_IN_USE`) follow the node's proof rule: a final code only when
-the node can prove nothing was or can be paid under the key (`INTENT_EXPIRED` only after a fresh Stripe read
-says the lapsed page is not complete). The SDK still does not trust them where it can check: the 409 bodies
-carry no intent id, so for a lost answer the code is all there is, but a key that names its intent is decided
-by reading that intent. Known gap: `INTENT_FINISHED` on a lost answer releases the key while a card payment's
-funds may still be landing (nothing more can be charged under that key; a person who then pays again does so
-deliberately on a fresh key). An intent id in the 409 body would close it.
+The same-key 409 codes (`INTENT_*`, `REQUEST_KEY_IN_USE`, `REQUEST_VOIDED`) follow the node's proof rule, but
+only `INTENT_EXPIRED` (after a fresh Stripe read) and `REQUEST_VOIDED` (the node voided the key) are proof that
+nothing was or can be paid; `INTENT_FINISHED` is "terminal" (paid, failed or expired) and `REQUEST_KEY_IN_USE`
+names another account's row. All four map to `definite`, so the flows never trust the code where they can ask:
+a key that names its intent is decided by reading it, and a resent key that names none is put to the void
+(§void). That closes round 2's gap (`INTENT_FINISHED` on a lost answer released the key while a card payment's
+funds were still landing): the void reveals that intent and the key follows it.
 
 `needs_review` (MEDIUM-3) is not "the answer did not arrive": the node answered, and it holds the request
 for an operator. The key is kept and `markNeedsReview` flags the saved request, so the UI shows "needs a
@@ -136,6 +139,14 @@ is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `p
   watched. This is why the node lane's first cut (`769494f1`, `INTENT_EXPIRED` on any lapsed page) cannot
   release the key of an ACH payment that is still clearing.
 
+- **A resent key's final-looking refusal is put to the void (round 3).** When `beginCheckout` resends a key
+  (`sendCheckout`, or `startCheckout` reusing a saved key: `claimKey` reports `resent`) that names no intent,
+  a refusal `releasesRequestKey` would accept (`INTENT_FINISHED`, `REQUEST_KEY_IN_USE`, a gate that appeared
+  since the first send, ...) proves nothing about the **earlier** send, so `releaseOnVoid` asks the node:
+  `voided` → the key goes and the attempt is the original refusal; `revealed` → the key follows that intent
+  (`applyCheckoutView`, no redirect); anything else → kept. A key's first send still releases on such a
+  refusal directly: nothing else was ever sent under it.
+
 - **Resend re-reads storage (L1).** `send*` re-reads the saved request inside the lock and sends only when
   its key is still the saved one; otherwise it returns `superseded` with what is saved now and sends
   nothing (another tab resolved, discarded or replaced it).
@@ -152,6 +163,39 @@ is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `p
   durably; a same-key retry then answers **200 with the `Refused` row**. `sendCashOut` (and `sendSale`)
   treat a view whose `status` is `refused` (any case) as a `definite` refusal carrying its
   `statusMessage`, so no host shows it as success or fires `onSettled`.
+
+## §void
+
+**Rule** (the money-key doctrine): a saved request key is the lock against a second payment, and it may be
+released only on a server-set value whose emitter proves nothing was or can be paid under it. A client-side
+discard cannot prove that: only the node knows what was admitted, and a begin still on the wire can be admitted
+after the client forgot the key. The node's answer is void-or-reveal by request key (oasis-sleek
+`FiatRailProvider.Void.cs`, `Providers/Fiat/AGENTS.md` §request-void, f2cb4fe8):
+
+| node answer | `checkout.void` result | key |
+| :-- | :-- | :-- |
+| 200 `voided`, `intentId: null` (nothing admitted: a tombstone is written; a late begin then gets 409 `REQUEST_VOIDED`) | `{ outcome: "voided", intentId: null }` | **released** |
+| 200 `voided`, `intentId` (unattached claim abandoned, or an open page expired at Stripe, then abandoned) | `{ outcome: "voided", intentId }` | **released** |
+| 200 `revealed` + `intent` (Stripe paid/complete, clearing, or terminal) | `{ outcome: "revealed", intent }` (narrowed: no `admissionKey`) | follows the intent: kept unless settled |
+| 503 `DEPENDENCY_UNAVAILABLE` / `RAIL_BUSY` / `PAYMENTS_NOT_CONFIGURED` / `RAIL_UNAVAILABLE`, 409 `REQUEST_KEY_IN_USE`, 400, 403, lost | a refusal | **kept** (whatever its code) |
+| 409 `INTENT_NEEDS_REVIEW` | `needs_review` | **kept**, marked |
+
+Voiding twice gives the same answer; a voided intent reads `status: "expired"` (settled).
+
+- `discardCheckout(transport, keyStore, request)` runs under the request lock, re-reads storage
+  (`superseded` if another tab changed it) and calls `voidOrReveal`. Results: `discarded` (`intentId` of the
+  voided intent, or null), `revealed` (the key now names that intent and follows its state; no page is handed
+  out), `refused` (kept; `needs_review` marks it).
+- **Only `outcome === "voided"` releases.** `asVoidAnswer` accepts the literal outcomes only (a host's
+  `"Voided"`, `null` value or missing intent keeps the key), and a void refusal whose code `releasesRequestKey`
+  would accept (`payments_not_configured` from the 503, `definite` from a BFF's 400 or `REQUEST_KEY_IN_USE`)
+  becomes `unconfirmed`: a void that could not decide proves nothing.
+- The direct transport calls `AzoaApiClient.voidFiatCheckoutRequest(userId, requestKey)` (the raw key as one
+  `encodeURIComponent` path segment, no body) and narrows with `toCheckoutVoidView`, which throws (→
+  `unconfirmed`) on anything but the two literal outcomes.
+- Known gap: a key the node binds to another account (`REQUEST_KEY_IN_USE` on both begin and void) is kept for
+  good. `BuildAdmissionKey` embeds the subject, so the node cannot reach it today; if it ever can, the person
+  needs an operator, not a second payment.
 
 ## §presentation
 
@@ -212,8 +256,8 @@ rejection. First-party differences: `account.ensure` is a status read (a login i
 `account.status` maps `/api/kyc/status` (404 = not started) and reports the wallet best-effort, with
 `ready` keyed on KYC approval alone because that is what checkout gates on; `revokeConsent` is a
 `definite` refusal (a first-party session has no app permission to withdraw); there is no `sale`;
-`balance` mirrors cash-out availability. Every call is wrapped so the client's own guards (which throw
-inside async methods) become refusals.
+`balance` mirrors cash-out availability; `checkout.void` is the node's void-or-reveal (§void). Every call is
+wrapped so the client's own guards (which throw inside async methods) become refusals.
 
 ## §contract
 
@@ -226,6 +270,12 @@ included (`checkout.begin`, `account.ensure`, `account.beginKyc`, `cashOut.begin
 others; each case builds its own fixture); same key → same checkout (`resumed: true`)
 and readable via `get`; new key → new checkout; unknown/malformed intent → a key-releasing refusal (or a
 poller never stops); same key → one cash-out, listed once; money is integer minor units and quantities are
-base-unit strings. Cases that need fixture state (an admitted checkout, something cashable) skip with a
-reason; `requireAll` turns skips into failures. The SDK's own test proves the contract fails a transport
-that mints a new key per call and leaks `admissionKey`.
+base-unit strings. Void cases (§void): an unused key → `voided` with no intent, twice, and a later begin is
+refused with a key-releasing code (`REQUEST_VOIDED`); an open unpaid checkout → `voided` naming it, twice, then
+reads settled and never opens again; a paid checkout → `revealed` (twice, narrowed), never voided, still
+resumable; an unreadable provider → a refusal whose code keeps the key. `checkout.void` is also in the
+forbidden-key and amount sweeps. The paid and unreadable cases need fixture controls: the factory may return
+`{ transport, checkout: { markPaid(intentId), makeUnreadable(intentId) } }` instead of a bare transport
+(still accepted); without controls those two skip. Cases that need fixture state (an admitted checkout,
+something cashable) skip with a reason; `requireAll` turns skips into failures. The SDK's own test proves the
+contract fails a transport that mints a new key per call and leaks `admissionKey`.

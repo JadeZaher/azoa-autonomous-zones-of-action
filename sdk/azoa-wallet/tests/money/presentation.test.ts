@@ -9,6 +9,7 @@ import {
   isTerminalCheckout,
   minorUnitsToText,
   safeRedirectUrl,
+  toCheckoutVoidView,
   toMinorUnits,
 } from "../../src/money/index.js";
 import type { CheckoutView } from "../../src/money/index.js";
@@ -138,5 +139,25 @@ describe("amounts follow the currency's ISO 4217 minor units", () => {
     expect(minorUnitsToText(2550, "USD")).toBe("25.50");
     expect(toMinorUnits(minorUnitsToText(2550, "USD")!, "USD")).toBe(2550);
     expect(minorUnitsToText(2500, "JPY")).toBe("2500");
+  });
+});
+
+describe("toCheckoutVoidView: only the node's literal outcomes count, and a revealed intent is narrowed", () => {
+  const intent = {
+    intentId: "8b4f1f2e-2f1d-4c1b-9d4e-6d1c9f3b2a10", admissionKey: "subject:tenant:key", status: "processing", settlementState: "payment_received",
+    paymentUrl: null, resumed: true, amountPaidMinorUnits: 2500, currency: "usd", expiresAt: null,
+  };
+  const { admissionKey: _admissionKey, ...browserSafe } = intent;
+  it.each<[string, unknown, unknown]>([
+    ["voided with no intent (a tombstone)", { outcome: "voided", intentId: null }, { outcome: "voided", intentId: null }],
+    ["voided naming its intent", { outcome: "voided", intentId: intent.intentId, subjectUserId: "u-1" }, { outcome: "voided", intentId: intent.intentId }],
+    ["revealed: the admission key never reaches the browser", { outcome: "revealed", intentId: intent.intentId, intent }, { outcome: "revealed", intent: browserSafe }],
+    ["a capitalized outcome", { outcome: "Voided", intentId: null }, "throws"],
+    ["revealed without an intent", { outcome: "revealed", intentId: intent.intentId }, "throws"],
+    ["no outcome", { intentId: null }, "throws"],
+  ])("%s", (_label, answer, expected) => {
+    const narrow = () => toCheckoutVoidView(answer as never);
+    if (expected === "throws") expect(narrow).toThrow();
+    else expect(narrow()).toEqual(expected);
   });
 });

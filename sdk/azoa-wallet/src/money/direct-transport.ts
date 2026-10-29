@@ -5,7 +5,15 @@ import { SdkError, SdkErrorCode } from "../core/errors.js";
 import type { Result } from "../core/result.js";
 import { moneyRefusal, refusalFromSdkError } from "./refusal.js";
 import type { AzoaMoneyTransport, CustodialAccountView, MoneyResult } from "./types.js";
-import { toCashOutQuoteView, toCashOutView, toCheckoutCapabilitiesView, toCheckoutView, toKycSessionView, toPayoutDestinationView } from "./views.js";
+import {
+  toCashOutQuoteView,
+  toCashOutView,
+  toCheckoutCapabilitiesView,
+  toCheckoutView,
+  toCheckoutVoidView,
+  toKycSessionView,
+  toPayoutDestinationView,
+} from "./views.js";
 
 export interface DirectMoneyTransportOptions {
   /** Where the payment provider returns the person; must be on an origin the node allowlists. */
@@ -85,6 +93,7 @@ export function createDirectMoneyTransport(client: AzoaApiClient, userId: string
         ...(returnUrl ? { successUrl: returnUrl, cancelUrl: returnUrl } : {}),
       }), toCheckoutView),
       get: intentId => call(() => client.getFiatCheckoutIntent(userId, intentId), toCheckoutView),
+      void: requestKey => call(() => client.voidFiatCheckoutRequest(userId, requestKey), toCheckoutVoidView),
     },
     cashOut: {
       availability: () => call(() => client.getCashOutAvailability(userId), toCashOutQuoteView),

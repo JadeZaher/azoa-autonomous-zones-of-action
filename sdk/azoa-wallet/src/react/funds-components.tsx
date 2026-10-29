@@ -180,7 +180,7 @@ export function AddFundsForm(props: AddFundsFormProps) {
           currencyCode={currency}
           busy={funds.busy}
           onResume={() => void funds.resume()}
-          onDiscard={funds.discard}
+          onDiscard={() => void funds.discard()}
           slots={props.slots}
         />
       ) : (

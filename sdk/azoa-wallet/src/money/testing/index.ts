@@ -1,11 +1,26 @@
 // Reusable, framework-agnostic contract every `AzoaMoneyTransport` must pass. See `src/money/AGENTS.md` §contract.
+import { isOpenCheckout, isSettledCheckout } from "../presentation.js";
 import { isMoneyRefusalCode, releasesRequestKey } from "../refusal.js";
 import { newRequestKey } from "../request-key.js";
 import type { AzoaMoneyTransport, MoneyResult } from "../types.js";
 import { findForbiddenViewKeys } from "../views.js";
 
-/** Builds a transport over a fresh fixture; called once per case. */
-export type MoneyTransportFactory = () => AzoaMoneyTransport | Promise<AzoaMoneyTransport>;
+/** Payment-provider controls the void cases need, wired to the fixture's fake node or sandbox. */
+export interface CheckoutFixtureControls {
+  /** The person paid this checkout at the provider (the webhook need not have arrived). */
+  markPaid(intentId: string): void | Promise<void>;
+  /** The provider can no longer be read for this checkout. */
+  makeUnreadable(intentId: string): void | Promise<void>;
+}
+
+/** A transport plus the controls some cases need; without `checkout`, those cases skip. */
+export interface MoneyTransportFixture {
+  transport: AzoaMoneyTransport;
+  checkout?: CheckoutFixtureControls;
+}
+
+/** Builds a transport (or a transport with fixture controls) over a fresh fixture; called once per case. */
+export type MoneyTransportFactory = () => AzoaMoneyTransport | MoneyTransportFixture | Promise<AzoaMoneyTransport | MoneyTransportFixture>;
 
 export interface MoneyTransportContractOptions {
   /** Amount for keyed checkouts; defaults to 2500 (25.00). */
@@ -45,7 +60,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "every read resolves to a MoneyResult with a known refusal code, never a rejection",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         for (const [label, read] of readsOf(transport)) await resolved(label, read());
         return "passed";
       },
@@ -53,7 +68,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "no view carries subject or tenant identifiers",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
           if (!result.ok) continue;
           const leaked = findForbiddenViewKeys(result.value);
@@ -65,7 +80,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "checkout.begin resumes the same intent for the same request key",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         const request = { requestKey: newRequestKey(), amountMinorUnits: amount };
         const first = await resolved("checkout.begin", transport.checkout.begin(request));
         if (!first.ok) return { skipped: `checkout.begin refused (${first.refusal.code}); the fixture must accept a checkout` };
@@ -81,7 +96,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "a new request key opens a new checkout",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         const first = await resolved("checkout.begin", transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: amount }));
         if (!first.ok) return { skipped: `checkout.begin refused (${first.refusal.code}); the fixture must accept a checkout` };
         const second = await resolved("checkout.begin", transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: amount }));
@@ -92,7 +107,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "checkout.get on an unknown or malformed intent is a definite refusal",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         for (const intentId of [newRequestKey(), "not-an-intent"]) {
           const result = await resolved(`checkout.get(${intentId})`, transport.checkout.get(intentId));
           check(!result.ok, `checkout.get(${intentId}) answered an intent that does not exist`);
@@ -104,7 +119,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "cashOut.start pays once per request key and history lists it once",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         const quote = await resolved("cashOut.availability", transport.cashOut.availability());
         if (!quote.ok) return { skipped: `cashOut.availability refused (${quote.refusal.code})` };
         const cashOutAmount = options.cashOutAmountMinorUnits ?? quote.value.minimumAmountMinorUnits;
@@ -123,7 +138,7 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "money amounts are integer minor units and unit quantities are base-unit strings",
       async run() {
-        const transport = await factory();
+        const { transport } = await build(factory);
         for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
           if (!result.ok) continue;
           for (const [path, value] of amountFields(result.value)) {
@@ -134,8 +149,83 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
         return "passed";
       },
     },
+    {
+      name: "checkout.void on a key nothing was admitted under voids it for good, and that key never opens a checkout",
+      async run() {
+        const { transport } = await build(factory);
+        const requestKey = newRequestKey();
+        for (const label of ["checkout.void", "checkout.void (again)"]) {
+          const voided = await resolved(label, transport.checkout.void(requestKey));
+          check(voided.ok && voided.value.outcome === "voided" && voided.value.intentId === null, `${label} on an unused key must answer voided with no intent`);
+        }
+        const begun = await resolved("checkout.begin (voided key)", transport.checkout.begin({ requestKey, amountMinorUnits: amount }));
+        check(!begun.ok, "checkout.begin opened a checkout under a voided key");
+        check(releasesRequestKey(begun.refusal), `checkout.begin on a voided key must refuse definitely (REQUEST_VOIDED), not ${begun.refusal.code}`);
+        return "passed";
+      },
+    },
+    {
+      name: "checkout.void on an open, unpaid checkout voids it (idempotently) and closes it",
+      async run() {
+        const { transport } = await build(factory);
+        const request = { requestKey: newRequestKey(), amountMinorUnits: amount };
+        const first = await resolved("checkout.begin", transport.checkout.begin(request));
+        if (!first.ok) return { skipped: `checkout.begin refused (${first.refusal.code}); the fixture must accept a checkout` };
+        for (const label of ["checkout.void", "checkout.void (again)"]) {
+          const voided = await resolved(label, transport.checkout.void(request.requestKey));
+          check(voided.ok && voided.value.outcome === "voided" && voided.value.intentId === first.value.intentId, `${label} on an open, unpaid checkout must answer voided naming its intent`);
+        }
+        const read = await resolved("checkout.get (voided)", transport.checkout.get(first.value.intentId));
+        check(read.ok && isSettledCheckout(read.value) && !isOpenCheckout(read.value), "a voided checkout must read closed and unpaid");
+        const resent = await resolved("checkout.begin (voided key)", transport.checkout.begin(request));
+        check(!resent.ok && releasesRequestKey(resent.refusal), "checkout.begin on a voided key must refuse definitely (REQUEST_VOIDED)");
+        return "passed";
+      },
+    },
+    {
+      name: "checkout.void on a paid checkout reveals it, narrowed, and never voids it",
+      async run() {
+        const { transport, checkout: controls } = await build(factory);
+        if (!controls) return { skipped: "the fixture has no checkout controls (markPaid) to pay a checkout" };
+        const request = { requestKey: newRequestKey(), amountMinorUnits: amount };
+        const first = await resolved("checkout.begin", transport.checkout.begin(request));
+        if (!first.ok) return { skipped: `checkout.begin refused (${first.refusal.code}); the fixture must accept a checkout` };
+        await controls.markPaid(first.value.intentId);
+        for (const label of ["checkout.void", "checkout.void (again)"]) {
+          const revealed = await resolved(label, transport.checkout.void(request.requestKey));
+          check(revealed.ok && revealed.value.outcome === "revealed", `${label} on a paid checkout must reveal it, never void it`);
+          check(revealed.value.intent.intentId === first.value.intentId, `${label} revealed a different checkout`);
+          const leaked = findForbiddenViewKeys(revealed.value);
+          check(leaked.length === 0, `${label} leaked ${leaked.join(", ")}`);
+        }
+        const resumed = await resolved("checkout.begin (revealed key)", transport.checkout.begin(request));
+        check(resumed.ok && resumed.value.intentId === first.value.intentId, "a revealed key must still resume its own checkout");
+        return "passed";
+      },
+    },
+    {
+      name: "checkout.void that cannot read the provider refuses with a code that keeps the key",
+      async run() {
+        const { transport, checkout: controls } = await build(factory);
+        if (!controls) return { skipped: "the fixture has no checkout controls (makeUnreadable) to cut the provider off" };
+        const request = { requestKey: newRequestKey(), amountMinorUnits: amount };
+        const first = await resolved("checkout.begin", transport.checkout.begin(request));
+        if (!first.ok) return { skipped: `checkout.begin refused (${first.refusal.code}); the fixture must accept a checkout` };
+        await controls.makeUnreadable(first.value.intentId);
+        const result = await resolved("checkout.void", transport.checkout.void(request.requestKey));
+        check(!result.ok, "checkout.void decided a checkout nobody could read; it must refuse");
+        check(!releasesRequestKey(result.refusal), `a void that could not decide must keep the key, not refuse with ${result.refusal.code}`);
+        return "passed";
+      },
+    },
   ];
   return cases;
+}
+
+/** The factory's transport and controls, whichever shape it returned. */
+async function build(factory: MoneyTransportFactory): Promise<MoneyTransportFixture> {
+  const built = await factory();
+  return "transport" in built ? built : { transport: built };
 }
 
 /** Runs every case and reports; `ok` is false on any failure (or any skip with `requireAll`). */
@@ -188,7 +278,9 @@ async function callAll(transport: AzoaMoneyTransport, amount: number, cashOutAmo
     results.push([label, result]);
     return result;
   };
-  await record("checkout.begin", transport.checkout.begin({ requestKey: newRequestKey(), amountMinorUnits: amount }));
+  const checkoutKey = newRequestKey();
+  await record("checkout.begin", transport.checkout.begin({ requestKey: checkoutKey, amountMinorUnits: amount }));
+  await record("checkout.void", transport.checkout.void(checkoutKey));
   await record("account.ensure", transport.account.ensure());
   await record("account.beginKyc", transport.account.beginKyc());
   await record("cashOut.beginDestinationSetup", transport.cashOut.beginDestinationSetup());

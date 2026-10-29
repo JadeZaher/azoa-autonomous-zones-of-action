@@ -24,6 +24,8 @@ const SERVER_CODE_RULES = new Map<string, { refusal: MoneyRefusalCode; statuses?
   ["INTENT_FINISHED", { refusal: "definite", statuses: [409] }],
   ["INTENT_EXPIRED", { refusal: "definite", statuses: [409] }],
   ["REQUEST_KEY_IN_USE", { refusal: "definite", statuses: [409] }],
+  // A begin on a voided key: the node voided it, so nothing was or can be paid under it.
+  ["REQUEST_VOIDED", { refusal: "definite", statuses: [409] }],
   // The node holds the request for an operator's decision and it may still complete: the key must survive.
   ["INTENT_NEEDS_REVIEW", { refusal: "needs_review", statuses: [409] }],
 ]);

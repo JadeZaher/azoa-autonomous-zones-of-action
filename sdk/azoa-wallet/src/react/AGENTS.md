@@ -94,8 +94,8 @@ polled, and the saved key is resolved by its state, never by which page the prov
 saved key with another intent id is watched and read: **settled** → resolved; otherwise (open, clearing,
 paid but not landed, unreadable) kept and offered for resume. `start` claims a key (persisted first),
 `resume` re-sends the pending request with its original key (decided by state when it names an intent, see
-`src/money/AGENTS.md` §flows), `discard` forgets it explicitly. On an opened checkout the intent id is saved
-before `onRedirect` fires.
+`src/money/AGENTS.md` §flows), `discard` asks the node to void it (below). On an opened checkout the intent id
+is saved before `onRedirect` fires.
 
 **The add-funds form lock (HIGH-1, MEDIUM-2).** `<AddFundsForm>` keeps the new-payment form disabled
 whenever it watches an intent that has **no settled read**: an open page, `processing` (ACH clearing),
@@ -103,8 +103,19 @@ whenever it watches an intent that has **no settled read**: an open page, `proce
 definitively refuses (e.g. a stale `?intent=` link: "That payment could not be found."), frees it. The
 saved key is the durable lock (it survives a reload); this is the in-page one.
 
-- `discard()` is the person's explicit escape hatch: it forgets the key **and** stops watching that intent,
-  so a separate payment can start (the copy warns that a completed page still counts).
+- **`discard()` is the node's decision (round 3).** It runs `discardCheckout` (void-or-reveal, see
+  `src/money/AGENTS.md` §void) through the same guarded `run` as `start`/`resume` (busy, double click, person),
+  and the form stays locked until a settled view or a `voided` answer:
+  - `discarded` → the key is gone; the voided intent stops being watched; `pending.voided` ("cancelled with the
+    payment service, so nothing can be paid under it").
+  - `revealed` → the key now names that intent, which is watched (the form stays locked until it settles, and
+    `onSettled` fires once for it); `pending.revealed` ("may already have gone through, so it was kept") unless
+    the revealed view is already settled, in which case the status card says it.
+  - `refused` → the key stays and the pending notice stays; `pending.discardUnconfirmed` ("could not be checked
+    right now, so it was kept"), or the review notice for `needs_review`. `onRefusal` fires. A refusal's own
+    copy ("Nothing was moved") is not shown here: a void that could not decide cannot say that.
+  - `pending.detail.checkout` now says discarding cancels with the payment service first. Cash-out and sale
+    discards are still local (`pending.discarded`): the node has no void for them yet.
 - **Held for review (MEDIUM-3).** A `needs_review` answer keeps the key, marked `needsReview`.
   `PendingRequestNotice` then renders "needs a manual check before it can continue — we'll follow up" with
   only a same-key "Check again" (no "Resume that payment", no "Discard", and no form), on this visit and

@@ -52,6 +52,24 @@ The breaking change below is why this is a minor bump; everything under "Added (
 - Every view has an allowlist `to*View`; the direct transport narrows cash-out, payout and capability
   answers, and the contract's forbidden-key case covers every call, mutations included.
 
+### Third round: void-or-reveal (pre-publish, 2026-10-28)
+Discarding a saved checkout key is now the node's decision (oasis-sleek f2cb4fe8, `Providers/Fiat/AGENTS.md`
+§request-void): a key is released only when the node answers `voided`.
+- `AzoaApiClient.voidFiatCheckoutRequest(userId, requestKey)` (`FiatCheckoutVoidResult`), additive.
+- `CheckoutTransport.void(requestKey)` → `MoneyResult<CheckoutVoidView>` (`{ outcome: "voided", intentId }` |
+  `{ outcome: "revealed", intent }`), **required**: host transports must forward it (narrow `intent` with
+  `toCheckoutView`). The direct transport implements it; `toCheckoutVoidView` narrows the node's answer.
+- `discardCheckout(transport, keyStore, request)` → `CheckoutDiscardAttempt` (`discarded` | `revealed` |
+  `refused` | `superseded`). Only `voided` clears the key; a void refusal keeps it whatever its code.
+- A resent key that names no intent (a lost answer) and meets a key-releasing refusal (`INTENT_FINISHED`,
+  `REQUEST_KEY_IN_USE`, a gate) is put to the void first; a revealed payment is followed by state. Closes round
+  2's open item (`INTENT_FINISHED` with no intent id released the key).
+- 409 `REQUEST_VOIDED` → `definite`.
+- `useAddFunds().discard()` is async and runs the void; new copy `pending.voided`, `pending.revealed`,
+  `pending.discardUnconfirmed`; `pending.detail.checkout` reworded.
+- `azoa-sdk/money/testing`: four void cases; a factory may return `{ transport, checkout: { markPaid,
+  makeUnreadable } }` for the two that need fixture control.
+
 ### Second fix round (pre-publish re-review, 2026-10-27)
 Guiding rule: the saved request key is the lock against a second payment; only proof that nothing was or can
 be paid under it may release it.
