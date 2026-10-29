@@ -183,6 +183,7 @@ below.
 | **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
 | | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
 | | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
+| | /api/fiat/checkout/{userId}/requests/{requestKey}/void | POST | — | — | **SDK gap** (request-key void; Providers/Fiat/AGENTS.md §request-void) |
 | **Fiat payout (off-ramp / cash-out)** | /api/fiat/payouts/{userId}/availability | GET | `getCashOutAvailability` | client.ts | OK |
 | | /api/fiat/payouts/{userId}/account | GET | `getPayoutAccountStatus` | client.ts | OK |
 | | /api/fiat/payouts/{userId}/account | POST | `beginPayoutAccountSetup` | client.ts | OK |

@@ -339,6 +339,13 @@ public interface IFiatOnRampRail
     /// </summary>
     Task<AZOAResult<FiatCheckoutIntent>> GetIntentAsync(
         Guid subjectUserId, Guid intentId, Guid? tenantId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Voids an admission key so nothing can ever be paid under it, or reveals the intent already
+    /// admitted under it when something was or may be paid; see <c>Providers/Fiat/AGENTS.md</c> §request-void.
+    /// </summary>
+    Task<AZOAResult<FiatCheckoutVoidResult>> VoidRequestAsync(
+        Guid subjectUserId, Guid? tenantId, string admissionKey, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -352,7 +359,7 @@ public interface IFiatOnRampRail
 /// <para>See <c>docs/FIAT-RAIL.md</c> for the ported invariants (pricing, auth, webhook
 /// mapping, idempotency, errors) this rail inherits from the retired sidecar.</para>
 /// </summary>
-public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
+public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
 {
     /// <summary>Prefix of the claim-bound Stripe idempotency key for a checkout session create.</summary>
     public const string CheckoutIdempotencyKeyPrefix = "azoa-fiat-checkout-";
@@ -601,6 +608,11 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
                 "That request key is already in use.", FiatConsumerErrors.RequestKeyInUseCode);
         }
 
+        // A voided key (tombstone or abandoned intent) is refused before the terminal check, which
+        // would otherwise call it "finished"; see Providers/Fiat/AGENTS.md §request-void.
+        if (FiatCheckoutVoid.IsVoided(session))
+            return FiatConsumerErrors.RequestVoided<FiatCheckoutIntent>();
+
         if (HostedSessionStates.IsTerminal(session.State))
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 "This payment is already finished.", FiatConsumerErrors.IntentFinishedCode);
@@ -617,6 +629,11 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
         // D1 creation fence: exactly one Stripe create per claim incarnation, keyed by its durable
         // creation token; see Providers/Fiat/AGENTS.md §creation-fence.
         var turn = await FiatHostedCreation.BeginOrResumeAsync(store, session, now, ct);
+
+        // A void that won the version CAS between the claim above and the fence lands here.
+        if (turn.Session is { } fenced && FiatCheckoutVoid.IsVoided(fenced))
+            return FiatConsumerErrors.RequestVoided<FiatCheckoutIntent>();
+
         switch (turn.Verdict)
         {
             case FiatCreationVerdict.Attached:
@@ -696,6 +713,14 @@ public sealed class FiatRailProvider : IValueRailProvider, IFiatOnRampRail
             if (!reread.IsError && reread.Result is not null && !string.IsNullOrWhiteSpace(reread.Result.RedirectUrl)
                 && string.Equals(reread.Result.ProviderSessionId, created.Result.SessionId, StringComparison.Ordinal))
                 return await ProjectAsync(scope, reread.Result, resumed: true, ct);
+
+            // A void abandoned the claim while this create was in flight. Its page never left this
+            // node, so nothing can be paid on it; close it at Stripe too (best effort).
+            if (!reread.IsError && reread.Result is { } voided && FiatCheckoutVoid.IsVoided(voided))
+            {
+                await ExpireOrphanedPageAsync(session.Id, created.Result.SessionId, ct);
+                return FiatConsumerErrors.RequestVoided<FiatCheckoutIntent>();
+            }
 
             return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
         }

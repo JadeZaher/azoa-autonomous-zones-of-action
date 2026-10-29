@@ -155,6 +155,10 @@ public sealed class CheckoutCreationFenceTests
                     : AZOAResult<StripeCheckoutSession>.Success(found));
             }
         }
+
+        public Task<AZOAResult<StripeCheckoutSession>> ExpireCheckoutSessionAsync(
+            StripeCredentials credentials, string sessionId, string idempotencyKey, CancellationToken ct = default)
+            => Task.FromResult(AZOAResult<StripeCheckoutSession>.Failure("The creation-fence tests never expire a session."));
     }
 
     private sealed class ManualClock(DateTimeOffset start) : TimeProvider

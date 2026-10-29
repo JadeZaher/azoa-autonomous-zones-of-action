@@ -1,7 +1,7 @@
 ---
 type: Module Notes
 title: Providers/Fiat — Stripe rail adapters
-tags: [fiat, stripe, hosted-session, creation-fence, D1]
+tags: [fiat, stripe, hosted-session, creation-fence, D1, request-void]
 ---
 
 # Providers/Fiat
@@ -46,8 +46,8 @@ record the fiat path never writes), so payout-account setups have their own Stri
 `POST /api/admin/fiat-payouts/accounts/{userId}/setup/resolve` (`PayoutAccountService.ResolveStuckSetupAsync`,
 see `Services/Fiat/OffRamp/AGENTS.md` §account-recovery). Connected accounts carry
 `metadata[azoa_payout_claim]=<rowId>` and `metadata[azoa_user_id]` so that exit can find the one Stripe opened.
-Checkout claims have no such exit: a new request key opens a new claim, and a Stripe session a lost response
-created expires unpaid (RV-L1-01; revisit if a stuck checkout claim ever blocks a person).
+Checkout claims have no operator exit: a new request key opens a new claim, and a Stripe session a lost response
+created expires unpaid (RV-L1-01). The key holder's own exit is the request-key void (§request-void).
 
 ## §expiry-pin — checkout `expires_at` is fixed per claim (D8, round 4)
 
@@ -90,11 +90,13 @@ message unchanged so this is additive for any caller that still only reads those
 - `INTENT_EXPIRED` — see the proof rule below; nothing else may emit it.
 - `INTENT_NEEDS_REVIEW` — `FiatCreationVerdict.NeedsOperator`: the 23-hour replay window elapsed, or
   the row is quarantined, with no provider session ever attached.
+- `REQUEST_VOIDED` — the key was voided (§request-void); nothing was or can be paid under it.
 
-These four strings are a wire contract with the SDK (`sdk/azoa-wallet`) and the ArdaNova BFF; never
-rename or repurpose them once shipped.
+These five strings are a wire contract with the SDK (`sdk/azoa-wallet`) and the ArdaNova BFF; never
+rename or repurpose them once shipped. Every controller switch that can see one maps it to 409
+(`FiatCheckoutController.Start`, `TenantPayoutBalanceController.TopUp`), never to the 400 default.
 
-**The proof rule.** Clients treat all four codes as FINAL: they release the request key and unlock
+**The proof rule.** Clients treat all five codes as FINAL: they release the request key and unlock
 the form. So a final code may be sent only when the code path that emits it can PROVE nothing was or
 can be paid under that key. Anything it cannot prove gets a non-final answer — a 200 projection, a
 503, or the generic 409 `CONFLICT` — because a final code on a payment that is clearing is a double
@@ -110,6 +112,7 @@ charge (the person pays again on a fresh key). The full same-key resend contract
 | page attached + past expiry AND intent `AwaitingSubject` AND a FRESH Stripe read says not complete (`expired` unpaid, or `open` past its own `expires_at`) | 409 `INTENT_EXPIRED` — the only case |
 | no page ever created and the pinned expiry is inside the 31-minute floor (§expiry-pin) | 409 `INTENT_EXPIRED` (nothing was ever payable) |
 | needs operator | 409 `INTENT_NEEDS_REVIEW` |
+| key voided (tombstone or voided intent), including a void that won the race against this begin | 409 `REQUEST_VOIDED` |
 | key bound to another account | 409 `REQUEST_KEY_IN_USE` |
 | Stripe answers 409 / `idempotency_key_in_use` (a same-key request still in flight) | 409 `CONFLICT` (`FiatConsumerErrors.RequestInFlight`) — keep the key, retry |
 
@@ -121,6 +124,69 @@ only while the intent is `awaiting_payment` and Stripe reads `open`, and reports
 Stripe says `complete` even if the webhook has not moved the claim yet. `StripeGateway.SendAsync`
 maps every Stripe 409 (and the `idempotency_key_in_use` code) to the non-final `CONFLICT`, never to
 `RAIL_REFUSED`/400, which clients treat as final.
+
+## §request-void — the one authoritative way to discard a request key
+
+**Why it exists.** Clients (the SDK, the ArdaNova BFF) persist the request key and resend it after a
+lost answer; the key is the lock against a second payment. A client cannot safely discard a key on
+its own ("start a new payment", "cancel", a first answer lost before any intent id came back):
+only the node knows whether anything was admitted under it, and a late in-flight begin could still
+be admitted after a client-side discard. `POST /api/fiat/checkout/{userId}/requests/{requestKey}/void`
+(`FiatCheckoutController.VoidRequest` → `FiatRailProvider.VoidRequestAsync`, in
+`FiatRailProvider.Void.cs`) is that server call. The proof rule above governs it: it answers
+`voided` only when it can prove nothing was or can be paid under the key.
+
+**Same gates and key as begin.** `AuthoriseSubjectAsync` (first-party self, or an API-key tenant with
+`tenant:provision` and live consent) and `BuildAdmissionKey` (`{subject}:{tenant|self}:{key}`) are the
+very methods `Start` uses. No KYC/KYB gate: voiding moves no value, and a lapsed approval must not
+stop a person from cancelling. A route value containing `%2F` is refused 400: routing leaves an
+encoded `/` undecoded, so it would name a different key than begin stored and a "voided" would lie.
+
+**How it serializes with begin.** There is no lock; the fence is the admission row plus its
+state-version CAS — the same one begin already relies on.
+1. The void's admission candidate IS a tombstone (`ABANDONED`, `authoritative_outcome=VOIDED`,
+   `outcome_detail=VOIDED_BEFORE_ADMISSION`). `ClaimAdmissionAsync` is create-if-absent on the unique
+   `(flow, provider, admission key)`, so a void and a begin racing on an unclaimed key resolve to one
+   row: if the void created it, every later begin finds a voided row.
+2. Every begin step that can lead to a page URL leaving the node — the creation fence
+   (`TryBeginCreationAsync`) and the attach (`TryAttachProviderSessionAsync`) — is a CAS requiring
+   `CLAIMED` at the observed version. The void's only write on an admitted row is
+   `TryTransitionAsync(→ ABANDONED, VOIDED, VOIDED_AFTER_ADMISSION)` at the version it read. Exactly
+   one lands; the loser re-reads. A void that loses re-decides on the new row (bounded attempts, then
+   503 `RAIL_BUSY`).
+3. Begin checks `FiatCheckoutVoid.IsVoided` after the claim, after the fence verdict, and after a lost
+   attach. In the last case its Stripe create already ran; the page was never handed out (a URL leaves
+   only after a won attach), and begin expires it at Stripe best-effort.
+
+**Decision table** (`TryVoidAdmittedAsync`; answers are the wire contract the SDK and BFF build on):
+
+| state under the admission key | effect | answer |
+|---|---|---|
+| nothing admitted | tombstone written | 200 `{outcome:"voided", intentId:null}` |
+| already voided (tombstone / voided intent) | none | the same 200 as the first void (idempotent) |
+| `CLAIMED`, no page attached, replayable | CAS → `ABANDONED`/`VOIDED` | 200 `{outcome:"voided", intentId}` |
+| page attached, fresh Stripe read `expired` | CAS → `ABANDONED`/`VOIDED` | 200 voided |
+| page attached, fresh Stripe read `open` | expire at Stripe, then CAS → `ABANDONED`/`VOIDED` | 200 voided |
+| expire refused or lost, and a fresh read then says `complete`/`paid` | none | 200 `{outcome:"revealed", intentId, intent}` |
+| Stripe says `complete` (paid OR unpaid) or `paid` | none | 200 revealed |
+| intent `AWAITING_OUTCOME`, `RESUMING`, or terminal (not voided) | none | 200 revealed |
+| Stripe unreadable; expire failed and the re-read still says `open`; unknown status | none | 503 `DEPENDENCY_UNAVAILABLE` |
+| unattached claim quarantined, tokenless or past the replay window (`FiatHostedCreation.IsUnreplayable`) | none | 409 `INTENT_NEEDS_REVIEW` |
+| key bound to another account | none | 409 `REQUEST_KEY_IN_USE` |
+
+`intent` on `revealed` is exactly the projection `GET /api/fiat/checkout/{userId}/{intentId}` returns.
+An unattached `CLAIMED` row is voidable even with its creation fence begun: the abandon CAS makes the
+attach impossible, so the page Stripe may hold for it is one nobody was or can be handed, and it
+lapses unpaid at its pinned `expires_at` (§expiry-pin).
+
+**Stripe expire.** `POST /v1/checkout/sessions/{id}/expire` with Idempotency-Key
+`azoa-fiat-checkout-expire-<intentId>-<stripeSessionId>` (`FiatCheckoutVoid.ExpireIdempotencyKey`),
+fixed per intent so a retried void replays the same request rather than issuing a second one, and a
+void that finds the row already voided never calls Stripe. Any failed or inconclusive expire is
+settled by a fresh read, never assumed: `expired` → void, `complete`/`paid` → reveal, anything else
+→ 503. Liveness caveat: Stripe replays a stored answer for a reused key, so if the first expire
+drew a Stripe 500 the void keeps answering 503 (key kept, safe) until the page lapses at its pinned
+expiry, after which the read says `expired` and the void succeeds.
 
 ## §settlement-read-failure — a read that cannot confirm state must fail, not guess
 

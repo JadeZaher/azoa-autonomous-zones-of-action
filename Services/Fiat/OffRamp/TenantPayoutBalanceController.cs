@@ -76,7 +76,8 @@ public sealed class TenantPayoutBalanceController(
             AzoaErrorCodes.Conflict => Conflict(result),
             // Same-key replay codes: same 409 as always, now distinguishable by `code`.
             FiatConsumerErrors.RequestKeyInUseCode or FiatConsumerErrors.IntentFinishedCode
-                or FiatConsumerErrors.IntentExpiredCode or FiatConsumerErrors.IntentNeedsReviewCode => Conflict(result),
+                or FiatConsumerErrors.IntentExpiredCode or FiatConsumerErrors.IntentNeedsReviewCode
+                or FiatConsumerErrors.RequestVoidedCode => Conflict(result),
             AzoaErrorCodes.DependencyUnavailable or FiatConsumerErrors.RailUnavailableCode or FiatConsumerErrors.RailBusyCode
                 or FiatConsumerErrors.PaymentsNotConfiguredCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             _ => BadRequest(result),

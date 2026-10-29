@@ -85,6 +85,10 @@ public interface IStripeGateway
     /// <summary>Re-reads one Checkout session server-side. Never trust a webhook body for these facts.</summary>
     Task<AZOAResult<StripeCheckoutSession>> GetCheckoutSessionAsync(
         StripeCredentials credentials, string sessionId, CancellationToken ct = default);
+
+    /// <summary>Expires an OPEN Checkout session so it can no longer take a payment. Idempotent on <paramref name="idempotencyKey"/>.</summary>
+    Task<AZOAResult<StripeCheckoutSession>> ExpireCheckoutSessionAsync(
+        StripeCredentials credentials, string sessionId, string idempotencyKey, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -179,6 +183,24 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
             form: null,
             idempotencyKey: null,
             "read a payment session",
+            ct);
+    }
+
+    /// <inheritdoc />
+    public Task<AZOAResult<StripeCheckoutSession>> ExpireCheckoutSessionAsync(
+        StripeCredentials credentials, string sessionId, string idempotencyKey, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return Task.FromResult(AZOAResult<StripeCheckoutSession>.Failure("A payment session id is required."));
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+
+        return SendAsync(
+            credentials,
+            HttpMethod.Post,
+            "/v1/checkout/sessions/" + Uri.EscapeDataString(sessionId.Trim()) + "/expire",
+            Array.Empty<KeyValuePair<string, string>>(),
+            idempotencyKey,
+            "expire a payment session",
             ct);
     }
 
@@ -504,7 +526,8 @@ public static class FiatConsumerErrors
     /// hits one of these 409s; the code tells the caller which one so it can stop polling,
     /// start fresh, or keep waiting, instead of treating every 409 alike. The HTTP status (409)
     /// and the human message stay exactly as they were — only this discriminator is new. These
-    /// four strings are a wire contract with the SDK and the ArdaNova BFF: never rename them.
+    /// strings (and <see cref="RequestVoidedCode"/>) are a wire contract with the SDK and the
+    /// ArdaNova BFF: never rename them.
     /// </summary>
     public const string RequestKeyInUseCode = "REQUEST_KEY_IN_USE";
 
@@ -516,6 +539,9 @@ public static class FiatConsumerErrors
 
     /// <summary>The send outcome for this key can no longer be replayed safely; an operator must reconcile it.</summary>
     public const string IntentNeedsReviewCode = "INTENT_NEEDS_REVIEW";
+
+    /// <summary>This request key was voided; nothing was or can be paid under it. Final: start a new payment.</summary>
+    public const string RequestVoidedCode = "REQUEST_VOIDED";
 
     private const string NotConfiguredMessage =
         "Adding funds is not configured on this node.";
@@ -531,6 +557,9 @@ public static class FiatConsumerErrors
 
     private const string InFlightMessage =
         "This payment request is still being processed. Keep this request and try again shortly.";
+
+    private const string VoidedMessage =
+        "This payment request was cancelled and nothing can be paid under it. Start a new payment.";
 
     public static AZOAResult<T> RailUnavailable<T>() =>
         AZOAResult<T>.FailureWithCode(UnavailableMessage, RailUnavailableCode);
@@ -551,6 +580,10 @@ public static class FiatConsumerErrors
     /// <summary>A same-key request is still in flight at the rail: the generic, NON-final 409 <see cref="AzoaErrorCodes.Conflict"/>.</summary>
     public static AZOAResult<T> RequestInFlight<T>(string? correlationId = null) =>
         AZOAResult<T>.FailureWithCode(WithReference(InFlightMessage, correlationId), AzoaErrorCodes.Conflict);
+
+    /// <summary>A begin on a voided request key: the final 409 <see cref="RequestVoidedCode"/>.</summary>
+    public static AZOAResult<T> RequestVoided<T>() =>
+        AZOAResult<T>.FailureWithCode(VoidedMessage, RequestVoidedCode);
 
     private static string WithReference(string message, string? correlationId) =>
         string.IsNullOrWhiteSpace(correlationId) ? message : $"{message} Reference: {correlationId}.";

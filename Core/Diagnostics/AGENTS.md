@@ -55,6 +55,20 @@ structured values, JSON-shaped messages, inner chains, and captured Surreal
 parameters. Do not put secrets in exception types, stack-frame names, plain-text
 exception messages, or unstructured scope values.
 
+## Redaction
+
+`JsonlExceptionLoggerOptions.RedactionKeys` is a case-insensitive key-substring deny-list. Beyond
+credentials (password, token, secret, api key, mnemonic, private key) it covers personal and bank
+fields by default — `first_name`, `last_name`, `birthday`, `date_of_birth`, `citizenship`,
+`person_key`, `account_number`, `routing_number`, `id_number`, `ssn`, with their unseparated
+spellings — because a SurrealForge fault attaches the failing query's parameters as
+`SurrealParams`, and the KYC identity binding (`SurrealKycIdentityStore`) binds a person's name,
+birthday, citizenship and person keys as `_binding_first_name`, `_binding_birthday`, and so on.
+Typed `SurrealWriter` writes bind each column as `_f_<column>` (`_f_first_name`), so the same
+substrings catch them. Matching is per parameter KEY; a value nested inside an object-valued
+parameter is not inspected, so bind personal fields as their own named parameters. The
+configuration binder appends to this list, so configuration can widen it but never drop a default.
+
 ## OpenTelemetry
 
 OpenTelemetry exports ASP.NET Core, HTTP-client, and custom AZOA/Surreal traces
