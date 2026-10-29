@@ -136,8 +136,9 @@ public sealed class AllocationManager : IAllocationManager
         {
             if (tenantId != callerUserId || _users is null)
                 return ToConsumerSafeFailure("Tenant allocation authority is unavailable.");
+            // Correlated, not owned: a claimed member stays this tenant's; see Managers/AGENTS.md §claimed-continuity.
             var target = await _users.GetByIdAsync(userId);
-            if (target.IsError || target.Result is null || target.Result.OwnerTenantId != tenantId)
+            if (target.IsError || target.Result is null || !TenantChildCorrelation.IsCorrelated(target.Result, tenantId))
                 return ToConsumerSafeFailure(
                     TenantAuthorizationError.NotFound + "Custodial user not found.");
         }

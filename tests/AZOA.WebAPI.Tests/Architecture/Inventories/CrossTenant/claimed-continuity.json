@@ -1,0 +1,7 @@
+[
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "RelinquishAsync",
+    "tenantCheck": "query-scoped: filters by tenantId and the tenant's deterministic member id; the credential must be the tenant's own"
+  }
+]

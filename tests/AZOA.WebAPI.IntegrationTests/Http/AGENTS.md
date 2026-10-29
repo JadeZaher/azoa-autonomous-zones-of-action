@@ -105,6 +105,7 @@ choice.
 | `StripeWebhookFlowTests` | Money path: a signed `checkout.session.completed` claiming "paid" while Stripe's own session is unpaid decides nothing; Stripe clears, `async_payment_succeeded` → intent PAID, payer reads `complete` / `payment_received`. Expiry moves the intent once; a re-signed redelivery is answered from the inbox | One table: wrong secret, stale timestamp, livemode mismatch → 400, no inbox row. Payment deliveries are never answered 4xx |
 | `WebhookRegistrationFlowTests` | Tenant registers a receiver; a lost response is replayed from the receipt without re-disclosing the secret; a withdrawn change can never apply | Stale `expectedVersion` → 409 |
 | `ClaimInviteFlowTests` / `ClaimInviteWithheldTokenFlowTests` | Tenant provisions a member → mints a claim invite → member claims with a password it chose; storage holds only the `h1:` digest. With the production policy (`WithheldClaimTokenWebApplicationFactory`) the tenant's response carries no token and a 72 h expiry | Stored digest presented as a token, used invite (password unchanged), expired invite, legacy plaintext row: each 404 with no ownership change (each is a way a tenant or DB reader could take the account) |
+| `ClaimedMemberContinuityFlowTests` | Tenant provisions + KYC-approves a member → tenant invites, person claims with a password → person grants `kyc:read, units:issue, swap:sign, transfer:sign, kyc:submit` with the claim's own login JWT → status `claimed`+ready, same wallet on ensure, checkout `200`, exchange admitted by consent (then `503` only for this host's missing platform unit), payout availability `200`, refund (Transfer allocation preview) admitted → person revokes → four-field status, checkout and exchange `403` → person re-grants → tenant `DELETE …/consent` revokes it with its `consent.revoked` event and audit | No grant after claim: exactly four fields on `GET` and `PUT` and no second wallet; another tenant gets `404` on status and on relinquish (cross-tenant isolation) |
 | `RecoverySurfaceAuthorizationTests` | Who reaches `api/ethereum/recovery/{network}`, `api/operator/ethereum/recovery/{network}`, `api/operator/wallet-identities`, `api/operator/hosted-sessions/reconciliation` | Authorized callers get a non-404, non-5xx answer (an unconfigured feature is a 409) |
 
 Time is arranged only where no route can: the reconciliation test ages `creation_claimed_at` with
@@ -114,6 +115,22 @@ HTTP needs a KYC-approved payer; the E2E on-ramp journey covers that path.
 
 Cut: no tests for request-validation variants already covered by unit tests
 (`tests/AZOA.WebAPI.Tests/Kyb`, `Kyc`), no mock-interaction assertions, no "throws on null".
+## §claimed-continuity — `Infrastructure/ClaimedContinuityWebApplicationFactory.cs`
+
+The flow host plus `CustodialAccounts:CustodyMode=Platform` (wallets encrypted under the base host's
+per-process `TestWalletEncryptionKey`), so the member owns a real encrypted platform wallet and status can
+be `ready` (the shared host's custody is `Disabled`). It sets `Tenant:ClaimInvites:ReturnTokenToTenant=true`
+explicitly (the IntegrationTest environment the Program.cs boot guard allows; see §claim-invite) so the
+tenant's invite response carries the token the person claims with. A request presenting a `Bearer` token is
+validated by the real JwtBearer handler; header-selected test and operator principals (no token)
+still reach `TestAuthHandler`, including through Bearer-only policies. The person therefore
+grants and revokes with the login JWT `POST /api/user/claim` returned, not a test principal
+(the test principal has no `exp`, which first-party credential capture requires). The claim CAS
+needs the wallet-identity migration `Ready`; the test runs the worker's sweep through
+`WalletAuthIdentityMigrationService.SweepAsync` (no route can). Exchange and allocation run as
+previews so nothing moves; the consent edge's `TenantSignAllowed` audit row is the proof the
+exchange was admitted.
+
 ## §adding-a-flow (round-4 lanes N/A/B/C)
 
 1. Derive from `HttpFlowTestBase` (`IClassFixture<HttpFlowWebApplicationFactory>` is inherited).

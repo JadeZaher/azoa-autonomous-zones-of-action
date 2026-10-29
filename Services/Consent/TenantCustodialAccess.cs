@@ -38,4 +38,8 @@ public sealed class TenantCustodialAccess(ISurrealExecutor executor) : ITenantCu
             || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal))
         { return false; }
     }
+
+    /// <inheritdoc/>
+    public Task<TenantCustodialKind?> ResolveOwnershipAsync(Guid userId, string externalUserId, Guid tenantId, CancellationToken ct = default)
+        => TenantCustodialAuthorityFence.OwnershipAsync(executor, userId, externalUserId, tenantId, ct);
 }

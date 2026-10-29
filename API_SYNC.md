@@ -213,6 +213,7 @@ below.
 | | /api/tenant/custodial-accounts/{externalSubject} | GET | `getTenantCustodialAccount` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/session | POST | `beginTenantKyc` | client.ts | OK |
 | | /api/tenant/custodial-accounts/{externalSubject}/kyc/submissions | POST | `submitTenantKyc` | client.ts | OK |
+| | /api/tenant/custodial-accounts/{externalSubject}/consent | DELETE | — | — | **SDK gap** — tenant relinquish of a member's grants (claimed-member continuity); the ArdaNova BFF calls it directly. The status `ownership`/`consent`/`consentScopes`/`consentExpiresAt` fields and the four-field claimed status are not yet in the SDK `TenantCustodialAccountStatus` type. |
 | **BlockchainOperation** | /api/blockchainoperation/{id} | GET | `getBlockchainOperation` | client.ts | OK (safe projection) |
 | | /api/blockchainoperation/user/{userId} | GET | `getBlockchainOperationsByUser` | client.ts | OK (safe projection) |
 | **Allocation receipt** | /api/allocation/receipt | GET | — | — | SDK gap (API-key caller surface; .NET SDK track) |

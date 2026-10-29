@@ -67,8 +67,8 @@ internal static class ConsentFixture
         var access = new Mock<ITenantCustodialAccess>();
         access.Setup(item => item.CaptureAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<SigningConsentWitness>(),
             It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid user, string external,
-                SigningConsentWitness authority, string _, CancellationToken _) => new TenantCustodialWitness(authority,
-                    user, external, null, "membership", 0, "grant", 0, string.Join(',', authority.RequiredScopes), null, "command", "receipt"));
+                SigningConsentWitness authority, string _, CancellationToken _) => new TenantCustodialWitness(TenantCustodialKind.Custodial,
+                    authority, user, external, null, "membership", 0, "grant", 0, string.Join(',', authority.RequiredScopes), null, "command", "receipt"));
         access.Setup(item => item.ValidateAsync(It.IsAny<TenantCustodialWitness>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         return access;

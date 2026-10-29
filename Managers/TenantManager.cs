@@ -1,7 +1,6 @@
 using AZOA.WebAPI.Models.Signing;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
@@ -55,7 +54,7 @@ public class TenantManager : ITenantManager
             return AZOAResult<ChildUserResponse>.FailureWithCode(UsernameRules.ReservedPrefixMessage, AzoaErrorCodes.InvalidRequest);
 
         var externalUserId = model.ExternalUserId.Trim();
-        var deterministicId = DeterministicUserId(tenantId, externalUserId);
+        var deterministicId = TenantChildCorrelation.DeterministicUserId(tenantId, externalUserId);
 
         var existing = await _userStore.GetByTenantAndExternalUserAsync(tenantId, externalUserId, ct);
         if (existing.IsError)
@@ -92,7 +91,7 @@ public class TenantManager : ITenantManager
             };
         }
 
-        var correlationHash = CorrelationHash(tenantId, externalUserId);
+        var correlationHash = TenantChildCorrelation.CorrelationHash(tenantId, externalUserId);
         var seed = $"onboard-{Convert.ToHexString(correlationHash.AsSpan(0, 12)).ToLowerInvariant()}";
         // OI-11: fold case HERE, not only at self-registration. user_email / user_username
         // are case-SENSITIVE UNIQUE indexes, so a tenant that provisioned Alice@Example.com
@@ -221,7 +220,7 @@ public class TenantManager : ITenantManager
         {
             // A claimed user no longer carries OwnerTenantId. Its deterministic
             // id remains the immutable, tenant-partitioned correlation key.
-            var deterministicId = DeterministicUserId(tenantId, externalUserId);
+            var deterministicId = TenantChildCorrelation.DeterministicUserId(tenantId, externalUserId);
             var claimed = await _userStore.GetByIdAsync(deterministicId, ct);
             if (!claimed.IsError
                 && claimed.Result is not null
@@ -372,13 +371,6 @@ public class TenantManager : ITenantManager
     /// </remarks>
     private static string NormalizeIdentityValue(string? value)
         => value?.Trim().ToLowerInvariant() ?? string.Empty;
-
-    private static byte[] CorrelationHash(Guid tenantId, string externalUserId)
-        => SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
-            $"azoa:tenant-user:v1:{tenantId:N}:{externalUserId}"));
-
-    private static Guid DeterministicUserId(Guid tenantId, string externalUserId)
-        => new(CorrelationHash(tenantId, externalUserId).AsSpan(0, 16));
 
     private static bool MatchesCorrelation(
         IUser user,

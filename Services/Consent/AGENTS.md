@@ -3,6 +3,28 @@
 
 ConsentLifecycleService captures the actual credential before user grant/revoke or tenant offboard and delegates the atomic lifecycle store. Expected invalid commands become typed failures; infrastructure errors propagate. ConsentExpiryWorker observes bounded persisted expiry facts even when outbound HTTP delivery is disabled. It does not alter expiry or restore a grant. The old internal provisioning issuer and account-claim sweep still require cutover before the legacy manager mutation surface can be removed.
 
+### §claimed-continuity — consent after a claim
+
+After a claim the tenant holds nothing until the person grants it scopes themselves
+(`POST /api/user/consent`, first-party login, origin `UserExplicit`). `TenantCustodialAccess`
+then answers custody reads/admissions through the fence's claimed branch
+(`Providers/Stores/Surreal/AGENTS.md` §claimed-custodial-fence) and
+`ResolveOwnershipAsync` tells the status projection whether a miss is a claimed member
+(minimal status) or not the tenant's member at all (404). Checkout, payout reads, cash-out
+and exchange already accept a grant of any origin through `TenantConsentGate`; nothing there
+changed. The flow is pinned end to end by `Http/ClaimedMemberContinuityFlowTests`.
+
+### §relinquish — the tenant gives up a member's grants
+
+`ConsentLifecycleService.RelinquishAsync` (route `DELETE /api/tenant/custodial-accounts/{ext}/consent`)
+captures the tenant credential, binds `tenant:provision`, and revokes every live grant the
+correlated member gave this tenant, whatever its origin, with the house `consent.revoked`
+notifications. It exists because `DELETE /api/tenant/consent/provisioned` closes only the
+Participation membership: after a claim that told the person "permission withdrawn" while the
+tenant still held their `transfer:sign`. Outcome codes: `NOT_FOUND` (not this tenant's member),
+`FORBIDDEN` (tenant credential), `CONFLICT` (grant set changed mid-transaction; retry the same
+request).
+
 ### Provisioning issuer cutover
 
 TenantProvisionedGrantIssuer now requires the atomic lifecycle store and the actual tenant SigningConsentWitness. It returns the immutable original command receipt, including after later grant revocation. TenantManager has no optional issuer or constructed fallback. The grant transaction validates current tenant credential, exact child ownership/external correlation/auth watermark, approved membership and destination evidence. A create-only identity can survive a failed grant admission; the caller reports failure and retry cannot manufacture a grant after ownership changed. Account claiming still requires its own atomic ownership/revocation notification migration.

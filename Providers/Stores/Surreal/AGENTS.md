@@ -1160,3 +1160,40 @@ translate nullable CBOR parameters into absent SCHEMAFULL option values. Require
 identity/provenance fields retain their required types. The real-DB binding
 fixture covers node-direct and tenant-scoped success with null personal fields,
 and changed lease/provider/selection/trust authority with transaction rollback.
+
+## §claimed-custodial-fence — TenantCustodialAuthorityFence, two kinds of member
+
+`TenantCustodialAuthorityFence` is the single read/admission boundary for tenant custody
+(`GET`/`PUT custodial-accounts/{ext}`, KYC session/submission, hosted KYC). `CaptureAsync`
+classifies the member first (`Classify`): tenant link equal to the caller → **Custodial**;
+tenant link cleared, `AuthNotBefore` set and the id equal to
+`TenantChildCorrelation.DeterministicUserId(tenant, ext)` → **Claimed**; anything else → no
+witness. The witness carries its `Kind`; membership fields are set only for Custodial.
+
+- **Custodial** (unchanged): open participation membership + the implied Participation grant
+  at its deterministic command id.
+- **Claimed**: the first live, receipt-backed `UserExplicit` grant from the person to this
+  tenant covering the required scope (`ParticipationRef` none, `Id == CommandId[..32]`).
+  `Create` emits, inside the caller's `BEGIN … COMMIT`: the credential guards
+  (`SigningAuthorityFence.ForConsent`), a no-op `UPDATE ONLY user` whose `WHERE` requires
+  `is_active`, `owner_tenant_id = NONE`, the external id and the captured `auth_not_before`,
+  and a no-op `UPDATE ONLY consent_grant` whose `WHERE` requires the captured `version`,
+  `revoked_at = NONE`, grantor, tenant, scopes, expiry, origin `UserExplicit`, command id and
+  receipt. One raw `IF … THROW 'TENANT_CUSTODIAL_AUTHORITY_CHANGED'` turns an empty result
+  (or a grant past its expiry by database time) into a rollback. A revoke or relinquish
+  bumps the grant version and a credential reset moves the watermark, so a witness captured
+  before either can never validate after it (`SurrealConsentLifecycleTests.Claimed.cs`).
+
+`OwnershipAsync` is the same classification without any authority read; managers use it only
+to choose between the minimal claimed status and not-found, never to authorise.
+
+## §relinquish — SurrealConsentLifecycleStore.Relinquish.cs
+
+The tenant gives up every live grant (any origin) from its correlated member to itself. The
+member is the tenant's deterministic id (custodial or claimed); anything else is `NOT_FOUND`.
+One transaction: tenant credential guards, the exact live grant set re-selected and
+count-checked (a grant admitted after the read rolls the whole thing back), one version-CAS
+revocation per grant, and per grant the house `Revoked` audit, `consent_webhook_event` and
+transition proof (detail `relinquished by tenant`). Zero live grants still runs the guarded
+transaction and answers an empty receipt, so the call is idempotent. Grants to other tenants
+are never selected. It does not close the participation membership (that is offboarding).

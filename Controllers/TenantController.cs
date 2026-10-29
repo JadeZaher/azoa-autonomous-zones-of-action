@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Interfaces.Managers;
+using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
@@ -70,7 +71,7 @@ public class TenantController : ControllerBase
             idempotencyKey ?? string.Empty,
             authority.Result,
             HttpContext.RequestAborted);
-        return TranslateResult(result);
+        return TranslateStatus(result);
     }
 
     /// <summary>Returns the secret-free authoritative account, wallet, and KYC status.</summary>
@@ -91,7 +92,28 @@ public class TenantController : ControllerBase
             externalSubject,
             authority,
             HttpContext.RequestAborted);
-        return TranslateResult(result);
+        return TranslateStatus(result);
+    }
+
+    /// <summary>Gives up every live grant this tenant holds from the correlated member, of any origin (claimed or not).</summary>
+    [HttpDelete("custodial-accounts/{externalSubject}/consent")]
+    [EnableRateLimiting("tenant-custodial")]
+    public async Task<ActionResult<AZOAResult<ConsentRelinquishReceipt>>> RelinquishCustodialConsent(
+        string externalSubject,
+        [FromServices] ConsentLifecycleService lifecycle)
+    {
+        var tenantId = GetTenantIdFromClaims();
+        if (tenantId is null) return Unauthorized();
+
+        var result = await lifecycle.RelinquishAsync(User, externalSubject, HttpContext.RequestAborted);
+        if (!result.IsError) return Ok(result);
+        return result.Code switch
+        {
+            AzoaErrorCodes.NotFound => NotFound(result),
+            AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
+            AzoaErrorCodes.Conflict => Conflict(result),
+            _ => BadRequest(result),
+        };
     }
 
     /// <summary>Begins either a hosted or document-reference KYC flow.</summary>
@@ -245,6 +267,20 @@ public class TenantController : ControllerBase
         }
 
         return BadRequest(result);
+    }
+
+    /// <summary>
+    /// A claimed member who has granted this tenant nothing is answered with the four-field
+    /// <see cref="TenantClaimedMemberStatusResponse"/> and nothing else; see docs/TENANT-CUSTODIAL-ONBOARDING.md §Claimed members.
+    /// </summary>
+    private ActionResult<AZOAResult<TenantCustodialAccountStatusResponse>> TranslateStatus(
+        AZOAResult<TenantCustodialAccountStatusResponse> result)
+    {
+        if (result is { IsError: false, Result: { Ownership: TenantMemberOwnership.Claimed, Consent: TenantMemberConsent.None } })
+            return Ok(AZOAResult<TenantClaimedMemberStatusResponse>.Success(new TenantClaimedMemberStatusResponse(),
+                "The member has claimed this account and has granted this tenant no access."));
+
+        return TranslateResult(result);
     }
 
     private ActionResult<AZOAResult<T>> MissingScope<T>(string scopes)

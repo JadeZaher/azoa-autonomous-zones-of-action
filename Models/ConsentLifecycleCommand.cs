@@ -18,5 +18,9 @@ public sealed record ConsentRevocationReceipt(Guid GrantId, DateTimeOffset Revok
 /// <summary>Original atomic membership closure result, preserved across retries.</summary>
 public sealed record ConsentOffboardReceipt(Guid TenantId, string ParticipationRef, DateTimeOffset ClosedAt, int RevokedCount);
 
+/// <summary>Every grant a tenant held from one correlated member, given up in one transaction (empty when none were live).</summary>
+public sealed record ConsentRelinquishReceipt(Guid TenantId, string ExternalSubject, DateTimeOffset RelinquishedAt,
+    int RevokedCount, IReadOnlyList<Guid> RevokedGrantIds);
+
 /// <summary>Proves a command cannot newly admit a grant, or returns its original admission receipt.</summary>
 public sealed record ConsentCommandWithdrawal(Guid RequestId, bool Withdrawn, ConsentLifecycleReceipt? Receipt);

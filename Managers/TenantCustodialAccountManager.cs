@@ -232,11 +232,23 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
                 SafeIdentityMessage(child.Message));
 
-        if (await CaptureAccessAsync(tenantId, child.Result.UserId, externalSubject, authority, AzoaScopes.KycRead, ct) is null)
-            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
+        return await ReportStatusAsync(tenantId, externalSubject, child.Result.UserId, null, authority, ct);
+    }
 
-        var capabilities = (await GetCapabilitiesAsync(tenantId, ct)).Result!;
-        var wallet = await FindBootstrapWalletAsync(child.Result.UserId, capabilities.WalletChain);
+    /// <summary>Reports a resolved member through the custody fence: full status under a live grant, else minimal-or-miss.</summary>
+    private async Task<AZOAResult<TenantCustodialAccountStatusResponse>> ReportStatusAsync(
+        Guid tenantId,
+        string externalSubject,
+        Guid userId,
+        TenantCustodialCapabilitiesResponse? capabilities,
+        SigningConsentWitness authority,
+        CancellationToken ct)
+    {
+        if (await CaptureAccessAsync(tenantId, userId, externalSubject, authority, AzoaScopes.KycRead, ct) is null)
+            return await WithoutLiveAccessAsync(tenantId, externalSubject, userId, authority, ct);
+
+        capabilities ??= (await GetCapabilitiesAsync(tenantId, ct)).Result!;
+        var wallet = await FindBootstrapWalletAsync(userId, capabilities.WalletChain);
         if (wallet.IsError)
             return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
                 "TENANT_WALLET_UNAVAILABLE: Custodial wallet status is temporarily unavailable.");
@@ -244,11 +256,30 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         return await BuildStatusAsync(
             tenantId,
             externalSubject,
-            child.Result.UserId,
+            userId,
             wallet.Result,
             capabilities,
             authority,
             ct);
+    }
+
+    /// <summary>
+    /// No live grant covers the read. A member who claimed their account from THIS tenant gets the minimal
+    /// claimed status (so the tenant can ask them for consent); anyone else stays indistinguishable from a miss.
+    /// </summary>
+    private async Task<AZOAResult<TenantCustodialAccountStatusResponse>> WithoutLiveAccessAsync(
+        Guid tenantId,
+        string externalSubject,
+        Guid userId,
+        SigningConsentWitness authority,
+        CancellationToken ct)
+    {
+        var claimed = authority.Credential.ActorUserId == tenantId && authority.Credential.TenantId is null
+            && await _access.ResolveOwnershipAsync(userId, externalSubject, tenantId, ct) == TenantCustodialKind.Claimed;
+        return claimed
+            ? AZOAResult<TenantCustodialAccountStatusResponse>.Success(ClaimedWithoutConsentStatus(tenantId, externalSubject))
+            : AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
+                TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
     }
 
     /// <inheritdoc/>
@@ -503,7 +534,13 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
                 && kycStatus == TenantKycStatus.Approved,
             UnavailableReason = unavailableReason,
             ReviewDueAt = review.Result.ReviewDueAt,
-            ReviewContact = review.Result.ReviewContact
+            ReviewContact = review.Result.ReviewContact,
+            Ownership = witness.Kind == TenantCustodialKind.Claimed
+                ? TenantMemberOwnership.Claimed
+                : TenantMemberOwnership.Custodial,
+            Consent = TenantMemberConsent.Granted,
+            ConsentScopes = witness.GrantScopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            ConsentExpiresAt = witness.GrantExpiresAt
         });
     }
 
@@ -705,6 +742,22 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         UnavailableReason = reason ?? "Tenant custodial onboarding is unavailable."
     };
 
+    /// <summary>
+    /// Internal shape of the minimal claimed status. Tenant and subject stay only so an Ensure replay stays bound
+    /// to its key; <c>TenantController</c> projects it to <see cref="TenantClaimedMemberStatusResponse"/> on the wire.
+    /// </summary>
+    private static TenantCustodialAccountStatusResponse ClaimedWithoutConsentStatus(
+        Guid tenantId,
+        string externalSubject) => new()
+    {
+        TenantId = tenantId.ToString("D"),
+        ExternalSubject = externalSubject,
+        KycStatus = TenantKycStatus.Unknown,
+        Ready = false,
+        Ownership = TenantMemberOwnership.Claimed,
+        Consent = TenantMemberConsent.None
+    };
+
     private static TenantKycSubmissionResponse ToKycSubmission(KycSubmissionModel submission) => new()
     {
         SubmissionId = submission.Id.ToString("D"),
@@ -790,9 +843,13 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
 
         if (observedLiveClaim)
         {
-            var witness = Guid.TryParse(original.UserId, out var userId)
-                ? await CaptureAccessAsync(tenantId, userId, externalSubject, authority, AzoaScopes.KycRead, ct) : null;
-            return witness is not null && await _access.ValidateAsync(witness, AzoaScopes.KycRead, ct)
+            var userId = Guid.TryParse(original.UserId, out var parsed)
+                ? parsed
+                : TenantChildCorrelation.DeterministicUserId(tenantId, externalSubject);
+            var witness = await CaptureAccessAsync(tenantId, userId, externalSubject, authority, AzoaScopes.KycRead, ct);
+            if (witness is null)
+                return await WithoutLiveAccessAsync(tenantId, externalSubject, userId, authority, ct);
+            return await _access.ValidateAsync(witness, AzoaScopes.KycRead, ct)
                 ? AZOAResult<TenantCustodialAccountStatusResponse>.Success(original)
                 : AZOAResult<TenantCustodialAccountStatusResponse>.Failure(TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
         }
@@ -908,6 +965,11 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
         SigningConsentWitness authority,
         CancellationToken ct)
     {
+        // A claimed member is never re-provisioned or re-bootstrapped; see Managers/AGENTS.md §claimed-continuity.
+        var memberId = TenantChildCorrelation.DeterministicUserId(tenantId, externalSubject);
+        if (await _access.ResolveOwnershipAsync(memberId, externalSubject, tenantId, ct) == TenantCustodialKind.Claimed)
+            return await ReportStatusAsync(tenantId, externalSubject, memberId, capabilities, authority, ct);
+
         var provisioned = await _tenants.ProvisionChildAsync(
             tenantId,
             new ProvisionChildModel { ExternalUserId = externalSubject },

@@ -43,6 +43,41 @@ public sealed class TenantCustodialAccountStatusResponse
 
     /// <summary>Operator-set route to a human while UnderReview; null when unset.</summary>
     public string? ReviewContact { get; set; }
+
+    /// <summary><see cref="TenantMemberOwnership"/> value; null only when the node could not resolve the member at all.</summary>
+    public string? Ownership { get; set; }
+
+    /// <summary><see cref="TenantMemberConsent"/> value for the grant this read was authorized under.</summary>
+    public string? Consent { get; set; }
+
+    /// <summary>Scopes of the live grant this read was authorized under (implied for custodial, the person's own once claimed).</summary>
+    public IReadOnlyList<string> ConsentScopes { get; set; } = [];
+
+    /// <summary>Expiry of that grant; null when it does not expire.</summary>
+    public DateTimeOffset? ConsentExpiresAt { get; set; }
+}
+
+/// <summary>Wire values of <see cref="TenantCustodialAccountStatusResponse.Ownership"/>.</summary>
+public static class TenantMemberOwnership
+{
+    public const string Custodial = "custodial";
+    public const string Claimed = "claimed";
+}
+
+/// <summary>Wire values of <see cref="TenantCustodialAccountStatusResponse.Consent"/>.</summary>
+public static class TenantMemberConsent
+{
+    public const string Granted = "granted";
+    public const string None = "none";
+}
+
+/// <summary>Everything a tenant may learn about a claimed member who has granted it nothing; see docs/TENANT-CUSTODIAL-ONBOARDING.md §Claimed members.</summary>
+public sealed class TenantClaimedMemberStatusResponse
+{
+    public string Ownership { get; init; } = TenantMemberOwnership.Claimed;
+    public string Consent { get; init; } = TenantMemberConsent.None;
+    public TenantKycStatus KycStatus { get; init; } = TenantKycStatus.Unknown;
+    public bool Ready { get; init; }
 }
 
 /// <summary>Runtime capability report for tenant-managed custody and verification.</summary>

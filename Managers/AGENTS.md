@@ -105,6 +105,29 @@ Direct document submission rejects a stale attempt and requires Begin to create
 the new provider-owned attempt, so one adapter never validates another's row.
 Tenant projections omit provider session ids and stored document references.
 
+### §claimed-continuity — a claimed member stays the tenant's member
+
+A claim clears `OwnerTenantId`, advances `AuthNotBefore` and revokes every live grant
+(`SurrealConsentLifecycleStore.Claim.cs`). The member is still *correlated* to the tenant:
+its id is `TenantChildCorrelation.DeterministicUserId(tenant, external)` forever
+(`Helpers/AGENTS.md` §tenant-child-correlation). Authority after the claim is only the
+person's own live `UserExplicit` grant, read through the custody fence's claimed branch
+(`Providers/Stores/Surreal/AGENTS.md` §claimed-custodial-fence).
+
+- **Status** (`GetStatusAsync`): no live grant covering `kyc:read` → a claimed member gets
+  the minimal status (`Ownership = claimed`, `Consent = none`, KYC `Unknown`, not ready);
+  any other miss stays `TENANT_NOT_FOUND`. The internal minimal object keeps tenant and
+  subject so an Ensure replay stays bound to its key; `TenantController.TranslateStatus`
+  projects it to the four-field `TenantClaimedMemberStatusResponse` on the wire.
+- **Ensure** (`ConvergeAccountAsync`): a claimed member is never re-provisioned or
+  re-bootstrapped (both require the tenant link); Ensure reports it through the same fence
+  and returns the original deterministic wallet. Residual race: a claim that commits between
+  the ownership read and provisioning fails that one Ensure with `TENANT_WALLET_UNAVAILABLE`
+  (the key is then terminal; a new key converges).
+- **Allocation** (`AllocationManager`): the tenant check is `IsCorrelated`, not "owns".
+  It only answers "is this the tenant's member"; the person's live consent at the
+  controller and again at custody is what authorises the move.
+
 ## §skip-semantics — ActionManager.ExecuteAsync skip loop
 
 The in-process executor walks nodes in topological order and skips a node when

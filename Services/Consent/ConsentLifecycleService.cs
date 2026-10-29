@@ -40,6 +40,22 @@ public sealed class ConsentLifecycleService(SigningAdmissionAuthorityFactory aut
             : AZOAResult<ConsentOffboardReceipt>.Success(receipt);
     }
 
+    /// <summary>The authenticated tenant gives up every live grant from its correlated member, of any origin.</summary>
+    public async Task<AZOAResult<ConsentRelinquishReceipt>> RelinquishAsync(ClaimsPrincipal principal,
+        string externalSubject, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(externalSubject) || externalSubject.Trim().Length > 128 || externalSubject.Any(char.IsControl))
+            return AZOAResult<ConsentRelinquishReceipt>.FailureWithCode(
+                "externalSubject must be a non-empty value of at most 128 characters.", AzoaErrorCodes.InvalidRequest);
+        var credential = await authorities.CaptureCredentialAsync(principal, ct);
+        if (credential.IsError || credential.Result is null)
+            return AZOAResult<ConsentRelinquishReceipt>.FailureWithCode(credential.Message, AzoaErrorCodes.Forbidden);
+        var authority = await authorities.BindConsentAsync(credential.Result, [AzoaScopes.TenantProvision], ct);
+        if (authority.IsError || authority.Result is null)
+            return AZOAResult<ConsentRelinquishReceipt>.FailureWithCode(authority.Message, AzoaErrorCodes.Forbidden);
+        return await store.RelinquishAsync(credential.Result.ActorUserId, externalSubject, authority.Result, ct);
+    }
+
     public async Task<AZOAResult<ConsentLifecycleReceipt>> GrantAsync(ClaimsPrincipal principal,
         ConsentLifecycleCommand command, CancellationToken ct)
     {

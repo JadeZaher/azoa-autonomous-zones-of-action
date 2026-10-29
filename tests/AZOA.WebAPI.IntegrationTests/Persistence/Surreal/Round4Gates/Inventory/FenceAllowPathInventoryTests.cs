@@ -31,7 +31,8 @@ public sealed class FenceAllowPathInventoryTests
         ["HoldReleaseWorkflowFence"] = ["Persistence.Surreal.SurrealHoldCommandTests.WorkflowOpeningConsentCommitsLiabilityAndMandateTogetherAndCancelledSourceCannotRelease"],
         ["NftProtocolCostAdmissionFence"] = ["Persistence.Surreal.SurrealNftLifecycleStoreTests.SelectedReceiptAdmitsOnceAndReplayDoesNotDependOnOfferAvailability"],
         ["NftWorkflowCostAuthorityFence"] = ["Persistence.Surreal.SurrealNftLifecycleStoreTests.WorkflowCostAcceptanceCommitsOnceAndReplaysAfterAuthorityAndQuoteRemoval"],
-        ["TenantCustodialAuthorityFence"] = ["Persistence.Surreal.SurrealConsentLifecycleTests.Custodial_kyc_mutations_and_first_send_reject_changed_authority"],
+        ["TenantCustodialAuthorityFence"] = ["Persistence.Surreal.SurrealConsentLifecycleTests.Custodial_kyc_mutations_and_first_send_reject_changed_authority",
+            "Persistence.Surreal.SurrealConsentLifecycleTests.Claimed_access_rechecks_the_exact_user_explicit_grant_version_in_the_consuming_transaction"],
         ["WttSigningAuthorityFence"] = ["Persistence.Surreal.SurrealWttOperationStoreTests.ConcurrentAdmissionsConsumeTheOfferOnceAndAnotherRequestCannotReuseIt"],
     };
 

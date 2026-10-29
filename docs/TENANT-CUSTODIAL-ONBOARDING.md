@@ -67,6 +67,60 @@ Aggregate `ready` requires all three plus approved KYC. If production KMS/HSM
 custody is not installed, ensure still creates the identity and KYC may proceed;
 only wallet creation remains skipped/fail-closed.
 
+Every status also carries who owns the account and the grant the read ran under:
+
+| Field | Values |
+|---|---|
+| `ownership` | `"custodial"` (still tenant-linked) or `"claimed"` (the person moved it into their own name) |
+| `consent` | `"granted"`: a live grant covering `kyc:read` authorized this read |
+| `consentScopes` | scopes of that grant (the implied Participation scopes while custodial; the person's own once claimed) |
+| `consentExpiresAt` | that grant's expiry, or `null` |
+
+## Claimed members
+
+A member may claim their account (`POST /api/user/claim` with the tenant's claim invite). The
+claim clears the tenant link and revokes every grant the tenant held, atomically. The member
+stays this tenant's member — same `externalSubject`, same user id, same wallet, same KYC — but
+the tenant now acts only under scopes the person grants it themselves
+(`POST /api/user/consent`, origin `UserExplicit`, e.g. `kyc:read`, `kyc:submit`,
+`transfer:sign`, `swap:sign`, `units:issue`).
+
+- **Before the person grants anything**, `GET` and `PUT custodial-accounts/{externalSubject}`
+  answer `200` with exactly four fields and nothing else — no ids, wallet, KYC detail or review:
+
+  ```json
+  { "ownership": "claimed", "consent": "none", "kycStatus": "Unknown", "ready": false }
+  ```
+
+  `consent: "none"` means no live grant from the person covers `kyc:read`. Ask the person to
+  grant access; do not call value routes. `kycStatus` keeps the existing enum spelling.
+- **With a live grant covering `kyc:read`**, status is the full projection with
+  `ownership: "claimed"`, `consent: "granted"`, and readiness exactly as for a custodial
+  member. `PUT` never re-provisions or re-bootstraps a claimed member; it reports the
+  original wallet. KYC session/submission need `kyc:submit` in the person's grant. Checkout,
+  payouts, cash-out, exchange and allocation each check their own signing scope against the
+  person's grant, as they always have.
+- **Another tenant** gets `404` for the same `externalSubject`, exactly as for a missing member.
+
+### Give up a member's grants
+
+`DELETE /api/tenant/custodial-accounts/{externalSubject}/consent` (custody key,
+`tenant:provision`) revokes **every** live grant the member gave this tenant, of any origin
+(custodial or claimed), in one transaction with one `consent.revoked` event per grant.
+Use it, not `DELETE /api/tenant/consent/provisioned`, when the person asks the tenant to stop:
+offboarding closes only the Participation membership and leaves a claimed person's own grants
+live.
+
+```json
+{ "isError": false, "result": {
+  "tenantId": "…", "externalSubject": "…", "relinquishedAt": "2026-10-28T12:00:00+00:00",
+  "revokedCount": 1, "revokedGrantIds": ["…"] } }
+```
+
+`200` with `revokedCount: 0` when nothing was live (safe to repeat); `404` when the subject is
+not this tenant's member; `403` when the tenant credential is no longer current; `409` when the
+member's grants changed during the call (retry the same request).
+
 ## KYC lifecycle
 
 - `POST .../{externalSubject}/kyc/session` requires `Idempotency-Key` (16-200
