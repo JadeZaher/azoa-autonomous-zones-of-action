@@ -157,7 +157,7 @@ below.
 | | /api/bridge/{id}/redeem | POST | `redeemBridge` | client.ts | OK (safe response) |
 | | /api/bridge/{id}/reverse | POST | `reverseBridge` | client.ts | OK (safe response) |
 | | /api/bridge/history | GET | `getBridgeHistory` | client.ts | OK (safe response) |
-| **Exchange** | /api/exchange/{userId} | POST | `exchange` | client.ts | OK — requires an API-key principal carrying the exchange-signing scope, exactly like `allocate`; idempotencyKey is REQUIRED (not optional, unlike allocate) |
+| **Exchange** | /api/exchange/{userId} | POST | `exchange` | client.ts | OK — requires an API-key principal carrying the exchange-signing scope, exactly like `allocate`; idempotencyKey is REQUIRED (not optional, unlike allocate). Optional `Admit-Before` header (RFC 3339 UTC; 2026-10-28): past it at admission → 409 `ADMISSION_DEADLINE_PASSED`, nothing admitted; malformed → 400; a replay ignores it (`Services/Reserve/AGENTS.md` §admission-deadline). **SDK gap:** `exchange()` does not send it yet |
 | | /api/exchange/receipt/{idempotencyKey} | GET | `getExchangeReceipt` | client.ts | OK |
 | **Hold commands** | /api/hold-commands | POST | `startHoldCommand` | client.ts | Keyed admission; quote before any custody |
 | | /api/hold-commands | GET | `listHoldCommands` | client.ts | Participant discovery after a lost response |

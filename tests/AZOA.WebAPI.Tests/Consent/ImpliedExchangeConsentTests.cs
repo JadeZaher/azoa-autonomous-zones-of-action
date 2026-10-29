@@ -42,7 +42,7 @@ public class ImpliedExchangeConsentTests
         // The exact stored shape of a pre-existing provisioned grant: swap:sign is NOT in the row.
         GivenImpliedGrant();
 
-        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-1", CancellationToken.None);
+        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-1", null, CancellationToken.None);
 
         response.Result.Should().BeOfType<OkObjectResult>();
         ExchangeRan(Times.Once());
@@ -53,7 +53,7 @@ public class ImpliedExchangeConsentTests
     {
         GivenImpliedGrant(revokedAt: DateTime.UtcNow.AddSeconds(-1));
 
-        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-2", CancellationToken.None);
+        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-2", null, CancellationToken.None);
 
         response.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         ExchangeRan(Times.Never());
@@ -62,7 +62,7 @@ public class ImpliedExchangeConsentTests
     [Fact]
     public async Task A_first_party_user_with_no_grant_to_the_tenant_is_refused()
     {
-        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-3", CancellationToken.None);
+        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-3", null, CancellationToken.None);
 
         response.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         ExchangeRan(Times.Never());
@@ -74,7 +74,7 @@ public class ImpliedExchangeConsentTests
         // A join-flow participation grant has the same stored scopes but no reserved prefix.
         GivenImpliedGrant(participationRef: "ardanova:project-member:42");
 
-        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-4", CancellationToken.None);
+        var response = await Controller().Exchange(_childId, new ExchangeRequest { PreviewOnly = true }, "idem-4", null, CancellationToken.None);
 
         response.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         ExchangeRan(Times.Never());

@@ -183,8 +183,12 @@ public sealed partial class SurrealHoldCommandTests
         foreign.Code.Should().Be(AzoaErrorCodes.NotFound);
     }
 
-    private async Task<ExchangeFlow> FlowAsync(bool transferSign = false)
+    /// <param name="clock">The node clock the admission deadline is read on; null keeps the shared store on the system clock.</param>
+    /// <param name="governance">Node governance seen by the manager; null is unrestricted.</param>
+    private async Task<ExchangeFlow> FlowAsync(bool transferSign = false, TimeProvider? clock = null,
+        INodeGovernanceGuard? governance = null)
     {
+        var store = clock is null ? _store : new SurrealHoldCommandStore(_executor, new ReserveOptions(), clock);
         var (intent, authority) = await ExchangeAsync("fixture");
         var credential = authority.Tenant.Credential;
         if (transferSign)
@@ -218,7 +222,7 @@ public sealed partial class SurrealHoldCommandTests
             new("Algorand", "Devnet", "7", "Platform", "PLAT", 0, new BigInteger(1_000_000), "reserve", DateTimeOffset.UtcNow),
             new(new BigInteger(1_000_000), BigInteger.Zero, BigInteger.Zero, new BigInteger(1_000_000)));
         var options = new ExchangeOptions { MaximumGroupNetworkFeeBaseUnits = "10000", MaximumRecipientFundingBaseUnits = "201000" };
-        var settlement = new ExchangeHoldSourceService(_store, providers, options);
+        var settlement = new ExchangeHoldSourceService(store, providers, options);
         var signing = new SigningAdmissionAuthorityFactory(users, wallets, _executor);
         var manager = new ReserveExchangeManager(
             Fake<IValueAccessService>("RequireValueAccessAsync", Task.FromResult(AZOAResult<bool>.Success(true))),
@@ -228,8 +232,9 @@ public sealed partial class SurrealHoldCommandTests
             wallets,
             Fake<IExchangeRatePolicy>("EvaluateAsync", Task.FromResult(AZOAResult<ExchangeRateDecision>.Success(new(null, "policy-v1")))),
             Fake<IExchangeDeclaredRateWriter>("RecordAsync", null),
-            _store, settlement, new ExchangeAuthorityFactory(signing, users, wallets, _executor), signing, providers, options);
-        return new(manager, settlement, chain, intent.ApiKeyId, authority.ParticipantUserId, credential);
+            store, settlement, new ExchangeAuthorityFactory(signing, users, wallets, _executor), signing, providers, options,
+            nodeGovernance: governance);
+        return new(manager, settlement, chain, intent.ApiKeyId, authority.ParticipantUserId, credential, signing);
     }
 
     /// <summary>A process-edge gate that answers one member with a fixed result; <c>null</c> means the flow must never call it.</summary>
@@ -237,7 +242,8 @@ public sealed partial class SurrealHoldCommandTests
         => InterfaceFake<T>.Create(new() { [member] = (_, _) => result ?? throw new NotSupportedException(member) });
 
     private sealed record ExchangeFlow(ReserveExchangeManager Manager, ExchangeHoldSourceService Settlement,
-        FakeExchangeChain Chain, Guid ApiKeyId, Guid Participant, SigningCredentialWitness Credential)
+        FakeExchangeChain Chain, Guid ApiKeyId, Guid Participant, SigningCredentialWitness Credential,
+        SigningAdmissionAuthorityFactory Signing)
     {
         public ExchangeRequest Request(DateTimeOffset? window = null) => new()
         {

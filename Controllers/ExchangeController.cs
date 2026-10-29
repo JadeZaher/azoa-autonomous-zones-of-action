@@ -101,7 +101,8 @@ public sealed class ExchangeController : ControllerBase
     /// <summary>
     /// Runs one exchange for the person named by the route. Idempotent on the
     /// <c>Idempotency-Key</c> header, partitioned by the caller's API key, so a redelivered
-    /// request never sponsors twice.
+    /// request never sponsors twice. An optional <c>Admit-Before</c> header (RFC 3339 UTC) bounds
+    /// when a new exchange may still be admitted; a replay is answered regardless of it.
     /// </summary>
     [HttpPost("{userId:guid}")]
     [EnableRateLimiting("financial")]
@@ -109,6 +110,7 @@ public sealed class ExchangeController : ControllerBase
         Guid userId,
         [FromBody] ExchangeRequest request,
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        [FromHeader(Name = AdmitBeforeHeader.Name)] string? admitBefore,
         CancellationToken ct)
     {
         if (request is null)
@@ -117,7 +119,7 @@ public sealed class ExchangeController : ControllerBase
                 "An exchange request is required.", AzoaErrorCodes.InvalidRequest));
         }
 
-        var identity = ResolveCaller(userId, idempotencyKey);
+        var identity = ResolveCaller(userId, idempotencyKey, admitBefore);
         if (identity.Error is not null)
             return identity.Error!;
 
@@ -145,6 +147,7 @@ public sealed class ExchangeController : ControllerBase
                 ActingTenantId = caller.ActingTenantId,
                 TargetUserId = caller.TargetUserId,
                 ClientIdempotencyKey = caller.ClientIdempotencyKey,
+                AdmitBefore = caller.AdmitBefore,
                 Credential = captured.Result,
             };
         }
@@ -192,7 +195,7 @@ public sealed class ExchangeController : ControllerBase
     /// comes from the authenticated principal and the route; none comes from the body.
     /// </summary>
     private (ExchangeCallerContext? Caller, ActionResult<AZOAResult<ExchangeReceipt>>? Error) ResolveCaller(
-        Guid userId, string? idempotencyKey)
+        Guid userId, string? idempotencyKey, string? admitBefore)
     {
         var principal = ReadPrincipal();
         if (principal.Error is not null)
@@ -204,6 +207,14 @@ public sealed class ExchangeController : ControllerBase
                 "An Idempotency-Key header of 1-" + MaxIdempotencyKeyLength + " characters is required. "
                 + "Two identical sponsorships are a normal thing to want, so the node will not guess "
                 + "whether a repeat is a retry or a second one.",
+                AzoaErrorCodes.InvalidRequest)));
+        }
+
+        // Refused, never ignored: dropping a malformed deadline would silently remove the bound the caller relies on.
+        if (!AdmitBeforeHeader.TryParse(admitBefore, out var deadline))
+        {
+            return (null, BadRequest(AZOAResult<ExchangeReceipt>.FailureWithCode(
+                "The Admit-Before header must be an RFC 3339 UTC timestamp, for example 2026-10-28T12:00:00Z.",
                 AzoaErrorCodes.InvalidRequest)));
         }
 
@@ -227,6 +238,7 @@ public sealed class ExchangeController : ControllerBase
             ActingTenantId = principal.CallerUserId,
             TargetUserId = userId,
             ClientIdempotencyKey = idempotencyKey!.Trim(),
+            AdmitBefore = deadline,
         }, null);
     }
 
@@ -350,6 +362,8 @@ public sealed class ExchangeController : ControllerBase
             AzoaErrorCodes.NotFound => NotFound(result),
             AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
             AzoaErrorCodes.OperationNotAllowed => StatusCode(StatusCodes.Status409Conflict, result),
+            // 409 by contract, but its code is the proof: nothing was admitted under this request (Services/Reserve/AGENTS.md §admission-deadline).
+            ConsumerSafeErrorCodes.AdmissionDeadlinePassed => StatusCode(StatusCodes.Status409Conflict, result),
             // A refusal that provably moved nothing is NOT a conflict. 409 says "this may
             // already have happened" and a consumer holding the seller's units must keep them
             // locked on it; 422 says "we read it and said no", which is safe to unlock on.

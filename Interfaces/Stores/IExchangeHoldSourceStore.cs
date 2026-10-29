@@ -14,6 +14,13 @@ public interface IExchangeHoldSourceStore
     Task<ExchangeHoldSource?> AdmitExchangeSourceAsync(ExchangeHoldSourceIntent intent,
         ExchangeParticipantAuthority authority, CancellationToken ct = default);
 
+    /// <summary>
+    /// Admits as the overload above, but writes nothing once <paramref name="admitBefore"/> has passed by the node's or the
+    /// database's clock at the admitting transaction; an identical prior source is returned regardless of the deadline.
+    /// </summary>
+    Task<ExchangeAdmission> AdmitExchangeSourceAsync(ExchangeHoldSourceIntent intent,
+        ExchangeParticipantAuthority authority, DateTimeOffset? admitBefore, CancellationToken ct = default);
+
     /// <summary>Commits source linkage, original hold receipt and reserve accounting in one transaction.</summary>
     Task<HoldCommandReceipt?> CommitExchangeOpeningAsync(string sourceId, CancellationToken ct = default);
 

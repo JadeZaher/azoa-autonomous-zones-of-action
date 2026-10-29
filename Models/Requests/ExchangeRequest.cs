@@ -175,6 +175,9 @@ public sealed class ExchangeCallerContext
 
     /// <summary>The authenticated API-key credential captured at the edge; required for any effect.</summary>
     public SigningCredentialWitness? Credential { get; init; }
+
+    /// <summary>The <c>Admit-Before</c> header: no source is admitted after this instant; null is no deadline. Never part of the idempotent intent.</summary>
+    public DateTimeOffset? AdmitBefore { get; init; }
 }
 
 /// <summary>

@@ -12,6 +12,9 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 public sealed partial class SurrealHoldCommandStore
 {
+    /// <summary>Thrown inside the admitting transaction when the database clock has passed the exchange's deadline.</summary>
+    private const string AdmissionDeadlineMarker = "EXCHANGE_ADMISSION_DEADLINE_PASSED";
+
     /// <inheritdoc/>
     public Task<ExchangeHoldSource?> GetExchangeSourceAsync(string sourceId, CancellationToken ct = default)
         => executor.QuerySingleAsync<ExchangeHoldSource>(SurrealQuery<ExchangeHoldSource>.Key(sourceId), ct);
@@ -19,15 +22,22 @@ public sealed partial class SurrealHoldCommandStore
     /// <inheritdoc/>
     public async Task<ExchangeHoldSource?> AdmitExchangeSourceAsync(ExchangeHoldSourceIntent intent,
         ExchangeParticipantAuthority authority, CancellationToken ct = default)
+        => (await AdmitExchangeSourceAsync(intent, authority, admitBefore: null, ct)).Source;
+
+    /// <inheritdoc/>
+    /// <remarks>See Services/Reserve/AGENTS.md §admission-deadline for why the deadline is re-read on the database clock.</remarks>
+    public async Task<ExchangeAdmission> AdmitExchangeSourceAsync(ExchangeHoldSourceIntent intent,
+        ExchangeParticipantAuthority authority, DateTimeOffset? admitBefore, CancellationToken ct = default)
     {
-        if (!ValidExchangeSource(intent, authority)) return null;
+        if (!ValidExchangeSource(intent, authority)) return ExchangeAdmission.Refused;
         var id = ExchangeHoldSourceIdentity.ForIntent(intent);
         var intentJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(intent));
         var intentHash = CanonicalJson.HashCanonical(intentJson);
         var prior = await GetExchangeSourceAsync(id, ct);
-        if (prior is not null) return SameExchangeRequest(prior, intent, intentJson) ? prior : null;
+        if (prior is not null) return ExchangeAdmission.Of(SameExchangeRequest(prior, intent, intentJson) ? prior : null);
         var guards = ExchangeAuthorityFence.Create(authority, "exchange_source");
-        if (guards is null) return null;
+        if (guards is null) return ExchangeAdmission.Refused;
+        if (admitBefore is { } deadline && _nodeClock.GetUtcNow() > deadline) return ExchangeAdmission.Late;
         var now = DateTimeOffset.UtcNow;
         var candidate = new ExchangeHoldSource { Id = id, TenantUserId = intent.TenantUserId.ToString("N"),
             ApiKeyId = intent.ApiKeyId.ToString("N"), ParticipantUserId = intent.ParticipantUserId.ToString("N"),
@@ -35,9 +45,15 @@ public sealed partial class SurrealHoldCommandStore
             AuthorityJson = CanonicalJson.Canonicalize(JsonSerializer.SerializeToElement(authority)),
             CreatedAt = now, UpdatedAt = now };
         // raw: both actual authorities and immutable source admission commit before any hold or custody effect.
-        var query = SurrealQuery.Combine(new[] { SurrealQuery.Of("BEGIN") }.Concat(guards)
-            .Append(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(candidate), "exchange_source_create"))
-            .Append(SurrealQuery.Of("COMMIT")).ToArray());
+        var statements = new List<SurrealQuery> { SurrealQuery.Of("BEGIN") };
+        statements.AddRange(guards);
+        // raw: the deadline is a condition of the admitting transaction, re-read on the database clock by every conflict retry.
+        if (admitBefore is { } bound)
+            statements.Add(SurrealQuery.Of("IF time::now() > $_exchange_admit_before { THROW 'EXCHANGE_ADMISSION_DEADLINE_PASSED' }")
+                .WithParam("_exchange_admit_before", bound));
+        statements.Add(SurrealGeneratedStatementScope.Apply(SurrealWriter.Create(candidate), "exchange_source_create"));
+        statements.Add(SurrealQuery.Of("COMMIT"));
+        var query = SurrealQuery.Combine(statements.ToArray());
         try
         {
             await SurrealTransientConflict.RetryOnConflictAsync(async () =>
@@ -46,14 +62,18 @@ public sealed partial class SurrealHoldCommandStore
                 response.EnsureAllOk();
                 return response;
             }, ct);
-            return candidate;
+            return ExchangeAdmission.Of(candidate);
         }
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message)
             || exception.Message.Contains(SigningAuthorityFence.FailureMarker, StringComparison.Ordinal)
-            || exception.Message.Contains(ExchangeAuthorityFence.FailureMarker, StringComparison.Ordinal))
+            || exception.Message.Contains(ExchangeAuthorityFence.FailureMarker, StringComparison.Ordinal)
+            || exception.Message.Contains(AdmissionDeadlineMarker, StringComparison.Ordinal))
         {
+            // A same-key winner is a replay whatever this request's deadline; only an empty key is "nothing was admitted".
             prior = await GetExchangeSourceAsync(id, ct);
-            return prior is not null && SameExchangeRequest(prior, intent, intentJson) ? prior : null;
+            if (prior is not null) return ExchangeAdmission.Of(SameExchangeRequest(prior, intent, intentJson) ? prior : null);
+            return exception.Message.Contains(AdmissionDeadlineMarker, StringComparison.Ordinal)
+                ? ExchangeAdmission.Late : ExchangeAdmission.Refused;
         }
     }
 

@@ -136,6 +136,8 @@ journals the exchange as an immutable `ExchangeHoldSource` **before** any commit
    authority.
 4. **Commitment pre-check.** The partition room or the treasury counters are explained before
    admission. This check is advisory; the source transaction rechecks everything atomically.
+5. **Admission deadline.** An optional `Admit-Before` header bounds when the source may still be
+   written. A replay is never refused by it (§admission-deadline).
 
 The source then advances through `ExchangeHoldSourceService.ContinueAsync`: commit, begin
 preparation, module `Prepare`, save the prepared candidate, authorize first egress, then
@@ -159,6 +161,59 @@ that competes with abandonment. The worker never commits, prepares or authorizes
 verbatim. The server checks it against fresh mechanics and captures transfer:sign from the same
 key. Under the same key, an expired disclosure can be revised only while the source is still
 `Admitted`. Each revision is a versioned, audited change (`ReviseExchangeReleaseAsync`).
+
+## §admission-deadline — `Admit-Before` turns a typed NOT_FOUND into proof
+
+**Why.** A consumer that lost an exchange's answer reads `GET /api/exchange/receipt/{key}`. A typed
+NOT_FOUND only says the source was absent *when it was read*. Admission (manager step 13) runs whenever
+the request gets there: after the governance, platform-unit, rate, readiness and account reads, and
+bounded only by `RequestAborted`. A request held by a proxy that pools upstream connections, or by a
+dependency that ignores `ct`, could admit after the consumer had concluded that nothing landed and
+released the value on its side. That is a double debit.
+
+**Wire.** `POST /api/exchange/{userId}` takes an optional `Admit-Before: <RFC 3339 UTC instant>`.
+`Helpers/AdmitBeforeHeader.cs` accepts `Z`/`z` or `+00:00` with up to 7 fraction digits. A missing or
+blank header means no bound, which is the old behaviour. Anything else (no offset, another offset, an
+HTTP-date, epoch seconds, two values) is `400 INVALID_REQUEST`. That check runs before consent, before the
+manager, and before any read, because silently dropping a deadline the caller relies on is worse than
+refusing it. The deadline travels on `ExchangeCallerContext.AdmitBefore`. It is never part of
+`RequestJson` or the intent hash, so a retry with a fresh deadline replays and does not conflict.
+
+**Enforcement** is in `SurrealHoldCommandStore.AdmitExchangeSourceAsync(intent, authority, admitBefore)`, in
+this order:
+
+1. **The replay is answered first.** If an identical source already exists under the key, it is
+   returned whatever the deadline. The manager's step 2 answers most replays even earlier, and this
+   path covers a same-key race.
+2. **The node clock** (`TimeProvider`, injected into the store). If `now > deadline`, nothing is
+   written. This is the cheap early refusal. On its own it is not a guarantee, because the write goes
+   out after it.
+3. **The database clock, inside the admitting transaction.** The statement
+   `IF time::now() > $_exchange_admit_before { THROW 'EXCHANGE_ADMISSION_DEADLINE_PASSED' }` sits between
+   the authority fences and the `CREATE`, in the same `BEGIN … COMMIT`. SurrealDB evaluates it when the
+   write executes, and `RetryOnConflictAsync` re-runs it on every retry. So a slow round trip, a pool
+   wait or a conflict retry cannot carry an admission past the deadline.
+4. **A THROW or unique violation re-reads the key.** A same-key winner comes back as a replay, and
+   `ExchangeAdmission.Late` is returned only when the key is still empty.
+
+The manager maps `Late` to `409 ADMISSION_DEADLINE_PASSED`, with the message "This request arrived after its
+deadline and nothing was admitted." The status is 409 because the contract says so. Unlike the 409 of
+`OPERATION_NOT_ALLOWED` ("this may already have run"), this code means nothing was admitted for this
+request. A consumer should branch on the code, not on the status.
+
+**Clock assumption.** A source is written only while both the node clock and the database clock read at
+or before the deadline. The node clock can only make the refusal earlier. The clock that decides the
+outcome is the database's, compared with the consumer's. The consumer, the node and SurrealDB are all
+NTP-synced on Railway; call the largest pairwise skew `s`. A consumer that sends
+`Admit-Before = dispatch + d` can treat a typed NOT_FOUND, read once its own clock is past
+`dispatch + d + s` (plus the time one transaction takes to commit), as proof that this request admitted
+nothing. So its quiet window must be longer than `d + s`.
+
+**Proof.** The tests are in
+`tests/AZOA.WebAPI.IntegrationTests/Persistence/Surreal/SurrealHoldCommandTests.ExchangeAdmitBefore.cs`.
+They drive the controller, the real manager and the real store, with a hand-stepped node clock. The
+stuck-request test needs the node-clock check: the database clock never reaches its deadline. The
+database-clock test needs the transaction guard: there the node clock lags behind the deadline.
 
 ## §d7-activation — the provider's declaration is the only pin
 

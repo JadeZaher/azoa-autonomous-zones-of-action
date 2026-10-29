@@ -85,7 +85,7 @@ public sealed class ExchangeRefusalStatusTests
             BuyBackLiquidityPolicy.ClosedMessage, ConsumerSafeErrorCodes.Declined);
 
         var response = await Controller(manager).Exchange(
-            Guid.NewGuid(), new ExchangeRequest { PreviewOnly = true }, "idem-1", CancellationToken.None);
+            Guid.NewGuid(), new ExchangeRequest { PreviewOnly = true }, "idem-1", null, CancellationToken.None);
 
         var status = response.Result.Should().BeOfType<ObjectResult>().Which;
         status.StatusCode.Should().Be(
@@ -101,7 +101,7 @@ public sealed class ExchangeRefusalStatusTests
             "This project is no longer accepting funds.", AzoaErrorCodes.OperationNotAllowed);
 
         var response = await Controller(manager).Exchange(
-            Guid.NewGuid(), new ExchangeRequest { PreviewOnly = true }, "idem-2", CancellationToken.None);
+            Guid.NewGuid(), new ExchangeRequest { PreviewOnly = true }, "idem-2", null, CancellationToken.None);
 
         // 409 must keep meaning "this may already have run": widening it would let a consumer
         // unlock units over an outcome the node cannot vouch for.
@@ -121,7 +121,7 @@ public sealed class ExchangeRefusalStatusTests
         var request = new ExchangeRequest { PreviewOnly = true,
             ReleaseMandate = withMandate ? new ExchangeReleaseMandateRequest { ExpiresAt = Now.AddDays(60) } : null };
 
-        var response = await Controller(manager.Object, consentGiven: false).Exchange(Guid.NewGuid(), request, "idem-3", CancellationToken.None);
+        var response = await Controller(manager.Object, consentGiven: false).Exchange(Guid.NewGuid(), request, "idem-3", null, CancellationToken.None);
 
         // The preview reads identity readiness (and, with a mandate, the wallet): a non-consenting
         // participant gets the same consent refusal whatever their status, never the manager's answer.

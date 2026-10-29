@@ -41,6 +41,7 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
     private const string ExchangeFailedCode = "EXCHANGE_FAILED";
     private const string UnavailableMessage = "The exchange service is temporarily unavailable. Try again later.";
     private const string PendingMessage = "This exchange is still settling and has not been confirmed. Retry once it settles; do not raise a second one.";
+    private const string AdmissionDeadlinePassedMessage = "This request arrived after its deadline and nothing was admitted.";
     private const int MaxProjectReferenceLength = 128;
     private const int MaxPartitionLength = 64;
     private const int MaxPurposeLength = 256;
@@ -230,9 +231,11 @@ public sealed class ReserveExchangeManager : IReserveExchangeManager
             draft = draft with { ReleaseConsent = consent.Result };
         }
 
-        // ── Step 13: admit before any commitment, then settle the exact saved group ──
-        var admitted = await _sources.AdmitExchangeSourceAsync(draft, authority.Result, ct);
-        if (admitted is null)
+        // ── Step 13: admit before any commitment and only within Admit-Before, then settle the exact saved group ──
+        var admission = await _sources.AdmitExchangeSourceAsync(draft, authority.Result, caller.AdmitBefore, ct);
+        if (admission.DeadlinePassed)
+            return AZOAResult<ExchangeReceipt>.FailureWithCode(AdmissionDeadlinePassedMessage, ConsumerSafeErrorCodes.AdmissionDeadlinePassed);
+        if (admission.Source is not { } admitted)
             return AZOAResult<ExchangeReceipt>.FailureWithCode(
                 "This Idempotency-Key already names a different exchange, or the tenant or participant authority changed.",
                 AzoaErrorCodes.OperationNotAllowed);

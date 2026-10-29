@@ -40,6 +40,10 @@ public static class ConsumerSafeErrorCodes
 
     /// <summary>Nothing more specific could be established without leaking rail detail.</summary>
     public const string TemporarilyUnavailable = "TEMPORARILY_UNAVAILABLE";
+
+    /// <summary>The request reached admission after its <c>Admit-Before</c> deadline, so nothing was admitted (HTTP 409).</summary>
+    /// <remarks>See Services/Reserve/AGENTS.md §admission-deadline.</remarks>
+    public const string AdmissionDeadlinePassed = "ADMISSION_DEADLINE_PASSED";
 }
 
 /// <summary>A consumer-safe code plus the only message permitted to leave the node for it.</summary>

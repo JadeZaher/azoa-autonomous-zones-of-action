@@ -14,9 +14,12 @@ using SurrealForge.Client.Query;
 namespace AZOA.WebAPI.Providers.Stores.Surreal;
 
 /// <inheritdoc/>
-public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, ReserveOptions options) : IHoldCommandStore, IExchangeHoldSourceStore
+/// <param name="clock">The node clock an exchange's <c>Admit-Before</c> deadline is read on; defaults to the system clock.</param>
+public sealed partial class SurrealHoldCommandStore(ISurrealExecutor executor, ReserveOptions options, TimeProvider? clock = null)
+    : IHoldCommandStore, IExchangeHoldSourceStore
 {
     private const string Conflict = "HOLD_COMMAND_CHANGED";
+    private readonly TimeProvider _nodeClock = clock ?? TimeProvider.System;
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<HoldCommand>> ListParticipantAsync(Guid actor, Guid? tenant, int offset, int limit, CancellationToken ct = default)

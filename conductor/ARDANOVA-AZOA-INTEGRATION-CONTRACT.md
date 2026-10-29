@@ -548,7 +548,7 @@ currency is refused before the call (`Infrastructure/Azoa/AzoaSettlementGateway.
 
 | State | Entered when | Notes |
 |---|---|---|
-| (none) | gates refused, or `previewOnly` | Nothing journaled; receipt read = typed NOT_FOUND. |
+| (none) | gates refused, `previewOnly`, or the `Admit-Before` deadline passed (12.1.4) | Nothing journaled; receipt read = typed NOT_FOUND. |
 | `Admitted` | every refusable gate passed; source journaled BEFORE any commitment | A replay with identical `RequestJson` resumes it; different bytes refused. |
 | `Committed` → `Preparing` → `Prepared` | `ExchangeHoldSourceService.ContinueAsync` | Idle here longer than `Exchange:UnsentSourceAbandonAfter` (default 1 h, `Services/Reserve/ExchangeHoldSourceService.cs:39-40`) → `Abandoned` / `Unsent`, commitment released. |
 | `Submitted` | first egress authorized (CAS from `Prepared`) | `ExchangeSourceReconciliationWorker` observes / rebroadcasts the identical saved bytes. A Simulated node always ends the first call here (AZOA `Providers/Blockchain/AGENTS.md` §simulated-exchange). |
@@ -601,6 +601,34 @@ from a durable journal written BEFORE commitment (12.1.1 row `Admitted`), so a t
 NOT_FOUND under the admitting key means nothing was committed. A node change that
 journals after commitment, or answers NOT_FOUND for a journaled source under its own
 key, breaks this contract.
+
+**12.1.4 Admission deadline (`Admit-Before`, added 2026-10-28).** A typed NOT_FOUND
+only proves absence *at the read*. A dispatch stuck before the node's admission step
+(in a pooling proxy, or behind a dependency that ignores cancellation) could still
+admit later. To close that gap, the consumer bounds admission itself:
+
+- **Request.** `POST /api/exchange/{userId}` takes the header
+  `Admit-Before: <RFC 3339 UTC>`, e.g. `2026-10-28T12:00:00.000Z`. Accepted forms are
+  `Z`/`z` or `+00:00`, with ≤ 7 fraction digits. The header is optional; without it
+  the node behaves as before. A malformed value → **400 `INVALID_REQUEST`**. It is
+  refused before anything is read, never ignored. The deadline is not part of the
+  intent hash, so a reopen (12.1.3) may send a fresh one under the same key.
+- **Refusal.** If the deadline has passed at the admission write → **409**
+  `{"isError":true,"message":"This request arrived after its deadline and nothing was
+  admitted.","result":null,"code":"ADMISSION_DEADLINE_PASSED","detail":null}`. Nothing
+  is journaled, and a later receipt read is the typed NOT_FOUND. **Branch on the code.**
+  The 409 of `OPERATION_NOT_ALLOWED` still means "may already have run".
+- **Replay.** If the key already admitted a source, the request gets that source's
+  receipt whatever its deadline (§12.0.2).
+- **Atomicity (AZOA `Providers/Stores/Surreal/SurrealHoldCommandStore.Exchange.cs`,
+  `Services/Reserve/AGENTS.md` §admission-deadline).** The node's `TimeProvider`
+  refuses early. The binding check is `time::now() > deadline` inside the admitting
+  SurrealDB transaction, re-run on every conflict retry, so no slow write can cross it.
+- **Clock rule.** Consumer, node and database clocks are NTP-synced, with a largest
+  pairwise skew `s`. A consumer that sends `Admit-Before = dispatch + d` may treat a
+  typed NOT_FOUND as proof that the request never landed, provided the read happens
+  after `dispatch + d + s` by its own clock. So the quiet window (12.1.3, currently 5
+  min) must be longer than `d + s`. Choose `d` well inside it.
 
 ### 12.2 Hold-command door (award holds)
 
