@@ -184,6 +184,76 @@ public sealed class DiagnosticsMiddlewareTests
     }
 
     [Fact]
+    public async Task JsonlLogger_WritesPersonalAndBankSurrealParametersRedactedByDefault()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var options = new JsonlExceptionLoggerOptions { Enabled = true, Directory = directory };
+            using var writer = new JsonlExceptionWriter(options);
+            await writer.StartAsync(CancellationToken.None);
+            var logger = new JsonlExceptionLogger("AZOA.WebAPI.Tests", writer, options, new LoggerExternalScopeProvider());
+
+            // The KYC identity binding's raw parameters, a typed write of the same record, and bank fields.
+            var personal = new Dictionary<string, object?>
+            {
+                ["_binding_first_name"] = "SENTINEL-first",
+                ["_binding_last_name"] = "SENTINEL-last",
+                ["_binding_birthday"] = "SENTINEL-birthday",
+                ["_binding_citizenship"] = "SENTINEL-citizenship",
+                ["_binding_person_key"] = "SENTINEL-person-key",
+                ["_binding_global_person_key"] = "SENTINEL-global-person-key",
+                ["date_of_birth"] = "SENTINEL-dob",
+                ["account_number"] = "SENTINEL-account",
+                ["routing_number"] = "SENTINEL-routing",
+                ["id_number"] = "SENTINEL-id-number",
+                ["ssn"] = "SENTINEL-ssn",
+                ["_binding_now"] = "2026-10-28T00:00:00Z",
+            };
+            var typed = SurrealForge.Client.Query.SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.KycIdentity
+            {
+                Id = "probe",
+                TenantScope = "node",
+                PersonKey = "SENTINEL-typed-person-key",
+                GlobalPersonKey = "SENTINEL-typed-global-person-key",
+                FirstName = "SENTINEL-typed-first",
+                LastName = "SENTINEL-typed-last",
+                Birthday = "SENTINEL-typed-birthday",
+                Citizenship = "SENTINEL-typed-citizenship",
+                ProviderKey = "identomat",
+            });
+            foreach (var (key, value) in typed.Params)
+                personal["typed_" + key] = value;
+            // A typed User write binds the address as `_f_email`.
+            var user = SurrealForge.Client.Query.SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.User
+            {
+                Id = "probe-user", Username = "probe-user", Email = "SENTINEL-email@example.test", PasswordHash = "SENTINEL-hash",
+            });
+            foreach (var (key, value) in user.Params)
+                personal["user_" + key] = value;
+
+            var fault = new InvalidOperationException("A statement failed.");
+            fault.Data["SurrealStatement"] = typed.Sql;
+            fault.Data["SurrealParams"] = personal;
+            logger.Log(LogLevel.Critical, new EventId(1), "A KYC identity binding failed.", fault, (state, _) => state);
+            await writer.StopAsync(CancellationToken.None);
+
+            var line = File.ReadAllLines(Directory.GetFiles(directory, "*.jsonl").Single()).Single();
+            line.Should().NotContain("SENTINEL", "no personal or bank value may reach the diagnostic sink");
+            using var document = JsonDocument.Parse(line);
+            var logged = document.RootElement.GetProperty("surrealParams");
+            logged.GetProperty("_binding_first_name").GetString().Should().Be("[REDACTED]");
+            logged.GetProperty("account_number").GetString().Should().Be("[REDACTED]");
+            logged.GetProperty("user__f_email").GetString().Should().Be("[REDACTED]");
+            logged.GetProperty("_binding_now").GetString().Should().Be("2026-10-28T00:00:00Z", "non-personal parameters stay readable");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task JsonlWriter_WriteFailure_IncrementsFallbackCounter()
     {
         var directory = CreateTempDirectory();

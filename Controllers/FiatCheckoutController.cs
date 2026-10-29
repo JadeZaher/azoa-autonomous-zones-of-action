@@ -107,7 +107,7 @@ public sealed class FiatCheckoutController : ControllerBase
             return Unauthorized(AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 "Invalid token.", AzoaErrorCodes.Forbidden));
 
-        var (actingTenantId, authorisation) = await AuthoriseSubjectAsync(userId, callerUserId.Value);
+        var (actingTenantId, authorisation) = await AuthoriseSubjectAsync<FiatCheckoutIntent>(userId, callerUserId.Value);
         if (authorisation is not null)
             return authorisation;
 
@@ -131,6 +131,63 @@ public sealed class FiatCheckoutController : ControllerBase
         {
             AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
             AzoaErrorCodes.Conflict => Conflict(result),
+            // Same-key replay codes (F-?: replay-state machine codes): distinct situations, same
+            // 409 the caller always got; the new `code` field is what lets it tell them apart.
+            FiatConsumerErrors.RequestKeyInUseCode => Conflict(result),
+            FiatConsumerErrors.IntentFinishedCode => Conflict(result),
+            FiatConsumerErrors.IntentExpiredCode => Conflict(result),
+            FiatConsumerErrors.IntentNeedsReviewCode => Conflict(result),
+            FiatConsumerErrors.RequestVoidedCode => Conflict(result),
+            AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+            FiatConsumerErrors.RailUnavailableCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+            FiatConsumerErrors.PaymentsNotConfiguredCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+            FiatConsumerErrors.RailBusyCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
+            _ => BadRequest(result),
+        };
+    }
+
+    /// <summary>
+    /// Voids <paramref name="requestKey"/> so nothing can ever be paid under it, or reveals the payment
+    /// already made under it. A 200 <c>voided</c> lets the caller discard the key; anything else means
+    /// keep it. See <c>Providers/Fiat/AGENTS.md</c> §request-void.
+    /// </summary>
+    [HttpPost("{userId:guid}/requests/{requestKey}/void")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<FiatCheckoutVoidResult>>> VoidRequest(Guid userId, string requestKey)
+    {
+        if (string.IsNullOrWhiteSpace(requestKey))
+            return BadRequest(AZOAResult<FiatCheckoutVoidResult>.FailureWithCode(
+                "A request key is required.", AzoaErrorCodes.InvalidRequest));
+
+        // Routing leaves an encoded '/' as the literal "%2F", which would name a DIFFERENT key than the
+        // one begin stored: a void of it would tombstone a stranger key and answer "voided" falsely.
+        if (requestKey.Contains("%2F", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(AZOAResult<FiatCheckoutVoidResult>.FailureWithCode(
+                "A request key containing '/' cannot be voided through this route.", AzoaErrorCodes.InvalidRequest));
+
+        if (!TryResolveRail(out var rail, out _))
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                FiatConsumerErrors.Unresolved<FiatCheckoutVoidResult>(_options));
+
+        var callerUserId = GetUserIdFromClaims();
+        if (callerUserId is null)
+            return Unauthorized(AZOAResult<FiatCheckoutVoidResult>.FailureWithCode(
+                "Invalid token.", AzoaErrorCodes.Forbidden));
+
+        var (actingTenantId, authorisation) = await AuthoriseSubjectAsync<FiatCheckoutVoidResult>(userId, callerUserId.Value);
+        if (authorisation is not null)
+            return authorisation;
+
+        var result = await rail!.VoidRequestAsync(
+            userId, actingTenantId, BuildAdmissionKey(userId, actingTenantId, requestKey), HttpContext.RequestAborted);
+        if (!result.IsError)
+            return Ok(result);
+
+        return result.Code switch
+        {
+            AzoaErrorCodes.Conflict => Conflict(result),
+            FiatConsumerErrors.RequestKeyInUseCode => Conflict(result),
+            FiatConsumerErrors.IntentNeedsReviewCode => Conflict(result),
             AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             FiatConsumerErrors.RailUnavailableCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
             FiatConsumerErrors.PaymentsNotConfiguredCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
@@ -155,13 +212,20 @@ public sealed class FiatCheckoutController : ControllerBase
             return Unauthorized(AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 "Invalid token.", AzoaErrorCodes.Forbidden));
 
-        var (actingTenantId, authorisation) = await AuthoriseSubjectAsync(userId, callerUserId.Value);
+        var (actingTenantId, authorisation) = await AuthoriseSubjectAsync<FiatCheckoutIntent>(userId, callerUserId.Value);
         if (authorisation is not null)
             return authorisation;
 
         var result = await rail!.GetIntentAsync(userId, intentId, actingTenantId, HttpContext.RequestAborted);
         if (!result.IsError)
             return Ok(result);
+
+        // A read whose settlement state could not be confirmed (the provider re-read failed) FAILS
+        // outright rather than answering 200 with an invented `not_started`; see
+        // FiatRailProvider.ProjectAsync and Providers/Fiat/AGENTS.md §settlement-read-failure. The
+        // client is expected to treat this as transient and retry, never as "no payment yet".
+        if (result.Code == AzoaErrorCodes.DependencyUnavailable)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, result);
 
         return result.Code == AzoaErrorCodes.NotFound ? NotFound(result) : BadRequest(result);
     }
@@ -171,10 +235,10 @@ public sealed class FiatCheckoutController : ControllerBase
     /// <summary>
     /// Decides whether this principal may act for <paramref name="subjectUserId"/>, and resolves the
     /// acting tenant when one is involved. Returns <c>(tenantId, null)</c> to proceed, or
-    /// <c>(null, refusal)</c> to stop.
+    /// <c>(null, refusal)</c> to stop; the refusal body is an <c>AZOAResult&lt;T&gt;</c> of the calling action.
     /// </summary>
-    private async Task<(Guid? TenantId, ActionResult<AZOAResult<FiatCheckoutIntent>>? Refusal)>
-        AuthoriseSubjectAsync(Guid subjectUserId, Guid callerUserId)
+    private async Task<(Guid? TenantId, ActionResult? Refusal)>
+        AuthoriseSubjectAsync<T>(Guid subjectUserId, Guid callerUserId)
     {
         var isApiKey = string.Equals(
             User.FindFirst("AuthMethod")?.Value, "ApiKey", StringComparison.OrdinalIgnoreCase);
@@ -186,7 +250,7 @@ public sealed class FiatCheckoutController : ControllerBase
             if (subjectUserId != callerUserId)
             {
                 return (null, StatusCode(StatusCodes.Status403Forbidden,
-                    AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                    AZOAResult<T>.FailureWithCode(
                         "You can only add funds to your own account.", AzoaErrorCodes.Forbidden)));
             }
 
@@ -196,7 +260,7 @@ public sealed class FiatCheckoutController : ControllerBase
         if (!User.HasScope(AzoaScopes.TenantProvision))
         {
             return (null, StatusCode(StatusCodes.Status403Forbidden,
-                AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                AZOAResult<T>.FailureWithCode(
                     $"Caller lacks the '{AzoaScopes.TenantProvision}' scope required to act for an account.",
                     AzoaErrorCodes.Forbidden)));
         }
@@ -208,21 +272,21 @@ public sealed class FiatCheckoutController : ControllerBase
         if (claimedTenantId is { } fromClaim && fromClaim != callerUserId)
         {
             return (null, StatusCode(StatusCodes.Status403Forbidden,
-                AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                AZOAResult<T>.FailureWithCode(
                     "The principal names two different acting tenants.", AzoaErrorCodes.Forbidden)));
         }
 
         if (callerUserId == Guid.Empty)
         {
             return (null, StatusCode(StatusCodes.Status403Forbidden,
-                AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                AZOAResult<T>.FailureWithCode(
                     "The principal carries no resolvable tenant identity.", AzoaErrorCodes.Forbidden)));
         }
 
         if (_consentGate is null)
         {
             return (null, StatusCode(StatusCodes.Status503ServiceUnavailable,
-                AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                AZOAResult<T>.FailureWithCode(
                     "Consent cannot be verified; the payment was refused.",
                     AzoaErrorCodes.DependencyUnavailable)));
         }
@@ -236,7 +300,7 @@ public sealed class FiatCheckoutController : ControllerBase
         if (consent.IsError)
         {
             return (null, StatusCode(StatusCodes.Status403Forbidden,
-                AZOAResult<FiatCheckoutIntent>.FailureWithCode(consent.Message, AzoaErrorCodes.Forbidden)));
+                AZOAResult<T>.FailureWithCode(consent.Message, AzoaErrorCodes.Forbidden)));
         }
 
         return (callerUserId, null);

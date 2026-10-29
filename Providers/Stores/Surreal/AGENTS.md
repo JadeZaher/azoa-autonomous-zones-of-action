@@ -432,6 +432,18 @@ typed attempt mutation. This multi-table atomic invariant is the reason for the
 small raw transaction guard. A paused previous owner cannot commit an approval
 after another process takes over, even if cancellation has not yet been observed.
 
+## Hosted-session contention
+
+`SurrealHostedSessionStore.ClaimAdmissionAsync` (the CREATE), `TryTransitionAsync` and the attach
+transaction run under `SurrealTransientConflict.RetryOnConflictAsync`. Under real contention —
+a request-key void racing a checkout begin on one admission key or one row
+(`Providers/Fiat/AGENTS.md` §request-void) — SurrealDB 3.x reports the loser as a retryable
+`Transaction conflict`, not as a unique violation or a zero-row CAS. The retry turns it into the
+answer callers already handle: a retried CREATE meets the winner's row as the unique violation
+(re-read, same row), and a retried CAS fails its version predicate (no row /
+`HOSTED_ATTACHMENT_CHANGED`). Without the retry the loser surfaced as an unhandled 500.
+`SurrealHostedSessionVoidTests` (integration) races both seams.
+
 ## KYB atomic decision
 
 `SurrealKybVerificationStore` uses typed keys, writers and conditional mutations for normal

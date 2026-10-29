@@ -85,6 +85,10 @@ public interface IStripeGateway
     /// <summary>Re-reads one Checkout session server-side. Never trust a webhook body for these facts.</summary>
     Task<AZOAResult<StripeCheckoutSession>> GetCheckoutSessionAsync(
         StripeCredentials credentials, string sessionId, CancellationToken ct = default);
+
+    /// <summary>Expires an OPEN Checkout session so it can no longer take a payment. Idempotent on <paramref name="idempotencyKey"/>.</summary>
+    Task<AZOAResult<StripeCheckoutSession>> ExpireCheckoutSessionAsync(
+        StripeCredentials credentials, string sessionId, string idempotencyKey, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -102,6 +106,9 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
 
     /// <summary>Named <see cref="IHttpClientFactory"/> client for the Stripe REST surface.</summary>
     public const string HttpClientName = "stripe";
+
+    /// <summary>Stripe's <c>error.code</c> for a request whose idempotency key is held by a concurrent in-flight request.</summary>
+    public const string IdempotencyKeyInUseErrorCode = "idempotency_key_in_use";
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<StripeGateway> _logger;
@@ -179,6 +186,24 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
             ct);
     }
 
+    /// <inheritdoc />
+    public Task<AZOAResult<StripeCheckoutSession>> ExpireCheckoutSessionAsync(
+        StripeCredentials credentials, string sessionId, string idempotencyKey, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return Task.FromResult(AZOAResult<StripeCheckoutSession>.Failure("A payment session id is required."));
+        ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
+
+        return SendAsync(
+            credentials,
+            HttpMethod.Post,
+            "/v1/checkout/sessions/" + Uri.EscapeDataString(sessionId.Trim()) + "/expire",
+            Array.Empty<KeyValuePair<string, string>>(),
+            idempotencyKey,
+            "expire a payment session",
+            ct);
+    }
+
     private Task<AZOAResult<StripeCheckoutSession>> SendAsync(
         StripeCredentials credentials, HttpMethod method, string path,
         IReadOnlyCollection<KeyValuePair<string, string>>? form, string? idempotencyKey,
@@ -243,15 +268,20 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
 
             if (!response.IsSuccessStatusCode)
             {
+                var stripeErrorCode = ReadErrorCode(body);
                 _logger.LogError(
-                    "Stripe refused an attempt to {AttemptedAction} ({Status}). correlationId={CorrelationId}",
-                    attemptedAction, (int)response.StatusCode, correlationId);
+                    "Stripe refused an attempt to {AttemptedAction} ({Status}, {StripeErrorCode}). correlationId={CorrelationId}",
+                    attemptedAction, (int)response.StatusCode, stripeErrorCode ?? "none", correlationId);
 
-                // 429 and 5xx are the rail being busy; anything else is a request this node
-                // built wrongly, which a consumer cannot fix by retrying.
-                return (int)response.StatusCode is 429 or >= 500
-                    ? FiatConsumerErrors.RailBusy<T>(correlationId)
-                    : FiatConsumerErrors.RailRefused<T>(correlationId);
+                // 429 and 5xx are the rail being busy. A 409 / idempotency_key_in_use is a same-key
+                // request still IN FLIGHT, so it must stay non-final (see Providers/Fiat/AGENTS.md
+                // §same-key-replay-codes). Anything else is a request this node built wrongly.
+                var status = (int)response.StatusCode;
+                if (status is 429 or >= 500)
+                    return FiatConsumerErrors.RailBusy<T>(correlationId);
+                if (status == 409 || string.Equals(stripeErrorCode, IdempotencyKeyInUseErrorCode, StringComparison.Ordinal))
+                    return FiatConsumerErrors.RequestInFlight<T>(correlationId);
+                return FiatConsumerErrors.RailRefused<T>(correlationId);
             }
 
             var parsed = parse(body);
@@ -310,6 +340,27 @@ public sealed class StripeGateway : IStripeGateway, IStripeRefundGateway
                 ExpiresAt = ReadUnixSeconds(root, "expires_at"),
                 ClientReferenceId = ReadString(root, "client_reference_id"),
             };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Stripe's machine <c>error.code</c> from an error body, or null. Never the message text.</summary>
+    private static string? ReadErrorCode(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.Object
+                    ? ReadString(error, "code")
+                    : null;
         }
         catch (JsonException)
         {
@@ -469,6 +520,29 @@ public static class FiatConsumerErrors
     /// <summary>Wire code for a node that has no payment provider configured at all (QA M3): not transient, nothing to retry.</summary>
     public const string PaymentsNotConfiguredCode = "PAYMENTS_NOT_CONFIGURED";
 
+    /// <summary>
+    /// Same-key replay codes for a hosted checkout (and the cash-out claim that shares the
+    /// REQUEST_KEY_IN_USE situation). A persisted idempotency key resent after a lost answer
+    /// hits one of these 409s; the code tells the caller which one so it can stop polling,
+    /// start fresh, or keep waiting, instead of treating every 409 alike. The HTTP status (409)
+    /// and the human message stay exactly as they were — only this discriminator is new. These
+    /// strings (and <see cref="RequestVoidedCode"/>) are a wire contract with the SDK and the
+    /// ArdaNova BFF: never rename them.
+    /// </summary>
+    public const string RequestKeyInUseCode = "REQUEST_KEY_IN_USE";
+
+    /// <summary>The claim this key names has already reached a terminal state.</summary>
+    public const string IntentFinishedCode = "INTENT_FINISHED";
+
+    /// <summary>The hosted payment page this key named can no longer be replayed; start a new payment.</summary>
+    public const string IntentExpiredCode = "INTENT_EXPIRED";
+
+    /// <summary>The send outcome for this key can no longer be replayed safely; an operator must reconcile it.</summary>
+    public const string IntentNeedsReviewCode = "INTENT_NEEDS_REVIEW";
+
+    /// <summary>This request key was voided; nothing was or can be paid under it. Final: start a new payment.</summary>
+    public const string RequestVoidedCode = "REQUEST_VOIDED";
+
     private const string NotConfiguredMessage =
         "Adding funds is not configured on this node.";
 
@@ -480,6 +554,12 @@ public static class FiatConsumerErrors
 
     private const string RefusedMessage =
         "This payment could not be started. Nothing was charged.";
+
+    private const string InFlightMessage =
+        "This payment request is still being processed. Keep this request and try again shortly.";
+
+    private const string VoidedMessage =
+        "This payment request was cancelled and nothing can be paid under it. Start a new payment.";
 
     public static AZOAResult<T> RailUnavailable<T>() =>
         AZOAResult<T>.FailureWithCode(UnavailableMessage, RailUnavailableCode);
@@ -496,6 +576,14 @@ public static class FiatConsumerErrors
 
     public static AZOAResult<T> RailRefused<T>(string? correlationId = null) =>
         AZOAResult<T>.FailureWithCode(WithReference(RefusedMessage, correlationId), RailRefusedCode);
+
+    /// <summary>A same-key request is still in flight at the rail: the generic, NON-final 409 <see cref="AzoaErrorCodes.Conflict"/>.</summary>
+    public static AZOAResult<T> RequestInFlight<T>(string? correlationId = null) =>
+        AZOAResult<T>.FailureWithCode(WithReference(InFlightMessage, correlationId), AzoaErrorCodes.Conflict);
+
+    /// <summary>A begin on a voided request key: the final 409 <see cref="RequestVoidedCode"/>.</summary>
+    public static AZOAResult<T> RequestVoided<T>() =>
+        AZOAResult<T>.FailureWithCode(VoidedMessage, RequestVoidedCode);
 
     private static string WithReference(string message, string? correlationId) =>
         string.IsNullOrWhiteSpace(correlationId) ? message : $"{message} Reference: {correlationId}.";

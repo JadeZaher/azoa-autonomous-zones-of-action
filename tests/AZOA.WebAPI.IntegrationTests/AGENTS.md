@@ -187,8 +187,15 @@ wire, where SurrealDB coerces text into typed columns, and the suite would have
 proved nothing about the transport the app actually uses. See
 `Core/Surreal/AGENTS.md §cbor-transport` for what changes because of that.
 
-- **Endpoint is `http://127.0.0.1:8020`** (`SurrealTestDefaults`). Port 8000 is a
-  different service on this machine.
+- **Endpoint is `http://127.0.0.1:8020`** (`SurrealTestDefaults.DefaultEndpoint`, what CI
+  publishes) unless `AZOA_TEST_SURREAL_ENDPOINT` names another server. Port 8000 is a
+  different service on this machine. On a dev box 8020 is usually the `azoa-dev-surrealdb`
+  DEMO database, which tests must not write to: start an isolated server and point the run
+  at it, e.g. `podman run -d --rm --name azoa-test-surreal-$PID -p 8090:8000
+  surrealdb/surrealdb:v3.1.4 start --user root --pass root memory`, then
+  `AZOA_TEST_SURREAL_ENDPOINT=http://127.0.0.1:8090 dotnet test ...`, and stop the container
+  afterwards. The backup/restore drill still targets its container by name
+  (`AZOA_SURREALDB_CONTAINER_NAME`, §g5-container-selection), not by this endpoint.
 - **Surreal settings reach the app through `UseSetting`, not
   `ConfigureAppConfiguration`.** `Program.cs` binds the section eagerly, before
   any `ConfigureAppConfiguration` delegate registered by a

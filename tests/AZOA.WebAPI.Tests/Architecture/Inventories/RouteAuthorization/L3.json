@@ -33,6 +33,17 @@
     ]
   },
   {
+    "route": "POST api/fiat/checkout/{userId}/requests/{requestKey}/void",
+    "controller": "FiatCheckoutController",
+    "action": "VoidRequest",
+    "class": "value-moving",
+    "scope": "first-party self | ApiKey tenant:provision + live consent(transfer:sign)",
+    "enforcement": "AuthoriseSubjectAsync (same as Start); admission key {subject}:{tenant|self}:{key}; voids only when nothing was or can be paid, else reveals or 503 (Providers/Fiat/AGENTS.md §request-void); financial limiter",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
     "route": "GET api/fiat/payouts/{userId}/availability",
     "controller": "FiatPayoutController",
     "action": "Availability",

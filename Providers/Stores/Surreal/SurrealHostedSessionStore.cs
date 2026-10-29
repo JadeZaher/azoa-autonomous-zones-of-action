@@ -51,8 +51,14 @@ public sealed partial class SurrealHostedSessionStore : IHostedSessionStore, ICu
         }
         try
         {
-            var response = await _executor.ExecuteAsync(SurrealWriter.Create(ToStorage(candidate)), ct);
-            response.EnsureAllOk();
+            // Two claims of one key can collide as a retryable write conflict rather than a unique
+            // violation; the retried CREATE then meets the winner's row as the violation handled below.
+            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var created = await _executor.ExecuteAsync(SurrealWriter.Create(ToStorage(candidate)), ct);
+                created.EnsureAllOk();
+                return created;
+            }, ct);
             return AZOAResult<HostedSession>.Success(FromStorage(response.GetValues<HostedSession>(0).Single()));
         }
         catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
@@ -336,8 +342,15 @@ public sealed partial class SurrealHostedSessionStore : IHostedSessionStore, ICu
         query = outcomeDetail is null ? query.Unset(row => row.OutcomeDetail) : query.Set(row => row.OutcomeDetail, outcomeDetail);
         query = resumeTargetId is null ? query.Unset(row => row.ResumeTargetId) : query.Set(row => row.ResumeTargetId, resumeTargetId);
         query = HostedSessionStates.IsTerminal(newState) ? query.Set(row => row.CompletedAt, (DateTimeOffset?)now) : query.Unset(row => row.CompletedAt);
-        var response = await _executor.ExecuteAsync(query.Build(), ct);
-        response.EnsureAllOk();
+        var transition = query.Build();
+        // A contended CAS can surface as a retryable write conflict; the retry re-evaluates the
+        // version predicate, so the loser gets no row instead of an exception.
+        var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+        {
+            var executed = await _executor.ExecuteAsync(transition, ct);
+            executed.EnsureAllOk();
+            return executed;
+        }, ct);
         var row = response.GetValues<HostedSession>(0).SingleOrDefault();
         return AZOAResult<HostedSession>.Success(row is null ? null! : FromStorage(row));
     }
@@ -388,8 +401,14 @@ public sealed partial class SurrealHostedSessionStore : IHostedSessionStore, ICu
         var query = SurrealQuery.Combine(statements.ToArray());
         try
         {
-            var response = await _executor.ExecuteAsync(query, ct);
-            response.EnsureAllOk();
+            // A write conflict aborts the whole transaction; the retry re-checks the CAS, so an attach that
+            // lost to a concurrent transition (e.g. a request-key void) ends as the changed-row answer.
+            var response = await SurrealTransientConflict.RetryOnConflictAsync(async () =>
+            {
+                var executed = await _executor.ExecuteAsync(query, ct);
+                executed.EnsureAllOk();
+                return executed;
+            }, ct);
             var row = response.GetValues<HostedSession>(resultIndex).SingleOrDefault();
             return AZOAResult<HostedSession>.Success(row is null ? null! : FromStorage(row));
         }

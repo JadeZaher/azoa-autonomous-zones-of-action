@@ -24,6 +24,26 @@ public sealed class JsonlExceptionLoggerOptions
         "secret",
         "mnemonic",
         "privatekey",
+        // Personal and bank fields, incl. the KYC identity binding's Surreal parameters
+        // (_binding_first_name, _binding_birthday, _binding_person_key, ...); see AGENTS.md §redaction.
+        "email",
+        "first_name",
+        "firstname",
+        "last_name",
+        "lastname",
+        "birthday",
+        "date_of_birth",
+        "dateofbirth",
+        "citizenship",
+        "person_key",
+        "personkey",
+        "account_number",
+        "accountnumber",
+        "routing_number",
+        "routingnumber",
+        "id_number",
+        "idnumber",
+        "ssn",
     ];
 
     /// <summary>Truncate serialized entries to this byte limit (effective minimum: two bytes).</summary>
