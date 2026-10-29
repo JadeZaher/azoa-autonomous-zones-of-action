@@ -1,16 +1,22 @@
-﻿namespace AZOA.WebAPI.IntegrationTests;
+namespace AZOA.WebAPI.IntegrationTests;
 
 /// <summary>
-/// Connection defaults for SurrealDB-backed integration tests.
-/// Points at the developer's local SurrealDB instance — same endpoint
-/// and credentials as <c>appsettings.Development.json</c>'s
-/// <c>SurrealDb</c> section. No env-var indirection: a single source
-/// of truth keeps test discovery, factory wiring, and direct-HTTP
-/// fixtures aligned.
+/// Connection defaults for SurrealDB-backed integration tests: the CI server on 8020 unless
+/// <c>AZOA_TEST_SURREAL_ENDPOINT</c> points the run at an isolated one. See
+/// <c>tests/AZOA.WebAPI.IntegrationTests/AGENTS.md</c> §cbor-transport.
 /// </summary>
 internal static class SurrealTestDefaults
 {
-    public const string Endpoint = "http://127.0.0.1:8020";
+    /// <summary>Environment variable that redirects every Surreal-backed test to another server.</summary>
+    public const string EndpointVariable = "AZOA_TEST_SURREAL_ENDPOINT";
+
+    /// <summary>The endpoint CI publishes its SurrealDB container on.</summary>
+    public const string DefaultEndpoint = "http://127.0.0.1:8020";
+
+    public static readonly string Endpoint =
+        Environment.GetEnvironmentVariable(EndpointVariable) is { Length: > 0 } overridden
+            ? overridden.Trim()
+            : DefaultEndpoint;
 
     /// <summary>
     /// The same server as <see cref="Endpoint"/>, addressed from INSIDE the

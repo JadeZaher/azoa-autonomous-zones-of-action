@@ -552,13 +552,16 @@ public sealed class FiatCheckoutIntentEventHandler : IFiatEventHandler
 
         var session = read.Result;
         if (HostedSessionStates.IsTerminal(session.State))
+        {
+            FlagPaymentOnAbandonedIntent(context.EventType, session);
             return FiatEventOutcome.Applied;   // a redelivery after the single terminal write
+        }
 
         if (string.Equals(context.EventType, "checkout.session.expired", StringComparison.Ordinal))
-            return await TransitionAsync(intentId, session, HostedSessionStates.Abandoned, "EXPIRED", ct);
+            return await TransitionAsync(intentId, session, HostedSessionStates.Abandoned, "EXPIRED", context.EventType, ct);
 
         if (string.Equals(context.EventType, "checkout.session.async_payment_failed", StringComparison.Ordinal))
-            return await TransitionAsync(intentId, session, HostedSessionStates.Failed, "PAYMENT_FAILED", ct);
+            return await TransitionAsync(intentId, session, HostedSessionStates.Failed, "PAYMENT_FAILED", context.EventType, ct);
 
         // The body is an untrusted TRIGGER. What actually happened is re-read from the provider,
         // exactly as the KYC hosted flow re-fetches its verdict.
@@ -573,18 +576,18 @@ public sealed class FiatCheckoutIntentEventHandler : IFiatEventHandler
         return FiatRailProvider.ClassifySession(fetched.Result) switch
         {
             ChainConfirmation.Confirmed =>
-                await TransitionAsync(intentId, session, HostedSessionStates.Completed, "PAID", ct),
+                await TransitionAsync(intentId, session, HostedSessionStates.Completed, "PAID", context.EventType, ct),
             ChainConfirmation.FailedOnChain =>
-                await TransitionAsync(intentId, session, HostedSessionStates.Failed, "PAYMENT_FAILED", ct),
+                await TransitionAsync(intentId, session, HostedSessionStates.Failed, "PAYMENT_FAILED", context.EventType, ct),
             // Still clearing (an asynchronous payment method). Parking it non-terminally is the
             // whole reason AcceptedPending exists: the provider must not retry, and the intent
             // must not terminalise on a payment that has not cleared.
-            _ => await ParkAsync(intentId, session, ct),
+            _ => await ParkAsync(intentId, session, context.EventType, ct),
         };
     }
 
     private async Task<FiatEventOutcome> TransitionAsync(
-        Guid intentId, HostedSession session, string newState, string outcome, CancellationToken ct)
+        Guid intentId, HostedSession session, string newState, string outcome, string eventType, CancellationToken ct)
     {
         var transitioned = await _store.TryTransitionAsync(
             intentId,
@@ -597,13 +600,12 @@ public sealed class FiatCheckoutIntentEventHandler : IFiatEventHandler
 
         if (transitioned.IsError)
             return FiatEventOutcome.Failed;
-
-        // Losing the compare-and-swap is the EXPECTED outcome for every redelivery after the
-        // first, not an error: some other delivery already made this exact transition.
-        return FiatEventOutcome.Applied;
+        return transitioned.Result is not null
+            ? FiatEventOutcome.Applied
+            : await SettleLostTransitionAsync(intentId, newState, FiatEventOutcome.Applied, eventType, ct);
     }
 
-    private async Task<FiatEventOutcome> ParkAsync(Guid intentId, HostedSession session, CancellationToken ct)
+    private async Task<FiatEventOutcome> ParkAsync(Guid intentId, HostedSession session, string eventType, CancellationToken ct)
     {
         if (string.Equals(session.State, HostedSessionStates.AwaitingOutcome, StringComparison.Ordinal))
             return FiatEventOutcome.AcceptedPending;
@@ -617,6 +619,50 @@ public sealed class FiatCheckoutIntentEventHandler : IFiatEventHandler
             resumeTargetId: null,
             ct);
 
-        return parked.IsError ? FiatEventOutcome.Failed : FiatEventOutcome.AcceptedPending;
+        if (parked.IsError)
+            return FiatEventOutcome.Failed;
+        return parked.Result is not null
+            ? FiatEventOutcome.AcceptedPending
+            : await SettleLostTransitionAsync(intentId, HostedSessionStates.AwaitingOutcome, FiatEventOutcome.AcceptedPending, eventType, ct);
+    }
+
+    /// <summary>
+    /// A lost state CAS is done only if the row already reached <paramref name="target"/> or a terminal
+    /// state; anything else is Failed so the provider redelivers. See <c>Services/Fiat/AGENTS.md</c> §intent-lost-cas.
+    /// </summary>
+    private async Task<FiatEventOutcome> SettleLostTransitionAsync(
+        Guid intentId, string target, FiatEventOutcome reached, string eventType, CancellationToken ct)
+    {
+        var reread = await _store.GetByIdAsync(intentId, ct);
+        if (reread.IsError || reread.Result is not { } row)
+            return FiatEventOutcome.Failed;
+        if (string.Equals(row.State, target, StringComparison.Ordinal))
+            return reached;
+        if (HostedSessionStates.IsTerminal(row.State))
+        {
+            FlagPaymentOnAbandonedIntent(eventType, row);
+            return FiatEventOutcome.Applied;
+        }
+
+        _logger.LogWarning(
+            "A {EventType} delivery lost a state race on funding intent {IntentId} (now {State}); it is failed so the provider redelivers it.",
+            eventType, row.Id, row.State);
+        return FiatEventOutcome.Failed;
+    }
+
+    /// <summary>
+    /// Critical (production's emitted level) when a payment event reaches an abandoned (voided or expired)
+    /// intent: money may have landed under a request key the node already released.
+    /// </summary>
+    private void FlagPaymentOnAbandonedIntent(string eventType, HostedSession row)
+    {
+        if (!string.Equals(row.State, HostedSessionStates.Abandoned, StringComparison.Ordinal)
+            || !(string.Equals(eventType, "checkout.session.completed", StringComparison.Ordinal)
+                || string.Equals(eventType, "checkout.session.async_payment_succeeded", StringComparison.Ordinal)))
+            return;
+
+        _logger.LogCritical(
+            "A {EventType} delivery reached funding intent {IntentId}, which is {Disposition}: a payment may have landed under a released request key. Reconcile it against Stripe now.",
+            eventType, row.Id, FiatCheckoutVoid.IsVoided(row) ? "voided" : "abandoned");
     }
 }

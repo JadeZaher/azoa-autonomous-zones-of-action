@@ -181,7 +181,7 @@ below.
 | | /api/hold-release-mandates/{id}/revoke | POST | `revokeHoldReleaseMandate` | client.ts | |
 | | /api/hold-release-mandates/{id}/reconcile-request | POST | `reconcileHoldReleaseMandate` | client.ts | |
 | **Fiat checkout** | /api/fiat/checkout/capabilities | GET | `getFiatCheckoutCapabilities` | client.ts | OK |
-| | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK |
+| | /api/fiat/checkout/{userId} | POST | `startFiatCheckout` | client.ts | OK (additive: 409 `INTENT_FINISHED`/`INTENT_EXPIRED`/`INTENT_NEEDS_REVIEW` carry the intent projection in `result`; Providers/Fiat/AGENTS.md §same-key-replay-codes) |
 | | /api/fiat/checkout/{userId}/{intentId} | GET | `getFiatCheckoutIntent` | client.ts | OK |
 | | /api/fiat/checkout/{userId}/requests/{requestKey}/void | POST | — | — | **SDK gap** (request-key void; Providers/Fiat/AGENTS.md §request-void) |
 | **Fiat payout (off-ramp / cash-out)** | /api/fiat/payouts/{userId}/availability | GET | `getCashOutAvailability` | client.ts | OK |

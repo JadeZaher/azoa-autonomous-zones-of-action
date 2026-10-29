@@ -224,6 +224,13 @@ public sealed class DiagnosticsMiddlewareTests
             });
             foreach (var (key, value) in typed.Params)
                 personal["typed_" + key] = value;
+            // A typed User write binds the address as `_f_email`.
+            var user = SurrealForge.Client.Query.SurrealWriter.Create(new AZOA.WebAPI.Persistence.SurrealDb.Models.User
+            {
+                Id = "probe-user", Username = "probe-user", Email = "SENTINEL-email@example.test", PasswordHash = "SENTINEL-hash",
+            });
+            foreach (var (key, value) in user.Params)
+                personal["user_" + key] = value;
 
             var fault = new InvalidOperationException("A statement failed.");
             fault.Data["SurrealStatement"] = typed.Sql;
@@ -237,6 +244,7 @@ public sealed class DiagnosticsMiddlewareTests
             var logged = document.RootElement.GetProperty("surrealParams");
             logged.GetProperty("_binding_first_name").GetString().Should().Be("[REDACTED]");
             logged.GetProperty("account_number").GetString().Should().Be("[REDACTED]");
+            logged.GetProperty("user__f_email").GetString().Should().Be("[REDACTED]");
             logged.GetProperty("_binding_now").GetString().Should().Be("2026-10-28T00:00:00Z", "non-personal parameters stay readable");
         }
         finally

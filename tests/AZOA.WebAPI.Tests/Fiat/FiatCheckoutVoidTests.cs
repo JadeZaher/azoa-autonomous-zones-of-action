@@ -204,6 +204,9 @@ public sealed class FiatCheckoutVoidTests
         var (http, body) = Unwrap(voided);
         http.Should().Be(409);
         body.Code.Should().Be(FiatConsumerErrors.IntentNeedsReviewCode);
+        body.Result!.Outcome.Should().Be(FiatVoidOutcomes.Revealed, "a 409 body must never read as voided");
+        body.Result.IntentId.Should().Be(Guid.ParseExact(claim.Id, "N"));
+        body.Result.Intent!.Status.Should().Be(FiatIntentStatuses.Starting);
         var after = await harness.RowAsync(Guid.ParseExact(claim.Id, "N"));
         after.State.Should().Be(HostedSessionStates.Claimed);
         after.StateVersion.Should().Be(claim.StateVersion, "a void that needs an operator writes nothing");
@@ -415,18 +418,22 @@ public sealed class FiatCheckoutVoidTests
     }
 
     [Fact]
-    public async Task The_void_and_REQUEST_VOIDED_bodies_serialize_to_the_wire_shapes_clients_build_on()
+    public async Task The_void_and_same_key_409_bodies_serialize_to_the_wire_shapes_clients_build_on()
     {
         var harness = new FiatCheckoutHarness();
         var subject = Guid.NewGuid();
         var open = Unwrap(await harness.StartAsync(subject, "open-key")).Body.Result!;
         var paid = Unwrap(await harness.StartAsync(subject, "paid-key")).Body.Result!;
         harness.Stripe.Settle(paid.IntentId, "complete", "paid");
+        var settled = Unwrap(await harness.StartAsync(subject, "settled-key")).Body.Result!;
+        harness.Stripe.Settle(settled.IntentId, "complete", "paid");
+        await harness.TransitionAsync(settled.IntentId, HostedSessionStates.Completed);
 
         var tombstone = WireJson(await harness.VoidAsync(subject, "never-sent"));
         var voided = WireJson(await harness.VoidAsync(subject, "open-key"));
         var revealed = WireJson(await harness.VoidAsync(subject, "paid-key"));
         var refused = WireJson(await harness.StartAsync(subject, "never-sent"));
+        var finished = WireJson(await harness.StartAsync(subject, "settled-key"));
 
         tombstone.Should().Be(
             """{"isError":false,"message":"Nothing can be paid under this request key.","result":{"outcome":"voided","intentId":null},"detail":null}""");
@@ -445,6 +452,22 @@ public sealed class FiatCheckoutVoidTests
             "intentId", "admissionKey", "status", "settlementState", "paymentUrl", "resumed", "amountPaidMinorUnits", "currency", "expiresAt");
         intent.GetProperty("status").GetString().Should().Be(FiatIntentStatuses.Processing);
         intent.GetProperty("settlementState").GetString().Should().Be(FiatSettlementStates.PaymentReceived);
+
+        // INTENT_FINISHED: code, status and message as before; `result` is additive and tells paid from failed.
+        using var finishedDocument = JsonDocument.Parse(finished);
+        var envelope = finishedDocument.RootElement;
+        envelope.EnumerateObject().Select(property => property.Name).Should().Equal("isError", "message", "result", "code", "detail");
+        envelope.GetProperty("isError").GetBoolean().Should().BeTrue();
+        envelope.GetProperty("code").GetString().Should().Be("INTENT_FINISHED");
+        envelope.GetProperty("message").GetString().Should().Be("This payment is already finished.");
+        var projection = envelope.GetProperty("result");
+        projection.EnumerateObject().Select(property => property.Name).Should().Equal(
+            "intentId", "admissionKey", "status", "settlementState", "paymentUrl", "resumed", "amountPaidMinorUnits", "currency", "expiresAt");
+        projection.GetProperty("intentId").GetGuid().Should().Be(settled.IntentId);
+        projection.GetProperty("status").GetString().Should().Be(FiatIntentStatuses.Complete);
+        projection.GetProperty("settlementState").GetString().Should().Be(FiatSettlementStates.PaymentReceived);
+        projection.GetProperty("paymentUrl").ValueKind.Should().Be(JsonValueKind.Null);
+        projection.GetProperty("amountPaidMinorUnits").GetInt64().Should().Be(1_000);
     }
 
     /// <summary>MVC's own default serializer settings plus the enum converter Program.cs adds: what goes on the wire.</summary>

@@ -55,12 +55,14 @@ public static class FiatHostedCreation
         {
             if (!string.IsNullOrWhiteSpace(session.ProviderSessionId))
                 return new(FiatCreationVerdict.Attached, session);
-            if (session.State != HostedSessionStates.Claimed || IsUnreplayable(session, now))
+            // IsUnreplayable already refuses a tokenless row; the pattern only hands the compiler that fact.
+            if (session.State != HostedSessionStates.Claimed || IsUnreplayable(session, now)
+                || session.CreationToken is not { } creationToken)
                 return new(FiatCreationVerdict.NeedsOperator, session);
             if (session.CreationStartedAt is not null)
                 return new(FiatCreationVerdict.Send, session);
 
-            var begun = await store.TryBeginCreationAsync(id, session.CreationToken, now, ct);
+            var begun = await store.TryBeginCreationAsync(id, creationToken, now, ct);
             if (!begun.IsError && begun.Result is not null)
                 return new(FiatCreationVerdict.Send, begun.Result);
 

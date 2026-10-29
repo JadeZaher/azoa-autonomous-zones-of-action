@@ -23,3 +23,22 @@ are documented in `OnRamp/AGENTS.md`.
 confirmation). Past the cap the row stays on the operator board (`ListNeedingOperatorAsync`,
 statuses unchanged) and the operator replay route still applies it; nothing is marked applied or
 dropped. The refund-reconciliation half of the sweep is unaffected.
+
+## §intent-lost-cas — a lost intent transition is re-read, never assumed done
+
+`FiatCheckoutIntentEventHandler` moves the funding intent with a state-version CAS
+(`TryTransitionAsync`). A lost CAS used to be read as "another delivery already made this exact
+transition" and answered `Applied` (or `AcceptedPending` for a park). That was only true while every
+racer wrote the same target. With `SurrealTransientConflict` retry in the store, a genuine race now
+surfaces as a CAS miss: a `checkout.session.completed` delivery that PARKS an async payment
+(`AwaitingOutcome`) can beat `checkout.session.async_payment_succeeded` at the same version, and the
+old answer marked the success applied while the row stayed `processing` forever.
+
+`SettleLostTransitionAsync` re-reads the row after a null transition: the target state → the
+success outcome; any terminal state → `Applied` (the single terminal write already happened); anything
+else → `Failed`, so Stripe redelivers (and `FiatEventRecovery` re-sweeps) and the next attempt decides
+on the new row. A payment event (`completed` / `async_payment_succeeded`) that finds the intent
+`ABANDONED` — voided by its request key or expired — is logged at **Critical**, the level
+`appsettings.Production.json` emits, because it means money may have landed under a key the node told
+the client to release (`Providers/Fiat/AGENTS.md` §same-key-replay-codes). The settlement handler still
+credits a confirmed payment; the log is what makes the contradiction visible.

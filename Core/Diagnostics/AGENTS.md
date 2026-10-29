@@ -59,13 +59,14 @@ exception messages, or unstructured scope values.
 
 `JsonlExceptionLoggerOptions.RedactionKeys` is a case-insensitive key-substring deny-list. Beyond
 credentials (password, token, secret, api key, mnemonic, private key) it covers personal and bank
-fields by default — `first_name`, `last_name`, `birthday`, `date_of_birth`, `citizenship`,
+fields by default — `email`, `first_name`, `last_name`, `birthday`, `date_of_birth`, `citizenship`,
 `person_key`, `account_number`, `routing_number`, `id_number`, `ssn`, with their unseparated
 spellings — because a SurrealForge fault attaches the failing query's parameters as
 `SurrealParams`, and the KYC identity binding (`SurrealKycIdentityStore`) binds a person's name,
 birthday, citizenship and person keys as `_binding_first_name`, `_binding_birthday`, and so on.
-Typed `SurrealWriter` writes bind each column as `_f_<column>` (`_f_first_name`), so the same
-substrings catch them. Matching is per parameter KEY; a value nested inside an object-valued
+Typed `SurrealWriter` writes bind each column as `_f_<column>` (`_f_first_name`; a `User` write
+binds `_f_email`), so the same substrings catch them. `email` is a substring match, so every
+email-bearing key (`email_at_link`, `notification_email`) is redacted too. Matching is per parameter KEY; a value nested inside an object-valued
 parameter is not inspected, so bind personal fields as their own named parameters. The
 configuration binder appends to this list, so configuration can widen it but never drop a default.
 

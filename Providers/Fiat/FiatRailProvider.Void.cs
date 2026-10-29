@@ -18,7 +18,7 @@ public static class FiatVoidOutcomes
     public const string Revealed = "revealed";
 }
 
-/// <summary>Body of a 200 from <c>POST /api/fiat/checkout/{userId}/requests/{requestKey}/void</c>.</summary>
+/// <summary>Body of a 200 from <c>POST /api/fiat/checkout/{userId}/requests/{requestKey}/void</c>, and (<c>revealed</c>) the <c>result</c> of its 409 INTENT_NEEDS_REVIEW.</summary>
 public sealed class FiatCheckoutVoidResult
 {
     /// <summary>One of <see cref="FiatVoidOutcomes"/>.</summary>
@@ -65,22 +65,6 @@ public sealed partial class FiatRailProvider
 {
     /// <summary>Re-reads after a lost version CAS before the void answers busy.</summary>
     private const int VoidAttempts = 4;
-
-    /// <summary>What a fresh Stripe read says a void may do with one Checkout session.</summary>
-    private enum VoidStripeVerdict
-    {
-        /// <summary>Paid, or complete and still clearing: reveal, never void.</summary>
-        PaidOrClearing,
-
-        /// <summary>Expired unpaid: nothing was or can be paid.</summary>
-        Dead,
-
-        /// <summary>Open: payable until expired.</summary>
-        Payable,
-
-        /// <summary>A status this node does not recognise: refuse to decide.</summary>
-        Unknown,
-    }
 
     /// <inheritdoc />
     public async Task<AZOAResult<FiatCheckoutVoidResult>> VoidRequestAsync(
@@ -176,7 +160,7 @@ public sealed partial class FiatRailProvider
         {
             if (!string.Equals(session.State, HostedSessionStates.Claimed, StringComparison.Ordinal)
                 || FiatHostedCreation.IsUnreplayable(session, _clock.GetUtcNow()))
-                return NeedsReview(session);
+                return await NeedsReviewAsync(scope, session, ct);
 
             // No page attached: a page URL leaves this node only after the attach CAS, and that CAS
             // needs this row CLAIMED at its current version -- which the abandon below takes away.
@@ -187,34 +171,13 @@ public sealed partial class FiatRailProvider
         if (read.IsError || read.Result is null)
             return Unconfirmed(read.Message);
 
-        var verdict = JudgeForVoid(read.Result);
-        if (verdict == VoidStripeVerdict.PaidOrClearing)
-            return Revealed(await ProjectAsync(scope, session, read.Result, resumed: true, ct));
-        if (verdict == VoidStripeVerdict.Dead)
-            return await AbandonAsync(store, session, intentId, ct);
-        if (verdict == VoidStripeVerdict.Unknown)
-            return Unconfirmed();
-
-        var expired = await _gateway.ExpireCheckoutSessionAsync(
-            _options.CredentialsFor(_environment), session.ProviderSessionId!,
-            FiatCheckoutVoid.ExpireIdempotencyKey(session.Id, session.ProviderSessionId!), ct);
-        var after = expired.IsError ? null : expired.Result;
-
-        // A refused or lost expire (the payer finished concurrently, Stripe busy, connection reset)
-        // is settled by a fresh read; anything that read cannot settle stays the caller's key.
-        if (after is null || JudgeForVoid(after) is not (VoidStripeVerdict.Dead or VoidStripeVerdict.PaidOrClearing))
+        // The same expire-first classifier the same-key resume uses (§stripe-session-verdict).
+        var settled = await SettleCheckoutSessionAsync(session, read.Result, ct);
+        return settled.Verdict switch
         {
-            var reread = await ReadProviderSessionAsync(session, ct);
-            if (reread.IsError || reread.Result is null)
-                return Unconfirmed(reread.Message);
-            after = reread.Result;
-        }
-
-        return JudgeForVoid(after) switch
-        {
-            VoidStripeVerdict.Dead => await AbandonAsync(store, session, intentId, ct),
-            VoidStripeVerdict.PaidOrClearing => Revealed(await ProjectAsync(scope, session, after, resumed: true, ct)),
-            _ => Unconfirmed(),
+            CheckoutSessionVerdict.Dead => await AbandonAsync(store, session, intentId, ct),
+            CheckoutSessionVerdict.PaidOrClearing => Revealed(await ProjectAsync(scope, session, settled.Provider, resumed: true, ct)),
+            _ => Unconfirmed(settled.Message),
         };
     }
 
@@ -251,18 +214,6 @@ public sealed partial class FiatRailProvider
                 intentId);
     }
 
-    /// <summary>Classifies one fresh Stripe read for the void decision; "complete" alone is never treated as dead.</summary>
-    private static VoidStripeVerdict JudgeForVoid(StripeCheckoutSession provider)
-    {
-        if (IsPaid(provider) || string.Equals(provider.Status, "complete", StringComparison.OrdinalIgnoreCase))
-            return VoidStripeVerdict.PaidOrClearing;
-        if (string.Equals(provider.Status, "expired", StringComparison.OrdinalIgnoreCase))
-            return VoidStripeVerdict.Dead;
-        return string.Equals(provider.Status, "open", StringComparison.OrdinalIgnoreCase)
-            ? VoidStripeVerdict.Payable
-            : VoidStripeVerdict.Unknown;
-    }
-
     private static AZOAResult<FiatCheckoutVoidResult> Voided(Guid? intentId) =>
         AZOAResult<FiatCheckoutVoidResult>.Success(
             new FiatCheckoutVoidResult { Outcome = FiatVoidOutcomes.Voided, IntentId = intentId },
@@ -281,13 +232,19 @@ public sealed partial class FiatRailProvider
                 },
                 "A payment under this request key may already have been made; follow it instead of starting a new one.");
 
-    private AZOAResult<FiatCheckoutVoidResult> NeedsReview(HostedSession session)
+    /// <summary>409 INTENT_NEEDS_REVIEW whose <c>result</c> reveals the intent (never <c>voided</c>), so the caller keeps the key and can name it.</summary>
+    private async Task<AZOAResult<FiatCheckoutVoidResult>> NeedsReviewAsync(
+        IServiceScope scope, HostedSession session, CancellationToken ct)
     {
         _logger.LogError(
             "Funding intent {IntentId} could not be voided: its unattached payment page needs operator reconciliation.",
             session.Id);
+        var projection = await ProjectAsync(scope, session, provider: null, resumed: true, ct);
         return AZOAResult<FiatCheckoutVoidResult>.FailureWithCode(
-            "This payment needs a manual check before it can continue.", FiatConsumerErrors.IntentNeedsReviewCode);
+            NeedsReviewMessage, FiatConsumerErrors.IntentNeedsReviewCode,
+            projection.Result is { } intent
+                ? new FiatCheckoutVoidResult { Outcome = FiatVoidOutcomes.Revealed, IntentId = intent.IntentId, Intent = intent }
+                : null);
     }
 
     /// <summary>RAIL_BUSY without the begin path's "nothing was charged", which a contended void cannot prove.</summary>

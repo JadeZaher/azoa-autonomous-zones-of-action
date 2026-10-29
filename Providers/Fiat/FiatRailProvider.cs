@@ -370,6 +370,10 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
     /// <summary>Lifetime floor: Stripe's minimum plus a replay margin for a lost create response.</summary>
     private const int MinimumPinnedLifetimeMinutes = 35;
 
+    private const string FinishedMessage = "This payment is already finished.";
+    private const string ExpiredMessage = "This payment page has expired. Start a new payment.";
+    private const string NeedsReviewMessage = "This payment needs a manual check before it can continue.";
+
     /// <summary>The claim's fixed <c>expires_at</c>: creation start + configured lifetime, clamped to Stripe's 35 min..24 h.</summary>
     public static DateTimeOffset PinnedCheckoutExpiry(DateTimeOffset creationStartedAt, int configuredMinutes)
         => creationStartedAt.AddMinutes(Math.Clamp(configuredMinutes, MinimumPinnedLifetimeMinutes, 24 * 60));
@@ -614,8 +618,7 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
             return FiatConsumerErrors.RequestVoided<FiatCheckoutIntent>();
 
         if (HostedSessionStates.IsTerminal(session.State))
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This payment is already finished.", FiatConsumerErrors.IntentFinishedCode);
+            return FinalConflict(await ProjectAsync(scope, session, resumed: true, ct), FinishedMessage, FiatConsumerErrors.IntentFinishedCode);
 
         // A live claim that already carries a page is resumed verbatim: the whole point of the
         // admission key is that a refresh does not open a second payment.
@@ -644,8 +647,8 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
                 _logger.LogError(
                     "Funding intent {IntentId} has an unattached payment page the node can no longer replay; operator reconciliation is required.",
                     session.Id);
-                return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                    "This payment needs a manual check before it can continue.", FiatConsumerErrors.IntentNeedsReviewCode);
+                return FinalConflict(await ProjectAsync(scope, turn.Session ?? session, resumed: true, ct),
+                    NeedsReviewMessage, FiatConsumerErrors.IntentNeedsReviewCode);
             case FiatCreationVerdict.Busy:
                 return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
         }
@@ -655,8 +658,8 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
         // claim-keyed create sends identical parameters; see Providers/Fiat/AGENTS.md §expiry-pin.
         var expiresAt = PinnedCheckoutExpiry(session.CreationStartedAt ?? now, checkout.SessionExpiryMinutes);
         if (expiresAt - now < StripeMinimumCheckoutLifetime)
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This payment page has expired. Start a new payment.", FiatConsumerErrors.IntentExpiredCode);
+            return FinalConflict(await ProjectAsync(scope, session, provider: null, resumed: true, ct),
+                ExpiredMessage, FiatConsumerErrors.IntentExpiredCode);
         var created = await _gateway.CreateCheckoutSessionAsync(
             _options.CredentialsFor(_environment),
             new StripeCheckoutSessionRequest
@@ -725,7 +728,9 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
             return FiatConsumerErrors.RailBusy<FiatCheckoutIntent>();
         }
 
-        return await ProjectAsync(scope, attached.Result, resumed: false, ct);
+        // The create's own answer IS the fresh read: this request won the attach, so the URL never
+        // left the node before now and nothing can have been paid on it; a second read adds only a 503.
+        return await ProjectAsync(scope, attached.Result, created.Result, resumed: false, ct);
     }
 
     /// <inheritdoc />
@@ -925,51 +930,52 @@ public sealed partial class FiatRailProvider : IValueRailProvider, IFiatOnRampRa
 
     /// <summary>
     /// The same-key resend of a claim that already carries a Stripe session but no resumable page.
-    /// INTENT_EXPIRED only when a fresh read proves nothing was or can be paid; see
-    /// <c>Providers/Fiat/AGENTS.md</c> §same-key-replay-codes.
+    /// INTENT_EXPIRED only once Stripe itself says the page is expired unpaid (an open one is expired
+    /// there first); see <c>Providers/Fiat/AGENTS.md</c> §same-key-replay-codes.
     /// </summary>
     private async Task<AZOAResult<FiatCheckoutIntent>> ResumeAttachedAsync(
         IServiceScope scope, HostedSession session, DateTimeOffset now, CancellationToken ct)
     {
         // The fence may have re-read a row a webhook terminalised between the claim and now.
         if (HostedSessionStates.IsTerminal(session.State))
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This payment is already finished.", FiatConsumerErrors.IntentFinishedCode);
+            return FinalConflict(await ProjectAsync(scope, session, resumed: true, ct), FinishedMessage, FiatConsumerErrors.IntentFinishedCode);
 
         var read = await ReadProviderSessionAsync(session, ct);
         if (read.IsError || read.Result is null)
             return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
                 read.Message, read.Code ?? AzoaErrorCodes.DependencyUnavailable);
 
-        if (ProvesNothingPaid(session, read.Result, now))
-            return AZOAResult<FiatCheckoutIntent>.FailureWithCode(
-                "This payment page has expired. Start a new payment.", FiatConsumerErrors.IntentExpiredCode);
+        // Only a page still awaiting its payer and past expiry can earn INTENT_EXPIRED. AwaitingOutcome /
+        // Resuming: the node already saw a payment clearing. Inside its lifetime: the page is live.
+        if (!string.Equals(session.State, HostedSessionStates.AwaitingSubject, StringComparison.Ordinal)
+            || session.ExpiresAt is not { } expiresAt || expiresAt > now)
+            return await ProjectAsync(scope, session, read.Result, resumed: true, ct);
 
-        // Paid, clearing, or not provably dead: the projection, never a final code.
-        return await ProjectAsync(scope, session, read.Result, resumed: true, ct);
+        // ExpiresAt IS Stripe's expires_at, so a clock past it proves nothing: a payer mid-3DS keeps the
+        // page `open` at Stripe. Expire it AT STRIPE, then decide on the void's classifier (§stripe-session-verdict).
+        var settled = await SettleCheckoutSessionAsync(session, read.Result, ct);
+        return settled.Verdict switch
+        {
+            CheckoutSessionVerdict.Dead => FinalConflict(
+                await ProjectAsync(scope, session, settled.Provider, resumed: true, ct),
+                ExpiredMessage, FiatConsumerErrors.IntentExpiredCode),
+            CheckoutSessionVerdict.PaidOrClearing => await ProjectAsync(scope, session, settled.Provider, resumed: true, ct),
+            _ => AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                settled.Message ?? "Your payment status could not be confirmed right now. Try again shortly.",
+                AzoaErrorCodes.DependencyUnavailable),
+        };
     }
 
     /// <summary>
-    /// True only when the claim is still awaiting its payer, its page is past expiry, AND the fresh
-    /// Stripe read shows an unpaid session that can no longer take a payment.
+    /// A final same-key 409 whose <c>result</c> is the projection GET returns, so a client that lost its
+    /// first answer can tell paid from failed; an unbuildable projection is the projection's own 503.
     /// </summary>
-    private static bool ProvesNothingPaid(HostedSession session, StripeCheckoutSession provider, DateTimeOffset now)
-    {
-        // AwaitingOutcome / Resuming: the node already saw a payment clearing on this key.
-        if (!string.Equals(session.State, HostedSessionStates.AwaitingSubject, StringComparison.Ordinal))
-            return false;
-        if (session.ExpiresAt is not { } expiresAt || expiresAt > now)
-            return false;
-        if (IsPaid(provider))
-            return false;
-
-        if (string.Equals(provider.Status, "expired", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // Stripe has not flipped the status yet; its own expires_at must have passed too.
-        return string.Equals(provider.Status, "open", StringComparison.OrdinalIgnoreCase)
-            && (provider.ExpiresAt is null || provider.ExpiresAt <= now);
-    }
+    private static AZOAResult<FiatCheckoutIntent> FinalConflict(
+        AZOAResult<FiatCheckoutIntent> projection, string message, string code) =>
+        projection.IsError || projection.Result is null
+            ? AZOAResult<FiatCheckoutIntent>.FailureWithCode(
+                projection.Message, projection.Code ?? AzoaErrorCodes.DependencyUnavailable)
+            : AZOAResult<FiatCheckoutIntent>.FailureWithCode(message, code, projection.Result);
 
     private static bool IsPaid(StripeCheckoutSession provider) =>
         string.Equals(provider.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase)

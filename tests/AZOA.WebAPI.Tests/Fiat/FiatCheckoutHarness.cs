@@ -178,6 +178,10 @@ internal sealed class FakeStripeCheckoutHttp : HttpMessageHandler
     private readonly object _gate = new();
 
     public int SessionsCreated { get; private set; }
+
+    /// <summary>Checkout Session GETs that reached Stripe (a scripted failure counts).</summary>
+    public int SessionReads { get; private set; }
+
     public bool LoseNextCreateResponse { get; set; }
     public bool FailNextGet { get; set; }
     public bool NextCreateCollidesWithInFlightRequest { get; set; }
@@ -338,6 +342,7 @@ internal sealed class FakeStripeCheckoutHttp : HttpMessageHandler
     {
         lock (_gate)
         {
+            SessionReads++;
             if (FailNextGet)
             {
                 FailNextGet = false;
