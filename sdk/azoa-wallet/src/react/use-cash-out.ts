@@ -1,7 +1,18 @@
 // Cash-out state machine: availability, payout destination, keyed start, history. See `src/react/AGENTS.md` §cash-out.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MONEY_SCOPES, clearSavedRequest, isCashOutOnTrack, moneyRefusal, readSavedRequest, sendCashOut, startCashOut } from "../money/index.js";
+import {
+  MONEY_SCOPES,
+  clearSavedRequest,
+  isCashOutOnTrack,
+  moneyRefusal,
+  readSavedRequest,
+  sendCashOut,
+  startCashOut,
+  toCashOutQuoteView,
+  toPayoutDestinationView,
+} from "../money/index.js";
 import type { CashOutAttempt, CashOutQuoteView, CashOutView, MoneyRefusal, PayoutDestinationView, SavedRequest } from "../money/index.js";
+import { cashOutHistoryFrom } from "../money/intake.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
 import { callHost, redirectTo, settleMoney, useMoneyEvents, useMounted, usePerson, useStorageChange } from "./internal.js";
@@ -62,15 +73,15 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
   const reload = useCallback(async () => {
     const readFor = person.current;
     const [available, payoutDestination, rows] = await Promise.all([
-      settleMoney(transport.cashOut.availability()),
-      settleMoney(transport.cashOut.destination()),
-      settleMoney(transport.cashOut.history()),
+      settleMoney(transport.cashOut.availability(), toCashOutQuoteView),
+      settleMoney(transport.cashOut.destination(), toPayoutDestinationView),
+      settleMoney(transport.cashOut.history(), cashOutHistoryFrom),
     ]);
     if (!mounted.current || person.current !== readFor) return;
     if (available.ok) setQuote(available.value);
     else setRefusal(available.refusal);
     if (payoutDestination.ok) setDestination(payoutDestination.value);
-    if (rows.ok && Array.isArray(rows.value)) setHistory(rows.value);
+    if (rows.ok) setHistory(rows.value);
   }, [transport, mounted, person]);
 
   useEffect(() => {
@@ -141,7 +152,7 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
     setBusy(true);
     setDestinationRefusal(null);
     try {
-      const result = await settleMoney(transport.cashOut.beginDestinationSetup());
+      const result = await settleMoney(transport.cashOut.beginDestinationSetup(), toPayoutDestinationView);
       // The previous person's setup page is never opened for the next one.
       if (person.current !== sentFor) return;
       if (result.ok) {

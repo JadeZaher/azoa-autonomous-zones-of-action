@@ -68,8 +68,8 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "no view carries subject or tenant identifiers",
       async run() {
-        const { transport } = await build(factory);
-        for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
+        const fixture = await build(factory);
+        for (const [label, result] of await callAll(fixture, amount, options.cashOutAmountMinorUnits)) {
           // Refusals too: a same-key 409's `serverResult` reaches the page like any view.
           const leaked = findForbiddenViewKeys(result.ok ? result.value : result.refusal);
           check(leaked.length === 0, `${label} leaked ${leaked.join(", ")}`);
@@ -138,8 +138,8 @@ export function moneyTransportContractCases(factory: MoneyTransportFactory, opti
     {
       name: "money amounts are integer minor units and unit quantities are base-unit strings",
       async run() {
-        const { transport } = await build(factory);
-        for (const [label, result] of await callAll(transport, amount, options.cashOutAmountMinorUnits)) {
+        const fixture = await build(factory);
+        for (const [label, result] of await callAll(fixture, amount, options.cashOutAmountMinorUnits)) {
           if (!result.ok) continue;
           for (const [path, value] of amountFields(result.value)) {
             check(typeof value === "number" ? Number.isSafeInteger(value) : value === null, `${label} ${path} must be an integer number of minor units`);
@@ -270,17 +270,30 @@ async function readAll(transport: AzoaMoneyTransport): Promise<Labelled[]> {
   return results;
 }
 
-/** Every read, then every action a person can take (consent withdrawn last, so it cannot gate the others). */
-async function callAll(transport: AzoaMoneyTransport, amount: number, cashOutAmount?: number): Promise<Labelled[]> {
+/**
+ * Every read, then every action a person can take (consent withdrawn last, so it cannot gate the others): a begun
+ * checkout read back by id, and (with controls) a same-key resend after `markPaid`, whose answer may be a final 409
+ * carrying the intent in `serverResult`.
+ */
+async function callAll({ transport, checkout: controls }: MoneyTransportFixture, amount: number, cashOutAmount?: number): Promise<Labelled[]> {
   const results = await readAll(transport);
-  const record = async (label: string, pending: Promise<MoneyResult<unknown>>) => {
+  const record = async <T>(label: string, pending: Promise<MoneyResult<T>>) => {
     const result = await resolved(label, pending);
     results.push([label, result]);
     return result;
   };
   const checkoutKey = newRequestKey();
-  await record("checkout.begin", transport.checkout.begin({ requestKey: checkoutKey, amountMinorUnits: amount }));
+  const begun = await record("checkout.begin", transport.checkout.begin({ requestKey: checkoutKey, amountMinorUnits: amount }));
+  if (begun.ok) await record(`checkout.get(${begun.value.intentId})`, transport.checkout.get(begun.value.intentId));
   await record("checkout.void", transport.checkout.void(checkoutKey));
+  if (controls) {
+    const paidRequest = { requestKey: newRequestKey(), amountMinorUnits: amount };
+    const paid = await record("checkout.begin (to pay)", transport.checkout.begin(paidRequest));
+    if (paid.ok) {
+      await controls.markPaid(paid.value.intentId);
+      await record("checkout.begin (same key, after markPaid)", transport.checkout.begin(paidRequest));
+    }
+  }
   await record("account.ensure", transport.account.ensure());
   await record("account.beginKyc", transport.account.beginKyc());
   await record("cashOut.beginDestinationSetup", transport.cashOut.beginDestinationSetup());

@@ -1,5 +1,5 @@
 // One account read per provider, shared by every account hook (external store for useSyncExternalStore). See `src/react/AGENTS.md` §account-store.
-import { deriveAccountGate } from "../money/index.js";
+import { deriveAccountGate, toConsentRevocationView, toCustodialAccountView, toKycSessionView } from "../money/index.js";
 import type {
   AccountGateState,
   AzoaMoneyTransport,
@@ -44,14 +44,14 @@ export class AccountStore {
   /** Re-reads the account; concurrent calls share one request. */
   refresh = (): Promise<void> => {
     this.loaded = true;
-    this.reading ??= this.track(settleMoney(this.transport.account.status())).then(result => this.applyRead(result)).finally(() => {
+    this.reading ??= this.track(settleMoney(this.transport.account.status(), toCustodialAccountView)).then(result => this.applyRead(result)).finally(() => {
       this.reading = null;
     });
     return this.reading;
   };
 
   ensure = async (): Promise<MoneyResult<CustodialAccountView>> => {
-    const result = await this.track(settleMoney(this.transport.account.ensure()));
+    const result = await this.track(settleMoney(this.transport.account.ensure(), toCustodialAccountView));
     this.applyRead(result);
     return result;
   };
@@ -60,13 +60,13 @@ export class AccountStore {
   beginKyc = async (): Promise<MoneyResult<KycSessionView>> => {
     const ensured = await this.ensure();
     if (!ensured.ok) return ensured;
-    const result = await this.track(settleMoney(this.transport.account.beginKyc()));
+    const result = await this.track(settleMoney(this.transport.account.beginKyc(), toKycSessionView));
     this.patch(result.ok ? { kycSession: result.value, refusal: null } : { refusal: result.refusal });
     return result;
   };
 
   revokeConsent = async (): Promise<MoneyResult<ConsentRevocationView>> => {
-    const result = await this.track(settleMoney(this.transport.account.revokeConsent()));
+    const result = await this.track(settleMoney(this.transport.account.revokeConsent(), toConsentRevocationView));
     this.patch(result.ok ? { gate: "revoked", refusal: null } : { refusal: result.refusal });
     return result;
   };

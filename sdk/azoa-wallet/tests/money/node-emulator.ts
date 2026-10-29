@@ -3,8 +3,9 @@ import type { CashOutView, FiatCheckoutIntent, FiatCheckoutStatus, FiatSettlemen
 
 /**
  * A fetch-level fake of the AZOA node's first-party money routes, rebuilt from the node's own code paths
- * (read-only, oasis-sleek branch feat/fiat-replay-codes, re-checked at 33168340): checkout status/settlement from
- * `FiatRailProvider.ProjectAsync` + `ClassifySession` (an unattached claim projects `starting`, with no provider read),
+ * (read-only, oasis-sleek branch feat/fiat-replay-codes, re-checked at b97edf60): checkout status/settlement from
+ * `FiatRailProvider.ProjectAsync` + `ClassifySession` (an unattached claim projects `starting`, with no provider read;
+ * a fresh Stripe `complete` reads `processing` unless the row recorded how the page ended),
  * the same-key resend contract of `BeginCheckoutAsync` + the creation fence (`FiatHostedCreation`) + `ResumeAttachedAsync`
  * (the table in `Providers/Fiat/AGENTS.md` §same-key-replay-codes), the request-key void of `FiatRailProvider.Void.cs`
  * (§request-void, plus the change the node lane announced: see `unreplayableClaimVoid`), the expire-first classifier
@@ -429,8 +430,19 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
     // `NeedsOperator`: tokenless, quarantined, or begun outside the replay window.
     if (session.state !== "Claimed" || isUnreplayable(session, now)) return needsReviewOnBegin(session);
     // §expiry-pin: a replay keeps the claim's pinned expiry; inside Stripe's floor no page can ever be created.
-    if (session.creationStartedAt + PINNED_LIFETIME_MS - now < STRIPE_MINIMUM_LIFETIME_MS) return expiredConflict(session);
+    if (session.creationStartedAt + PINNED_LIFETIME_MS - now < STRIPE_MINIMUM_LIFETIME_MS) return closeLapsedClaim(session);
     return createPage(session);
+  }
+
+  /**
+   * `CloseLapsedClaimAsync` (node b97edf60, LOW-1): the void's abandon CAS first, so a stalled attach of an earlier
+   * send can never hand out a page; the 409's `result` is the claim as the abandon found it (`starting`).
+   */
+  function closeLapsedClaim(session: HostedSession): Response {
+    const asFound = expiredConflict(session);
+    session.state = "Abandoned";
+    session.voided = true;
+    return asFound;
   }
 
   /** `ResumeAttachedAsync`: past expiry and still awaiting the payer, the clock proves nothing (Stripe keeps a page `open` mid-3DS), so it is expired AT STRIPE first. */
@@ -710,8 +722,10 @@ function project(session: HostedSession, resumed: boolean): FiatCheckoutIntent {
     settlementState = "payment_failed";
   }
   let status = STATUS_OF[session.state];
-  // Stripe finished the page before the webhook moved the claim: the payer is done, not waiting.
-  if (page?.status === "complete" && (status === "starting" || status === "awaiting_payment")) status = "processing";
+  // A fresh Stripe "complete" outranks the row's word (even "expired") unless the row recorded how the page ended:
+  // `complete`, or `failed` on a page Stripe does not read as paid (`rowRecordedTheEnd`, node LOW-3).
+  const rowRecordedTheEnd = status === "complete" || (status === "failed" && settlementState !== "payment_received");
+  if (page?.status === "complete" && !rowRecordedTheEnd) status = "processing";
   // The page is handed back only while Stripe would still take a payment on it.
   const payable = status === "awaiting_payment" && page?.status === "open";
   return {

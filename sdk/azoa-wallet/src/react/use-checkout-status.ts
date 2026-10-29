@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MONEY_SCOPES, isSettledCheckout, readSavedRequest, releasesRequestKey, resolveCheckoutByState } from "../money/index.js";
 import type { CheckoutView, MoneyRefusal } from "../money/index.js";
+import { checkoutViewFrom } from "../money/intake.js";
 import { useMoneyContext } from "./context.js";
 import { callHost, settleMoney, usePerson } from "./internal.js";
 
@@ -62,7 +63,7 @@ export function useCheckoutStatus(intentId: string | null, options: CheckoutStat
     const tick = async () => {
       // Whether this device holds the saved key for this intent, read before this answer can forget it.
       const heldKey = readSavedRequest(keyStore, MONEY_SCOPES.checkout)?.serverId === intentId;
-      const result = await settleMoney(transport.checkout.get(intentId));
+      const result = await settleMoney(transport.checkout.get(intentId), checkoutViewFrom);
       // An answer read for a previous person never reaches the next one, even before this effect is cleaned up.
       if (cancelled || person.current !== identity) return;
       polls += 1;

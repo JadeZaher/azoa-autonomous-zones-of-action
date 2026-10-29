@@ -1,12 +1,13 @@
 // Framework-free keyed money flows: lock → claim → persist → send → resolve the key by the answer. See `src/money/AGENTS.md` §flows.
 import { SdkError } from "../core/errors.js";
+import { cashOutViewFrom, checkoutViewFrom, narrowMoneyResult, saleViewFrom } from "./intake.js";
 import { isAwaitingFundsCheckout, isOpenCheckout, isSettledCheckout, isTerminalCheckout, safeRedirectUrl } from "./presentation.js";
 import type { RedirectPolicy } from "./presentation.js";
 import { moneyRefusal, releasesRequestKey } from "./refusal.js";
 import { MONEY_SCOPES, claimRequestKey, clearSavedRequest, markNeedsReview, readSavedRequest, rememberServerId } from "./request-key.js";
 import type { KeyStore, SavedRequest } from "./request-key.js";
-import type { AzoaMoneyTransport, CashOutView, CheckoutView, CheckoutVoidView, MoneyRefusal, MoneyResult, SaleQuoteView, SaleView } from "./types.js";
-import { toRefusalServerResult } from "./views.js";
+import type { AzoaMoneyTransport, CashOutView, CheckoutView, MoneyRefusal, MoneyResult, SaleQuoteView, SaleView } from "./types.js";
+import { toCheckoutVoidView } from "./views.js";
 
 /** A refused attempt; `kept` is the saved request whenever its key survives (resume it, never replace it). */
 export type RefusedAttempt = { kind: "refused"; refusal: MoneyRefusal; kept: SavedRequest | null };
@@ -147,12 +148,11 @@ export function sendSale(transport: AzoaMoneyTransport, keyStore: KeyStore, requ
 
 /** `resend`: this key was sent before (a lost answer), so an earlier send may have been admitted under it. */
 async function beginCheckout(transport: AzoaMoneyTransport, keyStore: KeyStore, request: SavedRequest, options: CheckoutFlowOptions, resend: boolean): Promise<CheckoutAttempt> {
-  const result = await settled(() => transport.checkout.begin({ requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits }), options);
-  const view = result.ok ? asCheckoutView(result.value) : null;
-  if (view) return applyCheckoutView(keyStore, request, view, options, true);
+  const result = await settled(() => transport.checkout.begin({ requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits }), options, checkoutViewFrom);
+  if (result.ok) return applyCheckoutView(keyStore, request, result.value, options, true);
   // A key that already names an intent is decided by that intent's state, never by a refusal code (HIGH-1, LOW-1).
   if (request.serverId) return decideByState(transport, keyStore, request, request.serverId, options);
-  const refusal = result.ok ? moneyRefusal("unconfirmed") : result.refusal;
+  const refusal = result.refusal;
   // A resent key's final-looking refusal (INTENT_FINISHED, REQUEST_KEY_IN_USE, a gate) is not proof for the earlier send: ask the node.
   if (resend && releasesRequestKey(refusal)) {
     // A final 409 whose envelope already names the key's own intent decides by that state directly (no
@@ -169,11 +169,11 @@ async function beginCheckout(transport: AzoaMoneyTransport, keyStore: KeyStore, 
   return refused(keyStore, MONEY_SCOPES.checkout, request, refusal);
 }
 
-/** The key's own intent from a definite final 409 (`INTENT_FINISHED` / `INTENT_EXPIRED`), re-narrowed; null for any other refusal (LOW-2). */
+/** The key's own intent from a definite final 409 (`INTENT_FINISHED` / `INTENT_EXPIRED`; already narrowed at intake); null for any other refusal. */
 function checkoutProjectionFrom(refusal: MoneyRefusal): CheckoutView | null {
   if (refusal.code !== "definite") return null;
-  const narrowed = toRefusalServerResult(refusal.serverResult);
-  return narrowed && !("outcome" in narrowed) ? narrowed : null;
+  const carried = refusal.serverResult;
+  return carried && !("outcome" in carried) ? carried : null;
 }
 
 /** A claim that never got a payment page: `starting`, nothing cleared, no page, nothing paid. Proof only inside a definite 409. */
@@ -193,8 +193,9 @@ type VoidDecision = { kind: "voided"; intentId: string | null } | { kind: "revea
 
 /** Void-or-reveal by request key: only an answer of `voided` clears the key; a refusal from the void keeps it, whatever its code. */
 async function voidOrReveal(transport: AzoaMoneyTransport, keyStore: KeyStore, request: SavedRequest, options: MoneyFlowOptions): Promise<VoidDecision> {
-  const result = await settled(() => transport.checkout.void(request.requestKey), options);
-  const answer = result.ok ? asVoidAnswer(result.value) : null;
+  // Only the literal outcomes count (a host's `"Voided"`, a null value or a missing intent keeps the key).
+  const result = await settled(() => transport.checkout.void(request.requestKey), options, toCheckoutVoidView);
+  const answer = result.ok ? result.value : null;
   if (answer?.outcome === "voided") {
     clearSavedRequest(keyStore, MONEY_SCOPES.checkout, request.requestKey);
     return { kind: "voided", intentId: answer.intentId };
@@ -207,10 +208,9 @@ async function voidOrReveal(transport: AzoaMoneyTransport, keyStore: KeyStore, r
 
 /** Reads the key's intent and lets the key go only on a settled view; anything else keeps it and shows the real state. */
 async function decideByState(transport: AzoaMoneyTransport, keyStore: KeyStore, request: SavedRequest, intentId: string, options: CheckoutFlowOptions): Promise<CheckoutAttempt> {
-  const read = await settled(() => transport.checkout.get(intentId), options);
-  const view = read.ok ? asCheckoutView(read.value) : null;
+  const read = await settled(() => transport.checkout.get(intentId), options, checkoutViewFrom);
   // The refused send never hands out a payment page by itself; an open one is shown, not navigated to.
-  if (view?.intentId === intentId) return applyCheckoutView(keyStore, request, view, options, false);
+  if (read.ok && read.value.intentId === intentId) return applyCheckoutView(keyStore, request, read.value, options, false);
   return { kind: "refused", refusal: read.ok ? moneyRefusal("unconfirmed") : read.refusal, kept: request };
 }
 
@@ -227,10 +227,9 @@ function applyCheckoutView(keyStore: KeyStore, request: SavedRequest, view: Chec
 }
 
 async function beginCashOut(transport: AzoaMoneyTransport, keyStore: KeyStore, request: SavedRequest, options: MoneyFlowOptions): Promise<CashOutAttempt> {
-  const result = await settled(() => transport.cashOut.start({ requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits }), options);
+  const result = await settled(() => transport.cashOut.start({ requestKey: request.requestKey, amountMinorUnits: request.amountMinorUnits }), options, cashOutViewFrom);
   if (!result.ok) return refused(keyStore, MONEY_SCOPES.cashOut, request, result.refusal);
   const view = result.value;
-  if (!isRecord(view) || typeof view.id !== "string") return refused(keyStore, MONEY_SCOPES.cashOut, request, moneyRefusal("unconfirmed"));
   // OffRampService answers a same-key retry of a refused cash-out with the refused row and a 200: still a refusal.
   if (isRefusedStatus(view.status)) return refused(keyStore, MONEY_SCOPES.cashOut, request, moneyRefusal("definite", view.statusMessage));
   clearSavedRequest(keyStore, MONEY_SCOPES.cashOut, request.requestKey);
@@ -244,10 +243,9 @@ async function beginSale(transport: AzoaMoneyTransport, keyStore: KeyStore, requ
     // Nothing can be sent now, but an earlier send under this key may have been admitted: it stays saved until discarded.
     return { kind: "refused", refusal: moneyRefusal("definite", "This sale can no longer be sent."), kept: request };
   }
-  const result = await settled(() => sale.sell({ requestKey: request.requestKey, quoteId }), options);
+  const result = await settled(() => sale.sell({ requestKey: request.requestKey, quoteId }), options, saleViewFrom);
   if (!result.ok) return refused(keyStore, MONEY_SCOPES.sale, request, result.refusal);
   const view = result.value;
-  if (!isRecord(view) || typeof view.id !== "string") return refused(keyStore, MONEY_SCOPES.sale, request, moneyRefusal("unconfirmed"));
   if (isRefusedStatus(view.status)) return refused(keyStore, MONEY_SCOPES.sale, request, moneyRefusal("definite", view.statusMessage));
   clearSavedRequest(keyStore, MONEY_SCOPES.sale, request.requestKey);
   return { kind: "accepted", view };
@@ -280,38 +278,22 @@ function refused(keyStore: KeyStore, scope: string, request: SavedRequest, refus
   return { kind: "refused", refusal, kept: null };
 }
 
-/** A transport call that cannot reject, resolve to junk or hang: each is `unconfirmed`, because the request may have been admitted. */
-async function settled<T>(run: () => Promise<MoneyResult<T>>, options: MoneyFlowOptions): Promise<MoneyResult<T>> {
+/**
+ * The flows' single intake: a transport call that cannot reject, resolve to junk or hang (each is `unconfirmed`,
+ * because the request may have been admitted), narrowed by `narrow` before any attempt holds it (LOW-2, §intake).
+ */
+async function settled<T>(run: () => Promise<MoneyResult<T>>, options: MoneyFlowOptions, narrow: (value: T) => T): Promise<MoneyResult<T>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timedOut = new Promise<null>(resolve => {
       timer = setTimeout(() => resolve(null), options.sendTimeoutMs ?? DEFAULT_SEND_TIMEOUT_MS);
     });
-    const result: unknown = await Promise.race([run(), timedOut]);
-    if (isRecord(result) && result.ok === true && "value" in result) return result as MoneyResult<T>;
-    if (isRecord(result) && result.ok === false && isRecord(result.refusal)) return result as MoneyResult<T>;
+    return narrowMoneyResult(await Promise.race([run(), timedOut]), narrow);
   } catch {
-    // Falls through to unconfirmed.
+    return { ok: false, refusal: moneyRefusal("unconfirmed") };
   } finally {
     clearTimeout(timer);
   }
-  return { ok: false, refusal: moneyRefusal("unconfirmed") };
-}
-
-function asCheckoutView(value: unknown): CheckoutView | null {
-  return isRecord(value) && typeof value.intentId === "string" ? (value as unknown as CheckoutView) : null;
-}
-
-/** A well-formed void answer, else null: host transports deserialize JSON, so only the literal outcomes count. */
-function asVoidAnswer(value: unknown): CheckoutVoidView | null {
-  if (!isRecord(value)) return null;
-  if (value.outcome === "voided") return { outcome: "voided", intentId: typeof value.intentId === "string" ? value.intentId : null };
-  const intent = asCheckoutView(value.intent);
-  return value.outcome === "revealed" && intent ? { outcome: "revealed", intent } : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isRefusedStatus(status: unknown): boolean {

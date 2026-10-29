@@ -1,6 +1,6 @@
 // Host-priced sale: sellable → quote → keyed sell. See `src/react/AGENTS.md` §sale.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MONEY_SCOPES, clearSavedRequest, moneyRefusal, readSavedRequest, sendSale, startSale } from "../money/index.js";
+import { MONEY_SCOPES, clearSavedRequest, moneyRefusal, readSavedRequest, sendSale, startSale, toSaleQuoteView, toSellableView } from "../money/index.js";
 import type { MoneyRefusal, SaleAttempt, SaleQuoteView, SaleView, SavedRequest, SellableView } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
@@ -54,7 +54,7 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
   const reload = useCallback(async () => {
     if (!sale) return;
     const readFor = person.current;
-    const result = await settleMoney(sale.sellable());
+    const result = await settleMoney(sale.sellable(), toSellableView);
     if (!mounted.current || person.current !== readFor) return;
     if (result.ok) setSellable(result.value);
     else setRefusal(result.refusal);
@@ -76,7 +76,7 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
     setRefusal(null);
     setNotice(null);
     try {
-      const result = await settleMoney(sale.quote({ quantityBaseUnits }));
+      const result = await settleMoney(sale.quote({ quantityBaseUnits }), toSaleQuoteView);
       if (person.current !== sentFor) return;
       if (result.ok) setQuote(result.value);
       else {

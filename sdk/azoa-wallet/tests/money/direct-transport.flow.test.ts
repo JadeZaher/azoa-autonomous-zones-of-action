@@ -280,6 +280,8 @@ describe("a key that already names its intent is decided by that intent's state,
     ["card paid and the funds landed", "409 INTENT_FINISHED", ["pay", "webhook", "applyFunds"], null, "finished", "funds_applied", false],
     ["Stripe expired the open page (provably unpaid)", "409 INTENT_FINISHED", ["expire"], null, "finished", "payment_failed", false],
     ["ACH still clearing past the page's expiry", "200 resumed, processing, no page", ["payAsync", "webhook", "pageLapsed"], null, "opened", "not_started", true],
+    // Node LOW-3: a fresh Stripe "complete" outranks a row that recorded "expired" (clients read that as settled-and-unpaid).
+    ["the row recorded the page expired, but the payer completed it at Stripe", "409 INTENT_FINISHED, read as processing", ["expire", "pay"], null, "opened", "payment_received", true],
     ["the payment rail was switched off while the page is open", "503 PAYMENTS_NOT_CONFIGURED", [], railOff, "opened", "not_started", true],
     ["the node cannot read Stripe at all", "503 DEPENDENCY_UNAVAILABLE, and on the read", ["stripeDown"], null, "refused", null, true],
   ])("%s: resend answered %s", async (_situation, _answer, events, before, kind, settlement, kept) => {
@@ -796,10 +798,51 @@ describe("browser-safe views (L7)", () => {
         },
       },
     })],
+    // A refusal for an unknown intent cannot leak, so only a read of the intent `begin` just opened catches this one.
+    ["checkout.get(", (direct: AzoaMoneyTransport): AzoaMoneyTransport => ({
+      ...direct,
+      checkout: {
+        ...direct.checkout,
+        get: async intentId => {
+          const result = await direct.checkout.get(intentId);
+          return result.ok ? { ok: true, value: { ...result.value, admissionKey: "subject:tenant:key" } as CheckoutView } : result;
+        },
+      },
+    })],
   ])("the contract checks %s for leaked identifiers too", async (label, leak) => {
     const report = await runMoneyTransportContract(() => leak(directTransport(freshNode())));
 
     const failure = report.failed.find(entry => entry.name === "no view carries subject or tenant identifiers");
     expect(failure?.reason).toContain(label);
+  });
+
+  it("the contract key-checks a paid key's same-key resend, so a BFF that passes a final 409's raw result through fails it", async () => {
+    const report = await runMoneyTransportContract(() => {
+      const node = freshNode();
+      const direct = directTransport(node);
+      const intentByKey = new Map<string, string>();
+      return {
+        transport: {
+          ...direct,
+          checkout: {
+            ...direct.checkout,
+            begin: async request => {
+              const known = intentByKey.get(request.requestKey);
+              if (known === undefined) {
+                const first = await direct.checkout.begin(request);
+                if (first.ok) intentByKey.set(request.requestKey, first.value.intentId);
+                return first;
+              }
+              const raw = { intentId: known, admissionKey: `${node.userId}:self:${request.requestKey}`, status: "complete", settlementState: "payment_received" };
+              return { ok: false, refusal: { code: "definite", message: "This payment is already finished.", serverResult: raw as unknown as CheckoutView } };
+            },
+          },
+        },
+        checkout: { markPaid: intentId => node.apply(intentId, "pay"), makeUnreadable: intentId => node.apply(intentId, "stripeDown") },
+      };
+    });
+
+    const failure = report.failed.find(entry => entry.name === "no view carries subject or tenant identifiers");
+    expect(failure?.reason).toBe("checkout.begin (same key, after markPaid) leaked serverResult.admissionKey");
   });
 });

@@ -52,9 +52,12 @@ revoked in one is `revoked` in the gate immediately and the account is read once
 
 `useCustodialAccount`, `useAddFunds({ returnedIntentId })`, `useCheckoutStatus(intentId)`, `useCashOut`,
 `useSellUnits`, `useBalance`. Hooks run the `azoa-sdk/money` flows (`startCheckout`, `sendCheckout`, ...);
-they add only React state and events. Every transport call goes through `settleMoney` (or the flows'
-own guard), so a host transport that rejects or resolves junk (`{ ok: true, value: null }`) shows an
-`unconfirmed` refusal instead of an unhandled rejection. A ref-held `sending` marker (the identity whose send
+they add only React state and events. Every transport call goes through `settleMoney(pending, narrow)` (or
+the flows' own `settled`), so a host transport that rejects or resolves junk (`{ ok: true, value: null }`)
+shows an `unconfirmed` refusal instead of an unhandled rejection. Both are the money intake (`src/money/AGENTS.md`
+§intake): `narrow` is required, each call site passes its allowlist `to*View` (or `checkoutViewFrom` /
+`cashOutHistoryFrom`), and the refusal is rebuilt from allowlisted fields, so no host transport can put
+`admissionKey` or a subject/tenant/provider id into hook state or `onRefusal` (LOW-2). A ref-held `sending` marker (the identity whose send
 is in flight) stops a same-tick double click from sending (or redirecting) twice before `busy` renders.
 
 **Host callbacks cannot break state (L4).** `onRedirect`, `onRefusal` and `onSettled` run through
@@ -132,7 +135,8 @@ saved key is the durable lock (it survives a reload); this is the in-page one.
 - **Acknowledge (M3).** `<AddFundsForm>`'s status card offers `checkout.acknowledge` ("Got it") while the
   watched intent reads `complete` + `payment_received` (and the read is not stale). `acknowledge(view)` runs
   `acknowledgeCheckout`, stops watching the intent, frees the form and shows `checkout.acknowledged(amount)`
-  ("received … still being added … contact support"); `onSettled` does not fire (the funds did not land). The
+  ("received … still being added … contact support") only when `acknowledgeCheckout` actually let this device's
+  key go (another window may have done it first: then no notice, LOW-4); `onSettled` does not fire (the funds did not land). The
   standalone `<CheckoutStatus>` never offers it: it does not own the key or the form lock.
 - **Superseded (LOW-5).** A resend another window got to first says `pending.superseded` ("resolved or
   discarded in another window") when nothing is saved now, and `pending.replaced` when a different request

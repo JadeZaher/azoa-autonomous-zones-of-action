@@ -37,6 +37,22 @@ check the contract runs (subject/tenant ids plus provider account ids and `missi
 `toRefusalServerResult(result)` narrows a same-key 409's `result` (a projection, or the void's `revealed`
 shape) for `MoneyRefusal.serverResult`, and returns null for anything else (§refusals, M1).
 
+## §intake
+
+**Narrowed once, where a transport's answer enters (LOW-2, final gate).** The direct transport narrows every
+answer, but a host transport (a BFF over tRPC) is code the SDK does not control: one that forwarded the node's
+raw projection, or a 409's raw `result`, used to put `admissionKey` (`{subject}:{tenant}:{key}`) into attempts,
+hook state and `onRefusal`, because `flows.ts` only *cast* views and passed refusals through. `intake.ts` is now
+the single seam: `narrowMoneyResult(result, narrow)` accepts a well-formed `MoneyResult` only, runs `value`
+through `narrow` (an allowlist `to*View`; one that throws means "not the view" → `unconfirmed`), and rebuilds
+every refusal with `narrowRefusal` — a known code or `unconfirmed` (which keeps the key), the message, a
+non-negative `retryAfterSeconds`, and `serverResult` only through `toRefusalServerResult` and only on `definite`
+/ `needs_review`. Nothing else of a host object survives. It has exactly two callers: `settled()` in `flows.ts`
+(every flow's transport call) and `settleMoney()` in `src/react/settle.ts` (every hook read), whose `narrow`
+parameter is required so a new call site cannot forget it. `checkoutViewFrom` / `cashOutViewFrom` /
+`saleViewFrom` keep the old acceptance rule (a record with a string id) and allowlist-copy; `cashOutHistoryFrom`
+requires an array. Internal: not exported from `azoa-sdk/money` (the React entry imports it directly).
+
 `deriveAccountGate`: `ready` (the only state that moves value) | `setup` (verify identity / finish the
 account; also a `setup_required` refusal, e.g. no account yet) | `review` (`UnderReview`: verified, a
 compliance check owes a human decision) | `revoked` (`consent_revoked`) | `unavailable` (the node cannot
@@ -93,8 +109,9 @@ projection carries `admissionKey` (`{subject}:{tenant}:{key}`), so the raw objec
 projection becomes `toCheckoutView(result)`, the void's `{ outcome: "revealed", intent }` becomes
 `{ outcome: "revealed", intent: toCheckoutView(intent) }`, anything else is dropped. Narrowing happens once,
 here, so a host BFF that builds its refusals with `refusalFromSdkError` is safe by construction; the contract
-(§contract) checks refusals for forbidden keys too. Flows only ever *read* it through `checkoutProjectionFrom`,
-which re-narrows and trusts it only on a `definite` refusal (LOW-2: after M1 that means `INTENT_FINISHED` /
+(§contract) checks refusals for forbidden keys too. A host transport's refusal is rebuilt at the intake
+(§intake), so `serverResult` is narrowed whoever built it. Flows only ever *read* it through
+`checkoutProjectionFrom`, which trusts it only on a `definite` refusal (after M1 that means `INTENT_FINISHED` /
 `INTENT_EXPIRED`; `needs_review` never decides by projection).
 
 `needs_review` (MEDIUM-3) is not "the answer did not arrive": the node answered, and it holds the request
@@ -165,7 +182,7 @@ is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `p
   `resent`) that names no intent, a refusal `releasesRequestKey` would accept (`INTENT_FINISHED`,
   `REQUEST_KEY_IN_USE`, a gate that appeared since the first send, ...) proves nothing about the **earlier**
   send by itself. `checkoutProjectionFrom` first checks whether the 409's own envelope already carries that
-  intent's projection (`serverResult`, allowlist-narrowed with `toCheckoutView`): when it does (round 4,
+  intent's projection (`serverResult`, allowlist-narrowed at the intake, §intake): when it does (round 4,
   `33168340`'s `INTENT_FINISHED` / `INTENT_EXPIRED`), `applyCheckoutView` decides it directly -- no round
   trip, and still never releases the key unless that state is **settled** (an unlanded card payment keeps
   it). Only when no projection is present does `releaseOnVoid` ask the node: `voided` → the key goes and the
@@ -176,7 +193,8 @@ is kept, `opened` (with `paymentUrl: null` when there is nothing to pay, e.g. `p
 - **Never started (M2a, B9).** A claim whose first Stripe create failed has no page (status `starting`). From
   4 min to 23 h after its creation fence began, the node's resend answers 409 `INTENT_EXPIRED` with that
   `starting` projection: the pinned expiry is inside Stripe's 31-minute floor, so no page can ever be created,
-  and none ever left the node. Applying it as an ordinary view showed "Waiting for your payment" with the form
+  and none ever left the node (since node `b97edf60` it closes the claim with the void's abandon CAS before
+  answering, so a stalled earlier attach cannot hand one out and a later resend gets `REQUEST_VOIDED`). Applying it as an ordinary view showed "Waiting for your payment" with the form
   locked and no Discard. So `beginCheckout` checks `isNeverStartedClaim` (`starting`, `not_started`, no
   `paymentUrl`, nothing paid) on the definite projection first: the key is cleared and the attempt is
   `neverStarted` (copy `pending.neverStarted`: "That payment never started. Nothing was charged."; the form is
@@ -231,7 +249,7 @@ Voiding twice gives the same answer; a voided intent reads `status: "expired"` (
   (`superseded` if another tab changed it) and calls `voidOrReveal`. Results: `discarded` (`intentId` of the
   voided intent, or null), `revealed` (the key now names that intent and follows its state; no page is handed
   out), `refused` (kept; `needs_review` marks it).
-- **Only `outcome === "voided"` releases.** `asVoidAnswer` accepts the literal outcomes only (a host's
+- **Only `outcome === "voided"` releases.** The intake narrows a void answer with `toCheckoutVoidView` (§intake), which accepts the literal outcomes only (a host's
   `"Voided"`, `null` value or missing intent keeps the key), and a void refusal whose code `releasesRequestKey`
   would accept (`payments_not_configured` from the 503, `definite` from a BFF's 400 or `REQUEST_KEY_IN_USE`)
   becomes `unconfirmed`: a void that could not decide proves nothing.
@@ -312,9 +330,12 @@ wrapped so the client's own guards (which throw inside async methods) become ref
 well-formed `MoneyResult` whose refusal code is in the closed vocabulary (now including `needs_review`; a host
 BFF must map the node's `INTENT_NEEDS_REVIEW` to it, never to `unconfirmed` or `definite`); no view **or
 refusal** carries subject/tenant keys (a refusal's `serverResult` reaches the page like a view, M1) — checked over **every** call, mutations
-included (`checkout.begin`, `account.ensure`, `account.beginKyc`, `cashOut.beginDestinationSetup`,
-`cashOut.start`, `sale.quote`, `sale.sell`, and `account.revokeConsent` last so it cannot gate the
-others; each case builds its own fixture); same key → same checkout (`resumed: true`)
+included (`checkout.begin`, `checkout.get(<the id begin returned>)` — a read of an unknown intent is a refusal
+and cannot leak, so only this one catches a leaky `get` — `checkout.void`, and with fixture controls a second
+checkout's same-key resend after `markPaid`, whose answer is the 200 projection on the node today and a final
+409 whose `serverResult` is the intent on a fixture whose `markPaid` also closes it; `account.ensure`,
+`account.beginKyc`, `cashOut.beginDestinationSetup`, `cashOut.start`, `sale.quote`, `sale.sell`, and
+`account.revokeConsent` last so it cannot gate the others; each case builds its own fixture); same key → same checkout (`resumed: true`)
 and readable via `get`; new key → new checkout; unknown/malformed intent → a key-releasing refusal (or a
 poller never stops); same key → one cash-out, listed once; money is integer minor units and quantities are
 base-unit strings. Void cases (§void): an unused key → `voided` with no intent, twice, and a later begin is

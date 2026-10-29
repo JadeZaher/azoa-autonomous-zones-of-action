@@ -12,7 +12,9 @@ import {
   resolveCheckoutByState,
   sendCheckout,
   startCheckout,
+  toCheckoutCapabilitiesView,
 } from "../money/index.js";
+import { checkoutViewFrom } from "../money/intake.js";
 import type { CheckoutAttempt, CheckoutCapabilitiesView, CheckoutDiscardAttempt, CheckoutView, MoneyRefusal, RefusedAttempt, SavedRequest } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
@@ -78,7 +80,7 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
     setRefusal(null);
     setNotice(null);
     setIntentId(returnedIntentId);
-    void settleMoney(transport.checkout.capabilities()).then(result => {
+    void settleMoney(transport.checkout.capabilities(), toCheckoutCapabilitiesView).then(result => {
       if (cancelled) return;
       if (result.ok) setCapabilities(result.value);
       else setRefusal(result.refusal);
@@ -89,7 +91,7 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
       setPending(saved);
     } else if (saved?.serverId && saved.serverId !== returnedIntentId) {
       if (!returnedIntentId) setIntentId(saved.serverId);
-      void settleMoney(transport.checkout.get(saved.serverId)).then(read => {
+      void settleMoney(transport.checkout.get(saved.serverId), checkoutViewFrom).then(read => {
         if (cancelled) return;
         // Only a settled read lets the key go; an unsettled or unreadable intent keeps it, offered for resume.
         if (!(read.ok && resolveCheckoutByState(keyStore, read.value))) setPending(saved);
@@ -223,13 +225,14 @@ export function useAddFunds(options: AddFundsOptions = {}): AddFundsState {
   const acknowledge = useCallback((view: CheckoutView) => {
     if (sending.current === person.current || view.intentId !== intentId || !isAwaitingFundsCheckout(view)) return;
     // Terminal and paid: nothing more can be charged under its key, so the person may let it go (M3).
-    acknowledgeCheckout(keyStore, view);
+    const forgotten = acknowledgeCheckout(keyStore, view);
     setPending(current => (current?.serverId === view.intentId ? null : current));
     setIntentId(null);
     setInitialView(null);
     setRefusal(null);
     const amount = view.amountPaidMinorUnits === null ? null : formatMinorUnits(view.amountPaidMinorUnits, view.currency);
-    setNotice(messages.checkout.acknowledged(amount));
+    // The notice says this device let the key go; when it did not (no saved key named the intent), it stays silent (LOW-4).
+    setNotice(forgotten ? messages.checkout.acknowledged(amount) : null);
   }, [intentId, keyStore, messages, person]);
 
   return {

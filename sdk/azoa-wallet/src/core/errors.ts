@@ -79,6 +79,8 @@ export class SdkError extends Error {
    * non-enumerable, so a plain `JSON.stringify(err)` silently drops them —
    * which is why raw error dumps previously showed only `{name, code}`. This
    * guarantees structured logs and error dumps carry the real diagnostics.
+   * `serverResult` is left out: unnarrowed, it can carry the node's `admissionKey`
+   * (subject + tenant ids), and a log line is not where those belong.
    */
   toJSON(): Record<string, unknown> {
     return {
@@ -92,7 +94,6 @@ export class SdkError extends Error {
       ...(this.detail !== undefined ? { detail: this.detail } : {}),
       ...(this.serverCode !== undefined ? { serverCode: this.serverCode } : {}),
       ...(this.serverMessage !== undefined ? { serverMessage: this.serverMessage } : {}),
-      ...(this.serverResult !== undefined ? { serverResult: this.serverResult } : {}),
       ...(this.cause !== undefined
         ? { cause: { name: this.cause.name, message: this.cause.message } }
         : {}),

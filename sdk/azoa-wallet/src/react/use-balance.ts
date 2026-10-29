@@ -1,5 +1,6 @@
 // The person's money balance. See `src/react/AGENTS.md` §hooks.
 import { useCallback, useEffect, useState } from "react";
+import { toBalanceView } from "../money/index.js";
 import type { BalanceView, MoneyRefusal } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import { settleMoney, useMounted, usePerson } from "./internal.js";
@@ -26,7 +27,7 @@ export function useBalance(): BalanceState {
   const refresh = useCallback(async () => {
     const readFor = person.current;
     setBusy(true);
-    const result = await settleMoney(transport.balance.get());
+    const result = await settleMoney(transport.balance.get(), toBalanceView);
     if (!mounted.current || person.current !== readFor) return;
     setBusy(false);
     if (result.ok) {

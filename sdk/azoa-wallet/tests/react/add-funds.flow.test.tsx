@@ -8,6 +8,7 @@ import { AzoaApiClient } from "../../src/api/client.js";
 import {
   MONEY_SCOPES,
   claimRequestKey,
+  clearSavedRequest,
   createDirectMoneyTransport,
   createKeyStore,
   defaultMoneyMessages,
@@ -16,10 +17,11 @@ import {
   readSavedRequest,
 } from "../../src/money/index.js";
 import type { AzoaMoneyTransport, CheckoutView, MoneyRedirectKind, MoneyRefusal } from "../../src/money/index.js";
-import { AddFundsForm, AzoaMoneyProvider, useAddFunds } from "../../src/react/index.js";
+import { AddFundsForm, AzoaMoneyProvider, useAddFunds, useBalance, useCashOut, useCheckoutStatus, useCustodialAccount } from "../../src/react/index.js";
 import type { AddFundsFormProps, AzoaMoneyProviderProps } from "../../src/react/index.js";
 import { CHECKOUT_VOID, createNodeEmulator } from "../money/node-emulator.js";
 import type { CheckoutEvent, NodeEmulator, NodeEmulatorOptions } from "../money/node-emulator.js";
+import { RAW_NODE_IDS, rawHostTransport } from "../money/raw-host-transport.js";
 
 type Redirect = [url: string, kind: MoneyRedirectKind];
 const copy = defaultMoneyMessages;
@@ -359,6 +361,23 @@ describe("<AddFundsForm> (P1 flows)", () => {
     expect(node.admissions).toHaveLength(1);
   });
 
+  it("acknowledging a paid payment whose key another window already let go frees the form without saying this device let it go (LOW-4)", async () => {
+    const user = userEvent.setup();
+    const redirects: Redirect[] = [];
+    const intentId = await openCheckout(node, redirects);
+    node.apply(intentId, "pay", "webhook");
+    visitFundsPage(node, redirects, { returnedIntentId: intentId, pollIntervalMs: 30 });
+    await screen.findByText(copy.settlement.payment_received);
+    // Another window acknowledged it first (same-document writes fire no storage event, so this page still shows it).
+    clearSavedRequest(createKeyStore({ subject: node.userId }), MONEY_SCOPES.checkout, savedCheckout()!.requestKey);
+
+    await user.click(screen.getByRole("button", { name: copy.checkout.acknowledge }));
+
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(screen.queryByText(copy.checkout.acknowledged("25.00 USD"))).toBeNull();
+    expect(node.admissions).toHaveLength(1);
+  });
+
   it("a payment paid at Stripe but not yet closed (processing) offers nothing to acknowledge: polling continues, the key is kept and the form stays locked (M3)", async () => {
     const redirects: Redirect[] = [];
     const intentId = await openCheckout(node, redirects);
@@ -569,6 +588,39 @@ describe("<AddFundsForm> (P1 flows)", () => {
     visit.unmount();
     visitFundsPage(node, redirects);
     await screen.findByRole("button", { name: "Resume that payment" });
+  });
+
+  it("a host transport that forwards the node's raw objects leaves no admissionKey, subject, tenant or provider id in any hook's state or onRefusal (LOW-2)", async () => {
+    useNode({ extraFields: RAW_NODE_IDS });
+    const transport = rawHostTransport(node);
+    const refusals: MoneyRefusal[] = [];
+    const wrapper = ({ children }: { children?: ReactNode }) => (
+      <AzoaMoneyProvider transport={transport} subject={node.userId} onRefusal={refusal => refusals.push(refusal)}>{children}</AzoaMoneyProvider>
+    );
+    const { result } = renderHook(() => {
+      const funds = useAddFunds();
+      const status = useCheckoutStatus(funds.intentId, { initialView: funds.initialView, pollIntervalMs: 10 });
+      return { funds, status, account: useCustodialAccount(), cashOut: useCashOut(), balance: useBalance() };
+    }, { wrapper });
+
+    // A lost create, then the resend is held for review: its 409 carries the raw claim, and onRefusal sees it.
+    node.failNextCreate();
+    await act(() => result.current.funds.start(25_00));
+    node.apply(node.admissions[0]!.intentId, "replayWindowLapsed");
+    await act(() => result.current.funds.resume());
+    await waitFor(() => expect(refusals.at(-1)).toMatchObject({ code: "needs_review", serverResult: { status: "starting" } }));
+    // The node voids it; a fresh payment opens and its status is polled from raw reads.
+    await act(() => result.current.funds.discard());
+    await act(() => result.current.funds.start(10_00));
+    await waitFor(() => expect(result.current.status.view).toMatchObject({ intentId: node.admissions[1]!.intentId, status: "awaiting_payment" }));
+    await act(() => result.current.account.beginKyc());
+    await waitFor(() => expect(result.current.cashOut.destination).toMatchObject({ readyToReceive: true }));
+    await waitFor(() => expect(result.current.balance.balance).toMatchObject({ availableMinorUnits: 100_00 }));
+
+    expect(result.current.funds.capabilities).toEqual({ available: true, unavailableReason: null });
+    expect(result.current.account.account?.walletId).toBe("w-1");
+    expect(findForbiddenViewKeys(result.current)).toEqual([]);
+    expect(findForbiddenViewKeys(refusals)).toEqual([]);
   });
 
   it("the same-tick double click sends once and redirects once", async () => {

@@ -52,6 +52,21 @@ The breaking change below is why this is a minor bump; everything under "Added (
 - Every view has an allowlist `to*View`; the direct transport narrows cash-out, payout and capability
   answers, and the contract's forbidden-key case covers every call, mutations included.
 
+### Sixth round: final-gate LOW findings (pre-publish, 2026-10-28)
+- **LOW-2** Every transport answer is narrowed once, at the intake (`src/money/intake.ts`): the flows' `settled()`
+  and the hooks' `settleMoney()` run each value through its allowlist view (`toCheckoutView`, `toCheckoutVoidView`,
+  `toCashOutView`, ...) and rebuild each refusal from allowlisted fields (unknown code → `unconfirmed`;
+  `serverResult` only via `toRefusalServerResult`). A host transport that forwards the node's raw objects can no
+  longer put `admissionKey` or subject/tenant/provider ids into attempts, hook state or `onRefusal`.
+- The contract's forbidden-key and amount sweeps also read back the checkout `begin` opened (`checkout.get(<id>)`)
+  and, with fixture controls, resend a paid checkout's key after `markPaid`.
+- `SdkError.toJSON()` no longer includes the unnarrowed `serverResult` (it stays on the error object).
+- **LOW-4** `useAddFunds().acknowledge(view)` shows `checkout.acknowledged` only when `acknowledgeCheckout` actually
+  forgot this device's key.
+- `tests/money/node-emulator.ts` mirrors the node's `rowRecordedTheEnd` projection rule (**LOW-3**: a fresh Stripe
+  `complete` reads `processing` unless the row recorded `complete`, or `failed` on an unpaid page) and the node's
+  lapsed-claim abandon before `INTENT_EXPIRED` (oasis-sleek `b97edf60`).
+
 ### Fifth round: release-gate fixes (pre-publish, 2026-10-28)
 - **M1** `MoneyRefusal.serverResult` is now `RefusalServerResult` (was `unknown`) and is attached only for
   `INTENT_FINISHED` / `INTENT_EXPIRED` / `INTENT_NEEDS_REVIEW`, narrowed by the new `toRefusalServerResult`; the
