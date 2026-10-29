@@ -97,6 +97,9 @@ services:
       Kyc__ApprovalPolicy__AssuranceLevel: "document-and-liveness"
       Kyc__ApprovalPolicy__TrustedProviderKeys__0: "identomat"
       Kyc__ApprovalPolicy__AllowManualInDevelopment: "false"
+      # Test harness only: the e2e journey stands in for the member's inbox and reads the claim
+      # token from the invite response. Every real host withholds it (Services/Auth/ClaimInviteOptions.cs).
+      Tenant__ClaimInvites__ReturnTokenToTenant: "true"
       Kyb__ConfigId: "${AZOA_E2E_IDENTOMAT_KYB_CONFIG:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
       # Must be a public HTTPS URL or business verification reports itself unconfigured; the
       # hosted page is intercepted in the browser, so this address is never visited.

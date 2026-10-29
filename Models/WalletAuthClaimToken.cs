@@ -6,8 +6,8 @@ public class WalletAuthClaimToken
     /// <summary>Stable record id (Guid; persisted as the SurrealDB record id).</summary>
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>The cryptographically-random one-time token value; UNIQUE across the table.</summary>
-    public string Token { get; set; } = string.Empty;
+    /// <summary>The <see cref="AZOA.WebAPI.Helpers.OpaqueTokenDigest"/> v1 digest of the one-time token; the raw token is never persisted. UNIQUE.</summary>
+    public string TokenHash { get; set; } = string.Empty;
 
     /// <summary>The child user this token authorizes a claim for.</summary>
     public Guid TargetUserId { get; set; }

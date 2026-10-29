@@ -167,3 +167,18 @@ refuse them, while a user who already holds a generated handle may keep resendin
 ## §principal-tenant
 
 `GetActingTenantOrPrincipalTenantId` answers "which tenant owns what this principal registers", the question the reserve partitions door (`Controllers/PlatformReserveController.cs` `RequireDeclarationAuthority`, lane 2) already answers from the principal alone (launch-readiness L1.1: never from the body). Precedence: an explicit `act_as_tenant` claim (delegated/acting child credential) wins; else an API-key principal's tenant IS the key's owning user (AZOA has no separate Tenant entity); else null — a first-party human session registers the node's own unit. It is deliberately NOT `GetActingTenantId`: that one is the *delegation* axis (consent grants, signing `ActingAs`, credential witness matching) and must stay null for a tenant's own key, or every signing seam would demand a self-consent grant.
+
+## §opaque-token-digest
+
+`OpaqueTokenDigest` is the at-rest form of a bearer token a person redeems (claim invites today; the
+later consent-request and hosted-page links are meant to reuse it): `"h1:" + lowercase hex SHA-256`
+of the UTF-8 token. A store holds only the digest, so reading the table yields nothing redeemable —
+and because the presented value is always hashed before comparison, presenting a stored digest fails
+too. SHA-256 without a salt or KDF is correct here because the input is a 256-bit random nonce, not a
+human secret; a password would need BCrypt.
+
+`Matches` is the authority and runs in constant time (`CryptographicOperations.FixedTimeEquals`). It
+refuses any stored value that is not a well-formed v1 digest, so a row written before hashing (the raw
+token itself) is never compared in plaintext — the right outcome for legacy claim invites, which lived
+15 minutes. The `h1:` tag leaves room for a future `h2:` (e.g. a keyed HMAC) without ambiguity; a new
+version must keep refusing unknown tags rather than falling back.

@@ -104,6 +104,7 @@ choice.
 | `HostedSessionReconciliationFlowTests` | Vendor created the KYB session but the response was lost → tenant sees `NEEDS_OPERATOR` → operator queue → operator attaches the verified session → tenant resumes → approval | Reconciling a claim younger than five minutes is refused (would race a live creation) |
 | `StripeWebhookFlowTests` | Money path: a signed `checkout.session.completed` claiming "paid" while Stripe's own session is unpaid decides nothing; Stripe clears, `async_payment_succeeded` → intent PAID, payer reads `complete` / `payment_received`. Expiry moves the intent once; a re-signed redelivery is answered from the inbox | One table: wrong secret, stale timestamp, livemode mismatch → 400, no inbox row. Payment deliveries are never answered 4xx |
 | `WebhookRegistrationFlowTests` | Tenant registers a receiver; a lost response is replayed from the receipt without re-disclosing the secret; a withdrawn change can never apply | Stale `expectedVersion` → 409 |
+| `ClaimInviteFlowTests` / `ClaimInviteWithheldTokenFlowTests` | Tenant provisions a member → mints a claim invite → member claims with a password it chose; storage holds only the `h1:` digest. With the production policy (`WithheldClaimTokenWebApplicationFactory`) the tenant's response carries no token and a 72 h expiry | Stored digest presented as a token, used invite (password unchanged), expired invite, legacy plaintext row: each 404 with no ownership change (each is a way a tenant or DB reader could take the account) |
 | `RecoverySurfaceAuthorizationTests` | Who reaches `api/ethereum/recovery/{network}`, `api/operator/ethereum/recovery/{network}`, `api/operator/wallet-identities`, `api/operator/hosted-sessions/reconciliation` | Authorized callers get a non-404, non-5xx answer (an unconfigured feature is a 409) |
 
 Time is arranged only where no route can: the reconciliation test ages `creation_claimed_at` with
@@ -151,3 +152,14 @@ authoritative outcome, outcome detail and available application error code.
 Diagnostic reads run only after the observed assertion value is wrong; they never
 include provider bodies, person/document attributes, session tokens or identifiers.
 Expected approval and value-access assertions remain unchanged.
+
+## §claim-invite — `Infrastructure/ClaimInviteFlowTestBase.cs`, `Infrastructure/WithheldClaimTokenWebApplicationFactory.cs`
+
+`appsettings.IntegrationTest.json` sets `Tenant:ClaimInvites:ReturnTokenToTenant=true` so the default flow
+host can hand the member side its token (the only place it is on; `Services/Auth/AGENTS.md` §claim-invites).
+`WithheldClaimTokenWebApplicationFactory` overrides it back to `false` to prove the production response. The
+password claim writes through the wallet-identity readiness gate, so `WalletIdentityReadyAsync` drives the
+host's own `WalletAuthIdentityMigrationService` to `Ready` instead of racing the 5 s worker. Arranged state:
+an expired invite (typed `UpdateOnly` of `expires_at`) and a legacy plaintext row (typed `Create`), because
+no route can produce either. Ownership is read back as a Guid from the user row's `owner_tenant_id` link.
+`Hosting/ClaimInviteLifetimeStartupTests` boots a host with an 8-day lifetime and expects the boot to fail.

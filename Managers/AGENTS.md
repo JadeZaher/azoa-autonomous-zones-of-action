@@ -848,6 +848,8 @@ TenantCustodialAccountManager uses BootstrapTenantWalletAsync, passing the origi
 
 ### Claim credential recovery
 
+Invites are stored as token digests and never returned to the minting tenant; see Services/Auth/AGENTS.md §claim-invites.
+
 Claims require the live invite and expected target ID from the invitation; a JWT subject alone cannot transfer ownership. The expected ID is a correlation check, never authorization. Consumers retain that ID before submitting. Lost successful responses recover through ordinary password login by userId (SDK loginByUserId), or a fresh wallet challenge. Consumed invites never mint replay JWTs. Password login accepts exactly one identity (email or userId), requires an active self-owned user, and verifies the current password. A failed wallet claim requires a fresh challenge but leaves the invite reusable if the ownership transaction did not commit. No password-derived command fingerprint or credential journal is stored.
 
 TenantCustodialAccountManager keeps historical identity correlation separate from current access. GetStatus, provisioning convergence and cached response release require the actual tenant witness and exact current provisioning enrollment. ResolveCorrelatedChildAsync intentionally returns identity only; it is followed by current custody authority capture. Infrastructure errors in KYC orchestration preserve the original exception after updating an owned idempotency claim. New KYC effects require the captured witness at the datastore admission boundary in addition to response validation.
