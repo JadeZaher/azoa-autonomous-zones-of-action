@@ -1922,7 +1922,20 @@ AZOA.WebAPI.Providers.Fiat.FiatRailStartup.Validate(
 var app = builder.Build();
 
 // Tenant:ClaimInvites validation (lifetime ≤ 7 days) must stop the boot, not the first invite.
-app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.ClaimInviteOptions>();
+var claimInvites = app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.ClaimInviteOptions>();
+
+// Tenant:ClaimInvites:ReturnTokenToTenant boot guard (N1 security review): true hands the raw
+// claim token to the minting TENANT, letting it claim the member's own account — only the
+// IntegrationTest host (and a developer's local Development run) may set it, because
+// appsettings.IntegrationTest.json ships inside the production image and
+// Tenant__ClaimInvites__ReturnTokenToTenant is a single environment variable away on any host.
+// Not IsProduction(): the released service runs as Staging, so that check alone would not have
+// caught this.
+if (claimInvites.ReturnTokenToTenant
+    && !app.Environment.IsDevelopment()
+    && !app.Environment.IsEnvironment("IntegrationTest"))
+    throw new InvalidOperationException(
+        "Tenant:ClaimInvites:ReturnTokenToTenant is refused outside Development/IntegrationTest.");
 
 // The second half of the money-path capability proof. Validate above counts what is in the
 // SERVICE COLLECTION; this resolves what is in the CONTAINER, because a live rail also needs a
