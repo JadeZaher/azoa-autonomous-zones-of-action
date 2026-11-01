@@ -123,6 +123,8 @@ person's own live `UserExplicit` grant, read through the custody fence's claimed
   `ConsentScopes` lacks `kyc:read` to `TenantClaimedMemberStatusResponse` (four fields, plus
   `consentScopes`/`consentExpiresAt` only when granted). The discriminator is the scope, not
   `Consent`, so it survives the Ensure replay's serialization and fails toward the minimal shape.
+  A deactivated claimed member answers `404`, not the minimal status (accepted LOW-3; see
+  `Providers/Stores/Surreal/AGENTS.md` §claimed-custodial-fence, accepted risks).
 - **Ensure** (`ConvergeAccountAsync`): a claimed member is never re-provisioned or
   re-bootstrapped (both require the tenant link); Ensure reports it through the same fence
   and returns the original deterministic wallet. Residual race: a claim that commits between

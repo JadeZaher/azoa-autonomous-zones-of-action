@@ -1197,6 +1197,21 @@ to choose between the minimal claimed status and not-found, never to authorise.
 `FirstLiveClaimedGrantAsync` reads the same live-grant set `CaptureAsync` selects from, but
 without a scope filter; it only reports `consent`/`consentScopes` in the minimal claimed status.
 
+**Accepted risks (N2 security review):**
+
+- **LOW-3 — status reveals that a claimed member deactivated their account.** `Classify` returns
+  null for `IsActive = false`, so a deactivated claimed member answers `404` where an active one
+  answers the minimal `200`; the tenant can infer the deactivation. Accepted: there is no
+  cross-tenant signal, because the deterministic id includes the tenant id, so only the tenant
+  that provisioned the member can ask. Revisit if a tenant surfaces deactivation as a signal
+  (for example to the person's counterparties).
+- **LOW-6 — tenant reads write to the person's own user row.** `ClaimedGuards` (like
+  `CustodialGuards`) re-checks the member with a no-op `UPDATE ONLY user … SET is_active = true`
+  inside the consuming transaction, so every tenant status poll takes a write on the claimed
+  person's row and can conflict with their own row updates (password change, login timestamp).
+  Status polling is rate-limited (`tenant-custodial`) and conflicts retry through
+  `SurrealTransientConflict`. Accepted; revisit if user-row write conflicts appear in logs.
+
 ## §relinquish — SurrealConsentLifecycleStore.Relinquish.cs
 
 The tenant gives up every live `UserExplicit` grant from its **claimed** member to itself. The
