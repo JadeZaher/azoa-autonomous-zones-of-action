@@ -2,6 +2,6 @@
   {
     "store": "SurrealConsentLifecycleStore",
     "method": "RelinquishAsync",
-    "tenantCheck": "query-scoped: filters by tenantId and the tenant's deterministic member id; the credential must be the tenant's own"
+    "tenantCheck": "query-scoped: filters by tenantId, the tenant's deterministic member id and origin UserExplicit; refuses a still-custodial member; the credential must be the tenant's own"
   }
 ]

@@ -5,7 +5,7 @@
     "action": "RelinquishCustodialConsent",
     "class": "non-value",
     "scope": null,
-    "enforcement": "TenantScope policy; tenant = caller; captured credential bound to live tenant:provision consent; revokes only grants to this tenant from its correlated member (deterministic id), atomically with consent.revoked notifications",
+    "enforcement": "TenantScope policy; tenant = caller; captured credential bound to live tenant:provision consent; claimed members only (a still-custodial member is a 409 MEMBER_STILL_CUSTODIAL); revokes only live UserExplicit grants to this tenant from its claimed member (deterministic id), atomically with consent.revoked notifications",
     "policies": [
       "TenantScope"
     ]

@@ -15,3 +15,6 @@ public enum TenantCustodialKind
 public sealed record TenantCustodialWitness(TenantCustodialKind Kind, SigningConsentWitness Authority, Guid UserId,
     string ExternalUserId, DateTimeOffset? AuthNotBefore, string? MembershipId, long? MembershipVersion, string GrantId,
     long GrantVersion, string GrantScopes, DateTimeOffset? GrantExpiresAt, string GrantCommandId, string GrantReceiptJson);
+
+/// <summary>The scopes and expiry of a claimed person's first live grant to the tenant; reported in status, authorizes nothing.</summary>
+public sealed record TenantClaimedConsent(IReadOnlyList<string> Scopes, DateTimeOffset? ExpiresAt);

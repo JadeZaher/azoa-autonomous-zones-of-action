@@ -49,7 +49,7 @@ public class ConsumerSafeExitCoverageTests
     /// How many failure returns <c>AllocationManager</c> has. Bump this ONLY together with a
     /// new <c>ToConsumerSafeFailure</c> call - never to make a red test green.
     /// </summary>
-    private const int ScrubbedExitCount = 20;
+    private const int ScrubbedExitCount = 21; // 21st: the preview's claimed-member-without-wallet refusal (N2 LOW-2).
 
     /// <summary>The one failure-result factory, plus its two calls inside the scrubber.</summary>
     private const int RefusedFactoryMentions = 3;

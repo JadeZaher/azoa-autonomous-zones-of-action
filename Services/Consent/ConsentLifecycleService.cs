@@ -40,7 +40,7 @@ public sealed class ConsentLifecycleService(SigningAdmissionAuthorityFactory aut
             : AZOAResult<ConsentOffboardReceipt>.Success(receipt);
     }
 
-    /// <summary>The authenticated tenant gives up every live grant from its correlated member, of any origin.</summary>
+    /// <summary>The authenticated tenant gives up every live UserExplicit grant from its claimed member; see AGENTS.md §relinquish.</summary>
     public async Task<AZOAResult<ConsentRelinquishReceipt>> RelinquishAsync(ClaimsPrincipal principal,
         string externalSubject, CancellationToken ct)
     {

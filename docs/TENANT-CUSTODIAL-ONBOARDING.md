@@ -92,24 +92,40 @@ the tenant now acts only under scopes the person grants it themselves
   { "ownership": "claimed", "consent": "none", "kycStatus": "Unknown", "ready": false }
   ```
 
-  `consent: "none"` means no live grant from the person covers `kyc:read`. Ask the person to
-  grant access; do not call value routes. `kycStatus` keeps the existing enum spelling.
+  `consent: "none"` means the person holds no live grant to this tenant at all. Ask them to
+  grant access; value routes will answer `403`. `kycStatus` keeps the existing enum spelling.
+- **With a live grant that does not cover `kyc:read`**, the same minimal answer says so
+  truthfully and adds that grant's scopes (and `consentExpiresAt` when it expires):
+
+  ```json
+  { "ownership": "claimed", "consent": "granted", "consentScopes": ["units:issue", "transfer:sign"],
+    "kycStatus": "Unknown", "ready": false }
+  ```
+
+  `ready` stays `false` and `kycStatus` `Unknown` because the tenant may not see KYC. Value
+  routes whose scope is in `consentScopes` are still admitted (each re-checks its own scope);
+  ask for `kyc:read` only if you need readiness or KYC detail. When the person holds several
+  live grants, `consentScopes` is the first one's (by grant id).
 - **With a live grant covering `kyc:read`**, status is the full projection with
   `ownership: "claimed"`, `consent: "granted"`, and readiness exactly as for a custodial
   member. `PUT` never re-provisions or re-bootstraps a claimed member; it reports the
   original wallet. KYC session/submission need `kyc:submit` in the person's grant. Checkout,
   payouts, cash-out, exchange and allocation each check their own signing scope against the
-  person's grant, as they always have.
+  person's grant, as they always have. An allocation never creates a wallet in a claimed
+  member's account: with no wallet for the request it is refused (the preview says so too).
 - **Another tenant** gets `404` for the same `externalSubject`, exactly as for a missing member.
 
-### Give up a member's grants
+### Give up a claimed member's grants
 
 `DELETE /api/tenant/custodial-accounts/{externalSubject}/consent` (custody key,
-`tenant:provision`) revokes **every** live grant the member gave this tenant, of any origin
-(custodial or claimed), in one transaction with one `consent.revoked` event per grant.
-Use it, not `DELETE /api/tenant/consent/provisioned`, when the person asks the tenant to stop:
-offboarding closes only the Participation membership and leaves a claimed person's own grants
-live.
+`tenant:provision`) revokes **every** live grant a **claimed** member gave this tenant
+(origin `UserExplicit`), in one transaction with one `consent.revoked` event per grant. Use it,
+not `DELETE /api/tenant/consent/provisioned`, when a claimed person asks the tenant to stop:
+offboarding closes only the Participation membership and leaves their own grants live.
+
+A member who has **not** claimed is refused with `409` and code `MEMBER_STILL_CUSTODIAL`: end the
+tenant's participation with `DELETE /api/tenant/consent/provisioned` instead (revoking only the
+implied grant would leave the membership open and the account unreadable to the tenant).
 
 ```json
 { "isError": false, "result": {
@@ -118,8 +134,13 @@ live.
 ```
 
 `200` with `revokedCount: 0` when nothing was live (safe to repeat); `404` when the subject is
-not this tenant's member; `403` when the tenant credential is no longer current; `409` when the
-member's grants changed during the call (retry the same request).
+not this tenant's member; `403` when the tenant credential is no longer current; `409` with code
+`MEMBER_STILL_CUSTODIAL` as above (do not retry); `409` with code `CONFLICT` when the member's
+grants changed during the call (retry the same request).
+
+A `200` lost in transit is not replayed: repeating the call answers `revokedCount: 0`. The
+durable record of what was revoked is the per-grant `consent.revoked` webhook events and audit
+rows (detail `relinquished by tenant`), not the response.
 
 ## KYC lifecycle
 

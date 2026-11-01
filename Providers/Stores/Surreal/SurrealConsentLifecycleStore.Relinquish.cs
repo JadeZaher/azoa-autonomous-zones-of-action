@@ -15,8 +15,9 @@ namespace AZOA.WebAPI.Providers.Stores.Surreal;
 public sealed partial class SurrealConsentLifecycleStore
 {
     private const string RelinquishDetail = "relinquished by tenant";
+    private const string RelinquishableOrigin = "UserExplicit";
 
-    /// <summary>Revokes every live grant, of any origin, from the tenant's correlated member to that tenant; see Services/Consent/AGENTS.md §relinquish.</summary>
+    /// <summary>Revokes every live UserExplicit grant from the tenant's claimed member to that tenant; see Services/Consent/AGENTS.md §relinquish.</summary>
     public async Task<AZOAResult<ConsentRelinquishReceipt>> RelinquishAsync(Guid tenantId, string externalUserId,
         SigningConsentWitness authority, CancellationToken ct = default)
     {
@@ -29,13 +30,20 @@ public sealed partial class SurrealConsentLifecycleStore
         var external = externalUserId.Trim();
         var memberId = TenantChildCorrelation.DeterministicUserId(tenantId, external);
         var member = await executor.QuerySingleAsync<User>(SurrealQuery<User>.Key(memberId.ToString("N")), ct);
+        var owner = member is null ? null : SurrealRecordGuid.ParseOptional(member.OwnerTenantId);
         if (member is null || member.ExternalUserId != external
-            || !TenantChildCorrelation.IsCorrelated(memberId, SurrealRecordGuid.ParseOptional(member.OwnerTenantId), member.ExternalUserId, tenantId))
+            || !TenantChildCorrelation.IsCorrelated(memberId, owner, member.ExternalUserId, member.AuthNotBefore is not null, tenantId))
             return AZOAResult<ConsentRelinquishReceipt>.FailureWithCode("No member for that external user id.", AzoaErrorCodes.NotFound);
+        // Still tenant-linked: revoking the implied Participation grant here would strand the open membership; offboarding owns that.
+        if (owner is not null)
+            return AZOAResult<ConsentRelinquishReceipt>.FailureWithCode(
+                "This member is still custodial; end the tenant's participation with DELETE /api/tenant/consent/provisioned instead.",
+                ConsentRelinquishErrors.MemberStillCustodialCode);
         var grantor = SurrealLink.ToLink("user", memberId.ToString("N"))!;
         var tenant = SurrealLink.ToLink("user", tenantId.ToString("N"))!;
         var selection = SurrealQuery<Grant>.From()
-            .Where(row => row.GrantorUserId == grantor && row.TenantId == tenant && row.RevokedAt == null).OrderBy(row => row.Id);
+            .Where(row => row.GrantorUserId == grantor && row.TenantId == tenant && row.Origin == RelinquishableOrigin && row.RevokedAt == null)
+            .OrderBy(row => row.Id);
         var grants = await executor.QueryAsync<Grant>(selection, ct);
         if (grants.Any(row => row.Version is < 0 or long.MaxValue))
             return AZOAResult<ConsentRelinquishReceipt>.FailureWithCode("A consent grant version cannot advance.", AzoaErrorCodes.Conflict);

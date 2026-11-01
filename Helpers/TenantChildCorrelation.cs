@@ -17,14 +17,14 @@ public static class TenantChildCorrelation
 
     /// <summary>True while the tenant link is set, or after a claim when the id is still the tenant's deterministic id.</summary>
     public static bool IsCorrelated(IUser user, Guid tenantId)
-        => IsCorrelated(user.Id, user.OwnerTenantId, user.ExternalUserId, tenantId);
+        => IsCorrelated(user.Id, user.OwnerTenantId, user.ExternalUserId, user.AuthNotBefore is not null, tenantId);
 
     /// <inheritdoc cref="IsCorrelated(IUser, Guid)"/>
-    public static bool IsCorrelated(Guid userId, Guid? ownerTenantId, string? externalUserId, Guid tenantId)
-        => ownerTenantId is { } owner ? owner == tenantId : IsClaimed(userId, ownerTenantId, externalUserId, tenantId);
+    public static bool IsCorrelated(Guid userId, Guid? ownerTenantId, string? externalUserId, bool claimWatermarked, Guid tenantId)
+        => ownerTenantId is { } owner ? owner == tenantId : IsClaimed(userId, ownerTenantId, externalUserId, claimWatermarked, tenantId);
 
-    /// <summary>True only for a self-owned account whose id is the deterministic id of (tenant, external user).</summary>
-    public static bool IsClaimed(Guid userId, Guid? ownerTenantId, string? externalUserId, Guid tenantId)
-        => ownerTenantId is null && tenantId != Guid.Empty && userId != Guid.Empty
+    /// <summary>True only for a self-owned account the claim stamped (AuthNotBefore set) whose id is the deterministic id of (tenant, external user).</summary>
+    public static bool IsClaimed(Guid userId, Guid? ownerTenantId, string? externalUserId, bool claimWatermarked, Guid tenantId)
+        => ownerTenantId is null && claimWatermarked && tenantId != Guid.Empty && userId != Guid.Empty
             && !string.IsNullOrWhiteSpace(externalUserId) && userId == DeterministicUserId(tenantId, externalUserId);
 }

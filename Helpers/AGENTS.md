@@ -27,8 +27,10 @@ Changing its v1 input is an identity migration, not a formatting refactor.
 `TenantChildCorrelation` owns the tenant member identity: SHA-256 over
 `azoa:tenant-user:v1:{tenant:N}:{externalUserId}`, first 16 bytes as the user id (pinned by
 `TenantChildCorrelationTests`; changing it is an identity migration). `IsCorrelated(user,
-tenant)` is true while `OwnerTenantId == tenant`, or after a claim (`OwnerTenantId` null) when
-the account's id is still that tenant's deterministic id for its `ExternalUserId`. Another
+tenant)` is true while `OwnerTenantId == tenant`, or after a claim (`OwnerTenantId` null and
+`AuthNotBefore` set, the stamp every claim writes) when the account's id is still that tenant's
+deterministic id for its `ExternalUserId`; `IsClaimed` is that second branch alone, the same rule
+the custody fence's `Classify` applies. Another
 tenant can never correlate with a claimed account: its deterministic id for the same external
 user is a different account. Correlation grants nothing by itself; every caller pairs it with
 a live grant check (`Managers/AGENTS.md` §claimed-continuity).

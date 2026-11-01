@@ -95,7 +95,7 @@ public class TenantController : ControllerBase
         return TranslateStatus(result);
     }
 
-    /// <summary>Gives up every live grant this tenant holds from the correlated member, of any origin (claimed or not).</summary>
+    /// <summary>Gives up every live UserExplicit grant this tenant holds from a claimed member; a custodial member is a 409.</summary>
     [HttpDelete("custodial-accounts/{externalSubject}/consent")]
     [EnableRateLimiting("tenant-custodial")]
     public async Task<ActionResult<AZOAResult<ConsentRelinquishReceipt>>> RelinquishCustodialConsent(
@@ -112,6 +112,7 @@ public class TenantController : ControllerBase
             AzoaErrorCodes.NotFound => NotFound(result),
             AzoaErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, result),
             AzoaErrorCodes.Conflict => Conflict(result),
+            ConsentRelinquishErrors.MemberStillCustodialCode => Conflict(result),
             _ => BadRequest(result),
         };
     }
@@ -270,15 +271,25 @@ public class TenantController : ControllerBase
     }
 
     /// <summary>
-    /// A claimed member who has granted this tenant nothing is answered with the four-field
-    /// <see cref="TenantClaimedMemberStatusResponse"/> and nothing else; see docs/TENANT-CUSTODIAL-ONBOARDING.md §Claimed members.
+    /// A claimed member whose grant does not cover kyc:read is answered with <see cref="TenantClaimedMemberStatusResponse"/>
+    /// (four fields, plus the grant's scopes and expiry when one is live) and nothing else; see docs/TENANT-CUSTODIAL-ONBOARDING.md §Claimed members.
     /// </summary>
     private ActionResult<AZOAResult<TenantCustodialAccountStatusResponse>> TranslateStatus(
         AZOAResult<TenantCustodialAccountStatusResponse> result)
     {
-        if (result is { IsError: false, Result: { Ownership: TenantMemberOwnership.Claimed, Consent: TenantMemberConsent.None } })
-            return Ok(AZOAResult<TenantClaimedMemberStatusResponse>.Success(new TenantClaimedMemberStatusResponse(),
-                "The member has claimed this account and has granted this tenant no access."));
+        if (result is { IsError: false, Result: { Ownership: TenantMemberOwnership.Claimed } status }
+            && status.ConsentScopes?.Contains(AzoaScopes.KycRead, StringComparer.Ordinal) != true)
+        {
+            var granted = status.Consent == TenantMemberConsent.Granted;
+            return Ok(AZOAResult<TenantClaimedMemberStatusResponse>.Success(new TenantClaimedMemberStatusResponse
+            {
+                Consent = granted ? TenantMemberConsent.Granted : TenantMemberConsent.None,
+                ConsentScopes = granted ? status.ConsentScopes : null,
+                ConsentExpiresAt = granted ? status.ConsentExpiresAt : null,
+            }, granted
+                ? "The member has claimed this account; their grant to this tenant does not cover kyc:read."
+                : "The member has claimed this account and has granted this tenant no access."));
+        }
 
         return TranslateResult(result);
     }

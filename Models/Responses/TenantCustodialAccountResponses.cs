@@ -71,11 +71,20 @@ public static class TenantMemberConsent
     public const string None = "none";
 }
 
-/// <summary>Everything a tenant may learn about a claimed member who has granted it nothing; see docs/TENANT-CUSTODIAL-ONBOARDING.md §Claimed members.</summary>
+/// <summary>Everything a tenant may learn about a claimed member whose grant does not cover kyc:read; see docs/TENANT-CUSTODIAL-ONBOARDING.md §Claimed members.</summary>
 public sealed class TenantClaimedMemberStatusResponse
 {
     public string Ownership { get; init; } = TenantMemberOwnership.Claimed;
     public string Consent { get; init; } = TenantMemberConsent.None;
+
+    /// <summary>The person's first live grant's scopes; omitted when <see cref="Consent"/> is none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? ConsentScopes { get; init; }
+
+    /// <summary>That grant's expiry; omitted when there is no grant or it does not expire.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? ConsentExpiresAt { get; init; }
+
     public TenantKycStatus KycStatus { get; init; } = TenantKycStatus.Unknown;
     public bool Ready { get; init; }
 }

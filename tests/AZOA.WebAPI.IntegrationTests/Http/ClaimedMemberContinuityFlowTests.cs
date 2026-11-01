@@ -9,6 +9,7 @@ using AZOA.WebAPI.IntegrationTests.Http.Infrastructure;
 using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Requests;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Fiat;
 using AZOA.WebAPI.Services.Auth;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +24,7 @@ namespace AZOA.WebAPI.IntegrationTests.Http;
 
 /// <summary>
 /// N2 claimed-member continuity: a member who claims their account keeps working with the tenant under the
-/// UserExplicit grant they give it, and the tenant sees nothing more than four fields until they do.
+/// UserExplicit grant they give it, and the tenant sees only the minimal status until that grant covers kyc:read.
 /// See <c>Http/AGENTS.md</c> §claimed-continuity.
 /// </summary>
 public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplicationFactory factory)
@@ -39,8 +40,19 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
     {
         using var tenant = await OnboardValueTenantAsync();
         var member = await ProvisionApprovedMemberAsync(tenant);
-        using var person = await ClaimAsync(tenant, member);
 
+        // Relinquish is for claimed members only: on a custodial one it would strand the open membership.
+        using (var custodialRelinquish = await tenant.Custody.DeleteAsync(AccountRoute(member.Subject) + "/consent"))
+        {
+            await ShouldReturnAsync(custodialRelinquish, HttpStatusCode.Conflict);
+            JsonSerializer.Deserialize<AZOAResult<ConsentRelinquishReceipt>>(await custodialRelinquish.Content.ReadAsStringAsync(), JsonOptions)!
+                .Code.Should().Be(ConsentRelinquishErrors.MemberStillCustodialCode);
+        }
+        var stillCustodial = await StatusAsync(tenant, member.Subject);
+        stillCustodial.Ownership.Should().Be(TenantMemberOwnership.Custodial);
+        stillCustodial.Ready.Should().BeTrue(stillCustodial.UnavailableReason);
+
+        using var person = await ClaimAsync(tenant, member);
         var grant = await GrantAsync(person, tenant.TenantId);
 
         var status = await StatusAsync(tenant, member.Subject);
@@ -57,7 +69,8 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
         ensured.Ready.Should().BeTrue(ensured.UnavailableReason);
         (await WalletsOfAsync(member.UserId)).Should().ContainSingle();
 
-        await ShouldReturnAsync(await BeginCheckoutAsync(tenant, member.UserId, "checkout-with-grant"), HttpStatusCode.OK);
+        var checkout = await ReadOkAsync<FiatCheckoutIntent>(await BeginCheckoutAsync(tenant, member.UserId, CheckoutKey));
+        var openIntent = await ReadOkAsync<FiatCheckoutIntent>(await tenant.Custody.GetAsync(IntentRoute(member.UserId, checkout.IntentId)));
         await ShouldBeAdmittedExchangeAsync(await ExchangePreviewAsync(tenant, member.UserId, "exchange-with-grant"), tenant, member.UserId);
         await ReadOkAsync<JsonElement>(await tenant.Custody.GetAsync($"api/fiat/payouts/{member.UserId}/availability"));
         var refund = await ReadOkAsync<AllocationResult>(await RefundPreviewAsync(tenant, member.UserId));
@@ -68,10 +81,16 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
             await ShouldReturnAsync(revoked, HttpStatusCode.OK);
         await ShouldBeMinimalStatusAsync(await tenant.Custody.GetAsync(AccountRoute(member.Subject)));
         await ShouldReturnAsync(await BeginCheckoutAsync(tenant, member.UserId, "checkout-after-revoke"), HttpStatusCode.Forbidden);
+        await ShouldReturnAsync(await tenant.Custody.GetAsync(IntentRoute(member.UserId, checkout.IntentId)), HttpStatusCode.Forbidden);
+        await ShouldReturnAsync(await tenant.Custody.PostAsync(VoidRoute(member.UserId, CheckoutKey), null), HttpStatusCode.Forbidden);
         await ShouldReturnAsync(await ExchangePreviewAsync(tenant, member.UserId, "exchange-after-revoke"), HttpStatusCode.Forbidden);
+        await ShouldReturnAsync(await RefundPreviewAsync(tenant, member.UserId), HttpStatusCode.Forbidden);
 
         var regranted = await GrantAsync(person, tenant.TenantId);
         (await StatusAsync(tenant, member.Subject)).Ready.Should().BeTrue();
+        var intentAfter = await ReadOkAsync<FiatCheckoutIntent>(await tenant.Custody.GetAsync(IntentRoute(member.UserId, checkout.IntentId)));
+        intentAfter.Status.Should().Be(openIntent.Status, "the refused void abandoned nothing on the tenant's behalf");
+        intentAfter.Status.Should().NotBe(FiatIntentStatuses.Expired);
         using var relinquished = await tenant.Custody.DeleteAsync(AccountRoute(member.Subject) + "/consent");
         var receipt = await ReadOkAsync<ConsentRelinquishReceipt>(relinquished);
         receipt.RevokedGrantIds.Should().Equal(regranted.GrantId);
@@ -94,7 +113,7 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
     {
         using var tenant = await OnboardValueTenantAsync();
         var member = await ProvisionApprovedMemberAsync(tenant);
-        using var _ = await ClaimAsync(tenant, member);
+        using var person = await ClaimAsync(tenant, member);
 
         await ShouldBeMinimalStatusAsync(await tenant.Custody.GetAsync(AccountRoute(member.Subject)));
         await ShouldBeMinimalStatusAsync(await EnsureAsync(tenant, member.Subject, "after-claim-" + member.Subject));
@@ -104,6 +123,18 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
         await TestDataBuilders.KybApprovedTenant(stranger.TenantId).SeedAsync(Factory.Services);
         await ShouldReturnAsync(await stranger.Client.GetAsync(AccountRoute(member.Subject)), HttpStatusCode.NotFound);
         await ShouldReturnAsync(await stranger.Client.DeleteAsync(AccountRoute(member.Subject) + "/consent"), HttpStatusCode.NotFound);
+
+        // A grant without kyc:read: consent is truthfully "granted", yet KYC and readiness stay hidden.
+        await GrantAsync(person, tenant.TenantId, [AzoaScopes.UnitsIssue, AzoaScopes.TransferSign]);
+        using var partial = await tenant.Custody.GetAsync(AccountRoute(member.Subject));
+        await ShouldReturnAsync(partial, HttpStatusCode.OK);
+        var result = await ResultElementAsync(partial);
+        result.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(MinimalStatusFields.Append("consentScopes"));
+        result.GetProperty("consent").GetString().Should().Be(TenantMemberConsent.Granted);
+        result.GetProperty("consentScopes").EnumerateArray().Select(scope => scope.GetString())
+            .Should().BeEquivalentTo(new[] { AzoaScopes.UnitsIssue, AzoaScopes.TransferSign });
+        result.GetProperty("kycStatus").GetString().Should().Be(nameof(TenantKycStatus.Unknown));
+        result.GetProperty("ready").GetBoolean().Should().BeFalse();
     }
 
     // ── Actors and onboarding, through public routes only ──────────────────────
@@ -180,13 +211,13 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
         return person;
     }
 
-    private async Task<ConsentLifecycleReceipt> GrantAsync(HttpClient person, Guid tenantId)
+    private async Task<ConsentLifecycleReceipt> GrantAsync(HttpClient person, Guid tenantId, IReadOnlyList<string>? scopes = null)
     {
         using var response = await person.PostAsJsonAsync("api/user/consent", new GrantConsentRequest
         {
             RequestId = Guid.NewGuid(),
             TenantId = tenantId,
-            Scopes = [.. PersonScopes],
+            Scopes = [.. scopes ?? PersonScopes],
             Origin = "UserExplicit",
         }, JsonOptions);
         return await ReadOkAsync<ConsentLifecycleReceipt>(response);
@@ -194,7 +225,13 @@ public sealed class ClaimedMemberContinuityFlowTests(ClaimedContinuityWebApplica
 
     // ── Tenant calls ───────────────────────────────────────────────────────────
 
+    private const string CheckoutKey = "checkout-with-grant";
+
     private static string AccountRoute(string subject) => $"api/tenant/custodial-accounts/{subject}";
+
+    private static string IntentRoute(Guid userId, Guid intentId) => $"api/fiat/checkout/{userId}/{intentId}";
+
+    private static string VoidRoute(Guid userId, string requestKey) => $"api/fiat/checkout/{userId}/requests/{requestKey}/void";
 
     private Task<HttpResponseMessage> EnsureAsync(ValueTenant tenant, string subject, string idempotencyKey)
     {

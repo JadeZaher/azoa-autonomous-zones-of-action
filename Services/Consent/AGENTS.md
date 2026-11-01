@@ -10,20 +10,35 @@ After a claim the tenant holds nothing until the person grants it scopes themsel
 then answers custody reads/admissions through the fence's claimed branch
 (`Providers/Stores/Surreal/AGENTS.md` §claimed-custodial-fence) and
 `ResolveOwnershipAsync` tells the status projection whether a miss is a claimed member
-(minimal status) or not the tenant's member at all (404). Checkout, payout reads, cash-out
-and exchange already accept a grant of any origin through `TenantConsentGate`; nothing there
-changed. The flow is pinned end to end by `Http/ClaimedMemberContinuityFlowTests`.
+(minimal status) or not the tenant's member at all (404); `ReadClaimedConsentAsync` then makes
+the minimal status's `consent` truthful (`granted` + that grant's scopes when any live
+UserExplicit grant exists, even one without `kyc:read`). Neither authorizes anything. Checkout,
+payout reads, cash-out and exchange already accept a grant of any origin through
+`TenantConsentGate`; nothing there changed. The flow is pinned end to end by
+`Http/ClaimedMemberContinuityFlowTests`.
 
-### §relinquish — the tenant gives up a member's grants
+### §relinquish — the tenant gives up a claimed member's grants
 
 `ConsentLifecycleService.RelinquishAsync` (route `DELETE /api/tenant/custodial-accounts/{ext}/consent`)
-captures the tenant credential, binds `tenant:provision`, and revokes every live grant the
-correlated member gave this tenant, whatever its origin, with the house `consent.revoked`
-notifications. It exists because `DELETE /api/tenant/consent/provisioned` closes only the
-Participation membership: after a claim that told the person "permission withdrawn" while the
-tenant still held their `transfer:sign`. Outcome codes: `NOT_FOUND` (not this tenant's member),
-`FORBIDDEN` (tenant credential), `CONFLICT` (grant set changed mid-transaction; retry the same
-request).
+captures the tenant credential, binds `tenant:provision`, and revokes every live `UserExplicit`
+grant the **claimed** member gave this tenant, with the house `consent.revoked` notifications.
+It exists because `DELETE /api/tenant/consent/provisioned` closes only the Participation
+membership: after a claim that told the person "permission withdrawn" while the tenant still
+held their `transfer:sign`.
+
+A still-custodial member is refused (`MEMBER_STILL_CUSTODIAL`, 409) before anything is read or
+written: revoking its implied Participation grant would leave membership and approval open, and
+re-Ensure replays the original (now revoked) provisioning receipt, so status/KYC/wallet would
+answer 404 for good. Offboarding is that member's route. The `UserExplicit`-only selection is
+defence in depth on top of that refusal (a claim already revoked every Participation grant).
+
+Outcome codes: `NOT_FOUND` (not this tenant's member), `MEMBER_STILL_CUSTODIAL` (use
+offboarding; do not retry), `FORBIDDEN` (tenant credential), `CONFLICT` (grant set changed
+mid-transaction; retry the same request).
+
+**Accepted (N2 security review LOW-5):** the 200 receipt is not stored, so a lost response cannot
+be replayed; a retry answers `revokedCount: 0`. The per-grant `consent.revoked` events and
+`Revoked` audit rows (detail `relinquished by tenant`) are the durable record.
 
 ### Provisioning issuer cutover
 

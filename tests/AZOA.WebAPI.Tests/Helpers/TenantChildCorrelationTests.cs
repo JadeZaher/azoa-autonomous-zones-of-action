@@ -13,27 +13,29 @@ public sealed class TenantChildCorrelationTests
         => TenantChildCorrelation.DeterministicUserId(Tenant, "member-1")
             .Should().Be(Guid.Parse("10286c16-32f6-1689-2c56-cdfc6d5a7050"));
 
-    public static TheoryData<string, Guid, Guid?, string?, Guid, bool> Cases()
+    public static TheoryData<string, Guid, Guid?, string?, bool, Guid, bool> Cases()
     {
         var member = TenantChildCorrelation.DeterministicUserId(Tenant, "member-1");
         return new()
         {
-            { "tenant-linked", Guid.NewGuid(), Tenant, "member-1", Tenant, true },
-            { "linked to another tenant", member, OtherTenant, "member-1", Tenant, false },
-            { "claimed with the tenant's deterministic id", member, null, "member-1", Tenant, true },
-            { "claimed, asked by another tenant", member, null, "member-1", OtherTenant, false },
-            { "claimed but the id belongs to another external user", member, null, "member-2", Tenant, false },
-            { "claimed with a non-deterministic id", Guid.NewGuid(), null, "member-1", Tenant, false },
-            { "self-registered account with no external user", member, null, null, Tenant, false },
+            { "tenant-linked", Guid.NewGuid(), Tenant, "member-1", false, Tenant, true },
+            { "linked to another tenant", member, OtherTenant, "member-1", true, Tenant, false },
+            { "claimed with the tenant's deterministic id", member, null, "member-1", true, Tenant, true },
+            { "self-owned deterministic row the claim never stamped", member, null, "member-1", false, Tenant, false },
+            { "claimed, asked by another tenant", member, null, "member-1", true, OtherTenant, false },
+            { "claimed but the id belongs to another external user", member, null, "member-2", true, Tenant, false },
+            { "claimed with a non-deterministic id", Guid.NewGuid(), null, "member-1", true, Tenant, false },
+            { "self-registered account with no external user", member, null, null, true, Tenant, false },
         };
     }
 
     [Theory]
     [MemberData(nameof(Cases))]
     public void A_member_is_correlated_while_linked_or_after_claiming_the_deterministic_account(
-        string because, Guid userId, Guid? owner, string? external, Guid askingTenant, bool correlated)
+        string because, Guid userId, Guid? owner, string? external, bool claimStamped, Guid askingTenant, bool correlated)
     {
-        var user = new User { Id = userId, OwnerTenantId = owner, ExternalUserId = external };
+        var user = new User { Id = userId, OwnerTenantId = owner, ExternalUserId = external,
+            AuthNotBefore = claimStamped ? DateTime.UtcNow : null };
         TenantChildCorrelation.IsCorrelated(user, askingTenant).Should().Be(correlated, because);
     }
 }

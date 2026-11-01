@@ -115,10 +115,14 @@ person's own live `UserExplicit` grant, read through the custody fence's claimed
 (`Providers/Stores/Surreal/AGENTS.md` §claimed-custodial-fence).
 
 - **Status** (`GetStatusAsync`): no live grant covering `kyc:read` → a claimed member gets
-  the minimal status (`Ownership = claimed`, `Consent = none`, KYC `Unknown`, not ready);
-  any other miss stays `TENANT_NOT_FOUND`. The internal minimal object keeps tenant and
-  subject so an Ensure replay stays bound to its key; `TenantController.TranslateStatus`
-  projects it to the four-field `TenantClaimedMemberStatusResponse` on the wire.
+  the minimal status (`Ownership = claimed`, KYC `Unknown`, not ready) with a truthful
+  `Consent`: `granted` plus the first live UserExplicit grant's scopes/expiry when one exists
+  (`ITenantCustodialAccess.ReadClaimedConsentAsync`), else `none`; any other miss stays
+  `TENANT_NOT_FOUND`. The internal minimal object keeps tenant and subject so an Ensure replay
+  stays bound to its key; `TenantController.TranslateStatus` projects any claimed status whose
+  `ConsentScopes` lacks `kyc:read` to `TenantClaimedMemberStatusResponse` (four fields, plus
+  `consentScopes`/`consentExpiresAt` only when granted). The discriminator is the scope, not
+  `Consent`, so it survives the Ensure replay's serialization and fails toward the minimal shape.
 - **Ensure** (`ConvergeAccountAsync`): a claimed member is never re-provisioned or
   re-bootstrapped (both require the tenant link); Ensure reports it through the same fence
   and returns the original deterministic wallet. Residual race: a claim that commits between
@@ -126,7 +130,11 @@ person's own live `UserExplicit` grant, read through the custody fence's claimed
   (the key is then terminal; a new key converges).
 - **Allocation** (`AllocationManager`): the tenant check is `IsCorrelated`, not "owns".
   It only answers "is this the tenant's member"; the person's live consent at the
-  controller and again at custody is what authorises the move.
+  controller and again at custody is what authorises the move. For a claimed target the
+  provision-if-absent step never generates: no wallet for the request is a refusal (the
+  preview refuses too), because a `units:issue`/`nft:mint` grant is not consent to the node
+  minting a held key into the person's own account. Node rails (`actingTenantId` null, e.g.
+  on-ramp settlement) are unaffected.
 
 ## §skip-semantics — ActionManager.ExecuteAsync skip loop
 

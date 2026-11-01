@@ -1183,17 +1183,31 @@ witness. The witness carries its `Kind`; membership fields are set only for Cust
   (or a grant past its expiry by database time) into a rollback. A revoke or relinquish
   bumps the grant version and a credential reset moves the watermark, so a witness captured
   before either can never validate after it (`SurrealConsentLifecycleTests.Claimed.cs`).
+- **Why the version predicate is belt-and-braces today.** Every grant version bump either
+  revokes (`revoked_at` set: revoke, claim, offboard, relinquish) or happens after expiry
+  (`RecordExpiryAsync` in `SurrealConsentLifecycleStore.Expiry.cs`, which this guard's own
+  `expires_at <= time::now()` clause already refuses). So removing only the version predicate
+  leaves the tests green (mutation-checked); removing it with `revoked_at = NONE` turns
+  `Claimed_access_rechecks…(revoked)` red. It starts to carry weight alone the day a write
+  bumps the version of a live, unexpired grant (e.g. narrowing scopes); pin it with a route
+  test then.
 
 `OwnershipAsync` is the same classification without any authority read; managers use it only
 to choose between the minimal claimed status and not-found, never to authorise.
+`FirstLiveClaimedGrantAsync` reads the same live-grant set `CaptureAsync` selects from, but
+without a scope filter; it only reports `consent`/`consentScopes` in the minimal claimed status.
 
 ## §relinquish — SurrealConsentLifecycleStore.Relinquish.cs
 
-The tenant gives up every live grant (any origin) from its correlated member to itself. The
-member is the tenant's deterministic id (custodial or claimed); anything else is `NOT_FOUND`.
-One transaction: tenant credential guards, the exact live grant set re-selected and
-count-checked (a grant admitted after the read rolls the whole thing back), one version-CAS
+The tenant gives up every live `UserExplicit` grant from its **claimed** member to itself. The
+member is the tenant's deterministic id and must be claimed (`IsCorrelated` with the claim
+watermark); not this tenant's member is `NOT_FOUND`, and a still-custodial member is refused with
+`MEMBER_STILL_CUSTODIAL` before any grant is read (offboarding owns its implied grant; see
+`Services/Consent/AGENTS.md` §relinquish). A claim is one-way, so no in-transaction ownership
+guard is needed. One transaction: tenant credential guards, the exact live grant set re-selected
+and count-checked (a grant admitted after the read rolls the whole thing back), one version-CAS
 revocation per grant, and per grant the house `Revoked` audit, `consent_webhook_event` and
 transition proof (detail `relinquished by tenant`). Zero live grants still runs the guarded
-transaction and answers an empty receipt, so the call is idempotent. Grants to other tenants
-are never selected. It does not close the participation membership (that is offboarding).
+transaction and answers an empty receipt, so the call is idempotent; the receipt itself is not
+stored, so a lost 200 is not replayable (the per-grant rows are the record). Grants to other
+tenants are never selected. It does not close the participation membership (that is offboarding).

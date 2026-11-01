@@ -132,6 +132,7 @@ public sealed class AllocationManager : IAllocationManager
         var authority = drawAuthority ?? ReserveDrawAuthority.ForTenant(actingTenantId);
         if (!Guid.TryParse(apiKeyId, out var callerApiKeyId) || callerApiKeyId == Guid.Empty)
             return ToConsumerSafeFailure("Caller API key context is invalid.");
+        var claimedTarget = false;
         if (actingTenantId is { } tenantId)
         {
             if (tenantId != callerUserId || _users is null)
@@ -141,6 +142,7 @@ public sealed class AllocationManager : IAllocationManager
             if (target.IsError || target.Result is null || !TenantChildCorrelation.IsCorrelated(target.Result, tenantId))
                 return ToConsumerSafeFailure(
                     TenantAuthorizationError.NotFound + "Custodial user not found.");
+            claimedTarget = target.Result.OwnerTenantId is null; // correlated without the link is a claimed member
         }
 
         var governance = await _nodeGovernance.EnsureAllowedAsync(
@@ -166,7 +168,7 @@ public sealed class AllocationManager : IAllocationManager
         // It deliberately sits before TryClaim so a preview can never consume the key
         // the real allocation will need.
         if (request.PreviewOnly)
-            return await PreviewAsync(userId, request, actingTenantId, identityScope);
+            return await PreviewAsync(userId, request, actingTenantId, identityScope, claimedTarget);
 
         // ── Step 2: idempotency claim ─────────────────────────────────────────
         // TryClaim BEFORE any irreversible effect. On a lost claim we replay the
@@ -235,7 +237,7 @@ public sealed class AllocationManager : IAllocationManager
             }
 
             // ── Step 5: provision-if-absent ───────────────────────────────────
-            var (wallet, provisioned, walletError) = await EnsureWalletAsync(userId, request.ChainType);
+            var (wallet, provisioned, walletError) = await EnsureWalletAsync(userId, request.ChainType, generateIfAbsent: !claimedTarget);
             if (wallet is null)
             {
                 var refusal = ToConsumerSafeFailure(walletError);
@@ -320,7 +322,7 @@ public sealed class AllocationManager : IAllocationManager
     /// the machine-checkable proof that no allocation happened.
     /// </summary>
     private async Task<AZOAResult<AllocationResult>> PreviewAsync(
-        Guid userId, AllocationRequest request, Guid? actingTenantId, Guid? identityScope)
+        Guid userId, AllocationRequest request, Guid? actingTenantId, Guid? identityScope, bool claimedTarget)
     {
         var gate = await _valueAccess.RequireValueAccessAsync(userId, identityScope);
         if (gate.IsError)
@@ -348,6 +350,10 @@ public sealed class AllocationManager : IAllocationManager
             return ToConsumerSafeFailure(settlementRefusal);
 
         var (wallet, _) = await FindWalletAsync(userId, request.ChainType);
+        // The real allocation would refuse rather than create one, so the quote says so now.
+        if (wallet is null && claimedTarget)
+            return ToConsumerSafeFailure(ClaimedMemberWithoutWallet);
+
         return new AZOAResult<AllocationResult>
         {
             Result = new AllocationResult
@@ -445,12 +451,17 @@ public sealed class AllocationManager : IAllocationManager
 
     // ── Provision-if-absent ───────────────────────────────────────────────────
 
+    /// <summary>Refusal when a tenant allocates to a claimed member who holds no wallet for the request.</summary>
+    private const string ClaimedMemberWithoutWallet =
+        "The member has claimed their account and has no wallet for this request; a tenant cannot create one " +
+        "in an account it no longer holds. Ask the member to add it themselves.";
+
     /// <summary>
-    /// Returns the user's existing wallet for the chain, or generates one.
+    /// Returns the user's existing wallet for the chain, or generates one when <paramref name="generateIfAbsent"/>.
     /// Never duplicates (uniqueness is also guarded inside GenerateWalletAsync).
     /// </summary>
     private async Task<(IWallet? Wallet, bool Provisioned, string Error)> EnsureWalletAsync(
-        Guid userId, string chainType)
+        Guid userId, string chainType, bool generateIfAbsent)
     {
         var existing = await _walletStore.GetByUserAsync(userId);
         if (existing.IsError)
@@ -463,6 +474,10 @@ public sealed class AllocationManager : IAllocationManager
             if (match is not null)
                 return (match, false, string.Empty);
         }
+
+        // A claimed member's account is theirs: never mint a node-held key into it on a tenant's say-so.
+        if (!generateIfAbsent)
+            return (null, false, ClaimedMemberWithoutWallet);
 
         var gen = await _walletManager.GenerateWalletAsync(
             new WalletGenerateRequest { ChainType = chainType }, userId);

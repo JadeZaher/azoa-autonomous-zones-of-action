@@ -265,7 +265,7 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
 
     /// <summary>
     /// No live grant covers the read. A member who claimed their account from THIS tenant gets the minimal
-    /// claimed status (so the tenant can ask them for consent); anyone else stays indistinguishable from a miss.
+    /// claimed status, with a truthful <c>consent</c>; anyone else stays indistinguishable from a miss.
     /// </summary>
     private async Task<AZOAResult<TenantCustodialAccountStatusResponse>> WithoutLiveAccessAsync(
         Guid tenantId,
@@ -276,10 +276,11 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     {
         var claimed = authority.Credential.ActorUserId == tenantId && authority.Credential.TenantId is null
             && await _access.ResolveOwnershipAsync(userId, externalSubject, tenantId, ct) == TenantCustodialKind.Claimed;
-        return claimed
-            ? AZOAResult<TenantCustodialAccountStatusResponse>.Success(ClaimedWithoutConsentStatus(tenantId, externalSubject))
-            : AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
+        if (!claimed)
+            return AZOAResult<TenantCustodialAccountStatusResponse>.Failure(
                 TenantAuthorizationError.NotFound + "Current custodial status access is unavailable.");
+        var consent = await _access.ReadClaimedConsentAsync(userId, tenantId, ct);
+        return AZOAResult<TenantCustodialAccountStatusResponse>.Success(ClaimedMinimalStatus(tenantId, externalSubject, consent));
     }
 
     /// <inheritdoc/>
@@ -746,16 +747,19 @@ public sealed class TenantCustodialAccountManager : ITenantCustodialAccountManag
     /// Internal shape of the minimal claimed status. Tenant and subject stay only so an Ensure replay stays bound
     /// to its key; <c>TenantController</c> projects it to <see cref="TenantClaimedMemberStatusResponse"/> on the wire.
     /// </summary>
-    private static TenantCustodialAccountStatusResponse ClaimedWithoutConsentStatus(
+    private static TenantCustodialAccountStatusResponse ClaimedMinimalStatus(
         Guid tenantId,
-        string externalSubject) => new()
+        string externalSubject,
+        TenantClaimedConsent? consent) => new()
     {
         TenantId = tenantId.ToString("D"),
         ExternalSubject = externalSubject,
         KycStatus = TenantKycStatus.Unknown,
         Ready = false,
         Ownership = TenantMemberOwnership.Claimed,
-        Consent = TenantMemberConsent.None
+        Consent = consent is null ? TenantMemberConsent.None : TenantMemberConsent.Granted,
+        ConsentScopes = consent?.Scopes ?? [],
+        ConsentExpiresAt = consent?.ExpiresAt
     };
 
     private static TenantKycSubmissionResponse ToKycSubmission(KycSubmissionModel submission) => new()

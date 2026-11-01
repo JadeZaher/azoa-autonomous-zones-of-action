@@ -18,9 +18,16 @@ public sealed record ConsentRevocationReceipt(Guid GrantId, DateTimeOffset Revok
 /// <summary>Original atomic membership closure result, preserved across retries.</summary>
 public sealed record ConsentOffboardReceipt(Guid TenantId, string ParticipationRef, DateTimeOffset ClosedAt, int RevokedCount);
 
-/// <summary>Every grant a tenant held from one correlated member, given up in one transaction (empty when none were live).</summary>
+/// <summary>Every UserExplicit grant a tenant held from one claimed member, given up in one transaction (empty when none were live).</summary>
 public sealed record ConsentRelinquishReceipt(Guid TenantId, string ExternalSubject, DateTimeOffset RelinquishedAt,
     int RevokedCount, IReadOnlyList<Guid> RevokedGrantIds);
+
+/// <summary>Machine codes a relinquish refusal carries beyond the shared <c>AzoaErrorCodes</c>.</summary>
+public static class ConsentRelinquishErrors
+{
+    /// <summary>409: the member is still tenant-linked; offboarding (<c>DELETE /api/tenant/consent/provisioned</c>) is the route.</summary>
+    public const string MemberStillCustodialCode = "MEMBER_STILL_CUSTODIAL";
+}
 
 /// <summary>Proves a command cannot newly admit a grant, or returns its original admission receipt.</summary>
 public sealed record ConsentCommandWithdrawal(Guid RequestId, bool Withdrawn, ConsentLifecycleReceipt? Receipt);

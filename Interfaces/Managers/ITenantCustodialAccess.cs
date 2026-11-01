@@ -16,4 +16,8 @@ public interface ITenantCustodialAccess
     /// <summary>Whether the member is still linked to <paramref name="tenantId"/>, claimed from it, or not its member (null).</summary>
     /// <remarks>Grants nothing: callers use it only to choose a projection, never to authorize a read.</remarks>
     Task<TenantCustodialKind?> ResolveOwnershipAsync(Guid userId, string externalUserId, Guid tenantId, CancellationToken ct = default);
+
+    /// <summary>A claimed member's first live UserExplicit grant to <paramref name="tenantId"/>, whatever it covers; null when none.</summary>
+    /// <remarks>Grants nothing: it only makes the minimal claimed status's <c>consent</c> truthful.</remarks>
+    Task<TenantClaimedConsent?> ReadClaimedConsentAsync(Guid userId, Guid tenantId, CancellationToken ct = default);
 }

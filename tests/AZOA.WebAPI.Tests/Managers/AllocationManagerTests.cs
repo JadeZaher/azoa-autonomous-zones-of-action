@@ -132,6 +132,45 @@ public class AllocationManagerTests
             access => access.RequireValueAccessAsync(_userId, tenantId, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    /// <summary>LOW-2: a tenant's allocation never creates a node-held wallet inside an account the member has claimed.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_tenant_allocation_to_a_claimed_member_without_a_wallet_is_refused_and_creates_none(bool previewOnly)
+    {
+        var tenantId = _callerUserId;
+        var member = TenantChildCorrelation.DeterministicUserId(tenantId, "member-1");
+        var users = new Mock<IUserStore>();
+        users.Setup(store => store.GetByIdAsync(member, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<IUser>
+            {
+                Result = new User { Id = member, OwnerTenantId = null, ExternalUserId = "member-1", AuthNotBefore = DateTime.UtcNow },
+            });
+        _valueAccess.Setup(access => access.RequireValueAccessAsync(member, tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AZOAResult<bool> { Result = true, Message = "Success" });
+        HasNoWallet(member);
+        var manager = new AllocationManager(
+            _valueAccess.Object, _walletManager.Object, _walletStore.Object,
+            _holonStore.Object, _nft.Object, _blockchainOps.Object, _idempotency,
+            _nodeFees.Object, users: users.Object);
+        var request = new AllocationRequest
+        {
+            Kind = AllocationKind.Transfer,
+            ChainType = ChainType,
+            Amount = "10",
+            Name = "escrow refund",
+            AssetRecordId = Guid.NewGuid(),
+            PreviewOnly = previewOnly,
+        };
+
+        var result = await manager.AllocateAsync(member, request, _callerUserId, "claimed-refund", ApiKeyId, tenantId);
+
+        result.IsError.Should().BeTrue();
+        result.Message.Should().Contain("claimed their account").And.Contain("no wallet");
+        _walletManager.Verify(m => m.GenerateWalletAsync(
+            It.IsAny<WalletGenerateRequest>(), It.IsAny<Guid>(), It.IsAny<AZOARequest?>()), Times.Never);
+    }
+
     private static IWallet WalletFor(Guid userId, string chain) =>
         Mock.Of<IWallet>(w =>
             w.Id == Guid.NewGuid() &&

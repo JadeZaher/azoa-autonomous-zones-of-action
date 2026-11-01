@@ -1,3 +1,4 @@
+using AZOA.WebAPI.Core;
 using AZOA.WebAPI.Core.Surreal;
 using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models.Signing;
@@ -42,4 +43,12 @@ public sealed class TenantCustodialAccess(ISurrealExecutor executor) : ITenantCu
     /// <inheritdoc/>
     public Task<TenantCustodialKind?> ResolveOwnershipAsync(Guid userId, string externalUserId, Guid tenantId, CancellationToken ct = default)
         => TenantCustodialAuthorityFence.OwnershipAsync(executor, userId, externalUserId, tenantId, ct);
+
+    /// <inheritdoc/>
+    public async Task<TenantClaimedConsent?> ReadClaimedConsentAsync(Guid userId, Guid tenantId, CancellationToken ct = default)
+    {
+        if (userId == Guid.Empty || tenantId == Guid.Empty) return null;
+        var grant = await TenantCustodialAuthorityFence.FirstLiveClaimedGrantAsync(executor, userId, tenantId, ct);
+        return grant is null ? null : new TenantClaimedConsent(ConsentScopeCoverage.SplitScopes(grant.Scopes), grant.ExpiresAt);
+    }
 }

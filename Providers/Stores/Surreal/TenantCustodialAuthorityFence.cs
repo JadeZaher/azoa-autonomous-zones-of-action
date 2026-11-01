@@ -65,7 +65,7 @@ public static class TenantCustodialAuthorityFence
         if (child is not { IsActive: true } || child.ExternalUserId != external) return null;
         var owner = SurrealRecordGuid.ParseOptional(child.OwnerTenantId);
         if (owner is not null) return owner == tenant ? TenantCustodialKind.Custodial : null;
-        return child.AuthNotBefore is not null && TenantChildCorrelation.IsClaimed(userId, owner, external, tenant)
+        return TenantChildCorrelation.IsClaimed(userId, owner, external, child.AuthNotBefore is not null, tenant)
             ? TenantCustodialKind.Claimed : null;
     }
 
@@ -88,21 +88,33 @@ public static class TenantCustodialAuthorityFence
             grant.Id, grant.Version, grant.Scopes, grant.ExpiresAt, commandId, grant.AdmissionReceiptJson);
     }
 
+    /// <summary>The person's first live UserExplicit grant to this tenant, whatever it covers; reports consent only, never authorizes.</summary>
+    public static async Task<ConsentGrant?> FirstLiveClaimedGrantAsync(ISurrealExecutor executor, Guid userId, Guid tenantId, CancellationToken ct)
+        => (await LiveClaimedGrantsAsync(executor, userId, tenantId, ct)).FirstOrDefault();
+
     /// <summary>Selects the first live, receipt-backed UserExplicit grant from the claimed person to this tenant covering the scope.</summary>
     private static async Task<TenantCustodialWitness?> CaptureClaimedAsync(ISurrealExecutor executor, User child, Guid userId,
         string external, SigningConsentWitness authority, string requiredScope, CancellationToken ct)
     {
+        var grant = (await LiveClaimedGrantsAsync(executor, userId, authority.Credential.ActorUserId, ct))
+            .FirstOrDefault(row => row.Scopes.Split(',').Contains(requiredScope, StringComparer.Ordinal));
+        return grant is null ? null : new(TenantCustodialKind.Claimed, authority, userId, external, child.AuthNotBefore, null, null,
+            grant.Id, grant.Version, grant.Scopes, grant.ExpiresAt, grant.CommandId!, grant.AdmissionReceiptJson!);
+    }
+
+    /// <summary>Live, unexpired, receipt-backed UserExplicit grants from the person to the tenant, in grant-id order.</summary>
+    private static async Task<IReadOnlyList<ConsentGrant>> LiveClaimedGrantsAsync(ISurrealExecutor executor, Guid userId, Guid tenantId,
+        CancellationToken ct)
+    {
         var grantor = SurrealLink.ToLink("user", userId.ToString("N"))!;
-        var tenant = SurrealLink.ToLink("user", authority.Credential.ActorUserId.ToString("N"))!;
+        var tenant = SurrealLink.ToLink("user", tenantId.ToString("N"))!;
         var grants = await executor.QueryAsync<ConsentGrant>(SurrealQuery<ConsentGrant>.From()
             .Where(row => row.GrantorUserId == grantor && row.TenantId == tenant && row.Origin == UserExplicitOrigin && row.RevokedAt == null)
             .OrderBy(row => row.Id), ct);
         var now = DateTimeOffset.UtcNow;
-        var grant = grants.FirstOrDefault(row => row.Version >= 0 && row.ParticipationRef is null && row.AdmissionReceiptJson is not null
+        return grants.Where(row => row.Version >= 0 && row.ParticipationRef is null && row.AdmissionReceiptJson is not null
             && row.CommandId is { Length: >= 32 } command && SurrealRecordGuid.BareId(row.Id) == command[..32]
-            && (row.ExpiresAt is null || row.ExpiresAt > now) && row.Scopes.Split(',').Contains(requiredScope, StringComparer.Ordinal));
-        return grant is null ? null : new(TenantCustodialKind.Claimed, authority, userId, external, child.AuthNotBefore, null, null,
-            grant.Id, grant.Version, grant.Scopes, grant.ExpiresAt, grant.CommandId!, grant.AdmissionReceiptJson!);
+            && (row.ExpiresAt is null || row.ExpiresAt > now)).ToList();
     }
 
     private static IReadOnlyList<SurrealQuery>? CustodialGuards(TenantCustodialWitness witness)
@@ -147,7 +159,7 @@ public static class TenantCustodialAuthorityFence
         var tenant = SurrealLink.ToLink("user", credential.ActorUserId.ToString("N"))!;
         var child = SurrealLink.ToLink("user", witness.UserId.ToString("N"))!;
         if (witness.MembershipId is not null || witness.MembershipVersion is not null || witness.AuthNotBefore is not { } watermark
-            || !TenantChildCorrelation.IsClaimed(witness.UserId, null, witness.ExternalUserId, credential.ActorUserId)
+            || !TenantChildCorrelation.IsClaimed(witness.UserId, null, witness.ExternalUserId, claimWatermarked: true, credential.ActorUserId)
             || witness.GrantCommandId.Length < 32 || SurrealRecordGuid.BareId(witness.GrantId) != witness.GrantCommandId[..32]) return null;
         return
         [
