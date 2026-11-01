@@ -649,6 +649,20 @@ using database time. Request identity includes actor, tenant and request ID; its
 hash binds all command fields and normalized reason. Replays return the original
 metadata receipt before destination/registration mutable checks, never a secret.
 
+The pre-transaction version/identity check (current vs. command) is read in two
+separate round trips — the prior-audit lookup, then the current-row lookup — so a
+concurrent winner for this exact same command can commit in the gap between them.
+The loser then sees a current row that looks "changed" even though it is its own
+command's result. On that mismatch the store re-reads the audit by request/actor/
+tenant hash one more time before declaring a conflict: if the winner's audit is now
+visible, the loser replays it (never re-discloses or rotates the secret); only a
+mismatch that still has no matching audit is a genuine conflict (now carrying
+`AzoaErrorCodes.Conflict` rather than a bare message). This is the lost-write
+re-read rule from the money-key doctrine — decide by state once admitted, not by
+whichever read happened to run first. See `SurrealWebhookRegistrationTests
+.Managed_create_replays_under_sustained_concurrent_racing`, which loops the
+concurrent pair to make this race reproducible.
+
 Only the winning first commit returns a generated secret. A lost response requires
 an explicitly new rotation command; replay cannot disclose the retained ciphertext.
 The generated secret/ciphertext and mutation are stable within transient database

@@ -41,7 +41,15 @@ public sealed partial class SurrealWebhookRegistrationStore
         if (current is null ? command.ExpectedVersion != 0 || command.ReplaceLegacy : SurrealRecordGuid.Parse(current.Id) != command.RegistrationId
             || current.Version != command.ExpectedVersion || current.SecretRevision == long.MaxValue || current.DestinationRevision == long.MaxValue
             || legacy != command.ReplaceLegacy || (legacy && command.LegacyFingerprint != LegacyFingerprint(current)))
-            return AZOAResult<WebhookRegistrationMutationResult>.Failure("Registration changed or needs explicit legacy replacement.");
+        {
+            // raw: current may have just lost this exact command to a concurrent winner between the
+            // prior-audit read above and this read — re-read by audit id and answer the replay instead
+            // of a false "changed" (money-key doctrine: decide by state once admitted, not by a stale read).
+            prior = await ReadManagementAuditAsync(auditId, ct);
+            return prior is null
+                ? AZOAResult<WebhookRegistrationMutationResult>.FailureWithCode("Registration changed or needs explicit legacy replacement.", AzoaErrorCodes.Conflict)
+                : ReplayManagement(prior, requestHash, credential.ActorUserId, tenantId);
+        }
         if (!legacy && command.LegacyFingerprint is not null)
             return AZOAResult<WebhookRegistrationMutationResult>.Failure("Legacy replacement evidence does not apply to this registration.");
         var disableOnly = current is not null && !command.IsActive && command.Url == current.Url;
@@ -126,7 +134,7 @@ public sealed partial class SurrealWebhookRegistrationStore
             || SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
         {
             prior = await ReadManagementAuditAsync(auditId, ct);
-            return prior is null ? AZOAResult<WebhookRegistrationMutationResult>.Failure("Registration or management authority changed.")
+            return prior is null ? AZOAResult<WebhookRegistrationMutationResult>.FailureWithCode("Registration or management authority changed.", AzoaErrorCodes.Conflict)
                 : ReplayManagement(prior, requestHash, credential.ActorUserId, tenantId);
         }
     }
@@ -143,5 +151,5 @@ public sealed partial class SurrealWebhookRegistrationStore
         => audit.Disposition == "Applied" && audit.RequestHash == hash && audit.ActorId == actor.ToString("N") && audit.TenantId == tenant.ToString("N")
             ? AZOAResult<WebhookRegistrationMutationResult>.Success(new(JsonSerializer.Deserialize<WebhookRegistrationReceipt>(audit.ReceiptJson)
                 ?? throw new InvalidOperationException("Webhook management receipt is unreadable."), null, true))
-            : AZOAResult<WebhookRegistrationMutationResult>.Failure("Request key conflicts with the original registration command.");
+            : AZOAResult<WebhookRegistrationMutationResult>.FailureWithCode("Request key conflicts with the original registration command.", AzoaErrorCodes.Conflict);
 }

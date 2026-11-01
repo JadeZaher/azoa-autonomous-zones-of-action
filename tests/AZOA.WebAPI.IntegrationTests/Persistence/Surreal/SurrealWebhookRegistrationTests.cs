@@ -146,6 +146,29 @@ public sealed class SurrealWebhookRegistrationTests : IAsyncLifetime
         (await _store.MutateAsync(tenant, command with { Url = "https://conflict.example/hook" }, authority)).IsError.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Regression for a timing race: between the loser's own prior-audit read and its
+    /// current-row read, the winner's create can land, so the loser's stale version
+    /// check must not report "changed" for a replay of its own exact command. One
+    /// iteration sees the race rarely; looping makes it reproducible. See
+    /// <c>Providers/Stores/Surreal/AGENTS.md</c> §webhook registration.
+    /// </summary>
+    [Fact]
+    public async Task Managed_create_replays_under_sustained_concurrent_racing()
+    {
+        for (var iteration = 0; iteration < 25; iteration++)
+        {
+            var authority = await SeedAuthorityAsync();
+            var tenant = authority.Credential.ActorUserId;
+            var command = new WebhookRegistrationCommand(Guid.NewGuid(), Guid.NewGuid(), 0,
+                "https://receiver.example/hook", true, false, "Configure the tenant event receiver.");
+            var results = await Task.WhenAll(_store.MutateAsync(tenant, command, authority), _store.MutateAsync(tenant, command, authority));
+            results.Should().OnlyContain(result => !result.IsError, $"iteration {iteration} lost the race instead of replaying");
+            results.Count(result => result.Result!.NewSecret is not null).Should().Be(1, $"iteration {iteration}");
+            results.Count(result => result.Result!.Replayed).Should().Be(1, $"iteration {iteration}");
+        }
+    }
+
     [Fact]
     public async Task Managed_mutation_refuses_cross_tenant_and_revoked_authority_atomically()
     {
