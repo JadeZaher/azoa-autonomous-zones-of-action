@@ -1,3 +1,4 @@
+import { currencyMinorDigits } from "./presentation.js";
 // Runtime allowlist narrowing of node DTOs into browser-safe views, and the account gate. See `src/money/AGENTS.md` §views.
 import type { FiatCheckoutIntent, FiatCheckoutVoidResult, TenantCustodialAccountStatus } from "../api/client.js";
 import type {
@@ -68,6 +69,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Copies only the browser-safe custodial account fields; readiness flags must be literally `true`. */
 export function toCustodialAccountView(account: TenantCustodialAccountStatus | CustodialAccountView): CustodialAccountView {
   return {
+    ownership: account.ownership === "claimed" ? "claimed" : account.ownership === "custodial" ? "custodial" : undefined,
+    consent: account.consent === "granted" ? "granted" : "none",
+    consentScopes: Array.isArray(account.consentScopes) ? account.consentScopes.filter((scope): scope is string => typeof scope === "string") : [],
+    consentExpiresAt: account.consentExpiresAt === null ? null : typeof account.consentExpiresAt === "string" ? account.consentExpiresAt : undefined,
     walletId: account.walletId ?? null,
     walletAddress: account.walletAddress ?? null,
     kycStatus: account.kycStatus,
@@ -142,7 +147,9 @@ export function toCashOutView(view: CashOutView): CashOutView {
 }
 
 export function toBalanceView(balance: BalanceView): BalanceView {
+  const denomination = narrowDenomination(balance.currencyCode, balance.currencyDecimals);
   return {
+    ...denomination,
     availableMinorUnits: balance.availableMinorUnits,
     onHoldMinorUnits: balance.onHoldMinorUnits,
     currencyCode: balance.currencyCode,
@@ -151,7 +158,9 @@ export function toBalanceView(balance: BalanceView): BalanceView {
 }
 
 export function toSellableView(sellable: SellableView): SellableView {
+  const denomination = narrowDenomination(sellable.currencyCode, sellable.currencyDecimals);
   return {
+    ...denomination,
     availableBaseUnits: sellable.availableBaseUnits,
     decimals: sellable.decimals,
     unitName: sellable.unitName,
@@ -161,7 +170,10 @@ export function toSellableView(sellable: SellableView): SellableView {
 }
 
 export function toSaleQuoteView(quote: SaleQuoteView): SaleQuoteView {
+  if (!quote.quoteId?.trim() || !/^[1-9]\d*$/u.test(quote.quantityBaseUnits) || !Number.isSafeInteger(quote.proceedsMinorUnits) || quote.proceedsMinorUnits < 0 || currencyMinorDigits(quote.currencyCode, quote.currencyDecimals) === null) throw new TypeError("Invalid sale quote.");
+  const denomination = narrowDenomination(quote.currencyCode, quote.currencyDecimals);
   return {
+    ...denomination,
     quoteId: quote.quoteId,
     quantityBaseUnits: quote.quantityBaseUnits,
     proceedsMinorUnits: quote.proceedsMinorUnits,
@@ -171,7 +183,9 @@ export function toSaleQuoteView(quote: SaleQuoteView): SaleQuoteView {
 }
 
 export function toSaleView(sale: SaleView): SaleView {
+  const denomination = narrowDenomination(sale.currencyCode, sale.currencyDecimals);
   return {
+    ...denomination,
     id: sale.id,
     status: sale.status,
     statusMessage: sale.statusMessage,
@@ -193,6 +207,10 @@ export function deriveAccountGate(result: MoneyResult<CustodialAccountView>): Ac
     }
   }
   const account = result.value;
+  if (account.ownership === "claimed" && (account.consent !== "granted"
+    || !Array.isArray(account.consentScopes) || !account.consentScopes.includes("kyc:read")
+    || account.consentExpiresAt === undefined
+    || (account.consentExpiresAt !== null && (!Number.isFinite(Date.parse(account.consentExpiresAt)) || Date.parse(account.consentExpiresAt) <= Date.now())))) return "revoked";
   if (account.ready === true) return "ready";
   if (account.kycStatus === "UnderReview") return "review";
   if (!account.identityReady || !account.kycReady) return "unavailable";
@@ -207,4 +225,10 @@ export function findForbiddenViewKeys(value: unknown, path = ""): string[] {
     const here = path ? `${path}.${key}` : key;
     return [...(FORBIDDEN_VIEW_KEYS.includes(key) ? [here] : []), ...findForbiddenViewKeys(child, here)];
   });
+}
+
+function narrowDenomination(symbol: string, decimals: number | undefined): { currencyDecimals?: number } {
+  if (decimals === undefined) return {};
+  if (currencyMinorDigits(symbol, decimals) === null) throw new TypeError("Invalid host denomination.");
+  return { currencyDecimals: decimals };
 }

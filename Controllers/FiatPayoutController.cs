@@ -180,6 +180,18 @@ public sealed class FiatPayoutController : ControllerBase
 
     // ─── authorisation ───
 
+    /// <summary>Voids an absent request permanently, or reveals its original cash-out without cancelling the saga.</summary>
+    [HttpPost("{userId:guid}/requests/{requestKey}/void")]
+    [EnableRateLimiting("financial")]
+    public async Task<ActionResult<AZOAResult<CashOutVoidView>>> Void(Guid userId, string requestKey)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var authorised = await AuthoriseAsync<CashOutVoidView>(userId);
+        if (authorised.Refusal is not null) return authorised.Refusal;
+        var result = await _offRamp.VoidAsync(userId, authorised.TenantId, requestKey, HttpContext.RequestAborted);
+        return result.IsError ? Map(result) : Ok(result);
+    }
+
     /// <summary>
     /// Decides whether this principal may act for <paramref name="subjectUserId"/>, and resolves
     /// the acting tenant when one is involved. A non-null refusal stops the request.
@@ -271,6 +283,7 @@ public sealed class FiatPayoutController : ControllerBase
         // Same situation as the fiat checkout same-key replay: another driver reusing this key. Same
         // 409 as always, now carrying the shared discriminator instead of the generic CONFLICT code.
         FiatConsumerErrors.RequestKeyInUseCode => Conflict(result),
+        "REQUEST_VOIDED" => Conflict(result),
         AzoaErrorCodes.DependencyUnavailable => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
         FiatPayoutErrors.PayoutUnavailableCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),
         FiatPayoutErrors.PayoutBusyCode => StatusCode(StatusCodes.Status503ServiceUnavailable, result),

@@ -89,6 +89,8 @@ public sealed class UserLoginTokenIssuer : IUserLoginTokenIssuer
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
+        if (AuthWatermark.FormatCut(user.AuthNotBefore) is { } cut)
+            claims.Add(new Claim(AzoaClaims.AuthCut, cut));
         StampDappRoleClaims(user, claims);
 
         var token = new JwtSecurityToken(

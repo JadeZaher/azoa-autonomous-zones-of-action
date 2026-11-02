@@ -4,7 +4,32 @@
 
 ## 0.6.0
 
-The breaking change below is why this is a minor bump; everything under "Added (money UI)" is additive.
+The transport requirements and API changes below are included before the first 0.6.0 publication.
+
+### Payment integration fixes (pre-publish, 2026-11-01)
+
+- Host transports require `cashOut.void(requestKey)` and, when sales are supported,
+  `sale.void({ requestKey, quoteId })`, alongside the existing required `checkout.void(requestKey)`.
+  Each returns an authoritative `voided` or a narrowed `revealed` record. Cash-out and sale discard actions
+  no longer forget a request locally; failed, malformed or unavailable void responses retain it.
+- Cash-out and sale requests keep their exact keys and commands across lost replies, timeouts,
+  ambiguous successful responses and later permission/setup refusals. A validated named record can
+  acknowledge an admitted request; generic refusal codes cannot prove the absence of an earlier payment.
+  This supersedes the earlier pre-publish cash-out/sale refusal-release guidance below. Default refusal
+  copy no longer promises that an earlier attempt moved nothing.
+- Strict admission reads preserve unreadable or corrupt storage instead of treating it as empty.
+  Migration guidance now requires matching keys, amounts and named-record/review evidence before old
+  data is removed. Hosts must bind queued callbacks to the active subject and validate that subject at
+  the authenticated backend boundary.
+- Sale quotes, records, balances and saved sale requests support explicit `currencyDecimals` for custom
+  denominations. Formatting preserves safe integer minor units with precision from 0 through 18;
+  invalid symbols or precision fail closed, while ISO defaults remain supported. Reference prices are
+  never treated as actual proceeds.
+- `AzoaApiClient.voidFiatCashOut(userId, requestKey)` and the direct money transport forward the new
+  cash-out void endpoint. The node keeps `Fiat:OffRamp:RequestVoidEnabled=false` until an operator confirms
+  that old unfenced processes have drained; an unavailable void retains the saved request.
+- Member handoff helpers expose request metadata without tenant-visible claim secrets. Browser account
+  views include ownership and consent state, and claimed accounts without current consent remain gated.
 
 ### Added (money UI, SR-05 P0 + P1)
 - `azoa-sdk/money` (framework-free): the `AzoaMoneyTransport` seam a host injects (no `userId` anywhere;

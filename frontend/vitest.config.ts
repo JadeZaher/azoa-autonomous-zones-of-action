@@ -27,12 +27,15 @@ const browserIncompatibleSliceTests = ['src/test/slices/operator-console.slice.t
  */
 const sliceAliases = [
   { find: /^azoa-sdk$/, replacement: fileURLToPath(new URL('../sdk/azoa-wallet/src/index.ts', import.meta.url)) },
+  { find: /^azoa-sdk\/react$/, replacement: fileURLToPath(new URL('../sdk/azoa-wallet/src/react/index.ts', import.meta.url)) },
+  { find: /^azoa-sdk\/money$/, replacement: fileURLToPath(new URL('../sdk/azoa-wallet/src/money/index.ts', import.meta.url)) },
   { find: /^azoa-sdk\/api$/, replacement: fileURLToPath(new URL('../sdk/azoa-wallet/src/api/index.ts', import.meta.url)) },
 ]
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    dedupe: ['react', 'react-dom'],
     // Mirrors the `@/*` path alias in tsconfig.json.
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

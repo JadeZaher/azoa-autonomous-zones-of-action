@@ -1,6 +1,7 @@
+import { discardSale } from "../money/index.js";
 // Host-priced sale: sellable → quote → keyed sell. See `src/react/AGENTS.md` §sale.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MONEY_SCOPES, clearSavedRequest, moneyRefusal, readSavedRequest, sendSale, startSale, toSaleQuoteView, toSellableView } from "../money/index.js";
+import { MONEY_SCOPES, moneyRefusal, readSavedRequest, sendSale, startSale, toSaleQuoteView, toSellableView } from "../money/index.js";
 import type { MoneyRefusal, SaleAttempt, SaleQuoteView, SaleView, SavedRequest, SellableView } from "../money/index.js";
 import { useMoneyContext } from "./context.js";
 import type { MoneyEventProps } from "./context.js";
@@ -25,7 +26,7 @@ export interface SellUnitsState {
   /** Sells the current quote under a key bound to its quote id. */
   sell(): Promise<void>;
   resume(): Promise<void>;
-  discard(): void;
+  discard(): Promise<void>;
 }
 
 export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
@@ -134,13 +135,32 @@ export function useSellUnits(options: SellUnitsOptions = {}): SellUnitsState {
     if (pending) await run(() => sendSale(transport, keyStore, pending));
   }, [run, transport, keyStore, pending]);
 
-  const discard = useCallback(() => {
-    // A request the host holds for review is never swapped for a fresh one from here.
-    if (!pending || pending.needsReview) return;
-    clearSavedRequest(keyStore, MONEY_SCOPES.sale, pending.requestKey);
-    setPending(null);
-    setNotice(messages.pending.discarded);
-  }, [keyStore, pending, messages]);
+  const discard = useCallback(async () => {
+    if (!pending || sending.current === person.current) return;
+    const sentFor = person.current;
+    sending.current = sentFor;
+    setBusy(true);
+    setRefusal(null);
+    try {
+      const decision = await discardSale(transport, keyStore, pending);
+      if (!mounted.current || person.current !== sentFor) return;
+      if (decision.kind === "discarded") {
+        setPending(null);
+        setNotice("That request was cancelled before admission. Nothing can be sent under its key.");
+      } else if (decision.kind === "revealed") {
+        setPending(null);
+        if (decision.view.status.toLowerCase() === "refused") setRefusal(moneyRefusal("definite", decision.view.statusMessage));
+        else setNotice(decision.view.statusMessage);
+      } else if (decision.kind === "superseded") setPending(decision.current);
+      else { setPending(decision.kept); setRefusal(moneyRefusal("unconfirmed")); }
+      await reload();
+    } catch {
+      if (person.current === sentFor) setRefusal(moneyRefusal("unconfirmed"));
+    } finally {
+      if (sending.current === sentFor) sending.current = null;
+      if (person.current === sentFor) setBusy(false);
+    }
+  }, [pending, transport, keyStore, person, mounted, reload]);
 
   return { supported: Boolean(sale), sellable, quote, pending, refusal, notice, busy, reload, requestQuote, sell, resume, discard };
 }

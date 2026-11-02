@@ -1010,6 +1010,10 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenSt
 // Bound from the final configuration; resolved once after Build so a bad Lifetime fails the boot.
 builder.Services.AddSingleton(sp => AZOA.WebAPI.Services.Auth.ClaimInviteOptions.FromConfiguration(
     sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton(sp => AZOA.WebAPI.Services.Auth.MemberHandoffOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddScoped<AZOA.WebAPI.Providers.Stores.Surreal.SurrealMemberHandoffStore>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Auth.MemberHandoffService>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Auth.IOutboundEmailSender, AZOA.WebAPI.Services.Auth.ProtectedStubEmailSender>();
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletOwnershipProofStore,
     AZOA.WebAPI.Providers.Stores.Surreal.SurrealWalletOwnershipProofStore>();
 // Phase 1B federated sign-in: the (tenant_scope, provider, subject) binding and the
@@ -1923,6 +1927,8 @@ var app = builder.Build();
 
 // Tenant:ClaimInvites validation (lifetime ≤ 7 days) must stop the boot, not the first invite.
 var claimInvites = app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.ClaimInviteOptions>();
+app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.MemberHandoffOptions>()
+    .Validate(app.Environment.IsDevelopment() || app.Environment.IsEnvironment("IntegrationTest"));
 
 // Tenant:ClaimInvites:ReturnTokenToTenant boot guard (N1 security review): true hands the raw
 // claim token to the minting TENANT, letting it claim the member's own account — only the

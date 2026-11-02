@@ -148,6 +148,8 @@ public static partial class NodeAdminRoutePermissions
         ["GET api/admin/sagas/dead-letters"] = Read(NodeAdminPermissions.RecoveryOperate),
         ["POST api/admin/sagas/{id}/requeue"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["POST api/admin/sagas/{id}/cancel"] = Recent(NodeAdminPermissions.RecoveryOperate),
+        ["GET api/operator/member-handoff-deliveries"] = Recent(NodeAdminPermissions.RecoveryOperate),
+        ["GET api/operator/member-handoff-deliveries/{requestid}"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/wallet-identities"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["POST api/operator/wallet-identities/clear-conflicting-binding"] = Recent(NodeAdminPermissions.RecoveryOperate),
         ["GET api/operator/tenants/{tenantid}/webhook-events"] = Recent(NodeAdminPermissions.RecoveryOperate),
