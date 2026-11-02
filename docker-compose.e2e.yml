@@ -12,12 +12,14 @@
 # The ":?" forms make a bare `compose up` fail loudly instead of booting a node that would call
 # real vendors. See frontend/e2e/AGENTS.md §stack and §hermetic.
 
-name: azoa-e2e
+name: ${AZOA_E2E_PROJECT:-azoa-e2e}
 
 services:
   surrealdb:
     image: surrealdb/surrealdb:v3.1.4
-    container_name: azoa-e2e-surrealdb
+    container_name: ${AZOA_E2E_PROJECT:-azoa-e2e}-surrealdb
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
     user: "0:0"
     command: [start, --log, warn, --user, root, --pass, root, --bind, 0.0.0.0:8000, rocksdb:///data/db]
     environment:
@@ -35,10 +37,12 @@ services:
   azoa-api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: ${AZOA_E2E_API_DOCKERFILE:-Dockerfile}
       args:
         SOURCE_REVISION: "${SOURCE_REVISION:?run frontend/e2e/scripts/e2e-stack.mjs up (sets the 40-character Git SHA)}"
-    container_name: azoa-e2e-api
+    container_name: ${AZOA_E2E_PROJECT:-azoa-e2e}-api
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -53,7 +57,7 @@ services:
     extra_hosts:
       - "host.docker.internal:${AZOA_E2E_HOST_GATEWAY:-host-gateway}"
       - "host.containers.internal:${AZOA_E2E_HOST_GATEWAY:-host-gateway}"
-      - "webhook-receiver.e2e.azoa.test:198.51.99.10"
+      - "webhook-receiver.e2e.azoa.test:${AZOA_E2E_WEBHOOK_RECEIVER_IP:-198.51.99.10}"
     environment:
       SurrealRuntime__Endpoint: "http://surrealdb:8000"
       SurrealRuntime__Namespace: "azoa"
@@ -97,9 +101,12 @@ services:
       Kyc__ApprovalPolicy__AssuranceLevel: "document-and-liveness"
       Kyc__ApprovalPolicy__TrustedProviderKeys__0: "identomat"
       Kyc__ApprovalPolicy__AllowManualInDevelopment: "false"
-      # Test harness only: the e2e journey stands in for the member's inbox and reads the claim
-      # token from the invite response. Every real host withholds it (Services/Auth/ClaimInviteOptions.cs).
-      Tenant__ClaimInvites__ReturnTokenToTenant: "true"
+      # The isolated hosted journey reads protected delivery as the recent operator.
+      Tenant__ClaimInvites__ReturnTokenToTenant: "false"
+      Tenant__ClaimInvites__Enabled: "true"
+      Tenant__ClaimInvites__StubDeliveryAcknowledged: "true"
+      Tenant__ClaimInvites__HostedBaseUrl: "http://localhost:${AZOA_E2E_FRONTEND_PORT:-3200}"
+      Tenant__ClaimInvites__AllowedReturnOrigins__0: "http://127.0.0.1:${AZOA_E2E_FRONTEND_PORT:-3200}"
       Kyb__ConfigId: "${AZOA_E2E_IDENTOMAT_KYB_CONFIG:?run frontend/e2e/scripts/e2e-stack.mjs prepare}"
       # Must be a public HTTPS URL or business verification reports itself unconfigured; the
       # hosted page is intercepted in the browser, so this address is never visited.
@@ -133,9 +140,9 @@ services:
     ports:
       - "${AZOA_E2E_API_PORT:-5200}:5000"
     volumes:
-      - ./frontend/e2e/.generated/trust:/e2e/trust:ro
+      - ./frontend/e2e/.generated/${AZOA_E2E_GENERATED_SUBDIR:-.}/trust:/e2e/trust:ro
       # The .NET egress probe global setup runs in this container (frontend/e2e/stack/egress-probe).
-      - ./frontend/e2e/.generated/egress-probe:/e2e/probe:ro
+      - ./frontend/e2e/.generated/${AZOA_E2E_GENERATED_SUBDIR:-.}/egress-probe:/e2e/probe:ro
       - e2e_api_data_protection:/app/data/data-protection-keys
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5000/health || exit 1"]
@@ -146,20 +153,22 @@ services:
 
   webhook-receiver:
     image: node:20-alpine
-    container_name: azoa-e2e-webhook-receiver
+    container_name: ${AZOA_E2E_PROJECT:-azoa-e2e}-webhook-receiver
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
     command: ["node", "/receiver/receiver.mjs"]
     # Serves TLS with the per-run vendor certificate (SAN webhook-receiver.e2e.azoa.test), which the
     # API trusts through the per-run CA; the published port is the journeys' control plane only.
     volumes:
       - ./frontend/e2e/support/webhook-receiver:/receiver:ro
       # Only the leaf certificate and key, never the per-run CA key beside them.
-      - ./frontend/e2e/.generated/vendor.pem:/certs/vendor.pem:ro
-      - ./frontend/e2e/.generated/vendor-key.pem:/certs/vendor-key.pem:ro
+      - ./frontend/e2e/.generated/${AZOA_E2E_GENERATED_SUBDIR:-.}/vendor.pem:/certs/vendor.pem:ro
+      - ./frontend/e2e/.generated/${AZOA_E2E_GENERATED_SUBDIR:-.}/vendor-key.pem:/certs/vendor-key.pem:ro
     networks:
       # default: carries only the published loopback control-plane port.
       default: {}
       e2e_webhooks:
-        ipv4_address: 198.51.99.10
+        ipv4_address: ${AZOA_E2E_WEBHOOK_RECEIVER_IP:-198.51.99.10}
     ports:
       - "127.0.0.1:${AZOA_E2E_WEBHOOK_RECEIVER_PORT:-9445}:8443"
 
@@ -167,7 +176,9 @@ services:
     build:
       context: .
       dockerfile: frontend/e2e/stack/frontend.Dockerfile
-    container_name: azoa-e2e-frontend
+    container_name: ${AZOA_E2E_PROJECT:-azoa-e2e}-frontend
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
     depends_on:
       azoa-api:
         condition: service_healthy
@@ -181,15 +192,23 @@ services:
       - "${AZOA_E2E_FRONTEND_PORT:-3200}:3000"
 
 networks:
-  default: {}
+  default:
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
   # Public-range on purpose (the SSRF guard refuses private and TEST-NET ranges); `internal` gives the
   # bridge no outbound route, so a delivery to 198.51.99.10 can only reach the receiver (RV-L1-07).
   e2e_webhooks:
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
     internal: true
     ipam:
       config:
-        - subnet: 198.51.99.0/24
+        - subnet: ${AZOA_E2E_WEBHOOK_SUBNET:-198.51.99.0/24}
 
 volumes:
   e2e_surrealdb_data:
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
   e2e_api_data_protection:
+    labels:
+      com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"

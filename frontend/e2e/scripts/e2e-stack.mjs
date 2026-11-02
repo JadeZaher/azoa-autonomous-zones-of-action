@@ -3,17 +3,22 @@
 // Usage: node e2e/scripts/e2e-stack.mjs <prepare|up|logs|down> [--rotate] [--wipe]
 // See frontend/e2e/AGENTS.md §stack.
 import { spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-const projectName = 'azoa-e2e'
+const projectName = process.env.AZOA_E2E_PROJECT ?? 'azoa-e2e'
+if (!/^azoa-(?:payment-)?e2e(?:-[a-z0-9][a-z0-9-]{0,39})?$/.test(projectName)) throw new Error('Use a bounded AZOA E2E project name.')
 const composeFile = 'docker-compose.e2e.yml'
 const e2eRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = path.resolve(e2eRoot, '..', '..')
-const generated = path.join(e2eRoot, '.generated')
+const generatedSubdir = projectName === 'azoa-e2e' ? '.' : projectName
+const generated = path.join(e2eRoot, '.generated', generatedSubdir)
+const ownershipFile = path.join(generated, 'owner-id')
+const apiDockerfile = path.join(generated, 'api.Dockerfile')
+let ownerId = ''
 const trustDirectory = path.join(generated, 'trust')
 const environmentFile = path.join(generated, 'e2e.env')
 const probeSource = path.join(e2eRoot, 'stack', 'egress-probe')
@@ -35,6 +40,74 @@ function run(executable, args, options = {}) {
   if (result.error) fail(`${executable} could not start: ${result.error.message}`)
   if (result.status !== 0) fail(`${executable} ${args.join(' ')} exited with ${result.status}`)
   return result
+}
+
+/** Refuses to adopt or remove any resource outside this generated run's ownership. */
+function establishOwnership() {
+  const engine = containerEngine()
+  const expected = existsSync(ownershipFile) ? readFileSync(ownershipFile, 'utf8').trim() : null
+  if (expected !== null && !/^[a-f0-9]{32}$/.test(expected)) fail('The E2E ownership marker is invalid.')
+  const resources = [
+    ...['surrealdb', 'api', 'frontend', 'webhook-receiver'].map(service => ['container', `${projectName}-${service}`]),
+    ...['e2e_surrealdb_data', 'e2e_api_data_protection'].map(volume => ['volume', `${projectName}_${volume}`]),
+    ...['default', 'e2e_webhooks'].map(network => ['network', `${projectName}_${network}`]),
+  ]
+  for (const [kind, command, format] of [
+    ['container', ['ps', '-a'], '{{.Names}}'], ['volume', ['volume', 'ls'], '{{.Name}}'], ['network', ['network', 'ls'], '{{.Name}}'],
+  ]) {
+    for (const label of ['com.docker.compose.project', 'io.podman.compose.project']) {
+      const result = spawnSync(engine, [...command, '--filter', `label=${label}=${projectName}`, '--format', format], {
+        encoding: 'utf8', windowsHide: true, timeout: 15_000,
+      })
+      if (result.error || result.status !== 0) fail(`Cannot inventory ${kind} ownership; no resource was changed.`)
+      for (const name of result.stdout.trim().split(/\r?\n/).filter(Boolean))
+        if (!resources.some(([type, existing]) => type === kind && existing === name)) resources.push([kind, name])
+    }
+  }
+  for (const [kind, name] of resources) {
+    const result = spawnSync(engine, [kind, 'inspect', name], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
+    if (result.error) fail(`Cannot inspect ${kind} ${name}.`)
+    if (result.status !== 0) {
+      if (/no (?:such )?(?:container|volume|network)|not found|does not exist/i.test(result.stderr ?? '')) continue
+      fail(`Cannot establish ownership of ${kind} ${name}; no resource was changed.`)
+    }
+    const value = JSON.parse(result.stdout)[0]
+    const labels = value.Config?.Labels ?? value.Labels ?? value.labels ?? {}
+    if (!expected || labels['com.azoa.e2e.owner'] !== expected)
+      fail(`Refusing unknown ${kind} ${name}; no resource was changed.`)
+  }
+  ownerId = expected ?? randomBytes(16).toString('hex')
+  if (!expected) writeFileSync(ownershipFile, ownerId + '\n')
+}
+
+function resetGeneratedDirectory(target) {
+  const relative = path.relative(generated, target)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) fail('Refusing a generated-directory reset outside this run.')
+  rmSync(target, { recursive: true, force: true })
+  mkdirSync(target, { recursive: true })
+}
+
+/** Derives the real API build with exactly one test-only restore property. */
+function ensureApiDockerfile() {
+  const source = readFileSync(path.join(repositoryRoot, 'Dockerfile'))
+  const anchor = Buffer.from('RUN dotnet restore AZOA.WebAPI.csproj')
+  const offsets = []
+  for (let start = source.indexOf(anchor); start >= 0; start = source.indexOf(anchor, start + 1)) {
+    const end = start + anchor.length
+    if ((start === 0 || source[start - 1] === 10) && (end === source.length || source[end] === 10 || source[end] === 13)) offsets.push(end)
+  }
+  if (offsets.length !== 1) fail('API Dockerfile restore anchor drifted; refusing an unverified local build.')
+  const offset = offsets[0]
+  const flag = Buffer.from(' -p:NuGetAudit=false')
+  const derived = Buffer.concat([source.subarray(0, offset), flag, source.subarray(offset)])
+  if (!Buffer.concat([derived.subarray(0, offset), derived.subarray(offset + flag.length)]).equals(source))
+    fail('Local API Dockerfile changed bytes beyond the approved restore property.')
+  writeFileSync(apiDockerfile, derived)
+  writeFileSync(path.join(generated, 'api-Dockerfile-proof.json'), JSON.stringify({
+    sourceSha256: createHash('sha256').update(source).digest('hex'),
+    generatedSha256: createHash('sha256').update(derived).digest('hex'),
+    insertedBytes: flag.length, exactRestoreMatches: offsets.length, inverseByteEquality: true,
+  }, null, 2) + '\n')
 }
 
 function findOpenssl() {
@@ -77,8 +150,7 @@ function ensureCertificates() {
   run(openssl, ['x509', '-req', '-in', 'vendor.csr', '-CA', 'ca.pem', '-CAkey', 'ca-key.pem', '-CAcreateserial',
     '-days', String(certificateLifetimeDays), '-out', 'vendor.pem', '-extfile', 'vendor.ext'], options)
 
-  rmSync(trustDirectory, { recursive: true, force: true })
-  mkdirSync(trustDirectory, { recursive: true })
+  resetGeneratedDirectory(trustDirectory)
   const subjectHash = run(openssl, ['x509', '-hash', '-noout', '-in', 'ca.pem'], { ...options, stdio: 'pipe', encoding: 'utf8' })
     .stdout.trim()
   copyFileSync(path.join(generated, 'ca.pem'), path.join(trustDirectory, 'ca.pem'))
@@ -139,11 +211,51 @@ function compose(args, environment, options = {}) {
   })
 }
 
+/** Verifies the provider's resolved build inputs without emitting its secret-bearing config. */
+function verifyResolvedBuilds(environment) {
+  const { executable, preArgs } = composeCommand()
+  const result = spawnSync(executable, [...preArgs, '-p', projectName, '-f', composeFile, 'config', '--format', 'json'], {
+    cwd: repositoryRoot, env: environment, encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024,
+  })
+  if (result.error || result.status !== 0)
+    fail('Compose must support resolved JSON configuration; no build was started. Use a compatible Compose v2 provider.')
+  let resolved
+  try { resolved = JSON.parse(result.stdout) } catch { fail('Compose returned invalid resolved JSON; no build was started.') }
+  if (!resolved || resolved.name !== projectName || !resolved.services || Object.keys(resolved.services).length !== 4)
+    fail('Resolved compose project or service inventory differs from the isolated stack; no build was started.')
+  if (!/^[a-f0-9]{40}$/.test(environment.SOURCE_REVISION))
+    fail('The E2E source revision must be an exact Git SHA; no build was started.')
+  const proof = []
+  for (const [name, expectedDockerfile] of [
+    ['azoa-api', apiDockerfile], ['azoa-frontend', path.join(e2eRoot, 'stack', 'frontend.Dockerfile')],
+  ]) {
+    const service = resolved.services[name]
+    const build = service?.build
+    if (!build || build.dockerfile_inline !== undefined || typeof build.context !== 'string' || typeof build.dockerfile !== 'string'
+      || path.relative(repositoryRoot, path.resolve(repositoryRoot, build.context)) !== ''
+      || path.relative(expectedDockerfile, path.resolve(repositoryRoot, build.context, build.dockerfile)) !== '')
+      fail('A resolved E2E Dockerfile or build context differs from the reviewed path; no build was started.')
+    if (name === 'azoa-api' && build.args?.SOURCE_REVISION !== environment.SOURCE_REVISION)
+      fail('The resolved API source revision differs from Git HEAD; no build was started.')
+    proof.push({ service: name, dockerfile: path.relative(repositoryRoot, expectedDockerfile).split(path.sep).join('/') })
+  }
+  for (const [name, suffix] of [['surrealdb', 'surrealdb'], ['azoa-api', 'api'], ['azoa-frontend', 'frontend'], ['webhook-receiver', 'webhook-receiver']]) {
+    const service = resolved.services[name]
+    if (service?.container_name !== `${projectName}-${suffix}` || service.labels?.['com.azoa.e2e.owner'] !== ownerId)
+      fail('Resolved E2E container ownership differs from this run; no build was started.')
+  }
+  writeFileSync(path.join(generated, 'resolved-build-proof.json'), JSON.stringify({
+    project: projectName, sourceRevision: environment.SOURCE_REVISION, builds: proof,
+  }, null, 2) + '\n')
+  console.log('[e2e-stack] resolved project, Dockerfiles, ownership and source revision verified without exposing configuration.')
+}
+
 /** Volumes are only ever removed for THIS project (its file declares `name: azoa-e2e`). */
 function removeStack(environment, withVolumes) {
+  establishOwnership()
   if (withVolumes) {
     const declared = /^name:\s*(\S+)/m.exec(readFileSync(path.join(repositoryRoot, composeFile), 'utf8'))?.[1]
-    if (declared !== projectName) fail(`Refusing to remove volumes: ${composeFile} declares project '${declared}'.`)
+    if (declared !== '${AZOA_E2E_PROJECT:-azoa-e2e}') fail('Refusing to remove volumes for an unexpected compose project declaration.')
   }
   compose(['down', '--remove-orphans', ...(withVolumes ? ['-v'] : [])], environment)
 }
@@ -160,8 +272,7 @@ function ensureEgressProbe() {
     statSync(path.join(probeSource, 'AzoaEgressProbe.csproj')).mtimeMs,
   )
   if (existsSync(dll) && statSync(dll).mtimeMs > newestSource) return
-  rmSync(probeOutput, { recursive: true, force: true })
-  mkdirSync(probeOutput, { recursive: true })
+  resetGeneratedDirectory(probeOutput)
   const user = typeof process.getuid === 'function' ? ['--user', `${process.getuid()}:${process.getgid()}`] : []
   run(containerEngine(), [
     'run', '--rm', ...user,
@@ -170,7 +281,7 @@ function ensureEgressProbe() {
     '--mount', `type=bind,source=${probeOutput},target=/out`,
     sdkImage, 'sh', '-c',
     'mkdir -p /tmp/build && cp /src/AzoaEgressProbe.csproj /tmp/build/ && cp /src/EgressProbe.csx /tmp/build/Program.cs '
-      + '&& dotnet publish /tmp/build/AzoaEgressProbe.csproj -c Release -o /out --nologo',
+      + '&& dotnet publish /tmp/build/AzoaEgressProbe.csproj -c Release -o /out --nologo -p:NuGetAudit=false',
   ])
 }
 
@@ -194,27 +305,39 @@ async function waitFor(url, label) {
  * stack uses to coexist with another frontend.
  */
 function stackEnvironment() {
-  const revision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).stdout.trim()
+  const git = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' })
+  const revision = git.stdout?.trim()
+  if (git.error || git.status !== 0 || !/^[a-f0-9]{40}$/.test(revision ?? ''))
+    fail('Cannot establish the exact Git HEAD for the E2E build.')
   const settings = { ...readEnvironmentFile(), ...process.env }
   return {
-    SOURCE_REVISION: revision,
     AZOA_E2E_FRONTEND_PORT: '3200',
     AZOA_E2E_API_PORT: '5200',
     ...settings,
+    SOURCE_REVISION: revision,
+    AZOA_E2E_PROJECT: projectName,
+    AZOA_E2E_GENERATED_SUBDIR: generatedSubdir,
+    AZOA_E2E_OWNER_ID: ownerId,
+    AZOA_E2E_API_DOCKERFILE: path.relative(repositoryRoot, apiDockerfile).split(path.sep).join('/'),
     AZOA_E2E_IDENTOMAT_UPSTREAM_PORT: settings.AZOA_E2E_IDENTOMAT_UPSTREAM_PORT ?? settings.AZOA_E2E_IDENTOMAT_PORT ?? '9443',
     AZOA_E2E_STRIPE_UPSTREAM_PORT: settings.AZOA_E2E_STRIPE_UPSTREAM_PORT ?? settings.AZOA_E2E_STRIPE_PORT ?? '9444',
   }
 }
 
 mkdirSync(generated, { recursive: true })
+establishOwnership()
 
 if (command === 'prepare' || command === 'up') {
+  ensureApiDockerfile()
   ensureCertificates()
-  if (ensureSecrets()) {
+  const secretsChanged = ensureSecrets()
+  const environment = stackEnvironment()
+  verifyResolvedBuilds(environment)
+  if (secretsChanged) {
     // The operator credential is seeded once per volume: a kept volume would keep the OLD password
     // and every operator login would answer 401. New secrets therefore always start a fresh volume.
     console.log(`[e2e-stack] new secrets written; removing any existing ${projectName} stack and its volumes so the operator is re-seeded.`)
-    removeStack(stackEnvironment(), true)
+    removeStack(environment, true)
   }
   ensureEgressProbe()
   console.log(`[e2e-stack] certificates, secrets and egress probe ready in ${generated}`)

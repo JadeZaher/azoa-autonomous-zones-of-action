@@ -63,7 +63,12 @@ export function MemberHandoff({ claim }: { claim: boolean }) {
       if (!signedIn) signedIn = await recoverClaimLogin(memberId, password)
       if (!signedIn) { setError('The account could not be confirmed. Retry the same password, or request a fresh invitation.'); return }
       setPassword('')
-      window.location.assign('/consent#requestId=' + encodeURIComponent(invitation.requestId))
+      if (claim) window.location.assign('/consent#requestId=' + encodeURIComponent(invitation.requestId))
+      else {
+        const result = await azoa.api.readMemberHandoff(invitation.requestId)
+        if (result.ok) setDescriptor(result.value)
+        else setError('This request could not be read. Retry using your invitation.')
+      }
     } catch { setError('The answer did not arrive. Retry the same password to sign in.'); }
     finally { setBusy(false) }
   }
