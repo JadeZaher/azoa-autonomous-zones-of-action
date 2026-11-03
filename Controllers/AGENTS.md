@@ -411,3 +411,19 @@ Every route carrying `Operator`, `NodeGovern`, `NodeOperatorSession`, `RecentNod
 admins at runtime). Operator controllers resolve the caller with `HttpContext.TryGetOperatorActor(out var actor)` and
 pass `actor.SubjectUserId` (always the reserved operator subject) plus `actor` to audit writers — never parse `sub` on an
 operator route. Design: `Services/NodeAdmin/AGENTS.md` §operator-actor, §route-permission-map, §reserved-id-inventory.
+
+## Member handoff routes
+
+Tenant-scoped `/api/tenant/custodial-accounts/{externalSubject}/handoff` issues immutable
+requests; `{id}/resend` compares terms and `{id}` reads metadata. No tenant route returns the
+raw member invitation. `/api/user/handoffs/preview` accepts a fragment token in a POST body;
+read/approve/decline require the target's first-party login. Request bodies are bounded and
+all routes rate limited. `/api/operator/member-handoff-deliveries` and its detail use
+RecentNodeOperatorSession plus RecoveryOperate permission; responses are no-store.
+
+## Cash-out void
+
+The payout request void route uses the same subject/tenant/consent check as cash-out,
+returns no-store data, and never cancels an admitted payout. The default-off
+`Fiat:OffRamp:RequestVoidEnabled` proof switch must remain off through mixed-version
+rollout; normal payment enablement does not imply absence-proof readiness.

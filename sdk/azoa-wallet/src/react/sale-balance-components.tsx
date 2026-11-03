@@ -47,9 +47,10 @@ export function SellUnitsForm(props: SellUnitsFormProps) {
           kind="sale"
           pending={sale.pending}
           currencyCode={sellable?.currencyCode}
+          currencyDecimals={sellable?.currencyDecimals}
           busy={sale.busy}
           onResume={() => void sale.resume()}
-          onDiscard={sale.discard}
+          onDiscard={() => void sale.discard()}
           slots={props.slots}
         />
       ) : (
@@ -70,7 +71,7 @@ export function SellUnitsForm(props: SellUnitsFormProps) {
           <p>
             {messages.sale.quoteSummary(
               `${formatBaseUnits(sale.quote.quantityBaseUnits, sellable.decimals)} ${sellable.unitName}`,
-              displayAmount(sale.quote.proceedsMinorUnits, sale.quote.currencyCode, messages),
+              displayAmount(sale.quote.proceedsMinorUnits, sale.quote.currencyCode, messages, sale.quote.currencyDecimals),
             )}
           </p>
           {sale.quote.expiresAt ? <p>{messages.sale.quoteExpires(formatDateTime(sale.quote.expiresAt))}</p> : null}
@@ -92,9 +93,9 @@ export function BalanceSummary(props: MoneyComponentProps) {
       {balance ? (
         <dl>
           <dt>{messages.balance.availableLabel}</dt>
-          <dd>{displayAmount(balance.availableMinorUnits, balance.currencyCode, messages)}</dd>
+          <dd>{displayAmount(balance.availableMinorUnits, balance.currencyCode, messages, balance.currencyDecimals)}</dd>
           <dt>{messages.balance.onHoldLabel}</dt>
-          <dd>{displayAmount(balance.onHoldMinorUnits, balance.currencyCode, messages)}</dd>
+          <dd>{displayAmount(balance.onHoldMinorUnits, balance.currencyCode, messages, balance.currencyDecimals)}</dd>
         </dl>
       ) : null}
       {balance?.availableFrom && balance.onHoldMinorUnits > 0 ? <p>{messages.balance.availableFrom(formatDateTime(balance.availableFrom))}</p> : null}

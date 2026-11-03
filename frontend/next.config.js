@@ -10,6 +10,10 @@ const nextConfig = {
     // import fail to resolve at build time (tsc and vitest resolve it fine, so
     // the failure only appears in `next build`).
     root: path.join(__dirname, '..'),
+    resolveAlias: {
+      react: { browser: './frontend/node_modules/react' },
+      'react-dom': { browser: './frontend/node_modules/react-dom' },
+    },
   },
   // NOTE: no NEXT_PUBLIC_API_URL here on purpose — that bakes the API URL at
   // `next build` time, which is the bug this file fixes. The API URL is

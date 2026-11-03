@@ -1,3 +1,4 @@
+import { cashOutVoidViewFrom } from "./intake.js";
 // First-party `AzoaMoneyTransport` over an `AzoaApiClient` holding the person's own session. See `src/money/AGENTS.md` §direct-transport.
 import type { AzoaApiClient, TenantKycStatus, WalletResult } from "../api/client.js";
 import type { KycStatus } from "../api/identity.js";
@@ -96,6 +97,7 @@ export function createDirectMoneyTransport(client: AzoaApiClient, userId: string
       void: requestKey => call(() => client.voidFiatCheckoutRequest(userId, requestKey), toCheckoutVoidView),
     },
     cashOut: {
+      void: requestKey => call(() => client.voidFiatCashOut(userId, requestKey), cashOutVoidViewFrom),
       availability: () => call(() => client.getCashOutAvailability(userId), toCashOutQuoteView),
       destination: () => call(() => client.getPayoutAccountStatus(userId), toPayoutDestinationView),
       beginDestinationSetup: () => call(() => client.beginPayoutAccountSetup(userId), toPayoutDestinationView),

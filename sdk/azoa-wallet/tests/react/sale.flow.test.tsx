@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultMoneyMessages } from "../../src/money/index.js";
@@ -78,5 +78,25 @@ describe("<SellUnitsForm>", () => {
       </AzoaMoneyProvider>,
     );
     expect(container.innerHTML).toBe("");
+  });
+});
+
+
+describe("holding transport changes", () => {
+  it("drops a late price from the previous holding", async () => {
+    const bff = createTenantBff({ ada: {} });
+    let finishQuote: ((value: unknown) => void) | undefined;
+    const previous = { ...bff.transport, sale: { ...bff.transport.sale!, quote: () => new Promise(resolve => { finishQuote = resolve as (value: unknown) => void; }) } } as typeof bff.transport;
+    const next = { ...bff.transport, sale: { ...bff.transport.sale!, sellable: async () => ({ ok: true as const, value: { availableBaseUnits: "5", decimals: 0, unitName: "SECOND", currencyCode: "USD", statusMessage: "Second holding." } }) } };
+    const view = render(<AzoaMoneyProvider transport={previous} subject="ada"><SellUnitsForm /></AzoaMoneyProvider>);
+    const user = userEvent.setup();
+    await screen.findByText(/Available to sell/);
+    await user.type(screen.getByLabelText(copy.sale.quantityLabel), "1");
+    await user.click(screen.getByRole("button", { name: copy.sale.getQuote }));
+    await waitFor(() => expect(finishQuote).toBeTypeOf("function"));
+    view.rerender(<AzoaMoneyProvider transport={next} subject="ada"><SellUnitsForm /></AzoaMoneyProvider>);
+    await screen.findByText(/5 SECOND/);
+    await act(async () => { finishQuote!({ ok: true, value: { quoteId: "old-price", quantityBaseUnits: "1000000", proceedsMinorUnits: 100, currencyCode: "USD", expiresAt: null } }); });
+    expect(screen.queryByRole("button", { name: copy.sale.submit })).toBeNull();
   });
 });

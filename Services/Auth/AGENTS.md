@@ -41,3 +41,30 @@ Three rules close that (P5-19, track N1 of claim-and-consent):
 Single-use and target binding are unchanged: `ClaimAsync` requires a live, unconsumed invite for the
 exact `targetUserId`, and the claim transaction in `SurrealUserStore` consumes it (`consumed_at = NONE`
 CAS) together with the ownership sever and consent revocations.
+
+## Member handoff
+
+Tenant handoffs default OFF (`Tenant:ClaimInvites:Enabled`). Enable only with an HTTPS hosted
+origin and explicit allowed return origins. Returns are exactly `/portfolio/withdraw`, no
+query, fragment, userinfo or arbitrary destination. Staging/Production also require explicit
+`StubDeliveryAcknowledged`: no email provider is contacted. `IOutboundEmailSender` prepares
+a DataProtection-protected message for the transactional delivery record. Only recent node
+operators (RecoveryOperate) can read/decrypt it. No raw token appears in tenant responses,
+application logs or database statement parameters. The delivery email is tenant-asserted;
+identity re-check before claim remains the accepted P5-21 residual risk.
+
+The descriptor fixes the correlated target, tenant, five scopes, 12-calendar-month grant
+expiry, return and consent command ID. Resend compares immutable terms and recipient digest,
+retires all live invitations under the same user-write fence, and replaces the encrypted
+message. A concurrent claim either wins first or consumes the replacement; it cannot keep
+an earlier invitation live. Mint/resend use the financial rate limiter. Resend has a one-minute
+per-descriptor cooldown and retains the original expiry; an expired request needs a new one.
+
+Claim never grants consent. Approval CASes pending to approving (decline CASes pending to
+declined); after approving, retry only the same command or withdraw it through the durable consent lifecycle. The grant transaction re-locks the
+exact descriptor/version/status/expiry and the claimed user's current auth watermark. The
+shared login issuer signs `auth_cut` with the exact persisted cut; approval compares that proof
+to the current credential watermark, without the generic JWT whole-second grace. An older
+login from the same wall-clock second cannot approve. Response loss retries the same request ID,
+which replays the original immutable grant receipt. Declining an ambiguous approval first writes a command tombstone or revokes the original admitted grant; it never clears local state on a failed read. Already-claimed members receive the consent
+only flow. A declined/expired request needs a new tenant request; it never grants implicitly.

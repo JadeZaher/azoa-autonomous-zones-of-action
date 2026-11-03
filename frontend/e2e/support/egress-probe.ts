@@ -1,9 +1,6 @@
 import { execFile, type ExecFileException } from 'node:child_process'
 import type { E2eEnvironment } from './environment'
 
-/** Fixed `container_name` of the API service in docker-compose.e2e.yml. */
-const apiContainer = 'azoa-e2e-api'
-
 /** Mounted from `.generated/egress-probe/` (built by `scripts/e2e-stack.mjs` from `stack/egress-probe/`). */
 const probeAssembly = '/e2e/probe/AzoaEgressProbe.dll'
 
@@ -25,7 +22,7 @@ function executeContainer(
   })
 }
 
-async function containerRuntime(): Promise<string> {
+async function containerRuntime(apiContainer: string): Promise<string> {
   const configured = process.env.AZOA_E2E_CONTAINER_RUNTIME
   if (configured) return configured
   for (const candidate of ['docker', 'podman']) {
@@ -37,10 +34,11 @@ async function containerRuntime(): Promise<string> {
 
 /** Runs the .NET positive and negative trust controls; see `e2e/AGENTS.md` §hermetic. */
 export async function proveEgressIsHermetic(environment: E2eEnvironment): Promise<void> {
+  const apiContainer = `${environment.projectName}-api`
   const upstreamPort = process.env.AZOA_E2E_IDENTOMAT_UPSTREAM_PORT ?? environment.identomatPort
   const fakeVendor = `https://${environment.vendorHost}:${upstreamPort}/__e2e/sessions`
   const result = await executeContainer(
-    await containerRuntime(),
+    await containerRuntime(apiContainer),
     ['exec', apiContainer, 'dotnet', probeAssembly, `+${fakeVendor}`, ...realVendorOrigins.map((origin) => `-${origin}`)],
     120_000,
   )

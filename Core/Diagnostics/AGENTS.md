@@ -77,3 +77,10 @@ and metrics. It does not replace `ILogger` exception records. Configure the OTLP
 endpoint and protocol under `OpenTelemetry:Otlp`; leave the endpoint unset when
 no collector is available. Export exception type and error status, but never an
 exception message, request body, query text, or parameter value as a span tag.
+
+## Member delivery redaction
+
+Default redaction includes delivery, email and token keys. The handoff service encrypts
+message/link bytes before any store call; database exception parameters therefore never
+carry the raw invitation. Operator detail endpoints return no-store content only after
+recent-operator authorization; do not log those response bodies.

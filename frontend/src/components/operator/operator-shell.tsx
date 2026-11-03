@@ -46,6 +46,7 @@ const OPERATOR_LINKS = [
     { href: "/operator/wallet-identities", label: "Wallet identities", icon: Fingerprint },
     { href: "/operator/sagas", label: "Sagas", icon: GitMerge },
     { href: "/operator/fees", label: "Fees", icon: Percent },
+    { href: "/operator/member-deliveries", label: "Member deliveries", icon: ClipboardCheck },
     { href: "/operator/audit", label: "Audit", icon: History },
 ];
 

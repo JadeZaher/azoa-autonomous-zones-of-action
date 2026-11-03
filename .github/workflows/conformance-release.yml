@@ -11,14 +11,6 @@ on:
         description: Successful CI run that produced the conformance-evidence artifact.
         required: true
         type: string
-      surreal_mode:
-        description: Preserve an already-pinned healthy database or explicitly promote the reviewed digest.
-        required: true
-        default: already-healthy
-        type: choice
-        options:
-          - already-healthy
-          - redeploy
 
 concurrency:
   group: conformance-promotion
@@ -243,6 +235,9 @@ jobs:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 1
 
+      - name: Load the verified source storage contract
+        run: python3 deploy/railway/surreal_contract.py --github-env >> "$GITHUB_ENV"
+
       - name: Install pinned Railway CLI
         run: npm install --global @railway/cli@5.27.0
 
@@ -257,10 +252,8 @@ jobs:
           FRONTEND_SERVICE_ID: ${{ vars.RAILWAY_FRONTEND_SERVICE_ID }}
           API_HEALTH_URL: ${{ vars.RAILWAY_API_HEALTH_URL }}
           FRONTEND_HEALTH_URL: ${{ vars.RAILWAY_FRONTEND_HEALTH_URL }}
-          SURREAL_MODE: ${{ inputs.surreal_mode }}
           API_IMAGE: ${{ needs.promote.outputs.api_image }}
           FRONTEND_IMAGE: ${{ needs.promote.outputs.frontend_image }}
-          SURREAL_IMAGE: docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60
         run: |
           set -euo pipefail
           python3 deploy/railway/serial-rollout.py \
@@ -270,10 +263,10 @@ jobs:
             --schema-service-id "$SCHEMA_SERVICE_ID" \
             --api-service-id "$API_SERVICE_ID" \
             --frontend-service-id "$FRONTEND_SERVICE_ID" \
-            --surreal-image "$SURREAL_IMAGE" \
+            --surreal-image "$SURREALDB_IMAGE" \
             --api-image "$API_IMAGE" \
             --frontend-image "$FRONTEND_IMAGE" \
-            --surreal-mode "$SURREAL_MODE" \
+            --surreal-mode already-healthy \
             --api-health-url "$API_HEALTH_URL" \
             --frontend-health-url "$FRONTEND_HEALTH_URL" \
             --confirm "PROMOTE $PROJECT_ID/$ENVIRONMENT_ID"

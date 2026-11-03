@@ -165,3 +165,23 @@ describe("toCheckoutVoidView: only the node's literal outcomes count, and a reve
     else expect(narrow()).toEqual(expected);
   });
 });
+
+
+describe("explicit host denominations", () => {
+  it("formats fixed minor units exactly without treating ARDA as an ISO currency", () => {
+    expect(formatMinorUnits(1234567, "ARDA", 2)).toBe("12,345.67 ARDA");
+    expect(formatMinorUnits(9007199254740991, "ARDA", 18)).toBe("0.009007199254740991 ARDA");
+    expect(formatMinorUnits(9007199254740991, "ARDA", 0)).toBe("9,007,199,254,740,991 ARDA");
+    expect(formatMinorUnits(12345, "USD")).toBe("123.45 USD");
+    expect(formatMinorUnits(12345, "ARDA")).toBeNull();
+  });
+  it.each([-1, 19, 1.5, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid precision %s", precision => {
+    expect(formatMinorUnits(12345, "ARDA", precision)).toBeNull();
+  });
+  it.each(["", "LONG_DENOMINATION_SYMBOL", "ARDA<script>", "USD/ARDA"]) ("rejects unbounded or unsafe symbol %s", symbol => {
+    expect(formatMinorUnits(12345, symbol, 2)).toBeNull();
+  });
+  it("does not round unsafe integer proceeds", () => {
+    expect(formatMinorUnits(9007199254740992, "ARDA", 2)).toBeNull();
+  });
+});

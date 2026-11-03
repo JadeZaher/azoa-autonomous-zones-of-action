@@ -768,6 +768,7 @@ public partial class OffRampTests
 
         /// <summary>Built on first use: the object initialiser runs AFTER the constructor.</summary>
         public OffRampService Service => _service ??= BuildService();
+        public bool RequestVoidEnabled { get; set; }
 
         public Task<AZOAResult<CashOutView>> RequestAsync(
             long amountMinorUnits, string requestKey = "cash-out-1", Guid? tenantId = null)
@@ -908,6 +909,7 @@ public partial class OffRampTests
             var options = new OffRampOptions
             {
                 Enabled = true,
+                RequestVoidEnabled = RequestVoidEnabled,
                 OnboardingReturnUrl = "https://app.example/payouts/done",
                 OnboardingRefreshUrl = "https://app.example/payouts/retry",
             };
@@ -1120,6 +1122,8 @@ public partial class OffRampTests
         public Task<AZOAResult<FiatPayoutClaim>> ClaimAsync(
             FiatPayout candidate, CancellationToken ct = default)
         {
+            if (_voids.TryGetValue(candidate.Id, out var fence))
+                return Task.FromResult(AZOAResult<FiatPayoutClaim>.FailureWithCode("Voided.", fence.TenantId == candidate.TenantId ? "REQUEST_VOIDED" : "REQUEST_KEY_IN_USE"));
             if (_rows.TryGetValue(candidate.Id, out var existing))
                 return Task.FromResult(AZOAResult<FiatPayoutClaim>.Success(
                     new FiatPayoutClaim(Clone(existing), Created: false)));
@@ -1127,6 +1131,19 @@ public partial class OffRampTests
             _rows[candidate.Id] = Clone(candidate);
             return Task.FromResult(AZOAResult<FiatPayoutClaim>.Success(
                 new FiatPayoutClaim(Clone(candidate), Created: true)));
+        }
+
+        private readonly Dictionary<string, FiatPayoutRequestFence> _voids = new(StringComparer.Ordinal);
+        public Task<AZOAResult<FiatPayoutKeyResolution>> VoidAsync(FiatPayoutRequestFence candidate, CancellationToken ct = default)
+        {
+            if (_rows.TryGetValue(candidate.Id, out var existing))
+                return Task.FromResult(existing.SubjectUserId == candidate.SubjectUserId && existing.TenantId == candidate.TenantId
+                    ? AZOAResult<FiatPayoutKeyResolution>.Success(new(false, Clone(existing)))
+                    : AZOAResult<FiatPayoutKeyResolution>.FailureWithCode("Other driver.", "REQUEST_KEY_IN_USE"));
+            if (_voids.TryGetValue(candidate.Id, out var prior) && prior.TenantId != candidate.TenantId)
+                return Task.FromResult(AZOAResult<FiatPayoutKeyResolution>.FailureWithCode("Other driver.", "REQUEST_KEY_IN_USE"));
+            _voids[candidate.Id] = candidate;
+            return Task.FromResult(AZOAResult<FiatPayoutKeyResolution>.Success(new(true, null)));
         }
 
         public Task<AZOAResult<FiatPayout?>> GetAsync(string recordId, CancellationToken ct = default)

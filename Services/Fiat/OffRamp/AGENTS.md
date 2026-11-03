@@ -553,3 +553,26 @@ progress"). Now a claim InProgress for at least 5 minutes and less than 23 hours
 or creates the one it never sent — never a second. A concurrent duplicate gets Stripe's 409 and parks
 for the operator resolution above. Past 23 hours the claim stays put and only the operator resolution
 (transfer-group evidence) can move the row.
+
+## Request void-or-reveal
+
+`POST /api/fiat/payouts/{userId}/requests/{requestKey}/void` shares normal subject/tenant
+authorization and the transfer:sign consent gate. A request that lost permission keeps
+its key until permission is restored. `fiat_payout_request_fence` has the exact same record
+id as the payout: subject + trimmed key + environment + chain network. New ClaimAsync
+atomically creates an admitted fence and payout; void atomically creates a voided fence
+only while no payout exists. The shared unique fence ID is the linearization point.
+A late claim cannot cross a successful void; this is not a timestamp/lease proof.
+
+Every existing payout, including Requested and legacy rows without a fence, is revealed
+without mutation. The saga might already be collecting units, so void cannot call it
+refused or returned. The original TenantId driver must match for both payouts and
+tombstones; first-party reuse of a tenant-driven key is also refused, as Request replay
+already does. No zero-amount fake payout is created to represent absence.
+
+Mixed-version release is explicitly gated: `Fiat:OffRamp:RequestVoidEnabled` defaults
+false. Deploy the new admission fence everywhere first; drain every old serving process
+and its in-flight DB work before attesting true. Until then void returns 503 and keys
+remain saved. Enabling a new client alone is not this proof. Claim fencing is always on
+in new code regardless of the switch. Enable this proof capability only after the
+operator has observed the drain; it does not enable cash-out or bypass KYC/KYB.

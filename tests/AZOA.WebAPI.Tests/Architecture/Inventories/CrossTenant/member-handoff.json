@@ -1,0 +1,32 @@
+[
+  {
+    "store": "SurrealMemberHandoffStore",
+    "method": "GetAsync",
+    "tenantCheck": "Private record lookup: MemberHandoffService checks authenticated tenant/member target; delivery listing/reveal requires RecentNodeOperatorSession. Writes serialize exact tenant/member binding and signing witness."
+  },
+  {
+    "store": "SurrealMemberHandoffStore",
+    "method": "ListAsync",
+    "tenantCheck": "Private record lookup: MemberHandoffService checks authenticated tenant/member target; delivery listing/reveal requires RecentNodeOperatorSession. Writes serialize exact tenant/member binding and signing witness."
+  },
+  {
+    "store": "SurrealMemberHandoffStore",
+    "method": "SaveDeliveryAsync",
+    "tenantCheck": "Private record lookup: MemberHandoffService checks authenticated tenant/member target; delivery listing/reveal requires RecentNodeOperatorSession. Writes serialize exact tenant/member binding and signing witness."
+  },
+  {
+    "store": "SurrealMemberHandoffStore",
+    "method": "TransitionAsync",
+    "tenantCheck": "Private record lookup: MemberHandoffService checks authenticated tenant/member target; delivery listing/reveal requires RecentNodeOperatorSession. Writes serialize exact tenant/member binding and signing witness."
+  },
+  {
+    "store": "SurrealConsentLifecycleStore",
+    "method": "AdmitHandoffAsync",
+    "tenantCheck": "First-party target, exact immutable tenant/scopes/expiry descriptor, approving-state CAS and live post-claim authority checked in the same grant transaction."
+  },
+  {
+    "store": "IFiatPayoutLedger",
+    "method": "VoidAsync",
+    "tenantCheck": "Exact subject/request-key/environment/network id plus matching original TenantId driver; a different driver cannot reveal either legacy payout or tombstone. Shared create-only fence serializes admission and absent-key void."
+  }
+]

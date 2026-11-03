@@ -21,6 +21,8 @@ export interface KeyStore {
 export interface SavedRequest {
   requestKey: string;
   amountMinorUnits: number;
+  currencyCode?: string;
+  currencyDecimals?: number;
   /** A caller reference sent with the key (e.g. a sale quote id), so a resume replays the identical request. */
   reference?: string;
   /** The server's id for this key (e.g. a checkout intent id), once an answer named it. */
@@ -68,17 +70,17 @@ export function memoryStorage(): KeyStorage {
 }
 
 /** Reuses the saved key for the same request; never replaces an unresolved key for a different one. Persists before returning. */
-export function claimRequestKey(store: KeyStore, scope: string, amountMinorUnits: number, reference?: string): RequestClaim {
+export function claimRequestKey(store: KeyStore, scope: string, amountMinorUnits: number, reference?: string, denomination?: { currencyCode: string; currencyDecimals?: number }): RequestClaim {
   if (!Number.isSafeInteger(amountMinorUnits) || amountMinorUnits <= 0) {
     throw new SdkError(SdkErrorCode.INVALID_INPUT, "amountMinorUnits must be a positive integer.");
   }
-  const saved = readSavedRequest(store, scope);
+  const saved = readSavedRequest(store, scope, true);
   if (saved) {
     return saved.amountMinorUnits === amountMinorUnits && saved.reference === reference
       ? { kind: "ready", request: saved }
       : { kind: "pending", pending: saved };
   }
-  const fresh: SavedRequest = { requestKey: newRequestKey(), amountMinorUnits, ...(reference !== undefined ? { reference } : {}) };
+  const fresh: SavedRequest = { requestKey: newRequestKey(), amountMinorUnits, ...denomination, ...(reference !== undefined ? { reference } : {}) };
   store.write(scope, JSON.stringify(fresh));
   // A store that silently dropped the write must not let the request leave unkeyed.
   if (readSavedRequest(store, scope)?.requestKey !== fresh.requestKey) {
@@ -102,20 +104,30 @@ export function markNeedsReview(store: KeyStore, scope: string, requestKey: stri
   if (saved?.requestKey === requestKey) store.write(scope, JSON.stringify({ ...saved, needsReview: true }));
 }
 
-export function readSavedRequest(store: KeyStore, scope: string): SavedRequest | null {
+export function readSavedRequest(store: KeyStore, scope: string, strict = false): SavedRequest | null {
   try {
     const raw = store.read(scope);
-    const parsed = raw ? (JSON.parse(raw) as Partial<SavedRequest>) : null;
-    return parsed && typeof parsed.requestKey === "string" && Number.isSafeInteger(parsed.amountMinorUnits)
-      ? {
-          requestKey: parsed.requestKey,
-          amountMinorUnits: parsed.amountMinorUnits as number,
-          ...(typeof parsed.reference === "string" ? { reference: parsed.reference } : {}),
-          ...(typeof parsed.serverId === "string" ? { serverId: parsed.serverId } : {}),
-          ...(parsed.needsReview === true ? { needsReview: true as const } : {}),
-        }
-      : null;
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new TypeError("Unreadable saved request.");
+    const value = parsed as Partial<SavedRequest>;
+    if (typeof value.requestKey !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/u.test(value.requestKey)
+      || !Number.isSafeInteger(value.amountMinorUnits) || (value.amountMinorUnits as number) <= 0
+      || (value.reference !== undefined && (typeof value.reference !== "string" || !value.reference))
+      || (value.serverId !== undefined && (typeof value.serverId !== "string" || !value.serverId))
+      || (value.needsReview !== undefined && value.needsReview !== true)
+      || (value.currencyCode !== undefined && (typeof value.currencyCode !== "string" || !/^[A-Za-z][A-Za-z0-9._-]{0,15}$/u.test(value.currencyCode)))
+      || (value.currencyDecimals !== undefined && (!Number.isInteger(value.currencyDecimals) || value.currencyDecimals < 0 || value.currencyDecimals > 18)))
+      throw new TypeError("Unreadable saved request.");
+    return { requestKey: value.requestKey, amountMinorUnits: value.amountMinorUnits as number,
+      ...(value.reference !== undefined ? { reference: value.reference } : {}),
+      ...(value.serverId !== undefined ? { serverId: value.serverId } : {}),
+      ...(value.needsReview ? { needsReview: true as const } : {}),
+      ...(value.currencyCode !== undefined ? { currencyCode: value.currencyCode } : {}),
+      ...(value.currencyDecimals !== undefined ? { currencyDecimals: value.currencyDecimals } : {}),
+    };
   } catch {
+    if (strict) throw new SdkError(SdkErrorCode.UNSUPPORTED_OPERATION, "An earlier request could not be read safely. Keep its saved data and check again before starting another.");
     return null;
   }
 }

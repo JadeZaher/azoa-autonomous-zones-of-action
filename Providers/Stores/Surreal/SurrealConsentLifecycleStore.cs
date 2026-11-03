@@ -44,6 +44,34 @@ public sealed partial class SurrealConsentLifecycleStore(ISurrealExecutor execut
         return AdmitAsync(command, grantorId, authority.Credential, guards, external, ct);
     }
 
+    public Task<ConsentLifecycleReceipt?> AdmitHandoffAsync(ConsentLifecycleCommand input,
+        SigningCredentialWitness credential, AZOA.WebAPI.Persistence.SurrealDb.Models.MemberHandoff handoff, CancellationToken ct)
+    {
+        var descriptor = JsonSerializer.Deserialize<AZOA.WebAPI.Models.MemberHandoffDescriptor>(handoff.Descriptor,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        if (descriptor is null || credential.Kind != "Jwt" || credential.TokenUse != AzoaClaims.TokenUseLogin
+            || credential.TenantId is not null || !credential.OwnerAuthority || credential.AuthNotBefore is null
+            || descriptor.TargetUserId != credential.ActorUserId
+            || input.RequestId != descriptor.RequestId || input.TenantId != descriptor.TenantId
+            || input.ExpiresAt != descriptor.GrantExpiresAt || input.Origin != GrantOrigin.UserExplicit
+            || input.ParticipationRef is not null || !input.Scopes.Order().SequenceEqual(descriptor.Scopes.Order()))
+            return Task.FromResult<ConsentLifecycleReceipt?>(null);
+        var authority = SigningAuthorityFence.ForRunAdmission(credential, "handoff_grant");
+        if (authority is null) return Task.FromResult<ConsentLifecycleReceipt?>(null);
+        var guards = new List<SurrealQuery>(authority);
+        guards.Add(SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<AZOA.WebAPI.Persistence.SurrealDb.Models.MemberHandoff>(descriptor.RequestId.ToString("N"))
+            .Where(row => row.Version == handoff.Version && row.Descriptor == handoff.Descriptor
+                && row.Status == "approving" && row.TargetUserId == handoff.TargetUserId && row.TenantId == handoff.TenantId)
+            .Set(row => row.Status, "approving").Build(), "handoff_grant_request", "_handoff_grant_request"));
+        guards.Add(SurrealQuery.Of("IF $_handoff_grant_request = NONE OR $_handoff_grant_request = [] OR $_handoff_expires <= time::now() { THROW 'CONSENT_LIFECYCLE_CHANGED' }")
+            .WithParam("_handoff_expires", descriptor.ExpiresAt));
+        guards.Add(SurrealGeneratedStatementScope.Assign(SurrealWriter.UpdateOnly<User>(credential.ActorUserId.ToString("N"))
+            .Where(row => row.IsActive && row.OwnerTenantId == null && row.AuthNotBefore == credential.AuthNotBefore)
+            .Set(row => row.IsActive, true).Build(), "handoff_grant_member", "_handoff_grant_member"));
+        guards.Add(SurrealQuery.Of("IF $_handoff_grant_member = NONE OR $_handoff_grant_member = [] { THROW 'CONSENT_LIFECYCLE_CHANGED' }"));
+        return AdmitAsync(input, credential.ActorUserId, credential, guards, null, ct);
+    }
+
     private Task<ConsentLifecycleReceipt?> AdmitDirectAsync(ConsentLifecycleCommand input,
         SigningCredentialWitness credential, CancellationToken ct = default)
     {

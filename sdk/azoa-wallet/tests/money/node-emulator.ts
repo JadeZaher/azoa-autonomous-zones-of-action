@@ -199,6 +199,7 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
   /** Keys a void claimed before anything was admitted (VOIDED_BEFORE_ADMISSION). */
   const tombstones = new Set<string>();
   const admissions: Admission[] = [];
+  const voidedCashOutKeys = new Set<string>();
   const cashOutsByKey = new Map<string, CashOutView>();
   const cashOuts: CashOutView[] = [];
   const scripts = new Map<string, CheckoutEvent[][]>();
@@ -289,6 +290,17 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
       if (!session || session.owner !== userId) return fail(404, "That payment could not be found.", "NOT_FOUND");
       for (const event of scripts.get(intentId)?.shift() ?? []) applyEvent(session, event);
       return projected(session);
+    }
+
+    const cashOutVoid = /^\/api\/fiat\/payouts\/([^/]+)\/requests\/([^/]+)\/void$/.exec(path);
+    if (cashOutVoid && method === "POST") {
+      if (cashOutVoid[1] !== userId) return fail(403, "You can only manage your own cash-out.", "FORBIDDEN");
+      if (consentRevoked) return consentGateRefusal();
+      const key = decodeURIComponent(cashOutVoid[2]!);
+      const row = cashOutsByKey.get(key);
+      if (row) return ok({ outcome: "revealed", cashOut: row });
+      voidedCashOutKeys.add(key);
+      return ok({ outcome: "voided" });
     }
 
     const payout = /^\/api\/fiat\/payouts\/([^/]+)(?:\/([^/]+))?$/.exec(path);
@@ -532,6 +544,7 @@ export function createNodeEmulator(options: NodeEmulatorOptions = {}): NodeEmula
 
   /** `OffRampService.StartAsync`: claim first, then refuse durably; a same-key replay returns the row verbatim, refused or not. */
   function startCashOut(requestKey: string, amountMinorUnits: number): Response {
+    if (voidedCashOutKeys.has(requestKey)) return fail(409, "This cash-out key is voided.", "REQUEST_VOIDED");
     const existing = cashOutsByKey.get(requestKey);
     if (existing) return ok(existing);
     const view: CashOutView = {

@@ -61,3 +61,7 @@ unsupported versions, evidence changes, invalid signatures, expiry, and broken
 rotation. Document lifetime is capped at 24 hours and payload size at 64 KiB;
 the deployment default is 16 KiB. Any protocol change requires new schema and
 domain versions with independent golden vectors.
+
+### Exact G1 runtime and configuration identities
+
+The database-free static G1 assertion is separated from the crash test fixture. G1.trx must contain exactly one passed runtime hard-kill method and one passed G1_DurabilityConfigurationTest configuration method. The reader enforces that exact two-element set and rejects missing/duplicated/substituted identities. Metadata digest/freshness/source binding remains unchanged. CI producer uses the same two identities and count, so static configuration cannot replace crash durability. Historical bundles from earlier source revisions are not relabeled.

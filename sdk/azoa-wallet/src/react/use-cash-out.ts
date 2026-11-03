@@ -1,8 +1,8 @@
+import { discardCashOut } from "../money/index.js";
 // Cash-out state machine: availability, payout destination, keyed start, history. See `src/react/AGENTS.md` §cash-out.
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MONEY_SCOPES,
-  clearSavedRequest,
   isCashOutOnTrack,
   moneyRefusal,
   readSavedRequest,
@@ -38,7 +38,7 @@ export interface CashOutState {
   reload(): Promise<void>;
   start(amountMinorUnits: number): Promise<void>;
   resume(): Promise<void>;
-  discard(): void;
+  discard(): Promise<void>;
   /** Opens (or resumes) payout-destination setup and hands its URL to `onRedirect(url, "payout-setup")`. */
   beginDestinationSetup(): Promise<void>;
 }
@@ -138,14 +138,33 @@ export function useCashOut(options: CashOutOptions = {}): CashOutState {
     if (pending) await run(() => sendCashOut(transport, keyStore, pending));
   }, [run, transport, keyStore, pending]);
 
-  const discard = useCallback(() => {
-    // The node holds a reviewed request for an operator: it is never swapped for a fresh one from here.
-    if (!pending || pending.needsReview) return;
-    clearSavedRequest(keyStore, MONEY_SCOPES.cashOut, pending.requestKey);
-    setPending(null);
-    setNoticeTone("info");
-    setNotice(messages.pending.discarded);
-  }, [keyStore, pending, messages]);
+  const discard = useCallback(async () => {
+    if (!pending || sending.current === person.current) return;
+    const sentFor = person.current;
+    sending.current = sentFor;
+    setBusy(true);
+    setRefusal(null);
+    try {
+      const decision = await discardCashOut(transport, keyStore, pending);
+      if (!mounted.current || person.current !== sentFor) return;
+      if (decision.kind === "discarded") {
+        setPending(null);
+        setNoticeTone("info");
+        setNotice("That request was cancelled before admission. Nothing can be sent under its key.");
+      } else if (decision.kind === "revealed") {
+        setPending(null);
+        if (decision.view.status.toLowerCase() === "refused") setRefusal(moneyRefusal("definite", decision.view.statusMessage));
+        else setNotice(decision.view.statusMessage);
+      } else if (decision.kind === "superseded") setPending(decision.current);
+      else { setPending(decision.kept); setRefusal(moneyRefusal("unconfirmed")); }
+      await reload();
+    } catch {
+      if (person.current === sentFor) setRefusal(moneyRefusal("unconfirmed"));
+    } finally {
+      if (sending.current === sentFor) sending.current = null;
+      if (person.current === sentFor) setBusy(false);
+    }
+  }, [pending, transport, keyStore, person, mounted, reload]);
 
   const beginDestinationSetup = useCallback(async () => {
     const sentFor = person.current;

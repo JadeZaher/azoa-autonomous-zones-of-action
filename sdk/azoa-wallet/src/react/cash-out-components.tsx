@@ -109,7 +109,7 @@ export function WithdrawForm(props: WithdrawFormProps) {
           currencyCode={quote?.currencyCode}
           busy={cashOut.busy}
           onResume={() => void cashOut.resume()}
-          onDiscard={cashOut.discard}
+          onDiscard={() => void cashOut.discard()}
           slots={props.slots}
         />
       ) : (

@@ -157,9 +157,10 @@ public sealed class SurrealDeploymentLeastPrivilegeContractTests
         databaseVariables.GetProperty("PORT").GetString().Should().Be("8000");
         databaseVariables.GetProperty("RAILWAY_RUN_UID").GetString().Should().Be("0");
         databaseVariables.GetProperty("SURREAL_BIND").GetString().Should().Be("0.0.0.0:8000");
-        databaseVariables.GetProperty("SURREAL_PATH").GetString().Should().Be("rocksdb:///data/db");
+        databaseVariables.GetProperty("SURREAL_PATH").GetString().Should().Be("<SUPPORTED_SURREAL_STORAGE_URI>");
+        databaseVariables.TryGetProperty("SURREAL_SYNC_DATA", out _).Should().BeFalse();
         databaseService.GetProperty("source").GetProperty("image").GetString().Should().Be(
-            "docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60");
+            "<SUPPORTED_SURREAL_IMAGE_REFERENCE>");
         databaseService.GetProperty("deploy").GetProperty("startCommand").GetString()
             .Should().Be("/surreal start");
         schemaVariables.GetProperty("SURREALFORGE_USER").GetString()

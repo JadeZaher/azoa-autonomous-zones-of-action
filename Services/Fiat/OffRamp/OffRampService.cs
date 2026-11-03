@@ -116,6 +116,9 @@ public interface IOffRamp
     /// <summary>Claims a cash-out and starts the saga. Idempotent on the request key.</summary>
     Task<AZOAResult<CashOutView>> RequestAsync(CashOutRequest request, CancellationToken ct = default);
 
+    /// <summary>Permanently voids an absent cash-out key or reveals its original admitted payout.</summary>
+    Task<AZOAResult<CashOutVoidView>> VoidAsync(Guid subjectUserId, Guid? tenantId, string requestKey, CancellationToken ct = default);
+
     /// <summary>Step 1: the units go back to the reserve. Nothing is paid yet.</summary>
     Task<AZOAResult<OffRampStepOutcome>> CollectUnitsAsync(string payoutId, CancellationToken ct = default);
 
@@ -306,7 +309,7 @@ public sealed partial class OffRampService : IOffRamp
             return AZOAResult<CashOutView>.FailureWithCode(
                 "An authenticated account is required to cash out.", AzoaErrorCodes.InvalidRequest);
 
-        if (string.IsNullOrWhiteSpace(request.RequestKey))
+        if (!ValidCashOutKey(request.RequestKey))
             return AZOAResult<CashOutView>.FailureWithCode(
                 "A stable request key is required so a repeated request cannot pay twice.",
                 AzoaErrorCodes.InvalidRequest);
@@ -376,7 +379,9 @@ public sealed partial class OffRampService : IOffRamp
 
         var claim = await _payouts.ClaimAsync(candidate, ct);
         if (claim.IsError || claim.Result is null)
-            return FiatPayoutErrors.RailBusy<CashOutView>();
+            return claim.Code is "REQUEST_VOIDED" or "REQUEST_KEY_IN_USE"
+                ? AZOAResult<CashOutView>.FailureWithCode("That request key is closed or belongs to another cash-out.", claim.Code)
+                : FiatPayoutErrors.RailBusy<CashOutView>();
 
         // A repeat of the same key resumes the cash-out that already exists. Returning it verbatim
         // — rather than re-planning it — is what makes a double-tapped button one payment. The

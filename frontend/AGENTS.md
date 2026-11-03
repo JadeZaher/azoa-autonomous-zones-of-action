@@ -13,3 +13,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Build the SDK with its own lockfile installation before installing frontend dependencies. Do not borrow an SDK `node_modules` junction: Turbopack follows the sibling SDK path, and a borrowed dependency tree can resolve outside this checkout even when TypeScript succeeds. The SDK's pinned `@msgpack/msgpack` remains its ordinary runtime dependency; no frontend shim or duplicate dependency is needed.
 
 The custom React/Hook rule overrides use the same file extensions as Next's named `next` flat-config entry. Unscoped overrides also applied to `.cjs` configuration files that do not register those plugins, causing ESLint configuration failure before source linting. Matching the plugin scope preserves all Hook rules on the source files they cover.
+
+Turbopack's root includes both the frontend and linked SDK. Browser React aliases point
+to `./frontend/node_modules` relative to that root, deduplicating their React runtime
+without unsupported Windows drive-letter imports. Keep the browser condition so Next's
+server runtime resolution remains under Next's control.

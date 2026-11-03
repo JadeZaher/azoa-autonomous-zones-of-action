@@ -34,6 +34,21 @@ node e2e/scripts/e2e-stack.mjs down    # stop the project; keeps its volume (add
   `egress-probe/` (see §hermetic).
 - Values resolve the same way on both sides: `process.env` first, then `.generated/e2e.env`
   (`scripts/e2e-stack.mjs`, `support/environment.ts`).
+- `AZOA_E2E_PROJECT` selects a separate bounded project such as
+  `azoa-payment-e2e-c17ff8f2`. Defaults remain `azoa-e2e`. A custom project stores credentials
+  and certificates under `.generated/<project>/`, and derives its own container, volume and
+  network names. The stack script inspects existing resources before preparation, reuse or
+  removal; its saved owner marker must match every existing resource label. Unknown resources
+  are refused, including older unlabelled stacks. Never adopt another user's project.
+- For a parallel local project, inspect ports and network subnets first, then select unused
+  frontend/API/vendor/control ports and `AZOA_E2E_WEBHOOK_SUBNET` plus
+  `AZOA_E2E_WEBHOOK_RECEIVER_IP`. The defaults retain the original CI addresses. This only
+  changes the test-owned internal webhook network; the real-vendor egress proof remains mandatory.
+- A documentation-only local network such as `203.0.113.0/24` is suitable for the handoff
+  and non-webhook journeys. `WebhookSsrfGuard` intentionally refuses all TEST-NET blocks,
+  so the positive public-webhook journey is inapplicable there. Select explicit non-webhook
+  journey files locally; the full CI job still runs every journey on its unchanged default
+  network. Do not bypass the guard or relabel a denied delivery as success.
 - The frontend image is `stack/frontend.Dockerfile` (build context: repo root): `azoa-sdk` is a
   `file:../sdk/azoa-wallet` dependency and the repo `.dockerignore` excludes `dist/`, so the image
   builds the SDK before `npm ci` in the frontend, in the `/repo/{sdk,frontend}` layout that
@@ -125,9 +140,10 @@ mocked inside the browser except the vendor's own page.
 | `tenant-business-verification` | Sign in (UI) → `/business-verification` → start → hosted KYB in a popup → callback → refresh → "Business verified" |
 | `stripe-on-ramp` | Platform unit seeded (§settlement) → tenant KYB (UI) → tenant price registered → same tenant member provisioned/enrolled → tenant KYC/AML approved → the member's implied grant read back (`units:issue`, no `transfer:sign`) → tenant starts checkout → hosted Stripe page → signed `checkout.session.completed` → intent `complete`, settlement `funds_applied` |
 | `webhook-registration` | Sign in (UI) → `/settings` → register `webhook-receiver.e2e.azoa.test` (pinned via compose `extra_hosts`, no DNS) → secret shown once → reload shows version 1 and no secret |
+| `member-handoff` | Operator-only protected delivery → real resend retires the old link → browser scrubs fragment before preview → password claim → exact saved consent → fixed consumer return; separate lost-reply recovery and claimed-renewal decline cases |
 
-There is no first-party KYC screen and no "Add funds" screen, so those steps go through the
-tenant API exactly as an integration would; the browser covers every screen that exists.
+The older on-ramp/KYC journeys retain their tenant API setup. First-party money screens have
+separate browser slices; their green result does not prove the hosted handoff journey.
 
 `completeBusinessVerification` reuses the hosted KYB journey before either
 custodial-member enrollment flow. The tenant owner completes the real UI and
@@ -152,13 +168,68 @@ implied `Participation` grant (`tenant-provisioned:v1:` ref), and
 journey reads it back through `GET api/tenant/consent` before checkout, so a
 regression fails on the grant, not as an opaque 403.
 
-An earlier version claimed the member and had the owner grant `transfer:sign` in
-Settings; that dated from when checkout probed `transfer:sign`. Claim revokes the
-implied grant ("account claimed by owner"), and an explicit `transfer:sign` grant
-does not cover `units:issue`, so that path now gets the typed FORBIDDEN. Claimed
-self-sovereign members paying through a tenant are not a documented flow.
-Checkout, intent reads and signed settlement keep the original tenant flow and
-financial assertions.
+Claim revokes the implied grant. An explicit `transfer:sign` grant alone does not cover
+`units:issue`; the new hosted handoff requests the exact accepted five-scope descriptor.
+Checkout, intent reads and signed settlement keep the original tenant fixture and financial
+assertions, while the new handoff cases cover the separate claimed-member relationship.
+
+## Hosted handoff coverage
+
+`member-handoff.journey.ts` runs the real Next routes, SDK and API. It never calls claim or
+approval from a setup API helper. Tenant receipts must contain metadata only; private links
+come exclusively from the recent operator's protected delivery endpoint. E2E configuration
+opts this isolated Development host into the stub and sets `ReturnTokenToTenant=false`.
+Production flags and guards are unchanged. Its DataProtection ring is generated in its own
+empty, labelled E2E volume; no production key backup or package publication is needed.
+
+The resend case waits for the actual one-minute cooldown through bounded API polling; no
+clock or row is changed. Every preview/read/decision request is paused before transmission
+to observe an already-empty browser fragment, then continued to the real API. A lost claim
+reply is induced only after `route.fetch()` receives server success and a public status read
+confirms claimed ownership; the reply is then aborted. Recovery must use the same chosen
+password through real owner login, make only one claim request and approve one exact grant.
+
+The renewal case uses a fresh browser context, proves no claim token or second ownership
+claim, signs in as the owner and declines the new request while the earlier grant survives.
+All cases check the fixed return path. A browser route serves only the receiving consumer
+landing page at the separately allowlisted loopback origin; it does not simulate ArdaNova's
+withdraw implementation, any consent endpoint, verification provider or payment outcome.
+
+Traces, screenshots and video are disabled for this file because private invitation URLs
+and chosen passwords must not enter artifacts. Navigation errors are sanitized; privacy
+assertions compare booleans rather than printing raw URLs or tokens. Tokens must be absent
+from network URLs/referrers, console output, local storage and session storage. The expected
+first-party JWT is allowed in the normal SDK session store. Bank-provider onboarding is not
+claimed by these cases; only its post-approval account-holder action is rendered.
+Private navigation and password entry use generic evaluate steps (native navigation/input
+events), avoiding report step titles that embed `goto` URLs or `fill` values. Actual form
+state, browser requests, SDK authentication and API effects remain real.
+
+The sensitive file also sets `PLAYWRIGHT_NO_COPY_PROMPT=1`. The pinned Playwright worker's
+`lib/index.js` checks this before taking the automatic ARIA error-context snapshot; ordinary
+trace/screenshot/video options alone do not stop that snapshot from including password
+textbox values. Safe error/source text can remain. An ignored intentionally failing canary
+checks that neither the generated password nor a page snapshot enters the resulting files.
+Keep this check when updating Playwright. Response observers retain rejection handling so
+the original failure remains visible without a second unhandled promise after context close.
+Alert assertions match the actual error text, excluding Next's empty route-announcer alert.
+
+## Local build audit policy
+
+The owner chose existing audit evidence. E2E frontend installs set `NPM_CONFIG_AUDIT=false`.
+The stack script derives an ignored API Dockerfile from the actual production Dockerfile,
+requires exactly one complete `RUN dotnet restore AZOA.WebAPI.csproj` anchor, and inserts
+only ` -p:NuGetAudit=false`. Removing those inserted bytes must recover the original bytes
+exactly; `api-Dockerfile-proof.json` records both SHA256 values and the inverse-byte result.
+The production Dockerfile, publish command, tool-install command and runtime are unchanged.
+The BCL egress-probe publish also passes the explicit property because publish can restore.
+
+The released [.NET 10 tool downloader](https://github.com/dotnet/sdk/blob/v10.0.100/src/Cli/dotnet/ToolPackage/ToolPackageDownloader.cs)
+installs its tool package through direct download/extraction, not an MSBuild PackageReference
+restore/audit; installed `dotnet tool install --help` exposes no audit property switch.
+Project-restore auditing and its opt-out are documented by [NuGet](https://learn.microsoft.com/en-us/nuget/concepts/auditing-packages).
+Do not blindly add unsupported MSBuild switches to tool installation. Dependency downloads
+still occur as required for these approved local builds; no audit command is run.
 
 ## §settlement — the on-ramp rail on the E2E stack (P6-19)
 
@@ -183,9 +254,22 @@ Simulated chain, the same rail `tools/dev-node/dev-node-up.ps1` runs (its AGENTS
   settlement state must reach `funds_applied`, which `FiatRailProvider` projects only from an inbox
   row the handler APPLIED (issuance `Transferred` with a tx hash, lot `Issued`). `payment_received`
   alone now means charged-and-uncredited and fails the journey.
-- **Proven only by CI's `e2e` job.** The whole chain (genesis over HTTP, price, KYC-scoped
-  allocation, Simulated recipient preparation and transfer, inbox projection) has run live on the
-  host dev node but not yet inside this compose project.
+- **Local compose evidence.** This journey passed in the isolated local compose project on
+  2026-11-01, including genesis over HTTP, price, KYC-scoped allocation, Simulated transfer and
+  applied inbox projection. Its signed incoming Stripe callback is separate from the public
+  outbound webhook-delivery journey excluded on the local documentation-only subnet.
+
+## Local hosted-flow validation — 2026-11-02
+
+All three new hosted scenarios have passing real-browser evidence from the dedicated project.
+The repaired three-case run passed resend/claim/approval/return and committed-lost-reply login
+recovery; a final renewal-only run passed after the same-page consent login refresh fix. The
+original signup/KYC, tenant KYB and Stripe on-ramp passes were retained without rerunning them.
+The public webhook journey remains included in full CI and was excluded only from this local
+203.0.113.0/24 run. The validator check passed 17 new matrix cases and three existing tests.
+An intentionally failing privacy canary confirmed no password, ARIA snapshot or media artifact;
+lint/type checks and the affected API/frontend image builds also passed. Images used the reviewed
+uncommitted validator/component overlays on the base Git revision, not a pure revision checkout.
 
 ## §writing-a-journey (round 4: NFT, DEX, Hold)
 

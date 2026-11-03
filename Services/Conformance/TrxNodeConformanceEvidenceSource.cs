@@ -19,12 +19,16 @@ public sealed class TrxNodeConformanceEvidenceSource : INodeConformanceEvidenceS
     private static readonly IReadOnlyDictionary<string, string> GateTestClasses =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["G1"] = "AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest",
             ["G2"] = "AZOA.WebAPI.IntegrationTests.Gates.G2_IdempotencyTocTouTest",
             ["G3"] = "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest",
             ["G5"] = "AZOA.WebAPI.IntegrationTests.Gates.G5_RestoreDrillTest",
             ["G7"] = "AZOA.WebAPI.IntegrationTests.Gates.G7_ReconciliationDrillTest",
         };
+    private static readonly HashSet<string> RequiredG1Tests = new(StringComparer.Ordinal)
+    {
+        "AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest.G1_HardKill_DurableInserts_SurviveRestart",
+        "AZOA.WebAPI.IntegrationTests.Gates.G1_DurabilityConfigurationTest.G1_DurabilityAckGate_FailsClosed_IfSyncEventual",
+    };
     private static readonly HashSet<string> RequiredG3Tests = new(StringComparer.Ordinal)
     {
         "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_ControllerPaths_HostileInput_LandsAsLiteralNotSurrealQl",
@@ -166,10 +170,18 @@ public sealed class TrxNodeConformanceEvidenceSource : INodeConformanceEvidenceS
             return false;
         }
 
-        var expectedClass = GateTestClasses[gate] + ".";
         var testNames = results.Select(result => (string?)result.Attribute("testName")).ToArray();
-        if (testNames.Any(testName => testName?.StartsWith(expectedClass, StringComparison.Ordinal) != true))
-            return false;
+        if (string.Equals(gate, "G1", StringComparison.Ordinal))
+        {
+            if (testNames.Length != RequiredG1Tests.Count || !RequiredG1Tests.SetEquals(testNames!))
+                return false;
+        }
+        else
+        {
+            var expectedClass = GateTestClasses[gate] + ".";
+            if (testNames.Any(testName => testName?.StartsWith(expectedClass, StringComparison.Ordinal) != true))
+                return false;
+        }
 
         if (string.Equals(gate, "G3", StringComparison.Ordinal)
             && (testNames.Length != RequiredG3Tests.Count

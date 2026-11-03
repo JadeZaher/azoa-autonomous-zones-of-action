@@ -8,7 +8,10 @@ This file is the operational cheat-sheet for build / test / local stack. Keep it
 
 The reference dev setup uses **podman** (docker works identically). All commands below use `podman`; substitute `docker` if present.
 Containers: `azoa-dev-surrealdb`, `azoa-dev-api`, `azoa-dev-frontend`.
-SurrealDB image: `surrealdb/surrealdb:v3.1.4`.
+Legacy local dev image: `surrealdb/surrealdb:v3.1.4` (RocksDB; preserve existing volumes).
+Normal production/CI uses the immutable3.2.0 SurrealKV contract in
+`deploy/railway/surreal-contract.json`; see `deploy/railway/DEPLOY.md`.
+Do not apply that fresh-service storage URI over an existing developer or production volume.
 
 ## Local stack — `dev-up.ps1` / `dev-up.sh`
 
@@ -35,7 +38,7 @@ Bash equivalents (`./dev-up.sh`, `./dev-down.sh`) use same flags in `--kebab-cas
 
 ## Database — SurrealDB
 
-- Storage URI: `rocksdb:///data/db` (G1 durability).
+- Legacy local storage URI: `rocksdb:///data/db` with `SURREAL_SYNC_DATA=true`; production/CI SurrealKV uses its separate explicit `sync=every` contract.
 - Connection: `SurrealDb:Endpoint=http://surrealdb:8000` (from-API), namespace `azoa`, database `azoa`, user/pass `root`/`root`.
 - Schema: lives in `Persistence/SurrealDb/Generated/Schemas/` (`.surql` files emitted from C# POCOs).
 - Schema sync: idempotent; runs from API entrypoint on boot and from host via `surrealforge up`.
