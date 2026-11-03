@@ -16,14 +16,13 @@ name: ${AZOA_E2E_PROJECT:-azoa-e2e}
 
 services:
   surrealdb:
-    image: surrealdb/surrealdb:v3.1.4
+    platform: linux/amd64
+    image: ${SURREALDB_IMAGE:?run the E2E stack script (loads the release contract)}
     container_name: ${AZOA_E2E_PROJECT:-azoa-e2e}-surrealdb
     labels:
       com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
     user: "0:0"
-    command: [start, --log, warn, --user, root, --pass, root, --bind, 0.0.0.0:8000, rocksdb:///data/db]
-    environment:
-      SURREAL_SYNC_DATA: "true"
+    command: [start, --log, warn, --user, root, --pass, root, --bind, 0.0.0.0:8000, "${SURREALDB_URI:?run the E2E stack script (loads the release contract)}"]
     # Not published: only the API talks to it, over the project network.
     volumes:
       - e2e_surrealdb_data:/data
@@ -209,6 +208,7 @@ volumes:
   e2e_surrealdb_data:
     labels:
       com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"
+      com.azoa.e2e.surreal-contract: "${SURREALDB_CONTRACT_SHA256:?run the E2E stack script (loads the release contract)}"
   e2e_api_data_protection:
     labels:
       com.azoa.e2e.owner: "${AZOA_E2E_OWNER_ID:?run the E2E stack script}"

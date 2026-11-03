@@ -8,6 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, wr
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { assertDatabaseVolumeContract } from './database-volume-contract.mjs'
 
 const projectName = process.env.AZOA_E2E_PROJECT ?? 'azoa-e2e'
 if (!/^azoa-(?:payment-)?e2e(?:-[a-z0-9][a-z0-9-]{0,39})?$/.test(projectName)) throw new Error('Use a bounded AZOA E2E project name.')
@@ -44,6 +45,7 @@ function run(executable, args, options = {}) {
 
 /** Refuses to adopt or remove any resource outside this generated run's ownership. */
 function establishOwnership() {
+  const contractSha256 = command === 'prepare' || command === 'up' ? surrealContractEnvironment().SURREALDB_CONTRACT_SHA256 : undefined
   const engine = containerEngine()
   const expected = existsSync(ownershipFile) ? readFileSync(ownershipFile, 'utf8').trim() : null
   if (expected !== null && !/^[a-f0-9]{32}$/.test(expected)) fail('The E2E ownership marker is invalid.')
@@ -75,6 +77,10 @@ function establishOwnership() {
     const labels = value.Config?.Labels ?? value.Labels ?? value.labels ?? {}
     if (!expected || labels['com.azoa.e2e.owner'] !== expected)
       fail(`Refusing unknown ${kind} ${name}; no resource was changed.`)
+    if (kind === 'volume' && name === `${projectName}_e2e_surrealdb_data`) {
+      try { assertDatabaseVolumeContract(labels, expected, contractSha256, command) }
+      catch (error) { fail(error.message) }
+    }
   }
   ownerId = expected ?? randomBytes(16).toString('hex')
   if (!expected) writeFileSync(ownershipFile, ownerId + '\n')
@@ -225,6 +231,13 @@ function verifyResolvedBuilds(environment) {
     fail('Resolved compose project or service inventory differs from the isolated stack; no build was started.')
   if (!/^[a-f0-9]{40}$/.test(environment.SOURCE_REVISION))
     fail('The E2E source revision must be an exact Git SHA; no build was started.')
+  const database = resolved.services.surrealdb
+  const expectedDatabaseCommand = ['start', '--log', 'warn', '--user', 'root', '--pass', 'root', '--bind', '0.0.0.0:8000', environment.SURREALDB_URI]
+  if (database?.image !== environment.SURREALDB_IMAGE || database.platform !== 'linux/amd64'
+    || JSON.stringify(database.command) !== JSON.stringify(expectedDatabaseCommand))
+    fail('Resolved E2E database image, platform or storage command differs from the release contract; no build was started.')
+  if (resolved.volumes?.e2e_surrealdb_data?.labels?.['com.azoa.e2e.surreal-contract'] !== environment.SURREALDB_CONTRACT_SHA256)
+    fail('Resolved E2E database volume has no matching release-contract label; no build was started.')
   const proof = []
   for (const [name, expectedDockerfile] of [
     ['azoa-api', apiDockerfile], ['azoa-frontend', path.join(e2eRoot, 'stack', 'frontend.Dockerfile')],
@@ -246,6 +259,7 @@ function verifyResolvedBuilds(environment) {
   }
   writeFileSync(path.join(generated, 'resolved-build-proof.json'), JSON.stringify({
     project: projectName, sourceRevision: environment.SOURCE_REVISION, builds: proof,
+    surreal: { image: environment.SURREALDB_IMAGE, uri: environment.SURREALDB_URI, contractSha256: environment.SURREALDB_CONTRACT_SHA256 },
   }, null, 2) + '\n')
   console.log('[e2e-stack] resolved project, Dockerfiles, ownership and source revision verified without exposing configuration.')
 }
@@ -299,11 +313,30 @@ async function waitFor(url, label) {
   fail(`${label} did not become healthy at ${url}.`)
 }
 
-/**
- * `process.env` wins over the generated file, the same precedence e2e/support/environment.ts uses.
- * The E2E ports are dedicated (3200/5200) and never read AZOA_FRONTEND_HOST_PORT, which the dev
- * stack uses to coexist with another frontend.
- */
+// The checked-out release contract owns the isolated database; see scripts/AGENTS.md.
+function surrealContractEnvironment() {
+  let raw, contract
+  try {
+    raw = readFileSync(path.join(repositoryRoot, 'deploy', 'railway', 'surreal-contract.json'))
+    contract = JSON.parse(raw.toString('utf8'))
+  } catch { fail('Cannot load the checked-out Surreal release contract.') }
+  const exactKeys = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort())
+  if (!exactKeys(contract, ['schema', 'version', 'image', 'platforms', 'storage'])
+    || contract.schema !== 'azoa-surreal-release/v1' || contract.version !== '3.2.0'
+    || typeof contract.image !== 'string'
+    || !/^docker\.io\/surrealdb\/surrealdb@sha256:[a-f0-9]{64}$/.test(contract.image ?? '')
+    || !exactKeys(contract.platforms, ['linux/amd64'])
+    || typeof contract.platforms['linux/amd64'] !== 'string'
+    || !/^sha256:[a-f0-9]{64}$/.test(contract.platforms?.['linux/amd64'] ?? '')
+    || !exactKeys(contract.storage, ['engine', 'uri', 'mountPath', 'sync'])
+    || contract.storage.engine !== 'surrealkv' || contract.storage.mountPath !== '/data' || contract.storage.sync !== 'every'
+    || contract.storage.uri !== `${contract.storage.engine}://${contract.storage.mountPath}/db?sync=${contract.storage.sync}`)
+    fail('The checked-out Surreal release contract has an unsupported image or storage shape.')
+  return { SURREALDB_IMAGE: contract.image, SURREALDB_URI: contract.storage.uri,
+    SURREALDB_VERSION: contract.version, SURREALDB_CONTRACT_SHA256: createHash('sha256').update(raw).digest('hex') }
+}
+
 function stackEnvironment() {
   const git = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' })
   const revision = git.stdout?.trim()
@@ -314,6 +347,7 @@ function stackEnvironment() {
     AZOA_E2E_FRONTEND_PORT: '3200',
     AZOA_E2E_API_PORT: '5200',
     ...settings,
+    ...surrealContractEnvironment(),
     SOURCE_REVISION: revision,
     AZOA_E2E_PROJECT: projectName,
     AZOA_E2E_GENERATED_SUBDIR: generatedSubdir,
@@ -346,6 +380,9 @@ if (command === 'prepare' || command === 'up') {
 if (command === 'up') {
   const environment = stackEnvironment()
   compose(['up', '-d', '--build'], environment)
+  const version = run(containerEngine(), ['exec', `${projectName}-surrealdb`, '/surreal', 'version'], { stdio: 'pipe', encoding: 'utf8', timeout: 15000, windowsHide: true, maxBuffer: 4096 })
+  if (version.stdout.trim() !== `${environment.SURREALDB_VERSION} for linux on x86_64`)
+    fail('The isolated E2E database binary version differs from the release contract.')
   await waitFor(`http://localhost:${environment.AZOA_E2E_API_PORT}/health`, 'The API')
   await waitFor(`http://localhost:${environment.AZOA_E2E_FRONTEND_PORT}/login`, 'The frontend')
   console.log(`[e2e-stack] project ${projectName} is up; run \`npm run test:e2e\` from frontend/.`)

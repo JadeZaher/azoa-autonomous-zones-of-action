@@ -181,12 +181,20 @@ generated desired-schema golden to advance.
 
 ### SurrealDB service on Railway
 
+The table records the **historical 3.1.4/RocksDB cutover**, not current release
+configuration. The new production/CI target is the immutable 3.2.0/SurrealKV
+`sync=every` contract in `deploy/railway/surreal-contract.json`. Normal promotion
+is preserve-only; an existing floating or incompatible source remains blocked
+until separately reviewed storage-preserving maintenance. Do not apply the fresh
+blueprint over an existing volume. See `deploy/railway/DEPLOY.md`. Fresh target CI
+is required; historical G1 results do not certify the new engine.
+
 | Aspect | Value |
 |---|---|
-| Image | v3.1.4 multi-arch OCI index pinned as `docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60` (the 1.5.4→3.x cutover tracked at `surrealdb-major-upgrade` is closed). |
+| Historical image | v3.1.4 multi-arch OCI index pinned as `docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60` (the 1.5.4→3.x cutover tracked at `surrealdb-major-upgrade` is closed). |
 | Start command | `/surreal start`; the shell-less image reads `SURREAL_USER`, `SURREAL_PASS`, `SURREAL_BIND=0.0.0.0:8000`, `SURREAL_LOG=info`, and `SURREAL_PATH=rocksdb:///data/db` from the environment. Do not put `$VAR` expansion in Railway's exec-form override. |
 | Volume | Mount a persistent volume at `/data` and set `RAILWAY_RUN_UID=0`; Railway volumes mount root-owned and the shell-less Surreal image cannot perform a chown-then-drop bootstrap. The database process therefore runs as root inside its container, while the API uses root only to repair `/app/data` and immediately drops to `APP_UID` with `setpriv`. |
-| Durability | RocksDB syncs its WAL per commit (`SURREAL_SYNC_DATA: "true"`), which satisfies the G1 durability gate — this is what `SurrealRuntime__G1DurabilityAcknowledged=true` on the Production API acknowledges. **G1 is live and green on SurrealDB 3.1.4** (re-verified during final-hardening-cutover). RocksDB remains the durable path; review the storage URI + sync flags at deploy time, since the fsync mode is not introspectable at runtime. |
+| Historical durability | The 3.1.4/RocksDB cutover used `SURREAL_SYNC_DATA: "true"` with `SurrealRuntime__G1DurabilityAcknowledged=true`; G1 was re-verified for that engine during `final-hardening-cutover`. This is historical evidence, not current 3.2/SurrealKV certification. The new contract requires explicit `sync=every` and fresh CI crash-durability evidence. |
 
 ---
 
@@ -300,10 +308,11 @@ added by the 2026-09-07 doc-accuracy pass. Recorded here so no claim resurfaces:
    (`ActionManager`/`SagaProcessorHostedService`), so `Sagas:Enabled=true` ships
    as the deliberate default with a boot guard. See
    [[durable-actions-inert-sagas-disabled]] for the fix history.
-2. **The G1 durability gate is live and green on SurrealDB 3.1.4.** RocksDB WAL
-   sync (`SURREAL_SYNC_DATA: "true"`) + `SurrealRuntime__G1DurabilityAcknowledged=true`
-   were re-verified against the 3.1.4 pin during `final-hardening-cutover`; the
-   gate is not stale or unverified.
+2. **The 3.1.4/RocksDB G1 result is historical.** Its WAL sync flag and runtime
+   acknowledgment were verified during `final-hardening-cutover`. The new
+   immutable 3.2.0/SurrealKV release target is defined by
+   `deploy/railway/surreal-contract.json` and needs fresh CI/schema/durability
+   results; normal promotion preserves the database and cannot downgrade it.
 
 3. **`scripts/passoff.ps1` and `scripts/passoff-architecture.ps1` no longer
    exist** (recorded 2026-09-07). Older docs name them as the code sign-off

@@ -36,11 +36,13 @@ network, fiat settlement partners) is reached over the network per config.
 - **podman or Docker** — to run SurrealDB (and, for the full local stack, the
   WebAPI + frontend images). The `dev-up` scripts auto-detect `docker compose`
   v2, `docker-compose` v1, `podman-compose`, or `podman compose`.
-- **SurrealDB** — local compose pins **`surrealdb/surrealdb:v3.1.4`**;
-  Railway pins that release's multi-arch OCI index as
-  **`docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60`**
-  (the 1.5.4→3.x cutover, tracked at `surrealdb-major-upgrade`, is closed). **Pin
-  the same SurrealDB version your schema was generated and tested against.**
+- **SurrealDB**: the preserved **legacy local** composition uses
+  `surrealdb/surrealdb:v3.1.4` with RocksDB. The new production/CI target is the
+  immutable 3.2.0/SurrealKV `sync=every` contract in
+  [`deploy/railway/surreal-contract.json`](../deploy/railway/surreal-contract.json).
+  Normal promotion preserves an already approved database; it never changes
+  engine/path or downgrades an existing volume. Fresh CI must certify this exact
+  target before release; historical local 3.1.4 results are insufficient.
 - **Node 20+** — only if you also run the reference frontend.
 
 ---
@@ -556,13 +558,14 @@ promoting the API. It alone receives database-owner credentials; the API runs
 with the database-scoped runtime account and refuses boot migrations. The full
 Railway procedure is in **`deploy/railway/DEPLOY.md`** and **`RUNBOOK.md` §2**.
 
-**SurrealDB version note.** Match the SurrealDB version in production to the one
-your schema was generated and tested against. Both dev/local
-(`docker-compose.dev.yml`) uses `surrealdb/surrealdb:v3.1.4`; the Railway prod
-service (`RUNBOOK.md` §2) pins the reviewed v3.1.4 OCI index digest. **Verify the
-digest still matches the release artifact** before going live; a version
-mismatch across environments enforces different namespace/DDL strictness and
-is the failure mode to avoid.
+**SurrealDB version note.** Production/CI consumes the single immutable 3.2.0
+SurrealKV contract in `deploy/railway/surreal-contract.json`; the default local
+3.1.4/RocksDB volume is retained as a legacy development profile. Those profiles
+are not interchangeable. Require fresh schema/application/crash-durability CI
+against the production target. Normal promotion admits only the approved image
+and digest and preserves its database; mutable or incompatible current services
+need separately reviewed storage-preserving maintenance. Never use the fresh
+blueprint URI, a source redeploy or a downgrade to convert an existing volume.
 
 **Verify:** `/health` returns 200 with `storage-db` Healthy, `surrealforge
 migrate status` matches the on-disk files, and for testnet/mainnet the Guardian

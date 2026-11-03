@@ -9,12 +9,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from surreal_contract import load_contract
+
 
 API_PLACEHOLDER = "<PROMOTED_API_IMAGE_REFERENCE>"
 FRONTEND_PLACEHOLDER = "<PROMOTED_FRONTEND_IMAGE_REFERENCE>"
 IMMUTABLE_IMAGE = re.compile(r"^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$")
 EXPECTED_SERVICES = ["surrealdb", "azoa-schema", "azoa-api", "azoa-frontend"]
-SURREAL_IMAGE = "docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60"
+SURREAL_IMAGE_PLACEHOLDER = "<SUPPORTED_SURREAL_IMAGE_REFERENCE>"
+SURREAL_URI_PLACEHOLDER = "<SUPPORTED_SURREAL_STORAGE_URI>"
 
 
 def fail(message: str) -> None:
@@ -39,11 +42,11 @@ def validate_contract(document: dict[str, Any], rendered: bool) -> None:
         if not isinstance(source, dict) or set(source) != {"image"}:
             fail(f"{name} source must contain only one immutable image reference")
 
+    contract = load_contract()
     surreal = services["surrealdb"]
-    if surreal.get("source", {}).get("image") != SURREAL_IMAGE:
-        fail("SurrealDB must remain pinned to the reviewed v3.1.4 OCI index digest")
-    if surreal.get("variables", {}).get("SURREAL_SYNC_DATA") != "true":
-        fail("SurrealDB must set SURREAL_SYNC_DATA=true")
+    expected_image = contract["image"] if rendered else SURREAL_IMAGE_PLACEHOLDER
+    if surreal.get("source", {}).get("image") != expected_image:
+        fail("SurrealDB must use the reviewed release-contract image")
     start_command = surreal.get("deploy", {}).get("startCommand", "")
     if start_command != "/surreal start":
         fail("SurrealDB must invoke the pinned image executable directly")
@@ -56,8 +59,11 @@ def validate_contract(document: dict[str, Any], rendered: bool) -> None:
         fail("SurrealDB must expose the fixed private service port 8000")
     if surreal_variables.get("SURREAL_BIND") != "0.0.0.0:8000":
         fail("SurrealDB must bind to the fixed private service port")
-    if surreal_variables.get("SURREAL_PATH") != "rocksdb:///data/db":
-        fail("SurrealDB must start RocksDB at /data/db")
+    expected_uri = contract["storage"]["uri"] if rendered else SURREAL_URI_PLACEHOLDER
+    if surreal_variables.get("SURREAL_PATH") != expected_uri:
+        fail("SurrealDB must use the reviewed synchronous SurrealKV URI")
+    if "SURREAL_SYNC_DATA" in surreal_variables:
+        fail("SurrealKV durability must not rely on the legacy RocksDB sync flag")
     if surreal_variables.get("RAILWAY_RUN_UID") != "0":
         fail("SurrealDB must acknowledge Railway's root-owned volume mount")
     if surreal.get("volume", {}).get("mountPath") != "/data":
@@ -205,6 +211,9 @@ def main() -> None:
         fail("--frontend-image must be an immutable GHCR name@sha256 reference")
 
     services = service_map(document)
+    contract = load_contract()
+    services["surrealdb"]["source"]["image"] = contract["image"]
+    services["surrealdb"]["variables"]["SURREAL_PATH"] = contract["storage"]["uri"]
     services["azoa-schema"]["source"]["image"] = args.api_image
     services["azoa-api"]["source"]["image"] = args.api_image
     services["azoa-frontend"]["source"]["image"] = args.frontend_image
