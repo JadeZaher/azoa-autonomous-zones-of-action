@@ -221,6 +221,11 @@ public sealed class IdentomatVendor
     public int IdentityResultRequests => Volatile.Read(ref _identityResultRequests);
 
     private int _identityResultRequests;
+    private readonly ConcurrentDictionary<string, int> _identityResultRequestsByToken = new(StringComparer.Ordinal);
+
+    /// <summary>Result-request ingress for one token, including failed authentication; see Http/AGENTS.md.</summary>
+    public int IdentityResultRequestsFor(string sessionToken)
+        => _identityResultRequestsByToken.GetValueOrDefault(sessionToken);
 
     /// <summary>Session tokens the node asked the vendor to delete, in request order.</summary>
     public IReadOnlyList<string> DeleteRequests => _deleteRequests.ToArray();
@@ -235,6 +240,11 @@ public sealed class IdentomatVendor
             Interlocked.Increment(ref _identityResultRequests);
         using var document = JsonDocument.Parse(request.Body);
         var root = document.RootElement;
+        if (request.Path == "/external-api/result/"
+            && root.TryGetProperty("session_token", out var ingressToken)
+            && ingressToken.ValueKind == JsonValueKind.String
+            && ingressToken.GetString() is { Length: > 0 } tokenAtIngress)
+            _identityResultRequestsByToken.AddOrUpdate(tokenAtIngress, 1, (_, count) => count + 1);
         if (!root.TryGetProperty("company_key", out var key) || key.GetString() != CompanyKey)
             return new HttpResponseMessage(HttpStatusCode.Unauthorized);
 

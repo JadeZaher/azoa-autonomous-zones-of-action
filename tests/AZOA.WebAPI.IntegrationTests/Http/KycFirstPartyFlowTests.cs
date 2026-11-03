@@ -1,5 +1,6 @@
 using System.Net;
 using AZOA.WebAPI.Interfaces;
+using AZOA.WebAPI.Interfaces.HostedSessions;
 using AZOA.WebAPI.IntegrationTests.Http.Infrastructure;
 using AZOA.WebAPI.Models.HostedSessions;
 using AZOA.WebAPI.Models.Kyc;
@@ -188,14 +189,45 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
         await BeginAsync(client);
         var attempt = await SubmissionAsync(user);
         await ExpireAttemptAsync(attempt.Id);
-        var vendorCalls = Flow.Identomat.IdentityResultRequests;
+        var expired = await SubmissionAsync(user);
+        (expired.Id == attempt.Id).Should().BeTrue();
+        expired.Status.Should().BeOneOf(KycStatus.PENDING, KycStatus.IN_REVIEW);
+        expired.ExpiresAt.Should().NotBeNull();
+        expired.ExpiresAt!.Value.Should().BeBefore(DateTimeOffset.UtcNow);
+
+        var observed = await HostedSessionAsync(attempt.Id);
+        observed.State.Should().BeOneOf(HostedSessionStates.AwaitingSubject, HostedSessionStates.AwaitingOutcome);
+        string.IsNullOrWhiteSpace(observed.ProviderSessionId).Should().BeFalse();
+        var version = observed.StateVersion;
+        var nextPollAt = observed.NextPollAt;
+        var providerSessionId = observed.ProviderSessionId;
+        await WriteAsync(SurrealWriter.UpdateOnly<HostedSession>(attempt.Id)
+            .Where(row => row.State == observed.State && row.StateVersion == version
+                && row.NextPollAt == nextPollAt && row.ProviderSessionId == providerSessionId)
+            .Set(row => row.StateVersion, version + 1)
+            .Unset(row => row.NextPollAt).Build());
+        var due = await HostedSessionAsync(attempt.Id);
+        due.State.Should().Be(observed.State);
+        due.StateVersion.Should().Be(version + 1);
+        due.NextPollAt.Should().BeNull();
+        (due.ProviderSessionId == providerSessionId).Should().BeTrue();
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var pollDue = await scope.ServiceProvider.GetRequiredService<IHostedSessionRecoveryStore>()
+                .ListPollDueAsync(DateTimeOffset.UtcNow, 100, CancellationToken.None);
+            pollDue.Any(row => row.Id == attempt.Id && row.StateVersion == due.StateVersion).Should().BeTrue();
+        }
+        var vendorSession = Flow.Identomat.LatestIdentitySessionFor(user);
+        (vendorSession is not null).Should().BeTrue();
+        (vendorSession!.Id == due.ProviderSessionId).Should().BeTrue();
+        var vendorCalls = Flow.Identomat.IdentityResultRequestsFor(vendorSession.SessionToken);
 
         await SweepAsync();
 
         var closed = await EventuallyHostedSessionAsync(attempt.Id, row => row.State == HostedSessionStates.Abandoned);
         closed.State.Should().Be(HostedSessionStates.Abandoned);
         closed.OutcomeDetail.Should().Be(HostedSessionRecoveryOutcomes.AttemptClosed);
-        Flow.Identomat.IdentityResultRequests.Should().Be(vendorCalls,
+        Flow.Identomat.IdentityResultRequestsFor(vendorSession.SessionToken).Should().Be(vendorCalls,
             "a dead attempt can take no verdict, so polling it only burns the shared Identomat budget (RV-L2 L2-2)");
     }
 
@@ -330,7 +362,7 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
         await worker.SweepAsync(scope.ServiceProvider, CancellationToken.None);
     }
 
-    /// <summary>The hosted worker may win the poll claim; either way the committed row converges.</summary>
+    /// <summary>Reads until the submission's committed state converges.</summary>
     private async Task<KycSubmission> EventuallySubmissionAsync(Guid user, Func<KycSubmission, bool> settled)
     {
         var row = await SubmissionAsync(user);
@@ -360,7 +392,7 @@ public sealed class KycFirstPartyFlowTests(HttpFlowWebApplicationFactory factory
             + $"outcomeDetail={session.OutcomeDetail ?? "none"}; errorCode={errorCode ?? "none"}";
     }
 
-    /// <summary>The hosted worker may close the row first; either way the committed row converges.</summary>
+    /// <summary>Reads until the hosted session's committed state converges.</summary>
     private async Task<HostedSession> EventuallyHostedSessionAsync(string id, Func<HostedSession, bool> settled)
     {
         var row = await HostedSessionAsync(id);
