@@ -1,38 +1,28 @@
-name: Promote attested conformance image
+name: Publish exact-c7 storage-maintenance API image only
 
 on:
   workflow_dispatch:
     inputs:
-      source_sha:
-        description: Exact current main commit proven by the CI run.
+      reviewed_workflow_sha:
+        description: Independently reviewed commit on this maintenance branch, not c7 build source.
         required: true
         type: string
-      ci_run_id:
-        description: Successful CI run that produced the conformance-evidence artifact.
+      ci_artifact_id:
+        description: Fresh exact-c7 conformance artifact ID from the source-only validation branch.
         required: true
         type: string
-      surreal_mode:
-        description: Preserve an already-pinned healthy database or explicitly promote the reviewed digest.
-        required: true
-        default: already-healthy
-        type: choice
-        options:
-          - already-healthy
-          - redeploy
 
 concurrency:
-  group: conformance-promotion
+  group: c7-storage-maintenance-publication
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
-  promote:
-    name: Verify evidence and publish immutable image
+  publish:
+    if: github.repository == 'JadeZaher/azoa-autonomous-zones-of-action' && github.ref == 'refs/heads/codex/c7-storage-maintenance-image-20261102'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: conformance-promotion
-    outputs:
-      api_image: ${{ steps.release_refs.outputs.api_image }}
-      frontend_image: ${{ steps.release_refs.outputs.frontend_image }}
+    timeout-minutes: 40
     permissions:
       actions: read
       contents: read
@@ -40,240 +30,120 @@ jobs:
       attestations: write
       artifact-metadata: write
       id-token: write
+    env:
+      BUILD_SOURCE_SHA: c7cfa4af82c99e130a26064054ea7c52ab2603bb
+      IMAGE_NAME: ghcr.io/jadezaher/azoa-autonomous-zones-of-action
+      CI_RUN_ID: '41461162520'
+      CI_RUN_ATTEMPT: '1'
     steps:
-      - name: Check out requested source
+      - name: Check out reviewed publication tooling only
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ inputs.source_sha }}
-          fetch-depth: 1
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Verify source and producer run
+      - name: Validate reviewed workflow revision
         env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          REVIEWED_SHA: ${{ inputs.reviewed_workflow_sha }}
         run: |
           set -euo pipefail
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git fetch origin +refs/heads/main:refs/remotes/origin/main --depth=1
-          test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
-          run=$(gh run view "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --json conclusion,event,headBranch,headSha,status,workflowName)
-          test "$(jq -r '.conclusion' <<< "$run")" = success
-          test "$(jq -r '.status' <<< "$run")" = completed
-          test "$(jq -r '.event' <<< "$run")" = push
-          test "$(jq -r '.headBranch' <<< "$run")" = main
-          test "$(jq -r '.headSha' <<< "$run")" = "$SOURCE_SHA"
-          test "$(jq -r '.workflowName' <<< "$run")" = CI
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$REVIEWED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+          test "$GITHUB_SHA" != "$BUILD_SOURCE_SHA"
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          mkdir -p "$RUNNER_TEMP/c7-maintenance"
 
-      - name: Download and verify attested evidence
+      - name: Download specific refreshed source CI evidence
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          ARTIFACT_ID: ${{ inputs.ci_artifact_id }}
         run: |
           set -euo pipefail
-          artifact="azoa-node-conformance-$SOURCE_SHA"
-          gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$artifact" --dir downloaded-evidence
-          bundle=$(find downloaded-evidence -type f -name conformance-evidence.tar.gz -print -quit)
-          test -n "$bundle"
-          test "$(find downloaded-evidence -type f -name conformance-evidence.tar.gz | wc -l)" = 1
-          test "$(stat --printf=%s "$bundle")" -le 2097152
-          gh attestation verify "$bundle" -R "$GITHUB_REPOSITORY" \
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/attempts/$CI_RUN_ATTEMPT" > "$RUNNER_TEMP/c7-maintenance/run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > "$RUNNER_TEMP/c7-maintenance/artifact.json"
+          python3 deploy/railway/maintenance-image-proof.py evidence-metadata "$RUNNER_TEMP/c7-maintenance"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/c7-maintenance/evidence.zip"
+          python3 deploy/railway/maintenance-image-proof.py evidence "$RUNNER_TEMP/c7-maintenance"
+          gh attestation verify "$RUNNER_TEMP/c7-maintenance/conformance-evidence.tar.gz" \
+            -R "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml" \
-            --source-digest "$SOURCE_SHA" \
-            --source-ref refs/heads/main \
-            --deny-self-hosted-runners
-          python3 - "$bundle" verified-evidence "$GITHUB_REPOSITORY" "$SOURCE_SHA" "$CI_RUN_ID" <<'PY'
-          import hashlib
-          import json
-          import sys
-          import tarfile
-          from datetime import datetime, timedelta, timezone
-          from pathlib import Path
+            --signer-digest "$BUILD_SOURCE_SHA" \
+            --source-digest "$BUILD_SOURCE_SHA" --source-ref refs/heads/codex/c7-storage-validation-20261102 \
+            --deny-self-hosted-runners \
+            --format json > "$RUNNER_TEMP/c7-maintenance/evidence-attestation.json"
+          python3 deploy/railway/maintenance-image-proof.py evidence-attestation "$RUNNER_TEMP/c7-maintenance"
 
-          bundle, destination, repository, source_sha, ci_run_id = sys.argv[1:]
-          expected_names = ["metadata.json", "G1.trx", "G2.trx", "G3.trx", "G5.trx", "G7.trx"]
-          expected_workflow = f"{repository}/.github/workflows/ci.yml@refs/heads/main"
-          member_limits = {"metadata.json": 65536, **{name: 524288 for name in expected_names[1:]}}
-          destination_path = Path(destination)
-          destination_path.mkdir(mode=0o700)
-          payloads = {}
-          with tarfile.open(bundle, "r:gz") as archive:
-              members = archive.getmembers()
-              names = [member.name for member in members]
-              if (names != expected_names or any(not member.isfile() for member in members)
-                      or any(member.size > member_limits[member.name] for member in members)
-                      or sum(member.size for member in members) > 2097152):
-                  raise SystemExit("Unexpected conformance archive members.")
-              for member in members:
-                  source = archive.extractfile(member)
-                  if source is None:
-                      raise SystemExit(f"Unreadable conformance archive member: {member.name}")
-                  payload = source.read(member_limits[member.name] + 1)
-                  if len(payload) > member_limits[member.name]:
-                      raise SystemExit(f"Oversized conformance archive member: {member.name}")
-                  payloads[member.name] = payload
+      - name: Create isolated BuildKit builder
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3 verified 2026-11-02
 
-          metadata = json.loads(payloads["metadata.json"])
-          required_keys = {"schema", "repository", "commit", "workflow", "runId", "generatedAt", "expiresAt", "files"}
-          if set(metadata) != required_keys:
-              raise SystemExit("Unexpected conformance metadata shape.")
-          if (metadata["schema"] != "azoa-node-conformance-evidence/v1"
-                  or metadata["repository"] != repository
-                  or metadata["commit"] != source_sha
-                  or metadata["workflow"] != expected_workflow
-                  or metadata["runId"] != ci_run_id):
-              raise SystemExit("Conformance metadata identity mismatch.")
-          parse_time = lambda value: datetime.fromisoformat(value.replace("Z", "+00:00"))
-          generated_at, expires_at = parse_time(metadata["generatedAt"]), parse_time(metadata["expiresAt"])
-          now = datetime.now(timezone.utc)
-          if generated_at.tzinfo is None or expires_at.tzinfo is None or generated_at > now or expires_at <= now or expires_at > generated_at + timedelta(hours=24):
-              raise SystemExit("Conformance metadata freshness mismatch.")
-          file_entries = metadata["files"]
-          if not isinstance(file_entries, list) or [entry.get("name") for entry in file_entries] != expected_names[1:]:
-              raise SystemExit("Conformance metadata file list mismatch.")
-          for entry in file_entries:
-              if set(entry) != {"name", "sha256"} or entry["name"] not in payloads:
-                  raise SystemExit("Conformance metadata file entry mismatch.")
-              if hashlib.sha256(payloads[entry["name"]]).hexdigest() != entry["sha256"]:
-                  raise SystemExit(f"Conformance hash mismatch: {entry['name']}")
-          for name in expected_names:
-              (destination_path / name).write_bytes(payloads[name])
-          PY
-
-      - name: Derive image names
-        id: image
-        run: |
-          echo "api=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-          echo "frontend=ghcr.io/${GITHUB_REPOSITORY,,}-frontend" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to GitHub Container Registry
+      - name: Log in to this repository's container registry
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish verified API image
-        id: push-api
+      - name: Publish standard Dockerfile from exact immutable Git context
+        id: image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
-          context: .
-          file: Dockerfile.conformance-release
-          push: true
-          build-args: SOURCE_REVISION=${{ inputs.source_sha }}
-          tags: ${{ steps.image.outputs.api }}:${{ inputs.source_sha }}
+          context: https://github.com/JadeZaher/azoa-autonomous-zones-of-action.git#c7cfa4af82c99e130a26064054ea7c52ab2603bb
+          file: Dockerfile
+          platforms: linux/amd64
+          build-args: SOURCE_REVISION=c7cfa4af82c99e130a26064054ea7c52ab2603bb
+          provenance: mode=max
+          outputs: type=image,name=ghcr.io/jadezaher/azoa-autonomous-zones-of-action,push-by-digest=true,name-canonical=true,push=true
+          github-token: ${{ github.token }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/JadeZaher/azoa-autonomous-zones-of-action
+            org.opencontainers.image.revision=c7cfa4af82c99e130a26064054ea7c52ab2603bb
+            io.azoa.release-purpose=storage-maintenance-only
+            io.azoa.publication-workflow-revision=${{ github.sha }}
 
-      - name: Attest API release image
+      - name: Attest emitted index with reviewed workflow identity
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
-          subject-name: ${{ steps.image.outputs.api }}
-          subject-digest: ${{ steps.push-api.outputs.digest }}
+          subject-name: ghcr.io/jadezaher/azoa-autonomous-zones-of-action
+          subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
 
-      - name: Build and publish verified frontend image
-        id: push-frontend
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: .
-          file: frontend/Dockerfile
-          push: true
-          tags: ${{ steps.image.outputs.frontend }}:${{ inputs.source_sha }}
-
-      - name: Attest frontend release image
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
-        with:
-          subject-name: ${{ steps.image.outputs.frontend }}
-          subject-digest: ${{ steps.push-frontend.outputs.digest }}
-          push-to-registry: true
-
-      - name: Materialize immutable Railway blueprint
+      - name: Verify anonymous public pull and bound Git-source provenance
         env:
-          API_IMAGE_NAME: ${{ steps.image.outputs.api }}
-          API_IMAGE_DIGEST: ${{ steps.push-api.outputs.digest }}
-          FRONTEND_IMAGE_NAME: ${{ steps.image.outputs.frontend }}
-          FRONTEND_IMAGE_DIGEST: ${{ steps.push-frontend.outputs.digest }}
-          RELEASE_TEMPLATE: ${{ runner.temp }}/azoa-railway-template-${{ inputs.source_sha }}.json
-        run: |
-          python3 deploy/railway/render-template.py \
-            --api-image "$API_IMAGE_NAME@$API_IMAGE_DIGEST" \
-            --frontend-image "$FRONTEND_IMAGE_NAME@$FRONTEND_IMAGE_DIGEST" \
-            --output "$RELEASE_TEMPLATE"
-
-      - name: Upload immutable Railway blueprint
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: azoa-railway-template-${{ inputs.source_sha }}
-          path: ${{ runner.temp }}/azoa-railway-template-${{ inputs.source_sha }}.json
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Publish immutable deployment references
-        id: release_refs
-        env:
-          API_IMAGE_NAME: ${{ steps.image.outputs.api }}
-          API_IMAGE_DIGEST: ${{ steps.push-api.outputs.digest }}
-          FRONTEND_IMAGE_NAME: ${{ steps.image.outputs.frontend }}
-          FRONTEND_IMAGE_DIGEST: ${{ steps.push-frontend.outputs.digest }}
-        run: |
-          echo "api_image=$API_IMAGE_NAME@$API_IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
-          echo "frontend_image=$FRONTEND_IMAGE_NAME@$FRONTEND_IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Verified AZOA release images"
-            echo
-            echo "Deploy API and schema job only from \`$API_IMAGE_NAME@$API_IMAGE_DIGEST\`."
-            echo
-            echo "Deploy frontend only from \`$FRONTEND_IMAGE_NAME@$FRONTEND_IMAGE_DIGEST\`."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  deploy:
-    name: Promote immutable images to Railway
-    needs: promote
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: railway-production
-    permissions:
-      contents: read
-    steps:
-      - name: Check out verified release tooling
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ inputs.source_sha }}
-          fetch-depth: 1
-
-      - name: Install pinned Railway CLI
-        run: npm install --global @railway/cli@5.27.0
-
-      - name: Run serial immutable-image rollout
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
-          ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
-          SURREAL_SERVICE_ID: ${{ vars.RAILWAY_SURREAL_SERVICE_ID }}
-          SCHEMA_SERVICE_ID: ${{ vars.RAILWAY_SCHEMA_SERVICE_ID }}
-          API_SERVICE_ID: ${{ vars.RAILWAY_API_SERVICE_ID }}
-          FRONTEND_SERVICE_ID: ${{ vars.RAILWAY_FRONTEND_SERVICE_ID }}
-          API_HEALTH_URL: ${{ vars.RAILWAY_API_HEALTH_URL }}
-          FRONTEND_HEALTH_URL: ${{ vars.RAILWAY_FRONTEND_HEALTH_URL }}
-          SURREAL_MODE: ${{ inputs.surreal_mode }}
-          API_IMAGE: ${{ needs.promote.outputs.api_image }}
-          FRONTEND_IMAGE: ${{ needs.promote.outputs.frontend_image }}
-          SURREAL_IMAGE: docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60
+          GH_TOKEN: ${{ github.token }}
+          INDEX_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
           set -euo pipefail
-          python3 deploy/railway/serial-rollout.py \
-            --project-id "$PROJECT_ID" \
-            --environment-id "$ENVIRONMENT_ID" \
-            --surreal-service-id "$SURREAL_SERVICE_ID" \
-            --schema-service-id "$SCHEMA_SERVICE_ID" \
-            --api-service-id "$API_SERVICE_ID" \
-            --frontend-service-id "$FRONTEND_SERVICE_ID" \
-            --surreal-image "$SURREAL_IMAGE" \
-            --api-image "$API_IMAGE" \
-            --frontend-image "$FRONTEND_IMAGE" \
-            --surreal-mode "$SURREAL_MODE" \
-            --api-health-url "$API_HEALTH_URL" \
-            --frontend-health-url "$FRONTEND_HEALTH_URL" \
-            --confirm "PROMOTE $PROJECT_ID/$ENVIRONMENT_ID"
+          python3 deploy/railway/maintenance-image-proof.py image "$INDEX_DIGEST" "$RUNNER_TEMP/c7-maintenance"
+          mkdir -m 700 "$RUNNER_TEMP/c7-anonymous-docker"
+          docker --config "$RUNNER_TEMP/c7-anonymous-docker" pull --platform linux/amd64 "$IMAGE_NAME@$INDEX_DIGEST"
+          gh attestation verify "oci://$IMAGE_NAME@$INDEX_DIGEST" \
+            -R "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/conformance-release.yml" \
+            --signer-digest "$GITHUB_SHA" --source-digest "$GITHUB_SHA" \
+            --source-ref refs/heads/codex/c7-storage-maintenance-image-20261102 \
+            --deny-self-hosted-runners \
+            --format json > "$RUNNER_TEMP/c7-maintenance/image-attestation.json"
+          python3 deploy/railway/maintenance-image-proof.py receipt "$INDEX_DIGEST" "$RUNNER_TEMP/c7-maintenance"
+          {
+            echo '## Storage-maintenance candidate only; no deployment performed'
+            echo "Immutable API image: \`$IMAGE_NAME@$INDEX_DIGEST\`"
+            echo "Build source: \`$BUILD_SOURCE_SHA\`; publication workflow: \`$GITHUB_SHA\`."
+            echo 'Anonymous pull and embedded BuildKit source verification passed.'
+            echo 'This is not payment promotion or a claim of the main promotion workflow.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact immutable publication proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: c7-maintenance-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/c7-maintenance/publication-receipt.json
+            ${{ runner.temp }}/c7-maintenance/image-proof.json
+            ${{ runner.temp }}/c7-maintenance/image-attestation.json
+            ${{ runner.temp }}/c7-maintenance/evidence-attestation.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30

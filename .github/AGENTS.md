@@ -1,5 +1,40 @@
 # .github — CI notes
 
+## Exact-c7 storage-maintenance publication branch
+
+Only `codex/c7-storage-maintenance-image-20261102` replaces the registered
+`conformance-release.yml` with a publication-only workflow. Do not merge this
+replacement into main or PR3. Its job has no Railway credential, production
+environment, deployment action, schema job, frontend image or provider call.
+This maintenance job references no GitHub environment, so it cannot implicitly
+create the absent `conformance-promotion` environment. Root/C explicitly reviewed
+this publication-only boundary; the exact W review and authorized manual dispatch
+are its gates. No server-side required-reviewer protection is claimed or altered.
+The normal main release workflow and its promotion policy remain untouched.
+
+The checked-out workflow revision W is reviewed separately from build source C.
+BuildKit receives the hardcoded remote Git context at exact C=c7cfa4af, not the
+tooling checkout. The GHA attestation binds W and the emitted image-index digest;
+the index binds the platform manifest and maximum BuildKit provenance containing
+C as an exact Git material. Never substitute an OCI revision label for this chain.
+
+Publication is digest-only in this repository's fixed GHCR package. No mutable
+tag is created or replaced, including on a workflow rerun. The evidence artifact
+name includes W, publication run ID and attempt, with overwrite disabled. A
+failed public-pull check does not grant permission to expose an existing private
+package: investigate its ownership/association and review visibility separately.
+
+Fresh CI is generated on `codex/c7-storage-validation-20261102`, whose ref points
+to exact C without a new commit. CI signs this explicitly named branch, not main.
+The publication workflow requires that new successful push run, attempt1, its
+specific artifact ID and unexpired signed source metadata. The verified GHA
+statement must name CI41461162520/attempts/1 and bind the exact bundle hash;
+timestamps and run ID alone cannot exclude a later attempt. The old main artifact
+is retained unchanged. The standard c7 Dockerfile is intentionally used because
+it is the deployed API recipe; no conformance-release filesystem changes or
+evidence directory are silently added. This image is a storage-maintenance
+candidate and cannot be represented as the normal main-promotion release.
+
 ## §gitleaks — allowlist review rules
 
 `.gitleaks.toml` (repo root) extends the default gitleaks rules; the CI job passes it with
