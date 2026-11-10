@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Fragment } from 'react'
+import { sourceLinksOwnUrls } from '@/content/workflows'
 import type { Block, Run, WorkflowSource } from '@/content/workflows'
 
 function RunView({ run }: { run: Run }) {
@@ -20,6 +21,14 @@ function Runs({ runs }: { runs: readonly Run[] }) {
   ))
 }
 
+function SourceLinks({ source }: { source: WorkflowSource }) {
+  if (sourceLinksOwnUrls(source)) return null
+  if (source.linkLabel) return <> <a href={source.urls[0]}>{source.linkLabel}</a></>
+  return source.urls.map((url, index) => (
+    <Fragment key={url}>{index === 0 ? ' ' : ' and '}<a href={url}>{url}</a></Fragment>
+  ))
+}
+
 function SourceList({ sources }: { sources: readonly WorkflowSource[] }) {
   return (
     <>
@@ -29,11 +38,7 @@ function SourceList({ sources }: { sources: readonly WorkflowSource[] }) {
         {sources.map((source) => (
           <li key={source.name}>
             {source.runs ? <Runs runs={source.runs} /> : source.name}
-            {source.linkLabel
-              ? <> <a href={source.urls[0]}>{source.linkLabel}</a></>
-              : source.urls.map((url, index) => (
-                <Fragment key={url}>{index === 0 ? ' ' : ' and '}<a href={url}>{url}</a></Fragment>
-              ))}
+            <SourceLinks source={source} />
           </li>
         ))}
       </ol>

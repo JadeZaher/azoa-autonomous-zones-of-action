@@ -23,6 +23,7 @@ describe('public documents', () => {
     expect(urls).not.toContain(absoluteUrl('/login'))
     expect(urls.join('\n')).not.toContain('railway.app')
     expect(urls.join('\n')).not.toContain('azoa.io')
+    expect(urls.join('\n')).not.toContain('/guides')
   })
 
   it('builds an RSS feed from the essays and workflow pages', () => {
@@ -33,6 +34,11 @@ describe('public documents', () => {
     expect(xml).toContain('/workflows/consent-records')
     expect(xml).toContain('/workflows/settle-once')
     expect(xml).toContain('/workflows/fail-closed')
+    expect(xml).toContain('/workflows/idempotent-requests')
+    expect(xml).toContain('/workflows/consent-withdrawal')
+    expect(xml).toContain('/workflows/least-privilege')
+    expect(xml).toContain('/workflows/separation-of-duties')
+    expect(xml).toContain('/workflows/event-logging')
     expect(xml).not.toContain('/workflows/action-graphs')
     expect(xml).not.toContain('/workflows/grants-and-bounties')
     expect(xml).not.toContain('railway.app')
@@ -61,7 +67,16 @@ describe('public documents', () => {
 
   it('states the simulation on the index and every workflow, with the cited sources', () => {
     expect(ESSAYS).toHaveLength(2)
-    expect(WORKFLOWS.map((workflow) => workflow.slug)).toEqual(['settle-once', 'fail-closed', 'consent-records'])
+    expect(WORKFLOWS.map((workflow) => workflow.slug)).toEqual([
+      'settle-once',
+      'fail-closed',
+      'consent-records',
+      'idempotent-requests',
+      'consent-withdrawal',
+      'least-privilege',
+      'separation-of-duties',
+      'event-logging',
+    ])
     const index = indexBodyText()
     expect(index).toContain('Shapes the engine can describe.')
     expect(index).toContain(SIMULATION_SENTENCE)
@@ -69,6 +84,11 @@ describe('public documents', () => {
     expect(index).toContain('https://ardanova.com')
     expect(index).toContain('/notes/settle-once-or-not-at-all')
     expect(index).toContain('/notes/fail-closed-or-it-isnt-a-control')
+    expect(index).toContain('/workflows/idempotent-requests')
+    expect(index).toContain('/workflows/consent-withdrawal')
+    expect(index).toContain('/workflows/least-privilege')
+    expect(index).toContain('/workflows/separation-of-duties')
+    expect(index).toContain('/workflows/event-logging')
     expect(index).not.toContain('azoa.io')
     expect(index).not.toContain('/patterns')
 
@@ -117,6 +137,60 @@ describe('public documents', () => {
     expect(consent).toContain('https://azoa.ardanova.com/privacy')
     expect(consent).toContain('could not be retrieved in the research pass (403)')
     expect(consent).toContain('does not paraphrase ICO audit-trail field lists from memory')
+  })
+
+  it('keeps the fact-checked figures and limits on the five field notes', () => {
+    const bySlug = Object.fromEntries(WORKFLOWS.map((workflow) => [workflow.slug, workflow]))
+    const idempotent = workflowBodyText(bySlug['idempotent-requests']!)
+    expect(bySlug['idempotent-requests']!.seoTitle).toBe('Idempotent retries in a workflow — Workflows | AZOA')
+    expect(idempotent).toContain('A request method is considered \'idempotent\' if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request.')
+    expect(idempotent).toContain('PUT, DELETE, and safe request methods are idempotent.')
+    expect(idempotent).toContain('A proxy MUST NOT automatically retry non-idempotent requests.')
+    expect(idempotent).toContain('A client SHOULD NOT automatically retry a failed automatic retry.')
+    expect(idempotent).toContain('https://www.rfc-editor.org/rfc/rfc9110.html')
+    expect(idempotent).toContain('https://primusneo.com/guides/idempotent-requests')
+    expect(idempotent).toContain('does not invent "idempotency keys"')
+    expect(idempotent).toContain('The RFC does not say that POST is idempotent')
+    expect(idempotent).toContain('An illustrative scenario')
+
+    const withdrawal = workflowBodyText(bySlug['consent-withdrawal']!)
+    expect(withdrawal).toContain('not legal advice')
+    expect(withdrawal).toContain('It shall be as easy to withdraw as to give consent.')
+    expect(withdrawal).toContain('clearly distinguishable from the other matters')
+    expect(withdrawal).toContain('utmost account shall be taken')
+    expect(withdrawal).toContain('https://www.legislation.gov.uk/eur/2016/679/article/7')
+    expect(withdrawal).toContain('does not enable identity checks for moving real money')
+    expect(withdrawal).toContain('An illustrative scenario')
+
+    const least = workflowBodyText(bySlug['least-privilege']!)
+    expect(least).toContain('Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks.')
+    expect(least).toContain('Organizations apply least privilege to the development, implementation, and operation of organizational systems.')
+    expect(least).toContain('https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final')
+    expect(least).toContain('does not claim to implement 800-53')
+    expect(least).toContain('no exploit steps')
+    expect(least).toContain('An illustrative scenario')
+
+    const duties = workflowBodyText(bySlug['separation-of-duties']!)
+    expect(duties).toContain('Identify and document [Assignment: organization-defined duties of individuals requiring separation]')
+    expect(duties).toContain('Define system access authorizations to support separation of duties.')
+    expect(duties).toContain('does not invent a mandatory initiator/approver pair')
+    expect(duties).toContain('does not claim to implement 800-53')
+    expect(duties).toContain('It does not move value.')
+    expect(duties).toContain('An illustrative scenario')
+
+    const events = workflowBodyText(bySlug['event-logging']!)
+    expect(events).toContain('Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: organization-defined event types that the system is capable of logging].')
+    expect(events).toContain('They are not reconstructed here.')
+    expect(events).toContain('is not cited as quoted text.')
+    expect(events).toContain('does not claim to implement 800-53')
+    expect(events).toContain('no keyloggers, clipboard monitors, secret capture, or exploit steps')
+    expect(events).toContain('An illustrative scenario')
+
+    for (const slug of ['least-privilege', 'separation-of-duties', 'event-logging']) {
+      const text = workflowBodyText(bySlug[slug]!)
+      expect(text).toContain('https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf')
+      expect(text).toContain('https://doi.org/10.6028/NIST.SP.800-53r5')
+    }
   })
 
   it('puts article, breadcrumb, and collection JSON-LD on the workflow routes', () => {

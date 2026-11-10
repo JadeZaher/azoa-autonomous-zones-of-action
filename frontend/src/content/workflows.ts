@@ -8,6 +8,18 @@ const AUTHOR_LINE: Block = {
   runs: ['Author: Escherbridge. Last reviewed: 2026-11-10, America/Denver.'],
 }
 
+const SIMULATION_CLOSE: Block = {
+  type: 'p',
+  runs: [
+    { strong: SIMULATION_SENTENCE },
+    ' ',
+    { text: 'ArdaNova', href: 'https://ardanova.com' },
+    ' is a planned pilot whose economy is still simulated. ',
+    { text: 'PrimusNeo', href: 'https://primusneo.com' },
+    ' is the lab whose stack this engine belongs to.',
+  ],
+}
+
 const PUBLISHED = '2026-11-10'
 const NOTE_DATE = '2026-11-09'
 
@@ -46,15 +58,15 @@ export type WorkflowPage = {
 }
 
 export const WORKFLOW_INDEX = {
-  eyebrow: 'Three workflows · the hosted site is a simulation',
+  eyebrow: 'Eight workflows · the hosted site is a simulation',
   h1: 'Shapes the engine can describe.',
   seoTitle: 'Workflows | AZOA',
   description:
-    'Workflow shapes the engine models: settle-once, fail-closed controls, and consent records. The hosted site is a simulation and does not move value.',
+    'Workflow shapes the engine models: settle-once, fail-closed controls, consent records, idempotent retries, consent withdrawal, least privilege, separation of duties, and event logging. The hosted site is a simulation and does not move value.',
   publishedAt: PUBLISHED,
   lastReviewed: PUBLISHED,
   lede:
-    'These pages are about workflow shapes the engine models: a retried step that settles once or not at all, a control that fails closed, and a consent record that can be shown and withdrawn. The figures and legal sentences are other people’s, with the links left on. They are public practice, not a claim that this hosted site moves money, verifies identity for value, or onboarded a regulated customer.',
+    'These pages are about workflow shapes the engine models: a retried step that settles once or not at all, a control that fails closed, and a consent record that can be shown and withdrawn. Five field notes read public rules the same way: RFC 9110 on idempotent retries, UK GDPR Article 7 on withdrawing consent, and NIST SP 800-53 Rev. 5 on least privilege (AC-6), separation of duties (AC-5), and which events an audit log is for (AU-2). The figures and legal sentences are other people’s, with the links left on. They are public practice, not a claim that this hosted site moves money, verifies identity for value, or onboarded a regulated customer.',
   blocks: [
     {
       type: 'p',
@@ -78,6 +90,32 @@ export const WORKFLOW_INDEX = {
         [
           { text: 'Consent records', href: '/workflows/consent-records', strong: true },
           ' — UK GDPR Article 7: demonstrate consent, ask clearly, and make withdrawal as easy as the original yes. Permission that cannot be shown, or withdrawn, was not really recorded.',
+        ],
+      ],
+    },
+    { type: 'h2', text: 'Five field notes' },
+    {
+      type: 'ul',
+      items: [
+        [
+          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests', strong: true },
+          ' — RFC 9110 §9.2.2: the intended effect of multiple identical requests is the same as one request, which is why a lost response can be retried automatically. PUT, DELETE, and safe methods are idempotent in that specification. This page does not call POST idempotent, and it does not invent idempotency keys.',
+        ],
+        [
+          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal', strong: true },
+          ' — UK GDPR Article 7(3): consent can be withdrawn at any time, and it shall be as easy to withdraw as to give. Not legal advice.',
+        ],
+        [
+          { text: 'Least privilege', href: '/workflows/least-privilege', strong: true },
+          ' — NIST SP 800-53 Rev. 5, AC-6: only the authorized accesses a user or process needs to accomplish the assigned task. Not an 800-53 implementation claim.',
+        ],
+        [
+          { text: 'Separation of duties', href: '/workflows/separation-of-duties', strong: true },
+          ' — NIST SP 800-53 Rev. 5, AC-5: identify and document the duties that require separation, then define access authorizations that support that split.',
+        ],
+        [
+          { text: 'Event logging', href: '/workflows/event-logging', strong: true },
+          ' — NIST SP 800-53 Rev. 5, AU-2 starts by identifying the event types the system can log in support of the audit function. Later control items are not reconstructed here.',
         ],
       ],
     },
@@ -181,6 +219,10 @@ const failClosedSources: readonly WorkflowSource[] = [
 ]
 
 const articleSeven = 'https://www.legislation.gov.uk/eur/2016/679/article/7'
+const rfc9110 = 'https://www.rfc-editor.org/rfc/rfc9110.html'
+const nist80053 = 'https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf'
+const nist80053Doi = 'https://doi.org/10.6028/NIST.SP.800-53r5'
+const nist80053Csrc = 'https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final'
 
 const consentSources: readonly WorkflowSource[] = [
   {
@@ -317,6 +359,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
             { text: 'Consent records', href: '/workflows/consent-records' },
             ' — permission that cannot be shown, or withdrawn, was not recorded. It was only assumed.',
           ],
+          [
+            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+            ' — a lost response can be retried automatically only when two identical requests mean one effect. This site does not move value.',
+          ],
+          [
+            { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
+            ' — identify the duties that require separation, then define access authorizations that support the split.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — decide which events the audit function is for.',
+          ],
         ],
       },
       {
@@ -445,6 +499,26 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
           [
             { text: 'Consent records', href: '/workflows/consent-records' },
             ' — permission that cannot be shown, or withdrawn, was not recorded. It was only assumed.',
+          ],
+          [
+            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+            ' — a lost response can be retried automatically only when two identical requests mean one effect. This site does not move value.',
+          ],
+          [
+            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+            ' — it shall be as easy to withdraw as to give consent. Not legal advice.',
+          ],
+          [
+            { text: 'Least privilege', href: '/workflows/least-privilege' },
+            ' — only the authorized accesses a user or process needs to accomplish the assigned task.',
+          ],
+          [
+            { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
+            ' — identify the duties that require separation, then define access authorizations that support the split.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — decide which events the audit function is for.',
           ],
         ],
       },
@@ -587,6 +661,14 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
             { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
             ' — if a required check cannot be verified, the run should stop rather than warning and continuing.',
           ],
+          [
+            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+            ' — it shall be as easy to withdraw as to give consent. Not legal advice.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — decide which events, including a withdrawal, the audit function is for.',
+          ],
         ],
       },
       {
@@ -618,6 +700,551 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
       AUTHOR_LINE,
     ],
   },
+  {
+    slug: 'idempotent-requests',
+    title: 'Idempotent retries in a workflow',
+    h1: 'Idempotent retries in a workflow',
+    seoTitle: 'Idempotent retries in a workflow — Workflows | AZOA',
+    description:
+      'A lost workflow response can be retried automatically only when two identical requests mean one effect. This is the workflow reading of RFC 9110.',
+    eyebrow: 'Idempotent requests',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'If the response never arrived, automatic retry is safe only when two identical requests were designed to mean one effect. That is the HTTP rule, read here as a workflow problem: a settlement step, a grant of access, or a recorded consent change that may be interrupted mid-flight.',
+    sources: [
+      {
+        name: 'RFC 9110, HTTP Semantics, June 2022, §9.2.2.',
+        urls: [rfc9110],
+        datePublished: '2022-06',
+      },
+      {
+        name: 'Protocol sibling: Idempotent HTTP requests.',
+        urls: ['https://primusneo.com/guides/idempotent-requests'],
+        runs: [
+          'Protocol sibling: ',
+          { text: 'Idempotent HTTP requests', href: 'https://primusneo.com/guides/idempotent-requests' },
+        ],
+      },
+      {
+        name: 'Workflow sibling: Settle once.',
+        urls: ['/workflows/settle-once'],
+        runs: [
+          'Workflow sibling: ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+        ],
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'This is a workflow note about retries, not a payments-product page. The protocol definition lives on ',
+          { text: "PrimusNeo's idempotent HTTP requests guide", href: 'https://primusneo.com/guides/idempotent-requests' },
+          ', which uses the same RFC 9110 source. This page does not invent a second definition. The already-live sibling is ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          '. This public site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled. It does not move money, and it does not prove a settle-once model in the wild.',
+        ],
+      },
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'RFC 9110, HTTP Semantics, June 2022, §9.2.2:' },
+            ' "A request method is considered \'idempotent\' if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request." "Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent."',
+          ],
+          [
+            { strong: 'Why the distinction exists:' },
+            ' "Idempotent methods are distinguished because the request can be repeated automatically if a communication failure occurs before the client is able to read the server\'s response."',
+          ],
+          [
+            { strong: 'The two limits in the same section:' },
+            ' "A proxy MUST NOT automatically retry non-idempotent requests." "A client SHOULD NOT automatically retry a failed automatic retry."',
+          ],
+        ],
+      },
+      { type: 'h2', text: "The RFC rule, once, in the RFC's words" },
+      {
+        type: 'p',
+        runs: [
+          'Intended effect of many identical requests equals the effect of one. PUT, DELETE, and safe methods are idempotent in this specification. The RFC does not say that POST is idempotent, and this page does not say so either. It does not invent "idempotency keys" as if RFC 9110 defined that product pattern. The longer protocol reading, including the logging note and the dropped-connection example, is on the ',
+          { text: 'PrimusNeo page', href: 'https://primusneo.com/guides/idempotent-requests' },
+          '.',
+        ],
+      },
+      {
+        type: 'p',
+        runs: [
+          'On a workflow, the same habit matters when a step may be interrupted before a response is read. Automatic retry is a safe move only for a method designed so that two identical requests mean one effect. ',
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+          ' is the sibling for a step that should stop rather than guess. ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          ' is the modelled "once, or not at all" page. Neither of those pages, and not this one, describes a live rail, a currency, or a KYC step.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: [
+          'This is a worked example, not a customer and not a transfer. A workflow step is sent, the response is lost, and a proxy retries it automatically. If the method was not idempotent, RFC 9110 already says that automatic retry was the wrong move. This site does not move value, so it does not prove the modelled alternative in production.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — a retried step is modelled to settle once, or not at all. This site does not move value.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — decide which events the audit function is for.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to read the RFC page, or ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          '. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'consent-withdrawal',
+    title: 'Withdrawing consent',
+    h1: 'Withdrawing consent under UK GDPR Article 7',
+    seoTitle: 'Withdrawing consent under UK GDPR Article 7 — Workflows | AZOA',
+    description:
+      'Under UK GDPR Article 7, consent can be withdrawn at any time, and it should be as easy to withdraw as to give. This covers that rule. Not legal advice.',
+    eyebrow: 'Consent withdrawal',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'Under Article 7 of the UK version of the GDPR, a person has the right to withdraw consent at any time, must be told that before consent is given, and "It shall be as easy to withdraw as to give consent." If giving consent was one step and withdrawing it is a scavenger hunt, the official test in Article 7(3) has not been met.',
+    sources: [
+      {
+        name: 'Regulation (EU) 2016/679, Article 7, UK version, legislation.gov.uk.',
+        urls: [articleSeven],
+      },
+      {
+        name: 'Sibling: Consent records.',
+        urls: ['/workflows/consent-records'],
+        runs: [
+          'Sibling: ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+        ],
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'This is a field note about taking consent back, not a compliance badge, not a cookie-banner review, and not legal advice. It is a plain reading of an official article, as a sibling to the already-live ',
+          { text: 'consent records', href: '/workflows/consent-records' },
+          ' page. It is not a claim that AZOA is a controller in any particular case, not a KYC or age-verification how-to, and not a U.S. law survey. It does not walk a reader through a filing or a DPIA, and it does not invent fines, time limits for honouring a withdrawal, or "GDPR requires a particular button."',
+        ],
+      },
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'Regulation (EU) 2016/679, Article 7, "Conditions for consent,"' },
+            ' as it appears on legislation.gov.uk (UK version). "1. Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data."',
+          ],
+          [
+            { strong: 'Article 7(2):' },
+            ' "If the data subject\'s consent is given in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language. Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding."',
+          ],
+          [
+            { strong: 'Article 7(3):' },
+            ' "The data subject shall have the right to withdraw his or her consent at any time. The withdrawal of consent shall not affect the lawfulness of processing based on consent before its withdrawal. Prior to giving consent, the data subject shall be informed thereof. It shall be as easy to withdraw as to give consent." Article 7(4): "When assessing whether consent is freely given, utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract." That last sentence is not turned into contract advice here.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What Article 7 actually says' },
+      {
+        type: 'p',
+        runs: [
+          'Demonstrate consent (7(1)). Distinguish it in a longer declaration (7(2)). Withdraw at any time; prior processing stays lawful; tell the person beforehand; as easy to withdraw as to give (7(3)). A withdrawn consent is a workflow event that has to be recorded and then respected — without inventing a house state machine. ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+          ' is the sibling for the record itself. ',
+          { text: 'Event logging', href: '/workflows/event-logging' },
+          ' is the sibling for deciding which events the audit function is for. ',
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+          ' is the sibling for a step that should stop when consent is no longer there.',
+        ],
+      },
+      {
+        type: 'p',
+        runs: ['This public site is a simulation. It does not move money, and it does not enable identity checks for moving real money.'],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: [
+          'This is a worked example, not a customer and not a filing. Consent was given in one click, and withdrawal is buried three menus deep behind a form that is not clearly about consent. Article 7(3)\'s "as easy to withdraw as to give" sentence is already the official test that design fails.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Consent records', href: '/workflows/consent-records' },
+            ' — a consent that cannot be found later is not yet a record.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — decide which events, including a withdrawal, the audit function is for.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to read Article 7, or ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+          '. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'least-privilege',
+    title: 'Least privilege',
+    h1: 'Least privilege: only the access the task needs',
+    seoTitle: 'Least privilege — Workflows | AZOA',
+    description:
+      'NIST SP 800-53 Rev. 5, AC-6, asks for only the authorized accesses a user or process needs for the assigned task. This guide covers that official principle.',
+    eyebrow: 'Least privilege',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'NIST SP 800-53 Rev. 5, control AC-6, tells organizations to "Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks." If a role or a process can do more than the assigned task requires, the official principle has not been applied yet.',
+    sources: [
+      {
+        name: 'NIST SP 800-53 Revision 5, AC-6 Least Privilege.',
+        urls: [nist80053, nist80053Doi, nist80053Csrc],
+        runs: [
+          'NIST SP 800-53 Revision 5, AC-6 Least Privilege. ',
+          { text: nist80053, href: nist80053 },
+          ' · DOI: ',
+          { text: nist80053Doi, href: nist80053Doi },
+          ' · CSRC: ',
+          { text: nist80053Csrc, href: nist80053Csrc },
+        ],
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'This is a field principle about access, not a penetration-test post, not a certification, and not a complete catalogue of AC-6 enhancements (AC-6(1) and later were not used in the brief). It contains no exploit steps, no proofs of concept, and no "how to escalate." AZOA does not claim to implement 800-53, and this page does not invent a role catalogue. This public site is a simulation. It does not move money.',
+        ],
+      },
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'NIST SP 800-53 Revision 5, AC-6 Least Privilege.' },
+            ' Control: "Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks."',
+          ],
+          [
+            { strong: 'Discussion, as opened:' },
+            ' "Organizations employ least privilege for specific duties and systems. The principle of least privilege is also applied to system processes, ensuring that the processes have access to systems and operate at privilege levels no higher than necessary to accomplish organizational missions or business functions. Organizations consider the creation of additional processes, roles, and accounts as necessary to achieve least privilege. Organizations apply least privilege to the development, implementation, and operation of organizational systems."',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What AC-6 actually says' },
+      {
+        type: 'p',
+        runs: [
+          'Authorized accesses only; users and processes; no higher privilege than the task or function needs; additional roles may be created in order to achieve least privilege; applies through development, implementation, and operation. A workflow can name the task and the access it actually needs. ',
+          { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
+          ' is the sibling for splitting duties that should not sit in one place. ',
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+          ' is the already-live sibling for a step that should stop rather than continue with too much access.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: [
+          'This is a worked example, not a customer and not an audit. A workflow process is granted a broad administrative role because that was the easiest existing account, and the assigned task only needed to record a consent change. AC-6\'s "necessary to accomplish assigned organizational tasks" sentence is already the reason that role is too wide.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
+            ' — first name the duties that must be separated, then make the access authorizations support the split.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — decide which events the audit function is for.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to name the task and the access it actually needs. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'separation-of-duties',
+    title: 'Separation of duties',
+    h1: 'Separation of duties',
+    seoTitle: 'Separation of duties — Workflows | AZOA',
+    description:
+      'NIST SP 800-53 Rev. 5, AC-5, tells organizations to identify the duties that require separation, and to define access authorizations that support that split.',
+    eyebrow: 'Separation of duties',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'NIST SP 800-53 Rev. 5, control AC-5, tells organizations to identify and document the duties that require separation, and to define system access authorizations that support that separation. First say which duties must be separated. Then make the access authorizations actually support that split.',
+    sources: [
+      {
+        name: 'NIST SP 800-53 Revision 5, AC-5 Separation of Duties.',
+        urls: [nist80053, nist80053Doi],
+        runs: [
+          'NIST SP 800-53 Revision 5, AC-5 Separation of Duties. ',
+          { text: nist80053, href: nist80053 },
+          ' · DOI: ',
+          { text: nist80053Doi, href: nist80053Doi },
+        ],
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'This is a field note about splitting duties, not a bank-operations manual, not a KYC page, and not a certification. It does not invent a mandatory initiator/approver pair as a NIST rule. The assignment in the control is organization-defined. It contains no exploit steps, and it does not invent a live settlement desk. This public site is a simulation. It does not move value. AZOA does not claim to implement 800-53.',
+        ],
+      },
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'NIST SP 800-53 Revision 5, AC-5 Separation of Duties.' },
+            ' Control: "a. Identify and document [Assignment: organization-defined duties of individuals requiring separation]; and b. Define system access authorizations to support separation of duties."',
+          ],
+          [
+            'Those two control items are the official text used here. No additional discussion sentences were taken from the PDF beyond what the brief opened, and none are invented.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What AC-5 actually says' },
+      {
+        type: 'p',
+        runs: [
+          'Identify and document the duties — the organization defines them. Define system access authorizations to support the separation. A workflow can name the split it is using. Naming a split is not the same as claiming a 800-53 implementation, and it is not the same as running a live desk.',
+        ],
+      },
+      {
+        type: 'p',
+        runs: [
+          { text: 'Least privilege', href: '/workflows/least-privilege' },
+          ' is the sibling for access that should not exceed the assigned task. ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          ' is the already-live modelled sibling for a retried step that should not finish twice. ',
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+          ' is the sibling for a step that should stop rather than continue.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: [
+          'This is a worked example, not a customer and not a production desk. One person can both start and finish a modelled settlement step, and no one has written down whether those duties should be separated. AC-5 already starts with "identify and document." The organization still has to do that part; NIST does not hand over a universal pair.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Least privilege', href: '/workflows/least-privilege' },
+            ' — only the authorized accesses the task actually needs, including for processes.',
+          ],
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — a retried step is modelled to settle once, or not at all.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to name the duties that must be separated, then check whether the access authorizations actually support that split. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'event-logging',
+    title: 'Event logging',
+    h1: 'Event logging: decide which events, and who needs them',
+    seoTitle: 'Event logging — Workflows | AZOA',
+    description:
+      'NIST SP 800-53 Rev. 5, AU-2, starts by asking which event types the system can log for the audit function. This guide covers that first official step.',
+    eyebrow: 'Event logging',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'NIST SP 800-53 Rev. 5, control AU-2, starts by asking the organization to identify the types of events the system is capable of logging in support of the audit function. A log that was never designed — no decided event types, no one who needs to read it — is not yet an audit function.',
+    sources: [
+      {
+        name: 'NIST SP 800-53 Revision 5, AU-2 Event Logging.',
+        urls: [nist80053, nist80053Doi],
+        runs: [
+          'NIST SP 800-53 Revision 5, AU-2 Event Logging. ',
+          { text: nist80053, href: nist80053 },
+          ' · DOI: ',
+          { text: nist80053Doi, href: nist80053Doi },
+        ],
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'This is a field note about choosing what the audit log is for, not a monitoring-product page, and not a guide to capturing secrets. It contains no keyloggers, clipboard monitors, secret capture, or exploit steps. It does not invent a required retention period or a universal event catalogue. The assignment in the control is organization-defined: NIST does not, in the opened opening of AU-2, hand you a universal event list. This is not a certification, and AZOA does not claim to implement 800-53. This public site is a simulation. It does not move money.',
+        ],
+      },
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'NIST SP 800-53 Revision 5, AU-2 Event Logging.' },
+            ' Control item (a), as opened and quoted complete: "Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: organization-defined event types that the system is capable of logging]."',
+          ],
+          [
+            { strong: 'The next item, as far as the opened brief quotes it,' },
+            ' begins by asking the organization to coordinate the event logging function with other organizational entities that require the audit. The remainder of that item, and any later items in AU-2, were not quoted complete in the brief. They are not reconstructed here. If a later draft needs them, the PDF should be re-opened and the items copied complete.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What AU-2 actually starts with' },
+      {
+        type: 'p',
+        runs: [
+          'Identify event types the system is capable of logging, in support of the audit function. The organization defines the types. Coordination with other entities that need the audit is the direction of the next item, without inventing the rest of its wording.',
+        ],
+      },
+      {
+        type: 'p',
+        runs: [
+          'A workflow can say which events it records — for example a consent change, a failed-closed stop, or a settlement attempt — as illustrations, labeled as such, not as a claimed 800-53 implementation. ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+          ' and ',
+          { text: 'withdrawing consent', href: '/workflows/consent-withdrawal' },
+          ' are the consent siblings. ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          ' and ',
+          { text: 'fail-closed controls', href: '/workflows/fail-closed' },
+          ' are the already-live workflow siblings. ',
+          { text: 'Least privilege', href: '/workflows/least-privilege' },
+          ' is the access sibling.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: [
+          'This is a worked example, not a customer and not a monitoring deployment. A system "logs everything," no one can say which event types support the audit function, and no one is named as needing to read the log. AU-2 already starts by asking for those decisions.',
+        ],
+      },
+      { type: 'sources' },
+      {
+        type: 'p',
+        runs: [
+          'The remainder of AU-2 after the complete item (a), and after the incomplete opening of item (b), is not cited as quoted text.',
+        ],
+      },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+            ' — a withdrawal is a workflow event that has to be recorded and then respected.',
+          ],
+          [
+            { text: 'Consent records', href: '/workflows/consent-records' },
+            ' — a consent that cannot be found later is not yet a record.',
+          ],
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — a retried step is modelled to settle once, or not at all.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to name the event types the audit function needs, and who has to read them. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
 ]
 
 export function workflowBySlug(slug: string): WorkflowPage | undefined {
@@ -633,6 +1260,14 @@ export function workflowCitations(sources: readonly WorkflowSource[]) {
       ...(source.datePublished ? { datePublished: source.datePublished } : {}),
     })),
   )
+}
+
+export function sourceLinksOwnUrls(source: WorkflowSource): boolean {
+  if (!source.runs || source.linkLabel) return false
+  const hrefs = new Set(
+    source.runs.flatMap((run) => (typeof run === 'object' && 'href' in run ? [run.href] : [])),
+  )
+  return source.urls.length > 0 && source.urls.every((url) => hrefs.has(url))
 }
 
 function runText(run: Run): string {
@@ -654,7 +1289,7 @@ export function blocksText(blocks: readonly Block[], sources: readonly WorkflowS
       parts.push('Every stat on this page is cited.')
       for (const source of sources) {
         parts.push(source.runs ? source.runs.map(runText).join('') : source.name)
-        parts.push(source.linkLabel ?? source.urls.join(' '))
+        if (!sourceLinksOwnUrls(source)) parts.push(source.linkLabel ?? source.urls.join(' '))
       }
     }
   }
