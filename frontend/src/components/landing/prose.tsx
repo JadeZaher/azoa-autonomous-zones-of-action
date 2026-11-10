@@ -33,7 +33,6 @@ function SourceList({ sources }: { sources: readonly WorkflowSource[] }) {
   return (
     <>
       <h2 className="az-arch-h2">Sources</h2>
-      <p>Every stat on this page is cited.</p>
       <ol>
         {sources.map((source) => (
           <li key={source.name}>

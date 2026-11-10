@@ -15,8 +15,11 @@ describe('workflow prose', () => {
       const view = render(<Prose blocks={workflow.blocks} sources={workflow.sources} />)
       expect(screen.getByText(SIMULATION_SENTENCE)).toBeTruthy()
       expect(screen.getByRole('heading', { name: 'Sources' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'An illustrative scenario' })).toBeTruthy()
-      expect(screen.getByText('Every stat on this page is cited.')).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'A situation like this' })).toBeTruthy()
+      expect(screen.queryByRole('heading', { name: 'An illustrative scenario' })).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Hero figures' })).toBeNull()
+      expect(screen.queryByRole('heading', { name: 'Hero points' })).toBeNull()
+      expect(screen.queryByText('Every stat on this page is cited.')).toBeNull()
       for (const source of workflow.sources) {
         for (const url of source.urls) {
           expect(view.container.querySelector(`a[href="${url}"]`)).toBeTruthy()

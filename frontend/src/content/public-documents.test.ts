@@ -113,7 +113,11 @@ describe('public documents', () => {
       expect(text).toContain(SIMULATION_SENTENCE)
       expect(blocksText(workflow.blocks, workflow.sources)).toContain(SIMULATION_SENTENCE)
       expect(text).toContain('Sources')
-      expect(text).toContain('An illustrative scenario')
+      expect(text).toContain('A situation like this')
+      expect(text).not.toContain('An illustrative scenario')
+      expect(text).not.toContain('Hero figures')
+      expect(text).not.toContain('Hero points')
+      expect(text).not.toContain('Every stat on this page is cited')
       expect(text).toContain('https://ardanova.com')
       expect(text).not.toContain('azoa.io')
       expect(text).not.toContain('ardanova.com/patterns')
@@ -166,7 +170,7 @@ describe('public documents', () => {
     expect(idempotent).toContain('https://primusneo.com/guides/idempotent-requests')
     expect(idempotent).toContain('does not invent "idempotency keys"')
     expect(idempotent).toContain('The RFC does not say that POST is idempotent')
-    expect(idempotent).toContain('An illustrative scenario')
+    expect(idempotent).toContain('A situation like this')
 
     const withdrawal = workflowBodyText(bySlug['consent-withdrawal']!)
     expect(withdrawal).toContain('not legal advice')
@@ -175,7 +179,7 @@ describe('public documents', () => {
     expect(withdrawal).toContain('utmost account shall be taken')
     expect(withdrawal).toContain('https://www.legislation.gov.uk/eur/2016/679/article/7')
     expect(withdrawal).toContain('does not enable identity checks for moving real money')
-    expect(withdrawal).toContain('An illustrative scenario')
+    expect(withdrawal).toContain('A situation like this')
 
     const least = workflowBodyText(bySlug['least-privilege']!)
     expect(least).toContain('Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks.')
@@ -183,7 +187,7 @@ describe('public documents', () => {
     expect(least).toContain('https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final')
     expect(least).toContain('does not claim to implement 800-53')
     expect(least).toContain('no exploit steps')
-    expect(least).toContain('An illustrative scenario')
+    expect(least).toContain('A situation like this')
 
     const duties = workflowBodyText(bySlug['separation-of-duties']!)
     expect(duties).toContain('Identify and document [Assignment: organization-defined duties of individuals requiring separation]')
@@ -191,7 +195,7 @@ describe('public documents', () => {
     expect(duties).toContain('does not invent a mandatory initiator/approver pair')
     expect(duties).toContain('does not claim to implement 800-53')
     expect(duties).toContain('It does not move value.')
-    expect(duties).toContain('An illustrative scenario')
+    expect(duties).toContain('A situation like this')
 
     const events = workflowBodyText(bySlug['event-logging']!)
     expect(events).toContain('Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: organization-defined event types that the system is capable of logging].')
@@ -199,7 +203,7 @@ describe('public documents', () => {
     expect(events).toContain('is not cited as quoted text.')
     expect(events).toContain('does not claim to implement 800-53')
     expect(events).toContain('no keyloggers, clipboard monitors, secret capture, or exploit steps')
-    expect(events).toContain('An illustrative scenario')
+    expect(events).toContain('A situation like this')
 
     for (const slug of ['least-privilege', 'separation-of-duties', 'event-logging']) {
       const text = workflowBodyText(bySlug[slug]!)
@@ -216,14 +220,14 @@ describe('public documents', () => {
     expect(bpmn).toContain('https://www.omg.org/spec/BPMN')
     expect(bpmn).toContain('https://www.omg.org/spec/BPMN/2.0.2/PDF')
     expect(bpmn).toContain('workflowpatterns.com did not open (HTTP 500 / failed fetch) on 2026-11-10')
-    expect(bpmn).toContain('An illustrative scenario')
+    expect(bpmn).toContain('A situation like this')
 
     const saga = workflowBodyText(bySlug['compensating-transactions']!)
     expect(saga).toContain('The database management system guarantees that either all the transactions in a saga are successfully completed or compensating transactions are run to amend a partial execution.')
     expect(saga).toContain('https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf')
     expect(saga).toContain('not a recovery playbook')
     expect(saga).toContain('does not write implementation steps')
-    expect(saga).toContain('An illustrative scenario')
+    expect(saga).toContain('A situation like this')
 
     const safe = workflowBodyText(bySlug['safe-and-idempotent']!)
     expect(safe).toContain('Request methods are considered ‘safe’ if their defined semantics are essentially read-only')
@@ -234,20 +238,20 @@ describe('public documents', () => {
     expect(safe).toContain('https://www.rfc-editor.org/rfc/rfc9110.html')
     expect(safe).toContain('https://primusneo.com/guides/idempotent-requests')
     expect(safe).toContain('no attack recipes')
-    expect(safe).toContain('An illustrative scenario')
+    expect(safe).toContain('A situation like this')
 
     const show = workflowBodyText(bySlug['demonstrable-consent']!)
     expect(show).toContain('Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data.')
     expect(show).toContain('not legal advice')
     expect(show).toContain('https://www.legislation.gov.uk/eur/2016/679/article/7')
-    expect(show).toContain('An illustrative scenario')
+    expect(show).toContain('A situation like this')
 
     const distinct = workflowBodyText(bySlug['distinguishable-consent']!)
     expect(distinct).toContain('If the data subject\'s consent is given in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language. Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding.')
     expect(distinct).toContain('When assessing whether consent is freely given, utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract.')
     expect(distinct).toContain('The second sentence is not abridged.')
     expect(distinct).toContain('not legal advice')
-    expect(distinct).toContain('An illustrative scenario')
+    expect(distinct).toContain('A situation like this')
   })
 
   it('puts article, breadcrumb, and collection JSON-LD on the workflow routes', () => {
