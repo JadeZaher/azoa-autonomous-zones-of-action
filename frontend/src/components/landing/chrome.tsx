@@ -156,7 +156,7 @@ export const LANDING_STYLES = `
 .az-arch-h2{margin:0 0 24px;font-size:clamp(30px,3.6vw,52px);line-height:1.02;font-weight:700;letter-spacing:-0.02em;text-transform:uppercase;}
 .az-arch-body p{margin:0 0 18px;font-size:17px;line-height:1.6;color:#3d362c;text-wrap:pretty;}
 .az-arch-body p:last-child{margin-bottom:0;}
-.az-arch-body ul{margin:0 0 18px;padding-left:1.2em;}
+.az-arch-body ul,.az-arch-body ol{margin:0 0 18px;padding-left:1.2em;}
 .az-arch-body li{margin:0 0 8px;font-size:17px;line-height:1.6;color:#3d362c;text-wrap:pretty;}
 .az-arch-body a{color:#A63D15;}
 .az-arch-body a:hover{color:#16120D;}

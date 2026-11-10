@@ -1,4 +1,8 @@
 import { SISTER_SITES } from '@/components/landing/sisters'
+import { WORKFLOW_INDEX, WORKFLOWS, workflowBySlug, workflowCitations } from '@/content/workflows'
+
+export { WORKFLOWS, workflowBySlug }
+export type { WorkflowPage as Workflow } from '@/content/workflows'
 
 export const SITE = 'https://azoa.ardanova.com'
 export const SHARE_IMAGE = `${SITE}/og/azoa-og-1200x630.png`
@@ -120,90 +124,6 @@ export function essayBySlug(slug: string): Essay | undefined {
   return ESSAYS.find((essay) => essay.slug === slug)
 }
 
-export const WORKFLOWS = [
-  {
-    slug: 'settle-once',
-    title: 'Settle once',
-    seoTitle: 'Settle once — Workflows — AZOA',
-    description:
-      'A retried step is modelled to settle once, or not at all. This hosted site is a simulation. Real-value bridging is disabled, and it does not move value.',
-    publishedAt: '2026-11-10',
-    summary: 'The model looks up an earlier attempt before it treats a retry as new work. This site does not move value.',
-    paragraphs: [
-      'A timeout is a silence. If the same work is sent again because nobody can tell whether the first attempt landed, the second attempt can become a second result. AZOA is being built so a step carries an identity that a later attempt can find. The later attempt is the same work, not a new one.',
-      'On the public homepage that rule is stated as a model: a retried or duplicated step is modelled to settle once, or not at all. This site does not move value. The longer note is the essay from 9 November 2026.',
-      'The architecture page describes the same shape. A graph can park, resume, and check the world outside the graph before an irreversible step. Those checks run here against a simulation. They are not a promise that a payment has been made, because this hosted site does not make one.',
-      SIMULATION,
-    ],
-  },
-  {
-    slug: 'fail-closed',
-    title: 'Fail-closed controls',
-    seoTitle: 'Fail-closed controls — Workflows — AZOA',
-    description:
-      'A check that cannot be verified is refused. This hosted site is a simulation. Real-value bridging is disabled, and it does not move value.',
-    publishedAt: '2026-11-10',
-    summary: 'If a step cannot be verified, the model refuses it. This site does not move value.',
-    paragraphs: [
-      'A control that lets work continue when the check cannot be finished has already given up. The convenient path is a warning in a log. The model AZOA is built around does the other thing: if the check cannot be verified, the step is refused.',
-      'That sentence is already on the homepage, and the 9 November 2026 note argues it as a construction rule rather than a slogan. This page is the same rule named as a workflow shape. It is not a claim that a dangerous path is open on this site.',
-      'What you can inspect today is the published description: the architecture, the terms, and the two notes. The terms say not to send funds here and not to expect a payment. The refusal is part of the page, in the same way a refused step is part of a graph.',
-      SIMULATION,
-    ],
-  },
-  {
-    slug: 'consent-records',
-    title: 'Consent records',
-    seoTitle: 'Consent records — Workflows — AZOA',
-    description:
-      'A permission record says who may act, for what, and that it can be revoked. This hosted site is a simulation and does not move value.',
-    publishedAt: '2026-11-10',
-    summary: 'The model keeps a permission that can be read and revoked. This site does not move value.',
-    paragraphs: [
-      'A workflow that acts for someone needs a record of that permission: who granted it, what it covers, and how it is taken back. The homepage states the primitive in one line. Apps act for you only with consent you can see, and revoke, at any moment.',
-      'This page is that shape, named as a workflow. It is a record in the model. It is not an identity-provider product, and it is not a statement that this hosted site is checking documents or opening an account at a partner.',
-      'Withdrawing the permission ends the grant. The architecture page says the same thing without dressing it as a finished service: the app loses the permission to act for you. On this site that permission does not move money.',
-      SIMULATION,
-    ],
-  },
-  {
-    slug: 'action-graphs',
-    title: 'Action graphs',
-    seoTitle: 'Action graphs — Workflows — AZOA',
-    description:
-      'An action is a graph of steps that can wait and resume. This hosted site shows that shape as a simulation and does not move value.',
-    publishedAt: '2026-11-10',
-    summary: 'Steps, waits, and checks are one graph. The public demo graph is a demo. This site does not move value.',
-    paragraphs: [
-      'An action, in this engine, is a graph of steps. A step can wait. A later signal can resume it. A failed check can stop the steps after it. The architecture page draws that as a durable state machine, and the homepage shows a demo graph labelled as a demo.',
-      'The demo is not a settlement. The badge on the homepage says the graph is simulated. Publishing a picture of a graph, or letting someone walk through one, does not move value and does not open a payment path.',
-      'Bundles, on the same page, are how a product can be scaffolded from those steps. Scaffolding is not a launch. The source is Apache-2.0 and can be self-hosted. The hosted site remains the simulation described in the terms.',
-      SIMULATION,
-    ],
-  },
-  {
-    slug: 'grants-and-bounties',
-    title: 'Grants and bounties',
-    seoTitle: 'Grants and bounties — Workflows — AZOA',
-    description:
-      'A grant or bounty is a modelled release that waits on a check. This hosted site does not pay anyone. Real-value bridging is disabled.',
-    publishedAt: '2026-11-10',
-    summary: 'Applications, milestones, and a release that waits on a check. This site does not pay a grant or a bounty.',
-    paragraphs: [
-      'The homepage lists grants and bounties as one of four modelled economies. The sentence under that heading is the whole claim: applications and milestones, with a release that waits on a check. This site does not release funds or send a refund.',
-      'A payroll line, a supplier milestone, and a bounty can share a shape in the model. Sharing a shape is not a payment. The large note on the homepage says this site does not pay a supplier, run payroll, or pay yield.',
-      'ArdaNova is the planned pilot named on the federation page. It is a separate product, its economy is still simulated, and this site does not pay creators for it. A modelled grant is not an announcement that a grant program is open.',
-      SIMULATION,
-    ],
-  },
-] as const
-
-export type Workflow = (typeof WORKFLOWS)[number]
-
-export function workflowBySlug(slug: string): Workflow | undefined {
-  return WORKFLOWS.find((workflow) => workflow.slug === slug)
-}
-
 const MARKETING: PublicDocument[] = [
   {
     path: '/',
@@ -278,12 +198,12 @@ const MARKETING: PublicDocument[] = [
   },
   {
     path: '/workflows',
-    title: 'Workflows — AZOA',
-    description:
-      'Five workflow shapes the engine models. This hosted site is a simulation. Real-value bridging is disabled, and it does not move value.',
+    title: WORKFLOW_INDEX.seoTitle,
+    description: WORKFLOW_INDEX.description,
     kind: 'website',
     index: true,
     inSitemap: true,
+    publishedAt: WORKFLOW_INDEX.publishedAt,
   },
 ]
 
@@ -365,7 +285,9 @@ export function breadcrumbJsonLd(path: string, title: string) {
 export function pageJsonLd(pathname: string): Record<string, unknown>[] {
   const document = publicDocument(pathname)
   if (!document) return []
-  const graph: Record<string, unknown>[] = [breadcrumbJsonLd(pathname, document.title)]
+  const workflow = WORKFLOWS.find((item) => `/workflows/${item.slug}` === pathname)
+  const crumbTitle = pathname === '/workflows' ? 'Workflows' : workflow?.title ?? document.title
+  const graph: Record<string, unknown>[] = [breadcrumbJsonLd(pathname, crumbTitle)]
   if (pathname === '/blog' || pathname === '/notes') {
     graph.push({
       '@type': 'CollectionPage',
@@ -385,21 +307,45 @@ export function pageJsonLd(pathname: string): Record<string, unknown>[] {
   } else if (pathname === '/workflows') {
     graph.push({
       '@type': 'CollectionPage',
-      name: document.title,
+      name: WORKFLOW_INDEX.h1,
       url: absoluteUrl(pathname),
       isPartOf: { '@id': `${SITE}/#website` },
+      datePublished: WORKFLOW_INDEX.publishedAt,
+      dateModified: WORKFLOW_INDEX.lastReviewed,
+      author: { '@type': 'Organization', name: AUTHOR },
+      publisher: {
+        '@type': 'Organization',
+        name: AUTHOR,
+        parentOrganization: { '@type': 'Organization', name: OPERATOR_NAME },
+      },
       mainEntity: {
         '@type': 'ItemList',
-        itemListElement: WORKFLOWS.map((workflow, index) => ({
+        itemListElement: WORKFLOWS.map((item, index) => ({
           '@type': 'ListItem',
           position: index + 1,
-          url: absoluteUrl(`/workflows/${workflow.slug}`),
-          name: workflow.title,
+          url: absoluteUrl(`/workflows/${item.slug}`),
+          name: item.title,
         })),
       },
     })
+  } else if (workflow) {
+    graph.push({
+      '@type': 'Article',
+      headline: workflow.h1,
+      description: workflow.description,
+      datePublished: workflow.publishedAt,
+      dateModified: workflow.lastReviewed,
+      author: { '@type': 'Organization', name: AUTHOR },
+      publisher: {
+        '@type': 'Organization',
+        name: AUTHOR,
+        parentOrganization: { '@type': 'Organization', name: OPERATOR_NAME },
+      },
+      mainEntityOfPage: absoluteUrl(pathname),
+      image: SHARE_IMAGE,
+      citation: workflowCitations(workflow.sources),
+    })
   } else if (document.kind === 'article' && document.publishedAt) {
-    const workflow = WORKFLOWS.find((item) => `/workflows/${item.slug}` === pathname)
     graph.push({
       '@type': 'Article',
       headline: document.title,
@@ -409,13 +355,6 @@ export function pageJsonLd(pathname: string): Record<string, unknown>[] {
       publisher: { '@id': `${SITE}/#organization` },
       mainEntityOfPage: absoluteUrl(pathname),
       image: SHARE_IMAGE,
-      citation: workflow
-        ? [
-            { '@type': 'CreativeWork', name: 'AZOA homepage', url: SITE },
-            { '@type': 'CreativeWork', name: 'AZOA architecture', url: `${SITE}/architecture` },
-            { '@type': 'CreativeWork', name: 'AZOA terms', url: `${SITE}/terms` },
-          ]
-        : undefined,
     })
   } else {
     graph.push({

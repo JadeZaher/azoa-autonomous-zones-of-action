@@ -1,0 +1,63 @@
+import Link from 'next/link'
+import { Fragment } from 'react'
+import type { Block, Run, WorkflowSource } from '@/content/workflows'
+
+function RunView({ run }: { run: Run }) {
+  if (typeof run === 'string') return run
+  if ('href' in run) {
+    const label = run.strong ? <strong>{run.text}</strong> : run.text
+    return run.href.startsWith('/') ? <Link href={run.href}>{label}</Link> : <a href={run.href}>{label}</a>
+  }
+  if ('em' in run) return <em>{run.em}</em>
+  return <strong>{run.strong}</strong>
+}
+
+function Runs({ runs }: { runs: readonly Run[] }) {
+  return runs.map((run, index) => (
+    <Fragment key={index}>
+      <RunView run={run} />
+    </Fragment>
+  ))
+}
+
+function SourceList({ sources }: { sources: readonly WorkflowSource[] }) {
+  return (
+    <>
+      <h2 className="az-arch-h2">Sources</h2>
+      <p>Every stat on this page is cited.</p>
+      <ol>
+        {sources.map((source) => (
+          <li key={source.name}>
+            {source.runs ? <Runs runs={source.runs} /> : source.name}
+            {source.linkLabel
+              ? <> <a href={source.urls[0]}>{source.linkLabel}</a></>
+              : source.urls.map((url, index) => (
+                <Fragment key={url}>{index === 0 ? ' ' : ' and '}<a href={url}>{url}</a></Fragment>
+              ))}
+          </li>
+        ))}
+      </ol>
+    </>
+  )
+}
+
+export function Prose({
+  blocks,
+  sources = [],
+}: {
+  blocks: readonly Block[]
+  sources?: readonly WorkflowSource[]
+}) {
+  return blocks.map((block, index) => {
+    if (block.type === 'h2') return <h2 key={index} className="az-arch-h2">{block.text}</h2>
+    if (block.type === 'p') return <p key={index}><Runs runs={block.runs} /></p>
+    if (block.type === 'sources') return <SourceList key={index} sources={sources} />
+    return (
+      <ul key={index}>
+        {block.items.map((item, itemIndex) => (
+          <li key={itemIndex}><Runs runs={item} /></li>
+        ))}
+      </ul>
+    )
+  })
+}
