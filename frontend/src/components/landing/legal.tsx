@@ -14,17 +14,19 @@ export function LegalDocument({
   eyebrow,
   title,
   lede,
+  active,
   children,
 }: {
   eyebrow: string
   title: string
   lede: string
+  active?: 'architecture' | 'federation' | 'workflows'
   children: ReactNode
 }) {
   return (
     <div className="azoa-landing">
       <LandingHead />
-      <LandingNav />
+      <LandingNav active={active} />
       <header className="az-fed-header">
         <div className="az-wrap">
           <div className="az-eyebrow">{eyebrow}</div>

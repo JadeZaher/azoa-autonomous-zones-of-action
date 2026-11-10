@@ -10,7 +10,6 @@ export const metadata: Metadata = {
 const SOURCES = [
   { label: 'AZOA homepage', href: 'https://azoa.ardanova.com' },
   { label: 'AZOA architecture', href: 'https://azoa.ardanova.com/architecture' },
-  { label: 'AZOA API health (real-value bridging is disabled)', href: 'https://azoa-api-production.up.railway.app/health' },
   { label: 'AZOA terms', href: 'https://azoa.ardanova.com/terms' },
   { label: 'PrimusNeo', href: 'https://primusneo.com' },
 ]

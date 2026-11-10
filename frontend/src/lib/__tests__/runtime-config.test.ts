@@ -26,6 +26,12 @@ describe('separate browser and server API origins', () => {
     expect(readInitialApiUrl()).toBe('https://api.example.test')
   })
 
+  it('does not invent a Railway origin when public HTML omitted the runtime script', () => {
+    vi.stubGlobal('window', {})
+    expect(readInitialApiUrl()).toBe('https://azoa.ardanova.com')
+    expect(readInitialApiUrl()).not.toContain('railway.app')
+  })
+
   it('keeps SSR SDK configuration on the public origin', () => {
     vi.stubEnv('INTERNAL_API_URL', 'http://azoa-api:5000')
     vi.stubEnv('AZOA_ALLOW_INSECURE_LOCAL_API', 'true')

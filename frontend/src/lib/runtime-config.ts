@@ -93,8 +93,7 @@ export function readInitialApiUrl(): string {
   if (typeof window === 'undefined') return resolveServerApiUrl()
   const configured = window.__RUNTIME_CONFIG__?.apiUrl
   if (configured) return configured
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('The server did not provide a production API URL.')
-  }
+  // Public HTML does not receive a Railway API origin. App routes inject one.
+  if (process.env.NODE_ENV === 'production') return 'https://azoa.ardanova.com'
   return DEFAULT_API_URL
 }

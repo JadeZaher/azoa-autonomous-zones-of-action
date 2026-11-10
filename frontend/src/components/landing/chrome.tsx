@@ -231,7 +231,7 @@ export function LandingHead() {
   )
 }
 
-export function LandingNav({ active }: { active?: 'architecture' | 'federation' }) {
+export function LandingNav({ active }: { active?: 'architecture' | 'federation' | 'workflows' }) {
   const { isAuthenticated, loading } = useAzoaAuth()
   const [open, setOpen] = useState(false)
   const entered = !loading && isAuthenticated
@@ -245,6 +245,7 @@ export function LandingNav({ active }: { active?: 'architecture' | 'federation' 
         <Link href="/" className="az-brand" onClick={close}><BrandMark /><span>AZOA</span></Link>
         <div className="az-nav-right">
           <Link href="/architecture" className={`az-link az-hide-sm${active === 'architecture' ? ' az-link--active' : ''}`}>ARCHITECTURE</Link>
+          <Link href="/workflows" className={`az-link az-hide-sm${active === 'workflows' ? ' az-link--active' : ''}`}>WORKFLOWS</Link>
           <Link href="/federation" className={`az-link az-hide-sm${active === 'federation' ? ' az-link--active' : ''}`}>FEDERATION</Link>
           <Link href="/federation#ardanova" className="az-link az-hide-sm">ARDANOVA</Link>
           <Link href={enterHref} className="az-btn az-btn--outline az-btn--sm az-hide-sm">{enterLabel}</Link>
@@ -263,6 +264,7 @@ export function LandingNav({ active }: { active?: 'architecture' | 'federation' 
       {open && (
         <div className="az-mobile-menu">
           <Link href="/architecture" className="az-mobile-link" onClick={close}>ARCHITECTURE</Link>
+          <Link href="/workflows" className="az-mobile-link" onClick={close}>WORKFLOWS</Link>
           <Link href="/federation" className="az-mobile-link" onClick={close}>FEDERATION</Link>
           <Link href="/federation#ardanova" className="az-mobile-link" onClick={close}>ARDANOVA</Link>
           <Link href={enterHref} className="az-mobile-link az-mobile-link--cta" onClick={close}>{enterLabel}</Link>
@@ -280,10 +282,14 @@ export function LandingFooter() {
         <span>AZOA — AUTONOMOUS ZONES OF ACTION</span>
         <div className="az-footer-links">
           <Link href="/" className="az-flink">HOME</Link>
-          <Link href="/federation" className="az-flink">FEDERATION</Link>
+          <Link href="/workflows" className="az-flink">WORKFLOWS</Link>
+          <Link href="/blog" className="az-flink">BLOG</Link>
+          <Link href="/news" className="az-flink">NEWS</Link>
           <Link href="/notes" className="az-flink">NOTES</Link>
+          <Link href="/federation" className="az-flink">FEDERATION</Link>
           <Link href="/terms" className="az-flink">TERMS</Link>
           <Link href="/privacy" className="az-flink">PRIVACY</Link>
+          <Link href="/feed.xml" className="az-flink">FEED</Link>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-flink">GITHUB ↗</a>
         </div>
       </div>
