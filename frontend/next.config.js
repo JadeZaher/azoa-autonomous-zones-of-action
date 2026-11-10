@@ -27,6 +27,12 @@ const nextConfig = {
   },
   // Transpile the published SDK package for Next.js bundling
   transpilePackages: ['azoa-sdk'],
+  async redirects() {
+    return [
+      { source: '/workflows/action-graphs', destination: '/workflows', permanent: true },
+      { source: '/workflows/grants-and-bounties', destination: '/workflows', permanent: true },
+    ]
+  },
   async headers() {
     return [
       {
