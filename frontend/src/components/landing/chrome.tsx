@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { BrandMark } from '@/components/brand-mark'
 import { useAzoaAuth } from '@/lib/azoa-auth'
+import { SISTER_SITES } from '@/components/landing/sisters'
 
 // Shared public styles and navigation; see AGENTS.md.
 
@@ -55,6 +56,8 @@ export const LANDING_STYLES = `
 .az-h1{margin:0;font-size:clamp(56px,8.5vw,140px);line-height:0.94;font-weight:700;letter-spacing:-0.03em;text-transform:uppercase;max-width:1200px;}
 .az-hero-row{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px;margin-top:32px;}
 .az-hero-lede{margin:0;font-size:clamp(17px,1.5vw,21px);line-height:1.45;max-width:560px;color:#3d362c;text-wrap:pretty;}
+.az-hero-lede a{pointer-events:auto;color:#A63D15;}
+.az-hero-lede a:hover{color:#16120D;}
 .az-hero-cta{display:flex;gap:12px;pointer-events:auto;flex-wrap:wrap;}
 .az-hero-badge{position:absolute;top:76px;right:32px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.1em;color:#6f665a;display:flex;align-items:center;gap:8px;}
 .az-dot{width:8px;height:8px;border-radius:50%;background:#A63D15;display:inline-block;}
@@ -116,10 +119,14 @@ export const LANDING_STYLES = `
 .az-cta p{margin:28px auto 0;font-size:18px;line-height:1.5;color:#3d362c;max-width:520px;text-wrap:pretty;}
 .az-cta-row{display:flex;justify-content:center;gap:12px;margin-top:40px;flex-wrap:wrap;}
 
-.az-footer{border-top:1px solid #16120D;padding:24px 32px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.08em;color:#6f665a;}
-.az-footer-links{display:flex;gap:28px;}
+.az-footer{border-top:1px solid #16120D;padding:24px 32px;display:flex;flex-direction:column;align-items:stretch;gap:16px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.08em;color:#6f665a;}
+.az-footer-bar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;}
+.az-footer-links{display:flex;gap:28px;flex-wrap:wrap;}
 .az-flink{color:#6f665a;transition:color .15s;}
 .az-flink:hover{color:#A63D15;}
+.az-sisters{display:flex;flex-direction:column;gap:8px;width:100%;padding-top:14px;border-top:1px solid #d6ccba;}
+.az-sisters-title{letter-spacing:0.12em;color:#A63D15;}
+.az-sisters-links{display:flex;flex-direction:column;gap:4px;line-height:1.45;}
 
 /* Federation route */
 .az-fed-header{padding:180px 32px 90px;border-bottom:1px solid #16120D;}
@@ -139,6 +146,8 @@ export const LANDING_STYLES = `
 .az-ardanova-item{display:flex;flex-direction:column;gap:10px;border-top:1px solid #3d362c;padding-top:20px;}
 .az-ardanova-item .lbl{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.12em;color:#E08A5B;}
 .az-ardanova-item p{margin:0;font-size:16px;line-height:1.6;color:#b7ad9c;text-wrap:pretty;}
+.az-ardanova-item a{color:#E08A5B;}
+.az-ardanova-item a:hover{color:#F2EDE3;}
 
 /* Architecture route */
 .az-arch-section{padding:100px 32px;border-bottom:1px solid #16120D;}
@@ -267,13 +276,24 @@ export function LandingNav({ active }: { active?: 'architecture' | 'federation' 
 export function LandingFooter() {
   return (
     <footer className="az-footer">
-      <span>AZOA — AUTONOMOUS ZONES OF ACTION</span>
-      <div className="az-footer-links">
-        <Link href="/" className="az-flink">HOME</Link>
-        <Link href="/federation" className="az-flink">FEDERATION</Link>
-        <Link href="/terms" className="az-flink">TERMS</Link>
-        <Link href="/privacy" className="az-flink">PRIVACY</Link>
-        <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-flink">GITHUB ↗</a>
+      <div className="az-footer-bar">
+        <span>AZOA — AUTONOMOUS ZONES OF ACTION</span>
+        <div className="az-footer-links">
+          <Link href="/" className="az-flink">HOME</Link>
+          <Link href="/federation" className="az-flink">FEDERATION</Link>
+          <Link href="/notes" className="az-flink">NOTES</Link>
+          <Link href="/terms" className="az-flink">TERMS</Link>
+          <Link href="/privacy" className="az-flink">PRIVACY</Link>
+          <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-flink">GITHUB ↗</a>
+        </div>
+      </div>
+      <div className="az-sisters">
+        <span className="az-sisters-title">An Escherbridge project</span>
+        <div className="az-sisters-links">
+          {SISTER_SITES.map((site) => (
+            <a key={site.href} href={site.href} className="az-flink">{site.label}</a>
+          ))}
+        </div>
       </div>
     </footer>
   )

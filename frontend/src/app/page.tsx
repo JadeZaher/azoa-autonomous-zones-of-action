@@ -55,7 +55,7 @@ const DOMAINS = [
 
 const PRIMITIVES = [
   { tag: 'IDENTITY', title: 'A user you actually own', body: 'Apps act for you only with consent you can see — and revoke — at any moment.' },
-  { tag: 'ACTIONS', title: 'Durable graphs of action', body: 'They wait, resume, and reconcile against reality before acting. They never double-spend.' },
+  { tag: 'ACTIONS', title: 'Durable graphs of action', body: 'They wait, resume, and reconcile against reality before acting. A retried or duplicated step is modelled to settle once, or not at all. This site does not move value.' },
   { tag: 'HOLONS', title: 'Value as nested wholes', body: 'Credits, rights, and records — anything the model can hold, split, and move. Holding one here is not a payout.' },
   { tag: 'RAILS', title: 'One settlement seam', body: 'A step can name a network or a fiat partner. Fiat is not enabled on this site. There is no live fiat bridge, and no bank is connected.' },
   { tag: 'BUNDLES', title: 'Whole apps, generated', body: 'Action graph bundles scaffold new products on top of identity and actions. Nobody rebuilds the plumbing.' },
@@ -83,7 +83,7 @@ export default function Home() {
           <h1 className="az-h1">One engine.<br />Every kind of&nbsp;economy.</h1>
           <div className="az-hero-row">
             <p className="az-hero-lede">
-              AZOA models financial workflows, circular economies, operational processes and grant programs as graphs of action. This public site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.
+              AZOA models financial workflows, circular economies, operational processes and grant programs as graphs of action. This public site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet. AZOA is the workflow-engine layer of <a href="https://primusneo.com">PrimusNeo, the lab whose stack this engine belongs to</a>. It is not a consumer app, and this hosted site does not move money.
             </p>
             <div className="az-hero-cta">
               <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--md">VIEW ON GITHUB ↗</a>
@@ -174,12 +174,12 @@ export default function Home() {
               <p>A sketch of separate zones that keep their own records and could later exchange them. Federation is not running on this site.</p>
               <div className="az-next-more">READ THE VISION →</div>
             </Link>
-            <Link href="/federation#ardanova" className="az-next-card az-next-card--dark">
+            <div className="az-next-card az-next-card--dark">
               <div className="az-next-tag">PLANNED PILOT</div>
               <div className="az-next-title">Ardanova</div>
               <p>A planned pilot. Ardanova is a separate app, and its economy is still simulated. This site does not pay creators or bridge fiat for it.</p>
-              <div className="az-next-more">MEET THE PILOT →</div>
-            </Link>
+              <a className="az-next-more" href="https://ardanova.com">ArdaNova, a planned pilot whose economy is still simulated</a>
+            </div>
           </div>
         </div>
       </section>

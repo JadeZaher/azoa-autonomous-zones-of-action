@@ -4,8 +4,17 @@ import { NetworkProvider } from '@/lib/network-context'
 import { DebugProvider } from '@/lib/debug-context'
 import { AzoaProvider } from '@/lib/azoa-context'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { SISTER_SITES } from '@/components/landing/sisters'
 import { resolveServerApiUrl } from '@/lib/runtime-config'
 import './globals.css'
+
+const organization = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'AZOA',
+  url: 'https://azoa.ardanova.com',
+  sameAs: SISTER_SITES.map((site) => site.href),
+}
 
 // Self-hosted latin subsets: `next build` makes no network call (see frontend/src/app/fonts/AGENTS.md).
 const spaceGrotesk = localFont({
@@ -74,6 +83,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${spaceGrotesk.variable} ${plexMono.variable} font-sans antialiased`}>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organization) }} />
         {/* Injected at request time — NOT a build-time constant. */}
         <script
           id="__RUNTIME_CONFIG__"
