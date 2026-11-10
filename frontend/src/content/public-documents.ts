@@ -249,6 +249,12 @@ export function organizationJsonLd() {
       '@type': 'Organization',
       name: OPERATOR_NAME,
       email: OPERATOR_EMAIL,
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: 'Boise',
+        addressRegion: 'ID',
+        addressCountry: 'US',
+      },
     },
     sameAs: SISTER_SITES.map((site) => site.href),
   }

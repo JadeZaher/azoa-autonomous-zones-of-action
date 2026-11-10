@@ -6,6 +6,7 @@ import {
   ESSAYS,
   injectsRuntimeApi,
   jsonLdGraph,
+  organizationJsonLd,
   sitemapDocuments,
   WORKFLOWS,
 } from './public-documents'
@@ -47,6 +48,15 @@ describe('public documents', () => {
     expect(injectsRuntimeApi('/workflows/settle-once')).toBe(false)
     expect(injectsRuntimeApi('/login')).toBe(true)
     expect(injectsRuntimeApi(null)).toBe(true)
+  })
+
+  it('publishes a city-level operator address', () => {
+    expect(organizationJsonLd().parentOrganization.address).toEqual({
+      '@type': 'PostalAddress',
+      addressLocality: 'Boise',
+      addressRegion: 'ID',
+      addressCountry: 'US',
+    })
   })
 
   it('states the simulation on the index and every workflow, with the cited sources', () => {
