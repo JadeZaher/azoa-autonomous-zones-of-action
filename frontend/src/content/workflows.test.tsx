@@ -10,6 +10,31 @@ describe('workflow prose', () => {
     expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull()
   })
 
+  it('renders backtick spans as code and leaves the other workflow guides as plain text', () => {
+    const pages = [
+      { slug: 'index', blocks: WORKFLOW_INDEX.blocks, sources: [] },
+      ...WORKFLOWS.map((workflow) => ({
+        slug: workflow.slug,
+        blocks: workflow.blocks,
+        sources: workflow.sources,
+      })),
+    ]
+    for (const page of pages) {
+      const view = render(<Prose blocks={page.blocks} sources={page.sources} />)
+      const codes = [...view.container.querySelectorAll('code')].map((node) => node.textContent)
+      if (page.slug === 'safe-and-idempotent') {
+        expect(codes).toEqual(['page?do=delete'])
+        expect(view.container.textContent).toContain(
+          "The RFC's example is a URI such as page?do=delete reached with GET.",
+        )
+      } else {
+        expect(codes).toEqual([])
+      }
+      expect(view.container.innerHTML).not.toContain('`')
+      view.unmount()
+    }
+  })
+
   it('renders each child body with sources and an illustrative scenario', () => {
     for (const workflow of WORKFLOWS) {
       const view = render(<Prose blocks={workflow.blocks} sources={workflow.sources} />)
