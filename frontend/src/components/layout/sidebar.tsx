@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
+import { BrandMark } from '@/components/brand-mark'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
@@ -207,9 +208,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 function Logo() {
   return (
     <div className="flex h-12 items-center gap-2.5 px-4">
-      <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-primary">
-        <span className="text-xs font-bold text-primary-foreground">A</span>
-      </div>
+      <BrandMark size={28} />
       <span className="text-sm font-bold tracking-[0.08em]">AZOA</span>
     </div>
   )
