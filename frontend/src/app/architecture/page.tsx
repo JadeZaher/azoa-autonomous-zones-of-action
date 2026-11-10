@@ -129,7 +129,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">From primitive to product.</h2>
             <p>
-              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a community fund — scaffolded from the primitives instead of rebuilt from scratch. New networks, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces. None of that is a live payout on this site.
+              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a community fund — scaffolded from the primitives instead of rebuilt from scratch. New networks, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces. None of that is a live payout on this site. A planned consumer of that shape is <a href="https://ardanova.com">the ArdaNova workspace</a>, and its economy is still simulated.
             </p>
           </div>
         </div>

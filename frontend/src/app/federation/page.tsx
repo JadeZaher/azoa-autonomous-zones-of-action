@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { GITHUB, LandingHead, LandingNav, LandingFooter } from '@/components/landing/chrome'
 
@@ -13,8 +14,8 @@ const PILLARS = [
   { title: 'Agency', body: 'Your account and your records travel with you. Leave a zone, join another, or belong to several at once — the identity is yours.' },
 ]
 
-const ARDANOVA = [
-  { label: 'SEPARATE APP', body: 'Ardanova is a different product. Its own API reports a simulated economy. This site does not pay creators, run payroll, or bridge fiat for it.' },
+const ARDANOVA: { label: string; body: ReactNode }[] = [
+  { label: 'SEPARATE APP', body: <><a href="https://ardanova.com">Ardanova</a> is a different product. Its own API reports a simulated economy. This site does not pay creators, run payroll, or bridge fiat for it.</> },
   { label: 'PLANNED PILOT', body: 'A first pilot means it is planned. It is a sketch of a later zone, and it does not settle from this site.' },
   { label: 'SIMULATED', body: 'Until real-value bridging is enabled, treat every earnings or payout line about Ardanova as a sketch. There is no yield here.' },
 ]

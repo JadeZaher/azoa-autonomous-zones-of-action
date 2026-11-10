@@ -54,6 +54,11 @@
       "word": "token",
       "file": "src/app/(dashboard)/settings/page.tsx",
       "reason": "This SDK-debug panel's 'Token' / 'session token' name the signed-in auth/session credential (masked via maskToken, next to the raw User ID), not the platform's asset token."
+    },
+    {
+      "word": "rail",
+      "file": "src/app/notes/settle-once-or-not-at-all/page.tsx",
+      "reason": "The published note uses 'rail' only to refuse a live one ('a parked rail', 'not a live rail'). The approved draft is fixed copy. It does not name a chain, and it does not say a rail is available on this site."
     }
   ]
 }
