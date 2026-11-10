@@ -58,15 +58,15 @@ export type WorkflowPage = {
 }
 
 export const WORKFLOW_INDEX = {
-  eyebrow: 'Eight workflows · the hosted site is a simulation',
+  eyebrow: 'Thirteen workflows · the hosted site is a simulation',
   h1: 'Shapes the engine can describe.',
   seoTitle: 'Workflows | AZOA',
   description:
-    'Workflow shapes the engine models: settle-once, fail-closed controls, consent records, idempotent retries, consent withdrawal, least privilege, separation of duties, and event logging. The hosted site is a simulation and does not move value.',
+    'Workflow shapes the engine models: settle-once, fail-closed controls, consent records, idempotent retries, consent withdrawal, least privilege, separation of duties, event logging, BPMN diagrams, sagas, safe and idempotent methods, and consent that can be shown and distinguished. The hosted site is a simulation and does not move value.',
   publishedAt: PUBLISHED,
   lastReviewed: PUBLISHED,
   lede:
-    'These pages are about workflow shapes the engine models: a retried step that settles once or not at all, a control that fails closed, and a consent record that can be shown and withdrawn. Five field notes read public rules the same way: RFC 9110 on idempotent retries, UK GDPR Article 7 on withdrawing consent, and NIST SP 800-53 Rev. 5 on least privilege (AC-6), separation of duties (AC-5), and which events an audit log is for (AU-2). The figures and legal sentences are other people’s, with the links left on. They are public practice, not a claim that this hosted site moves money, verifies identity for value, or onboarded a regulated customer.',
+    'These pages are about workflow shapes the engine models: a retried step that settles once or not at all, a control that fails closed, and a consent record that can be shown and withdrawn. Five field notes read public rules the same way: RFC 9110 on idempotent retries, UK GDPR Article 7 on withdrawing consent, and NIST SP 800-53 Rev. 5 on least privilege (AC-6), separation of duties (AC-5), and which events an audit log is for (AU-2). Five more read the same way: BPMN 2.0.2 as a shared process diagram, Garcia-Molina and Salem on sagas, RFC 9110 on safe versus idempotent methods, and UK GDPR Article 7(1) and 7(2) on consent that can be shown and that is clearly distinguishable. The figures and legal sentences are other people’s, with the links left on. They are public practice, not a claim that this hosted site moves money, verifies identity for value, or onboarded a regulated customer.',
   blocks: [
     {
       type: 'p',
@@ -116,6 +116,32 @@ export const WORKFLOW_INDEX = {
         [
           { text: 'Event logging', href: '/workflows/event-logging', strong: true },
           ' — NIST SP 800-53 Rev. 5, AU-2 starts by identifying the event types the system can log in support of the audit function. Later control items are not reconstructed here.',
+        ],
+      ],
+    },
+    { type: 'h2', text: 'Five more field notes' },
+    {
+      type: 'ul',
+      items: [
+        [
+          { text: 'What is BPMN', href: '/workflows/workflow-state-machines', strong: true },
+          ' — OMG BPMN 2.0.2, January 2014: a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
+        ],
+        [
+          { text: 'What is a saga', href: '/workflows/compensating-transactions', strong: true },
+          ' — Garcia-Molina and Salem: either all the transactions in a saga complete, or compensating transactions amend a partial execution. Not a recovery playbook.',
+        ],
+        [
+          { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent', strong: true },
+          ' — RFC 9110 §9.2.1: safe methods are essentially read-only. Safe methods are idempotent; PUT and DELETE are idempotent without being safe.',
+        ],
+        [
+          { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent', strong: true },
+          ' — UK GDPR Article 7(1): where processing is based on consent, the controller shall be able to demonstrate it. Not legal advice.',
+        ],
+        [
+          { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent', strong: true },
+          ' — UK GDPR Article 7(2), quoted in full: the request must be clearly distinguishable, and an infringing part shall not be binding. Not legal advice.',
         ],
       ],
     },
@@ -371,6 +397,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
             { text: 'Event logging', href: '/workflows/event-logging' },
             ' — decide which events the audit function is for.',
           ],
+          [
+            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
+            ' — a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
+          ],
+          [
+            { text: 'What is a saga', href: '/workflows/compensating-transactions' },
+            ' — all the transactions complete, or compensating transactions amend a partial execution. Not a recovery playbook.',
+          ],
+          [
+            { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent' },
+            ' — safe methods are essentially read-only. Safe methods are idempotent; not every idempotent method is safe.',
+          ],
         ],
       },
       {
@@ -519,6 +557,14 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
           [
             { text: 'Event logging', href: '/workflows/event-logging' },
             ' — decide which events the audit function is for.',
+          ],
+          [
+            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
+            ' — a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
+          ],
+          [
+            { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent' },
+            ' — safe methods are essentially read-only. Safe methods are idempotent; not every idempotent method is safe.',
           ],
         ],
       },
@@ -669,6 +715,14 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
             { text: 'Event logging', href: '/workflows/event-logging' },
             ' — decide which events, including a withdrawal, the audit function is for.',
           ],
+          [
+            { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
+            ' — where processing is based on consent, the controller shall be able to demonstrate it. Not legal advice.',
+          ],
+          [
+            { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
+            ' — Article 7(2), quoted in full, including that an infringing part shall not be binding. Not legal advice.',
+          ],
         ],
       },
       {
@@ -807,6 +861,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
             { text: 'Event logging', href: '/workflows/event-logging' },
             ' — decide which events the audit function is for.',
           ],
+          [
+            { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent' },
+            ' — safe methods are essentially read-only. Safe methods are idempotent; not every idempotent method is safe.',
+          ],
+          [
+            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
+            ' — a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
+          ],
+          [
+            { text: 'What is a saga', href: '/workflows/compensating-transactions' },
+            ' — all the transactions complete, or compensating transactions amend a partial execution. Not a recovery playbook.',
+          ],
         ],
       },
       SIMULATION_CLOSE,
@@ -916,6 +982,14 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
           [
             { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
             ' — a warning is not a control if the step can continue anyway.',
+          ],
+          [
+            { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
+            ' — where processing is based on consent, the controller shall be able to demonstrate it. Not legal advice.',
+          ],
+          [
+            { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
+            ' — Article 7(2), quoted in full, including that an infringing part shall not be binding. Not legal advice.',
           ],
         ],
       },
@@ -1238,6 +1312,470 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         type: 'p',
         runs: [
           'The useful next step is to name the event types the audit function needs, and who has to read them. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'workflow-state-machines',
+    title: 'What is BPMN',
+    h1: 'What is BPMN (Business Process Model and Notation)',
+    seoTitle: 'What is BPMN (Business Process Model and Notation) — Workflows | AZOA',
+    description:
+      'OMG’s BPMN is a standard notation for people who draft a process, implement it, and manage it. This guide covers that shared diagram, not a house engine.',
+    eyebrow: 'BPMN process diagrams',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'People often search "workflow state machine." The opened official source is OMG\'s Business Process Model and Notation, not a vendor state-machine tutorial. BPMN is used in the body; the address of this page keeps the query people type. If the only description of the workflow is in someone\'s head, the people who draft it, implement it, and manage it do not have a common picture. BPMN was written as a notation those three can share. This is a field note about a shared process diagram, not a workflow-product page, not a payments rail, and not a claim that AZOA conforms to BPMN.',
+    sources: [
+      {
+        name: 'OMG BPMN catalog, Version 2.0.2.',
+        urls: ['https://www.omg.org/spec/BPMN'],
+        datePublished: '2014-01',
+      },
+      {
+        name: 'Business Process Model and Notation (BPMN) Version 2.0.2, formal/2013-12-09.',
+        urls: ['https://www.omg.org/spec/BPMN/2.0.2/PDF'],
+        datePublished: '2013-12',
+        runs: [
+          { em: 'Business Process Model and Notation (BPMN) Version 2.0.2,' },
+          ' formal/2013-12-09. ',
+          { text: 'https://www.omg.org/spec/BPMN/2.0.2/PDF', href: 'https://www.omg.org/spec/BPMN/2.0.2/PDF' },
+        ],
+      },
+    ],
+    blocks: [
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'OMG catalog, current formal BPMN, Version 2.0.2, Document Status formal, Publication Date January 2014.' },
+            ' "Business Process Model and Notation has become the de-facto standard for business processes diagrams. It is intended to be used directly by the stakeholders who design, manage and realize business processes, but at the same time be precise enough to allow BPMN diagrams to be translated into software process components. BPMN has an easy-to-use flowchart-like notation that is independent of any particular implementation environment." The earlier Version 2.0 catalog page (Publication Date December 2010) was also opened and states that it was superseded; 2.0.2 is the current formal inventory on the opened catalog.',
+          ],
+          [
+            { strong: 'BPMN Version 2.0.2 specification PDF' },
+            ' (OMG Document Number formal/2013-12-09; the PDF\'s date line is December 2013; "NOTE: Version 2.0.2 contains a minor change to Clause 15."). "The primary goal of BPMN is to provide a notation that is readily understandable by all business users, from the business analysts that create the initial drafts of the processes, to the technical developers responsible for implementing the technology that will perform those processes, and finally, to the business people who will manage and monitor those processes. Thus, BPMN creates a standardized bridge for the gap between the business process design and process implementation." "The intent of BPMN is to standardize a business process model and notation in the face of many different modeling notations and viewpoints. In doing so, BPMN will provide a simple means of communicating process information to other business users, process implementers, customers, and suppliers."',
+          ],
+          [
+            { strong: 'The front matter' },
+            ' also says the document "does not represent a commitment to implement any portion of this specification in any company’s products." Software may claim compliance "if and only if the software fully matches the applicable compliance points"; partial implementations "can claim only that the software was based on this International Standard, but cannot claim compliance or conformance." This page does not claim AZOA conformance.',
+          ],
+        ],
+      },
+      {
+        type: 'p',
+        runs: ['workflowpatterns.com did not open (HTTP 500 / failed fetch) on 2026-11-10 and is not used.'],
+      },
+      { type: 'h2', text: 'What this page does not invent' },
+      {
+        type: 'p',
+        runs: [
+          'No house state-machine, no BPMN element tutorial, and no settlement story. ',
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+          ', ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          ', and ',
+          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+          ' are the workflow siblings. ',
+          { text: 'What is a saga in a long-lived transaction', href: '/workflows/compensating-transactions' },
+          ' is the companion in this batch.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: ['This is a worked example, not a customer and not a conformance claim. A workflow lives only in a chat thread, and three people later disagree about which step comes next. BPMN\'s primary-goal paragraph already names the three readers who needed a shared picture.'],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'What is a saga in a long-lived transaction', href: '/workflows/compensating-transactions' },
+            ' — all complete, or compensating transactions amend a partial run.',
+          ],
+          [
+            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+            ' — a lost response can be retried only when two identical requests mean one effect.',
+          ],
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — a retried step is modelled to settle once, or not at all.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to draw a diagram both sides can read, or to read ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          '. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'compensating-transactions',
+    title: 'What is a saga',
+    h1: 'What is a saga in a long-lived transaction',
+    seoTitle: 'What is a saga in a long-lived transaction — Workflows | AZOA',
+    description:
+      'A saga, in Garcia-Molina and Salem, is a long-lived transaction written as a sequence: all steps complete, or compensating transactions amend a partial run.',
+    eyebrow: 'Sagas and compensating transactions',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'Garcia-Molina and Salem proposed the saga as a long-lived transaction written as a sequence of transactions: the system guarantees that either all of those transactions complete, or compensating transactions are run to amend a partial execution. It is not a licence to invent what happened after a failure. This is a definitional note, not a payments recovery tutorial, and not a recovery playbook.',
+    sources: [
+      {
+        name: 'Hector Garcia-Molina and Kenneth Salem, Sagas, Department of Computer Science, Princeton University.',
+        urls: ['https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf'],
+        runs: [
+          'Hector Garcia-Molina and Kenneth Salem, "Sagas," Department of Computer Science, Princeton University, opened at ',
+          {
+            text: 'https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf',
+            href: 'https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf',
+          },
+        ],
+      },
+    ],
+    blocks: [
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'Hector Garcia-Molina and Kenneth Salem, "Sagas," Department of Computer Science, Princeton University.' },
+            ' The opened file is a bitmapped scan of the paper at a Cornell course URL. The typography in automated extracts is degraded; only short, checkable sentences are used here. After ordinary typographic correction of the scan, the abstract reads: "Long lived transactions (LLTs) hold on to database resources for relatively long periods of time, significantly delaying the termination of shorter and more common transactions. To alleviate these problems we propose the notion of a saga. A LLT is a saga if it can be written as a sequence of transactions that can be interleaved with other transactions. The database management system guarantees that either all the transactions in a saga are successfully completed or compensating transactions are run to amend a partial execution." The opened file is cited as the source that was actually opened. A conference name or page range that is not on that file is not added. An ACM PDF of the same work returned HTTP 403 and was not used. Authors\' names appear with typographic ligature errors in the scan; the standard spelling Hector Garcia-Molina and Kenneth Salem is used, which is visible as the intended author line.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What the paper actually says' },
+      {
+        type: 'p',
+        runs: ['The abstract\'s guarantee is the whole of the definition used here: all complete, or compensating transactions amend a partial execution. Interleaving with other transactions is part of that definition. This page does not write implementation steps, locking advice, or a house recovery workflow from the rest of the scan. A saga is not a reason to invent a recovery narrative.'],
+      },
+      {
+        type: 'p',
+        runs: [
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          ' and ',
+          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+          ' are the workflow siblings. ',
+          { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
+          ' is the shared-diagram companion. This page does not invent a client saga, a percentage, or a payments example that is not in the opened abstract.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: ['This is a worked example, not a customer and not a transfer. A step fails mid-sequence, and a later note invents what "must have been compensated," with no record of a compensating transaction. The abstract already requires that a partial execution be amended by compensating transactions, not by a story written afterwards.'],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
+            ' — a shared process diagram, not a house engine.',
+          ],
+          [
+            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+            ' — a lost response can be retried only when two identical requests mean one effect.',
+          ],
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — a retried step is modelled to settle once, or not at all.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to read the opened abstract, or ',
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          '. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'safe-and-idempotent',
+    title: 'Safe methods and idempotent methods',
+    h1: 'Safe methods and idempotent methods',
+    seoTitle: 'Safe methods and idempotent methods — Workflows | AZOA',
+    description:
+      'RFC 9110 distinguishes safe, essentially read-only methods from idempotent methods. Safe methods are idempotent; not every idempotent method is safe.',
+    eyebrow: 'Safe and idempotent methods',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'RFC 9110 distinguishes methods whose defined semantics are essentially read-only (safe) from methods whose intended effect is the same for one request or for many identical ones (idempotent). Safe methods are idempotent; not every idempotent method is safe. "Safe to retry" and "safe to read" are not the same test. This is a short companion to Idempotent retries in a workflow and to PrimusNeo\'s RFC 9110 page. It quotes §9.2.1 here and does not invent a second definition of idempotency.',
+    sources: [
+      {
+        name: 'RFC 9110, HTTP Semantics, §9.2.1 and §9.2.2.',
+        urls: [rfc9110],
+      },
+      {
+        name: 'Workflow sibling: Idempotent retries in a workflow.',
+        urls: ['/workflows/idempotent-requests'],
+        runs: [
+          'Workflow sibling: ',
+          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+        ],
+      },
+      {
+        name: 'Protocol sibling: Idempotent HTTP requests.',
+        urls: ['https://primusneo.com/guides/idempotent-requests'],
+        runs: [
+          'Protocol sibling: ',
+          { text: 'Idempotent HTTP requests', href: 'https://primusneo.com/guides/idempotent-requests' },
+        ],
+      },
+    ],
+    blocks: [
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'RFC 9110, HTTP Semantics, §9.2.1 Safe Methods.' },
+            ' "Request methods are considered ‘safe’ if their defined semantics are essentially read-only; i.e., the client does not request, and does not expect, any state change on the origin server as a result of applying a safe method to a target resource. Likewise, reasonable use of a safe method is not expected to cause any harm, loss of property, or unusual burden on the origin server." The definition "does not prevent an implementation from including behavior that is potentially harmful, that is not entirely read-only, or that causes side effects while invoking a safe method. What is important, however, is that the client did not request that additional behavior and cannot be held accountable for it." Of the methods defined by the specification, "GET, HEAD, OPTIONS, and TRACE methods are defined to be safe." "The purpose of distinguishing between safe and unsafe methods is to allow automated retrieval processes (spiders) and cache performance optimization (pre-fetching) to work without fear of causing harm." "If the purpose of such a resource is to perform an unsafe action, then the resource owner MUST disable or disallow that action when it is accessed using a safe request method." The RFC\'s example is a URI such as `page?do=delete` reached with GET.',
+          ],
+          [
+            { strong: 'RFC 9110, §9.2.2 Idempotent Methods, for the contrast already used in batch 1.' },
+            ' "A request method is considered ‘idempotent’ if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request." "PUT, DELETE, and safe request methods are idempotent." So every safe method in this specification is idempotent; PUT and DELETE are idempotent without being safe. "A client SHOULD NOT automatically retry a request with a non-idempotent method unless it has some means to know that the request semantics are actually idempotent… or some means to detect that the original request was never applied." "A proxy MUST NOT automatically retry non-idempotent requests." "A client SHOULD NOT automatically retry a failed automatic retry."',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What the RFC actually says' },
+      {
+        type: 'p',
+        runs: ['Safe means essentially read-only from the client\'s request. Side effects the client did not request do not make the method unsafe. GET, HEAD, OPTIONS, and TRACE are safe in this specification. Idempotent means one request or many identical ones have the same intended effect. PUT, DELETE, and the safe methods are idempotent. Do not automatically retry a non-idempotent method; a proxy must not do so; do not automatically retry a failed automatic retry. POST is not called safe or idempotent here. High-level concepts only — no attack recipes.'],
+      },
+      {
+        type: 'p',
+        runs: [
+          { text: 'Settle once', href: '/workflows/settle-once' },
+          ' and ',
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+          ' are the workflow siblings.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: ['This is a worked example, not a customer and not a transfer. A workflow treats every "retryable" call as if it were a read, and a GET is used to trigger a delete. RFC 9110 already says that a resource whose purpose is an unsafe action must disable that action when it is reached with a safe method, and that safe and idempotent are not the same test.'],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+            ' — a lost response can be retried only when two identical requests mean one effect.',
+          ],
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — a retried step is modelled to settle once, or not at all.',
+          ],
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — a warning is not a control if the step can continue anyway.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to read the RFC sections, or ',
+          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
+          '. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'demonstrable-consent',
+    title: 'Consent must be demonstrable',
+    h1: 'Consent must be demonstrable under UK GDPR Article 7',
+    seoTitle: 'Consent must be demonstrable under UK GDPR Article 7 — Workflows | AZOA',
+    description:
+      'UK GDPR Article 7(1) says that where processing is based on consent, the controller must be able to demonstrate that the person consented to it.',
+    eyebrow: 'Demonstrable consent',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'UK GDPR Article 7(1) says that where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data. If processing is based on consent, the duty is to be able to show it. This is a short companion to Withdrawing consent under UK GDPR Article 7 and to Consent records. It is not legal advice about a specific entity, and not a compliance-product page.',
+    sources: [
+      {
+        name: 'UK GDPR Article 7.',
+        urls: [articleSeven],
+      },
+    ],
+    blocks: [
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'UK version of GDPR, Article 7(1), legislation.gov.uk.' },
+            ' "Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data." That complete sentence is the whole of the duty quoted here. Article 7(3), already used in the withdrawal brief, remains the companion duty: consent may be withdrawn at any time, and it shall be as easy to withdraw as to give consent. Article 7(2) has its own sibling in this batch and is not summarised here.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What the article actually says' },
+      {
+        type: 'p',
+        runs: [
+          'If you rely on consent, you have to be able to show it. This page does not invent a house log format, a demonstration standard, or a retention period that is not in the opened sentence. ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+          ' is the sibling for what a record can hold. ',
+          { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
+          ' is the sibling for a request buried in a longer declaration. ',
+          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+          ' is the companion for 7(3).',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: ['This is a worked example, not a customer and not legal advice. A tick-box exists somewhere, and no record remains of who agreed to what, or when. Article 7(1) already requires the controller to be able to demonstrate the consent.'],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
+            ' — the request cannot be hidden in a longer declaration.',
+          ],
+          [
+            { text: 'Withdrawing consent under UK GDPR Article 7', href: '/workflows/consent-withdrawal' },
+            ' — it shall be as easy to withdraw as to give consent.',
+          ],
+          [
+            { text: 'Consent records', href: '/workflows/consent-records' },
+            ' — a consent that cannot be found later is not yet a record.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to read Article 7, or ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+          '. If something on this page is wrong, ',
+          { text: 'write to us', href: '/' },
+          '.',
+        ],
+      },
+      AUTHOR_LINE,
+    ],
+  },
+  {
+    slug: 'distinguishable-consent',
+    title: 'Consent must be clearly distinguishable',
+    h1: 'Consent must be clearly distinguishable under UK GDPR Article 7',
+    seoTitle: 'Consent must be clearly distinguishable under UK GDPR Article 7 — Workflows | AZOA',
+    description:
+      'If consent sits inside a longer written declaration, Article 7(2) requires the request to be clearly distinguishable, in clear and plain language.',
+    eyebrow: 'Distinguishable consent',
+    publishedAt: PUBLISHED,
+    lastReviewed: PUBLISHED,
+    lede:
+      'If consent is given in a written declaration that also concerns other matters, Article 7(2) requires the request for consent to be clearly distinguishable from those other matters, in an intelligible and easily accessible form, using clear and plain language. This is a short companion to Consent must be demonstrable and to Withdrawing consent. It is not legal advice, and not a design-system page.',
+    sources: [
+      {
+        name: 'UK GDPR Article 7.',
+        urls: [articleSeven],
+      },
+    ],
+    blocks: [
+      { type: 'h2', text: 'Hero figures' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'UK version of GDPR, Article 7(2), legislation.gov.uk — complete text.' },
+            ' "If the data subject\'s consent is given in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language. Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding." Both sentences are quoted. The second sentence is not abridged.',
+          ],
+          [
+            { strong: 'Article 7(4), quoted completely as a neighbouring test:' },
+            ' "When assessing whether consent is freely given, utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract."',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'What the article actually says' },
+      {
+        type: 'p',
+        runs: [
+          'If the consent sits inside a longer declaration, the request has to be clearly distinguishable from the other matters, and in clear and plain language. An infringing part of such a declaration "shall not be binding." This page does not invent a house layout or a typography rule beyond that official wording. ',
+          { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
+          ' is the 7(1) sibling. ',
+          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+          ' is the 7(3) sibling. ',
+          { text: 'Consent records', href: '/workflows/consent-records' },
+          ' is the record sibling.',
+        ],
+      },
+      { type: 'h2', text: 'An illustrative scenario' },
+      {
+        type: 'p',
+        runs: ['This is a worked example, not a customer and not legal advice. A "consent" is buried in a longer terms document, with no distinguishable request, and is later treated as binding in full. Article 7(2) already says the request has to be clearly distinguishable, and that an infringing part shall not be binding.'],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
+            ' — if you rely on consent, you have to be able to show it.',
+          ],
+          [
+            { text: 'Withdrawing consent under UK GDPR Article 7', href: '/workflows/consent-withdrawal' },
+            ' — it shall be as easy to withdraw as to give consent.',
+          ],
+          [
+            { text: 'Consent records', href: '/workflows/consent-records' },
+            ' — a consent that cannot be found later is not yet a record.',
+          ],
+        ],
+      },
+      SIMULATION_CLOSE,
+      {
+        type: 'p',
+        runs: [
+          'The useful next step is to read Article 7, or ',
+          { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
+          '. If something on this page is wrong, ',
           { text: 'write to us', href: '/' },
           '.',
         ],

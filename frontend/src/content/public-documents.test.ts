@@ -39,6 +39,11 @@ describe('public documents', () => {
     expect(xml).toContain('/workflows/least-privilege')
     expect(xml).toContain('/workflows/separation-of-duties')
     expect(xml).toContain('/workflows/event-logging')
+    expect(xml).toContain('/workflows/workflow-state-machines')
+    expect(xml).toContain('/workflows/compensating-transactions')
+    expect(xml).toContain('/workflows/safe-and-idempotent')
+    expect(xml).toContain('/workflows/demonstrable-consent')
+    expect(xml).toContain('/workflows/distinguishable-consent')
     expect(xml).not.toContain('/workflows/action-graphs')
     expect(xml).not.toContain('/workflows/grants-and-bounties')
     expect(xml).not.toContain('railway.app')
@@ -76,6 +81,11 @@ describe('public documents', () => {
       'least-privilege',
       'separation-of-duties',
       'event-logging',
+      'workflow-state-machines',
+      'compensating-transactions',
+      'safe-and-idempotent',
+      'demonstrable-consent',
+      'distinguishable-consent',
     ])
     const index = indexBodyText()
     expect(index).toContain('Shapes the engine can describe.')
@@ -89,6 +99,11 @@ describe('public documents', () => {
     expect(index).toContain('/workflows/least-privilege')
     expect(index).toContain('/workflows/separation-of-duties')
     expect(index).toContain('/workflows/event-logging')
+    expect(index).toContain('/workflows/workflow-state-machines')
+    expect(index).toContain('/workflows/compensating-transactions')
+    expect(index).toContain('/workflows/safe-and-idempotent')
+    expect(index).toContain('/workflows/demonstrable-consent')
+    expect(index).toContain('/workflows/distinguishable-consent')
     expect(index).not.toContain('azoa.io')
     expect(index).not.toContain('/patterns')
 
@@ -191,6 +206,48 @@ describe('public documents', () => {
       expect(text).toContain('https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf')
       expect(text).toContain('https://doi.org/10.6028/NIST.SP.800-53r5')
     }
+
+    const bpmn = workflowBodyText(bySlug['workflow-state-machines']!)
+    expect(bpmn).toContain('Business Process Model and Notation has become the de-facto standard for business processes diagrams.')
+    expect(bpmn).toContain('The primary goal of BPMN is to provide a notation that is readily understandable by all business users')
+    expect(bpmn).toContain('NOTE: Version 2.0.2 contains a minor change to Clause 15.')
+    expect(bpmn).toContain('cannot claim compliance or conformance')
+    expect(bpmn).toContain('does not claim AZOA conformance')
+    expect(bpmn).toContain('https://www.omg.org/spec/BPMN')
+    expect(bpmn).toContain('https://www.omg.org/spec/BPMN/2.0.2/PDF')
+    expect(bpmn).toContain('workflowpatterns.com did not open (HTTP 500 / failed fetch) on 2026-11-10')
+    expect(bpmn).toContain('An illustrative scenario')
+
+    const saga = workflowBodyText(bySlug['compensating-transactions']!)
+    expect(saga).toContain('The database management system guarantees that either all the transactions in a saga are successfully completed or compensating transactions are run to amend a partial execution.')
+    expect(saga).toContain('https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf')
+    expect(saga).toContain('not a recovery playbook')
+    expect(saga).toContain('does not write implementation steps')
+    expect(saga).toContain('An illustrative scenario')
+
+    const safe = workflowBodyText(bySlug['safe-and-idempotent']!)
+    expect(safe).toContain('Request methods are considered ‘safe’ if their defined semantics are essentially read-only')
+    expect(safe).toContain('GET, HEAD, OPTIONS, and TRACE methods are defined to be safe.')
+    expect(safe).toContain('A request method is considered ‘idempotent’ if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request.')
+    expect(safe).toContain('PUT and DELETE are idempotent without being safe.')
+    expect(safe).toContain('idempotent… or some means to detect that the original request was never applied.')
+    expect(safe).toContain('https://www.rfc-editor.org/rfc/rfc9110.html')
+    expect(safe).toContain('https://primusneo.com/guides/idempotent-requests')
+    expect(safe).toContain('no attack recipes')
+    expect(safe).toContain('An illustrative scenario')
+
+    const show = workflowBodyText(bySlug['demonstrable-consent']!)
+    expect(show).toContain('Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data.')
+    expect(show).toContain('not legal advice')
+    expect(show).toContain('https://www.legislation.gov.uk/eur/2016/679/article/7')
+    expect(show).toContain('An illustrative scenario')
+
+    const distinct = workflowBodyText(bySlug['distinguishable-consent']!)
+    expect(distinct).toContain('If the data subject\'s consent is given in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language. Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding.')
+    expect(distinct).toContain('When assessing whether consent is freely given, utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract.')
+    expect(distinct).toContain('The second sentence is not abridged.')
+    expect(distinct).toContain('not legal advice')
+    expect(distinct).toContain('An illustrative scenario')
   })
 
   it('puts article, breadcrumb, and collection JSON-LD on the workflow routes', () => {
