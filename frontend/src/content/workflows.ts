@@ -89,7 +89,7 @@ export const WORKFLOW_INDEX = {
         ],
         [
           { text: 'Consent records', href: '/workflows/consent-records', strong: true },
-          ' — UK GDPR says to demonstrate consent, ask clearly, and make withdrawal as easy as the original yes. Permission that cannot be shown, or withdrawn, was not really recorded.',
+          ' — UK GDPR says the controller shall be able to demonstrate consent, ask clearly, and make withdrawal as easy as the original yes. Permission that cannot be shown, or withdrawn, was not really recorded.',
         ],
       ],
     },
