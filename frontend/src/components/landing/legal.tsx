@@ -7,7 +7,7 @@ export const OPERATOR = {
   email: 'contact@escherbridge.com',
   phone: '(509) 578-4603',
   phoneHref: 'tel:+15095784603',
-  address: '1140 S Colorado Ln, Boise, ID',
+  address: 'Boise, Idaho',
 } as const
 
 export function LegalDocument({
