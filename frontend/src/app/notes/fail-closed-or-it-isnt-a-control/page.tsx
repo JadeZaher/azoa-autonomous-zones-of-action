@@ -11,7 +11,6 @@ const SOURCES = [
   { label: 'AZOA homepage', href: 'https://azoa.ardanova.com' },
   { label: 'AZOA architecture', href: 'https://azoa.ardanova.com/architecture' },
   { label: 'AZOA terms', href: 'https://azoa.ardanova.com/terms' },
-  { label: 'AZOA API health', href: 'https://azoa-api-production.up.railway.app/health' },
   { label: 'PrimusNeo', href: 'https://primusneo.com' },
   { label: 'ArdaNova', href: 'https://ardanova.com' },
 ]

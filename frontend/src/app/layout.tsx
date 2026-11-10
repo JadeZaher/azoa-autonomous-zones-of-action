@@ -1,20 +1,21 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import localFont from 'next/font/local'
 import { NetworkProvider } from '@/lib/network-context'
 import { DebugProvider } from '@/lib/debug-context'
 import { AzoaProvider } from '@/lib/azoa-context'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { SISTER_SITES } from '@/components/landing/sisters'
+import {
+  absoluteUrl,
+  injectsRuntimeApi,
+  jsonLdGraph,
+  publicDocument,
+  requestPath,
+  SHARE_IMAGE,
+  SITE,
+} from '@/content/public-documents'
 import { resolveServerApiUrl } from '@/lib/runtime-config'
 import './globals.css'
-
-const organization = {
-  '@context': 'https://schema.org',
-  '@type': 'Organization',
-  name: 'AZOA',
-  url: 'https://azoa.ardanova.com',
-  sameAs: SISTER_SITES.map((site) => site.href),
-}
 
 // Self-hosted latin subsets: `next build` makes no network call (see frontend/src/app/fonts/AGENTS.md).
 const spaceGrotesk = localFont({
@@ -33,26 +34,44 @@ const plexMono = localFont({
   variable: '--font-mono',
 })
 
-const SHARE_IMAGE = 'https://azoa.ardanova.com/og/azoa-og-1200x630.png'
+const SHARE = { url: SHARE_IMAGE, width: 1200, height: 630, alt: 'AZOA — Autonomous Zones of Action' }
 
-export const metadata: Metadata = {
-  metadataBase: new URL('https://azoa.ardanova.com'),
-  title: 'AZOA — Autonomous Zones of Action',
-  description: 'Open-source engine for structured workflows. This hosted site is a simulation: real-value bridging is disabled, and fiat settlement is not enabled yet.',
-  icons: {
-    icon: [
-      { url: '/favicons/azoa-favicon-32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicons/azoa-favicon-48.png', sizes: '48x48', type: 'image/png' },
-    ],
-    apple: [{ url: '/favicons/azoa-favicon-180.png', sizes: '180x180', type: 'image/png' }],
-  },
-  openGraph: {
-    images: [{ url: SHARE_IMAGE, width: 1200, height: 630, alt: 'AZOA — Autonomous Zones of Action' }],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    images: [SHARE_IMAGE],
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const path = requestPath((await headers()).get('x-azoa-path'))
+  const page = path ? publicDocument(path) : undefined
+  const title = page?.title ?? 'AZOA — Autonomous Zones of Action'
+  const description = page?.description ?? 'Open-source engine for structured workflows. This hosted site is a simulation: real-value bridging is disabled, and fiat settlement is not enabled yet.'
+  return {
+    metadataBase: new URL(SITE),
+    title,
+    description,
+    authors: page ? [{ name: 'Escherbridge' }] : undefined,
+    robots: page ? { index: page.index, follow: true } : path ? { index: false, follow: false } : undefined,
+    alternates: page
+      ? { canonical: absoluteUrl(page.path), types: { 'application/rss+xml': `${SITE}/feed.xml` } }
+      : undefined,
+    icons: {
+      icon: [
+        { url: '/favicons/azoa-favicon-32.png', sizes: '32x32', type: 'image/png' },
+        { url: '/favicons/azoa-favicon-48.png', sizes: '48x48', type: 'image/png' },
+      ],
+      apple: [{ url: '/favicons/azoa-favicon-180.png', sizes: '180x180', type: 'image/png' }],
+    },
+    openGraph: {
+      url: page ? absoluteUrl(page.path) : undefined,
+      title: page ? title : undefined,
+      description: page ? description : undefined,
+      type: page?.kind === 'article' ? 'article' : 'website',
+      publishedTime: page?.publishedAt,
+      images: [SHARE],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: page ? title : undefined,
+      description: page ? description : undefined,
+      images: [SHARE_IMAGE],
+    },
+  }
 }
 
 export const viewport = {
@@ -69,28 +88,34 @@ export const dynamic = 'force-dynamic'
 
 // Server Component: re-reads process.env on every request, so this is the
 // seam that makes the API URL runtime-resolvable (see lib/runtime-config.ts).
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const runtimeConfig = { apiUrl: resolveServerApiUrl() }
-  // Escape script-breaking chars so an env-sourced value can't close the tag.
-  const serializedConfig = JSON.stringify(runtimeConfig)
+  const path = requestPath((await headers()).get('x-azoa-path'))
+  const jsonLd = JSON.stringify(jsonLdGraph(path))
     .replace(/</g, '\\u003c')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029')
+  const runtimeConfig = injectsRuntimeApi(path) ? { apiUrl: resolveServerApiUrl() } : null
+  // Escape script-breaking chars so an env-sourced value can't close the tag.
+  const serializedConfig = runtimeConfig
+    ? JSON.stringify(runtimeConfig).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+    : null
   return (
     <html lang="en" className="dark">
       <body className={`${spaceGrotesk.variable} ${plexMono.variable} font-sans antialiased`}>
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organization) }} />
-        {/* Injected at request time — NOT a build-time constant. */}
-        <script
-          id="__RUNTIME_CONFIG__"
-          dangerouslySetInnerHTML={{
-            __html: `window.__RUNTIME_CONFIG__=${serializedConfig};`,
-          }}
-        />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
+        {/* Injected at request time — NOT a build-time constant. Omitted on public pages. */}
+        {serializedConfig ? (
+          <script
+            id="__RUNTIME_CONFIG__"
+            dangerouslySetInnerHTML={{
+              __html: `window.__RUNTIME_CONFIG__=${serializedConfig};`,
+            }}
+          />
+        ) : null}
         <NetworkProvider>
           <DebugProvider>
             <AzoaProvider>
