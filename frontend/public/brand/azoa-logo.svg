@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="AZOA">
+  <title>AZOA</title>
+  <rect width="1024" height="1024" fill="#F2EDE3"/>
+  <rect x="153.60" y="153.60" width="716.80" height="121.86" fill="#16120D"/>
+  <rect x="153.60" y="748.54" width="716.80" height="121.86" fill="#16120D"/>
+  <rect x="153.60" y="153.60" width="121.86" height="716.80" fill="#16120D"/>
+  <rect x="748.54" y="153.60" width="121.86" height="716.80" fill="#16120D"/>
+  <rect x="515.58" y="515.58" width="164.86" height="164.86" fill="#A63D15"/>
+</svg>

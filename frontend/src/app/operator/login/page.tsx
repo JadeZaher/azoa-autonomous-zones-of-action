@@ -10,6 +10,7 @@ import {
     ShieldCheck,
     UserRound,
 } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,9 +88,7 @@ export default function OperatorLoginPage() {
                         href="/"
                         className="inline-flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8501E]"
                     >
-                        <span className="flex h-9 w-9 items-center justify-center bg-primary text-primary-foreground font-bold">
-                            A
-                        </span>
+                        <BrandMark size={36} />
                         <span className="font-bold tracking-[0.14em]">
                             AZOA
                         </span>

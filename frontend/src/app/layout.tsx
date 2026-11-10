@@ -24,9 +24,26 @@ const plexMono = localFont({
   variable: '--font-mono',
 })
 
+const SHARE_IMAGE = 'https://azoa.ardanova.com/og/azoa-og-1200x630.png'
+
 export const metadata: Metadata = {
+  metadataBase: new URL('https://azoa.ardanova.com'),
   title: 'AZOA — Autonomous Zones of Action',
   description: 'Open-source engine for structured workflows. This hosted site is a simulation: real-value bridging is disabled, and fiat settlement is not enabled yet.',
+  icons: {
+    icon: [
+      { url: '/favicons/azoa-favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicons/azoa-favicon-48.png', sizes: '48x48', type: 'image/png' },
+    ],
+    apple: [{ url: '/favicons/azoa-favicon-180.png', sizes: '180x180', type: 'image/png' }],
+  },
+  openGraph: {
+    images: [{ url: SHARE_IMAGE, width: 1200, height: 630, alt: 'AZOA — Autonomous Zones of Action' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    images: [SHARE_IMAGE],
+  },
 }
 
 export const viewport = {

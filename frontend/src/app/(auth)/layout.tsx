@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { BrandMark } from '@/components/brand-mark'
 import { HeroDag } from '@/components/landing/hero-dag'
 
 export default function AuthLayout({
@@ -21,11 +22,14 @@ export default function AuthLayout({
 
         {/* Wordmark + status — wordmark returns to the marketing landing */}
         <div className="relative z-10 flex items-start justify-between">
-          <Link href="/" className="group -m-2 block p-2 transition-opacity hover:opacity-80">
-            <div className="text-2xl font-bold tracking-[0.08em]">AZOA</div>
-            <div className="mt-2 font-mono text-[11px] tracking-[0.18em] text-[#C8501E]">
-              AUTONOMOUS ZONES OF ACTION
-            </div>
+          <Link href="/" className="group -m-2 flex items-center gap-3 p-2 transition-opacity hover:opacity-80">
+            <BrandMark size={40} />
+            <span>
+              <div className="text-2xl font-bold tracking-[0.08em]">AZOA</div>
+              <div className="mt-2 font-mono text-[11px] tracking-[0.18em] text-[#C8501E]">
+                AUTONOMOUS ZONES OF ACTION
+              </div>
+            </span>
           </Link>
           <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#b7ad9c]">
             <span className="inline-block h-2 w-2 rounded-full bg-[#C8501E]" />
@@ -52,9 +56,7 @@ export default function AuthLayout({
         {/* Mobile wordmark */}
         <div className="absolute left-6 top-6 lg:hidden">
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-sm bg-[#16120D]">
-              <span className="text-sm font-bold text-[#F2EDE3]">A</span>
-            </div>
+            <BrandMark size={36} />
             <span className="text-lg font-bold tracking-[0.06em]">AZOA</span>
           </Link>
         </div>

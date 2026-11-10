@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { BrandMark } from '@/components/brand-mark'
 import { useAzoaAuth } from '@/lib/azoa-auth'
 
 // Shared public styles and navigation; see AGENTS.md.
@@ -17,7 +18,8 @@ export const LANDING_STYLES = `
 .azoa-landing .mono{font-family:'IBM Plex Mono',monospace;}
 
 .az-nav{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:0 32px;height:60px;border-bottom:1px solid #16120D;background:#F2EDE3;}
-.az-brand{font-weight:700;font-size:18px;letter-spacing:0.08em;}
+.az-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;letter-spacing:0.08em;}
+.az-brand img{display:block;width:28px;height:28px;}
 .az-nav-right{display:flex;align-items:center;gap:28px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:0.06em;}
 .az-link{transition:color .15s;}
 .az-link:hover{color:#A63D15;}
@@ -231,7 +233,7 @@ export function LandingNav({ active }: { active?: 'architecture' | 'federation' 
   return (
     <>
       <nav className="az-nav">
-        <Link href="/" className="az-brand" onClick={close}>AZOA</Link>
+        <Link href="/" className="az-brand" onClick={close}><BrandMark /><span>AZOA</span></Link>
         <div className="az-nav-right">
           <Link href="/architecture" className={`az-link az-hide-sm${active === 'architecture' ? ' az-link--active' : ''}`}>ARCHITECTURE</Link>
           <Link href="/federation" className={`az-link az-hide-sm${active === 'federation' ? ' az-link--active' : ''}`}>FEDERATION</Link>

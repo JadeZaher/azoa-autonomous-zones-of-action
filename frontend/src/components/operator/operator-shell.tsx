@@ -23,6 +23,7 @@ import {
     Undo2,
     Clock,
 } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { OPERATOR_REQUEST_HEADER } from "@/lib/operator-contracts";
@@ -187,9 +188,7 @@ export function OperatorShell({ children }: { children: React.ReactNode }) {
                         href="/operator"
                         className="flex min-h-11 items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8501E]"
                     >
-                        <span className="flex h-8 w-8 items-center justify-center bg-[#C8501E] font-bold">
-                            A
-                        </span>
+                        <BrandMark size={32} />
                         <span>
                             <span className="block text-sm font-bold tracking-[0.12em]">
                                 AZOA
