@@ -8,15 +8,15 @@ import { GITHUB, LandingHead, LandingNav, LandingFooter } from '@/components/lan
 // chrome; the "Architecture" links point at the /architecture route.
 
 const PILLARS = [
-  { title: 'Freedom', body: 'Every zone runs its own node, its own rules, its own economy. No central operator to appease, no platform that can change the deal underneath you.' },
+  { title: 'Freedom', body: 'The plan is that every zone keeps its own rules and its own records. No central operator rewriting the deal. That plan is not running on this site.' },
   { title: 'Privacy', body: 'What happens inside a zone stays inside it. Only what a zone chooses to share crosses the boundary — under consent that its members control.' },
-  { title: 'Agency', body: 'Your user and your value travel with you. Leave a zone, join another, or belong to ten at once — your identity is yours, not theirs.' },
+  { title: 'Agency', body: 'Your account and your records travel with you. Leave a zone, join another, or belong to several at once — the identity is yours.' },
 ]
 
 const ARDANOVA = [
-  { label: 'CREATORS OWN THE UPSIDE', body: "Work, audience, and earnings that belong to the people who make them — not to a platform's terms of service." },
-  { label: 'BUILT ON AZOA', body: 'The first zone to run on the engine: self-sovereign identity, durable workflows, and value that settles across chains and fiat alike.' },
-  { label: 'PROOF, NOT PROMISE', body: 'Ardanova is the working demonstration that a fairer economy can run on open, self-hosted infrastructure.' },
+  { label: 'SEPARATE APP', body: 'Ardanova is a different product. Its own API reports a simulated economy. This site does not pay creators, run payroll, or bridge fiat for it.' },
+  { label: 'PLANNED PILOT', body: 'A first pilot means it is planned. It is a sketch of a later zone, and it does not settle from this site.' },
+  { label: 'SIMULATED', body: 'Until real-value bridging is enabled, treat every earnings or payout line about Ardanova as a sketch. There is no yield here.' },
 ]
 
 export default function Federation() {
@@ -30,7 +30,7 @@ export default function Federation() {
           <div className="az-eyebrow">FEDERATION — ON ITS WAY</div>
           <h1 className="az-h1">Zones that govern<br />themselves.</h1>
           <p className="az-fed-lede">
-            An autonomous zone of action is exactly that — autonomous. Federation lets zones stay sovereign and still transact, so no one has to choose between independence and connection.
+            Federation is a plan for zones that keep their own rules and still exchange records with each other. It is not running on this site. Real-value bridging is disabled, and fiat settlement is not enabled yet.
           </p>
         </div>
       </header>
@@ -46,16 +46,16 @@ export default function Federation() {
             ))}
           </div>
           <p className="az-fed-note">
-            Distributed governance is not a feature. It's the point: <span className="az-accent">communities that own their economies</span>, and an internet of zones that trade as equals.
+            The aim is zones that keep their own records and deal with each other directly. That exchange is not live, and nothing on this page is a payout.
           </p>
         </div>
       </section>
 
       <section id="ardanova" className="az-ardanova">
         <div className="az-wrap">
-          <div className="az-ardanova-eyebrow">FIRST PILOT — COMING SOON</div>
+          <div className="az-ardanova-eyebrow">PLANNED PILOT</div>
           <h2 className="az-ardanova-title">Ardanova</h2>
-          <p className="az-ardanova-lede">The new creator economy. A fair deal for the digital age.</p>
+          <p className="az-ardanova-lede">A planned pilot. Its economy is simulated. Nobody is paid from this page.</p>
           <div className="az-ardanova-items">
             {ARDANOVA.map((a) => (
               <div className="az-ardanova-item" key={a.label}>
@@ -69,7 +69,7 @@ export default function Federation() {
 
       <section className="az-cta az-cta--plain">
         <h2>Build your zone.</h2>
-        <p>The engine is open source and ready to self-host today. Federation lands on top of what you build now.</p>
+        <p>The source is open and can be self-hosted. Federation is later work. This public site stays a simulation until real-value bridging is enabled.</p>
         <div className="az-cta-row">
           <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--lg">VIEW ON GITHUB ↗</a>
           <Link href="/architecture" className="az-btn az-btn--outline az-btn--lg">THE ARCHITECTURE →</Link>

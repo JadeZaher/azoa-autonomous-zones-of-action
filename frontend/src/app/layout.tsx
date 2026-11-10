@@ -26,7 +26,7 @@ const plexMono = localFont({
 
 export const metadata: Metadata = {
   title: 'AZOA — Autonomous Zones of Action',
-  description: 'One engine. Every kind of economy.',
+  description: 'Open-source engine for structured workflows. This hosted site is a simulation: real-value bridging is disabled, and fiat settlement is not enabled yet.',
 }
 
 export const viewport = {

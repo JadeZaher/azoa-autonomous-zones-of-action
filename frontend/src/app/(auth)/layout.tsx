@@ -19,7 +19,7 @@ export default function AuthLayout({
           }}
         />
 
-        {/* Wordmark + live badge — wordmark returns to the marketing landing */}
+        {/* Wordmark + status — wordmark returns to the marketing landing */}
         <div className="relative z-10 flex items-start justify-between">
           <Link href="/" className="group -m-2 block p-2 transition-opacity hover:opacity-80">
             <div className="text-2xl font-bold tracking-[0.08em]">AZOA</div>
@@ -29,26 +29,21 @@ export default function AuthLayout({
           </Link>
           <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#b7ad9c]">
             <span className="inline-block h-2 w-2 rounded-full bg-[#C8501E]" />
-            LIVE — ACTION GRAPH
+            SIMULATED — ACTION GRAPH
           </div>
         </div>
 
-        {/* Statement + quote */}
+        {/* Statement */}
         <div className="relative z-10 space-y-8">
           <h2 className="max-w-md text-4xl font-bold leading-[0.98] tracking-[-0.02em]">
             One user.
             <br />
             Every economy.
           </h2>
-          <blockquote className="space-y-3">
-            <p className="max-w-md text-lg leading-relaxed text-[#F2EDE3]/80">
-              &ldquo;Your sovereign digital identity, unified across every
-              chain. One user, infinite possibilities.&rdquo;
-            </p>
-            <footer className="font-mono text-[11px] tracking-[0.12em] text-[#b7ad9c]">
-              — THE AZOA PROTOCOL
-            </footer>
-          </blockquote>
+          <p className="max-w-md text-lg leading-relaxed text-[#F2EDE3]/80">
+            A sign-in on a simulation. Real-value bridging is disabled, and
+            fiat settlement is not enabled yet.
+          </p>
         </div>
       </div>
 
@@ -64,7 +59,14 @@ export default function AuthLayout({
           </Link>
         </div>
 
-        <div className="w-full max-w-sm">{children}</div>
+        <div className="w-full max-w-sm">
+          {children}
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            <Link href="/terms" className="underline underline-offset-4">Terms</Link>
+            {' · '}
+            <Link href="/privacy" className="underline underline-offset-4">Privacy</Link>
+          </p>
+        </div>
       </div>
     </div>
   )

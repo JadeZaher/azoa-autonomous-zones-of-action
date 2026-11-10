@@ -15,9 +15,9 @@ export default function Architecture() {
       <header className="az-fed-header">
         <div className="az-wrap">
           <div className="az-eyebrow">ARCHITECTURE</div>
-          <h1 className="az-h1">A workflow you can<br />trust with value.</h1>
+          <h1 className="az-h1">A workflow the<br />engine can check.</h1>
           <p className="az-fed-lede">
-            Financial processes want two things that usually fight each other: to be dynamic — branch, wait, span systems and days — and to be structured — auditable, exact, never losing a step. AZOA is the substrate that gives you both.
+            Financial processes want two things that usually fight each other: to be dynamic — branch, wait, span systems and days — and to be structured — auditable, exact, never losing a step. AZOA is the substrate built for both. This hosted site runs that substrate as a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.
           </p>
         </div>
       </header>
@@ -28,10 +28,10 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">A durable state machine, drawn as a graph.</h2>
             <p>
-              An action is a graph of steps — gates, transfers, swaps, grants, calls to the outside world. It parks when it needs to wait. It resumes on a signal or a timer. And before it takes any irreversible action, it reconciles against the source of truth: a chain confirmation, a settlement callback, the real world.
+              An action is a graph of steps — gates, transfers, swaps, grants, calls to the outside world. It parks when it needs to wait. It resumes on a signal or a timer. And before it takes any irreversible action, it reconciles against the source of truth: a network confirmation, a settlement callback, the world outside the graph.
             </p>
             <p>
-              Steps carry their results forward as bindings, failed checks cascade to stop downstream payouts, and every run survives restarts. Build actions visually — drag, drop, connect — and publish only when the graph validates.
+              Steps carry their results forward as bindings, failed checks stop later steps, and every run survives restarts. Build actions visually — drag, drop, connect — and publish only when the graph validates. On this site those steps are simulated. They do not send a payout.
             </p>
             {/* Wide horizontal graph — desktop/tablet. */}
             <svg viewBox="0 0 720 140" className="az-arch-diagram az-arch-diagram--desktop">
@@ -83,14 +83,14 @@ export default function Architecture() {
 
       <section className="az-arch-section">
         <div className="az-arch-grid">
-          <div className="az-kicker">02 — RAILS</div>
+          <div className="az-kicker">02 — SETTLEMENT</div>
           <div className="az-arch-body">
-            <h2 className="az-arch-h2">Blockchain and fiat, the same shape.</h2>
+            <h2 className="az-arch-h2">Networks and fiat, the same shape.</h2>
             <p>
-              AZOA treats a blockchain and a fiat partner as two kinds of settlement rail behind one uniform seam. On-chain assets move through provider adapters. Fiat clears in the partner&apos;s own checkout — then makes one exact, verified call into AZOA to materialize the value. Once, and exactly once.
+              AZOA treats a network and a fiat partner as two kinds of settlement behind one seam. Assets on a network move through adapters. Fiat is designed as one exact callback after a partner has already cleared funds in that partner&apos;s own checkout. That callback is not enabled on this site. There is no live fiat bridge.
             </p>
             <p>
-              An action doesn&apos;t care which rail a step settles on. That is the point: the same workflow can move on-chain value and fiat-originated value in a single run — multichain, multi-wallet, one graph.
+              A workflow can name either shape. On this site the fiat shape does not run, real-value bridging is disabled, and identity checks for real money are not enabled yet.
             </p>
           </div>
         </div>
@@ -105,7 +105,7 @@ export default function Architecture() {
               At the center is a self-sovereign user — an identity a person actually owns, proven by keys they hold, not an account a platform lends them. Applications act on a user&apos;s behalf only under a live, explicit, revocable grant of consent.
             </p>
             <p>
-              That makes every step in every workflow attributable to a real subject, and makes delegated action safe: withdraw consent, and the app&apos;s hands leave your value immediately.
+              That makes every step in every workflow attributable to a real subject, and makes delegated action safe: withdraw consent, and the app loses the permission to act for you. On this site that permission does not move real money.
             </p>
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">Wholes made of wholes.</h2>
             <p>
-              Everything a workflow can hold or move is a holon — a whole that can contain other wholes. A token, a credit, a right, a bundle of all three. Because value is modeled one way, an action built for one economy composes with value from any other. This is what makes a grant disbursement, a material credit, and a payroll line the same kind of thing to the engine.
+              Everything a workflow can hold or move is a holon — a whole that can contain other wholes. A credit, a right, a bundle of both. Because value is modeled one way, an action built for one economy composes with records from another. A grant line, a material credit, and a payroll line are the same kind of record to the engine. Saving that record does not send a grant, issue a credit, or run payroll.
             </p>
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">From primitive to product.</h2>
             <p>
-              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a community fund — scaffolded from the primitives instead of rebuilt from scratch. New chains, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces.
+              An action graph bundle generates and deploys whole applications on top of the identity and action layers. A new marketplace, a co-op ledger, a community fund — scaffolded from the primitives instead of rebuilt from scratch. New networks, new exchanges, new settlement partners, and new step types all plug in through the same open interfaces. None of that is a live payout on this site.
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function Architecture() {
           <div className="az-arch-body">
             <h2 className="az-arch-h2">Honest about the line.</h2>
             <p>
-              AZOA is deliberate about what software can guarantee and what a human must own. The safe path is automatic: exactly-once settlement, fail-closed verification, reconciliation before action. The ambiguous path is explicit: when a workflow is genuinely stuck, the engine flags it for a person — with full context — instead of silently resolving it.
+              AZOA is deliberate about what software can guarantee and what a human must own. The safe path is automatic: a repeated step settles once, fail-closed verification, reconciliation before action. The ambiguous path is explicit: when a workflow is genuinely stuck, the engine flags it for a person — with full context — instead of silently resolving it. On this site those checks run against a simulation. They do not settle real funds.
             </p>
             <p>
               Some decisions belong to the operator. AZOA surfaces them instead of faking them.
