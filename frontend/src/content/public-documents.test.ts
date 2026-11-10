@@ -81,14 +81,18 @@ describe('public documents', () => {
       }
     }
 
-    const settle = workflowBodyText(WORKFLOWS[0]!)
+    const settlePage = WORKFLOWS[0]!
+    expect(settlePage.description).toBe('A retried step should settle once, or not at all. Stripe API v1 and FedNow already name that habit. This hosted site does not move money.')
+    const settle = workflowBodyText(settlePage)
     expect(settle).toContain('including 500 errors')
     expect(settle).toContain('retries don’t repeat successful operations')
     expect(settle).toContain('admi.002')
     expect(settle).toContain('pacs.028')
     expect(settle).toContain('Version 3.2 (June 2025)')
 
-    const closed = workflowBodyText(WORKFLOWS[1]!)
+    const closedPage = WORKFLOWS[1]!
+    expect(closedPage.description).toBe('Fail-closed means permission, not exclusion, as Saltzer and Schroeder wrote in 1975. A warning in a log is not a control. This hosted site does not move value.')
+    const closed = workflowBodyText(closedPage)
     expect(closed).toContain('Base access decisions on permission rather than exclusion.')
     expect(closed).toContain('11 October 1974')
     expect(closed).toContain('17 April 1975')

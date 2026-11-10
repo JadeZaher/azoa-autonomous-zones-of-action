@@ -220,7 +220,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'A timeout is not a decision. A retry should not become a second settlement.',
     seoTitle: 'Settle once — Workflows | AZOA',
     description:
-      'A retried step should settle once, or not at all. Stripe API v1 and FedNow already name that habit. This AZOA site is a simulation and does not move money.',
+      'A retried step should settle once, or not at all. Stripe API v1 and FedNow already name that habit. This hosted site does not move money.',
     eyebrow: 'Settle once',
     publishedAt: PUBLISHED,
     lastReviewed: PUBLISHED,
@@ -352,7 +352,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'If it cannot be verified, refuse it. A warning is not a control.',
     seoTitle: 'Fail-closed controls — Workflows | AZOA',
     description:
-      'Fail-closed means permission, not exclusion (Saltzer and Schroeder, 1975). On AZOA that is a construction rule for a simulated engine, not live custody.',
+      'Fail-closed means permission, not exclusion, as Saltzer and Schroeder wrote in 1975. A warning in a log is not a control. This hosted site does not move value.',
     eyebrow: 'Fail-closed controls',
     publishedAt: PUBLISHED,
     lastReviewed: PUBLISHED,
