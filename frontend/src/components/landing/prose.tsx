@@ -1,10 +1,25 @@
 import Link from 'next/link'
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { sourceLinksOwnUrls } from '@/content/workflows'
 import type { Block, Run, WorkflowSource } from '@/content/workflows'
 
+function InlineText({ text }: { text: string }) {
+  const matches = [...text.matchAll(/`([^`\n]+)`/g)]
+  if (matches.length === 0) return text
+  const nodes: ReactNode[] = []
+  let cursor = 0
+  for (const match of matches) {
+    const start = match.index ?? 0
+    if (start > cursor) nodes.push(text.slice(cursor, start))
+    nodes.push(<code key={start}>{match[1]}</code>)
+    cursor = start + match[0].length
+  }
+  if (cursor < text.length) nodes.push(text.slice(cursor))
+  return nodes
+}
+
 function RunView({ run }: { run: Run }) {
-  if (typeof run === 'string') return run
+  if (typeof run === 'string') return <InlineText text={run} />
   if ('href' in run) {
     const label = run.strong ? <strong>{run.text}</strong> : run.text
     return run.href.startsWith('/') ? <Link href={run.href}>{label}</Link> : <a href={run.href}>{label}</a>
