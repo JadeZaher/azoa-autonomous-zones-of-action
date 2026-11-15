@@ -11,7 +11,7 @@ export const OPERATOR_NAME = 'Escherbridge, LLC'
 export const OPERATOR_EMAIL = 'contact@escherbridge.com'
 
 export const SIMULATION =
-  'This hosted site is a simulation. Real-value bridging is disabled. It does not move value.'
+  'Hosted demo runs simulated payloads. Real-value bridging and fiat settlement are disabled; self-host Apache-2.0 source for production workloads.'
 
 const PUBLIC_PREFIXES = ['/architecture', '/federation', '/privacy', '/terms', '/notes', '/blog', '/news', '/workflows']
 
@@ -91,26 +91,26 @@ export function formatPublicDate(iso: string): string {
 }
 
 const DEFAULT_DESCRIPTION =
-  'Open-source engine for structured workflows. This hosted site is a simulation: real-value bridging is disabled, and fiat settlement is not enabled yet.'
+  'Open-source workflow engine for durable action graphs: explicit idempotency keys, reconciliation sweeps, consent records, and fail-closed controls.'
 
 export const ESSAYS = [
   {
     slug: 'settle-once-or-not-at-all',
     title: 'A retried step should settle once, or not at all',
     description:
-      'A timeout is not a decision. AZOA is being built so a retried step can be found later as a yes or a no. This public site is a simulation, and it does not move value.',
+      'A timeout is network silence, not a verdict. How AZOA binds retries to durable idempotency keys and active reconciliation sweeps.',
     publishedAt: '2026-11-09',
     summary:
-      'A timeout is not a decision. AZOA is being built so a retried step can be found later as a yes or a no. This public site is a simulation, and it does not move value.',
+      'Why optimistic retry loops fail on network timeouts, and how explicit idempotency keys plus AwaitingReconciliation resolve ambiguous responses.',
   },
   {
     slug: 'fail-closed-or-it-isnt-a-control',
     title: "Fail closed, or it isn't a control",
     description:
-      'A control that fails open is a decoration. AZOA is built so that anything it cannot verify is refused, not waved through. This public site is a simulation, and that sentence is part of the control, not a disclaimer under it.',
+      'A safeguard that logs a warning and continues is a decoration. How AZOA enforces fail-closed version pinning, authority checks, and consent gates.',
     publishedAt: '2026-11-09',
     summary:
-      'A control that fails open is a decoration. AZOA is built so that anything it cannot verify is refused. This public site is a simulation, and that sentence is part of the control.',
+      'Why unreadable permissions, stale version hashes, and revoked consent must halt execution outright instead of writing quiet log warnings.',
   },
 ] as const
 
@@ -137,7 +137,7 @@ const MARKETING: PublicDocument[] = [
     path: '/architecture',
     title: 'Architecture — AZOA',
     description:
-      'A workflow the engine can check. This hosted site runs that substrate as a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.',
+      'How AZOA structures durable action graphs, version-pinned pre-flight consent, explicit idempotency keys, and swappable settlement adapters.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -146,7 +146,7 @@ const MARKETING: PublicDocument[] = [
     path: '/federation',
     title: 'Federation — AZOA',
     description:
-      'A plan for zones that keep their own records. Federation is not running on this site. The hosted site is a simulation, and real-value bridging is disabled.',
+      'Architecture sketch for independent workspace zones that exchange consent-scoped verifiable records without central lock-in.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -164,7 +164,7 @@ const MARKETING: PublicDocument[] = [
     path: '/terms',
     title: 'Terms — AZOA',
     description:
-      'Pre-launch terms for the hosted AZOA site. The site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.',
+      'Pre-launch terms for the hosted AZOA site. Hosted demo runs simulated payloads; real-value bridging and fiat settlement are disabled.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -173,7 +173,7 @@ const MARKETING: PublicDocument[] = [
     path: '/notes',
     title: 'Notes — AZOA',
     description:
-      'Two notes on settlement and controls for this hosted simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.',
+      'Engineering notes on idempotency, reconciliation sweeps, and fail-closed workflow design.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -182,7 +182,7 @@ const MARKETING: PublicDocument[] = [
     path: '/blog',
     title: 'Blog — AZOA',
     description:
-      'Two notes by Escherbridge on settlement and controls. This hosted site is a simulation. Real-value bridging is disabled, and it does not move value.',
+      'Engineering blog and workflow pattern deep dives by Escherbridge on durable execution, consent guards, and fail-closed controls.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -191,7 +191,7 @@ const MARKETING: PublicDocument[] = [
     path: '/news',
     title: 'News — AZOA',
     description:
-      'No public announcement is listed yet. This hosted site is a simulation. Real-value bridging is disabled, and it does not move value.',
+      'Release milestones and engineering updates for the AZOA open-source workflow engine.',
     kind: 'website',
     index: false,
     inSitemap: false,
@@ -422,5 +422,5 @@ export function buildFeedXml(): string {
       ].join('')
     })
     .join('')
-  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>AZOA</title><link>${SITE}</link><description>${escapeXml(SIMULATION)}</description>${items}</channel></rss>`
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>AZOA</title><link>${SITE}</link><description>${escapeXml(DEFAULT_DESCRIPTION)}</description>${items}</channel></rss>`
 }

@@ -24,8 +24,8 @@ function RunView({ run }: { run: Run }) {
     const label = run.strong ? <strong>{run.text}</strong> : run.text
     return run.href.startsWith('/') ? <Link href={run.href}>{label}</Link> : <a href={run.href}>{label}</a>
   }
-  if ('em' in run) return <em>{run.em}</em>
-  return <strong>{run.strong}</strong>
+  if ('em' in run) return <em><InlineText text={run.em} /></em>
+  return <strong><InlineText text={run.strong} /></strong>
 }
 
 function Runs({ runs }: { runs: readonly Run[] }) {

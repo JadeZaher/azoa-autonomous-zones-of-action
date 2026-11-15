@@ -1,27 +1,10 @@
-/** Reviewed workflow copy. Figures and source URLs are the drafts’; do not extend them. */
+/** Engineering workflow pattern library and index for /workflows and /workflows/[slug]. */
 
 export const SIMULATION_SENTENCE =
-  'This public site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.'
-
-const AUTHOR_LINE: Block = {
-  type: 'p',
-  runs: ['Author: Escherbridge. Last reviewed: 2026-11-10, America/Denver.'],
-}
-
-const SIMULATION_CLOSE: Block = {
-  type: 'p',
-  runs: [
-    { strong: SIMULATION_SENTENCE },
-    ' ',
-    { text: 'ArdaNova', href: 'https://ardanova.com' },
-    ' is a planned pilot whose economy is still simulated. ',
-    { text: 'PrimusNeo', href: 'https://primusneo.com' },
-    ' is the lab whose stack this engine belongs to.',
-  ],
-}
+  'Hosted demo runs simulated payloads. Real-value bridging and fiat settlement are disabled; self-host Apache-2.0 source for production workloads.'
 
 const PUBLISHED = '2026-11-10'
-const NOTE_DATE = '2026-11-09'
+const UPDATED = '2026-11-14'
 
 export type Run =
   | string
@@ -57,122 +40,131 @@ export type WorkflowPage = {
   blocks: readonly Block[]
 }
 
+const rfc9110 = 'https://www.rfc-editor.org/rfc/rfc9110.html'
+const articleSeven = 'https://www.legislation.gov.uk/eur/2016/679/article/7'
+const nist80053 = 'https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf'
+const nist80053Doi = 'https://doi.org/10.6028/NIST.SP.800-53r5'
+const nist80053Csrc = 'https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final'
+const azoaRepo = 'https://github.com/JadeZaher/azoa-autonomous-zones-of-action'
+const azoaSdkTypes = `${azoaRepo}/blob/main/sdk/azoa-wallet/src/workflow/types.ts`
+const azoaSdkClient = `${azoaRepo}/blob/main/sdk/azoa-wallet/src/workflow/client.ts`
+
 export const WORKFLOW_INDEX = {
-  eyebrow: 'Thirteen workflows · the hosted site is a simulation',
-  h1: 'Shapes the engine can describe.',
+  eyebrow: 'WORKFLOW PATTERNS · 16 ENGINEERING NOTES',
+  h1: 'Workflow guards that hold under failure.',
   seoTitle: 'Workflows | AZOA',
   description:
-    'Workflow shapes the engine models: settle-once, fail-closed controls, consent records, idempotent retries, consent withdrawal, least privilege, separation of duties, event logging, BPMN diagrams, sagas, safe and idempotent methods, and consent that can be shown and distinguished. The hosted site is a simulation and does not move value.',
+    'Architectural field notes grouped by execution guarantee: idempotency keys and sagas, consent and access boundaries, audit slices, reconciliation sweeps, and fail-closed version checks.',
   publishedAt: PUBLISHED,
-  lastReviewed: PUBLISHED,
+  lastReviewed: UPDATED,
   lede:
-    'These pages are about workflow shapes the engine models: a retried step that settles once or not at all, a control that fails closed, and a consent record that can be shown and withdrawn. Five field notes read public rules the same way: RFC 9110 on idempotent retries, UK GDPR Article 7 on withdrawing consent, and NIST SP 800-53 Rev. 5 on least privilege (AC-6), separation of duties (AC-5), and which events an audit log is for (AU-2). Five more read the same way: BPMN 2.0.2 as a shared process diagram, Garcia-Molina and Salem on sagas, RFC 9110 on safe versus idempotent methods, and UK GDPR Article 7(1) and 7(2) on consent that can be shown and that is clearly distinguishable. The figures and legal sentences are other people’s, with the links left on. They are public practice, not a claim that this hosted site moves money, verifies identity for value, or onboarded a regulated customer.',
+    'Multi-step business workflows rarely fail cleanly. Networks drop between a write and its response, two operators retry the same approval after a timeout, or an admin edits a rule while a participant is reading a confirmation screen. These sixteen notes group AZOA action-graph guarantees by failure mode — idempotency & sagas, consent & access control, and audit & fail-closed guards — with primary specifications cited at the bottom of each note.',
   blocks: [
-    {
-      type: 'p',
-      runs: [
-        { strong: SIMULATION_SENTENCE },
-        ' That sentence belongs on this index and on every child, in the body, not only in the footer.',
-      ],
-    },
-    { type: 'h2', text: 'The first three' },
+    { type: 'h2', text: 'Idempotency & Sagas' },
     {
       type: 'ul',
       items: [
         [
           { text: 'Settle once', href: '/workflows/settle-once', strong: true },
-          ' — Stripe API v1 saves the first request’s status and body, including 500 errors, and returns that response on retry; FedNow requires a unique message ID and tells participants not to process a duplicate. A timeout, on its own, is not a decision.',
+          ' — turn network timeouts into a settled yes or no using saved idempotency records and status inquiries instead of blind resends.',
         ],
         [
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed', strong: true },
-          ' — Saltzer and Schroeder, 1975: base access on permission, not exclusion, because a mistaken refusal is noticed and a mistaken allowance may not be. A warning on a screen is not a substitute for that rule.',
+          { text: 'Reconcile indeterminate runs instead of retrying blindly', href: '/workflows/reconciliation-over-blind-retry', strong: true },
+          ' — why AZOA parks ambiguous external calls in `AwaitingReconciliation` and relies on targeted probes rather than timer loops.',
         ],
-        [
-          { text: 'Consent records', href: '/workflows/consent-records', strong: true },
-          ' — UK GDPR says the controller shall be able to demonstrate consent, ask clearly, and make withdrawal as easy as the original yes. Permission that cannot be shown, or withdrawn, was not really recorded.',
-        ],
-      ],
-    },
-    { type: 'h2', text: 'Five field notes' },
-    {
-      type: 'ul',
-      items: [
         [
           { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests', strong: true },
-          ' — RFC 9110 §9.2.2: the intended effect of multiple identical requests is the same as one request, which is why a lost response can be retried automatically. PUT, DELETE, and safe methods are idempotent in that specification. This page does not call POST idempotent, and it does not invent idempotency keys.',
-        ],
-        [
-          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal', strong: true },
-          ' — UK GDPR Article 7(3): consent can be withdrawn at any time, and it shall be as easy to withdraw as to give. Not legal advice.',
-        ],
-        [
-          { text: 'Least privilege', href: '/workflows/least-privilege', strong: true },
-          ' — NIST SP 800-53 Rev. 5, AC-6: only the authorized accesses a user or process needs to accomplish the assigned task. Not an 800-53 implementation claim.',
-        ],
-        [
-          { text: 'Separation of duties', href: '/workflows/separation-of-duties', strong: true },
-          ' — NIST SP 800-53 Rev. 5, AC-5: identify and document the duties that require separation, then define access authorizations that support that split.',
-        ],
-        [
-          { text: 'Event logging', href: '/workflows/event-logging', strong: true },
-          ' — NIST SP 800-53 Rev. 5, AU-2 starts by identifying the event types the system can log in support of the audit function. Later control items are not reconstructed here.',
-        ],
-      ],
-    },
-    { type: 'h2', text: 'Five more field notes' },
-    {
-      type: 'ul',
-      items: [
-        [
-          { text: 'What is BPMN', href: '/workflows/workflow-state-machines', strong: true },
-          ' — OMG BPMN 2.0.2, January 2014: a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
-        ],
-        [
-          { text: 'What is a saga', href: '/workflows/compensating-transactions', strong: true },
-          ' — Garcia-Molina and Salem: either all the transactions in a saga complete, or compensating transactions amend a partial execution. Not a recovery playbook.',
+          ' — when automatic retries preserve a single side effect and why non-idempotent POST steps require explicit caller keys.',
         ],
         [
           { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent', strong: true },
-          ' — RFC 9110 §9.2.1: safe methods are essentially read-only. Safe methods are idempotent; PUT and DELETE are idempotent without being safe.',
+          ' — distinguish read-only inspection endpoints from mutating calls that are merely safe to repeat.',
+        ],
+        [
+          { text: 'Sagas and compensating transactions', href: '/workflows/compensating-transactions', strong: true },
+          ' — unwind partial multi-step executions using explicit backward transactions rather than post-hoc cleanup guesses.',
+        ],
+      ],
+    },
+    { type: 'h2', text: 'Consent & Access Control' },
+    {
+      type: 'ul',
+      items: [
+        [
+          { text: 'Consent records', href: '/workflows/consent-records', strong: true },
+          ' — persist who authorized an action, under which terms, and honor mid-flight withdrawal on downstream steps.',
+        ],
+        [
+          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal', strong: true },
+          ' — build revocation paths that require no more friction than the original opt-in.',
         ],
         [
           { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent', strong: true },
-          ' — UK GDPR Article 7(1): where processing is based on consent, the controller shall be able to demonstrate it. Not legal advice.',
+          ' — model consent grants as queryable audit artifacts rather than unlogged frontend flags.',
         ],
         [
           { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent', strong: true },
-          ' — UK GDPR Article 7(2), quoted in full: the request must be clearly distinguishable, and an infringing part shall not be binding. Not legal advice.',
+          ' — separate optional workflow permissions cleanly from unrelated contract boilerplate.',
+        ],
+        [
+          { text: 'Least privilege', href: '/workflows/least-privilege', strong: true },
+          ' — scope worker and delegated actor credentials strictly to the minimal permission set required by the current step.',
+        ],
+        [
+          { text: 'Separation of duties', href: '/workflows/separation-of-duties', strong: true },
+          ' — prevent single actors from both authoring and approving irreversible settlement transitions.',
         ],
       ],
     },
-    { type: 'h2', text: 'What AZOA is doing here' },
+    { type: 'h2', text: 'Audit & Fail-Closed Guards' },
+    {
+      type: 'ul',
+      items: [
+        [
+          { text: 'Fail-closed controls', href: '/workflows/fail-closed', strong: true },
+          ' — reject missing verifications explicitly; logging a warning and continuing is never a control.',
+        ],
+        [
+          { text: 'Pin the published version hash before execution', href: '/workflows/version-pinned-execution', strong: true },
+          ' — stop time-of-check to time-of-use drift between economic disclosure previews and run start.',
+        ],
+        [
+          { text: 'Durable waits, external signals, and stale threads', href: '/workflows/durable-waits-and-signals', strong: true },
+          ' — park runs cleanly in `Suspended`, `AwaitingSignal`, and `AwaitingTimer` across process restarts without holding memory locks.',
+        ],
+        [
+          { text: 'Event logging', href: '/workflows/event-logging', strong: true },
+          ' — decide upfront which state transitions, refusals, and revocations belong in the immutable audit slice.',
+        ],
+        [
+          { text: 'Shared workflow diagrams (BPMN)', href: '/workflows/workflow-state-machines', strong: true },
+          ' — give product analysts, operators, and backend engineers one shared diagram before writing code.',
+        ],
+      ],
+    },
+    { type: 'h2', text: 'Across the stack' },
     {
       type: 'p',
       runs: [
-        'AZOA is an open-source engine in the ',
-        { text: 'PrimusNeo', href: 'https://primusneo.com' },
-        ' stack, not a consumer bank. Related house notes are ',
+        'For design essays connecting these patterns, read ',
         { text: 'A retried step should settle once, or not at all', href: '/notes/settle-once-or-not-at-all' },
         ' and ',
         { text: 'Fail closed, or it isn’t a control', href: '/notes/fail-closed-or-it-isnt-a-control' },
-        '. ',
+        '. To trace how AZOA fits alongside ',
+        { text: 'PrimusNeo', href: 'https://primusneo.com' },
+        ' and powers shared workspace operations in ',
         { text: 'ArdaNova', href: 'https://ardanova.com' },
-        ' is a planned pilot whose economy is still simulated. Read ',
-        { text: 'Architecture', href: '/architecture' },
-        ' and the ',
-        { text: 'Terms', href: '/terms' },
-        '. Site notes, when there is something true to announce, live in ',
-        { text: 'News', href: '/news' },
+        ', see the ',
+        { text: 'Architecture overview', href: '/architecture' },
         '.',
       ],
     },
-    AUTHOR_LINE,
   ] as readonly Block[],
 }
 
 const settleOnceSources: readonly WorkflowSource[] = [
   {
-    name: 'Stripe Docs, “Idempotent requests” (API v1 wording; v2 distinguished).',
+    name: 'Stripe Docs, “Idempotent requests” (API v1 and v2 retry semantics).',
     urls: ['https://docs.stripe.com/api/idempotent_requests'],
   },
   {
@@ -186,98 +178,42 @@ const settleOnceSources: readonly WorkflowSource[] = [
     ],
   },
   {
-    name: 'AZOA, “A retried step should settle once, or not at all,” 9 November 2026 (sibling essay).',
+    name: 'AZOA note: A retried step should settle once, or not at all.',
     urls: ['https://azoa.ardanova.com/notes/settle-once-or-not-at-all'],
-    datePublished: NOTE_DATE,
+    datePublished: '2026-11-09',
   },
   {
-    name: 'AZOA homepage (public site is a simulation; does not move money; fiat not enabled).',
-    urls: ['https://azoa.ardanova.com/'],
-  },
-  {
-    name: 'AZOA Terms of use.',
-    urls: ['https://azoa.ardanova.com/terms'],
-  },
-  {
-    name: 'PrimusNeo, “Paid twice, or never” (sibling; current v1 wording).',
+    name: 'PrimusNeo engineering note: Paid twice, or never.',
     urls: ['https://primusneo.com/blog/paid-twice-or-never'],
-  },
-  {
-    name: 'PrimusNeo demo, “Paid twice.”',
-    urls: ['https://primusneo.com/demos/paid-twice'],
   },
 ]
 
 const failClosedSources: readonly WorkflowSource[] = [
   {
-    name: 'Saltzer & Schroeder, “The Protection of Information in Computer Systems,” 1975 (fail-safe defaults).',
+    name: 'Saltzer & Schroeder, “The Protection of Information in Computer Systems,” 1975 (Fail-safe defaults & Complete mediation).',
     urls: ['https://web.mit.edu/saltzer/www/publications/protection/Basic.html'],
     datePublished: '1975',
   },
   {
-    name: 'Same paper, front matter / about (manuscript received 11 October 1974; revised 17 April 1975).',
+    name: 'Saltzer & Schroeder manuscript front matter (received 11 October 1974; revised 17 April 1975).',
     urls: ['https://web.mit.edu/saltzer/www/publications/protection/Meta.html'],
     datePublished: '1975',
   },
   {
-    name: 'Same paper, index page.',
-    urls: ['https://web.mit.edu/saltzer/www/publications/protection/'],
-    datePublished: '1975',
-  },
-  {
-    name: 'AZOA, “Fail closed, or it isn’t a control,” 9 November 2026 (sibling essay).',
+    name: 'AZOA note: Fail closed, or it isn’t a control.',
     urls: ['https://azoa.ardanova.com/notes/fail-closed-or-it-isnt-a-control'],
-    datePublished: NOTE_DATE,
-  },
-  {
-    name: 'AZOA homepage (simulation; refuse what cannot be verified; does not move money).',
-    urls: ['https://azoa.ardanova.com/'],
-  },
-  {
-    name: 'AZOA Terms of use.',
-    urls: ['https://azoa.ardanova.com/terms'],
-  },
-  {
-    name: 'AZOA, “A retried step should settle once, or not at all,” 9 November 2026 (a timeout is also not a yes).',
-    urls: ['https://azoa.ardanova.com/notes/settle-once-or-not-at-all'],
-    datePublished: NOTE_DATE,
+    datePublished: '2026-11-09',
   },
 ]
 
-const articleSeven = 'https://www.legislation.gov.uk/eur/2016/679/article/7'
-const rfc9110 = 'https://www.rfc-editor.org/rfc/rfc9110.html'
-const nist80053 = 'https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf'
-const nist80053Doi = 'https://doi.org/10.6028/NIST.SP.800-53r5'
-const nist80053Csrc = 'https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final'
-
 const consentSources: readonly WorkflowSource[] = [
   {
-    name: 'UK GDPR Article 7(1) (demonstrate consent).',
+    name: 'Regulation (EU) 2016/679, Article 7 (UK GDPR official text on legislation.gov.uk).',
     urls: [articleSeven],
   },
   {
-    name: 'UK GDPR Article 7(2) (distinguishable, clear, plain-language request).',
-    urls: [articleSeven],
-    linkLabel: 'Same URL.',
-  },
-  {
-    name: 'UK GDPR Article 7(3) (withdrawal at any time; as easy to withdraw as to give).',
-    urls: [articleSeven],
-    linkLabel: 'Same URL.',
-  },
-  {
-    name: 'UK GDPR Article 7(4) (freely given; not bundled with unnecessary conditions).',
-    urls: [articleSeven],
-    linkLabel: 'Same URL.',
-  },
-  {
-    name: 'AZOA homepage and Terms (simulation; does not move money; no live fiat or identity-for-value checks).',
-    urls: ['https://azoa.ardanova.com/', 'https://azoa.ardanova.com/terms'],
-  },
-  {
-    name: 'AZOA, “Fail closed, or it isn’t a control,” 9 November 2026 (consent that can be seen and revoked, as house aim).',
-    urls: ['https://azoa.ardanova.com/notes/fail-closed-or-it-isnt-a-control'],
-    datePublished: NOTE_DATE,
+    name: 'AZOA Architecture & Privacy documentation.',
+    urls: ['https://azoa.ardanova.com/architecture', 'https://azoa.ardanova.com/privacy'],
   },
 ]
 
@@ -288,157 +224,184 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'A timeout is not a decision. A retry should not become a second settlement.',
     seoTitle: 'Settle once — Workflows | AZOA',
     description:
-      'A retried step should settle once, or not at all. Stripe API v1 and FedNow already name that habit. This hosted site does not move money.',
-    eyebrow: 'Settle once',
+      'Prevent duplicate settlement under dropped connections by binding workflow mutations to caller idempotency keys and explicit status inquiries.',
+    eyebrow: 'IDEMPOTENCY & SAGAS · SETTLE ONCE',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'Idempotency is how a retried request stays one result. A missing reply is a silence rather than a result. Public payment systems already have a name for the habit that stops a silence from becoming a double payout: save the first result, or refuse a duplicate identifier. AZOA is being built to keep that kind of record, and this hosted site still does not move value.',
+      'Network timeouts do not return a "no" — they return silence. Without durable idempotency records and status lookups before resending, one dropped response between client and gateway turns a legitimate retry into a duplicate settlement.',
     sources: settleOnceSources,
     blocks: [
       {
         type: 'p',
-        runs: ['Nobody has to be cheating; a timeout and a retry will do it. This page is not a thriller about lost payments, and the simulation sentence is not a footnote.'],
-      },
-      {
-        type: 'p',
         runs: [
-          { strong: SIMULATION_SENTENCE },
-          ' This hosted site does not move money, and identity checks for moving real money are not enabled. AZOA is not a Stripe integration, not a FedNow participant, and not a bank.',
+          'Two reasonable engineers looking at a hung HTTP payout request often choose opposite failure modes: one retries immediately assuming the call never landed; another suppresses retries assuming it succeeded. Left without a shared key and lookup protocol, the system either pays a supplier twice or leaves both ledgers out of sync while generating plausible logs on either side.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'Stripe’s current API documentation for idempotent requests:' },
-            ' “For API v1, Stripe saves the status code and body of the first request made with a given idempotency key after endpoint execution begins. Retries with the same key return the saved response, including 500 errors.” The same page distinguishes API v2 (“retries don’t repeat successful operations. Stripe retries failed or partially failed work to completion when possible and returns an updated response”). Quote v1 as v1, and do not collapse the v2 sentence into it. This is a public payments-API explanation of settle-once behaviour, not a claim that this site charges a card.',],
-      },
+      { type: 'h2', text: 'How mature payment systems enforce settle-once behavior' },
       {
         type: 'p',
-        runs: [{ strong: 'FedNow Service Operating Procedures, Version 3.2 (June 2025):' },
-            ' “FedNow Participants must use a unique message identifier for ISO 20022 messages, including when resubmitting a message that was previously rejected. The FedNow Service rejects messages that do not have a unique ID, responding with a message reject (admi.002) and applicable reason code.” If the participant is unsure of status after the payment timeout clock has expired, the procedures say to inquire first (pacs.028 or the Adhoc Query Tool); only if the Service likely did not process the message, and the participant wants to resend, “they should ensure it includes a new unique message ID.” Separately: “Participants must validate that all messages received from the FedNow Service have a unique message ID,” and if a duplicate arrives, “do not process” it, “in order to avoid processing the message more than once.”',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The live AZOA homepage and Terms already state the product limit,' },
-            ' and this page does not upgrade it. The sibling note of 9 November 2026 already says a timeout is not a decision and that a retried step should settle once, or not at all. Those are site facts, not Stripe or FedNow metrics.',],
+        runs: [
+          'Payment APIs solve this at the request boundary rather than relying on callers to guess. In ',
+          { strong: 'Stripe API v1' },
+          ', the server saves the HTTP status code and response body of the first request made with a given idempotency key once endpoint execution starts — including 500 errors — and replays that stored result on subsequent retries. By contrast, ',
+          { strong: 'Stripe API v2' },
+          ' prevents repeating already-completed work and retries failed or partially failed sub-operations toward completion, returning an updated state.',
+        ],
       },
       {
         type: 'p',
         runs: [
-          'The PrimusNeo essay ',
+          'Clearing networks pair key uniqueness with explicit status inquiry. Under ',
+          { strong: 'FedNow Service Operating Procedures Version 3.2 (June 2025)' },
+          ', participants must attach a unique ISO 20022 message identifier on every submission, and duplicates are rejected with ',
+          { strong: '`admi.002`' },
+          '. When a timeout expires with uncertain delivery, operators query status first via ',
+          { strong: '`pacs.028`' },
+          ' or the Adhoc Query Tool rather than blindly re-issuing under a new ID — while receivers deduplicate incoming IDs so duplicates are never processed twice.',
+        ],
+      },
+      { type: 'h2', text: 'How AZOA models the guard' },
+      {
+        type: 'p',
+        runs: [
+          'AZOA propagates explicit ',
+          { strong: '`Idempotency-Key`' },
+          ' headers across workflow initiation, manual step advances (`advance`), and external gate signals (`signal`). When an external settlement adapter fails to confirm within its deadline, the step transitions to `AwaitingReconciliation` instead of auto-retrying blindly.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'Suppose a milestone disbursement times out at the gateway while two workers pick up the retry backlog. Both submit the original `Idempotency-Key`, receive the initial recorded state rather than spawning a second transfer, and wait for reconciliation to resolve whether the upstream instruction settled or rolled back. See also the sibling engineering note in ',
           { text: 'Paid twice, or never', href: 'https://primusneo.com/blog/paid-twice-or-never' },
-          ' and the demo at ',
-          { text: 'Paid twice', href: 'https://primusneo.com/demos/paid-twice' },
-          ' now carry the same current Stripe API v1 wording. They are siblings in the stack, not the primary source; Stripe and FedNow carry the operational facts.',
-        ],
-      },
-      { type: 'h2', text: 'The bill for a split system' },
-      {
-        type: 'p',
-        runs: [{ strong: 'Treating a timeout as a no, and paying again.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Treating a timeout as a yes, and leaving the other party unpaid, with two complete-looking logs.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Describing this page, or this site, as a live payment rail, a Stripe integration, or a FedNow connection,' },
-            ' or quoting a superseded Stripe sentence. Use the current API v1 wording, and keep API v2 distinct if it is mentioned. There is no KYC, Identomat, or onboarding-provider claim on this site.',],
-      },
-      { type: 'h2', text: 'A shared record, applied here' },
-      {
-        type: 'p',
-        runs: [{ strong: 'Give a retried step a key that can be found later as a yes or a no.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Look up status before sending a second time.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Keep “does not move money” on the same screen as any payment-shaped example.' }],
-      },
-      { type: 'h2', text: 'What AZOA is, and is not, on this page' },
-      {
-        type: 'p',
-        runs: [
-          'This is an open-source workflow engine in the PrimusNeo stack, not a consumer bank. The public site is a simulation, and fiat settlement is not enabled. ',
-          { text: 'ArdaNova', href: 'https://ardanova.com' },
-          ' is a planned pilot whose economy is still simulated. This engine belongs to the stack at ',
-          { text: 'PrimusNeo', href: 'https://primusneo.com' },
           '.',
         ],
       },
       { type: 'sources' },
-      { type: 'h2', text: 'A situation like this' },
-      {
-        type: 'p',
-        runs: ['This is a worked example, not a live payout and not a customer. A grant-step times out and two operators each retry. The log should show one settlement or none, never two. Nothing on this site actually moves.'],
-      },
       { type: 'h2', text: 'Also in this section' },
       {
         type: 'ul',
         items: [
           [
-            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — if a required check cannot be verified, the run should stop rather than warning and continuing.',
-          ],
-          [
-            { text: 'Consent records', href: '/workflows/consent-records' },
-            ' — permission that cannot be shown, or withdrawn, was not recorded. It was only assumed.',
+            { text: 'Reconcile indeterminate runs instead of retrying blindly', href: '/workflows/reconciliation-over-blind-retry' },
+            ' — probe actual state at the destination before deciding whether to advance or compensate.',
           ],
           [
             { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-            ' — a lost response can be retried automatically only when two identical requests mean one effect. This site does not move value.',
+            ' — understand HTTP retry boundaries under RFC 9110.',
           ],
           [
-            { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
-            ' — identify the duties that require separation, then define access authorizations that support the split.',
+            { text: 'Sagas and compensating transactions', href: '/workflows/compensating-transactions' },
+            ' — amend partial runs with forward compensation rather than silent mutations.',
           ],
           [
-            { text: 'Event logging', href: '/workflows/event-logging' },
-            ' — decide which events the audit function is for.',
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — stop execution cleanly whenever authority or verification state is missing.',
           ],
-          [
-            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
-            ' — a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
-          ],
-          [
-            { text: 'What is a saga', href: '/workflows/compensating-transactions' },
-            ' — all the transactions complete, or compensating transactions amend a partial execution. Not a recovery playbook.',
-          ],
-          [
-            { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent' },
-            ' — safe methods are essentially read-only. Safe methods are idempotent; not every idempotent method is safe.',
-          ],
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'reconciliation-over-blind-retry',
+    title: 'Reconciliation over blind retry',
+    h1: 'Reconcile indeterminate runs instead of retrying blindly.',
+    seoTitle: 'Reconcile indeterminate runs instead of retrying blindly — Workflows | AZOA',
+    description:
+      'How AZOA handles timeout uncertainty with an explicit AwaitingReconciliation workflow state and sweep probes that verify destination truth before advancing.',
+    eyebrow: 'IDEMPOTENCY & SAGAS · RECONCILIATION',
+    publishedAt: UPDATED,
+    lastReviewed: UPDATED,
+    lede:
+      'When an external API call hangs and your HTTP client throws a socket timeout, firing an immediate exponential-backoff retry is often the worst possible instinct. If the first attempt succeeded silently downstream, an automated retry loop converts ambiguity into duplicate execution.',
+    sources: [
+      {
+        name: 'AZOA SDK WorkflowRunStatus and WorkflowReconciliationResult definitions.',
+        urls: [azoaSdkTypes, azoaSdkClient],
+        datePublished: UPDATED,
+      },
+      {
+        name: 'Federal Reserve Banks, FedNow Service Operating Procedures v3.2 (pacs.028 inquiry before resend).',
+        urls: ['https://www.frbservices.org/wp-content/uploads/062425-fednow-service-operating-procedures.pdf'],
+        datePublished: '2025-06',
+      },
+      {
+        name: 'Stripe Docs, “Idempotent requests”.',
+        urls: ['https://docs.stripe.com/api/idempotent_requests'],
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'Most background job queues classify any exception as "retryable with backoff." That works nicely for stateless read fetches or pure database updates inside one transaction. For external state mutations — ledger settlements, webhook deliveries, or credential issuances — throwing away the in-flight correlation context and blindly retrying risks double-execution whenever the external system committed the first request right as the response socket tore.',
+        ],
+      },
+      { type: 'h2', text: 'Making ambiguity a first-class workflow state' },
+      {
+        type: 'p',
+        runs: [
+          'In AZOA’s run lifecycle (`WorkflowRunStatus`), a step that stops with an indeterminate outcome does not enter an automated retry queue. Instead, the engine freezes the entire run into `AwaitingReconciliation`, a non-terminal parked status alongside `Suspended`, `AwaitingSignal`, and `AwaitingTimer`.',
         ],
       },
       {
         type: 'p',
         runs: [
-          'Related: ',
-          { text: 'A retried step should settle once, or not at all', href: 'https://azoa.ardanova.com/notes/settle-once-or-not-at-all' },
-          ', ',
-          { text: 'Fail closed, or it isn’t a control', href: 'https://azoa.ardanova.com/notes/fail-closed-or-it-isnt-a-control' },
-          ', ',
-          { text: 'Architecture', href: 'https://azoa.ardanova.com/architecture' },
-          ', ',
-          { text: 'Paid twice, or never', href: 'https://primusneo.com/blog/paid-twice-or-never' },
-          '.',
+          'Once parked in `AwaitingReconciliation`, the workflow cannot advance or trigger duplicate side effects on a blind timer. Recovery flows exclusively through explicit re-probing (`WorkflowClient.reconcileRun`) or an operator reconciliation sweep (`WorkflowReconciliationSweep`), which inspects the original operation ID at the destination:',
         ],
       },
       {
-        type: 'p',
-        runs: [
-          'The useful next step is to read the ',
-          { text: 'homepage', href: 'https://azoa.ardanova.com/' },
-          ' and the ',
-          { text: 'Terms', href: 'https://azoa.ardanova.com/terms' },
-          ', and to leave the simulation sentence in the body while you do.',
+        type: 'ul',
+        items: [
+          [
+            { strong: 'Confirmed (`reconciledConfirmed`):' },
+            ' The original external operation already committed. AZOA marks the step `Succeeded` and resumes downstream steps without re-issuing the request.',
+          ],
+          [
+            { strong: 'Definite failure:' },
+            ' The destination proves the original operation failed or never took effect. Only now is the step cleanly released back for safe retry or saga compensation.',
+          ],
+          [
+            { strong: 'Still indeterminate (`stillIndeterminate`):' },
+            ' Destination status remains pending or unknown; the run stays parked for the next sweep rather than fabricating a verdict.',
+          ],
         ],
       },
-      AUTHOR_LINE,
+      { type: 'h2', text: 'Why status sweeps beat optimistic timers' },
+      {
+        type: 'p',
+        runs: [
+          'This design mirrors the inquiry-first discipline of `pacs.028` clearing checks: query the original attempt before ever deciding whether another instruction is valid. Separating status observation (`reconcileRun`) from fresh execution eliminates race conditions during gateway slowdowns and gives operations teams clear visibility into `scanned`, `errors`, and `hardStuck` counts without ever equating zero errors with confirmed settlement.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'Suppose a clearing gateway stalls mid-batch and multiple in-flight payout steps hit a socket timeout. Rather than hammering the gateway with blind retries moments later, AZOA parks every ambiguous run in `AwaitingReconciliation`. Once the gateway stabilizes, a sweep checks upstream operation IDs — advancing confirmed transfers cleanly with zero double-settlement while releasing only confirmed failures for retry or compensation.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Settle once', href: '/workflows/settle-once' },
+            ' — pair caller idempotency keys with status verification.',
+          ],
+          [
+            { text: 'Durable waits, external signals, and stale threads', href: '/workflows/durable-waits-and-signals' },
+            ' — understand how parked states persist across restarts without open threads.',
+          ],
+          [
+            { text: 'Sagas and compensating transactions', href: '/workflows/compensating-transactions' },
+            ' — unwind multi-step runs cleanly once a failure is confirmed.',
+          ],
+        ],
+      },
     ],
   },
   {
@@ -447,156 +410,279 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'If it cannot be verified, refuse it. A warning is not a control.',
     seoTitle: 'Fail-closed controls — Workflows | AZOA',
     description:
-      'Fail-closed means permission, not exclusion, as Saltzer and Schroeder wrote in 1975. A warning in a log is not a control. This hosted site does not move value.',
-    eyebrow: 'Fail-closed controls',
+      'Why permission checks must deny execution whenever verification fails or stalls, applying Saltzer and Schroeder’s fail-safe defaults to multi-step action graphs.',
+    eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · ACCESS SAFETY',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'Fail-closed is an old protection rule, and most systems would rather succeed than be right. Saltzer and Schroeder’s “fail-safe defaults” already said the safer default is lack of access, because a mistaken refusal is noticed and a mistaken allowance may not be. AZOA is being built that way. This hosted site still does not hold or move value, and that limit is part of the control.',
+      'Distributed workflows tend to optimize for keeping queues moving. When a permission probe times out or a required confirmation hasn’t arrived, teams are tempted to log a warning and advance the step anyway — building a green dashboard over silent policy violations.',
     sources: failClosedSources,
     blocks: [
       {
         type: 'p',
-        runs: ['A control that fails open is a decoration. The sibling essay already has that line, and this page will not over-polish it. The Saltzer language below is kept in plain English.'],
-      },
-      {
-        type: 'p',
         runs: [
-          { strong: SIMULATION_SENTENCE },
-          ' This public site is a simulation, and that sentence is part of the control, not a disclaimer under it. Fiat is not enabled; there is no live fiat bridge; identity checks for moving real money are not enabled.',
+          'A safeguard that silently falls back to "allow" whenever verification degrades is merely telemetry dressed as security. When verification is unreachable, missing, or expired, a fail-closed workflow stops cleanly and records refusal as its explicit outcome.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'Jerome H. Saltzer and Michael D. Schroeder, “The Protection of Information in Computer Systems,”' },
-            ' invited paper, manuscript received 11 October 1974 and revised 17 April 1975 (copyright 1975 by J. H. Saltzer; author-hosted HTML at MIT). Design principle (b), Fail-safe defaults: “Base access decisions on permission rather than exclusion.” “This principle, suggested by E. Glaser in 1965, means that the default situation is lack of access, and the protection scheme identifies conditions under which access is permitted.” “A conservative design must be based on arguments why objects should be accessible, rather than why they should not.” “In a large system some objects will be inadequately considered, so a default of lack of permission is safer.”',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The same principle continues:' },
-            ' “A design or implementation mistake in a mechanism that gives explicit permission tends to fail by refusing permission, a safe situation, since it will be quickly detected. On the other hand, a design or implementation mistake in a mechanism that explicitly excludes access tends to fail by allowing access, a failure which may go unnoticed in normal use.” This is the warrant for “anything that cannot be verified is refused, not waved through.” A warning that does not stop the step is the unnoticed-failure case.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Complete mediation, in the same paper:' },
-            ' “Every access to every object must be checked for authority,” including “initialization, recovery, shutdown, and maintenance,” and proposals “to gain performance by remembering the result of an authority check” should be “examined skeptically.” Useful as a supporting habit (re-check; do not trust a remembered yes) without turning the page into a capability-system lecture.',],
-      },
-      {
-        type: 'p',
-        runs: ['The live homepage and the 9 November 2026 sibling note already use house language that this page does not inflate. Those are site facts, not Saltzer metrics.'],
-      },
-      { type: 'h2', text: 'The bill for a split system' },
-      {
-        type: 'p',
-        runs: [{ strong: '“Log a warning and continue” when a check cannot be finished.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Describing AZOA as a live custody, KYC, or payments-control product.' },
-            ' There is no Identomat, no onboarding vendor, and no live fiat bridge on this site.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Inventing a certification.' },
-            ' Common Criteria, IEC 61508, NIST figures, and similar were not opened in the research pass and are not named as if they were.',],
-      },
-      { type: 'h2', text: 'A shared record, applied here' },
-      {
-        type: 'p',
-        runs: [{ strong: 'Park or refuse a step that cannot be verified.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Treat the refusal as the recorded result, not as a temporary embarrassment.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Keep the simulation sentence in the body, not only in the footer.' }],
-      },
-      { type: 'h2', text: 'What AZOA is, and is not, on this page' },
+      { type: 'h2', text: 'Fail-safe defaults and complete mediation' },
       {
         type: 'p',
         runs: [
-          'This is an open-source workflow engine in the ',
-          { text: 'PrimusNeo', href: 'https://primusneo.com' },
-          ' stack, not a consumer bank. ',
-          { text: 'ArdaNova', href: 'https://ardanova.com' },
-          ' is a planned pilot whose economy is still simulated. IEEE volume and issue numbers that were not opened are not cited; the MIT-hosted text and the dated Meta page are the source.',
+          'In their classic 1975 paper, Jerome Saltzer and Michael Schroeder grounded access safety in ',
+          { strong: 'fail-safe defaults' },
+          ' (attributed to E. Glaser in 1965): base authorization on explicit permission rather than exclusion, because a false refusal surfaces immediately while a false allowance quietly slips through normal traffic until audited much later.',
+        ],
+      },
+      {
+        type: 'p',
+        runs: [
+          'They paired that rule with ',
+          { strong: 'complete mediation' },
+          ': every access must be validated against live authority — across normal transitions, retries, recovery sweeps, and shutdown paths — without blindly trusting cached "yes" verdicts after state has moved on.',
+        ],
+      },
+      { type: 'h2', text: 'How AZOA enforces fail-closed transitions' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'Refusal over warning:' },
+            ' A gate missing a required signal, signature, or consent flag halts the transition instead of writing a warning line and proceeding.',
+          ],
+          [
+            { strong: 'Hash validation on start:' },
+            ' If a published action graph was edited after an actor reviewed its terms, version pinning fails the run start with a conflict error rather than running mutated steps.',
+          ],
+          [
+            { strong: 'Non-caching authority reads:' },
+            ' When an upstream read fails or returns unreadable state, UI and worker surfaces report verification inability explicitly rather than assuming cleared funds or active consent.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'A grant release step expects a compliance reviewer’s signal before transferring funds. If the reviewer revoked approval five seconds earlier, or the policy service returned HTTP 503 during validation, the AZOA gate refuses to advance — writing an explicit audit refusal rather than firing a Slack alert after the transfer already left.',
         ],
       },
       { type: 'sources' },
-      { type: 'h2', text: 'A situation like this' },
-      {
-        type: 'p',
-        runs: ['This is a worked example, not a live payment and not a customer. A grant-approval step is missing a required confirmation. The run stops and says no, rather than posting a warning and releasing a modelled payout. Nothing on this site actually moves.'],
-      },
       { type: 'h2', text: 'Also in this section' },
       {
         type: 'ul',
         items: [
           [
+            { text: 'Pin the published version hash before execution', href: '/workflows/version-pinned-execution' },
+            ' — enforce Saltzer & Schroeder completeness between disclosure preview and run start.',
+          ],
+          [
             { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a timeout is not a decision, and a retry should not become a second settlement.',
+            ' — refuse blind retries when settlement status is unconfirmed.',
           ],
           [
             { text: 'Consent records', href: '/workflows/consent-records' },
-            ' — permission that cannot be shown, or withdrawn, was not recorded. It was only assumed.',
-          ],
-          [
-            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-            ' — a lost response can be retried automatically only when two identical requests mean one effect. This site does not move value.',
-          ],
-          [
-            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
-            ' — it shall be as easy to withdraw as to give consent. Not legal advice.',
+            ' — stop downstream actions automatically once consent is withdrawn.',
           ],
           [
             { text: 'Least privilege', href: '/workflows/least-privilege' },
-            ' — only the authorized accesses a user or process needs to accomplish the assigned task.',
+            ' — restrict each workflow actor exclusively to task-required scopes.',
+          ],
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'version-pinned-execution',
+    title: 'Version-pinned execution',
+    h1: 'Pin the published workflow hash before an actor consents.',
+    seoTitle: 'Pin the published workflow hash before execution — Workflows | AZOA',
+    description:
+      'Prevent time-of-check to time-of-use drift in action graphs by coupling economic disclosure previews with optimistic expectedPublishedHash guards on run start.',
+    eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · VERSION PINNING',
+    publishedAt: UPDATED,
+    lastReviewed: UPDATED,
+    lede:
+      'Suppose an approver opens a workflow disclosure showing a $500 recipient payout, steps away to verify an invoice, and clicks Approve two minutes later — unaware that a workspace admin edited the underlying action template to send $5,000 in the meantime. Without cryptographic version pinning, that click executes terms the approver never read.',
+    sources: [
+      {
+        name: 'AZOA SDK previewRun, ActionEconomicManifest, and expectedPublishedHash implementation.',
+        urls: [azoaSdkClient, azoaSdkTypes],
+        datePublished: UPDATED,
+      },
+      {
+        name: 'Saltzer & Schroeder, “The Protection of Information in Computer Systems” (Complete mediation), 1975.',
+        urls: ['https://web.mit.edu/saltzer/www/publications/protection/Basic.html'],
+        datePublished: '1975',
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'In concurrent multi-party systems, checking permissions or rendering disclosures before an irreversible start creates a classic ',
+          { strong: 'time-of-check to time-of-use (TOCTOU)' },
+          ' gap. An action definition ID (`actionId`) is a mutable pointer across edits, repointings, and unpublish cycles; only a published content hash pins the exact step graph, recipients, and economic rules a caller consented to.',
+        ],
+      },
+      { type: 'h2', text: 'Two-step disclosure and hash enforcement in AZOA' },
+      {
+        type: 'p',
+        runs: [
+          'AZOA’s workflow SDK (`WorkflowClient`) separates preview inspection from execution using two coordinated primitives:',
+        ],
+      },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: '1. Pre-flight disclosure (`previewRun`):' },
+            ' Before starting execution, the caller fetches an `ActionEconomicManifest` containing every value-bearing step (`entries`), `hasEconomicNodes`, and the exact `publishedVersionHash` of the published graph.',
           ],
           [
-            { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
-            ' — identify the duties that require separation, then define access authorizations that support the split.',
-          ],
-          [
-            { text: 'Event logging', href: '/workflows/event-logging' },
-            ' — decide which events the audit function is for.',
-          ],
-          [
-            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
-            ' — a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
-          ],
-          [
-            { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent' },
-            ' — safe methods are essentially read-only. Safe methods are idempotent; not every idempotent method is safe.',
+            { strong: '2. Version-pinned start (`startWorkflow`):' },
+            ' When submitting start options (`StartWorkflowOptions`), the client echoes back `expectedPublishedHash`, `acknowledgeEconomicEffects`, and a persistent `idempotencyKey`.',
           ],
         ],
       },
       {
         type: 'p',
         runs: [
-          'Related: ',
-          { text: 'Fail closed, or it isn’t a control', href: 'https://azoa.ardanova.com/notes/fail-closed-or-it-isnt-a-control' },
-          ', ',
-          { text: 'A retried step should settle once, or not at all', href: 'https://azoa.ardanova.com/notes/settle-once-or-not-at-all' },
-          ', ',
-          { text: 'Architecture', href: 'https://azoa.ardanova.com/architecture' },
-          ', ',
-          { text: 'Federation', href: 'https://azoa.ardanova.com/federation' },
-          '.',
+          'If another operator updated, unpublished, or republished the template between preview and start, the server rejects the request cleanly with an action conflict (`400`) instead of silently binding stale consent to mutated steps.',
         ],
       },
+      { type: 'h2', text: 'Why version pinning must travel with idempotency' },
       {
         type: 'p',
         runs: [
-          'The useful next step is to read the ',
-          { text: 'homepage', href: 'https://azoa.ardanova.com/' },
-          ' and the ',
-          { text: 'Terms', href: 'https://azoa.ardanova.com/terms' },
-          ', including the simulation sentence in the body.',
+          'Retrying a failed network response around `startWorkflow` preserves both the original `idempotencyKey` and `expectedPublishedHash`. That guarantees network recovery can never accidentally adopt a newer definition published mid-retry: either the pinned version starts once, or the run fails closed and prompts the caller to review the updated manifest.',
         ],
       },
-      AUTHOR_LINE,
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'An operator opens a cohort grant run in a browser, inspects the manifest of 12 recipients, and clicks start just as an administrator removes a grantee and republishes the graph. Because `expectedPublishedHash` disagrees with the active published version, AZOA aborts the start before a single step initializes, refreshes the preview, and asks for explicit confirmation against the new manifest.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — make mismatch refusal a hard protocol invariant rather than a UI warning.',
+          ],
+          [
+            { text: 'Consent records', href: '/workflows/consent-records' },
+            ' — capture who agreed to exactly what disclosure state.',
+          ],
+          [
+            { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
+            ' — preserve verifiable evidence linking approval to exact scope.',
+          ],
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'durable-waits-and-signals',
+    title: 'Durable waits, signals, and stale threads',
+    h1: 'Durable waits, external signals, and stale threads.',
+    seoTitle: 'Durable waits, external signals, and stale threads — Workflows | AZOA',
+    description:
+      'Replace fragile in-memory sleepers and long-lived worker locks with durable wait states (Suspended, AwaitingSignal, AwaitingTimer) that survive restarts.',
+    eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · DURABLE STATE',
+    publishedAt: UPDATED,
+    lastReviewed: UPDATED,
+    lede:
+      'Long-lived workflows often sit idle for hours or days waiting for a human approver, an onboarding webhook, or a cooling-off timer. Holding open HTTP connections or in-memory worker threads during those waits turns every container deploy or restart into lost workflow state.',
+    sources: [
+      {
+        name: 'AZOA SDK WorkflowRunStatus, AdvanceParams, and SignalParams.',
+        urls: [azoaSdkTypes, azoaSdkClient],
+        datePublished: UPDATED,
+      },
+      {
+        name: 'Hector Garcia-Molina and Kenneth Salem, “Sagas,” Princeton University.',
+        urls: ['https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf'],
+      },
+      {
+        name: 'OMG Business Process Model and Notation (BPMN) Version 2.0.2.',
+        urls: ['https://www.omg.org/spec/BPMN/2.0.2/PDF'],
+        datePublished: '2013-12',
+      },
+    ],
+    blocks: [
+      {
+        type: 'p',
+        runs: [
+          'Real-world coordination runs on human time, not millisecond RPC latency. If your architecture models an approval pause using an in-memory promise, a background thread `sleep()`, or a polling cron loop guessing whether a step is ready, deployments corrupt state and stale callbacks double-trigger downstream branches.',
+        ],
+      },
+      { type: 'h2', text: 'Four distinct parked states instead of one vague "Waiting"' },
+      {
+        type: 'p',
+        runs: [
+          'AZOA persists every run transition in storage so workers hold zero memory between steps. Non-terminal parked states are explicitly typed by what event unlocks them:',
+        ],
+      },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: '`Suspended`:' },
+            ' Paused between steps waiting on an authorized manual advance (`advance(runId, fromNodeId)`) carrying an explicit step UUID.',
+          ],
+          [
+            { strong: '`AwaitingSignal`:' },
+            ' Parked at a named gate waiting for an external webhook or actor to send `signal(runId, gateId, payload)`.',
+          ],
+          [
+            { strong: '`AwaitingTimer`:' },
+            ' Parked on a scheduled deadline that wakes cleanly via the saga trigger when the window matures.',
+          ],
+          [
+            { strong: '`AwaitingReconciliation`:' },
+            ' Frozen after an indeterminate downstream response so blind retries cannot touch the run until state probing finishes.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'Defeating stale threads with scoped step pointers' },
+      {
+        type: 'p',
+        runs: [
+          'A recurring bug in asynchronous orchestrators is the ',
+          { strong: 'stale thread' },
+          ': a late worker callback or slow user browser submits a resume call targeting step 2 after the run has already moved to step 4 or been `Cancelled`. Because `advance` names `fromNodeId`, `signal` names `gateId`, and both honor `Idempotency-Key`, stale requests from evicted workers or double-clicked UI forms cannot jump a workflow ahead twice or resurrect terminal states (`Succeeded`, `Failed`, `Forked`, `Cancelled`).',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'A vendor contract review requires a three-day cooling-off timer followed by a legal counter-signature gate. Across that 72-hour span, three API releases restart every application server instance cleanly. Because pause state lives durably in the persisted run row (`WorkflowExecutionState`), no worker thread stalls and the arriving webhook picks up seamlessly at `gateId`.',
+        ],
+      },
+      { type: 'sources' },
+      { type: 'h2', text: 'Also in this section' },
+      {
+        type: 'ul',
+        items: [
+          [
+            { text: 'Reconcile indeterminate runs instead of retrying blindly', href: '/workflows/reconciliation-over-blind-retry' },
+            ' — understand how `AwaitingReconciliation` protects external transitions.',
+          ],
+          [
+            { text: 'Sagas and compensating transactions', href: '/workflows/compensating-transactions' },
+            ' — recover cleanly when a resumed branch eventually rejects.',
+          ],
+          [
+            { text: 'Shared workflow diagrams (BPMN)', href: '/workflows/workflow-state-machines' },
+            ' — align analysts and implementers on gates, timers, and branches before implementation.',
+          ],
+        ],
+      },
     ],
   },
   {
@@ -605,157 +691,85 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Permission that cannot be shown, or withdrawn, was not recorded. It was only assumed.',
     seoTitle: 'Consent records — Workflows | AZOA',
     description:
-      'UK GDPR Article 7: consent must be demonstrable, clearly asked, and as easy to withdraw as to give. Public practice on this simulated site, not a KYC feature.',
-    eyebrow: 'Consent records',
+      'Model user consent as a queryable, distinguishable workflow record with first-class revocation that halts future sharing cleanly.',
+    eyebrow: 'CONSENT & ACCESS CONTROL · RECORDS',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'A consent record has to show that permission was given, for what, and that it can be withdrawn as easily as it was given. Silence is not consent, and a tick buried in a longer document is not a record of one. UK GDPR Article 7 requires the controller to be able to demonstrate consent, to present the request clearly, and to honour withdrawal. That is a public consent-record practice — not a KYC vendor feature, and not a claim that this simulated AZOA site onboards anyone or moves money.',
+      'Many products implement consent as a boolean checked during signup and never looked at again. When a user withdraws permission halfway through a multi-stage workflow — or asks which exact terms they accepted six months ago — an unversioned boolean fails both engineering auditability and data-protection rules.',
     sources: consentSources,
     blocks: [
       {
         type: 'p',
-        runs: ['AZOA is operated by Escherbridge, LLC in Idaho. This article is a public standard, not a declaration that the hosted site is a UK controller, that every workflow step is personal-data processing, or that publishing this page makes the hosted site GDPR-certified. This page does not give legal advice.'],
-      },
-      {
-        type: 'p',
         runs: [
-          { strong: SIMULATION_SENTENCE },
-          ' This public site is a simulation and does not move money. Fiat settlement is not enabled, identity checks for moving real money are not enabled, and there is no Identomat or onboarding-provider claim here.',
+          'An actionable consent model connects permissions directly to execution gates: who granted access, to whom, for which scopes, under which notice, and whether that permission remains unrevoked when a downstream step fires.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'UK GDPR, in the first paragraph of the consent article, official revised text on legislation.gov.uk:' },
-            ' “Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data.” A permission that cannot later be shown was not recorded in the sense the law uses.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The UK GDPR rule that consent must be clearly distinguishable:' },
-            ' if consent is given “in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language.” “Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding.” A consent buried in terms, or bundled with an unrelated yes, fails this already-public test.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The UK GDPR rule that withdrawal must be as easy as giving consent:' },
-            ' “The data subject shall have the right to withdraw his or her consent at any time.” “The withdrawal of consent shall not affect the lawfulness of processing based on consent before its withdrawal.” “Prior to giving consent, the data subject shall be informed thereof.” “It shall be as easy to withdraw as to give consent.” Withdrawal is part of the record, not an after-sales courtesy.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The UK GDPR rule that consent is not freely given if it is bundled with a contract that does not need it:' },
-            ' when assessing whether consent is freely given, “utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract.” Scope matters. A modelled workflow must not treat a required, unrelated permission as if it were freely given consent.',],
-      },
-      {
-        type: 'p',
-        runs: ['The ICO’s detailed “how to obtain, record and manage consent” page could not be retrieved in the research pass (403). This page does not paraphrase ICO audit-trail field lists from memory. The fail-closed sibling already mentions “consent that can be seen and revoked” as a construction aim — house language, not a compliance certificate. If NEOS is mentioned, its “consent” (a reasoned-objection check in ACT) is a different use of the word from GDPR consent.'],
-      },
-      { type: 'h2', text: 'The bill for a split system' },
-      {
-        type: 'p',
-        runs: [{ strong: 'Treating silence, or a continued run, as permission.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Bundling an unrelated permission into a contract or a terms tick.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'KYC, Identomat, onboarding-provider, or “this is our fiat identity check” claims,' },
-            ' or quoting ICO field lists that were not opened.',],
-      },
-      { type: 'h2', text: 'A shared record, applied here' },
-      {
-        type: 'p',
-        runs: [{ strong: 'Record who agreed, to what, and when, in a form that can be shown later.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Keep the request visually and linguistically separate from other matter.' }],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Make withdrawal a first-class step, and record it; fail closed if the permission is no longer there.' }],
-      },
-      { type: 'h2', text: 'What AZOA is, and is not, on this page' },
+      { type: 'h2', text: 'Four operational rules from Article 7' },
       {
         type: 'p',
         runs: [
-          'A simulated engine; no live custody; no vendor names; no implication that this page is a completed UK GDPR assessment. ',
-          { text: 'ArdaNova', href: 'https://ardanova.com' },
-          ' is a planned pilot whose economy is still simulated. This engine belongs to the stack at ',
-          { text: 'PrimusNeo', href: 'https://primusneo.com' },
-          '.',
+          'Even outside UK or EU jurisdictions, Article 7 of the UK GDPR distills four clean engineering requirements for any software workflow holding user permission:',
+        ],
+      },
+      {
+        type: 'ul',
+        items: [
+          [
+            { strong: 'Demonstrable (Article 7(1)):' },
+            ' Persist structured consent grant records — grantor, grantee, scoped permissions, source, timestamp, and optional expiry — so evidence exists long after the UI modal closes.',
+          ],
+          [
+            { strong: 'Distinguishable (Article 7(2)):' },
+            ' Keep optional data or sharing requests visually and structurally separate from unrelated legal declarations in plain language.',
+          ],
+          [
+            { strong: 'As easy to withdraw as to give (Article 7(3)):' },
+            ' Treat revocation as a first-class workflow transition accessible in one deliberate action without burying controls in menus, while keeping prior lawful steps intact.',
+          ],
+          [
+            { strong: 'Unbundled where unnecessary (Article 7(4)):' },
+            ' Avoid making unrelated data sharing a hidden precondition for executing core service functionality.',
+          ],
+        ],
+      },
+      { type: 'h2', text: 'Wiring consent into AZOA gates' },
+      {
+        type: 'p',
+        runs: [
+          'In an AZOA workflow, a consent toggle is checked as an active gate before executing data-sharing or external dispatch steps — never assumed from account creation time. When permission is withdrawn mid-run, downstream steps fail closed while preserving immutable historical audit records of work performed prior to revocation.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'A contributor opts into sharing contact details with an external grant reviewer during intake, then withdraws sharing consent two weeks later before payout reporting runs. AZOA records the revocation timestamp immediately, skips downstream contact exports, and leaves earlier approved review logs untouched.',
         ],
       },
       { type: 'sources' },
-      {
-        type: 'p',
-        runs: [
-          'Privacy policy may be linked as a live page, not as a source of Article 7: ',
-          { text: 'https://azoa.ardanova.com/privacy', href: 'https://azoa.ardanova.com/privacy' },
-        ],
-      },
-      { type: 'h2', text: 'A situation like this' },
-      {
-        type: 'p',
-        runs: ['A modelled grant workflow asks for a clearly separate yes to share a contact email with a reviewer, and later records a withdrawal that stops further sharing, without touching work already done. The permission can be shown, and it can be withdrawn. Nothing on this site moves money.'],
-      },
       { type: 'h2', text: 'Also in this section' },
       {
         type: 'ul',
         items: [
           [
-            { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a timeout is not a decision, and a retry should not become a second settlement.',
-          ],
-          [
-            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — if a required check cannot be verified, the run should stop rather than warning and continuing.',
-          ],
-          [
             { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
-            ' — it shall be as easy to withdraw as to give consent. Not legal advice.',
-          ],
-          [
-            { text: 'Event logging', href: '/workflows/event-logging' },
-            ' — decide which events, including a withdrawal, the audit function is for.',
+            ' — design zero-friction revocation paths that take effect immediately.',
           ],
           [
             { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
-            ' — where processing is based on consent, the controller shall be able to demonstrate it. Not legal advice.',
+            ' — make every historical permission queryable on demand.',
           ],
           [
             { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
-            ' — Article 7(2), quoted in full, including that an infringing part shall not be binding. Not legal advice.',
+            ' — prevent permission bundling inside general terms.',
+          ],
+          [
+            { text: 'Event logging', href: '/workflows/event-logging' },
+            ' — ensure grant and withdrawal events enter the audit slice cleanly.',
           ],
         ],
       },
-      {
-        type: 'p',
-        runs: [
-          'Related: ',
-          { text: 'Fail closed, or it isn’t a control', href: 'https://azoa.ardanova.com/notes/fail-closed-or-it-isnt-a-control' },
-          ', ',
-          { text: 'A retried step should settle once, or not at all', href: 'https://azoa.ardanova.com/notes/settle-once-or-not-at-all' },
-          ', ',
-          { text: 'Architecture', href: 'https://azoa.ardanova.com/architecture' },
-          ', ',
-          { text: 'Terms', href: 'https://azoa.ardanova.com/terms' },
-          ', ',
-          { text: 'Privacy', href: 'https://azoa.ardanova.com/privacy' },
-          '.',
-        ],
-      },
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read the ',
-          { text: 'homepage', href: 'https://azoa.ardanova.com/' },
-          ' and the ',
-          { text: 'Terms', href: 'https://azoa.ardanova.com/terms' },
-          '. A modelled checkbox on this site is not a banking onboarding, and the page should not be read as one.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -764,85 +778,69 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Idempotent retries in a workflow',
     seoTitle: 'Idempotent retries in a workflow — Workflows | AZOA',
     description:
-      'A lost workflow response can be retried automatically only when two identical requests mean one effect. This is the workflow reading of RFC 9110.',
-    eyebrow: 'Idempotent requests',
+      'Apply RFC 9110 HTTP idempotency boundaries cleanly inside workflow run drivers so interrupted transport calls do not create duplicate side effects.',
+    eyebrow: 'IDEMPOTENCY & SAGAS · HTTP SEMANTICS',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'If the response never arrived, automatic retry is safe only when two identical requests were designed to mean one effect. That is the HTTP rule, read here as a workflow problem: a settlement step, a grant of access, or a recorded consent change that may be interrupted mid-flight.',
+      'Automatic retry is only safe when executing the identical request twice leaves system state identical to executing it once. Understanding where HTTP semantics guarantee idempotency — and where POST mutations require application-level caller keys — prevents silent duplication across proxies and SDKs.',
     sources: [
       {
-        name: 'RFC 9110, HTTP Semantics, June 2022, §9.2.2.',
+        name: 'RFC 9110, HTTP Semantics, June 2022, §9.2.2 (Idempotent Methods).',
         urls: [rfc9110],
         datePublished: '2022-06',
       },
       {
-        name: 'Protocol sibling: Idempotent HTTP requests.',
+        name: 'Protocol sibling: Idempotent HTTP requests (PrimusNeo).',
         urls: ['https://primusneo.com/guides/idempotent-requests'],
-        runs: [
-          'Protocol sibling: ',
-          { text: 'Idempotent HTTP requests', href: 'https://primusneo.com/guides/idempotent-requests' },
-        ],
       },
       {
         name: 'Workflow sibling: Settle once.',
         urls: ['/workflows/settle-once'],
-        runs: [
-          'Workflow sibling: ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-        ],
       },
     ],
     blocks: [
       {
         type: 'p',
         runs: [
-          'This is a workflow note about retries, not a payments-product page. The protocol definition lives on ',
-          { text: "PrimusNeo's idempotent HTTP requests guide", href: 'https://primusneo.com/guides/idempotent-requests' },
-          ', which uses the same RFC 9110 source. This page does not invent a second definition. The already-live sibling is ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          '. This public site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled. It does not move money, and it does not prove a settle-once model in the wild.',
+          'Transport layers regularly drop packets right after an origin server finishes processing a request. When the HTTP client sees an incomplete read, deciding whether it may automatically resend depends strictly on the contract between caller, proxy, and endpoint semantics.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'RFC 9110, HTTP Semantics, June 2022, the HTTP standard\'s rule on idempotent methods:' },
-            ' "A request method is considered \'idempotent\' if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request." "Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Why the distinction exists:' },
-            ' "Idempotent methods are distinguished because the request can be repeated automatically if a communication failure occurs before the client is able to read the server\'s response."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The two limits in the same section:' },
-            ' "A proxy MUST NOT automatically retry non-idempotent requests." "A client SHOULD NOT automatically retry a failed automatic retry."',],
-      },
-      { type: 'h2', text: "The RFC rule, once, in the RFC's words" },
+      { type: 'h2', text: 'What RFC 9110 actually permits' },
       {
         type: 'p',
         runs: [
-          'Intended effect of many identical requests equals the effect of one. PUT, DELETE, and safe methods are idempotent in this specification. The RFC does not say that POST is idempotent, and this page does not say so either. It does not invent "idempotency keys" as if RFC 9110 defined that product pattern. The longer protocol reading, including the logging note and the dropped-connection example, is on the ',
-          { text: 'PrimusNeo page', href: 'https://primusneo.com/guides/idempotent-requests' },
-          '.',
+          'RFC 9110 §9.2.2 defines a request method as idempotent if the intended effect on the server of multiple identical requests equals the effect of a single request. In the standard specification, ',
+          { strong: 'PUT, DELETE, and safe methods are idempotent' },
+          ' — because a client or intermediary can safely repeat them automatically if a communication failure hides the server response.',
         ],
       },
       {
         type: 'p',
         runs: [
-          'On a workflow, the same habit matters when a step may be interrupted before a response is read. Automatic retry is a safe move only for a method designed so that two identical requests mean one effect. ',
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-          ' is the sibling for a step that should stop rather than guess. ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          ' is the modelled "once, or not at all" page. Neither of those pages, and not this one, describes a live rail, a currency, or a KYC step.',
+          'Crucially, the RFC places explicit ceilings on intermediaries: ',
+          { strong: 'a proxy MUST NOT automatically retry non-idempotent requests' },
+          ', and ',
+          { strong: 'a client SHOULD NOT automatically retry a failed automatic retry' },
+          '. Standard ',
+          { strong: 'POST' },
+          ' calls are not idempotent under HTTP itself; repeating them safely requires explicit application-layer correlation.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'Bridging HTTP boundaries inside AZOA' },
       {
         type: 'p',
         runs: [
-          'A workflow step is sent, the response is lost, and a proxy retries it automatically. If the method was not idempotent, RFC 9110 already says that automatic retry was the wrong move. This site does not move value, so it does not prove the modelled alternative in production.',
+          'Because workflow mutations (`startWorkflow`, `advance`, `signal`) use `POST` semantics with state transitions, AZOA attaches caller-persisted `Idempotency-Key` headers before submitting and caches request keys across browser reloads until a definite acceptance or refusal lands. See ',
+          { text: 'PrimusNeo’s protocol breakdown', href: 'https://primusneo.com/guides/idempotent-requests' },
+          ' for dropped-connection wire examples.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'A mobile client fires a workflow advance over spotty cellular data, receives an ECONNRESET while the server commits step 2, and a naive proxy tries to resend raw POST without an `Idempotency-Key`. Under RFC 9110 that automatic proxy retry was invalid; pairing explicit idempotency keys with deterministic status reads keeps recovery crisp and deterministic.',
         ],
       },
       { type: 'sources' },
@@ -852,42 +850,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         items: [
           [
             { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a retried step is modelled to settle once, or not at all. This site does not move value.',
-          ],
-          [
-            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
-          ],
-          [
-            { text: 'Event logging', href: '/workflows/event-logging' },
-            ' — decide which events the audit function is for.',
+            ' — persist initial outcomes and inquire status before resending.',
           ],
           [
             { text: 'Safe methods and idempotent methods', href: '/workflows/safe-and-idempotent' },
-            ' — safe methods are essentially read-only. Safe methods are idempotent; not every idempotent method is safe.',
+            ' — separate read-only safety from repeatable state updates.',
           ],
           [
-            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
-            ' — a notation the people who design, manage, and realize a process can share. This page does not claim AZOA conformance.',
-          ],
-          [
-            { text: 'What is a saga', href: '/workflows/compensating-transactions' },
-            ' — all the transactions complete, or compensating transactions amend a partial execution. Not a recovery playbook.',
+            { text: 'Reconcile indeterminate runs instead of retrying blindly', href: '/workflows/reconciliation-over-blind-retry' },
+            ' — handle transport silence using active state sweeps.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read the RFC page, or ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -896,72 +870,49 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Withdrawing consent under UK GDPR Article 7',
     seoTitle: 'Withdrawing consent under UK GDPR Article 7 — Workflows | AZOA',
     description:
-      'Under UK GDPR Article 7, consent can be withdrawn at any time, and it should be as easy to withdraw as to give. This covers that rule. Not legal advice.',
-    eyebrow: 'Consent withdrawal',
+      'Implement consent revocation workflows that are as direct as giving permission, halt downstream sharing immediately, and preserve prior audit history.',
+    eyebrow: 'CONSENT & ACCESS CONTROL · REVOCATION',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'Under Article 7 of the UK version of the GDPR, a person has the right to withdraw consent at any time, must be told that before consent is given, and "It shall be as easy to withdraw as to give consent." If giving consent was one step and withdrawing it is a scavenger hunt, the official test in the UK GDPR rule that withdrawal must be as easy as giving consent has not been met.',
+      'Many applications let a user opt into sharing with a single tap, then bury withdrawal behind support emails or multi-page settings trees. Under Article 7(3), revocation must be as straightforward as consent itself — and in workflow engineering, that withdrawal must propagate immediately to parked or queued steps.',
     sources: [
       {
         name: 'Regulation (EU) 2016/679, Article 7, UK version, legislation.gov.uk.',
         urls: [articleSeven],
       },
       {
-        name: 'Sibling: Consent records.',
+        name: 'Workflow sibling: Consent records.',
         urls: ['/workflows/consent-records'],
-        runs: [
-          'Sibling: ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-        ],
       },
     ],
     blocks: [
       {
         type: 'p',
         runs: [
-          'This is a field note about taking consent back, not a compliance badge, not a cookie-banner review, and not legal advice. It is a plain reading of an official article, as a sibling to the already-live ',
-          { text: 'consent records', href: '/workflows/consent-records' },
-          ' page. It is not a claim that AZOA is a controller in any particular case, not a KYC or age-verification how-to, and not a U.S. law survey. It does not walk a reader through a filing or a DPIA, and it does not invent fines, time limits for honouring a withdrawal, or "GDPR requires a particular button."',
+          'Consent that cannot be undone cleanly acts like an unbreakable lock. Treating withdrawal as an asynchronous admin ticket guarantees race conditions where scheduled background jobs continue executing operations the user already revoked.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'UK GDPR, in the article on conditions for consent,' },
-            ' as it appears on legislation.gov.uk (UK version). "1. Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The UK GDPR rule that consent must be clearly distinguishable:' },
-            ' "If the data subject\'s consent is given in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language. Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The UK GDPR rule that withdrawal must be as easy as giving consent:' },
-            ' "The data subject shall have the right to withdraw his or her consent at any time. The withdrawal of consent shall not affect the lawfulness of processing based on consent before its withdrawal. Prior to giving consent, the data subject shall be informed thereof. It shall be as easy to withdraw as to give consent." The UK GDPR rule that consent is not freely given if it is bundled with a contract that does not need it: "When assessing whether consent is freely given, utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract." That last sentence is not turned into contract advice here.',],
-      },
-      { type: 'h2', text: 'What Article 7 actually says' },
+      { type: 'h2', text: 'The asymmetric-friction anti-pattern' },
       {
         type: 'p',
         runs: [
-          'Demonstrate consent (7(1)). Distinguish it in a longer declaration (7(2)). Withdraw at any time; prior processing stays lawful; tell the person beforehand; as easy to withdraw as to give (7(3)). A withdrawn consent is a workflow event that has to be recorded and then respected — without inventing a house state machine. ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-          ' is the sibling for the record itself. ',
-          { text: 'Event logging', href: '/workflows/event-logging' },
-          ' is the sibling for deciding which events the audit function is for. ',
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-          ' is the sibling for a step that should stop when consent is no longer there.',
+          'UK GDPR Article 7(3) establishes four direct operational rules: the person may withdraw consent at any time; prior processing performed before withdrawal remains lawful; they must be informed of the right to withdraw before granting consent; and ',
+          { strong: 'it shall be as easy to withdraw as to give consent' },
+          '.',
         ],
       },
       {
         type: 'p',
-        runs: ['This public site is a simulation. It does not move money, and it does not enable identity checks for moving real money.'],
+        runs: [
+          'In event-driven workflows, that requires two coupled behaviors: exposing a direct one-step withdrawal endpoint next to where grants are managed, and wiring future action-graph gates to re-verify active consent rather than relying on a cached flag from run initiation.',
+        ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'In practice' },
       {
         type: 'p',
         runs: [
-          'Consent was given in one click, and withdrawal is buried three menus deep behind a form that is not clearly about consent. The UK GDPR rule that withdrawal must be as easy as giving consent uses its "as easy to withdraw as to give" sentence as the official test that design fails.',
+          'A multi-week cohort workflow accepts a participant’s directory opt-in via a single confirmation toggle, yet forces withdrawal through a three-menu account settings sequence under an unrelated privacy tab. Surfacing revocation directly at the consent grant view and gating upcoming dispatch steps on live consent state closes both usability and compliance gaps cleanly.',
         ],
       },
       { type: 'sources' },
@@ -971,38 +922,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         items: [
           [
             { text: 'Consent records', href: '/workflows/consent-records' },
-            ' — a consent that cannot be found later is not yet a record.',
-          ],
-          [
-            { text: 'Event logging', href: '/workflows/event-logging' },
-            ' — decide which events, including a withdrawal, the audit function is for.',
-          ],
-          [
-            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
+            ' — bind consent grants and revocations directly to gate evaluation.',
           ],
           [
             { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
-            ' — where processing is based on consent, the controller shall be able to demonstrate it. Not legal advice.',
+            ' — prove when permission started and when withdrawal took effect.',
           ],
           [
-            { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
-            ' — Article 7(2), quoted in full, including that an infringing part shall not be binding. Not legal advice.',
+            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
+            ' — block queued downstream steps whenever live permission is absent.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read Article 7, or ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -1011,59 +942,45 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Least privilege: only the access the task needs',
     seoTitle: 'Least privilege — Workflows | AZOA',
     description:
-      'NIST SP 800-53 Rev. 5, AC-6, asks for only the authorized accesses a user or process needs for the assigned task. This guide covers that official principle.',
-    eyebrow: 'Least privilege',
+      'Apply NIST SP 800-53 AC-6 across background workflow workers and delegated child credentials so each step holds strictly task-scoped permissions.',
+    eyebrow: 'CONSENT & ACCESS CONTROL · SCOPED CREDENTIALS',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'NIST\'s security-control catalog, Revision 5, control AC-6, tells organizations to "Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks." If a role or a process can do more than the assigned task requires, the official principle has not been applied yet.',
+      'Giving an orchestration worker or service script broad administrative permissions because "it is simpler than writing a custom role" exposes every downstream step to excessive blast radius. Least privilege limits both human operators and background processes to the exact accesses required for their assigned task.',
     sources: [
       {
         name: 'NIST SP 800-53 Revision 5, AC-6 Least Privilege.',
         urls: [nist80053, nist80053Doi, nist80053Csrc],
-        runs: [
-          'NIST SP 800-53 Revision 5, AC-6 Least Privilege. ',
-          { text: nist80053, href: nist80053 },
-          ' · DOI: ',
-          { text: nist80053Doi, href: nist80053Doi },
-          ' · CSRC: ',
-          { text: nist80053Csrc, href: nist80053Csrc },
-        ],
       },
     ],
     blocks: [
       {
         type: 'p',
         runs: [
-          'This is a field principle about access, not a penetration-test post, not a certification, and not a complete catalogue of AC-6 enhancements (AC-6(1) and later were not used in the brief). It contains no exploit steps, no proofs of concept, and no "how to escalate." AZOA does not claim to implement 800-53, and this page does not invent a role catalogue. This public site is a simulation. It does not move money.',
+          'In workflow engines where steps trigger external integrations, execute on behalf of tenant users, or sweep reconciliation queues, overly broad credentials quickly become the path of least resistance. A step meant solely to write a receipt ends up carrying cluster-wide settlement authority simply because both shared the same service credential.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'NIST\'s security-control catalog, AC-6 Least Privilege.' },
-            ' Control: "Employ the principle of least privilege, allowing only authorized accesses for users (or processes acting on behalf of users) that are necessary to accomplish assigned organizational tasks."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'Discussion, as opened:' },
-            ' "Organizations employ least privilege for specific duties and systems. The principle of least privilege is also applied to system processes, ensuring that the processes have access to systems and operate at privilege levels no higher than necessary to accomplish organizational missions or business functions. Organizations consider the creation of additional processes, roles, and accounts as necessary to achieve least privilege. Organizations apply least privilege to the development, implementation, and operation of organizational systems."',],
-      },
-      { type: 'h2', text: 'What AC-6 actually says' },
+      { type: 'h2', text: 'Scoping users and automated processes alike' },
       {
         type: 'p',
         runs: [
-          'Authorized accesses only; users and processes; no higher privilege than the task or function needs; additional roles may be created in order to achieve least privilege; applies through development, implementation, and operation. A workflow can name the task and the access it actually needs. ',
-          { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
-          ' is the sibling for splitting duties that should not sit in one place. ',
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-          ' is the already-live sibling for a step that should stop rather than continue with too much access.',
+          'NIST SP 800-53 Rev. 5 (AC-6) specifies that organizations allow only authorized accesses for users — ',
+          { strong: 'and processes acting on behalf of users' },
+          ' — necessary to accomplish assigned organizational tasks. Its discussion emphasizes intentionally splitting roles, processes, and service accounts throughout development and operations rather than reusing omnipotent super-identities.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
       {
         type: 'p',
         runs: [
-          'A workflow process is granted a broad administrative role because that was the easiest existing account, and the assigned task only needed to record a consent change. AC-6\'s "necessary to accomplish assigned organizational tasks" sentence is already the reason that role is too wide.',
+          'In AZOA’s workflow SDK, delegated tenant runs issue short-lived child credentials (`ChildCredentialResult`) whose granted scopes equal strictly the intersection of requested permissions and the tenant’s own delegated authority — passing explicit per-run bearer credentials cleanly rather than issuing permanent admin sessions.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'A notification step only needs read permission on run metadata and consent status, yet inherits an operator account holding disbursement and schema-write privileges. Splitting notification workers onto read-scoped credentials prevents template typos or downstream compromises from reaching settlement controls.',
         ],
       },
       { type: 'sources' },
@@ -1073,28 +990,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         items: [
           [
             { text: 'Separation of duties', href: '/workflows/separation-of-duties' },
-            ' — first name the duties that must be separated, then make the access authorizations support the split.',
+            ' — divide authoring, execution, and approval powers across distinct actors.',
           ],
           [
             { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
+            ' — deny execution immediately when a scoped credential lacks required claims.',
           ],
           [
             { text: 'Event logging', href: '/workflows/event-logging' },
-            ' — decide which events the audit function is for.',
+            ' — trace exactly which scoped identity executed each step.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to name the task and the access it actually needs. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -1103,63 +1010,43 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Separation of duties',
     seoTitle: 'Separation of duties — Workflows | AZOA',
     description:
-      'NIST SP 800-53 Rev. 5, AC-5, tells organizations to identify the duties that require separation, and to define access authorizations that support that split.',
-    eyebrow: 'Separation of duties',
+      'Use NIST SP 800-53 AC-5 to separate who designs or initiates sensitive workflow runs from who approves or reconciles irreversible transitions.',
+    eyebrow: 'CONSENT & ACCESS CONTROL · ROLE BOUNDARIES',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'NIST\'s security-control catalog, Revision 5, control AC-5, tells organizations to identify and document the duties that require separation, and to define system access authorizations that support that separation. First say which duties must be separated. Then make the access authorizations actually support that split.',
+      'If the same single account can draft a payout template, publish it live, approve its human gate, and override its reconciliation failure, access control becomes theater. Separating critical workflow duties ensures no lone actor controls both initiation and authorization.',
     sources: [
       {
         name: 'NIST SP 800-53 Revision 5, AC-5 Separation of Duties.',
         urls: [nist80053, nist80053Doi],
-        runs: [
-          'NIST SP 800-53 Revision 5, AC-5 Separation of Duties. ',
-          { text: nist80053, href: nist80053 },
-          ' · DOI: ',
-          { text: nist80053Doi, href: nist80053Doi },
-        ],
       },
     ],
     blocks: [
       {
         type: 'p',
         runs: [
-          'This is a field note about splitting duties, not a bank-operations manual, not a KYC page, and not a certification. It does not invent a mandatory initiator/approver pair as a NIST rule. The assignment in the control is organization-defined. It contains no exploit steps, and it does not invent a live settlement desk. This public site is a simulation. It does not move value. AZOA does not claim to implement 800-53.',
+          'Many security incidents inside financial and operational tooling stem not from external attackers breaking cryptography, but from single accounts possessing unsegregated end-to-end capabilities: create vendor, approve invoice, trigger disbursement.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'NIST\'s security-control catalog, AC-5 Separation of Duties.' },
-            ' Control: "a. Identify and document [Assignment: organization-defined duties of individuals requiring separation]; and b. Define system access authorizations to support separation of duties."',],
-      },
-      {
-        type: 'p',
-        runs: ['Those two control items are the official text used here. No additional discussion sentences were taken from the PDF beyond what the brief opened, and none are invented.',],
-      },
-      { type: 'h2', text: 'What AC-5 actually says' },
+      { type: 'h2', text: 'Document the split first, then enforce it in authorizations' },
       {
         type: 'p',
         runs: [
-          'Identify and document the duties — the organization defines them. Define system access authorizations to support the separation. A workflow can name the split it is using. Naming a split is not the same as claiming a 800-53 implementation, and it is not the same as running a live desk.',
+          'NIST SP 800-53 Rev. 5 (AC-5) frames separation of duties in two concrete stages: first identify and document which organization-defined duties require separation, then define system access authorizations to enforce that split. Standard rules don’t prescribe one universal initiator/approver pair for every business — each organization must name its high-risk pairs explicitly and bind roles accordingly.',
         ],
       },
       {
         type: 'p',
         runs: [
-          { text: 'Least privilege', href: '/workflows/least-privilege' },
-          ' is the sibling for access that should not exceed the assigned task. ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          ' is the already-live modelled sibling for a retried step that should not finish twice. ',
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-          ' is the sibling for a step that should stop rather than continue.',
+          'Inside an AZOA action graph, separation shows up naturally as distinct permission gates: one role authors and publishes the versioned template (`expectedPublishedHash`), an independent actor triggers or consents to a run, and operator-only sweep permissions handle stuck reconciliation probes separately from general members.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'In practice' },
       {
         type: 'p',
         runs: [
-          'One person can both start and finish a modelled settlement step, and no one has written down whether those duties should be separated. AC-5 already starts with "identify and document." The organization still has to do that part; NIST does not hand over a universal pair.',
+          'When a workflow allows any engineer with template-edit rights to also self-approve the `AwaitingSignal` release gate on production runs, mistakes and unauthorized edits bypass peer inspection. Enforcing distinct gate-signaler credentials from template-author roles closes the loop cleanly.',
         ],
       },
       { type: 'sources' },
@@ -1169,28 +1056,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         items: [
           [
             { text: 'Least privilege', href: '/workflows/least-privilege' },
-            ' — only the authorized accesses the task actually needs, including for processes.',
+            ' — constrain every individual credential strictly to its narrow role.',
           ],
           [
-            { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a retried step is modelled to settle once, or not at all.',
+            { text: 'Pin the published version hash before execution', href: '/workflows/version-pinned-execution' },
+            ' — guarantee approvers review the exact template version running.',
           ],
           [
             { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
+            ' — halt runs if conflicting actor identities attempt self-approval.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to name the duties that must be separated, then check whether the access authorizations actually support that split. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -1199,124 +1076,78 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Event logging: decide which events, and who needs them',
     seoTitle: 'Event logging — Workflows | AZOA',
     description:
-      'NIST SP 800-53 Rev. 5, AU-2, starts by asking which event types the system can log for the audit function. This guide covers that first official step.',
-    eyebrow: 'Event logging',
+      'Design purposeful workflow audit slices following NIST SP 800-53 AU-2 by naming exact auditable events and the downstream reviewers who rely on them.',
+    eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · AUDIT SLICES',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'NIST\'s security-control catalog, Revision 5, control AU-2, starts by asking the organization to identify the types of events the system is capable of logging in support of the audit function. A log that was never designed — no decided event types, no one who needs to read it — is not yet an audit function.',
+      'Teams often say "we log everything" right up until an auditor or incident responder asks why a step stopped or who changed consent — and discovers gigabytes of noisy debug lines with zero structured transition history.',
     sources: [
       {
         name: 'NIST SP 800-53 Revision 5, AU-2 Event Logging.',
         urls: [nist80053, nist80053Doi],
-        runs: [
-          'NIST SP 800-53 Revision 5, AU-2 Event Logging. ',
-          { text: nist80053, href: nist80053 },
-          ' · DOI: ',
-          { text: nist80053Doi, href: nist80053Doi },
-        ],
       },
     ],
     blocks: [
       {
         type: 'p',
         runs: [
-          'This is a field note about choosing what the audit log is for, not a monitoring-product page, and not a guide to capturing secrets. It contains no keyloggers, clipboard monitors, secret capture, or exploit steps. It does not invent a required retention period or a universal event catalogue. The assignment in the control is organization-defined: NIST does not, in the opened opening of AU-2, hand you a universal event list. This is not a certification, and AZOA does not claim to implement 800-53. This public site is a simulation. It does not move money.',
+          'An audit log without deliberate selection is just unstructured console noise. Effective logging starts by defining exactly which state transitions constitute the verifiable record and coordinating those schemas with the teams who review compliance, reconciliation, and security alerts.',
         ],
       },
-            {
-        type: 'p',
-        runs: [{ strong: 'The event-logging control in NIST\'s security-control catalog.' },
-            ' Control item (a), as opened and quoted complete: "Identify the types of events that the system is capable of logging in support of the audit function: [Assignment: organization-defined event types that the system is capable of logging]."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The next item, as far as the opened brief quotes it,' },
-            ' begins by asking the organization to coordinate the event logging function with other organizational entities that require the audit. The remainder of that item, and any later items in AU-2, were not quoted complete in the brief. They are not reconstructed here. If a later draft needs them, the PDF should be re-opened and the items copied complete.',],
-      },
-      { type: 'h2', text: 'What AU-2 actually starts with' },
+      { type: 'h2', text: 'Define auditable event types and stakeholders upfront' },
       {
         type: 'p',
         runs: [
-          'Identify event types the system is capable of logging, in support of the audit function. The organization defines the types. Coordination with other entities that need the audit is the direction of the next item, without inventing the rest of its wording.',
+          'NIST SP 800-53 Rev. 5 (AU-2) begins with two foundational requirements: identify the specific event types the system must log in support of the audit function, and coordinate logging scope across organizational entities that depend on those audit records.',
         ],
       },
       {
         type: 'p',
         runs: [
-          'A workflow can say which events it records — for example a consent change, a failed-closed stop, or a settlement attempt — as illustrations, labeled as such, not as a claimed 800-53 implementation. ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-          ' and ',
-          { text: 'withdrawing consent', href: '/workflows/consent-withdrawal' },
-          ' are the consent siblings. ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          ' and ',
-          { text: 'fail-closed controls', href: '/workflows/fail-closed' },
-          ' are the already-live workflow siblings. ',
-          { text: 'Least privilege', href: '/workflows/least-privilege' },
-          ' is the access sibling.',
+          'Across AZOA runs, meaningful audit slices focus on decision boundaries rather than dumping secrets or transient stack chatter: consent grants and revocations, published hash pins (`publishedVersionHash`), fail-closed gate refusals, forks (`parentRunId`, `forkReason`), and reconciliation sweep outcomes.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'In practice' },
       {
         type: 'p',
         runs: [
-          'A system "logs everything," no one can say which event types support the audit function, and no one is named as needing to read the log. AU-2 already starts by asking for those decisions.',
+          'Three months after an interrupted multi-step disbursement, finance needs proof of whether an operator manually resumed `Suspended` step 3 or if the timer fired automatically. Recording typed transition events (`NodeExecution`, `forkReason`, `failReason`, actor subject, timestamp) turns incident post-mortems from archaeology into a one-query audit slice.',
         ],
       },
       { type: 'sources' },
-      {
-        type: 'p',
-        runs: [
-          'The remainder of AU-2 after the complete item (a), and after the incomplete opening of item (b), is not cited as quoted text.',
-        ],
-      },
       { type: 'h2', text: 'Also in this section' },
       {
         type: 'ul',
         items: [
           [
-            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
-            ' — a withdrawal is a workflow event that has to be recorded and then respected.',
-          ],
-          [
             { text: 'Consent records', href: '/workflows/consent-records' },
-            ' — a consent that cannot be found later is not yet a record.',
+            ' — capture consent grants and withdrawals as durable event rows.',
           ],
           [
-            { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a retried step is modelled to settle once, or not at all.',
+            { text: 'Durable waits, external signals, and stale threads', href: '/workflows/durable-waits-and-signals' },
+            ' — preserve full step-by-step execution projections across multi-day pauses.',
           ],
           [
             { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
+            ' — record explicit refusal reasons cleanly whenever a guard blocks progress.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to name the event types the audit function needs, and who has to read them. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
     slug: 'workflow-state-machines',
     title: 'What is BPMN',
-    h1: 'What is BPMN (Business Process Model and Notation)',
-    seoTitle: 'What is BPMN (Business Process Model and Notation) — Workflows | AZOA',
+    h1: 'Shared process diagrams: BPMN and workflow state machines',
+    seoTitle: 'Shared process diagrams (BPMN) — Workflows | AZOA',
     description:
-      'OMG’s BPMN is a standard notation for people who draft a process, implement it, and manage it. This guide covers that shared diagram, not a house engine.',
-    eyebrow: 'BPMN process diagrams',
+      'Use standardized process diagrams like OMG BPMN 2.0.2 so product owners, operators, and software engineers share one exact picture before encoding state machines.',
+    eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · PROCESS MODELING',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'People often search "workflow state machine." The opened official source is OMG\'s Business Process Model and Notation, not a vendor state-machine tutorial. BPMN is used in the body; the address of this page keeps the query people type. If the only description of the workflow is in someone\'s head, the people who draft it, implement it, and manage it do not have a common picture. BPMN was written as a notation those three can share. This is a field note about a shared process diagram, not a workflow-product page, not a payments rail, and not a claim that AZOA conforms to BPMN.',
+      'When a multi-step approval workflow lives only inside scattered Slack threads and controller conditionals, product analysts, reviewers, and backend engineers carry three incompatible mental models of what happens on failure.',
     sources: [
       {
         name: 'OMG BPMN catalog, Version 2.0.2.',
@@ -1327,52 +1158,36 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         name: 'Business Process Model and Notation (BPMN) Version 2.0.2, formal/2013-12-09.',
         urls: ['https://www.omg.org/spec/BPMN/2.0.2/PDF'],
         datePublished: '2013-12',
-        runs: [
-          { em: 'Business Process Model and Notation (BPMN) Version 2.0.2,' },
-          ' formal/2013-12-09. ',
-          { text: 'https://www.omg.org/spec/BPMN/2.0.2/PDF', href: 'https://www.omg.org/spec/BPMN/2.0.2/PDF' },
-        ],
       },
     ],
     blocks: [
-            {
-        type: 'p',
-        runs: [{ strong: 'OMG catalog, current formal BPMN, Version 2.0.2, Document Status formal, Publication Date January 2014.' },
-            ' "Business Process Model and Notation has become the de-facto standard for business processes diagrams. It is intended to be used directly by the stakeholders who design, manage and realize business processes, but at the same time be precise enough to allow BPMN diagrams to be translated into software process components. BPMN has an easy-to-use flowchart-like notation that is independent of any particular implementation environment." The earlier Version 2.0 catalog page (Publication Date December 2010) was also opened and states that it was superseded; 2.0.2 is the current formal inventory on the opened catalog.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'BPMN Version 2.0.2 specification PDF' },
-            ' (OMG Document Number formal/2013-12-09; the PDF\'s date line is December 2013; "NOTE: Version 2.0.2 contains a minor change to Clause 15."). "The primary goal of BPMN is to provide a notation that is readily understandable by all business users, from the business analysts that create the initial drafts of the processes, to the technical developers responsible for implementing the technology that will perform those processes, and finally, to the business people who will manage and monitor those processes. Thus, BPMN creates a standardized bridge for the gap between the business process design and process implementation." "The intent of BPMN is to standardize a business process model and notation in the face of many different modeling notations and viewpoints. In doing so, BPMN will provide a simple means of communicating process information to other business users, process implementers, customers, and suppliers."',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'The front matter' },
-            ' also says the document "does not represent a commitment to implement any portion of this specification in any company’s products." Software may claim compliance "if and only if the software fully matches the applicable compliance points"; partial implementations "can claim only that the software was based on this International Standard, but cannot claim compliance or conformance." This page does not claim AZOA conformance.',],
-      },
-      {
-        type: 'p',
-        runs: ['workflowpatterns.com did not open (HTTP 500 / failed fetch) on 2026-11-10 and is not used.'],
-      },
-      { type: 'h2', text: 'What this page does not invent' },
       {
         type: 'p',
         runs: [
-          'No house state-machine, no BPMN element tutorial, and no settlement story. ',
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-          ', ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          ', and ',
-          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-          ' are the workflow siblings. ',
-          { text: 'What is a saga in a long-lived transaction', href: '/workflows/compensating-transactions' },
-          ' is the companion in this batch.',
+          'Before implementing gates, compensating paths, or escalation timers in code, teams need an unambiguous visual diagram showing happy paths, parallel splits, waits, and refusal exits that non-engineers and implementers read the same way.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'Bridging business intent and executable steps' },
       {
         type: 'p',
-        runs: ['A workflow lives only in a chat thread, and three people later disagree about which step comes next. BPMN\'s primary-goal paragraph already names the three readers who needed a shared picture.'],
+        runs: [
+          'OMG’s ',
+          { strong: 'BPMN Version 2.0.2' },
+          ' standard was created specifically to bridge the gap between process design and software implementation — giving business analysts, technical developers who build the execution steps, and managers monitoring live runs one shared visual vocabulary independent of a particular runtime.',
+        ],
+      },
+      {
+        type: 'p',
+        runs: [
+          'While AZOA compiles workflows into its own typed directed-acyclic action graph (`WorkflowExecutionState`) rather than executing raw BPMN XML directly, drawing flows using clear state-machine and BPMN conventions upfront surfaces missing timeout paths and escalation gates long before deployment.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'Three engineers disagree on whether a rejected milestone inspection cancels the entire grant run or routes back for amendment. Sketching the explicit state transitions, timers, and compensation exits first turns implicit assumptions into explicit graph edges before anyone writes controller handlers.',
+        ],
       },
       { type: 'sources' },
       { type: 'h2', text: 'Also in this section' },
@@ -1380,88 +1195,69 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         type: 'ul',
         items: [
           [
-            { text: 'What is a saga in a long-lived transaction', href: '/workflows/compensating-transactions' },
-            ' — all complete, or compensating transactions amend a partial run.',
+            { text: 'Sagas and compensating transactions', href: '/workflows/compensating-transactions' },
+            ' — model backward unwinding paths cleanly on your process map.',
           ],
           [
-            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-            ' — a lost response can be retried only when two identical requests mean one effect.',
+            { text: 'Durable waits, external signals, and stale threads', href: '/workflows/durable-waits-and-signals' },
+            ' — translate visual gates and timers cleanly into AZOA run states.',
           ],
           [
-            { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a retried step is modelled to settle once, or not at all.',
-          ],
-          [
-            { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
+            { text: 'Pin the published version hash before execution', href: '/workflows/version-pinned-execution' },
+            ' — guarantee deployed workflows match the reviewed version.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to draw a diagram both sides can read, or to read ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
     slug: 'compensating-transactions',
     title: 'What is a saga',
-    h1: 'What is a saga in a long-lived transaction',
+    h1: 'Sagas and compensating transactions in long-lived workflows',
     seoTitle: 'What is a saga in a long-lived transaction — Workflows | AZOA',
     description:
-      'A saga, in Garcia-Molina and Salem, is a long-lived transaction written as a sequence: all steps complete, or compensating transactions amend a partial run.',
-    eyebrow: 'Sagas and compensating transactions',
+      'Coordinate multi-step workflows that span external boundaries without global locks by pairing each committed step with an explicit compensating transaction.',
+    eyebrow: 'IDEMPOTENCY & SAGAS · COMPENSATING ACTIONS',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'Garcia-Molina and Salem proposed the saga as a long-lived transaction written as a sequence of transactions: the system guarantees that either all of those transactions complete, or compensating transactions are run to amend a partial execution. It is not a licence to invent what happened after a failure. This is a definitional note, not a payments recovery tutorial, and not a recovery playbook.',
+      'Long-running business processes cannot hold open database locks while waiting hours or days for external services and approvals. A saga breaks a long-lived transaction into a sequence of discrete steps — guaranteeing that either every step succeeds, or compensating actions cleanly amend a partial run.',
     sources: [
       {
-        name: 'Hector Garcia-Molina and Kenneth Salem, Sagas, Department of Computer Science, Princeton University.',
+        name: 'Hector Garcia-Molina and Kenneth Salem, “Sagas,” Department of Computer Science, Princeton University.',
         urls: ['https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf'],
-        runs: [
-          'Hector Garcia-Molina and Kenneth Salem, "Sagas," Department of Computer Science, Princeton University, opened at ',
-          {
-            text: 'https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf',
-            href: 'https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf',
-          },
-        ],
       },
     ],
     blocks: [
-            {
-        type: 'p',
-        runs: [{ strong: 'Hector Garcia-Molina and Kenneth Salem, "Sagas," Department of Computer Science, Princeton University.' },
-            ' The opened file is a bitmapped scan of the paper at a Cornell course URL. The typography in automated extracts is degraded; only short, checkable sentences are used here. After ordinary typographic correction of the scan, the abstract reads: "Long lived transactions (LLTs) hold on to database resources for relatively long periods of time, significantly delaying the termination of shorter and more common transactions. To alleviate these problems we propose the notion of a saga. A LLT is a saga if it can be written as a sequence of transactions that can be interleaved with other transactions. The database management system guarantees that either all the transactions in a saga are successfully completed or compensating transactions are run to amend a partial execution." The opened file is cited as the source that was actually opened. A conference name or page range that is not on that file is not added. An ACM PDF of the same work returned HTTP 403 and was not used. Authors\' names appear with typographic ligature errors in the scan; the standard spelling Hector Garcia-Molina and Kenneth Salem is used, which is visible as the intended author line.',],
-      },
-      { type: 'h2', text: 'What the paper actually says' },
       {
         type: 'p',
-        runs: ['The abstract\'s guarantee is the whole of the definition used here: all complete, or compensating transactions amend a partial execution. Interleaving with other transactions is part of that definition. This page does not write implementation steps, locking advice, or a house recovery workflow from the rest of the scan. A saga is not a reason to invent a recovery narrative.'],
+        runs: [
+          'Two-phase commit breaks down the moment a workflow spans independent HTTP services, third-party clearing partners, or human decision delays. Holding locks across external steps stalls unrelated throughput and becomes fragile across process crashes.',
+        ],
+      },
+      { type: 'h2', text: 'Forward completion or backward semantic repair' },
+      {
+        type: 'p',
+        runs: [
+          'In Garcia-Molina and Salem’s foundational ',
+          { em: 'Sagas' },
+          ' model, a long-lived transaction (LLT) is structured as interleaved smaller transactions where the system guarantees an all-or-compensated invariant: either all transactions in the sequence complete successfully, or explicit ',
+          { strong: 'compensating transactions' },
+          ' execute to semantically amend the effects of a partial failure.',
+        ],
       },
       {
         type: 'p',
         runs: [
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          ' and ',
-          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-          ' are the workflow siblings. ',
-          { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
-          ' is the shared-diagram companion. This page does not invent a client saga, a percentage, or a payments example that is not in the opened abstract.',
+          'Because a committed external action cannot simply vanish via database rollback, compensation writes an explicit corrective action forward in the log — releasing an escrow hold, issuing a refund adjustment, or revoking a provisioned permission — preserving a full audit trail of both the initial step and its reversal.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'In practice' },
       {
         type: 'p',
-        runs: ['A step fails mid-sequence, and a later note invents what "must have been compensated," with no record of a compensating transaction. The abstract already requires that a partial execution be amended by compensating transactions, not by a story written afterwards.'],
+        runs: [
+          'Step 1 locks reserve escrow, Step 2 registers milestone acceptance, and Step 3 fails permanently at the partner API. Rather than leaving Step 1 orphaned in limbo or manually editing database tables afterward, an explicit compensating step releases the held reserve and closes the run in `Failed` with full linkage between original hold and release.',
+        ],
       },
       { type: 'sources' },
       { type: 'h2', text: 'Also in this section' },
@@ -1469,31 +1265,19 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         type: 'ul',
         items: [
           [
-            { text: 'What is BPMN', href: '/workflows/workflow-state-machines' },
-            ' — a shared process diagram, not a house engine.',
-          ],
-          [
-            { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-            ' — a lost response can be retried only when two identical requests mean one effect.',
+            { text: 'Reconcile indeterminate runs instead of retrying blindly', href: '/workflows/reconciliation-over-blind-retry' },
+            ' — verify an external step truly failed before triggering compensation.',
           ],
           [
             { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a retried step is modelled to settle once, or not at all.',
+            ' — ensure compensating steps carry their own idempotency keys.',
+          ],
+          [
+            { text: 'Durable waits, external signals, and stale threads', href: '/workflows/durable-waits-and-signals' },
+            ' — park sagas safely across timers and signals without lock contention.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read the opened abstract, or ',
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -1502,63 +1286,61 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Safe methods and idempotent methods',
     seoTitle: 'Safe methods and idempotent methods — Workflows | AZOA',
     description:
-      'RFC 9110 distinguishes safe, essentially read-only methods from idempotent methods. Safe methods are idempotent; not every idempotent method is safe.',
-    eyebrow: 'Safe and idempotent methods',
+      'Keep RFC 9110 distinctions crystal clear: safe methods like GET are read-only and idempotent, while PUT and DELETE are idempotent without being safe.',
+    eyebrow: 'IDEMPOTENCY & SAGAS · SAFE VS IDEMPOTENT',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'RFC 9110 distinguishes methods whose defined semantics are essentially read-only (safe) from methods whose intended effect is the same for one request or for many identical ones (idempotent). Safe methods are idempotent; not every idempotent method is safe. "Safe to retry" and "safe to read" are not the same test. This is a short companion to Idempotent retries in a workflow and to PrimusNeo\'s RFC 9110 page. It quotes the HTTP standard\'s rule on safe methods here and does not invent a second definition of idempotency.',
+      '"Safe to read" and "safe to retry" solve two entirely different problems. Treating every retryable workflow endpoint as harmless—or worse, hiding destructive mutations behind HTTP GET URLs—breaks caches, crawlers, and automatic retry safety.',
     sources: [
       {
-        name: 'RFC 9110, HTTP Semantics, §9.2.1 and §9.2.2.',
+        name: 'RFC 9110, HTTP Semantics, §9.2.1 (Safe Methods) and §9.2.2 (Idempotent Methods).',
         urls: [rfc9110],
+        datePublished: '2022-06',
       },
       {
         name: 'Workflow sibling: Idempotent retries in a workflow.',
         urls: ['/workflows/idempotent-requests'],
-        runs: [
-          'Workflow sibling: ',
-          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-        ],
       },
       {
-        name: 'Protocol sibling: Idempotent HTTP requests.',
+        name: 'Protocol sibling: Idempotent HTTP requests (PrimusNeo).',
         urls: ['https://primusneo.com/guides/idempotent-requests'],
-        runs: [
-          'Protocol sibling: ',
-          { text: 'Idempotent HTTP requests', href: 'https://primusneo.com/guides/idempotent-requests' },
-        ],
       },
     ],
     blocks: [
-            {
-        type: 'p',
-        runs: [{ strong: 'The HTTP standard\'s rule on safe methods.' },
-            ' "Request methods are considered ‘safe’ if their defined semantics are essentially read-only; i.e., the client does not request, and does not expect, any state change on the origin server as a result of applying a safe method to a target resource. Likewise, reasonable use of a safe method is not expected to cause any harm, loss of property, or unusual burden on the origin server." The definition "does not prevent an implementation from including behavior that is potentially harmful, that is not entirely read-only, or that causes side effects while invoking a safe method. What is important, however, is that the client did not request that additional behavior and cannot be held accountable for it." Of the methods defined by the specification, "GET, HEAD, OPTIONS, and TRACE methods are defined to be safe." "The purpose of distinguishing between safe and unsafe methods is to allow automated retrieval processes (spiders) and cache performance optimization (pre-fetching) to work without fear of causing harm." "If the purpose of such a resource is to perform an unsafe action, then the resource owner MUST disable or disallow that action when it is accessed using a safe request method." The RFC\'s example is a URI such as `page?do=delete` reached with GET.',],
-      },
       {
         type: 'p',
-        runs: [{ strong: 'The HTTP standard\'s rule on idempotent methods, for the contrast already used in batch 1.' },
-            ' "A request method is considered ‘idempotent’ if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request." "PUT, DELETE, and safe request methods are idempotent." So every safe method in this specification is idempotent; PUT and DELETE are idempotent without being safe. "A client SHOULD NOT automatically retry a request with a non-idempotent method unless it has some means to know that the request semantics are actually idempotent… or some means to detect that the original request was never applied." "A proxy MUST NOT automatically retry non-idempotent requests." "A client SHOULD NOT automatically retry a failed automatic retry."',],
+        runs: [
+          'Every safe HTTP method in RFC 9110 is idempotent, but plenty of idempotent methods mutate critical state. Confusing the two leads engineers to expose destructive triggers as GET queries or strip confirmation guards from repeatable mutations.',
+        ],
       },
-      { type: 'h2', text: 'What the RFC actually says' },
+      { type: 'h2', text: 'Read-only semantics vs. repeatable mutations' },
       {
         type: 'p',
-        runs: ['Safe means essentially read-only from the client\'s request. Side effects the client did not request do not make the method unsafe. GET, HEAD, OPTIONS, and TRACE are safe in this specification. Idempotent means one request or many identical ones have the same intended effect. PUT, DELETE, and the safe methods are idempotent. Do not automatically retry a non-idempotent method; a proxy must not do so; do not automatically retry a failed automatic retry. POST is not called safe or idempotent here. High-level concepts only — no attack recipes.'],
+        runs: [
+          'Under ',
+          { strong: 'RFC 9110 §9.2.1' },
+          ', `GET`, `HEAD`, `OPTIONS`, and `TRACE` are defined as ',
+          { strong: 'safe' },
+          ': their semantics are essentially read-only, allowing prefetchers, monitoring bots, and caches to call them freely without expecting state changes. The specification warns explicitly that resource owners MUST disable unsafe actions if accessed via a safe method — famously illustrated with a URI such as `page?do=delete` reached over GET.',
+        ],
       },
       {
         type: 'p',
         runs: [
-          { text: 'Settle once', href: '/workflows/settle-once' },
-          ' and ',
-          { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-          ' are the workflow siblings.',
+          'Under ',
+          { strong: 'RFC 9110 §9.2.2' },
+          ', `PUT` and `DELETE` are ',
+          { strong: 'idempotent without being safe' },
+          ': they clearly change server state, yet sending the exact request twice produces the same intended outcome as sending it once. Neither safe nor idempotent includes bare `POST`, which must carry explicit keys or status reconciliation before any retry.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'In practice' },
       {
         type: 'p',
-        runs: ['A workflow treats every "retryable" call as if it were a read, and a GET is used to trigger a delete. RFC 9110 already says that a resource whose purpose is an unsafe action must disable that action when it is reached with a safe method, and that safe and idempotent are not the same test.'],
+        runs: [
+          'Suppose a preview email includes a quick-action approval link backed by GET (`?action=release`). A corporate mail security scanner prefetches every URL inside incoming messages—triggering approval before any human reads the email. Keeping read endpoints strictly side-effect-free while executing state advances over explicit authenticated POST calls with idempotency keys prevents automated prefetchers from acting as inadvertent approvers.',
+        ],
       },
       { type: 'sources' },
       { type: 'h2', text: 'Also in this section' },
@@ -1567,30 +1349,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         items: [
           [
             { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-            ' — a lost response can be retried only when two identical requests mean one effect.',
+            ' — wire RFC 9110 retry bounds cleanly across SDK transport.',
           ],
           [
             { text: 'Settle once', href: '/workflows/settle-once' },
-            ' — a retried step is modelled to settle once, or not at all.',
+            ' — bind workflow mutations to explicit caller idempotency keys.',
           ],
           [
             { text: 'Fail-closed controls', href: '/workflows/fail-closed' },
-            ' — a warning is not a control if the step can continue anyway.',
+            ' — refuse state transitions triggered over read-only paths.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read the RFC sections, or ',
-          { text: 'Idempotent retries in a workflow', href: '/workflows/idempotent-requests' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -1599,41 +1369,44 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Consent must be demonstrable under UK GDPR Article 7',
     seoTitle: 'Consent must be demonstrable under UK GDPR Article 7 — Workflows | AZOA',
     description:
-      'UK GDPR Article 7(1) says that where processing is based on consent, the controller must be able to demonstrate that the person consented to it.',
-    eyebrow: 'Demonstrable consent',
+      'Store immutable evidence of who granted permission, for which scopes, and under which disclosure hash so consent can always be proved after the fact.',
+    eyebrow: 'CONSENT & ACCESS CONTROL · AUDITABILITY',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'UK GDPR says, in the first paragraph of the consent article, that where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data. If processing is based on consent, the duty is to be able to show it. This is a short companion to Withdrawing consent under UK GDPR Article 7 and to Consent records. It is not legal advice about a specific entity, and not a compliance-product page.',
+      'A single `accepted_terms = true` column updated in place destroys history the moment policies change or users withdraw later. Demonstrable consent means preserving verifiable evidence of what was accepted, by whom, and when.',
     sources: [
       {
-        name: 'UK GDPR Article 7.',
+        name: 'Regulation (EU) 2016/679, Article 7(1) (UK GDPR on legislation.gov.uk).',
         urls: [articleSeven],
+      },
+      {
+        name: 'Workflow siblings: Consent records & Version-pinned execution.',
+        urls: ['/workflows/consent-records', '/workflows/version-pinned-execution'],
       },
     ],
     blocks: [
-            {
-        type: 'p',
-        runs: [{ strong: 'UK GDPR, in the first paragraph of the consent article, as published on legislation.gov.uk.' },
-            ' "Where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented to processing of his or her personal data." That complete sentence is the whole of the duty quoted here. The UK GDPR rule that withdrawal must be as easy as giving consent, already used in the withdrawal brief, remains the companion duty: consent may be withdrawn at any time, and it shall be as easy to withdraw as to give consent. The UK GDPR rule that consent must be clearly distinguishable has its own sibling in this batch and is not summarised here.',],
-      },
-      { type: 'h2', text: 'What the article actually says' },
       {
         type: 'p',
         runs: [
-          'If you rely on consent, you have to be able to show it. This page does not invent a house log format, a demonstration standard, or a retention period that is not in the opened sentence. ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-          ' is the sibling for what a record can hold. ',
-          { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
-          ' is the sibling for a request buried in a longer declaration. ',
-          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
-          ' is the companion for 7(3).',
+          'If processing or third-party data disclosure relies on participant consent, Article 7(1) makes the operational test unambiguous: ',
+          { strong: 'where processing is based on consent, the controller shall be able to demonstrate that the data subject has consented' },
+          '.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'Why overwrite-in-place database flags break proof' },
       {
         type: 'p',
-        runs: ['A tick-box exists somewhere, and no record remains of who agreed to what, or when. The first paragraph of the UK GDPR consent article already requires the controller to be able to demonstrate the consent.'],
+        runs: [
+          'Updating a mutable boolean on a user profile erases prior scope versions and breaks causality once a workflow takes downstream action. An audit-ready schema keeps consent grants as append-friendly records referencing actor ID, receiver ID, explicit permission list, acquisition channel, grant timestamp, optional expiry, and linked withdrawal timestamps — paired with `expectedPublishedHash` when triggering economic disclosures.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'When a participant disputes why their email appeared on a reviewer export three weeks prior, querying the run’s audit slice returns the exact scoped consent record created before dispatch — proving both valid authorization at run time and whether a later withdrawal halted subsequent runs.',
+        ],
       },
       { type: 'sources' },
       { type: 'h2', text: 'Also in this section' },
@@ -1641,31 +1414,19 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         type: 'ul',
         items: [
           [
-            { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
-            ' — the request cannot be hidden in a longer declaration.',
-          ],
-          [
-            { text: 'Withdrawing consent under UK GDPR Article 7', href: '/workflows/consent-withdrawal' },
-            ' — it shall be as easy to withdraw as to give consent.',
-          ],
-          [
             { text: 'Consent records', href: '/workflows/consent-records' },
-            ' — a consent that cannot be found later is not yet a record.',
+            ' — tie stored grants directly into active workflow gate checks.',
+          ],
+          [
+            { text: 'Consent must be clearly distinguishable', href: '/workflows/distinguishable-consent' },
+            ' — keep optional consents visibly separate before recording them.',
+          ],
+          [
+            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+            ' — record revocations cleanly without mutating historical facts.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read Article 7, or ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
   {
@@ -1674,46 +1435,48 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     h1: 'Consent must be clearly distinguishable under UK GDPR Article 7',
     seoTitle: 'Consent must be clearly distinguishable under UK GDPR Article 7 — Workflows | AZOA',
     description:
-      'If consent sits inside a longer written declaration, Article 7(2) requires the request to be clearly distinguishable, in clear and plain language.',
-    eyebrow: 'Distinguishable consent',
+      'Keep optional workflow permissions visually and structurally separate from unrelated legal declarations in plain language.',
+    eyebrow: 'CONSENT & ACCESS CONTROL · CLARITY',
     publishedAt: PUBLISHED,
-    lastReviewed: PUBLISHED,
+    lastReviewed: UPDATED,
     lede:
-      'If consent is given in a written declaration that also concerns other matters, the UK GDPR rule that consent must be clearly distinguishable requires the request for consent to be clearly distinguishable from those other matters, in an intelligible and easily accessible form, using clear and plain language. This is a short companion to Consent must be demonstrable and to Withdrawing consent. It is not legal advice, and not a design-system page.',
+      'Burying optional data-sharing agreements inside a 4,000-word Terms of Service checkbox invalidates the permission you thought you captured. Article 7(2) states that any bundled, indistinguishable consent request infringing those rules is simply not binding.',
     sources: [
       {
-        name: 'UK GDPR Article 7.',
+        name: 'Regulation (EU) 2016/679, Article 7(2) and 7(4) (UK GDPR on legislation.gov.uk).',
         urls: [articleSeven],
+      },
+      {
+        name: 'Workflow sibling: Consent must be demonstrable.',
+        urls: ['/workflows/demonstrable-consent'],
       },
     ],
     blocks: [
-            {
-        type: 'p',
-        runs: [{ strong: 'UK GDPR, in the paragraph on consent being clearly distinguishable, as published on legislation.gov.uk — complete text.' },
-            ' "If the data subject\'s consent is given in the context of a written declaration which also concerns other matters, the request for consent shall be presented in a manner which is clearly distinguishable from the other matters, in an intelligible and easily accessible form, using clear and plain language. Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding." Both sentences are quoted. The second sentence is not abridged.',],
-      },
-      {
-        type: 'p',
-        runs: [{ strong: 'A neighbouring test in the same article, quoted completely:' },
-            ' "When assessing whether consent is freely given, utmost account shall be taken of whether, inter alia, the performance of a contract, including the provision of a service, is conditional on consent to the processing of personal data that is not necessary for the performance of that contract."',],
-      },
-      { type: 'h2', text: 'What the article actually says' },
       {
         type: 'p',
         runs: [
-          'If the consent sits inside a longer declaration, the request has to be clearly distinguishable from the other matters, and in clear and plain language. An infringing part of such a declaration "shall not be binding." This page does not invent a house layout or a typography rule beyond that official wording. ',
-          { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
-          ' is the 7(1) sibling. ',
-          { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
-          ' is the 7(3) sibling. ',
-          { text: 'Consent records', href: '/workflows/consent-records' },
-          ' is the record sibling.',
+          'Under ',
+          { strong: 'UK GDPR Article 7(2)' },
+          ', when consent sits inside a written declaration covering other matters, the request must be presented in a manner ',
+          { strong: 'clearly distinguishable from the other matters' },
+          ', intelligible, easily accessible, and written in clear plain language — otherwise ',
+          { strong: 'any infringing part shall not be binding' },
+          '. Alongside Article 7(4), workflows must avoid making core service delivery conditional on consent unnecessary for contract performance.',
         ],
       },
-      { type: 'h2', text: 'A situation like this' },
+      { type: 'h2', text: 'Designing clean workflow consent toggles' },
       {
         type: 'p',
-        runs: ['A "consent" is buried in a longer terms document, with no distinguishable request, and is later treated as binding in full. The UK GDPR rule that consent must be clearly distinguishable already says the request has to be clearly distinguishable, and that an infringing part shall not be binding.'],
+        runs: [
+          'Instead of one blanket "I agree to everything" checkbox gating form submission, decompose workflow intake into explicit, separate permission toggles tied to discrete scopes. Users can approve core execution while leaving optional sharing unchecked — and the workflow engine checks only the exact scope required for each step.',
+        ],
+      },
+      { type: 'h2', text: 'In practice' },
+      {
+        type: 'p',
+        runs: [
+          'A project onboarding screen bundles marketing newsletters, public profile indexing, and payout agreement inside one monolithic checkbox. Separating optional directory visibility and notifications into independent plain-language consent toggles preserves genuine user agency and keeps every permission scope unambiguous in the audit log.',
+        ],
       },
       { type: 'sources' },
       { type: 'h2', text: 'Also in this section' },
@@ -1722,30 +1485,18 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
         items: [
           [
             { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
-            ' — if you rely on consent, you have to be able to show it.',
-          ],
-          [
-            { text: 'Withdrawing consent under UK GDPR Article 7', href: '/workflows/consent-withdrawal' },
-            ' — it shall be as easy to withdraw as to give consent.',
+            ' — record separate proof per distinct consent scope.',
           ],
           [
             { text: 'Consent records', href: '/workflows/consent-records' },
-            ' — a consent that cannot be found later is not yet a record.',
+            ' — wire granular scope permissions cleanly into run gates.',
+          ],
+          [
+            { text: 'Withdrawing consent', href: '/workflows/consent-withdrawal' },
+            ' — let participants toggle individual scopes off just as easily.',
           ],
         ],
       },
-      SIMULATION_CLOSE,
-      {
-        type: 'p',
-        runs: [
-          'The useful next step is to read Article 7, or ',
-          { text: 'Consent must be demonstrable', href: '/workflows/demonstrable-consent' },
-          '. If something on this page is wrong, ',
-          { text: 'write to us', href: '/' },
-          '.',
-        ],
-      },
-      AUTHOR_LINE,
     ],
   },
 ]

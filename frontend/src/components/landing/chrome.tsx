@@ -127,6 +127,17 @@ export const LANDING_STYLES = `
 .az-sisters{display:flex;flex-direction:column;gap:8px;width:100%;padding-top:14px;border-top:1px solid #d6ccba;}
 .az-sisters-title{letter-spacing:0.12em;color:#A63D15;}
 .az-sisters-links{display:flex;flex-direction:column;gap:4px;line-height:1.45;}
+.az-footer-notice{padding-top:14px;border-top:1px solid #d6ccba;font-size:11px;line-height:1.6;letter-spacing:0.04em;color:#3d362c;}
+
+/* Funnel gate */
+.az-gate{margin-top:44px;border:1px solid #16120D;background:#e9e2d3;padding:32px;display:flex;flex-direction:column;gap:12px;}
+.az-gate-title{margin:0;font-size:clamp(22px,2.4vw,30px);line-height:1.12;font-weight:700;letter-spacing:-0.015em;color:#16120D;}
+.az-gate p.az-gate-body{margin:0;font-size:16px;line-height:1.55;color:#3d362c;max-width:680px;text-wrap:pretty;}
+.az-gate-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;}
+.az-gate a.az-btn--dark{color:#F2EDE3;}
+.az-gate a.az-btn--dark:hover{color:#F2EDE3;}
+.az-gate a.az-btn--outline{color:#16120D;}
+.az-gate a.az-btn--outline:hover{color:#F2EDE3;}
 
 /* Federation route */
 .az-fed-header{padding:180px 32px 90px;border-bottom:1px solid #16120D;}
@@ -213,6 +224,7 @@ export const LANDING_STYLES = `
   .az-cta-row{flex-direction:column;align-items:center;}
   .az-cta-row .az-btn{justify-content:center;width:100%;max-width:320px;}
   .az-footer{flex-direction:column;gap:12px;}
+  .az-gate{padding:24px 20px;margin-top:32px;}
 }
 `
 
@@ -300,6 +312,9 @@ export function LandingFooter() {
             <a key={site.href} href={site.href} className="az-flink">{site.label}</a>
           ))}
         </div>
+      </div>
+      <div className="az-footer-notice">
+        Hosted demo runs simulated payloads · Real-value bridging and fiat settlement are disabled · Self-host Apache-2.0 source for production workloads · Architecture and workflow notes are engineering guidance, not legal advice.
       </div>
     </footer>
   )

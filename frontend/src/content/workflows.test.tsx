@@ -1,16 +1,18 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { Prose } from '@/components/landing/prose'
-import { SIMULATION_SENTENCE, WORKFLOW_INDEX, WORKFLOWS } from './workflows'
+import { WORKFLOW_INDEX, WORKFLOWS } from './workflows'
 
 describe('workflow prose', () => {
-  it('renders the simulation sentence in the index body', () => {
+  it('groups the workflows index by guarantee and avoids citation headings there', () => {
     render(<Prose blocks={WORKFLOW_INDEX.blocks} />)
-    expect(screen.getByText(SIMULATION_SENTENCE)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Idempotency & Sagas' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Consent & Access Control' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Audit & Fail-Closed Guards' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull()
   })
 
-  it('renders backtick spans as code and leaves the other workflow guides as plain text', () => {
+  it('renders backtick spans cleanly as code elements across all workflow guides', () => {
     const pages = [
       { slug: 'index', blocks: WORKFLOW_INDEX.blocks, sources: [] },
       ...WORKFLOWS.map((workflow) => ({
@@ -23,28 +25,29 @@ describe('workflow prose', () => {
       const view = render(<Prose blocks={page.blocks} sources={page.sources} />)
       const codes = [...view.container.querySelectorAll('code')].map((node) => node.textContent)
       if (page.slug === 'safe-and-idempotent') {
-        expect(codes).toEqual(['page?do=delete'])
-        expect(view.container.textContent).toContain(
-          "The RFC's example is a URI such as page?do=delete reached with GET.",
-        )
-      } else {
-        expect(codes).toEqual([])
+        expect(codes).toContain('page?do=delete')
+      }
+      if (page.slug === 'reconciliation-over-blind-retry') {
+        expect(codes).toContain('AwaitingReconciliation')
+      }
+      if (page.slug === 'version-pinned-execution') {
+        expect(codes).toContain('expectedPublishedHash')
+      }
+      if (page.slug === 'durable-waits-and-signals') {
+        expect(codes).toContain('AwaitingSignal')
       }
       expect(view.container.innerHTML).not.toContain('`')
       view.unmount()
     }
   })
 
-  it('renders each child body with sources and an illustrative scenario', () => {
+  it('renders every child workflow guide cleanly with bottom sources and practical walkthroughs', () => {
     for (const workflow of WORKFLOWS) {
       const view = render(<Prose blocks={workflow.blocks} sources={workflow.sources} />)
-      expect(screen.getByText(SIMULATION_SENTENCE)).toBeTruthy()
       expect(screen.getByRole('heading', { name: 'Sources' })).toBeTruthy()
-      expect(screen.getByRole('heading', { name: 'A situation like this' })).toBeTruthy()
-      expect(screen.queryByRole('heading', { name: 'An illustrative scenario' })).toBeNull()
+      expect(screen.getByRole('heading', { name: 'In practice' })).toBeTruthy()
       expect(screen.queryByRole('heading', { name: 'Hero figures' })).toBeNull()
       expect(screen.queryByRole('heading', { name: 'Hero points' })).toBeNull()
-      expect(screen.queryByText('Every stat on this page is cited.')).toBeNull()
       for (const source of workflow.sources) {
         for (const url of source.urls) {
           expect(view.container.querySelector(`a[href="${url}"]`)).toBeTruthy()
@@ -52,6 +55,9 @@ describe('workflow prose', () => {
       }
       expect(view.container.innerHTML).not.toContain('azoa.io')
       expect(view.container.innerHTML).not.toContain('/patterns')
+      expect(view.container.textContent).not.toContain('research pass (403)')
+      expect(view.container.textContent).not.toContain('HTTP 500 / failed fetch')
+      expect(view.container.textContent).not.toContain('never double-spend')
       view.unmount()
     }
   })

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { LegalDocument } from '@/components/landing/legal'
 import { Prose } from '@/components/landing/prose'
+import { WorkflowFunnelGate } from '@/components/landing/workflow-gate'
 import { workflowBySlug } from '@/content/workflows'
 
 export default async function WorkflowPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -28,6 +29,7 @@ export default async function WorkflowPage({ params }: { params: Promise<{ slug:
               {workflow.title}
             </p>
             <Prose blocks={workflow.blocks} sources={workflow.sources} />
+            <WorkflowFunnelGate context="workflow" />
           </div>
         </div>
       </section>

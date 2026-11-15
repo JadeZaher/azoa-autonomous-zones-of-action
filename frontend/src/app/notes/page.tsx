@@ -1,28 +1,37 @@
 import Link from 'next/link'
 import { LegalDocument } from '@/components/landing/legal'
+import { WorkflowFunnelGate } from '@/components/landing/workflow-gate'
 import { ESSAYS, essayPath, formatPublicDate } from '@/content/public-documents'
 
 export default function NotesPage() {
   return (
     <LegalDocument
-      eyebrow="NOTES"
-      title="Notes"
-      lede="Two notes on how this hosted site talks about settlement and controls. This public site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet."
+      eyebrow="ENGINEERING NOTES"
+      title="Notes on settlement and controls."
+      lede="Two core architectural notes on turning ambiguous timeouts into settled records and ensuring every verification check fails closed."
     >
       <section className="az-arch-section">
         <div className="az-arch-grid">
-          <div className="az-kicker">INDEX</div>
+          <div className="az-kicker">POSTS</div>
           <div className="az-arch-body">
             {ESSAYS.map((essay) => (
-              <p key={essay.slug}>
-                <span className="mono">{formatPublicDate(essay.publishedAt)}</span>
-                <br />
-                <Link href={essayPath(essay.slug)}>{essay.title}</Link>
-                <br />
-                {essay.summary}
-              </p>
+              <div key={essay.slug} style={{ marginBottom: 40 }}>
+                <div className="az-kicker" style={{ marginBottom: 8 }}>{formatPublicDate(essay.publishedAt)}</div>
+                <h2 className="az-arch-h2" style={{ marginBottom: 12 }}>
+                  <Link href={essayPath(essay.slug)}>{essay.title}</Link>
+                </h2>
+                <p>{essay.summary}</p>
+                <p><Link href={essayPath(essay.slug)}>Read the note →</Link></p>
+              </div>
             ))}
-            <p><Link href="/blog">Blog</Link></p>
+            <p>
+              <Link href="/workflows">Explore all workflow patterns →</Link>
+              {' · '}
+              <Link href="/feed.xml">RSS feed</Link>
+              {' · '}
+              <Link href="/blog">Blog index</Link>
+            </p>
+            <WorkflowFunnelGate context="blog" />
           </div>
         </div>
       </section>
