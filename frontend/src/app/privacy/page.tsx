@@ -1,12 +1,5 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LegalDocument, LegalSection, OperatorContact } from '@/components/landing/legal'
-
-export const metadata: Metadata = {
-  title: 'Privacy — AZOA',
-  description:
-    'What the hosted AZOA site stores: account fields, browser storage, optional provider sign-in, and verification records if a session is started.',
-}
 
 export default function PrivacyPage() {
   return (

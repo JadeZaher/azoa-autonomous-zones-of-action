@@ -1,12 +1,5 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LegalDocument, LegalSection, OperatorContact } from '@/components/landing/legal'
-
-export const metadata: Metadata = {
-  title: 'Terms — AZOA',
-  description:
-    'Pre-launch terms for the hosted AZOA site. The site is a simulation. Real-value bridging is disabled, and fiat settlement is not enabled yet.',
-}
 
 export default function TermsPage() {
   return (

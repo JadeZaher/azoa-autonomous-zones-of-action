@@ -3,10 +3,12 @@ import { blocksText, indexBodyText, WORKFLOW_INDEX, workflowBodyText } from './w
 import {
   absoluteUrl,
   buildFeedXml,
+  buildLlmsTxt,
   ESSAYS,
   injectsRuntimeApi,
   jsonLdGraph,
   organizationJsonLd,
+  publicDocuments,
   SIMULATION,
   sitemapDocuments,
   WORKFLOWS,
@@ -34,7 +36,7 @@ const EXPECTED_SLUGS = [
 describe('public documents', () => {
   it('publishes marketing, notes, blog, and all 16 workflow urls on the custom host', () => {
     const urls = sitemapDocuments().map((document) => absoluteUrl(document.path))
-    for (const path of ['/', '/architecture', '/federation', '/privacy', '/terms', '/blog', '/notes', '/workflows']) {
+    for (const path of ['/', '/architecture', '/federation', '/privacy', '/terms', '/contact', '/blog', '/notes', '/workflows']) {
       expect(urls).toContain(absoluteUrl(path))
     }
     for (const essay of ESSAYS) expect(urls).toContain(absoluteUrl(`/notes/${essay.slug}`))
@@ -65,9 +67,12 @@ describe('public documents', () => {
   it('keeps the runtime API url off public html and on the sign-in route', () => {
     expect(injectsRuntimeApi('/')).toBe(false)
     expect(injectsRuntimeApi('/architecture')).toBe(false)
+    expect(injectsRuntimeApi('/contact')).toBe(false)
     expect(injectsRuntimeApi('/workflows/settle-once')).toBe(false)
     expect(injectsRuntimeApi('/workflows/reconciliation-over-blind-retry')).toBe(false)
     expect(injectsRuntimeApi('/login')).toBe(true)
+    expect(injectsRuntimeApi('/overview')).toBe(true)
+    expect(injectsRuntimeApi('/no-such-page')).toBe(false)
     expect(injectsRuntimeApi(null)).toBe(true)
   })
 
@@ -142,6 +147,62 @@ describe('public documents', () => {
     expect(safe).toContain('https://www.rfc-editor.org/rfc/rfc9110.html')
   })
 
+  it('keeps public titles unique and within the search-title length', () => {
+    const documents = publicDocuments()
+    const titles = documents.map((document) => document.title)
+    const descriptions = documents.map((document) => document.description)
+    expect(new Set(titles).size).toBe(titles.length)
+    expect(new Set(descriptions).size).toBe(descriptions.length)
+    const home = documents.find((document) => document.path === '/')
+    expect(home?.title).toBe('AZOA — Autonomous Zones of Action')
+    for (const document of documents) {
+      expect(document.title.length).toBeLessThanOrEqual(60)
+      if (document.path !== '/') expect(document.title.endsWith('AZOA')).toBe(true)
+      expect(document.title === home?.title).toBe(document.path === '/')
+      expect(document.description.length).toBeGreaterThan(80)
+      expect(absoluteUrl(document.path).startsWith('https://azoa.ardanova.com')).toBe(true)
+    }
+    const contact = documents.find((document) => document.path === '/contact')
+    expect(contact?.description).toContain('contact@escherbridge.com')
+    expect(contact?.description).toContain('Boise, Idaho')
+    expect(contact?.index).toBe(true)
+  })
+
+  it('lists real public urls in llms.txt and keeps the operator at city level', () => {
+    const text = buildLlmsTxt()
+    expect(text.startsWith('# AZOA')).toBe(true)
+    expect(text).toContain('Escherbridge, LLC, Boise, Idaho')
+    expect(text).toContain('contact@escherbridge.com')
+    expect(text).toContain(SIMULATION)
+    for (const document of sitemapDocuments()) {
+      expect(text).toContain(absoluteUrl(document.path))
+    }
+    expect(text).toContain(absoluteUrl('/feed.xml'))
+    expect(text).toContain(absoluteUrl('/sitemap.xml'))
+    expect(text).toContain(absoluteUrl('/news'))
+    expect(text).not.toContain(absoluteUrl('/login'))
+    expect(text).not.toContain(absoluteUrl('/operator'))
+    expect(text).not.toContain(absoluteUrl('/api'))
+    expect(text).not.toContain('railway.app')
+    expect(text).not.toContain('streetAddress')
+    expect(text).not.toMatch(/\b\d{1,6}\s+[A-Za-z0-9.'#-]+\s+(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr)\b/)
+  })
+
+  it('puts a homepage collection list on the public sections', () => {
+    const home = JSON.stringify(jsonLdGraph('/'))
+    expect(home).toContain('"@type":"CollectionPage"')
+    expect(home).toContain('"@type":"ItemList"')
+    expect(home).toContain(absoluteUrl('/contact'))
+    expect(home).toContain(absoluteUrl('/workflows'))
+    expect(home).not.toContain(absoluteUrl('/news'))
+    expect(home).not.toContain(absoluteUrl('/login'))
+    const contact = JSON.stringify(jsonLdGraph('/contact'))
+    expect(contact).toContain('"@type":"BreadcrumbList"')
+    expect(contact).toContain('"name":"Contact","item":"https://azoa.ardanova.com/contact"')
+    expect(contact).toContain('contact@escherbridge.com')
+    expect(contact).not.toContain('streetAddress')
+  })
+
   it('puts article, breadcrumb, and collection JSON-LD on the workflow routes', () => {
     const index = JSON.stringify(jsonLdGraph('/workflows'))
     expect(index).toContain('"@type":"CollectionPage"')
@@ -151,6 +212,8 @@ describe('public documents', () => {
     expect(index).toContain('"name":"Escherbridge"')
     expect(index).toContain('Escherbridge, LLC')
     for (const workflow of WORKFLOWS) {
+      const document = publicDocuments().find((item) => item.path === `/workflows/${workflow.slug}`)
+      expect(document?.modifiedAt).toBe(workflow.lastReviewed)
       expect(index).toContain(absoluteUrl(`/workflows/${workflow.slug}`))
       const article = JSON.stringify(jsonLdGraph(`/workflows/${workflow.slug}`))
       expect(article).toContain('"@type":"Article"')

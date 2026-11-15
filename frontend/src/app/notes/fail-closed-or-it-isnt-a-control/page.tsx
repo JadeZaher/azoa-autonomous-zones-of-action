@@ -1,13 +1,6 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LegalDocument } from '@/components/landing/legal'
 import { WorkflowFunnelGate } from '@/components/landing/workflow-gate'
-
-export const metadata: Metadata = {
-  title: "Fail closed, or it isn't a control — AZOA",
-  description:
-    'A control that logs a warning and proceeds is a decoration. How AZOA enforces fail-closed version hashes, consent checks, and authority boundaries.',
-}
 
 const SOURCES = [
   { label: 'AZOA architecture', href: 'https://azoa.ardanova.com/architecture' },

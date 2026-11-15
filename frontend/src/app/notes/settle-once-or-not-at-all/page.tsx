@@ -1,13 +1,6 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LegalDocument } from '@/components/landing/legal'
 import { WorkflowFunnelGate } from '@/components/landing/workflow-gate'
-
-export const metadata: Metadata = {
-  title: 'A retried step should settle once, or not at all — AZOA',
-  description:
-    'A timeout is network silence, not a verdict. How AZOA models idempotency keys and AwaitingReconciliation so retried steps resolve cleanly.',
-}
 
 const SOURCES = [
   { label: 'AZOA architecture', href: 'https://azoa.ardanova.com/architecture' },

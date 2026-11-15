@@ -6,6 +6,12 @@ export type { WorkflowPage as Workflow } from '@/content/workflows'
 
 export const SITE = 'https://azoa.ardanova.com'
 export const SHARE_IMAGE = `${SITE}/og/azoa-og-1200x630.png`
+export const SHARE_IMAGE_META = {
+  url: SHARE_IMAGE,
+  width: 1200,
+  height: 630,
+  alt: 'AZOA — Autonomous Zones of Action',
+} as const
 export const AUTHOR = 'Escherbridge'
 export const OPERATOR_NAME = 'Escherbridge, LLC'
 export const OPERATOR_EMAIL = 'contact@escherbridge.com'
@@ -13,7 +19,7 @@ export const OPERATOR_EMAIL = 'contact@escherbridge.com'
 export const SIMULATION =
   'Hosted demo runs simulated payloads. Real-value bridging and fiat settlement are disabled; self-host Apache-2.0 source for production workloads.'
 
-const PUBLIC_PREFIXES = ['/architecture', '/federation', '/privacy', '/terms', '/notes', '/blog', '/news', '/workflows']
+const PUBLIC_PREFIXES = ['/architecture', '/federation', '/privacy', '/terms', '/contact', '/notes', '/blog', '/news', '/workflows']
 
 /** Private app routes. Public HTML must not point at these, and robots.txt disallows them. */
 export const PRIVATE_PREFIXES = [
@@ -62,6 +68,7 @@ export type PublicDocument = {
   index: boolean
   inSitemap: boolean
   publishedAt?: string
+  modifiedAt?: string
 }
 
 export function requestPath(headerValue: string | null): string | null {
@@ -77,7 +84,9 @@ export function isPublicDocument(pathname: string): boolean {
 
 /** The browser API origin is omitted from public HTML so a Railway host cannot leak there. */
 export function injectsRuntimeApi(pathname: string | null): boolean {
-  return pathname === null || !isPublicDocument(pathname)
+  if (pathname === null) return true
+  if (isPublicDocument(pathname)) return false
+  return PRIVATE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 
 export function absoluteUrl(path: string): string {
@@ -170,10 +179,19 @@ const MARKETING: PublicDocument[] = [
     inSitemap: true,
   },
   {
+    path: '/contact',
+    title: 'Contact — AZOA',
+    description:
+      'Contact Escherbridge, LLC in Boise, Idaho at contact@escherbridge.com. The hosted AZOA demo runs simulated payloads. Real-value bridging is disabled.',
+    kind: 'website',
+    index: true,
+    inSitemap: true,
+  },
+  {
     path: '/notes',
     title: 'Notes — AZOA',
     description:
-      'Engineering notes on idempotency, reconciliation sweeps, and fail-closed workflow design.',
+      'Engineering notes by Escherbridge on idempotency keys, reconciliation sweeps, and fail-closed design. Hosted demo runs simulated payloads.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -204,6 +222,7 @@ const MARKETING: PublicDocument[] = [
     index: true,
     inSitemap: true,
     publishedAt: WORKFLOW_INDEX.publishedAt,
+    modifiedAt: WORKFLOW_INDEX.lastReviewed,
   },
 ]
 
@@ -225,6 +244,7 @@ export function publicDocuments(): PublicDocument[] {
     index: true,
     inSitemap: true,
     publishedAt: workflow.publishedAt,
+    modifiedAt: workflow.lastReviewed,
   }))
   return [...MARKETING, ...essays, ...workflows]
 }
@@ -271,6 +291,10 @@ export function websiteJsonLd() {
   }
 }
 
+function breadcrumbLabel(title: string): string {
+  return title.replace(/ (?:—|\|) AZOA$/, '')
+}
+
 export function breadcrumbJsonLd(path: string, title: string) {
   const crumbs = [{ name: 'Home', path: '/' }]
   if (path.startsWith('/workflows/')) crumbs.push({ name: 'Workflows', path: '/workflows' })
@@ -282,7 +306,7 @@ export function breadcrumbJsonLd(path: string, title: string) {
     itemListElement: crumbs.map((crumb, index) => ({
       '@type': 'ListItem',
       position: index + 1,
-      name: crumb.name,
+      name: breadcrumbLabel(crumb.name),
       item: absoluteUrl(crumb.path),
     })),
   }
@@ -294,7 +318,27 @@ export function pageJsonLd(pathname: string): Record<string, unknown>[] {
   const workflow = WORKFLOWS.find((item) => `/workflows/${item.slug}` === pathname)
   const crumbTitle = pathname === '/workflows' ? 'Workflows' : workflow?.title ?? document.title
   const graph: Record<string, unknown>[] = [breadcrumbJsonLd(pathname, crumbTitle)]
-  if (pathname === '/blog' || pathname === '/notes') {
+  if (pathname === '/') {
+    const sections = publicDocuments().filter(
+      (item) => item.index && item.path !== '/' && !item.path.slice(1).includes('/'),
+    )
+    graph.push({
+      '@type': 'CollectionPage',
+      name: document.title,
+      description: document.description,
+      url: absoluteUrl('/'),
+      isPartOf: { '@id': `${SITE}/#website` },
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: sections.map((item, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          url: absoluteUrl(item.path),
+          name: breadcrumbLabel(item.title),
+        })),
+      },
+    })
+  } else if (pathname === '/blog' || pathname === '/notes') {
     graph.push({
       '@type': 'CollectionPage',
       name: document.title,
@@ -404,6 +448,32 @@ export function feedItems() {
     publishedAt: workflow.publishedAt,
   }))
   return [...workflows, ...essays].sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
+}
+
+export function buildLlmsTxt(): string {
+  const pages = sitemapDocuments()
+    .map((document) => `- [${document.title}](${absoluteUrl(document.path)}): ${document.description}`)
+    .join('\n')
+  return [
+    '# AZOA',
+    '',
+    `> ${DEFAULT_DESCRIPTION} ${SIMULATION} Written by ${AUTHOR}. Operated by ${OPERATOR_NAME}, Boise, Idaho. Email: ${OPERATOR_EMAIL}.`,
+    '',
+    '## Public pages',
+    pages,
+    '',
+    '## Discovery',
+    `- [Sitemap](${absoluteUrl('/sitemap.xml')}): Indexable public URLs.`,
+    `- [Robots](${absoluteUrl('/robots.txt')}): Allows / and disallows account, operator, dashboard, and API routes.`,
+    `- [RSS](${absoluteUrl('/feed.xml')}): Notes and workflow pages.`,
+    '',
+    '## Empty shelf',
+    `- [News](${absoluteUrl('/news')}): No dated announcements are posted. This URL is not in the sitemap.`,
+    '',
+    'Operator: Escherbridge, LLC, Boise, Idaho.',
+    `Contact: ${OPERATOR_EMAIL}`,
+    '',
+  ].join('\n')
 }
 
 export function buildFeedXml(): string {
