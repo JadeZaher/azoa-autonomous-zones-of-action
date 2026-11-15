@@ -208,3 +208,6 @@ and open-questions content (a point-in-time record, not live track status)
 was relocated verbatim to
 [retros/runbook-status-2026-06-12.md](retros/runbook-status-2026-06-12.md).
 This catalog above remains the authoritative source for live track status.
+
+- [ ] **Track: Identomat Access Links, Ride-Along SDK Components, and Commercial/Account Primitives**
+  *Link: [./tracks/commercial-primitives-identomat-access-links_20261115/](./tracks/commercial-primitives-identomat-access-links_20261115/)*

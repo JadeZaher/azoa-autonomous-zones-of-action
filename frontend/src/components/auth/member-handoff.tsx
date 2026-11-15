@@ -140,6 +140,75 @@ const scopeLabels: Record<string, string> = {
 function safeBankUrl(value: string) {
   try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && (url.hostname === 'connect.stripe.com' || url.hostname.endsWith('.stripe.com')) } catch { return false }
 }
-function safeReturnUrl(value: string) {
-  try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password && url.pathname === '/portfolio/withdraw' && !url.search && !url.hash } catch { return false }
+const SAFE_RETURN_PATH_PREFIXES = [
+  '/portfolio',
+  '/settings/verification',
+  '/ride',
+  '/documents',
+  '/funds',
+  '/cash-out',
+  '/invoices',
+  '/invoice-pay',
+  '/commercial',
+] as const
+
+function isLoopbackHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+}
+
+function hasSafeReturnPath(pathname: string) {
+  if (!pathname.startsWith('/') || pathname.startsWith('//') || pathname.includes('\\')) return false
+  return SAFE_RETURN_PATH_PREFIXES.some(
+    prefix => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  )
+}
+
+function configuredAllowedReturnOrigins(): string[] {
+  const raw = process.env.NEXT_PUBLIC_ALLOWED_RETURN_ORIGINS
+  if (!raw) return []
+  return raw
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .flatMap(candidate => {
+      try {
+        const parsed = new URL(candidate)
+        if (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname))) {
+          return [parsed.origin]
+        }
+        return []
+      } catch {
+        return []
+      }
+    })
+}
+
+export function safeReturnUrl(value: string) {
+  if (typeof value !== 'string') return false
+  const trimmed = value.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/')) {
+    if (trimmed.startsWith('//') || trimmed.includes('\\')) return false
+    try {
+      const parsed = new URL(trimmed, 'https://azoa-internal.local')
+      return hasSafeReturnPath(parsed.pathname)
+    } catch {
+      return false
+    }
+  }
+  try {
+    const url = new URL(trimmed)
+    if (url.username || url.password) return false
+    const sameOrigin = typeof window !== 'undefined' && url.origin === window.location.origin
+    const allowedProtocol =
+      url.protocol === 'https:' ||
+      (url.protocol === 'http:' && (isLoopbackHost(url.hostname) || sameOrigin))
+    if (!allowedProtocol) return false
+    if (sameOrigin || configuredAllowedReturnOrigins().includes(url.origin)) {
+      return url.pathname.startsWith('/') && !url.pathname.startsWith('//')
+    }
+    return hasSafeReturnPath(url.pathname)
+  } catch {
+    return false
+  }
 }

@@ -291,3 +291,42 @@ export type {
   NftMintRequestParams,
   NftTransferRequestParams,
 } from "./workflow/index.js";
+
+// Commercial & ride-along primitives
+export {
+  ACCESS_LINK_SCOPES,
+  ACCOUNT_DOCUMENT_TYPES,
+  buildSignedRideAlongUrl,
+  parseSignedRideAlongParams,
+  isAccessLinkExpired,
+  formatInvoiceTotal,
+  createHttpCommercialTransport,
+} from "./money/commercial.js";
+export type {
+  AccessLinkScope,
+  AccessLinkDeferralStatus,
+  SignedAccessLinkView,
+  IdentomatVerificationState,
+  IdentomatSessionStatusView,
+  InvoiceLineItem,
+  CommercialInvoiceStatus,
+  CommercialInvoiceView,
+  PaymentRequestView,
+  OwnershipHolderClass,
+  OwnershipVerificationStatus,
+  OwnershipReceiptView,
+  AccountDocumentType,
+  AccountDocumentReportView,
+  ProviderDeferralView,
+  MintAccessLinkInput,
+  VerifyAccessLinkInput,
+  AccessLinkVerificationView,
+  StartIdentomatSessionInput,
+  CreateCommercialInvoiceInput,
+  CreatePaymentRequestInput,
+  IssueOwnershipReceiptInput,
+  GenerateAccountDocumentInput,
+  CommercialTransport,
+  HttpCommercialTransportOptions,
+  SignedRideAlongParams,
+} from "./money/commercial.js";

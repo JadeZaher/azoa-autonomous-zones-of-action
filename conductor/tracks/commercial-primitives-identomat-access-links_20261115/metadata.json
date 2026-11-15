@@ -1,0 +1,18 @@
+{
+  "track_id": "commercial-primitives-identomat-access-links_20261115",
+  "title": "Identomat Access Links, Ride-Along SDK Components, and Commercial/Account Primitives",
+  "status": "completed",
+  "summary": "Implement MoonPay/FastWallet-grade signed access link minting, Identomat KYC handoff with graceful deferral logging, ride-along React SDK components, and first-class Invoices, Payment Requests, Owners",
+  "goal": "Implement MoonPay/FastWallet-grade signed access link minting, Identomat KYC handoff with graceful deferral logging, ride-along React SDK components, and first-class Invoices, Payment Requests, Ownership Receipts, and Account Documents/Reports across AZOA with all migrations applied and feature gates unlocked.",
+  "loop_template": "plan-execute-review-critique-futurist",
+  "partitions": [
+    "azoa-backend-contracts-migrations",
+    "azoa-sdk-and-node-frontend"
+  ],
+  "criteria": [],
+  "linked_runs": [],
+  "linked_factory_runs": [],
+  "compiled_factory_path": null,
+  "created_at": "2026-11-15T17:34:04.599561Z",
+  "updated_at": "2026-11-15T17:34:04.599561Z"
+}

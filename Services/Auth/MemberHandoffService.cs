@@ -16,7 +16,8 @@ namespace AZOA.WebAPI.Services.Auth;
 /// <summary>Member-owned account handoff and explicit consent; see AGENTS.md §member-handoff.</summary>
 public sealed class MemberHandoffService(SurrealMemberHandoffStore store, IUserStore users,
     SigningAdmissionAuthorityFactory authorities, ConsentLifecycleService lifecycle,
-    MemberHandoffOptions options, ClaimInviteOptions invites, IOutboundEmailSender delivery, IWalletAuthClaimTokenStore claimTokens)
+    MemberHandoffOptions options, ClaimInviteOptions invites, IOutboundEmailSender delivery, IWalletAuthClaimTokenStore claimTokens,
+    AccessLinkMintingService? accessLinks = null)
 {
     public static IReadOnlyList<string> RequestedScopes { get; } = Array.AsReadOnly(new[] { "kyc:read", "kyc:submit", "units:issue", "swap:sign", "transfer:sign" });
     private static string Link(Guid id) => "user:" + id.ToString("N");
@@ -200,10 +201,21 @@ public sealed class MemberHandoffService(SurrealMemberHandoffStore store, IUserS
     private static MemberHandoffDescriptor ReadDescriptor(Handoff row)
         => JsonSerializer.Deserialize<MemberHandoffDescriptor>(row.Descriptor, Json)
             ?? throw new InvalidOperationException("Stored handoff descriptor is unreadable.");
-    private static MemberHandoffReceipt Receipt(Handoff row)
+    private MemberHandoffReceipt Receipt(Handoff row)
     {
         var d = ReadDescriptor(row);
-        return new(d.RequestId, d.TargetUserId, d.Ownership, row.Status, row.ExpiresAt);
+        string? signedAccessUrl = null;
+        if (accessLinks is not null)
+        {
+            var minted = accessLinks.Mint(new MintAccessLinkRequest(
+                row.ExternalSubject,
+                AccessLinkScopes.Consent,
+                d.RequestId.ToString("D"),
+                d.ReturnUrl));
+            if (!minted.IsError)
+                signedAccessUrl = minted.Result?.SignedUrl;
+        }
+        return new(d.RequestId, d.TargetUserId, d.Ownership, row.Status, row.ExpiresAt, SignedAccessUrl: signedAccessUrl);
     }
     private static MemberHandoffView View(Handoff row)
     {

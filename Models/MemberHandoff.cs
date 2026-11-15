@@ -9,5 +9,5 @@ public sealed record MemberHandoffView(Guid RequestId, Guid TenantId, string Ten
     Guid TargetUserId, string Ownership, string[] Scopes, DateTimeOffset GrantExpiresAt,
     string ReturnUrl, DateTimeOffset ExpiresAt, string Status);
 public sealed record MemberHandoffReceipt(Guid RequestId, Guid TargetUserId, string Ownership,
-    string Status, DateTimeOffset ExpiresAt, string Delivery = "operator_stub");
+    string Status, DateTimeOffset ExpiresAt, string Delivery = "operator_stub", string? SignedAccessUrl = null);
 public sealed record MemberHandoffDelivery(string To, string Subject, string Text);

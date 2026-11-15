@@ -54,6 +54,9 @@ export default function SettingsPage() {
   const chainNames = azoa.wallet.chains
   const sessionState = { userId, isAuthenticated, user, tokenMasked: maskToken(token) }
   const apiBaseUrl = azoa.getApiUrl()
+  const userRole = user && 'dappRole' in user ? (user as { dappRole?: unknown }).dappRole : undefined
+  const showOperatorDebug =
+    process.env.NEXT_PUBLIC_AZOA_OPERATOR_CONSOLE === 'true' || userRole === 'dapp:manager'
   const rpcUrls: Record<string, string> = {
     algorand: process.env.NEXT_PUBLIC_ALGO_RPC ?? 'https://testnet-api.algonode.cloud',
     solana: process.env.NEXT_PUBLIC_SOL_RPC ?? 'https://api.devnet.solana.com',
@@ -63,7 +66,9 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Session, SDK config, and debug tools</p>
+        <p className="text-sm text-muted-foreground">
+          {showOperatorDebug ? 'Session, SDK config, and debug tools' : 'Session status and active authorizations'}
+        </p>
       </div>
 
       <Card>
@@ -82,37 +87,41 @@ export default function SettingsPage() {
       {isAuthenticated && userId && <WebhookEventsPanel userId={userId} />}
       {isAuthenticated && userId && <WebhookEventsPanel userId={userId} family="consent" />}
 
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">SDK Configuration</CardTitle><CardDescription>Registered chains and API endpoint</CardDescription></CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">API URL</span><span className="font-mono text-xs">{apiBaseUrl}</span></div>
-          <Separator />
-          <div className="flex justify-between items-center"><span className="text-muted-foreground">Chains</span>
-            <div className="flex gap-1">{chainNames.length > 0 ? chainNames.map(c => <Badge key={c} variant="outline" className="text-[10px] capitalize">{c}</Badge>) : <span className="text-xs text-muted-foreground">none</span>}</div>
-          </div>
-        </CardContent>
-      </Card>
+      {showOperatorDebug && (
+        <>
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">SDK Configuration</CardTitle><CardDescription>Registered chains and API endpoint</CardDescription></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">API URL</span><span className="font-mono text-xs">{apiBaseUrl}</span></div>
+              <Separator />
+              <div className="flex justify-between items-center"><span className="text-muted-foreground">Chains</span>
+                <div className="flex gap-1">{chainNames.length > 0 ? chainNames.map(c => <Badge key={c} variant="outline" className="text-[10px] capitalize">{c}</Badge>) : <span className="text-xs text-muted-foreground">none</span>}</div>
+              </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">Network</CardTitle><CardDescription>RPC endpoints</CardDescription></CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {Object.entries(rpcUrls).map(([chain, url], i) => (
-            <div key={chain}>{i > 0 && <Separator className="my-2" />}
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground capitalize">{chain}</span><span className="font-mono text-xs max-w-[65%] text-right break-all">{url}</span></div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Network</CardTitle><CardDescription>RPC endpoints</CardDescription></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {Object.entries(rpcUrls).map(([chain, url], i) => (
+                <div key={chain}>{i > 0 && <Separator className="my-2" />}
+                  <div className="flex justify-between gap-4"><span className="text-muted-foreground capitalize">{chain}</span><span className="font-mono text-xs max-w-[65%] text-right break-all">{url}</span></div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">Provider Override</CardTitle><CardDescription>Set a provider name for AZOA requests. Informational only.</CardDescription></CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Input value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="e.g. MongoAZOA" className="max-w-xs" />
-            <Button onClick={handleSaveProvider} variant="secondary" size="sm">{saved ? 'Saved' : 'Save'}</Button>
-          </div>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Provider Override</CardTitle><CardDescription>Set a provider name for AZOA requests. Informational only.</CardDescription></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Input value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="e.g. MongoAZOA" className="max-w-xs" />
+                <Button onClick={handleSaveProvider} variant="secondary" size="sm">{saved ? 'Saved' : 'Save'}</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       <Separator />
 
@@ -124,16 +133,18 @@ export default function SettingsPage() {
             <Button variant="destructive" size="sm" onClick={handleLogoutEverywhere}>Log out of all devices</Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            "Log out of all devices" invalidates every active session token for this account, everywhere it's signed in.
+            &quot;Log out of all devices&quot; invalidates every active session token for this account, everywhere it&apos;s signed in.
           </p>
           {logoutEverywhereError && <p className="text-sm text-destructive">{logoutEverywhereError}</p>}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-sm">Raw Session</CardTitle></CardHeader>
-        <CardContent><div className="rounded-md bg-muted/50 p-3 text-xs font-mono"><JsonViewer data={sessionState} /></div></CardContent>
-      </Card>
+      {showOperatorDebug && (
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Raw Session</CardTitle></CardHeader>
+          <CardContent><div className="rounded-md bg-muted/50 p-3 text-xs font-mono"><JsonViewer data={sessionState} /></div></CardContent>
+        </Card>
+      )}
     </div>
   )
 }

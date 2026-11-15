@@ -1011,6 +1011,10 @@ builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Stores.IWalletAuthClaimTokenSt
 builder.Services.AddSingleton(sp => AZOA.WebAPI.Services.Auth.ClaimInviteOptions.FromConfiguration(
     sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton(sp => AZOA.WebAPI.Services.Auth.MemberHandoffOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Compliance.IProviderDeferralLedger, AZOA.WebAPI.Services.Compliance.ProviderDeferralLedger>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Auth.AccessLinkMintingService>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Commercial.CommercialPrimitivesStoreState>();
+builder.Services.AddScoped<AZOA.WebAPI.Services.Commercial.CommercialPrimitivesService>();
 builder.Services.AddScoped<AZOA.WebAPI.Providers.Stores.Surreal.SurrealMemberHandoffStore>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Auth.MemberHandoffService>();
 builder.Services.AddSingleton<AZOA.WebAPI.Services.Auth.IOutboundEmailSender, AZOA.WebAPI.Services.Auth.ProtectedStubEmailSender>();
@@ -1929,6 +1933,8 @@ var app = builder.Build();
 var claimInvites = app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.ClaimInviteOptions>();
 app.Services.GetRequiredService<AZOA.WebAPI.Services.Auth.MemberHandoffOptions>()
     .Validate(app.Environment.IsDevelopment() || app.Environment.IsEnvironment("IntegrationTest"));
+// Evaluate provider credential deferrals at boot so Identomat pending credentials log once cleanly.
+app.Services.GetRequiredService<AZOA.WebAPI.Services.Compliance.IProviderDeferralLedger>();
 
 // Tenant:ClaimInvites:ReturnTokenToTenant boot guard (N1 security review): true hands the raw
 // claim token to the minting TENANT, letting it claim the member's own account — only the

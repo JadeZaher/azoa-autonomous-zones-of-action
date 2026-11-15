@@ -1,5 +1,11 @@
 /** Mirrors `KycStatus` (Models/Kyc/KycEnums.cs); string-serialized as written. */
-export type KycStatus = "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "EXPIRED";
+export type KycStatus =
+  | "PENDING"
+  | "PENDING_VENDOR_CREDENTIALS"
+  | "IN_REVIEW"
+  | "APPROVED"
+  | "REJECTED"
+  | "EXPIRED";
 
 /** Mirrors `KycProvider`. */
 export type KycProviderKind = "MANUAL" | "VERIFF" | "GENERIC_HOSTED" | "IDENTOMAT" | "UNAVAILABLE";

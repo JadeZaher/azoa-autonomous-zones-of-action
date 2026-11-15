@@ -59,18 +59,40 @@ export function KycStep(props: MoneyComponentProps) {
   const account = useCustodialAccount(props);
   const { messages, redirectPolicy } = useMoneyContext();
   const { Card, Button, Alert } = useSlots(props.slots);
+  const [copiedForUrl, setCopiedForUrl] = useState<string | null>(null);
   const status = account.account?.kycStatus ?? "Unknown";
   const finishSetup = status === "Approved" && account.account !== null && !account.account.walletReady;
   const verificationUrl = safeRedirectUrl(account.kycSession?.verificationUrl, redirectPolicy);
+  const copied = verificationUrl !== null && copiedForUrl === verificationUrl;
+  const copyVerificationLink = () => {
+    if (!verificationUrl || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
+    void navigator.clipboard.writeText(verificationUrl).then(
+      () => setCopiedForUrl(verificationUrl),
+      () => setCopiedForUrl(null),
+    );
+  };
   return (
     <Card title={messages.kyc.title} description={messages.kycStatus[status]} className={props.className}>
       {account.refusal ? <Alert tone="error">{describeRefusal(account.refusal, messages)}</Alert> : null}
       {status !== "UnderReview" ? (
         <Button onClick={() => void (finishSetup ? account.ensure() : account.beginKyc())} disabled={account.busy}>
-          {finishSetup ? messages.kyc.finishSetup : status === "Pending" ? messages.kyc.continue : messages.kyc.start}
+          {finishSetup
+            ? messages.kyc.finishSetup
+            : status === "Pending" || status === "PendingVendorCredentials"
+              ? messages.kyc.continue
+              : messages.kyc.start}
         </Button>
       ) : null}
-      {verificationUrl && !account.canRedirect ? <a href={verificationUrl}>{messages.kyc.openVerification}</a> : null}
+      {verificationUrl ? (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
+          <a href={verificationUrl} target="_blank" rel="noopener noreferrer">
+            {messages.kyc.openVerification}
+          </a>
+          <Button type="button" variant="secondary" onClick={copyVerificationLink} disabled={account.busy}>
+            {copied ? (messages.kyc.copied ?? "Verification link copied") : (messages.kyc.copyLink ?? "Copy verification link")}
+          </Button>
+        </div>
+      ) : null}
       {account.kycSession?.instructions ? <Alert tone="info">{account.kycSession.instructions}</Alert> : null}
       {account.kycSession?.developmentSimulation ? <Alert tone="info">{messages.kyc.simulation}</Alert> : null}
       <Button variant="secondary" onClick={() => void account.refresh()} disabled={account.busy}>{messages.kyc.checkAgain}</Button>

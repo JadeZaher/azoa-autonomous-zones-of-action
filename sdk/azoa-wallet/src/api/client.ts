@@ -201,6 +201,7 @@ export interface BusinessVerificationSession {
 export type TenantKycStatus =
   | "Unknown"
   | "Pending"
+  | "PendingVendorCredentials"
   | "Approved"
   | "Rejected"
   | "UnderReview";

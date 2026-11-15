@@ -159,7 +159,7 @@ export interface MoneyMessages {
   gate: Record<AccountGateState | "loading", string> & { reviewDue: (date: string) => string };
   kycStatus: Record<TenantKycStatus, string>;
   kycStatusLabel: Record<TenantKycStatus, string>;
-  kyc: { title: string; start: string; continue: string; finishSetup: string; checkAgain: string; openVerification: string; simulation: string };
+  kyc: { title: string; start: string; continue: string; finishSetup: string; checkAgain: string; openVerification: string; simulation: string; copyLink?: string; copied?: string };
   consent: { title: string; active: string; revoked: string; revoke: string; confirmRevoke: string; keep: string; confirmPrompt: string };
   account: { title: string; identityLabel: string; walletLabel: string; walletReady: string; walletPending: string; addressLabel: string };
   addFunds: {
@@ -250,11 +250,19 @@ export const defaultMoneyMessages: MoneyMessages = {
   kycStatus: {
     Unknown: "Before you can add or cash out money, verify your identity. It takes a few minutes.",
     Pending: "Your verification has started. Continue where you left off.",
+    PendingVendorCredentials: "Identity verification is queued while provider credentials finish activating. Keep this page open or return shortly to open your hosted check.",
     Approved: "Your identity is verified.",
     Rejected: "Your verification was not approved. You can try again.",
     UnderReview: "Your identity is verified and an additional compliance check is under review. Nothing more is needed from you.",
   },
-  kycStatusLabel: { Unknown: "Not started", Pending: "In progress", Approved: "Verified", Rejected: "Not approved", UnderReview: "Under review" },
+  kycStatusLabel: {
+    Unknown: "Not started",
+    Pending: "In progress",
+    PendingVendorCredentials: "Queued (provider setup)",
+    Approved: "Verified",
+    Rejected: "Not approved",
+    UnderReview: "Under review",
+  },
   kyc: {
     title: "Verify your identity",
     start: "Verify your identity",
@@ -262,6 +270,8 @@ export const defaultMoneyMessages: MoneyMessages = {
     finishSetup: "Finish setting up your account",
     checkAgain: "I finished — check again",
     openVerification: "Open the verification page",
+    copyLink: "Copy verification link",
+    copied: "Verification link copied",
     simulation: "This node simulates verification for development.",
   },
   consent: {

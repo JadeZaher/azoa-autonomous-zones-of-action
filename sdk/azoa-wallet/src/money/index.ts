@@ -69,3 +69,40 @@ export type {
 } from "./flows.js";
 export { createDirectMoneyTransport } from "./direct-transport.js";
 export type { DirectMoneyTransportOptions } from "./direct-transport.js";
+export {
+  ACCESS_LINK_SCOPES,
+  ACCOUNT_DOCUMENT_TYPES,
+  buildSignedRideAlongUrl,
+  parseSignedRideAlongParams,
+  isAccessLinkExpired,
+  formatInvoiceTotal,
+  createHttpCommercialTransport,
+} from "./commercial.js";
+export type {
+  AccessLinkScope,
+  AccessLinkDeferralStatus,
+  SignedAccessLinkView,
+  IdentomatVerificationState,
+  IdentomatSessionStatusView,
+  InvoiceLineItem,
+  CommercialInvoiceStatus,
+  CommercialInvoiceView,
+  PaymentRequestView,
+  OwnershipHolderClass,
+  OwnershipVerificationStatus,
+  OwnershipReceiptView,
+  AccountDocumentType,
+  AccountDocumentReportView,
+  ProviderDeferralView,
+  MintAccessLinkInput,
+  VerifyAccessLinkInput,
+  AccessLinkVerificationView,
+  StartIdentomatSessionInput,
+  CreateCommercialInvoiceInput,
+  CreatePaymentRequestInput,
+  IssueOwnershipReceiptInput,
+  GenerateAccountDocumentInput,
+  CommercialTransport,
+  HttpCommercialTransportOptions,
+  SignedRideAlongParams,
+} from "./commercial.js";

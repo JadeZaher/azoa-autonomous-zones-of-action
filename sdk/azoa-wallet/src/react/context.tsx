@@ -86,3 +86,8 @@ export function useMoneyContext(): MoneyContextValue {
   if (!value) throw new Error("azoa-sdk/react: money components and hooks must render inside <AzoaMoneyProvider>.");
   return value;
 }
+
+/** Optional provider lookup for standalone-compatible commercial ride-along components. */
+export function useOptionalMoneyContext(): MoneyContextValue | null {
+  return useContext(MoneyContext);
+}

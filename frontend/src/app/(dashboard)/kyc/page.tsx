@@ -257,11 +257,8 @@ export default function TenantKycPage() {
                                         <span className="block font-medium">
                                             {provider.displayName}
                                         </span>
-                                        <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
-                                            {provider.providerKey}
-                                        </span>
-                                        <span className="mt-2 block text-xs text-muted-foreground">
-                                            Assurance: {provider.assuranceLevel}
+                                        <span className="mt-1 block text-xs text-muted-foreground">
+                                            {provider.hostedVerification ? 'Guided browser verification' : 'Document verification'}
                                         </span>
                                     </span>
                                 </span>

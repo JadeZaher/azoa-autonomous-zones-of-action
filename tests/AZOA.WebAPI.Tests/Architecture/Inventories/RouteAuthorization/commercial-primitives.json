@@ -1,0 +1,90 @@
+[
+  {
+    "route": "POST api/commercial/access-links/mint",
+    "controller": "CommercialPrimitivesController",
+    "action": "MintAccessLink",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] authenticated subject claim via AzoaClaims.TryGetSubjectId; HMAC-SHA256 signed ride-along URL minting with strict HTTP/HTTPS returnUrl and allow-listed scope validation",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/identomat/session",
+    "controller": "CommercialPrimitivesController",
+    "action": "StartIdentomatSession",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] authenticated subject claim via AzoaClaims.TryGetSubjectId; records Identomat credential deferral when vendor keys absent and issues signed kyc ride-along URL",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/invoices",
+    "controller": "CommercialPrimitivesController",
+    "action": "CreateInvoice",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] authenticated actorId ownership stamped on commercial invoice and payment link minting",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/invoices/{invoiceId}/pay",
+    "controller": "CommercialPrimitivesController",
+    "action": "PayInvoice",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped lookup by actorId returning 404 across owners (IDOR protection) and state transition check (open -> paid)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/invoices/{invoiceId}/void",
+    "controller": "CommercialPrimitivesController",
+    "action": "VoidInvoice",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped lookup by actorId returning 404 across owners (IDOR protection) and state transition check (draft/open -> void)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/payment-requests",
+    "controller": "CommercialPrimitivesController",
+    "action": "CreatePaymentRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped payment request creation by authenticated actorId with signed invoice_pay access link",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/ownership-receipts/issue",
+    "controller": "CommercialPrimitivesController",
+    "action": "IssueOwnershipReceipt",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped ownership receipt issuance with deterministic SHA-256 contentHash integrity anchor",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/account-documents/generate",
+    "controller": "CommercialPrimitivesController",
+    "action": "GenerateAccountDocument",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped account document report generation aggregating only authenticated actorId commercial records",
+    "policies": [
+      "authenticated"
+    ]
+  }
+]

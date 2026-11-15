@@ -51,7 +51,14 @@ export function MemberMoneySurface({ kind, onRedirect }: { kind: 'funds' | 'cash
     allowedRedirectOrigins={[origin]} allowLoopbackRedirects={process.env.NODE_ENV !== 'production'}
     onRedirect={url => onRedirect ? onRedirect(url) : window.location.assign(url)}>
     <main className="mx-auto max-w-3xl space-y-6 p-6">
-      <h1 className="text-3xl font-bold">{kind === 'funds' ? 'Funds' : 'Cash out'}</h1>
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold">{kind === 'funds' ? 'Add & manage funds' : 'Cash out funds'}</h1>
+        <p className="text-sm text-muted-foreground">
+          {kind === 'funds'
+            ? 'Deposit money by card, track settlement status in real time, and review ownership receipts or invoices under Documents & invoices.'
+            : 'Withdraw cleared balance directly to your connected payout destination.'}
+        </p>
+      </div>
       <CustodialAccountCard />
       <BalanceSummary />
       {kind === 'funds' ? <AddFundsForm currencyCode="USD" returnedIntentId={returnedIntent} /> : <WithdrawForm />}

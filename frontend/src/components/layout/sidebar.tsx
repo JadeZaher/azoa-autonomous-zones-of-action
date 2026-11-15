@@ -39,6 +39,7 @@ import {
   PiggyBank,
   HandCoins,
   Landmark,
+  ReceiptText,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -95,6 +96,7 @@ const navGroups: NavGroup[] = [
       { href: '/funds', label: 'Add funds', icon: PiggyBank },
       { href: '/cash-out', label: 'Cash out', icon: HandCoins },
       { href: '/payout-balance', label: 'Payout balance', icon: Landmark },
+      { href: '/documents', label: 'Documents & invoices', icon: ReceiptText },
     ],
   },
   {
@@ -134,7 +136,7 @@ const navGroups: NavGroup[] = [
   },
   {
     label: 'Admin',
-    audience: 'all',
+    audience: 'operator',
     items: [
       { href: '/admin/key-rotation', label: 'Key Rotation', icon: ShieldAlert },
       // Operator-policy boards live in the operator console (QA M1); these open its sign-in.
@@ -150,7 +152,7 @@ const navGroups: NavGroup[] = [
     audience: 'all',
     items: [
       { href: '/settings', label: 'Settings', icon: Settings },
-      { href: '/tests', label: 'Tests', icon: FlaskConical },
+      { href: '/tests', label: 'Tests', icon: FlaskConical, audience: 'operator' },
     ],
   },
 ]

@@ -30,6 +30,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** First-party KYC words → the custodial vocabulary the gate reads. */
 const KYC_STATUS: Record<KycStatus, TenantKycStatus> = {
   PENDING: "Pending",
+  PENDING_VENDOR_CREDENTIALS: "PendingVendorCredentials",
   IN_REVIEW: "UnderReview",
   APPROVED: "Approved",
   REJECTED: "Rejected",
@@ -67,7 +68,13 @@ export function createDirectMoneyTransport(client: AzoaApiClient, userId: string
         kycReady: true,
         walletReady: wallet !== null,
         ready: approved,
-        unavailableReason: approved ? null : kycStatus === "UnderReview" ? "An additional compliance check is under review." : "KYC verification is not approved.",
+        unavailableReason: approved
+          ? null
+          : kycStatus === "UnderReview"
+            ? "An additional compliance check is under review."
+            : kycStatus === "PendingVendorCredentials"
+              ? "Identity verification is queued while hosted provider credentials finish activating."
+              : "KYC verification is not approved.",
         reviewDueAt: null,
       },
     };
