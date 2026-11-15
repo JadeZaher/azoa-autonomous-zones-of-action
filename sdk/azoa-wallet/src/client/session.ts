@@ -93,6 +93,20 @@ export class SessionManager {
     return ok(state);
   }
 
+  /** Establishes the node's just-issued claim login after matching its subject. */
+  async acceptAuthenticationToken(token: string, expectedUserId: string): Promise<SessionState> {
+    const subject = this.extractUserIdFromJwt(token);
+    if (!subject || subject.replace(/-/g, "").toLowerCase() !== expectedUserId.replace(/-/g, "").toLowerCase())
+      throw new Error("The claim response did not match this account.");
+    this._token = token;
+    this._userId = subject;
+    await this.storage.set(this.tokenKey, token);
+    await this.storage.set(this.userIdKey, subject);
+    const state = this.state();
+    this.onChange?.(state);
+    return state;
+  }
+
   /** Register, then login. */
   async register(
     api: AzoaApiClient,

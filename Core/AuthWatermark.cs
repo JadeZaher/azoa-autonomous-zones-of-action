@@ -17,6 +17,11 @@ namespace AZOA.WebAPI.Core;
 /// </summary>
 public static class AuthWatermark
 {
+    /// <summary>Canonical exact login-cut proof; shared by issuer and consent writes.</summary>
+    public static string? FormatCut(DateTime? watermark)
+        => watermark is { } cut ? DateTime.SpecifyKind(cut, DateTimeKind.Utc)
+            .ToString("O", System.Globalization.CultureInfo.InvariantCulture) : null;
+
     /// <summary>
     /// True when a token issued at <paramref name="tokenInstant"/> is STALE relative to
     /// the user's <paramref name="watermark"/> and must be rejected. A null watermark

@@ -1,6 +1,6 @@
 // Framework-free keyed money flows: lock → claim → persist → send → resolve the key by the answer. See `src/money/AGENTS.md` §flows.
 import { SdkError } from "../core/errors.js";
-import { cashOutViewFrom, checkoutViewFrom, narrowMoneyResult, saleViewFrom } from "./intake.js";
+import { cashOutVoidViewFrom, saleVoidViewFrom, cashOutViewFrom, checkoutViewFrom, narrowMoneyResult, saleViewFrom } from "./intake.js";
 import { isAwaitingFundsCheckout, isOpenCheckout, isSettledCheckout, isTerminalCheckout, safeRedirectUrl } from "./presentation.js";
 import type { RedirectPolicy } from "./presentation.js";
 import { moneyRefusal, releasesRequestKey } from "./refusal.js";
@@ -132,7 +132,7 @@ export function sendCashOut(transport: AzoaMoneyTransport, keyStore: KeyStore, r
 /** Claims a sale key bound to the quote (its id is replayed on resume), persists it, then sells. */
 export function startSale(transport: AzoaMoneyTransport, keyStore: KeyStore, quote: SaleQuoteView, options: MoneyFlowOptions = {}): Promise<SaleAttempt> {
   return withRequestLock(keyStore, MONEY_SCOPES.sale, options, async () => {
-    const claimed = claimKey(keyStore, MONEY_SCOPES.sale, quote.proceedsMinorUnits, quote.quoteId);
+    const claimed = claimKey(keyStore, MONEY_SCOPES.sale, quote.proceedsMinorUnits, quote.quoteId, { currencyCode: quote.currencyCode, ...(quote.currencyDecimals !== undefined ? { currencyDecimals: quote.currencyDecimals } : {}) });
     return claimed.kind === "ready" ? beginSale(transport, keyStore, claimed.request, options) : claimed;
   });
 }
@@ -231,7 +231,10 @@ async function beginCashOut(transport: AzoaMoneyTransport, keyStore: KeyStore, r
   if (!result.ok) return refused(keyStore, MONEY_SCOPES.cashOut, request, result.refusal);
   const view = result.value;
   // OffRampService answers a same-key retry of a refused cash-out with the refused row and a 200: still a refusal.
-  if (isRefusedStatus(view.status)) return refused(keyStore, MONEY_SCOPES.cashOut, request, moneyRefusal("definite", view.statusMessage));
+  if (isRefusedStatus(view.status)) {
+    clearSavedRequest(keyStore, MONEY_SCOPES.cashOut, request.requestKey);
+    return { kind: "refused", refusal: moneyRefusal("definite", view.statusMessage), kept: null };
+  }
   clearSavedRequest(keyStore, MONEY_SCOPES.cashOut, request.requestKey);
   return { kind: "accepted", view };
 }
@@ -246,7 +249,10 @@ async function beginSale(transport: AzoaMoneyTransport, keyStore: KeyStore, requ
   const result = await settled(() => sale.sell({ requestKey: request.requestKey, quoteId }), options, saleViewFrom);
   if (!result.ok) return refused(keyStore, MONEY_SCOPES.sale, request, result.refusal);
   const view = result.value;
-  if (isRefusedStatus(view.status)) return refused(keyStore, MONEY_SCOPES.sale, request, moneyRefusal("definite", view.statusMessage));
+  if (isRefusedStatus(view.status)) {
+    clearSavedRequest(keyStore, MONEY_SCOPES.sale, request.requestKey);
+    return { kind: "refused", refusal: moneyRefusal("definite", view.statusMessage), kept: null };
+  }
   clearSavedRequest(keyStore, MONEY_SCOPES.sale, request.requestKey);
   return { kind: "accepted", view };
 }
@@ -255,20 +261,21 @@ async function beginSale(transport: AzoaMoneyTransport, keyStore: KeyStore, requ
 type Claim = { kind: "ready"; request: SavedRequest; resent: boolean } | PendingAttempt | RefusedAttempt;
 
 /** A key that cannot be saved means the request never leaves: a definite refusal, nothing kept. */
-function claimKey(keyStore: KeyStore, scope: string, amountMinorUnits: number, reference?: string): Claim {
+function claimKey(keyStore: KeyStore, scope: string, amountMinorUnits: number, reference?: string, denomination?: { currencyCode: string; currencyDecimals?: number }): Claim {
   try {
-    const before = readSavedRequest(keyStore, scope);
-    const claimed = claimRequestKey(keyStore, scope, amountMinorUnits, reference);
+    const before = readSavedRequest(keyStore, scope, true);
+    const claimed = claimRequestKey(keyStore, scope, amountMinorUnits, reference, denomination);
     if (claimed.kind !== "ready") return { kind: "pending", pending: claimed.pending };
     return { kind: "ready", request: claimed.request, resent: before?.requestKey === claimed.request.requestKey };
   } catch (error) {
     const message = error instanceof SdkError ? error.message : "The request could not be prepared, so it was not sent.";
-    return { kind: "refused", refusal: moneyRefusal("definite", message), kept: null };
+    return { kind: "refused", refusal: moneyRefusal("unconfirmed", message), kept: readSavedRequest(keyStore, scope) };
   }
 }
 
 function refused(keyStore: KeyStore, scope: string, request: SavedRequest, refusal: MoneyRefusal): RefusedAttempt {
-  if (!releasesRequestKey(refusal)) {
+  if (scope !== MONEY_SCOPES.checkout || !releasesRequestKey(refusal)) {
+    if (scope !== MONEY_SCOPES.checkout && (refusal.code === "definite" || refusal.code === "under_review")) refusal = { ...refusal, message: "This call could not continue. The earlier request stays saved until its outcome is checked." };
     // Held for an operator: later visits must show that, not offer it as a lost answer to resume.
     if (refusal.code === "needs_review") markNeedsReview(keyStore, scope, request.requestKey);
     const saved = readSavedRequest(keyStore, scope);
@@ -332,4 +339,32 @@ function timeoutSignal(ms: number): { signal: AbortSignal; clear(): void } {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+export type RequestDiscardAttempt<T> = SupersededAttempt | RefusedAttempt | { kind: "discarded"; request: SavedRequest } | { kind: "revealed"; view: T };
+
+/** Voids a cash-out key atomically on the host, or reveals the accepted request. */
+export function discardCashOut(transport: AzoaMoneyTransport, store: KeyStore, request: SavedRequest, options: MoneyFlowOptions = {}): Promise<RequestDiscardAttempt<CashOutView>> {
+  return withRequestLock(store, MONEY_SCOPES.cashOut, options, async () => {
+    const current = readSavedRequest(store, MONEY_SCOPES.cashOut, true);
+    if (current?.requestKey !== request.requestKey) return { kind: "superseded", current };
+    const result = await settled(() => transport.cashOut.void(current.requestKey), options, cashOutVoidViewFrom);
+    if (!result.ok) return refused(store, MONEY_SCOPES.cashOut, current, result.refusal);
+    clearSavedRequest(store, MONEY_SCOPES.cashOut, current.requestKey);
+    return result.value.outcome === "voided" ? { kind: "discarded", request: current } : { kind: "revealed", view: result.value.cashOut };
+  });
+}
+
+/** Voids a quote-bound sale key atomically on the host, or reveals its admitted sale. */
+export function discardSale(transport: AzoaMoneyTransport, store: KeyStore, request: SavedRequest, options: MoneyFlowOptions = {}): Promise<RequestDiscardAttempt<SaleView>> {
+  return withRequestLock(store, MONEY_SCOPES.sale, options, async () => {
+    const current = readSavedRequest(store, MONEY_SCOPES.sale, true);
+    if (current?.requestKey !== request.requestKey) return { kind: "superseded", current };
+    if (!transport.sale || !current.reference) return refused(store, MONEY_SCOPES.sale, current, moneyRefusal("unconfirmed"));
+    const sale = transport.sale;
+    const result = await settled(() => sale.void({ requestKey: current.requestKey, quoteId: current.reference! }), options, saleVoidViewFrom);
+    if (!result.ok) return refused(store, MONEY_SCOPES.sale, current, result.refusal);
+    clearSavedRequest(store, MONEY_SCOPES.sale, current.requestKey);
+    return result.value.outcome === "voided" ? { kind: "discarded", request: current } : { kind: "revealed", view: result.value.sale };
+  });
 }

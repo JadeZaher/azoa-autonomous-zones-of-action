@@ -120,14 +120,14 @@ saved key is the durable lock (it survives a reload); this is the in-page one.
     already says. `onRefusal` fires. A refusal's own copy ("Nothing was moved") is not shown here: a void that
     could not decide cannot say that.
   - `pending.detail.checkout` now says discarding cancels with the payment service first. Cash-out and sale
-    discards are still local (`pending.discarded`): the node has no void for them yet.
+    discard through their required server void operations; a failed decision keeps the key.
 - **Held for review (MEDIUM-3, M2b).** A `needs_review` answer keeps the key, marked `needsReview`.
   `PendingRequestNotice` then renders "needs a manual check before it can continue — we'll follow up" with a
   same-key "Check again" and, **for a checkout only**, "Discard" (no "Resume that payment" and no form), on
   this visit and every later one, until an answer that is not `needs_review` arrives. Discard runs the same
   void-or-reveal as any discard: the node voids an unattached claim it can no longer replay (`voided` →
-  released), or answers 409 `INTENT_NEEDS_REVIEW` / `revealed` (kept). Cash-out and sale discards are local,
-  so a reviewed one is never offered (a local discard proves nothing). The hooks do not also set `refusal` for
+  released), or answers 409 `INTENT_NEEDS_REVIEW` / `revealed` (kept). Cash-out and sale also require a server-backed void decision;
+  a local discard proves nothing. The hooks do not also set `refusal` for
   it (the notice says it once).
 - **Never started (M2a).** A `neverStarted` attempt (the node's `INTENT_EXPIRED` on a claim that never got a
   page, `src/money/AGENTS.md` §flows) clears the pending request and the watched intent and shows
@@ -203,3 +203,13 @@ Shared chunks need no directive: the entry marks the client boundary.
 Watch-out: hosts that link the SDK with `file:` (the AZOA frontend) resolve `react` from the SDK's own
 `node_modules` if they import this subpath from the built `dist/`, giving two Reacts. Dedupe `react` in
 the host's bundler before adopting `azoa-sdk/react` that way; published installs are unaffected.
+
+## Retained cash-out and sale requests
+
+Pending cash-outs and sales expose same-key resume/check and authoritative server-backed discard. A failed discard keeps the key and reports an unconfirmed outcome. A generic refusal after a lost reply never releases a prior request. A validated named immutable Refused record can settle the key; an expired unused sale quote must be resolved durably by the host before the UI can start another sale.
+
+Sale quote, sale result, balance and pending notices honor optional `currencyDecimals`; pending sales store it with their currency symbol and exact quote reference. Fiat forms keep ISO 4217 input rules.
+
+## Authoritative discard
+
+Cash-out and sale pending notices offer a server-backed discard. Their hooks use the required transport void operations, keep unresolved keys on failure, and acknowledge revealed records. Discard never removes a key on the browser's word alone.

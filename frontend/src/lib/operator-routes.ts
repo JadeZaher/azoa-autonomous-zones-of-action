@@ -93,6 +93,8 @@ function feeEntry(value: unknown): Body | null | undefined {
 const FEE_KEYS = ['mint', 'transfer', 'swap', 'actionComplete', 'federationPublish']
 
 export const CONSOLE_ROUTES: ConsoleRoute[] = [
+  { method: 'GET', pattern: /^member-handoff-deliveries$/, upstream: () => '/api/operator/member-handoff-deliveries' },
+  { method: 'GET', pattern: new RegExp(`^member-handoff-deliveries/(${UUID})$`), upstream: (_path, match) => `/api/operator/member-handoff-deliveries/${match[1]}` },
   // D-3 stuck client-signed operations.
   { method: 'GET', pattern: /^blockchain-operations\/stuck$/, upstream: () => '/api/operator/blockchain-operations/stuck', query: limitQuery(200) },
   {

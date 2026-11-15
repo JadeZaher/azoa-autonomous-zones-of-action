@@ -206,7 +206,20 @@ export type TenantKycStatus =
   | "UnderReview";
 
 /** Secret-free tenant account projection returned to platforms such as ArdaNova. */
+export interface MemberHandoffRequest { deliveryEmail: string; returnUrl: string }
+export interface MemberHandoffReceipt {
+  requestId: string; targetUserId: string; ownership: "custodial" | "claimed";
+  status: "pending" | "approving" | "approved" | "declined"; expiresAt: string; delivery: "operator_stub";
+}
+export interface MemberHandoffDescriptor extends Omit<MemberHandoffReceipt, "delivery"> {
+  tenantId: string; tenantName: string; scopes: string[]; grantExpiresAt: string; returnUrl: string;
+}
+
 export interface TenantCustodialAccountStatus {
+  ownership?: "custodial" | "claimed";
+  consent?: "granted" | "none";
+  consentScopes?: string[];
+  consentExpiresAt?: string | null;
   tenantId: string;
   externalSubject: string;
   /** Compatibility alias emitted for the initial ArdaNova integration. */
@@ -2332,8 +2345,33 @@ export class AzoaApiClient {
     return this.request("POST", "/api/user/wallet/link", proof);
   }
 
-  async createWalletOwnershipInvite(childUserId: string): Promise<Result<{ claimToken: string; targetUserId: string; expiresAt: string }, SdkError>> {
+  async createWalletOwnershipInvite(childUserId: string): Promise<Result<{ claimToken?: string; targetUserId: string; expiresAt: string }, SdkError>> {
     return this.request("POST", "/api/user/claim-invite", { childUserId });
+  }
+
+  async createMemberHandoff(externalSubject: string, request: MemberHandoffRequest): Promise<Result<MemberHandoffReceipt, SdkError>> {
+    return this.request("POST", `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}/handoff`, request);
+  }
+  async resendMemberHandoff(externalSubject: string, requestId: string, request: MemberHandoffRequest): Promise<Result<MemberHandoffReceipt, SdkError>> {
+    return this.request("POST", `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}/handoff/${encodeURIComponent(requestId)}/resend`, request);
+  }
+  async getMemberHandoff(externalSubject: string, requestId: string): Promise<Result<MemberHandoffReceipt, SdkError>> {
+    return this.request("GET", `/api/tenant/custodial-accounts/${encodeURIComponent(externalSubject)}/handoff/${encodeURIComponent(requestId)}`);
+  }
+  async previewMemberHandoff(requestId: string, claimToken: string): Promise<Result<MemberHandoffDescriptor, SdkError>> {
+    return this.request("POST", "/api/user/handoffs/preview", { requestId, claimToken }, false, undefined, true);
+  }
+  async readMemberHandoff(requestId: string): Promise<Result<MemberHandoffDescriptor, SdkError>> {
+    return this.request("GET", `/api/user/handoffs/${encodeURIComponent(requestId)}`);
+  }
+  async approveMemberHandoff(requestId: string): Promise<Result<MemberHandoffDescriptor, SdkError>> {
+    return this.request("POST", `/api/user/handoffs/${encodeURIComponent(requestId)}/approve`, {});
+  }
+  async declineMemberHandoff(requestId: string): Promise<Result<MemberHandoffDescriptor, SdkError>> {
+    return this.request("POST", `/api/user/handoffs/${encodeURIComponent(requestId)}/decline`, {});
+  }
+  async loginClaimedMember(userId: string, password: string): Promise<Result<string, SdkError>> {
+    return this.request("POST", "/api/user/login", { userId, password }, false, undefined, true);
   }
 
   async claimWalletOwnership(request: WalletOwnershipClaim): Promise<Result<WalletAuthenticationToken, SdkError>> {
@@ -3380,6 +3418,13 @@ export class AzoaApiClient {
     assertUuid(userId, "userId");
     assertNonEmpty(params.requestKey, "requestKey");
     return this.request<CashOutView>("POST", API_PATHS.FIAT_PAYOUT_BASE(userId), params);
+  }
+
+  /** Atomically voids an unused cash-out request key or reveals its admitted cash-out. */
+  async voidFiatCashOut(userId: string, requestKey: string): Promise<Result<{ outcome: "voided" } | { outcome: "revealed"; cashOut: CashOutView }, SdkError>> {
+    assertUuid(userId, "userId");
+    assertNonEmpty(requestKey, "requestKey");
+    return this.request("POST", `${API_PATHS.FIAT_PAYOUT_BASE(userId)}/requests/${encodeURIComponent(requestKey)}/void`);
   }
 
   /** `userId`'s own cash-out history, newest first. */

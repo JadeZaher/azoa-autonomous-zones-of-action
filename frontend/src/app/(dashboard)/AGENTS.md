@@ -95,3 +95,10 @@ plainly that it needs the operator session (the BFF deliberately does not proxy 
 ## Overview status
 
 Network transport failures leave the Algorand/Solana card identity visible with an unavailable-details state. The overview does not render SDK/JavaScript exception strings, infer that the whole node is down, or infer anything about balances. Session status remains independent. A returned network snapshot is shown only when present; unavailable status is not a successful chain operation.
+
+## SDK money cutover
+
+Funds and cash-out now mount the SDK first-party money provider and unstyled components
+through `components/money/member-money.tsx`. Legacy request keys migrate without rotating
+their request identity; malformed/conflicting evidence blocks new payments. The tenant float
+remains separate. First-party bank setup obeys F-H8; no tenant credential is used by the page.

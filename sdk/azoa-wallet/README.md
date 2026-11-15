@@ -56,10 +56,40 @@ import { AzoaMoneyProvider, MoneyGate, AddFundsForm } from "azoa-sdk/react";
 </AzoaMoneyProvider>
 ```
 
-A host transport forwards `checkout.void(requestKey)` to the node's void-or-reveal route: discarding a saved
-payment releases its key only when the node answers `voided`. Verify a transport with
-`runMoneyTransportContract` from `azoa-sdk/money/testing`. Design notes: `src/money/AGENTS.md`,
-`src/react/AGENTS.md`.
+A host transport must implement authoritative void-or-reveal for each supported flow:
+
+| Method                               | Successful value                                                       |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `checkout.void(requestKey)`          | `{ outcome: "voided", intentId }` or `{ outcome: "revealed", intent }` |
+| `cashOut.void(requestKey)`           | `{ outcome: "voided" }` or `{ outcome: "revealed", cashOut }`          |
+| `sale.void({ requestKey, quoteId })` | `{ outcome: "voided" }` or `{ outcome: "revealed", sale }`             |
+
+`sale` is optional; its `void` method is required when sale support is provided. Forward these calls to
+your backend's atomic admission fence. `voided` proves that the saved key cannot admit a later payment;
+`revealed` supplies the existing named record for reconciliation. It does not cancel that record.
+The SDK's discard actions use these responses; a failed or malformed void never clears the key.
+
+Keep the exact saved request and key after a lost reply, timeout, ambiguous successful response, or later
+permission/setup refusal. Resume with the same key or use the authoritative void action before starting
+another request. A refusal status alone does not prove that an earlier attempt moved no money.
+
+Use durable, subject-scoped storage. Admission reads fail closed on unreadable or corrupt saved data.
+When migrating old storage, preserve the original request bytes and any named-record or review evidence;
+conflicting keys, amounts, or evidence must block a replacement request. Do not fall back to an empty
+in-memory store. Bind host callbacks to the active session and check the expected subject again in your
+backend before every write, including callbacks delayed by a cross-tab lock.
+
+Sale quotes, sale records, balances and saved sale requests may carry explicit `currencyDecimals` for a
+custom denomination. Supply its authoritative symbol and precision consistently; ISO currencies retain
+their normal default. Money views use safe integer minor units and precision from 0 through 18. Reject
+out-of-range amounts before conversion, and never substitute a display-only reference price for proceeds.
+
+The node's cash-out void endpoint is disabled by default (`Fiat:OffRamp:RequestVoidEnabled=false`). An
+operator must confirm that old unfenced processes have drained before enabling it. Until then, a void
+refusal keeps the request saved; hosts must retain reconciliation and retry controls.
+
+Verify a transport with `runMoneyTransportContract` from `azoa-sdk/money/testing`. Design notes:
+`src/money/AGENTS.md`, `src/react/AGENTS.md`.
 
 ---
 

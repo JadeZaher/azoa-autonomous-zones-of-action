@@ -180,3 +180,10 @@ signer controls instead of an error with a retry button.
 ## Provider policy freshness
 
 `KycProviderRegistry.BuiltIn` returns version-zero defaults with Unix epoch timestamps until an operator persists a policy. The provider page names that state “Policy has not been configured yet” rather than formatting the sentinel as a 1969/1970 update. Persisted policies, including disabled ones, retain their real update timestamp. This display rule changes no authority, provider enablement or backend timestamp data.
+
+## Member delivery stub
+
+Member deliveries are an explicit operator-only stub, not an email provider. The list carries
+metadata only; a deliberate detail read retrieves/decrypts the protected message over the
+operator BFF. The view never logs the content or auto-opens the member link. Send only to its
+recorded recipient. The node requires RecoveryOperate and a recent operator session.

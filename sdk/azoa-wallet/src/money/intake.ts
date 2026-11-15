@@ -1,6 +1,6 @@
 // The one intake every transport answer passes before a flow or hook keeps it. See `src/money/AGENTS.md` §intake.
 import { isMoneyRefusalCode, moneyRefusal } from "./refusal.js";
-import type { CashOutView, CheckoutView, MoneyRefusal, MoneyRefusalCode, MoneyResult, SaleView } from "./types.js";
+import type { CashOutVoidView, SaleVoidView, CashOutView, CheckoutView, MoneyRefusal, MoneyRefusalCode, MoneyResult, SaleView } from "./types.js";
 import { toCashOutView, toCheckoutView, toRefusalServerResult, toSaleView } from "./views.js";
 
 /** The refusal codes whose node evidence can carry the key's own intent (`INTENT_FINISHED` / `INTENT_EXPIRED` → `definite`, `INTENT_NEEDS_REVIEW`). */
@@ -38,7 +38,7 @@ export function checkoutViewFrom(value: unknown): CheckoutView {
 
 /** `narrow` for one cash-out: any record with a string `id`, allowlist-copied; throws for anything else. */
 export function cashOutViewFrom(value: unknown): CashOutView {
-  if (!isRecord(value) || typeof value.id !== "string") throw new TypeError("Not a cash-out view.");
+  if (!isRecord(value) || !nonEmpty(value.id) || !nonEmpty(value.status) || !nonEmpty(value.statusMessage) || !nonEmpty(value.currencyCode) || !nonEmpty(value.requestedAt) || !Number.isSafeInteger(value.amountMinorUnits) || (value.amountMinorUnits as number) <= 0) throw new TypeError("Not a cash-out view.");
   return toCashOutView(value as unknown as CashOutView);
 }
 
@@ -50,10 +50,26 @@ export function cashOutHistoryFrom(value: unknown): CashOutView[] {
 
 /** `narrow` for one sale: any record with a string `id`, allowlist-copied; throws for anything else. */
 export function saleViewFrom(value: unknown): SaleView {
-  if (!isRecord(value) || typeof value.id !== "string") throw new TypeError("Not a sale view.");
+  if (!isRecord(value) || !nonEmpty(value.id) || !nonEmpty(value.status) || !nonEmpty(value.statusMessage) || !nonEmpty(value.currencyCode) || !nonEmpty(value.requestedAt) || typeof value.quantityBaseUnits !== "string" || !/^[1-9]\d*$/u.test(value.quantityBaseUnits) || !Number.isSafeInteger(value.proceedsMinorUnits) || (value.proceedsMinorUnits as number) < 0) throw new TypeError("Not a sale view.");
   return toSaleView(value as unknown as SaleView);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonEmpty(value: unknown): value is string { return typeof value === "string" && value.trim().length > 0; }
+
+export function cashOutVoidViewFrom(value: unknown): CashOutVoidView {
+  if (!isRecord(value)) throw new TypeError("Not a cash-out void result.");
+  if (value.outcome === "voided") return { outcome: "voided" };
+  if (value.outcome === "revealed") return { outcome: "revealed", cashOut: cashOutViewFrom(value.cashOut) };
+  throw new TypeError("Not a cash-out void result.");
+}
+
+export function saleVoidViewFrom(value: unknown): SaleVoidView {
+  if (!isRecord(value)) throw new TypeError("Not a sale void result.");
+  if (value.outcome === "voided") return { outcome: "voided" };
+  if (value.outcome === "revealed") return { outcome: "revealed", sale: saleViewFrom(value.sale) };
+  throw new TypeError("Not a sale void result.");
 }

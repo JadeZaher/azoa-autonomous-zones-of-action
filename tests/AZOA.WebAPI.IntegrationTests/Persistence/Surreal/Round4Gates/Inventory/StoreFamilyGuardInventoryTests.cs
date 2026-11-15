@@ -15,6 +15,7 @@ public sealed class StoreFamilyGuardInventoryTests
 
     private static readonly Dictionary<string, Cases> Families = new(StringComparer.Ordinal)
     {
+        ["FiatPayoutLedger"] = new(Surreal + "Round4Gates.Interleaving.FiatPayoutLegacyFenceGuardTests.Legacy_admission_after_void_preread_throws_and_rolls_back_the_absence_fence", Surreal + "Round4Gates.TenantPayout.CashOutRequestVoidRaceTests.Lost_void_response_replays_the_same_permanent_tombstone"),
         ["NodeAdminAuditLog"] = new(Surreal + "SurrealNodeAdminAuditLogTests.ConcurrentAppendRetriesRefusedHeadCasWithoutForkOrGap", Surreal + "SurrealNodeAdminAuditLogTests.DuplicateNextRowRollsBackEveryHeadAdvanceAndPreservesExistingEvidence"),
         ["SurrealActionEmitStore"] = new(Surreal + "SurrealActionEmitTests.Changed_frozen_input_or_cancelled_run_cannot_accept", Surreal + "SurrealActionEmitTests.Original_dispatch_and_absent_receipt_recovery_accept_one_local_receipt"),
         ["SurrealActionLocalMutationStore"] = new(Surreal + "SurrealActionLocalMutationTests.ChangedQueryMembershipRollsBackEveryStagedWriteAndReceipt", Surreal + "SurrealActionNftHolonLinkTests.ConcurrentAttachmentHasOneReceiptAndReplayDoesNotTouchChangedOwner"),
@@ -43,6 +44,7 @@ public sealed class StoreFamilyGuardInventoryTests
         ["SurrealKycIdentityStore"] = new(null, null, "person-key binding cases owed (L2): stale lease refused, concurrent binding one identity"),
         ["SurrealKycScreeningStore"] = new(Surreal + "SurrealHostedProviderAttemptTests.BoundAmlAppendsShareOneEvidenceRevision_SubjectlessScreeningsNeverCreateEmptySubjectGuard", null, "duplicate monitor registration case owed (L2): kyc_screening_monitor_query UNIQUE"),
         ["SurrealKycStore"] = new(Surreal + "SurrealConsentLifecycleTests.Custodial_kyc_mutations_and_first_send_reject_changed_authority", Surreal + "Round4Gates.Interleaving.KycBeginInterleavingTests.ConcurrentBeginsForOneSubjectScopeAdmitOneAttemptAndOnlyItsDocuments"),
+        ["SurrealMemberHandoffStore"] = new(Surreal + "Round4Gates.Interleaving.MemberHandoffStoreGuardTests.Disabled_or_stale_member_refuses_delivery_and_leaves_no_partial_retirement", Surreal + "Round4Gates.Interleaving.MemberHandoffStoreGuardTests.Duplicate_resend_preserves_winning_invite_and_rolls_back_losing_retirement"),
         ["SurrealNftLifecycleStore"] = new(Surreal + "SurrealNftLifecycleStoreTests.ChangedStoredEvidenceRollsBackLifecycleCreation", Surreal + "SurrealNftLifecycleStoreTests.AtomicCommitScopesTwoTypedWritersAndStaleReplayCannotChangeOwnership"),
         ["SurrealNftWorkflowCostAcceptanceStore"] = new(Surreal + "SurrealNftLifecycleStoreTests.EmptyWorkflowRejectionRequiresOriginalExecutionAndCannotContainPreparedWire", Surreal + "SurrealNftLifecycleStoreTests.WorkflowCostAcceptanceCommitsOnceAndReplaysAfterAuthorityAndQuoteRemoval"),
         ["SurrealNodeAdminStore"] = new(Surreal + "SurrealNodeAdminStoreTests.RefusedMutationRollsBackDirectoryAndEarlierRoleWrite", Surreal + "SurrealNodeAdminStoreTests.ConcurrentDirectoryClaimsCommitOneRoleAndDuplicateCannotOverwriteIt"),

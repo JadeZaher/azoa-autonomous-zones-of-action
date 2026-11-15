@@ -90,8 +90,8 @@ export function useSlots(local?: Partial<MoneySlots>): MoneySlots {
 }
 
 /** An amount for display; the copy map's placeholder when the currency is unknown (never a guessed decimal point). */
-export function displayAmount(minorUnits: number, currencyCode: string | null | undefined, messages: MoneyMessages): string {
-  return formatMinorUnits(minorUnits, currencyCode) ?? messages.common.amountUnavailable;
+export function displayAmount(minorUnits: number, currencyCode: string | null | undefined, messages: MoneyMessages, currencyDecimals?: number): string {
+  return formatMinorUnits(minorUnits, currencyCode, currencyDecimals) ?? messages.common.amountUnavailable;
 }
 
 /** Locale date-time for display; the raw text when it does not parse. */

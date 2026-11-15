@@ -8,8 +8,10 @@
 >    not `Enabled=false` (gate 7 and the §2/§4 references below describe the
 >    old, superseded premise — the durable-action saga consumer now exists and
 >    runs by default; see [[durable-actions-inert-sagas-disabled]]).
-> 2. **The G1 durability gate is live and green on SurrealDB 3.1.4** —
->    re-verified during `final-hardening-cutover`.
+> 2. **The 3.1.4/RocksDB G1 result is historical**, re-verified during
+>    `final-hardening-cutover`. The new immutable 3.2.0/SurrealKV target is
+>    `deploy/railway/surreal-contract.json`; it needs fresh CI certification and
+>    preserve-only promotion, not a downgrade or conversion of existing data.
 > 3. **`scripts/passoff.ps1` and `scripts/passoff-architecture.ps1` no longer
 >    exist.** Every reference to them below is a record of a gate that ran at
 >    the time, not an instruction. The current code gate is

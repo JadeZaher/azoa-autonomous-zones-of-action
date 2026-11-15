@@ -119,8 +119,12 @@ describe("controller route parity (OI-69)", () => {
       expect(routes.length).toBeGreaterThan(0);
     });
 
-    it("declares exactly the five routes this SDK section depends on", () => {
-      expect(routes).toHaveLength(5);
+    it("declares exactly the six routes this SDK section depends on", () => {
+      expect(routes).toHaveLength(6);
+    });
+
+    it("exposes the exact subject-bound request-void route", () => {
+      expect(routes).toContainEqual({ httpMethod: "POST", path: `${API_PATHS.FIAT_PAYOUT_BASE("userId")}/requests/requestKey/void` });
     });
 
     it("still exposes GET {userId}/availability — the exact route OI-69 named as renameable unnoticed", () => {
@@ -551,5 +555,19 @@ describe("AzoaApiClient — W10.3 parity", () => {
         expect(headers["X-Api-Key"]).toBeUndefined();
       }
     );
+  });
+});
+
+
+describe("cash-out request-void SDK parity", () => {
+  beforeEach(() => mockFetch.mockReset());
+  it("uses the real controller route with an encoded key and projects its authoritative result", async () => {
+    const client = new AzoaApiClient({ baseUrl: "http://localhost:5000", token: "member-token" });
+    const route = readControllerRoutes("FiatPayoutController.cs").find(candidate => candidate.httpMethod === "POST" && candidate.path.endsWith("/requests/requestKey/void"));
+    expect(route).toBeDefined();
+    mockFetch.mockReturnValueOnce(azoaResponse({ outcome: "voided" }));
+    const result = await client.voidFiatCashOut(USER_ID, "cash:key-1");
+    expect(result).toMatchObject({ ok: true, value: { outcome: "voided" } });
+    expect(mockFetch).toHaveBeenCalledWith("http://localhost:5000" + route!.path.replace("userId", USER_ID).replace("requestKey", encodeURIComponent("cash:key-1")), expect.objectContaining({ method: "POST" }));
   });
 });

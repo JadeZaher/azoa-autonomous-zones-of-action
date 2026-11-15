@@ -3,8 +3,10 @@ import path from 'node:path'
 
 /** Everything a journey needs to reach the stack and impersonate its vendors. See `e2e/AGENTS.md`. */
 export interface E2eEnvironment {
+  projectName: string
   apiUrl: string
   appUrl: string
+  handoffReturnUrl: string
   /** Hostname the API container dials to reach the host-run fake vendors (in the test CA's SAN list). */
   vendorHost: string
   identomatPort: number
@@ -23,7 +25,9 @@ export interface E2eEnvironment {
 }
 
 export const e2eRoot = path.resolve(__dirname, '..')
-const generatedDirectory = path.join(e2eRoot, '.generated')
+const projectName = process.env.AZOA_E2E_PROJECT ?? 'azoa-e2e'
+if (!/^azoa-(?:payment-)?e2e(?:-[a-z0-9][a-z0-9-]{0,39})?$/.test(projectName)) throw new Error('Use a bounded AZOA E2E project name.')
+const generatedDirectory = path.join(e2eRoot, '.generated', projectName === 'azoa-e2e' ? '.' : projectName)
 
 /** Fixed in docker-compose.e2e.yml; the password is the generated per-run secret. */
 const operatorUsername = 'node-operator'
@@ -52,9 +56,11 @@ export function loadE2eEnvironment(): E2eEnvironment {
     return resolved
   }
   return {
+    projectName,
     // Dedicated E2E ports; AZOA_FRONTEND_HOST_PORT belongs to the dev stack and is never read here.
     apiUrl: process.env.AZOA_E2E_API_URL ?? `http://localhost:${process.env.AZOA_E2E_API_PORT ?? '5200'}`,
     appUrl: process.env.AZOA_E2E_APP_URL ?? `http://localhost:${process.env.AZOA_E2E_FRONTEND_PORT ?? '3200'}`,
+    handoffReturnUrl: `http://127.0.0.1:${process.env.AZOA_E2E_FRONTEND_PORT ?? '3200'}/portfolio/withdraw`,
     vendorHost: process.env.AZOA_E2E_VENDOR_HOST ?? 'host.docker.internal',
     identomatPort: Number(process.env.AZOA_E2E_IDENTOMAT_PORT ?? 9443),
     stripePort: Number(process.env.AZOA_E2E_STRIPE_PORT ?? 9444),

@@ -77,7 +77,11 @@ NFT stage costs, and the operator console.
 - **Pages that read `useAzoaAuth`**: payout balance uses `renderSliceWithAuth` (real `AzoaAuthProvider` + session
   fakes); the money and NFT-lifecycle slices written alongside it use a hand-built `AzoaContext.Provider`
   value carrying only `userId`. The full `AzoaProvider` would fetch profile and wallets the slice
-  does not model. The SDK session is still the real one `renderSlice` restored.
+    does not model. The SDK session is still the real one `renderSlice` restored.
+    Money slices also model the direct transport's KYC, wallets and balance reads.
+    Pending cash-outs remove the new-amount form; a refusal alone never clears a key.
+    Cancellation uses the node's void-or-reveal route. Funds redirect callbacks are
+    captured by the host surface so browser fixtures never navigate to a payment provider.
 - **Operator console slices** (`operator-console.slice.test.tsx`) route the page's relative
   `/api/operator/...` fetch into the real BFF handler (`app/api/operator/[...path]/route.ts`, with
   `next/headers` cookies mocked and `API_URL` stubbed to the slice origin). The handler's upstream

@@ -77,6 +77,8 @@ export type CashOutView = NodeCashOutView;
 
 /** The person's money balance; amounts are integer minor units of `currencyCode`. */
 export interface BalanceView {
+  /** Explicit minor-unit precision for a host denomination; omitted uses ISO 4217. */
+  currencyDecimals?: number;
   /** What may leave today. */
   availableMinorUnits: number;
   /** What is still inside a reversal window. */
@@ -88,6 +90,8 @@ export interface BalanceView {
 
 /** Units the person may sell to the host; quantities are base-unit decimal strings, never JavaScript numbers. */
 export interface SellableView {
+  /** Explicit minor-unit precision for a host denomination; omitted uses ISO 4217. */
+  currencyDecimals?: number;
   availableBaseUnits: string;
   /** Decimal places between a base unit and one whole unit. */
   decimals: number;
@@ -102,6 +106,8 @@ export interface SaleQuoteRequest {
 
 /** The host's price for one sale; `quoteId` pins quantity and proceeds. */
 export interface SaleQuoteView {
+  /** Explicit minor-unit precision for a host denomination; omitted uses ISO 4217. */
+  currencyDecimals?: number;
   quoteId: string;
   quantityBaseUnits: string;
   proceedsMinorUnits: number;
@@ -116,6 +122,8 @@ export interface SaleRequest {
 
 /** One accepted sale as the person sees it. */
 export interface SaleView {
+  /** Explicit minor-unit precision for a host denomination; omitted uses ISO 4217. */
+  currencyDecimals?: number;
   id: string;
   status: string;
   statusMessage: string;
@@ -148,6 +156,9 @@ export interface CheckoutTransport {
   void(requestKey: string): Promise<MoneyResult<CheckoutVoidView>>;
 }
 
+export type CashOutVoidView = { outcome: "voided" } | { outcome: "revealed"; cashOut: CashOutView };
+export type SaleVoidView = { outcome: "voided" } | { outcome: "revealed"; sale: SaleView };
+
 export interface CashOutTransport {
   availability(): Promise<MoneyResult<CashOutQuoteView>>;
   destination(): Promise<MoneyResult<PayoutDestinationView>>;
@@ -155,6 +166,7 @@ export interface CashOutTransport {
   start(request: MoneyRequest): Promise<MoneyResult<CashOutView>>;
   /** Newest first. */
   history(): Promise<MoneyResult<CashOutView[]>>;
+  void(requestKey: string): Promise<MoneyResult<CashOutVoidView>>;
 }
 
 /** Host-priced sale of units back to money; optional because only some hosts buy units. */
@@ -162,6 +174,7 @@ export interface SaleTransport {
   sellable(): Promise<MoneyResult<SellableView>>;
   quote(request: SaleQuoteRequest): Promise<MoneyResult<SaleQuoteView>>;
   sell(request: SaleRequest): Promise<MoneyResult<SaleView>>;
+  void(request: SaleRequest): Promise<MoneyResult<SaleVoidView>>;
 }
 
 export interface BalanceTransport {

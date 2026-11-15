@@ -68,6 +68,9 @@ public interface IFiatPayoutLedger
     /// <summary>Creates the cash-out only if it is absent. A losing racer gets the winner's row.</summary>
     Task<AZOAResult<FiatPayoutClaim>> ClaimAsync(FiatPayout candidate, CancellationToken ct = default);
 
+    /// <summary>Permanently voids an absent key, or reveals the existing payout under the same subject and funding driver.</summary>
+    Task<AZOAResult<FiatPayoutKeyResolution>> VoidAsync(FiatPayoutRequestFence candidate, CancellationToken ct = default);
+
     /// <summary>One cash-out by record id; a null result when there is none.</summary>
     Task<AZOAResult<FiatPayout?>> GetAsync(string recordId, CancellationToken ct = default);
 
@@ -101,25 +104,13 @@ public interface IFiatPayoutLedger
 /// <c>Providers/Stores/Surreal/</c> is outside this item's file boundary; the interface is
 /// <see cref="IFiatPayoutLedger"/>, so moving it later is a file move.
 /// </summary>
-public sealed class SurrealFiatPayoutLedger(ISurrealExecutor executor) : IFiatPayoutLedger
+public sealed partial class SurrealFiatPayoutLedger(ISurrealExecutor executor) : IFiatPayoutLedger
 {
     /// <inheritdoc />
     public async Task<AZOAResult<FiatPayoutClaim>> ClaimAsync(FiatPayout candidate, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        try
-        {
-            var response = await executor.ExecuteAsync(SurrealWriter.Create(candidate), ct);
-            response.EnsureAllOk();
-            var row = response.GetValues<FiatPayout>(0).Single();
-            return AZOAResult<FiatPayoutClaim>.Success(new(row, true));
-        }
-        catch (SurrealStatementException exception) when (SurrealIdempotencyLedger.IsUniqueViolation(exception.Message))
-        {
-            var existing = await GetAsync(candidate.Id, ct);
-            if (existing.Result is null) throw;
-            return AZOAResult<FiatPayoutClaim>.Success(new(existing.Result, false));
-        }
+        return await ClaimFencedAsync(candidate, ct);
     }
 
     /// <inheritdoc />

@@ -347,3 +347,17 @@ forbidden-key and amount sweeps. The paid and unreadable cases need fixture cont
 (still accepted); without controls those two skip. Cases that need fixture state (an admitted checkout,
 something cashable) skip with a reason; `requireAll` turns skips into failures. The SDK's own test proves the
 contract fails a transport that mints a new key per call and leaks `admissionKey`.
+
+## Cash-out and sale key retention
+
+A cash-out or sale error refusal never releases its saved key: a prior send may have been admitted before consent expired or a reply was lost. The required server void operation is the only authority for releasing an absent request. Resume replays the saved amount and quote reference. A browser-only discard is unavailable; only a validated, named record acknowledges admission or proves immutable terminal refusal and releases that request. A restored consent gate permits a same-key retry. Hosts must check an already-admitted key before quote expiry and expose durable terminal evidence for expired unused quotes; a missing row or local timeout cannot release it. Checkout retains its separate server void-or-reveal protocol.
+
+## Explicit host denominations
+
+Sale and balance views may carry `currencyDecimals` alongside `currencyCode`. Omitted precision uses ISO 4217; explicit precision must be an integer from 0 through 18 and a bounded ASCII symbol. Formatting uses BigInt division on safe integer minor units and never guesses an unknown symbol's scale. A custom sale quote without known precision is refused. Pending sales persist their denomination with the exact quote, so changing a holding cannot relabel saved proceeds. ArdaNova's ARDA contract uses two decimal places; its USD reference is never the payment amount.
+
+## Cash-out and sale server void
+
+`cashOut.void(requestKey)` and `sale.void({requestKey, quoteId})` are required transport methods. `discardCashOut` and `discardSale` keep the key on errors, timeouts, malformed outcomes and unconfirmed absence. Only a server `voided` response, backed by the shared admission/tombstone namespace, releases an absent request. `revealed` carries the named admitted record and acknowledges it without sending again. Hosts must refuse late admission under a voided key and must not blind-cancel a cash-out saga.
+
+Strict admission reads distinguish `null` absence from storage errors or corrupt envelopes. Unreadable prior data is preserved and no replacement is sent. Display-only reads remain lenient; they are never used to authorize overwriting a request.

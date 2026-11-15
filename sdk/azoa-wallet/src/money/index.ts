@@ -54,8 +54,9 @@ export {
   findForbiddenViewKeys,
   FORBIDDEN_VIEW_KEYS,
 } from "./views.js";
-export { startCheckout, sendCheckout, discardCheckout, resolveCheckoutByState, acknowledgeCheckout, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
+export { discardCashOut, discardSale, startCheckout, sendCheckout, discardCheckout, resolveCheckoutByState, acknowledgeCheckout, startCashOut, sendCashOut, startSale, sendSale } from "./flows.js";
 export type {
+  RequestDiscardAttempt,
   CheckoutAttempt,
   CheckoutDiscardAttempt,
   CashOutAttempt,

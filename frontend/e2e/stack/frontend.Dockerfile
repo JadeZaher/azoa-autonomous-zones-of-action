@@ -6,6 +6,7 @@
 # Build context: the repository root (see docker-compose.e2e.yml). See frontend/e2e/AGENTS.md §stack.
 
 FROM node:20-alpine
+ENV NPM_CONFIG_AUDIT=false
 
 WORKDIR /repo/sdk/azoa-wallet
 COPY sdk/azoa-wallet/package.json sdk/azoa-wallet/package-lock.json ./

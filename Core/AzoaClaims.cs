@@ -19,6 +19,9 @@ public static class AzoaClaims
     /// or <see cref="TokenUseChild"/>).</summary>
     public const string TokenUse = "token_use";
 
+    /// <summary>Exact ownership cut observed when an interactive login was minted.</summary>
+    public const string AuthCut = "auth_cut";
+
     /// <summary>A full-authority interactive user login token (wallet-challenge or
     /// password). NEVER carries <c>act_as_tenant</c>.</summary>
     public const string TokenUseLogin = "login";

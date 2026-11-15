@@ -28,6 +28,7 @@ export interface PendingRequestNoticeProps {
   pending: SavedRequest;
   /** For display only; without a known currency the notice names no amount. */
   currencyCode?: string;
+  currencyDecimals?: number;
   busy?: boolean;
   onResume: () => void;
   onDiscard: () => void;
@@ -36,18 +37,18 @@ export interface PendingRequestNoticeProps {
 }
 
 /** An unresolved saved request blocks a new one until the person resumes or explicitly discards it; one held for review is re-asked, not resumed. */
-export function PendingRequestNotice({ kind, pending, currencyCode, busy, onResume, onDiscard, slots, className }: PendingRequestNoticeProps) {
+export function PendingRequestNotice({ kind, pending, currencyCode, currencyDecimals, busy, onResume, onDiscard, slots, className }: PendingRequestNoticeProps) {
   const { messages } = useMoneyContext();
   const { Alert, Button } = useSlots(slots);
-  const summary = messages.pending.summary[kind](formatMinorUnits(pending.amountMinorUnits, currencyCode));
+  const summary = messages.pending.summary[kind](formatMinorUnits(pending.amountMinorUnits, pending.currencyCode ?? currencyCode, pending.currencyCode ? pending.currencyDecimals : currencyDecimals));
   if (pending.needsReview) {
-    // Held for an operator: a same-key re-ask, and for a checkout the node's void-or-reveal (a cash-out or sale discard is local, so none).
+    // Held requests are checked or resolved by the server, never discarded locally.
     return (
       <Alert tone="warning" className={className}>
         <p>{messages.pending.notConfirmed(summary)}</p>
         <p>{describeRefusal(moneyRefusal("needs_review"), messages)}</p>
         <Button variant="secondary" onClick={onResume} disabled={busy}>{messages.pending.checkAgain}</Button>
-        {kind === "checkout" ? <Button variant="secondary" onClick={onDiscard} disabled={busy}>{messages.pending.discard}</Button> : null}
+        <Button variant="secondary" onClick={onDiscard} disabled={busy}>{messages.pending.discard}</Button>
       </Alert>
     );
   }

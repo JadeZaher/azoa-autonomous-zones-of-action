@@ -45,6 +45,8 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
   const intents = new Map<string, CheckoutView & { owner: string; requestKey: string }>();
   /** `${owner}:${requestKey}` for every key the node voided; begin under one is refused (REQUEST_VOIDED). */
   const voidedKeys = new Set<string>();
+  const voidedCashOuts = new Set<string>();
+  const voidedSales = new Map<string, string>();
   const cashOuts = new Map<string, CashOutView & { owner: string }>();
   const quotes = new Map<string, SaleQuoteView>();
   const sales: (SaleView & { quoteId: string; requestKey: string; owner: string })[] = [];
@@ -122,6 +124,13 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
       }),
     },
     cashOut: {
+      void: requestKey => answer("cashOut.void", () => {
+        const key = `${user}:${requestKey}`;
+        const found = cashOuts.get(key);
+        if (found) { const { owner: _owner, ...view } = found; return { ok: true, value: { outcome: "revealed", cashOut: view } }; }
+        voidedCashOuts.add(key);
+        return { ok: true, value: { outcome: "voided" } };
+      }),
       availability: () => answer("cashOut.availability", () => ({
         ok: true,
         value: {
@@ -139,6 +148,7 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
       // F-H8: the node refuses tenant-initiated payout setup.
       beginDestinationSetup: () => answer("cashOut.beginDestinationSetup", () => refuse("account_holder_required", "Payout account setup can only be done by the account holder.")),
       start: request => answer("cashOut.start", () => {
+        if (voidedCashOuts.has(`${user}:${request.requestKey}`)) return refuse("unconfirmed", "That key is voided.");
         let view = cashOuts.get(`${user}:${request.requestKey}`);
         if (!view) {
           view = {
@@ -156,6 +166,18 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
       })),
     },
     sale: {
+      void: request => answer("sale.void", () => {
+        const key = `${user}:${request.requestKey}`;
+        const found = sales.find(row => row.owner === user && row.requestKey === request.requestKey);
+        if (found) {
+          if (found.quoteId !== request.quoteId) return refuse("unconfirmed", "The quote does not match this request.");
+          const { owner: _owner, requestKey: _key, quoteId: _quote, ...view } = found;
+          return { ok: true, value: { outcome: "revealed", sale: view } };
+        }
+        if (voidedSales.has(key) && voidedSales.get(key) !== request.quoteId) return refuse("unconfirmed", "The quote does not match this request.");
+        voidedSales.set(key, request.quoteId);
+        return { ok: true, value: { outcome: "voided" } };
+      }),
       sellable: () => answer("sale.sellable", () => ({
         ok: true,
         value: { availableBaseUnits: "5000000", decimals: 6, unitName: "AZU", currencyCode: "USD", statusMessage: "You can sell up to 5 AZU." },
@@ -170,6 +192,7 @@ export function createTenantBff(people: Record<string, Partial<Person>>, firstUs
       }),
       sell: async request => {
         const result = await answer("sale.sell", (): MoneyResult<SaleView> => {
+          if (voidedSales.has(`${user}:${request.requestKey}`)) return refuse("unconfirmed", "That key is voided.");
           const quote = quotes.get(request.quoteId);
           if (!quote) return refuse("definite", "That price expired. Get a new one.");
           let sale = sales.find(row => row.owner === user && row.requestKey === request.requestKey);

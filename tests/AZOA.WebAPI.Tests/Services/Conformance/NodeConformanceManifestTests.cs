@@ -140,6 +140,35 @@ public sealed class NodeConformanceManifestTests : IDisposable
     }
 
     [Fact]
+    public async Task TrxEvidenceSource_RequiresBothExactG1MethodsWithoutDuplicatesOrSubstitution()
+    {
+        var directory = Path.Combine(_temporaryDirectory, "evidence-g1-identities");
+        Directory.CreateDirectory(directory);
+        var now = DateTimeOffset.Parse("2026-07-13T12:00:00Z");
+        var source = new TrxNodeConformanceEvidenceSource(
+            Options.Create(CreateEvidenceOptions(directory)), new FixedTimeProvider(now));
+        await WriteEvidenceBundleAsync(directory, now);
+        var valid = await source.TryReadAsync();
+        valid.Should().NotBeNull();
+        valid!.Evidence.Single(item => item.Gate == "G1").PassedTestCount.Should().Be(2);
+        IReadOnlyList<string>[] refused =
+        [
+            [G1Tests[0]], [G1Tests[1]], [G1Tests[0], G1Tests[0]],
+            [G1Tests[0], "AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest.G1_DurabilityAckGate_FailsClosed_IfSyncEventual"],
+            [G1Tests[0], G1Tests[1], "AZOA.WebAPI.IntegrationTests.Gates.G1_DurabilityConfigurationTest.Unrelated"],
+        ];
+        foreach (var methods in refused)
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "G1.trx"), Trx("G1", "Passed", methods));
+            await WriteMetadataAsync(directory, now);
+            (await source.TryReadAsync()).Should().BeNull();
+        }
+        await File.WriteAllTextAsync(Path.Combine(directory, "G1.trx"), Trx("G1", "Failed", G1Tests));
+        await WriteMetadataAsync(directory, now);
+        (await source.TryReadAsync()).Should().BeNull();
+    }
+
+    [Fact]
     public async Task TrxEvidenceSource_FailsClosedWhenMetadataBindingOrFreshnessIsInvalid()
     {
         var evidenceDirectory = Path.Combine(_temporaryDirectory, "evidence-binding");
@@ -265,6 +294,11 @@ public sealed class NodeConformanceManifestTests : IDisposable
     };
 
     private static readonly string[] Gates = ["G1", "G2", "G3", "G5", "G7"];
+    private static readonly string[] G1Tests =
+    [
+        "AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest.G1_HardKill_DurableInserts_SurviveRestart",
+        "AZOA.WebAPI.IntegrationTests.Gates.G1_DurabilityConfigurationTest.G1_DurabilityAckGate_FailsClosed_IfSyncEventual",
+    ];
     private static readonly string[] G3Tests =
     [
         "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_ControllerPaths_HostileInput_LandsAsLiteralNotSurrealQl",
@@ -298,7 +332,7 @@ public sealed class NodeConformanceManifestTests : IDisposable
     {
         foreach (var gate in Gates)
         {
-            var testNames = string.Equals(gate, "G3", StringComparison.Ordinal) ? G3Tests : null;
+            var testNames = gate switch { "G1" => G1Tests, "G3" => G3Tests, _ => null };
             await File.WriteAllTextAsync(Path.Combine(evidenceDirectory, $"{gate}.trx"), Trx(gate, "Passed", testNames));
         }
 

@@ -3,7 +3,8 @@
 Flows through the **highest fast public seam**: `WebApplicationFactory` with real DI, real
 authentication schemes and policies, routing, model binding, rate limiting and a real SurrealDB
 namespace. Only the process edge is fake: Identomat and Stripe outbound HTTP, and DNS for webhook
-receivers. Assertions are HTTP responses and committed rows, never call counts.
+receivers. Assertions use HTTP responses and committed rows; vendor-ingress counts additionally
+check request-budget invariants.
 
 Run (needs the dev SurrealDB on `127.0.0.1:8020`, see root `AGENTS.md` §Test):
 
@@ -25,6 +26,9 @@ test rail enabled, using **random per-factory credentials** that exist only in m
   payload can be read; operator selection is unaffected.
 - Vendor base URLs are config-driven (`Kyc:Identomat:BeginBaseUrl/ResultBaseUrl`,
   `Fiat:ApiBaseUrl`), so the fake hosts below are real configuration, not a code seam.
+- `Kyc:Identomat:OutcomePoll:Enabled=false` disables only this host's autonomous timer.
+  Poll tests resolve the registered real worker and run its real `SweepAsync` explicitly;
+  an unrelated periodic sweep cannot defer their target before the arranged expiry.
 - `RateLimiting:Financial/TenantCustodial:PermitLimit` are raised: onboarding a tenant spends
   operator "financial" permits and a class's own setup must not trip the limiter. The limiter
   stays in the pipeline.
@@ -71,6 +75,20 @@ submitted yet. `Pending` therefore answers `{"result":null}` (no verdict, which 
 non-terminal `UNKNOWN` without manual review), and `ManualCheck` answers the documented
 `MANUAL_CHECK`. The fake previously answered `MANUAL_CHECK` for every undecided session, which hid
 L2-1/L2-2. `IdentityResultRequests` counts `/external-api/result/` calls for budget assertions.
+
+The global counter retains its request-ingress semantics. `IdentityResultRequestsFor`
+adds thread-safe per-token accounting before authentication and verdict lookup, so the
+dead-attempt test proves zero requests for its own target while other due sessions may
+legitimately poll. The fake and both counters have the same per-factory instance lifetime.
+`IdentomatVendorAccountingTests` drives the real fake edge with bad authentication,
+another token and deletion to prove the counter is wired and subject-specific; it needs
+neither a host nor a database.
+
+The expired-attempt poll fixture reads back the past submission expiry, then makes only
+its eligible session due through an observed-state/version/next-poll/provider CAS. It
+increments the fixture version, rereads it and verifies actual poll-list membership
+before the real sweep. The worker must still commit `ABANDONED` / `ATTEMPT_CLOSED`;
+the fixture never arranges that outcome or changes production timing, CAS or budgets.
 
 The widget host also answers the documented `POST /external-api/delete/` (`company_key`, `session_token`):
 `true` when it deletes, `{"argumentError":"session-not-found"}` otherwise (`Providers/Kyc/IdentomatSessionDeletion.cs`

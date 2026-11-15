@@ -6,8 +6,8 @@
   "services": [
     {
       "name": "surrealdb",
-      "source": { "image": "docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60" },
-      "notes": "Pinned SurrealDB v3.1.4 with synchronous RocksDB durability at /data/db. Do not replace the start command, storage path, version, or SURREAL_SYNC_DATA setting without a separately reviewed storage migration.",
+      "source": { "image": "<SUPPORTED_SURREAL_IMAGE_REFERENCE>" },
+      "notes": "New-service-only image and synchronous SurrealKV URI are materialized from surreal-contract.json. Never apply this blueprint over an existing database or change its path/engine/options during application promotion.",
       "deploy": {
         "startCommand": "/surreal start",
         "healthcheckPath": "/health",
@@ -21,8 +21,7 @@
         "SURREAL_PASS": "${{secret(48)}}",
         "SURREAL_BIND": "0.0.0.0:8000",
         "SURREAL_LOG": "info",
-        "SURREAL_PATH": "rocksdb:///data/db",
-        "SURREAL_SYNC_DATA": "true",
+        "SURREAL_PATH": "<SUPPORTED_SURREAL_STORAGE_URI>",
         "SURREAL_HTTP_PRIVATE_URL": "http://${{RAILWAY_PRIVATE_DOMAIN}}:${{PORT}}"
       },
       "volume": { "mountPath": "/data" }

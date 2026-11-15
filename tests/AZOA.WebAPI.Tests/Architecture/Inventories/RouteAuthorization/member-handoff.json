@@ -1,0 +1,69 @@
+[
+  {
+    "route": "POST /api/tenant/custodial-accounts/{externalsubject}/handoff",
+    "controller": "MemberHandoffController",
+    "action": "Create",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Member handoff: immutable target/tenant descriptor, live credential fence, hashed single-use invite, protected operator-only delivery. Approval uses exact descriptor in post-claim first-party consent transaction.",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/tenant/custodial-accounts/{externalsubject}/handoff/{requestid}/resend",
+    "controller": "MemberHandoffController",
+    "action": "Resend",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Member handoff: immutable target/tenant descriptor, live credential fence, hashed single-use invite, protected operator-only delivery. Approval uses exact descriptor in post-claim first-party consent transaction.",
+    "policies": [
+      "TenantScope"
+    ]
+  },
+  {
+    "route": "POST /api/user/handoffs/preview",
+    "controller": "MemberHandoffUserController",
+    "action": "Preview",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Member handoff: immutable target/tenant descriptor, live credential fence, hashed single-use invite, protected operator-only delivery. Approval uses exact descriptor in post-claim first-party consent transaction.",
+    "policies": [
+      "FirstPartyLogin",
+      "anonymous"
+    ]
+  },
+  {
+    "route": "POST /api/user/handoffs/{requestid}/approve",
+    "controller": "MemberHandoffUserController",
+    "action": "Approve",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Member handoff: immutable target/tenant descriptor, live credential fence, hashed single-use invite, protected operator-only delivery. Approval uses exact descriptor in post-claim first-party consent transaction.",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/user/handoffs/{requestid}/decline",
+    "controller": "MemberHandoffUserController",
+    "action": "Decline",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Member handoff: immutable target/tenant descriptor, live credential fence, hashed single-use invite, protected operator-only delivery. Approval uses exact descriptor in post-claim first-party consent transaction.",
+    "policies": [
+      "FirstPartyLogin"
+    ]
+  },
+  {
+    "route": "POST /api/fiat/payouts/{userid}/requests/{requestkey}/void",
+    "controller": "FiatPayoutController",
+    "action": "Void",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "Authenticated first-party subject or tenant:provision plus live transfer:sign grant; identical funding driver; default-closed RequestVoidEnabled attestation; shared atomic admission fence tombstones only absent payouts, existing payouts always reveal unchanged.",
+    "policies": [
+      "authenticated"
+    ]
+  }
+]

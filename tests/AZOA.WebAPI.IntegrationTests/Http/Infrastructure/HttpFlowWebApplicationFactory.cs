@@ -99,6 +99,7 @@ public class HttpFlowWebApplicationFactory : AZOATestWebApplicationFactory
         ["Kyc:Identomat:ResultBaseUrl"] = $"https://{IdentomatVendor.WidgetHost}",
         ["Kyc:Identomat:CompanyKey"] = Identomat.CompanyKey,
         ["Kyc:Identomat:ConfigId"] = Identomat.KycConfigId,
+        ["Kyc:Identomat:OutcomePoll:Enabled"] = "false",
         ["Kyc:Identomat:CallbackApiKey"] = CallbackApiKey,
         ["Kyc:Identity:PersonKeySecret"] = RandomSecret(),
         ["Kyb:ConfigId"] = Identomat.KybConfigId,

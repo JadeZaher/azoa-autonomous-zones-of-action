@@ -4,7 +4,7 @@ An Azoa node is three long-running services plus one one-shot release job:
 
 | Service | What it is | Source |
 |---|---|---|
-| **SurrealDB** | Sole storage engine: v3.1.4, RocksDB at `/data/db`, synchronous writes | Pinned `docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60` multi-arch image |
+| **SurrealDB** | Release target: 3.2.0, persistent SurrealKV with `sync=every` | Official production index and approved amd64 manifest in [`surreal-contract.json`](./surreal-contract.json) |
 | **azoa-schema** | One-shot schema and runtime-user provisioner | Same digest-pinned, attested image as `azoa-api` |
 | **azoa-api** | .NET 10 WebAPI backend | Verified GHCR image, promoted from this repo |
 | **azoa-frontend** | Next.js 16 dashboard | Verified GHCR image, promoted from this repo |
@@ -14,8 +14,11 @@ Solana SDK dependency chain and is built with `npm ci`; the release gate require
 `npm audit` to report zero known vulnerabilities. Do not use
 `npm audit fix --force` as a release shortcut.
 
-The exact release contract is in [`template.json`](./template.json). CI validates
-that contract with [`render-template.py`](./render-template.py); the protected
+The single storage contract is [`surreal-contract.json`](./surreal-contract.json).
+CI and isolated browser fixtures consume it from the checked-out source;
+[`surreal_contract.py`](./surreal_contract.py) exports validated public job settings.
+The fresh-service [`template.json`](./template.json) carries contract placeholders.
+[`render-template.py`](./render-template.py) resolves them from that same file; the protected
 promotion workflow publishes a fully materialized blueprint artifact containing
 whole `name@sha256` image references.
 
@@ -23,7 +26,9 @@ whole `name@sha256` image references.
 
 Deploy one release serially. Do not start all four services together:
 
-1. Start the pinned `surrealdb` service and require `/health` to pass.
+1. Preserve an already provisioned, approved immutable `surrealdb` deployment
+   and require its operator-attested private `/health` gate. Normal application
+   promotion never starts or changes the database service.
 2. Deploy `azoa-schema` from the promoted API digest and require terminal
    `SUCCESS`. A checksum mismatch or failed migration stops the release.
 3. Deploy `azoa-api` from that exact same digest and require `/health` to pass.
@@ -46,15 +51,21 @@ environment, and every service. Railway CLI 5.27 added the project selector to
 `deployment list`, so every lookup and image-config edit carries explicit scope
 and never inherits a linked project.
 
-Choose the SurrealDB gate deliberately:
+Normal application promotion accepts only `--surreal-mode already-healthy`.
+It rejects `redeploy` before any provider call. Inspect the exact project,
+environment and database service and confirm its private `/health` gate first.
+The helper then requires latest terminal `SUCCESS`, the contract's exact configured
+image index, and only that index digest or its explicitly listed amd64 manifest
+as the deployment digest. Old versions, mutable tags, unknown digests and source
+or deployment drift fail before schema/API/frontend effects.
 
-- `--surreal-mode redeploy` applies the explicit pinned `--surreal-image` and
-  waits for its new deployment to reach terminal `SUCCESS`. Because the service config owns
-  the `/health` healthcheck, `SUCCESS` is also Railway's health-gate result.
-- `--surreal-mode already-healthy` is for a preserved database deployment.
-  Before running it, inspect the exact project/environment/service in Railway
-  and confirm `/health` is green. The helper additionally requires the latest
-  SurrealDB deployment to be `SUCCESS`; it does not expose SurrealDB publicly.
+A current floating `v3` source is deliberately blocked. Pinning an existing
+service is a separate reviewed storage-maintenance operation with fresh actual
+configuration, mount, recoverability and health evidence. It must preserve its
+existing start command, path, engine options, credentials and volume. Never apply
+the fresh template over it or use application promotion to downgrade/change its
+engine. This code change performs no such live operation and claims no equality
+between a recovered selected backup and current source configuration/data.
 
 Example (replace every value; the confirmation string is intentionally exact):
 
@@ -68,7 +79,7 @@ python3 deploy/railway/serial-rollout.py \
   --schema-service-id <schema-service-uuid> \
   --api-service-id <api-service-uuid> \
   --frontend-service-id <frontend-service-uuid> \
-  --surreal-image docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60 \
+  --surreal-image <exact-image-from-surreal-contract.json> \
   --api-image ghcr.io/<owner>/<api>@sha256:<64-hex-digest> \
   --frontend-image ghcr.io/<owner>/<frontend>@sha256:<64-hex-digest> \
   --surreal-mode already-healthy \
@@ -77,7 +88,8 @@ python3 deploy/railway/serial-rollout.py \
   --confirm "PROMOTE ${PROJECT_ID}/${ENVIRONMENT_ID}"
 ```
 
-The helper writes each exact `name@sha256` reference with
+The helper preserves the database and writes only schema/API/frontend
+`name@sha256` references with
 `railway environment edit ... source.image`, never uploads or rebuilds source.
 It snapshots deployment IDs, rejects concurrent/ambiguous deployments, verifies
 the terminal deployment's `meta.imageDigest`, reads the service image back for
@@ -90,13 +102,21 @@ rolls schema backward and never prints response bodies, URLs, or Railway stderr.
 
 ## Storage invariants
 
-The SurrealDB service is deliberately not a floating `3.x` template. Keep all
-four controls together: image
-`docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60`,
-command `/surreal start` with the committed `SURREAL_*` variables, volume mount
-`/data`, and
-`SURREAL_SYNC_DATA=true`. Changing any one is a storage migration and requires a
-separate restore drill.
+For **new services and fresh CI/E2E volumes**, the sole reviewed storage contract
+is immutable production SurrealDB 3.2.0 with `surrealkv:///data/db?sync=every` on
+`/data`. Its official production image differs from the dev image used for
+private recovery tooling. `sync=every` is the SurrealKV durability setting; the
+legacy RocksDB `SURREAL_SYNC_DATA` flag is not its substitute. CI verifies the
+actual binary version and executes ACK?SIGKILL?restart durability, schema and
+backup/restore gates against this contract. Historical 3.1.4 results do not
+certify the new engine.
+
+The repository's default developer composition and historical upgrade rehearsal
+remain the legacy 3.1.4/RocksDB profile, with their existing volumes and sync flag.
+They are not the normal production/CI contract. This change never converts or
+wipes those resources. New engine/path settings are not safe instructions for an
+existing volume; a changed storage contract requires separate reviewed recovery
+and migration engineering.
 
 The API persists ASP.NET Data Protection keys at
 `/app/data/data-protection-keys` on its `/app/data` volume. The template pins one
@@ -182,13 +202,13 @@ names, sources, and the `${{service.VAR}}` references must match).
 
 ## Manual stand-up (what the automation does, by hand)
 
-1. **SurrealDB** — create the service from
-   `docker.io/surrealdb/surrealdb@sha256:5757ed157c13b539bdc23a798ba2db1ffba6026deb3d15513058bffc77754a60`.
-   Copy the blueprint's exact `/surreal start` command,
-   `/data` volume, `SURREAL_SYNC_DATA=true`, credentials, private-URL variable,
-   `/health` check, and `RAILWAY_RUN_UID=0` required by this pinned upstream
-   image/volume shape. The generated credentials are owner credentials:
-   reference them only from `azoa-schema`, never from `azoa-api`.
+1. **SurrealDB (new service only)** ? materialize the fresh blueprint from
+   `surreal-contract.json` and the reviewed API/frontend image references. Use
+   its exact production image, `/surreal start`, explicit synchronous SurrealKV
+   URI, `/data` volume, credentials/private URL, `/health` check and UID setting.
+   Owner credentials may be referenced only by `azoa-schema`, never `azoa-api`.
+   For an existing service, preserve its configuration and finish the separately
+   reviewed immutable-pin/storage operation before normal promotion.
 
 2. **Promote images** — configure the protected `railway-production` GitHub
    environment with `RAILWAY_TOKEN` plus the project, environment, four service
@@ -323,3 +343,20 @@ attestations against this repository and the protected promotion workflow.
   vulnerability audit, lint, typecheck, and production build before a promotion
   can consume the successful CI run.
 - **CORS is required in Production.** Set at least `Cors__AllowedOrigins__0`.
+
+## Contract consumer and refusal tests
+
+The storage digest exists only in surreal-contract.json. CI, the browser harness,
+template renderer and preserved-database rollout read that exact checkout. The
+workflow loads the deployment contract after checking out the already attested
+current-main source. No user-supplied image or inherited browser environment can
+override it. Public contract exports contain no credentials.
+
+The focused standard-library test suite covers old/mutable/unknown image and
+digest refusals before effects, prohibited database redeploy, successful preserved
+serial order, template storage drift and cross-surface consumption. The .NET
+least-privilege and G1 static guards retain their security/durability assertions.
+All source fixes and independent review precede one coordinated affected check
+batch and fresh full CI. Main/source attestation, freshness, reviewer/environment,
+Railway token, keyring, schema owner/runtime separation and real-value OFF gates
+remain required; this contract update grants no deployment or activation.

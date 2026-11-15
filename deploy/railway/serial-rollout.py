@@ -19,6 +19,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from surreal_contract import admitted_digests, load_contract
+
 
 RAILWAY_CALLER = "skill:use-railway@1.3.5"
 TRANSIENT_STATUSES = frozenset(
@@ -236,11 +238,10 @@ def parse_arguments() -> tuple[RolloutConfig, str]:
     parser.add_argument("--frontend-image", required=True)
     parser.add_argument(
         "--surreal-mode",
-        choices=("redeploy", "already-healthy"),
+        choices=("already-healthy",),
         required=True,
         help=(
-            "redeploy the configured SurrealDB source and wait for Railway's /health "
-            "gate, or attest that the existing deployment already passed that gate"
+            "preserve the approved immutable database after its operator-attested health gate"
         ),
     )
     parser.add_argument("--api-health-url", required=True)
@@ -277,6 +278,8 @@ def parse_arguments() -> tuple[RolloutConfig, str]:
             "api": immutable_image(arguments.api_image, "API/schema"),
             "frontend": immutable_image(arguments.frontend_image, "frontend"),
         }
+        if images["surreal"] != load_contract()["image"]:
+            raise ValueError("SurrealDB image must match the reviewed release contract")
 
         api_health_url = validate_health_url(
             arguments.api_health_url, "/health", "API"
@@ -387,11 +390,13 @@ def require_existing_surreal_success(
     client: RailwayClient, service_id: str, expected_image: str
 ) -> None:
     deployments = client.list_deployments(service_id)
-    expected_digest = image_digest(expected_image)
+    contract = load_contract()
+    if expected_image != contract["image"]:
+        raise RolloutError("SurrealDB image is outside the reviewed release contract")
     if (
         not deployments
         or deployments[0].status != "SUCCESS"
-        or deployments[0].image_digest != expected_digest
+        or deployments[0].image_digest not in admitted_digests(contract)
         or client.get_service_image(service_id) != expected_image
     ):
         raise RolloutError(
@@ -541,19 +546,9 @@ def main() -> int:
     client = RailwayClient(executable, config.project_id, config.environment_id)
     client.require_supported_version()
 
-    if config.surreal_mode == "redeploy":
-        deploy_and_wait(
-            client,
-            config.surreal_service_id,
-            "surrealdb",
-            config.deployment_timeout_seconds,
-            config.poll_seconds,
-            config.surreal_image,
-        )
-    else:
-        require_existing_surreal_success(
-            client, config.surreal_service_id, config.surreal_image
-        )
+    require_existing_surreal_success(
+        client, config.surreal_service_id, config.surreal_image
+    )
 
     deploy_and_wait(
         client,

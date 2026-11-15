@@ -1240,3 +1240,26 @@ transition proof (detail `relinquished by tenant`). Zero live grants still runs 
 transaction and answers an empty receipt, so the call is idempotent; the receipt itself is not
 stored, so a lost 200 is not replayable (the per-grant rows are the record). Grants to other
 tenants are never selected. It does not close the participation membership (that is offboarding).
+
+## Member handoff
+
+`SurrealMemberHandoffStore` is private persistence: service/controller boundaries authorize
+target-only reads, tenant-correlated metadata, and recent-operator-only protected delivery.
+The compound issuance transaction fences the live tenant credential and exact member binding,
+locks the member row, retires all its prior live claim invites and persists the descriptor,
+replacement invitation and encrypted delivery together. The one raw multi-record UPDATE is
+part of that atomic retirement invariant, not a standalone CRUD exception.
+
+The member lock is a no-op active-flag write guarded by active state, original ownership,
+external correlation and auth watermark. A concurrent deactivation fails the CAS; issuance
+cannot reactivate the member.
+
+The raw watermark check uses an explicit presence flag and a non-null datetime sentinel,
+matching `SigningAuthorityFence`: Surreal `NONE` differs from a JSON-bound null. Missing
+watermarks must match `NONE`; present watermarks must match the exact captured datetime.
+The typed member CAS independently retains ownership, correlation, active-state and cut checks.
+
+Approval/decline serialize through the descriptor version. `AdmitHandoffAsync` extends the
+existing consent transaction with exact immutable descriptor and post-claim owner guards;
+the normal grant receipt ledger is the authority for an approval whose response was lost.
+The descriptor's approved label is historical; live permission comes from the consent gate.

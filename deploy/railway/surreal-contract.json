@@ -1,0 +1,14 @@
+{
+  "schema": "azoa-surreal-release/v1",
+  "version": "3.2.0",
+  "image": "docker.io/surrealdb/surrealdb@sha256:cd2b5ef11e77c00c59808ca8bb68a868a836c5bc6aba7af71f718cd6e73acb04",
+  "platforms": {
+    "linux/amd64": "sha256:335569b51a53bc0a943c7394a63f6dec07e5a582d3af3ee783c717ad12e06363"
+  },
+  "storage": {
+    "engine": "surrealkv",
+    "uri": "surrealkv:///data/db?sync=every",
+    "mountPath": "/data",
+    "sync": "every"
+  }
+}

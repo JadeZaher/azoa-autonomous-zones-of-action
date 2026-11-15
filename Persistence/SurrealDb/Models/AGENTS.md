@@ -325,3 +325,21 @@ discoverable), the caller is matching themself, or the caller reaches search thr
 plus `Migrations/20261018_090000__add_user_discoverable.surql` rather than an in-place edit to
 the generated golden. `Managers/AGENTS.md` §user-discoverable has the filter rationale;
 `Controllers/AGENTS.md` §User responses has the node-admin route detail.
+
+## Member handoff
+
+`member_handoff` is a new private identity table. Descriptor bytes and recipient digest are
+immutable; version serializes resend and decisions. Raw claim tokens remain digests in the
+invitation table. Delivery body (including recipient/link) is DataProtection ciphertext in
+this table, readable only through recent operator routes. No generic search/MCP surface
+exposes this table. New-table goldens are emitted by the normal schema generator; no existing
+table definitions need to change.
+
+## Cash-out request fence
+
+`fiat_payout_request_fence` is a new private table, keyed identically to `FiatPayout` by
+subject/key/environment/network. An admitted fence and payout are one transaction; an
+absent-key void competes on that same fence and is permanent. TenantId fixes the original
+driver. A void row is not a payout and carries no invented amount or settlement status.
+Existing payouts without fences are revealed unchanged. This table adds no modifications
+to deployed payout schema goldens.

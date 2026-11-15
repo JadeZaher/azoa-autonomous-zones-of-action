@@ -27,6 +27,8 @@ public sealed class JsonlExceptionLoggerOptions
         // Personal and bank fields, incl. the KYC identity binding's Surreal parameters
         // (_binding_first_name, _binding_birthday, _binding_person_key, ...); see AGENTS.md §redaction.
         "email",
+        "delivery",
+        "claimtoken",
         "first_name",
         "firstname",
         "last_name",

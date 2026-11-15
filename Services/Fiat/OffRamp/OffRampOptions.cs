@@ -25,6 +25,9 @@ public sealed class OffRampOptions
     /// </summary>
     public bool Enabled { get; set; }
 
+    /// <summary>Operator attestation that every serving node uses the shared claim/void admission fence.</summary>
+    public bool RequestVoidEnabled { get; set; }
+
     /// <summary>
     /// The reserve partition cashed-out units go BACK to. It is the on-ramp's partition by
     /// default because that is where they were issued from: returning them anywhere else would

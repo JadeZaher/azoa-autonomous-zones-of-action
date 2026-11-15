@@ -20,14 +20,8 @@ on:
   pull_request:
     branches: ["**"]
 
-# One pin, referenced by every job that needs a server. There were two literal
-# copies of this tag before; a third for the perf job would have made "which
-# SurrealDB does CI actually test against" a question with three answers.
-# The release path pins by digest instead (conformance-release.yml,
-# deploy/railway/template.json) because it publishes immutable images -- that is
-# a deliberately different guarantee, not a second copy of this one.
+# Database jobs load the immutable engine/storage contract after checkout.
 env:
-  SURREALDB_IMAGE: surrealdb/surrealdb:v3.1.4
   # Pinned scanner version. Swap for an image digest once someone resolves one:
   # an unpinned scanner is a supply-chain hole in the job that exists to close
   # supply-chain holes.
@@ -44,6 +38,9 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Load Surreal release contract
+        run: python3 deploy/railway/surreal_contract.py --github-env >> "$GITHUB_ENV"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
@@ -77,14 +74,15 @@ jobs:
 
       - name: Start SurrealDB
         run: |
-          docker run --detach \
+          docker run --detach --platform linux/amd64 \
             --name azoa-ci-surrealdb \
             --user 0:0 \
             --publish 8020:8000 \
-            --env SURREAL_SYNC_DATA=true \
             --volume azoa-ci-surrealdb-data:/data \
             "$SURREALDB_IMAGE" \
-            start --log info --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
+            start --log info --user root --pass root --bind 0.0.0.0:8000 "$SURREALDB_URI"
+
+          test "$(docker exec azoa-ci-surrealdb /surreal version)" = "$SURREALDB_VERSION for linux on x86_64"
 
           for attempt in {1..30}; do
             if docker exec azoa-ci-surrealdb /surreal is-ready --endpoint http://localhost:8000; then
@@ -129,7 +127,7 @@ jobs:
           CONFORMANCE_RESULTS: ${{ runner.temp }}/azoa-conformance
         run: |
           mkdir -p "$CONFORMANCE_RESULTS"
-          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest" --logger "trx;LogFileName=G1.trx" --results-directory "$CONFORMANCE_RESULTS"
+          dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest|FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G1_DurabilityConfigurationTest" --logger "trx;LogFileName=G1.trx" --results-directory "$CONFORMANCE_RESULTS"
           dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G2_IdempotencyTocTouTest" --logger "trx;LogFileName=G2.trx" --results-directory "$CONFORMANCE_RESULTS"
           dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_ControllerPaths_HostileInput_LandsAsLiteralNotSurrealQl|FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_DirectWithParam_HostileInput_PersistsAsLiteralString" --logger "trx;LogFileName=G3.trx" --results-directory "$CONFORMANCE_RESULTS"
           dotnet test tests/AZOA.WebAPI.IntegrationTests/AZOA.WebAPI.IntegrationTests.csproj --configuration Release --no-build --filter "FullyQualifiedName~AZOA.WebAPI.IntegrationTests.Gates.G5_RestoreDrillTest" --logger "trx;LogFileName=G5.trx" --results-directory "$CONFORMANCE_RESULTS"
@@ -140,24 +138,28 @@ jobs:
           from pathlib import Path
 
           expected = {
-              "G1": "G1_CrashDurabilityTest",
-              "G2": "G2_IdempotencyTocTouTest",
-              "G3": "G3_InjectionSuiteTest",
-              "G5": "G5_RestoreDrillTest",
-              "G7": "G7_ReconciliationDrillTest",
+              "G1": ("G1_CrashDurabilityTest", "G1_DurabilityConfigurationTest"),
+              "G2": ("G2_IdempotencyTocTouTest",),
+              "G3": ("G3_InjectionSuiteTest",),
+              "G5": ("G5_RestoreDrillTest",),
+              "G7": ("G7_ReconciliationDrillTest",),
           }
           required_methods = {
+              "G1": {
+                  "AZOA.WebAPI.IntegrationTests.Gates.G1_CrashDurabilityTest.G1_HardKill_DurableInserts_SurviveRestart",
+                  "AZOA.WebAPI.IntegrationTests.Gates.G1_DurabilityConfigurationTest.G1_DurabilityAckGate_FailsClosed_IfSyncEventual",
+              },
               "G3": {
                   "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_ControllerPaths_HostileInput_LandsAsLiteralNotSurrealQl",
                   "AZOA.WebAPI.IntegrationTests.Gates.G3_InjectionSuiteTest.G3_DirectWithParam_HostileInput_PersistsAsLiteralString",
               },
           }
           directory = Path(sys.argv[1])
-          for gate, class_name in expected.items():
+          for gate, class_names in expected.items():
               path = directory / f"{gate}.trx"
               results = [element for element in ET.parse(path).iter()
                          if element.tag.rsplit("}", 1)[-1] == "UnitTestResult"]
-              prefix = f"AZOA.WebAPI.IntegrationTests.Gates.{class_name}."
+              prefix = tuple(f"AZOA.WebAPI.IntegrationTests.Gates.{class_name}." for class_name in class_names)
               result_names = [result.get("testName", "") for result in results]
               if not results or any(result.get("outcome") != "Passed" or not
                                     result.get("testName", "").startswith(prefix)
@@ -212,6 +214,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      - name: Load Surreal release contract
+        run: python3 deploy/railway/surreal_contract.py --github-env >> "$GITHUB_ENV"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
@@ -219,13 +224,14 @@ jobs:
 
       - name: Start SurrealDB
         run: |
-          docker run --detach \
+          docker run --detach --platform linux/amd64 \
             --name azoa-schema-ci \
             --user 0:0 \
             --publish 8030:8000 \
-            --env SURREAL_SYNC_DATA=true \
             "$SURREALDB_IMAGE" \
-            start --log warn --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
+            start --log warn --user root --pass root --bind 0.0.0.0:8000 "$SURREALDB_URI"
+
+          test "$(docker exec azoa-schema-ci /surreal version)" = "$SURREALDB_VERSION for linux on x86_64"
 
           for attempt in {1..30}; do
             if docker exec azoa-schema-ci /surreal is-ready --endpoint http://localhost:8000; then
@@ -579,6 +585,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      - name: Load Surreal release contract
+        working-directory: .
+        run: python3 deploy/railway/surreal_contract.py --github-env >> "$GITHUB_ENV"
+
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -587,6 +597,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       # Host side runs only Playwright and the fake vendors; neither imports the SDK.
+      - name: Verify existing E2E database volume contract
+        run: node --test e2e/scripts/database-volume-contract.test.mjs
+
       - name: Install dependencies
         run: npm ci
 
@@ -642,6 +655,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      - name: Load Surreal release contract
+        run: python3 deploy/railway/surreal_contract.py --github-env >> "$GITHUB_ENV"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
@@ -668,13 +684,14 @@ jobs:
       # targets are printed per run instead. Derivation: Perf/AGENTS.md.
       - name: Start SurrealDB
         run: |
-          docker run --detach \
+          docker run --detach --platform linux/amd64 \
             --name azoa-perf-surrealdb \
             --user 0:0 \
             --publish 8020:8000 \
-            --env SURREAL_SYNC_DATA=true \
             "$SURREALDB_IMAGE" \
-            start --log warn --user root --pass root --bind 0.0.0.0:8000 rocksdb:///data/db
+            start --log warn --user root --pass root --bind 0.0.0.0:8000 "$SURREALDB_URI"
+
+          test "$(docker exec azoa-perf-surrealdb /surreal version)" = "$SURREALDB_VERSION for linux on x86_64"
 
           for attempt in {1..30}; do
             if docker exec azoa-perf-surrealdb /surreal is-ready --endpoint http://localhost:8000; then
@@ -782,3 +799,6 @@ jobs:
 
       - name: Validate operator-gated template
         run: python3 deploy/railway/render-template.py --check
+
+      - name: Verify release storage contract guards
+        run: python3 -m unittest discover -s deploy/railway -p 'test_release_contract.py'

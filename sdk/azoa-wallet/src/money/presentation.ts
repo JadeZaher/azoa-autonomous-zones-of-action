@@ -56,9 +56,10 @@ const MINOR_DIGITS_TWO = new Set(
 );
 
 /** Digits between a minor and a major unit of `currencyCode` (ISO 4217), or null for a code this SDK does not know. */
-export function currencyMinorDigits(currencyCode: string | null | undefined): number | null {
+export function currencyMinorDigits(currencyCode: string | null | undefined, explicitDecimals?: number): number | null {
   if (typeof currencyCode !== "string") return null;
   const code = currencyCode.trim().toUpperCase();
+  if (explicitDecimals !== undefined) return /^[A-Z][A-Z0-9._-]{0,15}$/u.test(code) && Number.isInteger(explicitDecimals) && explicitDecimals >= 0 && explicitDecimals <= 18 ? explicitDecimals : null;
   return MINOR_DIGITS_NOT_TWO.get(code) ?? (MINOR_DIGITS_TWO.has(code) ? 2 : null);
 }
 
@@ -73,18 +74,19 @@ export function toMinorUnits(text: string, currencyCode: string | null | undefin
 }
 
 /** Formats integer minor units for display (`1,234.50 USD`); null when the currency is unknown, never a guessed decimal point. */
-export function formatMinorUnits(minorUnits: number, currencyCode: string | null | undefined): string | null {
-  const text = minorUnitsToText(Math.abs(minorUnits), currencyCode, true);
+export function formatMinorUnits(minorUnits: number, currencyCode: string | null | undefined, currencyDecimals?: number): string | null {
+  const text = minorUnitsToText(Math.abs(minorUnits), currencyCode, true, currencyDecimals);
   return text === null ? null : `${minorUnits < 0 ? "-" : ""}${text} ${currencyCode!.trim().toUpperCase()}`;
 }
 
 /** Minor units as plain decimal text `toMinorUnits` parses back (`1234.50`); null when the currency is unknown. */
-export function minorUnitsToText(minorUnits: number, currencyCode: string | null | undefined, grouped = false): string | null {
-  const digits = currencyMinorDigits(currencyCode);
+export function minorUnitsToText(minorUnits: number, currencyCode: string | null | undefined, grouped = false, currencyDecimals?: number): string | null {
+  const digits = currencyMinorDigits(currencyCode, currencyDecimals);
   if (digits === null || !Number.isSafeInteger(minorUnits) || minorUnits < 0) return null;
-  const scale = 10 ** digits;
-  const whole = Math.floor(minorUnits / scale);
-  const fraction = digits > 0 ? `.${String(minorUnits % scale).padStart(digits, "0")}` : "";
+  const scale = 10n ** BigInt(digits);
+  const exact = BigInt(minorUnits);
+  const whole = exact / scale;
+  const fraction = digits > 0 ? `.${String(exact % scale).padStart(digits, "0")}` : "";
   return `${grouped ? whole.toLocaleString("en-US") : String(whole)}${fraction}`;
 }
 
@@ -226,12 +228,12 @@ export const defaultMoneyMessages: MoneyMessages = {
     payment_failed: "The payment did not go through. Nothing was added.",
   },
   refusal: {
-    setup_required: "Finish verifying your identity first. Nothing was moved.",
-    consent_revoked: "This app no longer has your permission to manage payments for your account. Nothing was moved.",
+    setup_required: "Finish verifying your identity. Check any saved request separately.",
+    consent_revoked: "This app no longer has payment permission. A saved request still needs its outcome checked.",
     account_holder_required: "Only you can set up where your money is paid out, signed in to your AZOA account directly. This app cannot do it for you.",
-    kyb_required: "Payments are paused while this app renews its business verification. Nothing was moved.",
-    payments_not_configured: "Payments are not set up here yet, so nothing can be charged. Nothing was charged.",
-    rail_busy: "The payment service is busy. Nothing was moved; try again shortly.",
+    kyb_required: "New payments are paused while this app renews its business verification. Check any saved request separately.",
+    payments_not_configured: "Payments are not configured here. Earlier requests still need their outcomes checked.",
+    rail_busy: "The payment service is busy. Keep the saved request and check again shortly.",
     unconfirmed: "The answer did not arrive, so it is not known whether this went through. Resuming it cannot charge or pay twice.",
     needs_review: "This payment needs a manual check before it can continue — we'll follow up.",
     unauthenticated: "Your session expired. Sign in again.",
@@ -241,7 +243,7 @@ export const defaultMoneyMessages: MoneyMessages = {
     ready: "Your account is ready for payments.",
     setup: "Finish setting up your account to add or cash out money.",
     review: "Your identity is verified and an additional compliance check is under review. Nothing more is needed from you; payments open once it is resolved.",
-    revoked: "You withdrew this app's permission to manage your payments, so nothing can be added or cashed out here.",
+    revoked: "New payment instructions are paused until this app has your permission. Earlier requests are checked separately.",
     unavailable: "Payments are not available for your account right now.",
     reviewDue: date => `Expected by ${date}.`,
   },
@@ -265,11 +267,11 @@ export const defaultMoneyMessages: MoneyMessages = {
   consent: {
     title: "Payment permission",
     active: "This app may manage payments for your account.",
-    revoked: "You withdrew this app's permission to manage your payments. Nothing can be added or cashed out here until it is granted again.",
+    revoked: "New payment instructions are paused until permission is granted again. Earlier requests may still complete.",
     revoke: "Withdraw permission",
     confirmRevoke: "Yes, withdraw permission",
     keep: "Keep it",
-    confirmPrompt: "Withdrawing stops this app from adding or cashing out money for you. Money already in your account stays there.",
+    confirmPrompt: "Withdrawing blocks new payment instructions. Requests already admitted may still complete.",
   },
   account: { title: "Your account", identityLabel: "Identity", walletLabel: "Wallet", walletReady: "Ready", walletPending: "Being set up", addressLabel: "Address" },
   addFunds: {
@@ -306,11 +308,11 @@ export const defaultMoneyMessages: MoneyMessages = {
     },
     detail: {
       checkout: "Resuming reopens that same payment instead of starting a second one. Discarding cancels it with the payment service first; if it may already have been paid, it is kept and shown to you instead.",
-      cashOut: "Resuming sends the same request again, and it is paid at most once. If it is already in the history, it was received. Discard it only if you want a separate cash-out.",
-      sale: "Resuming sends the same sale again; it completes at most once. Discard it only if you want a separate sale.",
+      cashOut: "Resuming checks the same cash-out. Cancellation asks the service to void an unused key or reveal the cash-out already admitted.",
+      sale: "Resuming checks the same quoted sale. Cancellation asks the host to void an unused key or reveal the sale already admitted.",
     },
     resume: { checkout: "Resume that payment", cashOut: "Resume that cash-out", sale: "Resume that sale" },
-    discard: "Discard it and start a new request",
+    discard: "Check or cancel request",
     discarded: "The unconfirmed request was discarded. Enter an amount to start a new one.",
     voided: "That payment was cancelled with the payment service, so nothing can be paid under it. Enter an amount to start a new one.",
     revealed: "That payment may already have gone through, so it was kept instead of discarded. Nothing new will be charged; its status is below.",
@@ -360,7 +362,7 @@ export const defaultMoneyMessages: MoneyMessages = {
   common: {
     refresh: "Refresh",
     retryAfter: seconds => `Try again in ${seconds} seconds.`,
-    genericRefusal: "That did not go through. Nothing was moved.",
+    genericRefusal: "This call could not continue. Check any saved request before starting another.",
     unknownCurrency: "Amounts in this currency cannot be entered here, so nothing was sent.",
     amountUnavailable: "—",
   },

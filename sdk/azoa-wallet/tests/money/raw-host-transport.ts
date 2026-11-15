@@ -62,6 +62,7 @@ export function rawHostTransport(node: NodeEmulator): AzoaMoneyTransport {
       void: requestKey => call("POST", `${checkout}/requests/${encodeURIComponent(requestKey)}/void`),
     },
     cashOut: {
+      void: requestKey => call("POST", `${payouts}/requests/${encodeURIComponent(requestKey)}/void`),
       availability: () => call("GET", `${payouts}/availability`),
       destination: () => call("GET", `${payouts}/account`),
       beginDestinationSetup: () => call("POST", `${payouts}/account`),

@@ -52,3 +52,10 @@ green is the sweep's job (`round4-lane-L6-verification.md` lists the ones red on
 `Inventory/StoreFamilyGuardInventoryTests`: every store family that commits a BEGIN…COMMIT batch names one THROW-marker
 case (typed refusal, nothing partial) and one duplicate/replay case (one winner), or a gap with its owner. The gaps
 are the remaining fixture debt, listed in the lane record for the sweep.
+
+`MemberHandoffStoreGuardTests` proves inactive/stale binding rollback and preserves the
+winning invite when a losing resend's retirement precedes its failed version CAS. The
+hostile external correlation persists literally. `FiatPayoutLegacyFenceGuardTests` inserts
+a real legacy payout after the void preread, forwards the unchanged transaction, records
+its real THROW and verifies the void fence rolled back before the unchanged payout is
+revealed. Neither fixture fabricates a database response or suppresses validation.

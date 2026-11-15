@@ -88,3 +88,14 @@ The allowlist must equal the `childCredentialScope`/`childSigningScopes` rows in
 The tenant-provisioned implied grant also covers `swap:sign` for the W5.1 reserve exchange, computed
 at check time from its reserved participation-ref prefix rather than stored. Rule, rationale and the
 `transfer:sign` exclusion: `Core/AGENTS.md` §consent-scope-coverage.
+
+## Handoff grant admission
+
+Every first-party grant, withdrawal and revocation requires the signed exact `auth_cut`
+when the user has a watermark, including the generic consent route. Issuer and verifier
+use `AuthWatermark.FormatCut` and ordinal equality; missing, duplicate, malformed and
+older cuts fail closed. Legacy users without a watermark retain their existing access.
+`AdmitHandoffAsync` validates target/tenant/scopes/expiry/command id
+and locks the approving descriptor plus current claimed-user watermark inside the grant
+transaction. Old first-party credentials cannot exploit the generic one-second timestamp
+grace. Request status is historical; revocation still wins at every live consent fence.
