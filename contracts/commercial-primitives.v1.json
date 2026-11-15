@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azoa.ardanova.com/contracts/commercial-primitives.v1.json",
+  "title": "AZOA Commercial & Access Primitives Contract v1",
+  "description": "Shared contract defining signed access links, Identomat KYC verification sessions with graceful credential deferral, commercial invoices, payment requests, ownership receipts, and account documents/reports.",
+  "version": "1.0.0",
+  "$defs": {
+    "AccessLinkScope": {
+      "type": "string",
+      "enum": [
+        "kyc",
+        "consent",
+        "add_funds",
+        "cash_out",
+        "invoice_pay",
+        "receipt_view",
+        "statement_view"
+      ]
+    },
+    "SignedAccessLink": {
+      "type": "object",
+      "required": [
+        "linkId",
+        "externalSubject",
+        "scope",
+        "signedUrl",
+        "signature",
+        "expiresAt",
+        "provider",
+        "deferralStatus"
+      ],
+      "properties": {
+        "linkId": { "type": "string" },
+        "externalSubject": { "type": "string" },
+        "scope": { "$ref": "#/$defs/AccessLinkScope" },
+        "targetResourceId": { "type": ["string", "null"] },
+        "returnUrl": { "type": ["string", "null"] },
+        "signedUrl": { "type": "string" },
+        "signature": { "type": "string" },
+        "rideAlongToken": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "provider": { "type": "string" },
+        "deferralStatus": {
+          "type": "string",
+          "enum": ["active", "deferred_credentials", "sandbox_preview"]
+        },
+        "deferredReason": { "type": ["string", "null"] }
+      }
+    },
+    "IdentomatSessionStatus": {
+      "type": "object",
+      "required": ["provider", "status", "deferralLogged"],
+      "properties": {
+        "provider": { "type": "string", "const": "Identomat" },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Pending",
+            "PendingVendorCredentials",
+            "UnderReview",
+            "Approved",
+            "Rejected"
+          ]
+        },
+        "sessionId": { "type": ["string", "null"] },
+        "verificationUrl": { "type": ["string", "null"] },
+        "signedAccessUrl": { "type": ["string", "null"] },
+        "deferralLogged": { "type": "boolean" },
+        "deferredReason": { "type": ["string", "null"] },
+        "deferralLoggedAt": { "type": ["string", "null"], "format": "date-time" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "InvoiceLineItem": {
+      "type": "object",
+      "required": ["description", "quantity", "unitPriceMinorUnits", "amountMinorUnits"],
+      "properties": {
+        "description": { "type": "string" },
+        "quantity": { "type": "integer", "minimum": 1 },
+        "unitPriceMinorUnits": { "type": "integer", "minimum": 0 },
+        "amountMinorUnits": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "CommercialInvoiceStatus": {
+      "type": "string",
+      "enum": ["draft", "open", "paid", "void", "expired"]
+    },
+    "CommercialInvoice": {
+      "type": "object",
+      "required": [
+        "id",
+        "invoiceNumber",
+        "issuerSubject",
+        "payerSubject",
+        "currencyCode",
+        "subtotalMinorUnits",
+        "feeMinorUnits",
+        "totalMinorUnits",
+        "lineItems",
+        "status",
+        "createdAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "title": { "type": "string" },
+        "issuerSubject": { "type": "string" },
+        "payerSubject": { "type": "string" },
+        "currencyCode": { "type": "string" },
+        "subtotalMinorUnits": { "type": "integer", "minimum": 0 },
+        "feeMinorUnits": { "type": "integer", "minimum": 0 },
+        "totalMinorUnits": { "type": "integer", "minimum": 0 },
+        "tokenEquivalentUnits": { "type": ["string", "null"] },
+        "lineItems": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/InvoiceLineItem" }
+        },
+        "status": { "$ref": "#/$defs/CommercialInvoiceStatus" },
+        "dueAt": { "type": ["string", "null"], "format": "date-time" },
+        "paymentLinkUrl": { "type": ["string", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "paidAt": { "type": ["string", "null"], "format": "date-time" },
+        "voidedAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "PaymentRequestRecord": {
+      "type": "object",
+      "required": [
+        "id",
+        "requestNumber",
+        "requesterSubject",
+        "payerSubject",
+        "currencyCode",
+        "amountMinorUnits",
+        "status",
+        "createdAt"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "requestNumber": { "type": "string" },
+        "title": { "type": "string" },
+        "requesterSubject": { "type": "string" },
+        "payerSubject": { "type": "string" },
+        "currencyCode": { "type": "string" },
+        "amountMinorUnits": { "type": "integer", "minimum": 1 },
+        "tokenEquivalentUnits": { "type": ["string", "null"] },
+        "memo": { "type": ["string", "null"] },
+        "status": { "$ref": "#/$defs/CommercialInvoiceStatus" },
+        "dueAt": { "type": ["string", "null"], "format": "date-time" },
+        "paymentLinkUrl": { "type": ["string", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "paidAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "OwnershipReceiptDocument": {
+      "type": "object",
+      "required": [
+        "receiptId",
+        "receiptNumber",
+        "allocationOrSaleId",
+        "holderSubject",
+        "holderClass",
+        "assetSymbol",
+        "unitsFormatted",
+        "fiatMinorUnits",
+        "contentHash",
+        "issuedAt",
+        "verificationStatus"
+      ],
+      "properties": {
+        "receiptId": { "type": "string" },
+        "receiptNumber": { "type": "string" },
+        "allocationOrSaleId": { "type": "string" },
+        "holderSubject": { "type": "string" },
+        "holderClass": {
+          "type": "string",
+          "enum": ["CONTRIBUTOR", "INVESTOR", "FOUNDER", "MEMBER"]
+        },
+        "assetSymbol": { "type": "string" },
+        "assetResourceId": { "type": ["string", "null"] },
+        "unitsFormatted": { "type": "string" },
+        "fiatMinorUnits": { "type": "integer", "minimum": 0 },
+        "currencyCode": { "type": "string" },
+        "chainTxHash": { "type": ["string", "null"] },
+        "contentHash": { "type": "string" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["verified", "recorded_pending_chain", "sandbox_simulated"]
+        }
+      }
+    },
+    "AccountDocumentType": {
+      "type": "string",
+      "enum": [
+        "monthly_statement",
+        "payout_ledger_report",
+        "ownership_certificate",
+        "kyc_consent_attestation",
+        "tax_activity_summary"
+      ]
+    },
+    "AccountDocumentReport": {
+      "type": "object",
+      "required": [
+        "documentId",
+        "subject",
+        "documentType",
+        "title",
+        "summaryMetrics",
+        "contentHash",
+        "generatedAt"
+      ],
+      "properties": {
+        "documentId": { "type": "string" },
+        "subject": { "type": "string" },
+        "documentType": { "$ref": "#/$defs/AccountDocumentType" },
+        "title": { "type": "string" },
+        "periodStart": { "type": ["string", "null"], "format": "date-time" },
+        "periodEnd": { "type": ["string", "null"], "format": "date-time" },
+        "summaryMetrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        },
+        "contentHash": { "type": "string" },
+        "downloadUrl": { "type": ["string", "null"] },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ProviderDeferralEntry": {
+      "type": "object",
+      "required": [
+        "id",
+        "provider",
+        "capability",
+        "reasonCode",
+        "message",
+        "loggedAt",
+        "status"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "provider": { "type": "string" },
+        "capability": { "type": "string" },
+        "reasonCode": { "type": "string" },
+        "message": { "type": "string" },
+        "missingConfigurationKeys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "loggedAt": { "type": "string", "format": "date-time" },
+        "status": {
+          "type": "string",
+          "enum": ["deferred", "resolved"]
+        }
+      }
+    }
+  }
+}
