@@ -88,7 +88,7 @@ export default function RolesPage() {
             An <strong>operator</strong> (JWT <code className="rounded bg-muted px-1 py-0.5 font-mono">operator:admin</code>) can
             assign <em>any</em> of the three roles, including <strong>manager</strong> — this is how the very first
             manager is promoted. A <strong>manager</strong> can then grant only <code className="rounded bg-muted px-1 py-0.5 font-mono">developer</code>{' '}
-            and <code className="rounded bg-muted px-1 py-0.5 font-mono">user</code>. Ordinary users and developers cannot assign roles.
+            and <code className="rounded bg-muted px-1 py-0.5 font-mono">user</code>. Ordinary users and developers cannot assign roles.{" "}
             <br />
             <span className="text-xs">You must be signed in as an operator (or manager) for this to succeed.</span>
           </CardDescription>

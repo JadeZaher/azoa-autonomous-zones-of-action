@@ -40,7 +40,7 @@ export default function AuthLayout({
         {/* Statement */}
         <div className="relative z-10 space-y-8">
           <h2 className="max-w-md text-4xl font-bold leading-[0.98] tracking-[-0.02em]">
-            One user.
+            One user.{" "}
             <br />
             Every economy.
           </h2>

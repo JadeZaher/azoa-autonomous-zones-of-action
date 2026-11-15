@@ -48,7 +48,7 @@ export default function Federation() {
       <header className="az-fed-header">
         <div className="az-wrap">
           <div className="az-eyebrow">FEDERATION · ARCHITECTURE SKETCH</div>
-          <h1 className="az-h1">Zones that govern<br />themselves.</h1>
+          <h1 className="az-h1">Zones that govern{" "}<br />themselves.</h1>
           <p className="az-fed-lede">
             AZOA&apos;s federation model lets autonomous organizations run isolated action graphs and exchange only consent-scoped proofs across zone boundaries. Single-zone workflows are active in the repository today; multi-zone federation is queued on the roadmap.
           </p>

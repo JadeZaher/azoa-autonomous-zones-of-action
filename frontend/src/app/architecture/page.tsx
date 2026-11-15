@@ -13,7 +13,7 @@ export default function Architecture() {
       <header className="az-fed-header">
         <div className="az-wrap">
           <div className="az-eyebrow">ARCHITECTURE</div>
-          <h1 className="az-h1">A workflow the engine<br />can verify.</h1>
+          <h1 className="az-h1">A workflow the engine{" "}<br />can verify.</h1>
           <p className="az-fed-lede">
             AZOA separates workflow orchestration from downstream adapters: durable graphs handle retries, consent, version pinning, and pause-and-resume state while clearing partners stay swappable behind narrow interfaces.
           </p>

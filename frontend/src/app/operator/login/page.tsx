@@ -94,7 +94,7 @@ export default function OperatorLoginPage() {
                         </span>
                     </Link>
                     <p className="mt-20 max-w-lg text-4xl font-semibold leading-tight">
-                        Operate the node.
+                        Operate the node.{" "}
                         <br />
                         Keep human judgment visible.
                     </p>

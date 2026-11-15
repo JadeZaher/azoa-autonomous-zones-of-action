@@ -184,7 +184,7 @@ export default function Home() {
           <div className="az-kicker">03 — GUARANTEES</div>
           <div>
             <h2>
-              Silence is never
+              Silence is never{" "}
               <br />
               treated as yes.
             </h2>
