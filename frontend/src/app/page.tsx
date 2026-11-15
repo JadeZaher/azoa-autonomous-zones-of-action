@@ -95,9 +95,9 @@ export default function Home() {
         <div className="az-hero-content">
           <div className="az-eyebrow">AUTONOMOUS ZONES OF ACTION</div>
           <h1 className="az-h1">
-            Durable
+            Durable{" "}
             <br />
-            workflows.
+            workflows.{" "}
             <br />
             Fail closed.
           </h1>
@@ -129,7 +129,7 @@ export default function Home() {
           <div className="az-shead">
             <div className="az-kicker">01 — WORKLOADS</div>
             <h2 className="az-h2">
-              Explicit state machines
+              Explicit state machines{" "}
               <br />
               for risky coordination.
             </h2>
