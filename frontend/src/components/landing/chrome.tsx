@@ -299,6 +299,7 @@ export function LandingFooter() {
           <Link href="/news" className="az-flink">NEWS</Link>
           <Link href="/notes" className="az-flink">NOTES</Link>
           <Link href="/federation" className="az-flink">FEDERATION</Link>
+          <Link href="/contact" className="az-flink">CONTACT</Link>
           <Link href="/terms" className="az-flink">TERMS</Link>
           <Link href="/privacy" className="az-flink">PRIVACY</Link>
           <Link href="/feed.xml" className="az-flink">FEED</Link>
