@@ -1,10 +1,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { jsonLdGraph, publicDocuments } from '@/content/public-documents'
 import ContactPage from '@/app/contact/page'
+import PrivacyPage from '@/app/privacy/page'
+import TermsPage from '@/app/terms/page'
 import NotFound, { metadata as notFoundMetadata } from '@/app/not-found'
 
 vi.mock('@/lib/azoa-auth', () => ({
@@ -117,6 +120,16 @@ describe('operator contact and compliance boundaries', () => {
     expect(screen.getByRole('link', { name: OPERATOR.email }).getAttribute('href')).toBe(`mailto:${OPERATOR.email}`)
     expect(screen.getByText(/There is no form on this page/)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'CONTACT' }).getAttribute('href')).toBe('/contact')
+  })
+
+  it('emits the literal operator address in the rendered HTML', () => {
+    const mailto = `<!--email_off--><a href="mailto:${OPERATOR.email}">${OPERATOR.email}</a><!--email_on-->`
+    for (const html of [ContactPage, PrivacyPage, TermsPage].map((Page) => renderToStaticMarkup(<Page />))) {
+      expect(html).toContain(OPERATOR.email)
+      expect(html).toContain(mailto)
+      expect(html).not.toContain('/cdn-cgi/l/email-protection')
+    }
+    expect(renderToStaticMarkup(<OperatorContact />)).toContain(mailto)
   })
 
   it('renders a noindex not-found page with links to real public pages', () => {

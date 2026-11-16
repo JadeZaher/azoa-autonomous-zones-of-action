@@ -62,12 +62,20 @@ export function LegalSection({
   )
 }
 
+// JSX comments never reach the response. Cloudflare's HTML scanner leaves a mailto
+// alone only when these markers are actually present in the served markup.
+const OPERATOR_MAILTO_HTML = `<!--email_off--><a href="mailto:${OPERATOR.email}">${OPERATOR.email}</a><!--email_on-->`
+
+export function OperatorEmail() {
+  return <p dangerouslySetInnerHTML={{ __html: OPERATOR_MAILTO_HTML }} />
+}
+
 export function OperatorContact() {
   return (
     <>
       <p>{OPERATOR.name}</p>
       <p>{OPERATOR.contact}</p>
-      <p><a href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a></p>
+      <OperatorEmail />
       <p><a href={OPERATOR.phoneHref}>{OPERATOR.phone}</a></p>
       <p>{OPERATOR.address}</p>
     </>
