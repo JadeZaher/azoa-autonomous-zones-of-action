@@ -4,79 +4,87 @@ import Link from 'next/link'
 import { GITHUB, LandingHead, LandingNav, LandingFooter } from '@/components/landing/chrome'
 import { HeroDag } from '@/components/landing/hero-dag'
 
+// AZOA landing page — vision-first overview of what you can build with AZOA
+// and why it exists. Shared chrome lives in components/landing/chrome.
+
 const DOMAINS = [
   {
-    n: '01',
-    name: 'Payroll & Schedules',
-    desc: 'Timeouts happen mid-batch when downstream partners stall. An action graph gives every payee transfer a durable idempotency key and a paused state you can resume safely.',
+    title: 'Financial workflows',
+    body: 'Payouts, escrows, grants, settlements. Processes that branch on conditions, wait for the real world, and never lose a step or spend one twice.',
+    icon: (
+      <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <path d="M6 36 L20 20 L30 28 L42 10" fill="none" stroke="#16120D" strokeWidth="2" />
+        <circle cx="42" cy="10" r="4" fill="#C8501E" />
+      </svg>
+    ),
   },
   {
-    n: '02',
-    name: 'Supplier Settlement',
-    desc: 'Bind deliverables, inspection gates, and split approvals into one version-pinned workflow so a partial completion triggers explicit compensating actions rather than manual spreadsheet cleanup.',
+    title: 'Circular economies',
+    body: 'Materials, credits, and obligations that loop. Tracked from first issue to final return — so what goes around genuinely comes around.',
+    icon: (
+      <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <circle cx="24" cy="24" r="16" fill="none" stroke="#16120D" strokeWidth="2" />
+        <path d="M40 24 L44 19 M40 24 L35 20" fill="none" stroke="#C8501E" strokeWidth="2" />
+      </svg>
+    ),
   },
   {
-    n: '03',
-    name: 'Grants & Milestones',
-    desc: 'Park runs cheaply in AwaitingSignal or AwaitingTimer until reviewers publish evidence and cohorts pass quorum, keeping the entire approval audit slice attached to the run.',
+    title: 'Operational processes',
+    body: 'Approvals, procurement, logistics — the everyday choreography of an organization, made durable and auditable instead of ad-hoc.',
+    icon: (
+      <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <rect x="6" y="20" width="10" height="10" fill="none" stroke="#16120D" strokeWidth="2" />
+        <rect x="32" y="8" width="10" height="10" fill="none" stroke="#16120D" strokeWidth="2" />
+        <rect x="32" y="32" width="10" height="10" fill="#C8501E" />
+        <path d="M16 25 L32 13 M16 25 L32 37" stroke="#16120D" strokeWidth="2" />
+      </svg>
+    ),
   },
   {
-    n: '04',
-    name: 'Escrow Reserves',
-    desc: 'Separate authorization from settlement using two-phase holds, bounded retries, and fail-closed version hashes so concurrent edits never execute under stale terms.',
+    title: 'Grants and bounties',
+    body: 'Applications, milestones, payouts — funding that releases only when the work is verified, and refunds when it is not.',
+    icon: (
+      <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <path d="M24 6 L42 24 L24 42 L6 24 Z" fill="none" stroke="#16120D" strokeWidth="2" />
+        <circle cx="24" cy="24" r="5" fill="#C8501E" />
+      </svg>
+    ),
   },
 ]
 
 const PRIMITIVES = [
   {
-    tag: 'WAIT / RESUME',
-    name: 'Suspendable runs',
-    desc: 'Park long-lived workflows in Suspended, AwaitingSignal, or AwaitingTimer for hours or weeks, then resume safely across server restarts.',
+    tag: 'IDENTITY',
+    title: 'A user you actually own',
+    body: 'Apps act for you only with consent you can see — and revoke — at any moment.',
   },
   {
-    tag: 'FAIL / CLOSED',
-    name: 'Fail-closed guards',
-    desc: 'Missing disclosures, revoked consent, or stale published version hashes abort execution with an explicit refusal rather than logging a quiet warning.',
+    tag: 'ACTIONS',
+    title: 'Durable graphs of action',
+    body: 'They wait, resume, and reconcile against reality before acting. A retried step settles once, or not at all.',
   },
   {
-    tag: 'POLICY / PRIVACY',
-    name: 'Consent toggles',
-    desc: 'Record who granted consent, for which purpose, and let withdrawal take effect immediately for downstream steps.',
+    tag: 'HOLONS',
+    title: 'Value as nested wholes',
+    body: 'Credits, rights, units, things — anything that can be held, split, and moved.',
   },
   {
-    tag: 'SAGA / RECOVERY',
-    name: 'Compensating actions',
-    desc: 'When step four of a multi-party workflow fails, invoke declared compensating steps in reverse order instead of ad-hoc repair scripts.',
+    tag: 'RAILS',
+    title: 'Networks and fiat, one seam',
+    body: "A step doesn't care where it settles. Digital networks and banks sit behind the same door.",
   },
   {
-    tag: 'RETRY / KEY',
-    name: 'Idempotency keys',
-    desc: 'Every run start, advance, and signal carries an explicit caller key so dropped HTTP responses converge to the original result.',
-  },
-  {
-    tag: 'SWEEP / STATE',
-    name: 'Reconciliation loop',
-    desc: 'Ambiguous external timeouts transition to AwaitingReconciliation so sweeps inspect actual destination truth before deciding whether to retry or fail.',
+    tag: 'BUNDLES',
+    title: 'Whole apps, generated',
+    body: 'Action graph bundles scaffold new products on top of identity and actions. Nobody rebuilds the plumbing.',
   },
 ]
 
 const TRUST = [
-  {
-    n: '01 / SETTLE ONCE',
-    desc: 'Save the first recorded outcome by idempotency key and re-probe timed-out destinations before resending, turning network silence into a settled yes or no.',
-  },
-  {
-    n: '02 / FAIL CLOSED',
-    desc: 'Every transition checks current authority, consent state, and published action hash. Anything unreadable stops at the gate.',
-  },
-  {
-    n: '03 / RECONCILE FIRST',
-    desc: 'Parked runs do not spin on blind timer retries. Operator sweeps and targeted probes confirm external state before advancing.',
-  },
-  {
-    n: '04 / ESCALATE AMBIGUITY',
-    desc: 'When a provider returns an indeterminate state, hold the run for human review instead of guessing.',
-  },
+  { label: 'EXACTLY ONCE', body: 'A retried or duplicated step settles once, or not at all. Never twice.' },
+  { label: 'FAIL CLOSED', body: "Anything that can't be verified is refused — not waved through." },
+  { label: 'RECONCILE, NEVER GUESS', body: 'The engine re-checks the real world before every irreversible move.' },
+  { label: 'ESCALATE TO A HUMAN', body: 'Genuinely ambiguous decisions are surfaced to an operator — never faked.' },
 ]
 
 export default function Home() {
@@ -85,71 +93,71 @@ export default function Home() {
       <LandingHead />
       <LandingNav />
 
-      <section className="az-hero">
-        <HeroDag ink="#16120D" accent="#A63D15" />
+      <header className="az-hero">
+        <HeroDag ink="#16120D" accent="#C8501E" speed={1} density={1} />
         <div className="az-hero-fade" />
-        <div className="az-hero-badge">
-          <span className="az-dot" />
-          <span>APACHE-2.0 · ACTION GRAPH ENGINE</span>
-        </div>
         <div className="az-hero-content">
           <div className="az-eyebrow">AUTONOMOUS ZONES OF ACTION</div>
           <h1 className="az-h1">
-            Durable{" "}
+            One engine.{" "}
             <br />
-            workflows.{" "}
-            <br />
-            Fail closed.
+            Every kind of&nbsp;economy.
           </h1>
           <div className="az-hero-row">
             <p className="az-hero-lede">
-              Write multi-step workflows that pause across human sign-offs, carry idempotency keys across retries, reconcile timed-out calls against live state, and refuse to proceed when consent or authority is missing.
+              AZOA models financial workflows, circular economies, operational processes, and grant programs as living graphs of action. Built from the same primitives. Interoperable by default.
             </p>
             <div className="az-hero-cta">
-              <Link href="/workflows" className="az-btn az-btn--dark az-btn--md">
-                WORKFLOW PATTERNS →
-              </Link>
-              <Link href="/architecture" className="az-btn az-btn--outline az-btn--md">
-                ARCHITECTURE →
-              </Link>
+              <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--md">
+                VIEW ON GITHUB ↗
+              </a>
+              <a href="#domains" className="az-btn az-btn--outline az-btn--md">
+                HOW IT WORKS ↓
+              </a>
             </div>
           </div>
         </div>
-      </section>
+        <div className="az-hero-badge">
+          <span className="az-dot" />
+          LIVE — AGENTS EXECUTING AN ACTION GRAPH
+        </div>
+      </header>
 
       <div className="az-ticker">
-        <span>4 EXECUTION GUARANTEES</span>
-        <span>EXPLICIT IDEMPOTENCY KEYS</span>
-        <span>RECONCILE BEFORE RETRY</span>
-        <span>HOSTED DEMO · SIMULATED PAYLOADS</span>
+        <span>FINANCE</span>
+        <span>/</span>
+        <span>CIRCULARITY</span>
+        <span>/</span>
+        <span>OPERATIONS</span>
+        <span>/</span>
+        <span>GRANTS</span>
       </div>
 
       <section id="domains">
-        <div className="az-wrap">
-          <div className="az-shead">
-            <div className="az-kicker">01 — WORKLOADS</div>
-            <h2 className="az-h2">
-              Explicit state machines{" "}
-              <br />
-              for risky coordination.
-            </h2>
-          </div>
-
-          <div className="az-domains">
-            {DOMAINS.map((d) => (
-              <div className="az-domain" key={d.n}>
-                <div className="mono">{d.n}</div>
-                <h3>{d.name}</h3>
-                <p>{d.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="az-domains-note">
-            <p>
-              Built inside the <a href="https://primusneo.com" className="az-accent">PrimusNeo</a> engineering stack and tested against real operational workloads in the <a href="https://ardanova.com" className="az-accent">ArdaNova</a> workspace pilot.
-            </p>
-          </div>
+        <div className="az-shead az-wrap">
+          <div className="az-kicker">01 — DOMAINS</div>
+          <h2 className="az-h2">
+            Four economies.{" "}
+            <br />
+            One grammar.
+          </h2>
+        </div>
+        <div className="az-domains">
+          {DOMAINS.map((d) => (
+            <div className="az-domain" key={d.title}>
+              {d.icon}
+              <h3>{d.title}</h3>
+              <p>{d.body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="az-domains-note">
+          <p>
+            Each of these is a graph of steps over the same primitives. Which means{' '}
+            <span className="az-accent">a verified milestone can pay a supplier</span>. A circular credit can settle a payroll. Built in the{' '}
+            <a href="https://primusneo.com" className="az-accent">PrimusNeo</a>{' '}
+            lab, anything can talk to anything.
+          </p>
         </div>
       </section>
 
@@ -157,23 +165,25 @@ export default function Home() {
         <div className="az-wrap">
           <div className="az-shead">
             <div className="az-kicker">02 — PRIMITIVES</div>
-            <h2 className="az-h2">Six workflow guards built into the run loop.</h2>
+            <h2 className="az-h2">
+              The five moves{" "}
+              <br />
+              underneath it all.
+            </h2>
           </div>
-
           <div className="az-prim-grid">
             {PRIMITIVES.map((p) => (
-              <div className="az-prim" key={p.name}>
+              <div className="az-prim" key={p.tag}>
                 <div className="az-prim-tag">{p.tag}</div>
-                <div className="az-prim-title">{p.name}</div>
-                <p>{p.desc}</p>
+                <div className="az-prim-title">{p.title}</div>
+                <p>{p.body}</p>
               </div>
             ))}
           </div>
-
           <div className="az-prim-foot">
-            <p>DESIGNED IN THE OPEN · TESTED AGAINST FAILURE MODES · ZERO SILENT PASSES</p>
-            <Link href="/workflows" className="az-btn az-btn--outline-inv az-btn--md">
-              READ WORKFLOW PATTERNS →
+            <p>MULTI-NETWORK · MULTI-ACCOUNT · FIAT-CONNECTED · SELF-HOSTED</p>
+            <Link href="/architecture" className="az-btn az-btn--outline-inv az-btn--md">
+              FULL ARCHITECTURE →
             </Link>
           </div>
         </div>
@@ -181,18 +191,18 @@ export default function Home() {
 
       <section className="az-trust">
         <div className="az-trust-grid">
-          <div className="az-kicker">03 — GUARANTEES</div>
+          <div className="az-kicker">03 — TRUST</div>
           <div>
             <h2>
-              Silence is never{" "}
+              Honest by{" "}
               <br />
-              treated as yes.
+              construction.
             </h2>
             <div className="az-trust-items">
               {TRUST.map((t) => (
-                <div className="az-trust-item" key={t.n}>
-                  <div className="lbl">{t.n}</div>
-                  <p>{t.desc}</p>
+                <div className="az-trust-item" key={t.label}>
+                  <div className="lbl">{t.label}</div>
+                  <p>{t.body}</p>
                 </div>
               ))}
             </div>
@@ -203,46 +213,49 @@ export default function Home() {
       <section id="next">
         <div className="az-wrap">
           <div className="az-shead">
-            <div className="az-kicker">04 — EXPLORE FURTHER</div>
-            <h2 className="az-h2">Patterns, architecture, and live pilots.</h2>
+            <div className="az-kicker">04 — NEXT</div>
+            <h2 className="az-h2">What&apos;s coming.</h2>
           </div>
-
           <div className="az-next-grid">
-            <Link href="/workflows" className="az-next-card az-next-card--outline">
-              <div className="az-next-tag">FIELD NOTES &amp; PATTERNS</div>
-              <div className="az-next-title">Workflows</div>
-              <p>Sixteen engineering essays on idempotency, reconciliation sweeps, consent records, least privilege, and saga compensation.</p>
-              <span className="az-next-more">BROWSE PATTERNS →</span>
-            </Link>
             <Link href="/federation" className="az-next-card az-next-card--outline">
-              <div className="az-next-tag">ZONE BOUNDARIES</div>
+              <div className="az-next-tag">ON ITS WAY</div>
               <div className="az-next-title">Federation</div>
-              <p>How independent workspaces preserve local records, share verifiable proofs across boundaries, and keep user portability intact.</p>
-              <span className="az-next-more">EXPLORE FEDERATION →</span>
+              <p>
+                Zones that govern themselves — and still talk to each other. Distributed governance means freedom, privacy, and agency.
+              </p>
+              <div className="az-next-more">READ THE VISION →</div>
             </Link>
-            <a href="https://ardanova.com" target="_blank" rel="noopener noreferrer" className="az-next-card az-next-card--dark">
-              <div className="az-next-tag">WORKSPACE PILOT</div>
+            <a
+              href="https://ardanova.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="az-next-card az-next-card--dark"
+            >
+              <div className="az-next-tag">COMING SOON — FIRST PILOT</div>
               <div className="az-next-title">ArdaNova</div>
-              <p>A collaborative operations workspace piloting AZOA action graphs for contributor payouts, escrow workflows, and verifiable permissions.</p>
-              <span className="az-next-more">VISIT ARDANOVA ↗</span>
+              <p>
+                The new creator economy. A fair deal for the digital age — the first zone built on AZOA.
+              </p>
+              <div className="az-next-more">MEET THE PILOT ↗</div>
             </a>
           </div>
         </div>
       </section>
 
       <section className="az-cta">
-        <div className="az-cta-kicker">SELF-HOST OR INSPECT</div>
-        <h2>Read the source.</h2>
-        <p>Clone the Apache-2.0 repository and TypeScript SDK, or sign in to explore the interactive console with simulated payloads.</p>
+        <div className="az-cta-kicker">APACHE-2.0 · OPEN SOURCE</div>
+        <h2>
+          Run it. Audit it.{" "}
+          <br />
+          Own it.
+        </h2>
+        <p>AZOA is meant to be self-hosted and extended. The engine is yours, end to end.</p>
         <div className="az-cta-row">
           <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--lg">
             VIEW ON GITHUB ↗
           </a>
-          <Link href="/architecture" className="az-btn az-btn--outline az-btn--lg">
-            ARCHITECTURE →
-          </Link>
           <Link href="/login" className="az-btn az-btn--outline az-btn--lg">
-            OPEN CONSOLE →
+            LOGIN →
           </Link>
         </div>
       </section>

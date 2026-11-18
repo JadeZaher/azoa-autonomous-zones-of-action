@@ -42,7 +42,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = page?.title ?? (path ? 'AZOA' : 'AZOA — Autonomous Zones of Action')
   const description = page?.description ?? (path
     ? 'This AZOA route is not a public page.'
-    : 'Open-source engine for durable workflows: idempotent retries, reconciliation sweeps, consent records, and fail-closed execution.')
+    : 'Open-source engine for financial workflows, circular economies, operational processes, and grants — built from shared, trustworthy primitives.')
   return {
     metadataBase: new URL(SITE),
     title,

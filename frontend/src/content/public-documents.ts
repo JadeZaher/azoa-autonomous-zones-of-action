@@ -100,26 +100,26 @@ export function formatPublicDate(iso: string): string {
 }
 
 const DEFAULT_DESCRIPTION =
-  'Open-source workflow engine for durable action graphs: explicit idempotency keys, reconciliation sweeps, consent records, and fail-closed controls.'
+  'Open-source engine for financial workflows, circular economies, operational processes, and grants — built from shared, trustworthy primitives.'
 
 export const ESSAYS = [
   {
     slug: 'settle-once-or-not-at-all',
     title: 'A retried step should settle once, or not at all',
     description:
-      'A timeout is network silence, not a verdict. How AZOA binds retries to durable idempotency keys and active reconciliation sweeps.',
+      'A timeout is silence, not a decision. Why AZOA gives multi-step processes a shared memory and checks the real world before acting twice.',
     publishedAt: '2026-11-09',
     summary:
-      'Why optimistic retry loops fail on network timeouts, and how explicit idempotency keys plus AwaitingReconciliation resolve ambiguous responses.',
+      'Why simple retries cause double payments or lost work, and how AZOA resolves uncertain timeouts cleanly.',
   },
   {
     slug: 'fail-closed-or-it-isnt-a-control',
     title: "Fail closed, or it isn't a control",
     description:
-      'A safeguard that logs a warning and continues is a decoration. How AZOA enforces fail-closed version pinning, authority checks, and consent gates.',
+      'A safeguard that logs a quiet warning and proceeds is only decoration. Why AZOA refuses unverified steps and keeps humans in charge of ambiguity.',
     publishedAt: '2026-11-09',
     summary:
-      'Why unreadable permissions, stale version hashes, and revoked consent must halt execution outright instead of writing quiet log warnings.',
+      'Why missing consent, changed terms, and unverified checks must stop a process outright rather than waving it through.',
   },
 ] as const
 
@@ -146,7 +146,7 @@ const MARKETING: PublicDocument[] = [
     path: '/architecture',
     title: 'Architecture — AZOA',
     description:
-      'How AZOA structures durable action graphs, version-pinned pre-flight consent, explicit idempotency keys, and swappable settlement adapters.',
+      'How AZOA combines self-owned identity, durable action graphs, nested value holons, unified settlement, and the operator pattern.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -155,7 +155,7 @@ const MARKETING: PublicDocument[] = [
     path: '/federation',
     title: 'Federation — AZOA',
     description:
-      'Architecture sketch for independent workspace zones that exchange consent-scoped verifiable records without central lock-in.',
+      'Self-governing zones built for freedom, privacy, and agency — and ArdaNova, the first creator-economy pilot on AZOA.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -191,7 +191,7 @@ const MARKETING: PublicDocument[] = [
     path: '/notes',
     title: 'Notes — AZOA',
     description:
-      'Engineering notes by Escherbridge on idempotency keys, reconciliation sweeps, and fail-closed design. Hosted demo runs simulated payloads.',
+      'Why AZOA exists: essays on settling steps once or not at all and failing closed when proof is missing.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -200,7 +200,7 @@ const MARKETING: PublicDocument[] = [
     path: '/blog',
     title: 'Blog — AZOA',
     description:
-      'Engineering blog and workflow pattern deep dives by Escherbridge on durable execution, consent guards, and fail-closed controls.',
+      'Essays and plain-language guides from Escherbridge on self-owned identity, durable workflows, and what you can build with AZOA.',
     kind: 'website',
     index: true,
     inSitemap: true,
@@ -209,7 +209,7 @@ const MARKETING: PublicDocument[] = [
     path: '/news',
     title: 'News — AZOA',
     description:
-      'Release milestones and engineering updates for the AZOA open-source workflow engine.',
+      'Announcements, release milestones, and pilot updates for AZOA as new pilots and capabilities ship.',
     kind: 'website',
     index: false,
     inSitemap: false,

@@ -87,14 +87,14 @@ describe('public documents', () => {
     expect(SIMULATION).toContain('fiat settlement')
   })
 
-  it('organizes workflows by guarantee with practitioner copy, bottom citations, and clean safety claims', () => {
+  it('organizes workflows in plain language with bottom citations and clean safety claims', () => {
     expect(ESSAYS).toHaveLength(2)
     expect(WORKFLOWS.map((workflow) => workflow.slug)).toEqual(EXPECTED_SLUGS)
     const index = indexBodyText()
     expect(index).toContain(WORKFLOW_INDEX.h1)
-    expect(blocksText(WORKFLOW_INDEX.blocks)).toContain('Idempotency & Sagas')
-    expect(blocksText(WORKFLOW_INDEX.blocks)).toContain('Consent & Access Control')
-    expect(blocksText(WORKFLOW_INDEX.blocks)).toContain('Audit & Fail-Closed Guards')
+    expect(blocksText(WORKFLOW_INDEX.blocks)).toContain('Reliable Money & Agreements')
+    expect(blocksText(WORKFLOW_INDEX.blocks)).toContain('Identity & Permission')
+    expect(blocksText(WORKFLOW_INDEX.blocks)).toContain('Trust, Waits & Clarity')
     expect(index).toContain('https://ardanova.com')
     expect(index).toContain('https://primusneo.com')
     for (const slug of EXPECTED_SLUGS) {
@@ -115,6 +115,9 @@ describe('public documents', () => {
       expect(text).not.toContain('ardanova.com/patterns')
       expect(text).not.toContain('never double-spend')
       expect(text).not.toContain('FIAT-BRIDGED')
+      expect(text).not.toContain('AwaitingReconciliation')
+      expect(text).not.toContain('expectedPublishedHash')
+      expect(text).not.toContain('WorkflowClient')
       expect(text.toLowerCase()).not.toContain('kyc is available')
       expect(text.toLowerCase()).not.toContain('live custody is')
       for (const source of workflow.sources) {
@@ -124,26 +127,23 @@ describe('public documents', () => {
 
     const bySlug = Object.fromEntries(WORKFLOWS.map((workflow) => [workflow.slug, workflow]))
     const settle = workflowBodyText(bySlug['settle-once']!)
-    expect(settle).toContain('Stripe API v1')
-    expect(settle).toContain('admi.002')
-    expect(settle).toContain('pacs.028')
-    expect(settle).toContain('Version 3.2 (June 2025)')
+    expect(settle).toContain('Stripe')
+    expect(settle).toContain('FedNow')
 
     const reconcile = workflowBodyText(bySlug['reconciliation-over-blind-retry']!)
-    expect(reconcile).toContain('AwaitingReconciliation')
-    expect(reconcile).toContain('WorkflowClient.reconcileRun')
+    expect(reconcile).toContain('source of truth')
+    expect(reconcile).toContain('ambiguous')
 
     const pinned = workflowBodyText(bySlug['version-pinned-execution']!)
-    expect(pinned).toContain('expectedPublishedHash')
-    expect(pinned).toContain('ActionEconomicManifest')
+    expect(pinned).toContain('fingerprint')
+    expect(pinned).toContain('updated terms')
 
     const durable = workflowBodyText(bySlug['durable-waits-and-signals']!)
-    expect(durable).toContain('AwaitingSignal')
-    expect(durable).toContain('AwaitingTimer')
-    expect(durable).toContain('stale thread')
+    expect(durable).toContain('cooling-off window')
+    expect(durable).toContain('stale signal')
 
     const safe = workflowBodyText(bySlug['safe-and-idempotent']!)
-    expect(safe).toContain('page?do=delete')
+    expect(safe).toContain('read-only views')
     expect(safe).toContain('https://www.rfc-editor.org/rfc/rfc9110.html')
   })
 

@@ -16,44 +16,44 @@ const GATE_COPY: Record<
   }
 > = {
   workflow: {
-    kicker: 'NEXT IN THE STACK',
-    title: 'Put the action graph in your own stack.',
+    kicker: 'BUILD WITH AZOA',
+    title: 'Use one engine across every kind of economy.',
     primaryHref: '/architecture',
-    primaryLabel: 'READ ARCHITECTURE →',
+    primaryLabel: 'FULL ARCHITECTURE →',
     secondaryHref: '/workflows',
-    secondaryLabel: 'ALL WORKFLOWS →',
-    pilotAction: 'inspect the console',
+    secondaryLabel: 'ALL GUIDES →',
+    pilotAction: 'open the workspace',
   },
   'workflows-index': {
     kicker: 'BUILD WITH AZOA',
-    title: 'Trace how the engine executes each guarantee.',
+    title: 'See how the five primitives fit together.',
     primaryHref: '/architecture',
-    primaryLabel: 'READ ARCHITECTURE →',
+    primaryLabel: 'FULL ARCHITECTURE →',
     secondaryHref: '/login',
-    secondaryLabel: 'OPEN CONSOLE →',
-    pilotAction: 'explore the interactive sandbox',
+    secondaryLabel: 'LOGIN →',
+    pilotAction: 'try the workspace',
   },
   architecture: {
-    kicker: 'PRACTICAL PATTERNS',
-    title: 'Read the workflow field notes or clone the source.',
+    kicker: 'EXPLORE FURTHER',
+    title: 'See what people build with AZOA.',
     primaryHref: '/workflows',
-    primaryLabel: 'WORKFLOW PATTERNS →',
+    primaryLabel: 'EXPLORE USE CASES →',
     secondaryHref: '/login',
-    secondaryLabel: 'OPEN CONSOLE →',
-    pilotAction: 'walk the live workflow patterns',
+    secondaryLabel: 'LOGIN →',
+    pilotAction: 'explore the workspace',
   },
   blog: {
-    kicker: 'FROM ESSAYS TO CODE',
-    title: 'Explore how AZOA enforces every guard in practice.',
+    kicker: 'BUILD WITH AZOA',
+    title: 'Run it, audit it, and own it end to end.',
     primaryHref: '/workflows',
-    primaryLabel: 'WORKFLOW PATTERNS →',
+    primaryLabel: 'EXPLORE USE CASES →',
     secondaryHref: '/architecture',
     secondaryLabel: 'ARCHITECTURE →',
-    pilotAction: 'open the interactive console',
+    pilotAction: 'open the workspace',
   },
 }
 
-/** Shared top-of-funnel call-to-action panel for AZOA public engineering pages. */
+/** Shared call-to-action panel for AZOA public pages. */
 export function WorkflowFunnelGate({ context = 'workflow' }: { context?: GateContext }) {
   const copy = GATE_COPY[context]
   return (
@@ -61,8 +61,8 @@ export function WorkflowFunnelGate({ context = 'workflow' }: { context?: GateCon
       <div className="az-kicker">{copy.kicker}</div>
       <h2 className="az-gate-title">{copy.title}</h2>
       <p className="az-gate-body">
-        Clone the Apache-2.0 engine and SDK, {copy.pilotAction} via{' '}
-        <Link href="/login">workspace sign-in</Link>, or see multi-party operations modelled in the{' '}
+        Self-host the open-source engine, {copy.pilotAction} through{' '}
+        <Link href="/login">account sign-in</Link>, or see how shared creative work runs in the{' '}
         <a href="https://ardanova.com" target="_blank" rel="noopener noreferrer">
           ArdaNova
         </a>{' '}

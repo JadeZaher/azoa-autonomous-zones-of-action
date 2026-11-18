@@ -3,39 +3,44 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { GITHUB, LandingHead, LandingNav, LandingFooter } from '@/components/landing/chrome'
-import { WorkflowFunnelGate } from '@/components/landing/workflow-gate'
+
+// AZOA Federation page — vision for self-governing zones and the ArdaNova pilot.
 
 const PILLARS = [
   {
     title: 'Freedom',
-    body: 'Each workspace zone preserves its own business rules and audit logs. No single central hub can silently rewrite historical agreements or unilaterally override zone policies.',
+    body: 'Every zone runs its own rules, its own records, and its own economy. No central operator to appease, no platform that can change the deal underneath you.',
   },
   {
     title: 'Privacy',
-    body: 'Workflow payloads executed inside a zone remain inside that zone by default. Only explicit consent-gated assertions or verifiable receipts cross zone boundaries.',
+    body: 'What happens inside a zone stays inside it. Only what a zone chooses to share crosses the boundary — under consent that its members control.',
   },
   {
     title: 'Agency',
-    body: 'Participants keep portable identities and verifiable credentials across workspaces — leave a zone, join another, or operate across several concurrently.',
+    body: 'Your user and your value travel with you. Leave a zone, join another, or belong to ten at once — your identity is yours, not theirs.',
   },
 ]
 
 const ARDANOVA: { label: string; body: ReactNode }[] = [
   {
-    label: 'COMPANION WORKSPACE',
+    label: 'CREATORS OWN THE UPSIDE',
+    body: "Work, audience, and earnings that belong to the people who make them — not to a platform's terms of service.",
+  },
+  {
+    label: 'BUILT ON AZOA',
     body: (
       <>
-        <a href="https://ardanova.com">ArdaNova</a> is a separate collaboration platform piloting AZOA action graphs for shared projects, role permissions, and milestone tracking.
+        The first zone to run on the engine: self-sovereign identity, durable workflows, and value that settles across networks and fiat alike. Explore{' '}
+        <a href="https://ardanova.com" target="_blank" rel="noopener noreferrer">
+          ArdaNova
+        </a>
+        .
       </>
     ),
   },
   {
-    label: 'STATUS',
-    body: 'Cross-zone federation and ArdaNova live settlement remain under active engineering development alongside the core single-zone runtime.',
-  },
-  {
-    label: 'SIMULATED ECONOMY',
-    body: 'ArdaNova pilot ledgers currently run simulated balances; hosted AZOA pages do not move customer funds or execute fiat payouts.',
+    label: 'PROOF, NOT PROMISE',
+    body: 'ArdaNova is the working demonstration that a fairer economy can run on open, self-hosted infrastructure.',
   },
 ]
 
@@ -47,10 +52,14 @@ export default function Federation() {
 
       <header className="az-fed-header">
         <div className="az-wrap">
-          <div className="az-eyebrow">FEDERATION · ARCHITECTURE SKETCH</div>
-          <h1 className="az-h1">Zones that govern{" "}<br />themselves.</h1>
+          <div className="az-eyebrow">FEDERATION — ON ITS WAY</div>
+          <h1 className="az-h1">
+            Zones that govern{" "}
+            <br />
+            themselves.
+          </h1>
           <p className="az-fed-lede">
-            AZOA&apos;s federation model lets autonomous organizations run isolated action graphs and exchange only consent-scoped proofs across zone boundaries. Single-zone workflows are active in the repository today; multi-zone federation is queued on the roadmap.
+            An autonomous zone of action is exactly that — autonomous. Federation lets zones stay sovereign and still transact, so no one has to choose between independence and connection.
           </p>
         </div>
       </header>
@@ -66,16 +75,19 @@ export default function Federation() {
             ))}
           </div>
           <p className="az-fed-note">
-            Self-sovereign logs locally, explicit verifiable handoffs across boundaries.
+            Distributed governance is not a feature. It&apos;s the point:{' '}
+            <span className="az-accent">communities that own their economies</span>, and an internet of zones that trade as equals.
           </p>
         </div>
       </section>
 
       <section id="ardanova" className="az-ardanova">
         <div className="az-wrap">
-          <div className="az-ardanova-eyebrow">COMPANION PILOT</div>
+          <div className="az-ardanova-eyebrow">FIRST PILOT — COMING SOON</div>
           <h2 className="az-ardanova-title">ArdaNova</h2>
-          <p className="az-ardanova-lede">Where shared workspaces meet AZOA action graphs.</p>
+          <p className="az-ardanova-lede">
+            The new creator economy. A fair deal for the digital age.
+          </p>
           <div className="az-ardanova-items">
             {ARDANOVA.map((a) => (
               <div className="az-ardanova-item" key={a.label}>
@@ -88,15 +100,17 @@ export default function Federation() {
       </section>
 
       <section className="az-cta az-cta--plain">
-        <h2>Explore the architecture today.</h2>
-        <p>Inspect single-zone execution patterns now or audit the Apache-2.0 source directly.</p>
+        <h2>Build your zone.</h2>
+        <p>
+          The engine is open source and ready to self-host today. Federation lands on top of what you build now.
+        </p>
         <div className="az-cta-row">
-          <Link href="/workflows" className="az-btn az-btn--dark az-btn--lg">WORKFLOW PATTERNS →</Link>
-          <Link href="/architecture" className="az-btn az-btn--outline az-btn--lg">THE ARCHITECTURE →</Link>
-          <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--outline az-btn--lg">GITHUB ↗</a>
-        </div>
-        <div className="az-wrap" style={{ textAlign: 'left', marginTop: 48 }}>
-          <WorkflowFunnelGate context="architecture" />
+          <a href={GITHUB} target="_blank" rel="noopener noreferrer" className="az-btn az-btn--dark az-btn--lg">
+            VIEW ON GITHUB ↗
+          </a>
+          <Link href="/architecture" className="az-btn az-btn--outline az-btn--lg">
+            THE ARCHITECTURE →
+          </Link>
         </div>
       </section>
 

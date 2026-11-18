@@ -4,15 +4,15 @@ import { Prose } from '@/components/landing/prose'
 import { WORKFLOW_INDEX, WORKFLOWS } from './workflows'
 
 describe('workflow prose', () => {
-  it('groups the workflows index by guarantee and avoids citation headings there', () => {
+  it('groups the workflows index cleanly and avoids citation headings there', () => {
     render(<Prose blocks={WORKFLOW_INDEX.blocks} />)
-    expect(screen.getByRole('heading', { name: 'Idempotency & Sagas' })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Consent & Access Control' })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Audit & Fail-Closed Guards' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Reliable Money & Agreements' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Identity & Permission' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Trust, Waits & Clarity' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Sources' })).toBeNull()
   })
 
-  it('renders backtick spans cleanly as code elements across all workflow guides', () => {
+  it('renders cleanly without unparsed backticks or SDK/enum jargon across all guides', () => {
     const pages = [
       { slug: 'index', blocks: WORKFLOW_INDEX.blocks, sources: [] },
       ...WORKFLOWS.map((workflow) => ({
@@ -23,20 +23,12 @@ describe('workflow prose', () => {
     ]
     for (const page of pages) {
       const view = render(<Prose blocks={page.blocks} sources={page.sources} />)
-      const codes = [...view.container.querySelectorAll('code')].map((node) => node.textContent)
-      if (page.slug === 'safe-and-idempotent') {
-        expect(codes).toContain('page?do=delete')
-      }
-      if (page.slug === 'reconciliation-over-blind-retry') {
-        expect(codes).toContain('AwaitingReconciliation')
-      }
-      if (page.slug === 'version-pinned-execution') {
-        expect(codes).toContain('expectedPublishedHash')
-      }
-      if (page.slug === 'durable-waits-and-signals') {
-        expect(codes).toContain('AwaitingSignal')
-      }
+      const text = view.container.textContent ?? ''
       expect(view.container.innerHTML).not.toContain('`')
+      expect(text).not.toContain('AwaitingReconciliation')
+      expect(text).not.toContain('expectedPublishedHash')
+      expect(text).not.toContain('WorkflowClient')
+      expect(text).not.toContain('ActionEconomicManifest')
       view.unmount()
     }
   })

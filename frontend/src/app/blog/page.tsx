@@ -17,9 +17,9 @@ const FEATURED_WORKFLOWS = WORKFLOWS.filter((w) =>
 export default function BlogPage() {
   return (
     <LegalDocument
-      eyebrow="ENGINEERING BLOG"
-      title="Notes on workflow durability and fail-closed design."
-      lede={`Engineering essays and architectural pattern notes by ${AUTHOR}. Focused on idempotency, reconciliation sweeps, consent records, and state integrity across multi-step action graphs.`}
+      eyebrow="BLOG"
+      title="Why AZOA exists, and what you can build with it."
+      lede={`Essays and plain-language guides from ${AUTHOR} on self-owned identity, durable agreements, and workflows an organization can actually trust.`}
     >
       <section className="az-arch-section">
         <div className="az-arch-grid">
@@ -27,27 +27,35 @@ export default function BlogPage() {
           <div className="az-arch-body">
             {ESSAYS.map((essay) => (
               <div key={essay.slug} style={{ marginBottom: 40 }}>
-                <div className="az-kicker" style={{ marginBottom: 8 }}>{formatPublicDate(essay.publishedAt)}</div>
+                <div className="az-kicker" style={{ marginBottom: 8 }}>
+                  {formatPublicDate(essay.publishedAt)}
+                </div>
                 <h2 className="az-arch-h2" style={{ marginBottom: 12 }}>
                   <Link href={essayPath(essay.slug)}>{essay.title}</Link>
                 </h2>
                 <p>{essay.summary}</p>
-                <p><Link href={essayPath(essay.slug)}>Read the note →</Link></p>
+                <p>
+                  <Link href={essayPath(essay.slug)}>Read the essay →</Link>
+                </p>
               </div>
             ))}
 
-            <h2 className="az-arch-h2" style={{ marginTop: 48 }}>Featured Workflow Patterns</h2>
+            <h2 className="az-arch-h2" style={{ marginTop: 48 }}>
+              Core Ideas &amp; Guides
+            </h2>
             <ul>
               {FEATURED_WORKFLOWS.map((workflow) => (
                 <li key={workflow.slug}>
-                  <Link href={`/workflows/${workflow.slug}`}><strong>{workflow.title}</strong></Link>
+                  <Link href={`/workflows/${workflow.slug}`}>
+                    <strong>{workflow.title}</strong>
+                  </Link>
                   {' — '}
                   {workflow.description}
                 </li>
               ))}
             </ul>
             <p>
-              <Link href="/workflows">Browse all workflow patterns →</Link>
+              <Link href="/workflows">Explore all guides →</Link>
               {' · '}
               <Link href="/feed.xml">RSS feed</Link>
               {' · '}

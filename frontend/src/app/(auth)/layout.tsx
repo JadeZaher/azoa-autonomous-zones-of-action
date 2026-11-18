@@ -20,7 +20,7 @@ export default function AuthLayout({
           }}
         />
 
-        {/* Wordmark + status — wordmark returns to the marketing landing */}
+        {/* Wordmark + live badge — wordmark returns to the marketing landing */}
         <div className="relative z-10 flex items-start justify-between">
           <Link href="/" className="group -m-2 flex items-center gap-3 p-2 transition-opacity hover:opacity-80">
             <BrandMark size={40} />
@@ -33,21 +33,26 @@ export default function AuthLayout({
           </Link>
           <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#b7ad9c]">
             <span className="inline-block h-2 w-2 rounded-full bg-[#C8501E]" />
-            SIMULATED — ACTION GRAPH
+            LIVE — ACTION GRAPH
           </div>
         </div>
 
-        {/* Statement */}
+        {/* Statement + quote */}
         <div className="relative z-10 space-y-8">
           <h2 className="max-w-md text-4xl font-bold leading-[0.98] tracking-[-0.02em]">
             One user.{" "}
             <br />
             Every economy.
           </h2>
-          <p className="max-w-md text-lg leading-relaxed text-[#F2EDE3]/80">
-            A sign-in on a simulation. Real-value bridging is disabled, and
-            fiat settlement is not enabled yet.
-          </p>
+          <blockquote className="space-y-3">
+            <p className="max-w-md text-lg leading-relaxed text-[#F2EDE3]/80">
+              &ldquo;Your sovereign digital identity, unified across every
+              network. One user, infinite possibilities.&rdquo;
+            </p>
+            <footer className="font-mono text-[11px] tracking-[0.12em] text-[#b7ad9c]">
+              — THE AZOA PROTOCOL
+            </footer>
+          </blockquote>
         </div>
       </div>
 

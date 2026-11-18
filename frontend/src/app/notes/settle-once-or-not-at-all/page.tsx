@@ -4,46 +4,52 @@ import { WorkflowFunnelGate } from '@/components/landing/workflow-gate'
 
 const SOURCES = [
   { label: 'AZOA architecture', href: 'https://azoa.ardanova.com/architecture' },
-  { label: 'Reconciliation over blind retry', href: 'https://azoa.ardanova.com/workflows/reconciliation-over-blind-retry' },
-  { label: 'Settle once workflow pattern', href: 'https://azoa.ardanova.com/workflows/settle-once' },
+  { label: 'Checking real state before retrying', href: 'https://azoa.ardanova.com/workflows/reconciliation-over-blind-retry' },
+  { label: 'Settle once guide', href: 'https://azoa.ardanova.com/workflows/settle-once' },
   { label: 'PrimusNeo', href: 'https://primusneo.com' },
 ]
 
 export default function SettleOncePage() {
   return (
     <LegalDocument
-      eyebrow="ENGINEERING NOTE · 9 NOVEMBER 2026"
+      eyebrow="NOTE · 9 NOVEMBER 2026"
       title="A retried step should settle once, or not at all"
-      lede="A timeout is silence, not a verdict. Most systems treat a missing reply as permission to retry, which is how the same supplier or recipient gets paid twice — or left unpaid with two logs that both look complete."
+      lede="A timeout is silence, not a verdict. Most software treats a missing reply as permission to try again — which is how the same work gets paid twice, or missed completely while everyone thinks it finished."
     >
       <section className="az-arch-section">
         <div className="az-arch-grid">
-          <div className="az-kicker">NOTE</div>
+          <div className="az-kicker">ESSAY</div>
           <div className="az-arch-body">
             <p>
-              A timeout is easy to misread. When a settlement call goes out and no response returns, one reasonable caller assumes it dropped and retries. Another assumes it went through and records completion. Those two assumptions applied to the same logical task produce either a duplicate transfer or an unpaid party holding what looks like a clean confirmation receipt. Nobody has to be malicious; a dropped TCP connection and an optimistic retry loop will do it on their own.
+              A silence is easy to misread. When an approval or payout goes out and no answer comes back, one reasonable person assumes the request got lost and sends it again. Another person — or an automatic retry a minute later — assumes it went through and marks the work done. Both reactions make sense in isolation, yet together they create duplicate payments or leave contributors unpaid while every dashboard says complete. Nobody has to be dishonest for that to happen; an everyday network hiccup is enough.
             </p>
             <p>
-              AZOA — the Autonomous Zones of Action workflow engine built within the <a href="https://primusneo.com">PrimusNeo</a> engineering stack — exists to keep that record straight. Each workflow compiles into explicit steps that can pause, persist caller-supplied idempotency keys, reconcile against external state before taking irreversible actions, and avoid optimistic guesses.
+              AZOA — the Autonomous Zones of Action engine built in the{' '}
+              <a href="https://primusneo.com">PrimusNeo</a> lab — exists to keep that record honest. Instead of gluing together fragile scripts and background timers, AZOA models financial workflows, circular economies, organizational approvals, and grants as living graphs of action. Every step knows what it has already asked for, can pause for hours or days while the real world catches up, and checks what actually happened before making any irreversible move.
             </p>
             <p>
-              Honest state boundaries matter before code hits production. Hosted AZOA pages demonstrate action graphs against simulated payloads while live value bridging stays disabled; self-hosted deployments bind real clearing partners explicitly through narrow backend adapters.
+              One rule sits at the center of that design: a retried or duplicated step settles once, or not at all. Never twice. When an outside partner or network goes quiet mid-step, AZOA does not fire off blind retries hoping for the best. It pauses, remembers the original attempt, and checks the source of truth before deciding what comes next.
             </p>
             <p>
-              <a href="https://primusneo.com">PrimusNeo</a> documented this failure mode in public without dressing up a parked adapter as live money movement. Separating simulated verification from live clearing allows engineers to test exact idempotency semantics today: attach a durable key before sending, persist the initial response body, and probe status before dispatching a second attempt.
+              <a href="https://primusneo.com">PrimusNeo</a> wrote openly about this exact gap because most workflow systems gloss over it. By separating the core rules of an agreement from whatever network or bank sits underneath, teams can test and prove those guarantees cleanly before real money ever enters the picture.
             </p>
             <p>
-              The rest of AZOA&apos;s construction rules reinforce that invariant. Fail closed when any required permission or published version hash is missing. Transition indeterminate external responses into <code>AwaitingReconciliation</code> so sweeps confirm destination truth instead of spinning blind timers. Escalate truly ambiguous cases to an operator rather than fabricating confidence.
+              The rest of AZOA&apos;s principles reinforce the same promise. Anything that cannot be verified is refused instead of waved through. Every action belongs to an identity a person actually owns, under consent they can see and revoke. And when a decision is genuinely ambiguous, the engine surfaces the full context to a human operator rather than inventing a guess.
             </p>
             <p>
-              When real-value adapters run inside self-hosted deployments or future pilots such as <a href="https://ardanova.com">ArdaNova</a>, the test will never be whether the marketing headline promises &quot;exactly once.&quot; The test is whether every retried step can be traced later to an unambiguous yes or no — and whether silence was never mistaken for either.
+              Whether someone runs a community fund, a supplier agreement, or a creator workspace like{' '}
+              <a href="https://ardanova.com">ArdaNova</a>, the real test of an economy engine is never a marketing promise — it is whether every step can be traced back to an honest yes or no, and whether silence was never mistaken for either.
             </p>
-            <h2 className="az-arch-h2">Sources &amp; related reading</h2>
+            <h2 className="az-arch-h2">Related reading</h2>
             <ul>
               {SOURCES.map((source) => (
-                <li key={source.href}><a href={source.href}>{source.label}</a></li>
+                <li key={source.href}>
+                  <a href={source.href}>{source.label}</a>
+                </li>
               ))}
-              <li><Link href="/terms">AZOA Terms of Use</Link></li>
+              <li>
+                <Link href="/terms">AZOA Terms of Use</Link>
+              </li>
             </ul>
             <WorkflowFunnelGate context="workflow" />
           </div>

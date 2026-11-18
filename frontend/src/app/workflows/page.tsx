@@ -13,7 +13,7 @@ export default function WorkflowsPage() {
     >
       <section className="az-arch-section">
         <div className="az-arch-grid">
-          <div className="az-kicker">BY GUARANTEE</div>
+          <div className="az-kicker">GUIDES</div>
           <div className="az-arch-body">
             <Prose blocks={WORKFLOW_INDEX.blocks} />
             <WorkflowFunnelGate context="workflows-index" />

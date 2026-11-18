@@ -77,21 +77,23 @@ describe('public sister links and quiet footer disclosure', () => {
     expect(hrefs).not.toContain('https://azoa.ardanova.com')
   })
 
-  it('renders the funnel gate with clear navigation into architecture, workflows, console, and ArdaNova', () => {
+  it('renders the funnel gate with clear navigation into architecture, workflows, login, and ArdaNova', () => {
     render(<WorkflowFunnelGate context="workflow" />)
-    expect(screen.getByRole('link', { name: 'READ ARCHITECTURE →' }).getAttribute('href')).toBe('/architecture')
-    expect(screen.getByRole('link', { name: 'ALL WORKFLOWS →' }).getAttribute('href')).toBe('/workflows')
-    expect(screen.getByRole('link', { name: 'workspace sign-in' }).getAttribute('href')).toBe('/login')
+    expect(screen.getByRole('link', { name: 'FULL ARCHITECTURE →' }).getAttribute('href')).toBe('/architecture')
+    expect(screen.getByRole('link', { name: 'ALL GUIDES →' }).getAttribute('href')).toBe('/workflows')
+    expect(screen.getByRole('link', { name: 'account sign-in' }).getAttribute('href')).toBe('/login')
     expect(screen.getByRole('link', { name: 'ArdaNova' }).getAttribute('href')).toBe('https://ardanova.com')
     expect(screen.getByRole('link', { name: 'GITHUB ↗' }).getAttribute('href')).toContain('github.com/JadeZaher/azoa')
   })
 
-  it('keeps the homepage builder-first while connecting stack sites cleanly', () => {
+  it('keeps the homepage vision-first while connecting stack sites cleanly', () => {
     const home = readFileSync(join(frontendRoot, 'src/app/page.tsx'), 'utf8')
     const layout = readFileSync(join(frontendRoot, 'src/app/layout.tsx'), 'utf8')
-    expect(home).toContain('WORKFLOW PATTERNS →')
-    expect(home).toContain('ARCHITECTURE →')
-    expect(home).toContain('HOSTED DEMO · SIMULATED PAYLOADS')
+    expect(home).toContain('One engine.')
+    expect(home).toContain('Four economies.')
+    expect(home).toContain('The five moves')
+    expect(home).toContain('Honest by')
+    expect(home).toContain('FULL ARCHITECTURE →')
     expect(home).not.toContain('This public site is a simulation')
     expect(home).not.toContain('never double-spend')
     expect(home).toContain('https://primusneo.com')
