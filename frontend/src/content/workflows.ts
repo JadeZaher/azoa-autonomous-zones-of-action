@@ -54,7 +54,7 @@ export const WORKFLOW_INDEX = {
   h1: 'Workflow guards that hold under failure.',
   seoTitle: 'Workflows | AZOA',
   description:
-    'Architectural field notes grouped by execution guarantee: idempotency keys and sagas, consent and access boundaries, audit slices, reconciliation sweeps, and fail-closed version checks.',
+    'Field notes grouped by guarantee: idempotency and sagas, consent and access boundaries, audit slices, reconciliation sweeps, and fail-closed checks.',
   publishedAt: PUBLISHED,
   lastReviewed: UPDATED,
   lede:
@@ -308,7 +308,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'reconciliation-over-blind-retry',
     title: 'Reconciliation over blind retry',
     h1: 'Reconcile indeterminate runs instead of retrying blindly.',
-    seoTitle: 'Reconcile indeterminate runs instead of retrying blindly — Workflows | AZOA',
+    seoTitle: 'Reconcile indeterminate runs — Workflows | AZOA',
     description:
       'How AZOA handles timeout uncertainty with an explicit AwaitingReconciliation workflow state and sweep probes that verify destination truth before advancing.',
     eyebrow: 'IDEMPOTENCY & SAGAS · RECONCILIATION',
@@ -495,7 +495,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'version-pinned-execution',
     title: 'Version-pinned execution',
     h1: 'Pin the published workflow hash before an actor consents.',
-    seoTitle: 'Pin the published workflow hash before execution — Workflows | AZOA',
+    seoTitle: 'Pin the published workflow hash — Workflows | AZOA',
     description:
       'Prevent time-of-check to time-of-use drift in action graphs by coupling economic disclosure previews with optimistic expectedPublishedHash guards on run start.',
     eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · VERSION PINNING',
@@ -589,7 +589,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'durable-waits-and-signals',
     title: 'Durable waits, signals, and stale threads',
     h1: 'Durable waits, external signals, and stale threads.',
-    seoTitle: 'Durable waits, external signals, and stale threads — Workflows | AZOA',
+    seoTitle: 'Durable waits and stale threads — Workflows | AZOA',
     description:
       'Replace fragile in-memory sleepers and long-lived worker locks with durable wait states (Suspended, AwaitingSignal, AwaitingTimer) that survive restarts.',
     eyebrow: 'AUDIT & FAIL-CLOSED GUARDS · DURABLE STATE',
@@ -868,7 +868,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'consent-withdrawal',
     title: 'Withdrawing consent',
     h1: 'Withdrawing consent under UK GDPR Article 7',
-    seoTitle: 'Withdrawing consent under UK GDPR Article 7 — Workflows | AZOA',
+    seoTitle: 'Withdrawing consent — Workflows | AZOA',
     description:
       'Implement consent revocation workflows that are as direct as giving permission, halt downstream sharing immediately, and preserve prior audit history.',
     eyebrow: 'CONSENT & ACCESS CONTROL · REVOCATION',
@@ -1214,7 +1214,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'compensating-transactions',
     title: 'What is a saga',
     h1: 'Sagas and compensating transactions in long-lived workflows',
-    seoTitle: 'What is a saga in a long-lived transaction — Workflows | AZOA',
+    seoTitle: 'Saga in a long-lived transaction — Workflows | AZOA',
     description:
       'Coordinate multi-step workflows that span external boundaries without global locks by pairing each committed step with an explicit compensating transaction.',
     eyebrow: 'IDEMPOTENCY & SAGAS · COMPENSATING ACTIONS',
@@ -1367,7 +1367,7 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'demonstrable-consent',
     title: 'Consent must be demonstrable',
     h1: 'Consent must be demonstrable under UK GDPR Article 7',
-    seoTitle: 'Consent must be demonstrable under UK GDPR Article 7 — Workflows | AZOA',
+    seoTitle: 'Demonstrable consent — Workflows | AZOA',
     description:
       'Store immutable evidence of who granted permission, for which scopes, and under which disclosure hash so consent can always be proved after the fact.',
     eyebrow: 'CONSENT & ACCESS CONTROL · AUDITABILITY',
@@ -1433,9 +1433,9 @@ export const WORKFLOWS: readonly WorkflowPage[] = [
     slug: 'distinguishable-consent',
     title: 'Consent must be clearly distinguishable',
     h1: 'Consent must be clearly distinguishable under UK GDPR Article 7',
-    seoTitle: 'Consent must be clearly distinguishable under UK GDPR Article 7 — Workflows | AZOA',
+    seoTitle: 'Distinguishable consent — Workflows | AZOA',
     description:
-      'Keep optional workflow permissions visually and structurally separate from unrelated legal declarations in plain language.',
+      'Keep optional workflow permissions separate from unrelated legal text, in plain language, so a reader can tell what they are agreeing to.',
     eyebrow: 'CONSENT & ACCESS CONTROL · CLARITY',
     publishedAt: PUBLISHED,
     lastReviewed: UPDATED,

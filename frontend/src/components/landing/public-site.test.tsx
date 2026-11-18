@@ -1,9 +1,18 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { jsonLdGraph, publicDocuments } from '@/content/public-documents'
+import ContactPage from '@/app/contact/page'
+import PrivacyPage from '@/app/privacy/page'
+import TermsPage from '@/app/terms/page'
+import NotFound, { metadata as notFoundMetadata } from '@/app/not-found'
+
+vi.mock('@/lib/azoa-auth', () => ({
+  useAzoaAuth: () => ({ isAuthenticated: false, loading: false, user: null, userId: null }),
+}))
 import { LandingFooter } from './chrome'
 import { OPERATOR, OperatorContact } from './legal'
 import { SISTER_SITES } from './sisters'
@@ -38,6 +47,9 @@ const PUBLIC_FILES = [
   'src/app/blog',
   'src/app/notes',
   'src/app/workflows',
+  'src/app/contact',
+  'src/app/not-found.tsx',
+  'src/app/llms.txt',
   'src/app/layout.tsx',
   'src/app/robots.ts',
   'src/app/sitemap.ts',
@@ -84,8 +96,10 @@ describe('public sister links and quiet footer disclosure', () => {
     expect(home).not.toContain('never double-spend')
     expect(home).toContain('https://primusneo.com')
     expect(home).toContain('https://ardanova.com')
-    expect(layout).toContain('SHARE_IMAGE')
+    expect(layout).toContain('SHARE_IMAGE_META')
+    expect(layout).toContain('modifiedTime')
     expect(readFileSync(join(frontendRoot, 'src/content/public-documents.ts'), 'utf8')).toContain('/og/azoa-og-1200x630.png')
+    expect(readFileSync(join(frontendRoot, 'next.config.js'), 'utf8')).toContain("source: '/rss.xml'")
     expect(layout).toContain('/favicons/azoa-favicon-180.png')
     expect(readFileSync(join(frontendRoot, 'public/favicon.ico')).length).toBeGreaterThan(0)
   })
@@ -97,6 +111,34 @@ describe('operator contact and compliance boundaries', () => {
     render(<OperatorContact />)
     expect(screen.getByText(OPERATOR.address).textContent).toBe('Boise, Idaho')
     expect(screen.getByRole('link', { name: OPERATOR.email }).textContent).toBe('contact@escherbridge.com')
+  })
+
+  it('renders the contact page with the operator email and city line', () => {
+    render(<ContactPage />)
+    expect(screen.getByRole('heading', { level: 1, name: 'Contact' })).toBeTruthy()
+    expect(screen.getByText('Escherbridge, LLC, Boise, Idaho')).toBeTruthy()
+    expect(screen.getByRole('link', { name: OPERATOR.email }).getAttribute('href')).toBe(`mailto:${OPERATOR.email}`)
+    expect(screen.getByText(/There is no form on this page/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'CONTACT' }).getAttribute('href')).toBe('/contact')
+  })
+
+  it('emits the literal operator address in the rendered HTML', () => {
+    const mailto = `<!--email_off--><a href="mailto:${OPERATOR.email}">${OPERATOR.email}</a><!--email_on-->`
+    for (const html of [ContactPage, PrivacyPage, TermsPage].map((Page) => renderToStaticMarkup(<Page />))) {
+      expect(html).toContain(OPERATOR.email)
+      expect(html).toContain(mailto)
+      expect(html).not.toContain('/cdn-cgi/l/email-protection')
+    }
+    expect(renderToStaticMarkup(<OperatorContact />)).toContain(mailto)
+  })
+
+  it('renders a noindex not-found page with links to real public pages', () => {
+    expect(notFoundMetadata.title).toBe('Page not found — AZOA')
+    expect(notFoundMetadata.description).toBe('This address does not match a public AZOA page.')
+    render(<NotFound />)
+    expect(screen.getByRole('heading', { level: 1, name: 'Page not found.' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Contact' }).getAttribute('href')).toBe('/contact')
+    expect(screen.getByRole('link', { name: 'Workflows' }).getAttribute('href')).toBe('/workflows')
   })
 
   it('finds no street, ZIP, PO Box, or investor/valuation figure on any public page', () => {

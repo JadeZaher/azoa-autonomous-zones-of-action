@@ -35,6 +35,7 @@ const nextConfig = {
     return [
       { source: '/workflows/action-graphs', destination: '/workflows', permanent: true },
       { source: '/workflows/grants-and-bounties', destination: '/workflows', permanent: true },
+      { source: '/rss.xml', destination: '/feed.xml', permanent: true },
     ]
   },
   async headers() {

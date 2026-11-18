@@ -11,7 +11,7 @@ import {
   jsonLdGraph,
   publicDocument,
   requestPath,
-  SHARE_IMAGE,
+  SHARE_IMAGE_META,
   SITE,
 } from '@/content/public-documents'
 import { resolveServerApiUrl } from '@/lib/runtime-config'
@@ -34,21 +34,27 @@ const plexMono = localFont({
   variable: '--font-mono',
 })
 
-const SHARE = { url: SHARE_IMAGE, width: 1200, height: 630, alt: 'AZOA — Autonomous Zones of Action' }
+const FEED_INDEXES = new Set(['/', '/blog', '/notes', '/news', '/workflows'])
 
 export async function generateMetadata(): Promise<Metadata> {
   const path = requestPath((await headers()).get('x-azoa-path'))
   const page = path ? publicDocument(path) : undefined
-  const title = page?.title ?? 'AZOA — Autonomous Zones of Action'
-  const description = page?.description ?? 'Open-source engine for durable workflows: idempotent retries, reconciliation sweeps, consent records, and fail-closed execution.'
+  const title = page?.title ?? (path ? 'AZOA' : 'AZOA — Autonomous Zones of Action')
+  const description = page?.description ?? (path
+    ? 'This AZOA route is not a public page.'
+    : 'Open-source engine for durable workflows: idempotent retries, reconciliation sweeps, consent records, and fail-closed execution.')
   return {
     metadataBase: new URL(SITE),
     title,
     description,
-    authors: page ? [{ name: 'Escherbridge' }] : undefined,
+    authors: [{ name: 'Escherbridge' }],
+    publisher: 'Escherbridge',
     robots: page ? { index: page.index, follow: true } : path ? { index: false, follow: false } : undefined,
     alternates: page
-      ? { canonical: absoluteUrl(page.path), types: { 'application/rss+xml': `${SITE}/feed.xml` } }
+      ? {
+          canonical: absoluteUrl(page.path),
+          ...(FEED_INDEXES.has(page.path) ? { types: { 'application/rss+xml': `${SITE}/feed.xml` } } : {}),
+        }
       : undefined,
     icons: {
       icon: [
@@ -63,13 +69,14 @@ export async function generateMetadata(): Promise<Metadata> {
       description: page ? description : undefined,
       type: page?.kind === 'article' ? 'article' : 'website',
       publishedTime: page?.publishedAt,
-      images: [SHARE],
+      modifiedTime: page?.modifiedAt,
+      images: [SHARE_IMAGE_META],
     },
     twitter: {
       card: 'summary_large_image',
       title: page ? title : undefined,
       description: page ? description : undefined,
-      images: [SHARE_IMAGE],
+      images: [SHARE_IMAGE_META],
     },
   }
 }
