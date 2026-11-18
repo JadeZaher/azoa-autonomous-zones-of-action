@@ -47,6 +47,10 @@ public sealed class IdentomatBeginResponse
 
     [JsonPropertyName("additionalSessionUrl")]
     public string? AdditionalSessionUrl { get; set; }
+
+    /// <summary>Envelope wrapper returned by live <c>external-api.identomat.com/begin</c>.</summary>
+    [JsonPropertyName("result")]
+    public IdentomatBeginResponse? Result { get; set; }
 }
 
 /// <summary>Inbound callback body. An untrusted TRIGGER, never an authority.</summary>

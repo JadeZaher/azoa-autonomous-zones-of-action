@@ -47,6 +47,8 @@ public sealed class DevelopmentProviderSecretsTests
             configuration["Fiat:Test:WebhookSecret"].Should().Be("explicit-webhook");
             configuration["Kyb:ConfigId"].Should().Be("business-config");
             configuration["Kyc:Identomat:CallbackApiKey"].Should().Be("callback-fixture");
+            configuration["Kyc:Provider"].Should().Be("identomat");
+            configuration["Kyc:Identity:PersonKeySecret"].Should().Be("person-key-secret-fixture-0123456789abcdef");
             configuration["Fiat:Test:SecretKey"].Should().BeNull();
             configuration["Fiat:Live:SecretKey"].Should().BeNull();
         });
@@ -59,6 +61,7 @@ public sealed class DevelopmentProviderSecretsTests
         var path = Path.Combine(directory, ".env");
         File.WriteAllLines(path, ["IDENTOMAT_API_KEY=company-fixture", "STRIPE_SECRET_API_KEY_DEV=sk_live_wrong-mode",
             "STRIPE_SECRET_API_KEY_LIVE=sk_live_never-import", "Kyb__ConfigId=business-config",
+            "Kyc__Provider=identomat", "Kyc__Identity__PersonKeySecret=person-key-secret-fixture-0123456789abcdef",
             "Kyc__Identomat__CallbackApiKey=callback-fixture", "Fiat__Test__WebhookSecret=whsec_fixture"]);
         try
         {

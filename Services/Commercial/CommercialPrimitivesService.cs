@@ -2,11 +2,12 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
 using AZOA.WebAPI.Services.Auth;
@@ -19,8 +20,8 @@ using SurrealForge.Client.Query;
 namespace AZOA.WebAPI.Services.Commercial;
 
 /// <summary>
-/// Thread-safe singleton backing store for commercial primitives when operating in memory
-/// or alongside SurrealDB write-through/read-through persistence.
+/// Thread-safe in-memory state used when tests construct <see cref="CommercialPrimitivesService"/>
+/// without a SurrealDB executor, and cache of owned slots in memory.
 /// </summary>
 public sealed class CommercialPrimitivesStoreState
 {
@@ -45,10 +46,6 @@ public sealed class CommercialPrimitivesStoreState
     internal ConcurrentDictionary<string, PaymentRequestSlot> PaymentRequests { get; } = new(StringComparer.Ordinal);
     internal ConcurrentDictionary<string, OwnershipReceiptSlot> OwnershipReceipts { get; } = new(StringComparer.Ordinal);
     internal ConcurrentDictionary<string, AccountDocumentSlot> AccountDocuments { get; } = new(StringComparer.Ordinal);
-
-    internal long InvoiceSequence;
-    internal long PaymentRequestSequence;
-    internal long OwnershipReceiptSequence;
 }
 
 /// <summary>
@@ -69,6 +66,7 @@ public sealed class CommercialPrimitivesService
     private readonly ILogger<CommercialPrimitivesService> _logger;
     private readonly TimeProvider _clock;
     private readonly ISurrealExecutor? _surrealExecutor;
+    private readonly IKycManager? _kycManager;
 
     public CommercialPrimitivesService(
         CommercialPrimitivesStoreState state,
@@ -77,7 +75,8 @@ public sealed class CommercialPrimitivesService
         IOptions<KycSettings> kycOptions,
         ILogger<CommercialPrimitivesService> logger,
         TimeProvider? clock = null,
-        ISurrealExecutor? surrealExecutor = null)
+        ISurrealExecutor? surrealExecutor = null,
+        IKycManager? kycManager = null)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _accessLinks = accessLinks ?? throw new ArgumentNullException(nameof(accessLinks));
@@ -86,6 +85,7 @@ public sealed class CommercialPrimitivesService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _clock = clock ?? TimeProvider.System;
         _surrealExecutor = surrealExecutor;
+        _kycManager = kycManager;
     }
 
     public AZOAResult<SignedAccessLink> MintAccessLink(Guid actorId, MintAccessLinkRequest request)
@@ -106,6 +106,11 @@ public sealed class CommercialPrimitivesService
         => _accessLinks.VerifyAccessLink(linkId, scope, externalSubject, exp, sig);
 
     public AZOAResult<IdentomatSessionStatus> GetIdentomatStatus(Guid actorId)
+        => GetIdentomatStatusAsync(actorId, CancellationToken.None).GetAwaiter().GetResult();
+
+    public async Task<AZOAResult<IdentomatSessionStatus>> GetIdentomatStatusAsync(
+        Guid actorId,
+        CancellationToken ct = default)
     {
         if (actorId == Guid.Empty)
             return AZOAResult<IdentomatSessionStatus>.FailureWithCode(
@@ -114,6 +119,33 @@ public sealed class CommercialPrimitivesService
         var evaluated = _deferrals.EnsureIdentomatCredentialDeferralEvaluated();
         if (_deferrals.HasLiveIdentomatCredentials)
         {
+            if (_kycManager is not null)
+            {
+                var current = await _kycManager.GetStatusAsync(actorId, ct);
+                if (!current.IsError && current.Result is { } submission)
+                {
+                    return AZOAResult<IdentomatSessionStatus>.Success(new IdentomatSessionStatus(
+                        ProviderDeferralLedger.IdentomatProviderName,
+                        MapKycStatus(submission.Status),
+                        SessionId: submission.ProviderSessionId ?? submission.Id.ToString("N"),
+                        VerificationUrl: submission.VerificationUrl,
+                        SignedAccessUrl: null,
+                        DeferralLogged: false,
+                        DeferredReason: null,
+                        DeferralLoggedAt: null,
+                        ExpiresAt: ToUtcOffset(submission.ExpiresAt),
+                        MissingConfigurationKeys: Array.Empty<string>()));
+                }
+
+                if (current.IsError && current.Message?.StartsWith(KycAuthorizationError.NotFound, StringComparison.Ordinal) != true)
+                {
+                    _logger.LogWarning(
+                        "Identomat status lookup via KYC manager returned {Code}: {Message}",
+                        current.Code ?? AzoaErrorCodes.DependencyUnavailable,
+                        current.Message);
+                }
+            }
+
             return AZOAResult<IdentomatSessionStatus>.Success(new IdentomatSessionStatus(
                 ProviderDeferralLedger.IdentomatProviderName,
                 IdentomatSessionStatuses.Pending,
@@ -151,6 +183,12 @@ public sealed class CommercialPrimitivesService
     }
 
     public AZOAResult<IdentomatSessionStatus> StartIdentomatSession(Guid actorId, IdentomatSessionRequest? request)
+        => StartIdentomatSessionAsync(actorId, request, CancellationToken.None).GetAwaiter().GetResult();
+
+    public async Task<AZOAResult<IdentomatSessionStatus>> StartIdentomatSessionAsync(
+        Guid actorId,
+        IdentomatSessionRequest? request,
+        CancellationToken ct = default)
     {
         if (actorId == Guid.Empty)
             return AZOAResult<IdentomatSessionStatus>.FailureWithCode(
@@ -164,14 +202,76 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<IdentomatSessionStatus>.FailureWithCode(
                 "Invalid externalSubject.", AzoaErrorCodes.InvalidRequest);
 
-        var sessionId = $"idem_{Guid.NewGuid():N}";
-        var linkResult = _accessLinks.Mint(new MintAccessLinkRequest(
-            externalSubject,
-            AccessLinkScopes.Kyc,
-            TargetResourceId: sessionId,
-            ReturnUrl: request?.ReturnUrl,
-            TtlMinutes: request?.TtlMinutes));
+        if (_deferrals.HasLiveIdentomatCredentials && _kycManager is not null)
+        {
+            var beginResult = await _kycManager.BeginAsync(actorId, ct);
+            if (!beginResult.IsError && beginResult.Result is { } started)
+            {
+                var sessionId = string.IsNullOrWhiteSpace(started.ProviderSessionId)
+                    ? $"idem_{Guid.NewGuid():N}"
+                    : started.ProviderSessionId.Trim();
+                var liveLinkResult = MintKycAccessLink(externalSubject, sessionId, request);
+                if (liveLinkResult.IsError || liveLinkResult.Result is null)
+                    return AZOAResult<IdentomatSessionStatus>.FailureWithCode(
+                        liveLinkResult.Message,
+                        liveLinkResult.Code ?? AzoaErrorCodes.InvalidRequest);
 
+                var liveLink = liveLinkResult.Result;
+                return AZOAResult<IdentomatSessionStatus>.Success(new IdentomatSessionStatus(
+                    ProviderDeferralLedger.IdentomatProviderName,
+                    IdentomatSessionStatuses.Pending,
+                    sessionId,
+                    VerificationUrl: !string.IsNullOrWhiteSpace(started.VerificationUrl) ? started.VerificationUrl : liveLink.SignedUrl,
+                    SignedAccessUrl: liveLink.SignedUrl,
+                    DeferralLogged: false,
+                    DeferredReason: null,
+                    DeferralLoggedAt: null,
+                    ExpiresAt: ToUtcOffset(started.ExpiresAt) ?? liveLink.ExpiresAt,
+                    MissingConfigurationKeys: Array.Empty<string>()));
+            }
+
+            if (beginResult.Message?.StartsWith("KYC_ALREADY_APPROVED", StringComparison.Ordinal) == true)
+            {
+                var existing = await _kycManager.GetStatusAsync(actorId, ct);
+                var existingSessionId = !existing.IsError && existing.Result is { } sub
+                    ? sub.ProviderSessionId ?? sub.Id.ToString("N")
+                    : $"idem_{Guid.NewGuid():N}";
+                var approvedLinkResult = MintKycAccessLink(externalSubject, existingSessionId, request);
+                if (approvedLinkResult.IsError || approvedLinkResult.Result is null)
+                    return AZOAResult<IdentomatSessionStatus>.FailureWithCode(
+                        approvedLinkResult.Message,
+                        approvedLinkResult.Code ?? AzoaErrorCodes.InvalidRequest);
+
+                var approvedLink = approvedLinkResult.Result;
+                return AZOAResult<IdentomatSessionStatus>.Success(new IdentomatSessionStatus(
+                    ProviderDeferralLedger.IdentomatProviderName,
+                    IdentomatSessionStatuses.Approved,
+                    existingSessionId,
+                    VerificationUrl: existing.Result?.VerificationUrl,
+                    SignedAccessUrl: approvedLink.SignedUrl,
+                    DeferralLogged: false,
+                    DeferredReason: null,
+                    DeferralLoggedAt: null,
+                    ExpiresAt: ToUtcOffset(existing.Result?.ExpiresAt) ?? approvedLink.ExpiresAt,
+                    MissingConfigurationKeys: Array.Empty<string>()));
+            }
+
+            _logger.LogWarning(
+                "Identomat live session creation via KYC manager failed ({Provider}) with {Code}: {Message}",
+                _kycOptions.Value.Provider,
+                beginResult.Code ?? AzoaErrorCodes.DependencyUnavailable,
+                beginResult.Message);
+            return new AZOAResult<IdentomatSessionStatus>
+            {
+                IsError = true,
+                Message = beginResult.Message ?? "Identomat KYC session could not be started.",
+                Code = beginResult.Code ?? AzoaErrorCodes.DependencyUnavailable,
+                RetryAfterSeconds = beginResult.RetryAfterSeconds,
+            };
+        }
+
+        var fallbackSessionId = $"idem_{Guid.NewGuid():N}";
+        var linkResult = MintKycAccessLink(externalSubject, fallbackSessionId, request);
         if (linkResult.IsError || linkResult.Result is null)
             return AZOAResult<IdentomatSessionStatus>.FailureWithCode(
                 linkResult.Message,
@@ -180,11 +280,10 @@ public sealed class CommercialPrimitivesService
         var link = linkResult.Result;
         if (_deferrals.HasLiveIdentomatCredentials)
         {
-            _ = _kycOptions.Value;
             return AZOAResult<IdentomatSessionStatus>.Success(new IdentomatSessionStatus(
                 ProviderDeferralLedger.IdentomatProviderName,
                 IdentomatSessionStatuses.Pending,
-                sessionId,
+                fallbackSessionId,
                 VerificationUrl: link.SignedUrl,
                 SignedAccessUrl: link.SignedUrl,
                 DeferralLogged: false,
@@ -206,7 +305,7 @@ public sealed class CommercialPrimitivesService
         return AZOAResult<IdentomatSessionStatus>.Success(new IdentomatSessionStatus(
             ProviderDeferralLedger.IdentomatProviderName,
             IdentomatSessionStatuses.PendingVendorCredentials,
-            sessionId,
+            fallbackSessionId,
             VerificationUrl: link.SignedUrl,
             SignedAccessUrl: link.SignedUrl,
             DeferralLogged: true,
@@ -224,21 +323,7 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<IReadOnlyList<CommercialInvoice>>.FailureWithCode(
                 "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
 
-        var ownerActorId = actorId.ToString("N");
-        await HydrateInvoicesFromSurrealAsync(ownerActorId, ct);
-
-        var items = _state.Invoices.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot =>
-            {
-                lock (slot.SyncRoot)
-                {
-                    return slot.Invoice;
-                }
-            })
-            .OrderByDescending(inv => inv.CreatedAt)
-            .ToArray();
-
+        var items = await LoadOwnedInvoicesAsync(actorId.ToString("N"), ct);
         return AZOAResult<IReadOnlyList<CommercialInvoice>>.Success(items);
     }
 
@@ -328,9 +413,9 @@ public sealed class CommercialPrimitivesService
 
         var ownerActorId = actorId.ToString("N");
         var createdAt = _clock.GetUtcNow();
-        var id = $"inv_{Guid.NewGuid():N}";
-        var seq = Interlocked.Increment(ref _state.InvoiceSequence);
-        var invoiceNumber = $"INV-{createdAt:yyyyMMdd}-{seq:D4}";
+        var rawId = Guid.NewGuid();
+        var id = $"inv_{rawId:N}";
+        var invoiceNumber = $"INV-{createdAt:yyyyMMdd}-{rawId.ToString("N")[..8].ToUpperInvariant()}";
         var title = string.IsNullOrWhiteSpace(request.Title)
             ? $"Invoice {invoiceNumber}"
             : request.Title.Trim();
@@ -372,8 +457,6 @@ public sealed class CommercialPrimitivesService
             PaidAt: null,
             VoidedAt: null);
 
-        _state.Invoices[id] = new CommercialPrimitivesStoreState.InvoiceSlot(ownerActorId, invoice);
-
         var record = new CommercialInvoiceRecord
         {
             Id = invoice.Id,
@@ -396,7 +479,8 @@ public sealed class CommercialPrimitivesService
             VoidedAt = invoice.VoidedAt,
         };
 
-        await TryExecuteSurrealCreateAsync(record, ct);
+        await PersistRecordAsync(record, ct);
+        _state.Invoices[id] = new CommercialPrimitivesStoreState.InvoiceSlot(ownerActorId, invoice);
         return AZOAResult<CommercialInvoice>.Success(invoice);
     }
 
@@ -414,13 +498,47 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<CommercialInvoice>.FailureWithCode(
                 "invoiceId is required.", AzoaErrorCodes.InvalidRequest);
 
-        _ = request;
-        var normalizedId = invoiceId.Trim();
+        if (!TryValidateOptionalText(request?.PaymentReference, 128, out _))
+            return AZOAResult<CommercialInvoice>.FailureWithCode(
+                "Invalid paymentReference.", AzoaErrorCodes.InvalidRequest);
+
+        var normalizedId = SurrealRecordGuid.BareId(invoiceId.Trim());
         var ownerActorId = actorId.ToString("N");
         var slot = await FindOwnedInvoiceAsync(ownerActorId, normalizedId, ct);
         if (slot is null)
             return AZOAResult<CommercialInvoice>.FailureWithCode(
                 "Invoice not found.", AzoaErrorCodes.NotFound);
+
+        var paidAt = _clock.GetUtcNow();
+        if (_surrealExecutor is not null)
+        {
+            if (!string.Equals(slot.Invoice.Status, CommercialInvoiceStatuses.Open, StringComparison.Ordinal))
+            {
+                return AZOAResult<CommercialInvoice>.FailureWithCode(
+                    $"Invoice cannot be marked paid from status '{slot.Invoice.Status}'.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            var response = await _surrealExecutor.ExecuteAsync(
+                SurrealWriter.UpdateOnly<CommercialInvoiceRecord>(normalizedId)
+                    .Where(row => row.OwnerActorId == ownerActorId && row.Status == CommercialInvoiceStatuses.Open)
+                    .Set(row => row.Status, CommercialInvoiceStatuses.Paid)
+                    .Set(row => row.PaidAt, paidAt)
+                    .Build(),
+                ct);
+            response.EnsureAllOk();
+            var persisted = response.GetValues<CommercialInvoiceRecord>(0).FirstOrDefault();
+            if (persisted is null)
+            {
+                return AZOAResult<CommercialInvoice>.FailureWithCode(
+                    "Invoice state changed concurrently and could not be marked paid.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            var updatedFromDb = ToCommercialInvoice(persisted);
+            _state.Invoices[updatedFromDb.Id] = new CommercialPrimitivesStoreState.InvoiceSlot(ownerActorId, updatedFromDb);
+            return AZOAResult<CommercialInvoice>.Success(updatedFromDb);
+        }
 
         CommercialInvoice updated;
         lock (slot.SyncRoot)
@@ -435,12 +553,11 @@ public sealed class CommercialPrimitivesService
             updated = slot.Invoice with
             {
                 Status = CommercialInvoiceStatuses.Paid,
-                PaidAt = _clock.GetUtcNow(),
+                PaidAt = paidAt,
             };
             slot.Invoice = updated;
         }
 
-        await TryUpdateInvoicePaidAsync(ownerActorId, updated.Id, updated.PaidAt!.Value, ct);
         return AZOAResult<CommercialInvoice>.Success(updated);
     }
 
@@ -458,13 +575,49 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<CommercialInvoice>.FailureWithCode(
                 "invoiceId is required.", AzoaErrorCodes.InvalidRequest);
 
-        _ = request;
-        var normalizedId = invoiceId.Trim();
+        if (!TryValidateOptionalText(request?.Reason, 256, out _))
+            return AZOAResult<CommercialInvoice>.FailureWithCode(
+                "Invalid void reason.", AzoaErrorCodes.InvalidRequest);
+
+        var normalizedId = SurrealRecordGuid.BareId(invoiceId.Trim());
         var ownerActorId = actorId.ToString("N");
         var slot = await FindOwnedInvoiceAsync(ownerActorId, normalizedId, ct);
         if (slot is null)
             return AZOAResult<CommercialInvoice>.FailureWithCode(
                 "Invoice not found.", AzoaErrorCodes.NotFound);
+
+        var voidedAt = _clock.GetUtcNow();
+        if (_surrealExecutor is not null)
+        {
+            if (string.Equals(slot.Invoice.Status, CommercialInvoiceStatuses.Paid, StringComparison.Ordinal)
+                || string.Equals(slot.Invoice.Status, CommercialInvoiceStatuses.Void, StringComparison.Ordinal))
+            {
+                return AZOAResult<CommercialInvoice>.FailureWithCode(
+                    $"Invoice cannot be voided from status '{slot.Invoice.Status}'.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            var response = await _surrealExecutor.ExecuteAsync(
+                SurrealWriter.UpdateOnly<CommercialInvoiceRecord>(normalizedId)
+                    .Where(row => row.OwnerActorId == ownerActorId
+                        && (row.Status == CommercialInvoiceStatuses.Open || row.Status == CommercialInvoiceStatuses.Draft))
+                    .Set(row => row.Status, CommercialInvoiceStatuses.Void)
+                    .Set(row => row.VoidedAt, voidedAt)
+                    .Build(),
+                ct);
+            response.EnsureAllOk();
+            var persisted = response.GetValues<CommercialInvoiceRecord>(0).FirstOrDefault();
+            if (persisted is null)
+            {
+                return AZOAResult<CommercialInvoice>.FailureWithCode(
+                    "Invoice state changed concurrently and could not be voided.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            var updatedFromDb = ToCommercialInvoice(persisted);
+            _state.Invoices[updatedFromDb.Id] = new CommercialPrimitivesStoreState.InvoiceSlot(ownerActorId, updatedFromDb);
+            return AZOAResult<CommercialInvoice>.Success(updatedFromDb);
+        }
 
         CommercialInvoice updated;
         lock (slot.SyncRoot)
@@ -480,12 +633,11 @@ public sealed class CommercialPrimitivesService
             updated = slot.Invoice with
             {
                 Status = CommercialInvoiceStatuses.Void,
-                VoidedAt = _clock.GetUtcNow(),
+                VoidedAt = voidedAt,
             };
             slot.Invoice = updated;
         }
 
-        await TryUpdateInvoiceVoidedAsync(ownerActorId, updated.Id, updated.VoidedAt!.Value, ct);
         return AZOAResult<CommercialInvoice>.Success(updated);
     }
 
@@ -497,15 +649,7 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<IReadOnlyList<PaymentRequestRecord>>.FailureWithCode(
                 "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
 
-        var ownerActorId = actorId.ToString("N");
-        await HydratePaymentRequestsFromSurrealAsync(ownerActorId, ct);
-
-        var items = _state.PaymentRequests.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot => slot.Request)
-            .OrderByDescending(r => r.CreatedAt)
-            .ToArray();
-
+        var items = await LoadOwnedPaymentRequestsAsync(actorId.ToString("N"), ct);
         return AZOAResult<IReadOnlyList<PaymentRequestRecord>>.Success(items);
     }
 
@@ -536,9 +680,9 @@ public sealed class CommercialPrimitivesService
 
         var ownerActorId = actorId.ToString("N");
         var createdAt = _clock.GetUtcNow();
-        var id = $"pr_{Guid.NewGuid():N}";
-        var seq = Interlocked.Increment(ref _state.PaymentRequestSequence);
-        var requestNumber = $"PR-{createdAt:yyyyMMdd}-{seq:D4}";
+        var rawId = Guid.NewGuid();
+        var id = $"pr_{rawId:N}";
+        var requestNumber = $"PR-{createdAt:yyyyMMdd}-{rawId.ToString("N")[..8].ToUpperInvariant()}";
         var title = string.IsNullOrWhiteSpace(request.Title)
             ? $"Payment Request {requestNumber}"
             : request.Title.Trim();
@@ -573,8 +717,6 @@ public sealed class CommercialPrimitivesService
             createdAt,
             PaidAt: null);
 
-        _state.PaymentRequests[id] = new CommercialPrimitivesStoreState.PaymentRequestSlot(ownerActorId, item);
-
         var record = new PaymentRequestRecordModel
         {
             Id = item.Id,
@@ -594,7 +736,8 @@ public sealed class CommercialPrimitivesService
             PaidAt = item.PaidAt,
         };
 
-        await TryExecuteSurrealCreateAsync(record, ct);
+        await PersistRecordAsync(record, ct);
+        _state.PaymentRequests[id] = new CommercialPrimitivesStoreState.PaymentRequestSlot(ownerActorId, item);
         return AZOAResult<PaymentRequestRecord>.Success(item);
     }
 
@@ -606,15 +749,7 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<IReadOnlyList<OwnershipReceiptDocument>>.FailureWithCode(
                 "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
 
-        var ownerActorId = actorId.ToString("N");
-        await HydrateOwnershipReceiptsFromSurrealAsync(ownerActorId, ct);
-
-        var items = _state.OwnershipReceipts.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot => slot.Receipt)
-            .OrderByDescending(r => r.IssuedAt)
-            .ToArray();
-
+        var items = await LoadOwnedOwnershipReceiptsAsync(actorId.ToString("N"), ct);
         return AZOAResult<IReadOnlyList<OwnershipReceiptDocument>>.Success(items);
     }
 
@@ -662,7 +797,10 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<OwnershipReceiptDocument>.FailureWithCode(
                 "A 3-letter ISO currency code is required.", AzoaErrorCodes.InvalidRequest);
 
-        var chainTxHash = NormalizeOptionalString(request.ChainTxHash);
+        if (!TryValidateOptionalText(request.ChainTxHash, 128, out var chainTxHash))
+            return AZOAResult<OwnershipReceiptDocument>.FailureWithCode(
+                "Invalid chainTxHash.", AzoaErrorCodes.InvalidRequest);
+
         var verificationStatus = string.IsNullOrWhiteSpace(request.VerificationStatus)
             ? (chainTxHash is not null
                 ? OwnershipVerificationStatuses.Verified
@@ -675,9 +813,9 @@ public sealed class CommercialPrimitivesService
 
         var ownerActorId = actorId.ToString("N");
         var issuedAt = _clock.GetUtcNow();
-        var receiptId = $"rcp_{Guid.NewGuid():N}";
-        var seq = Interlocked.Increment(ref _state.OwnershipReceiptSequence);
-        var receiptNumber = $"RCP-{issuedAt:yyyyMMdd}-{seq:D4}";
+        var rawId = Guid.NewGuid();
+        var receiptId = $"rcp_{rawId:N}";
+        var receiptNumber = $"RCP-{issuedAt:yyyyMMdd}-{rawId.ToString("N")[..8].ToUpperInvariant()}";
         var allocationOrSaleId = request.AllocationOrSaleId.Trim();
         var assetSymbol = request.AssetSymbol.Trim();
         var assetResourceId = NormalizeOptionalString(request.AssetResourceId);
@@ -702,8 +840,6 @@ public sealed class CommercialPrimitivesService
         var contentHash = ComputeOwnershipReceiptContentHash(draft);
         var document = draft with { ContentHash = contentHash };
 
-        _state.OwnershipReceipts[receiptId] = new CommercialPrimitivesStoreState.OwnershipReceiptSlot(ownerActorId, document);
-
         var record = new OwnershipReceiptRecord
         {
             Id = document.ReceiptId,
@@ -723,7 +859,8 @@ public sealed class CommercialPrimitivesService
             VerificationStatus = document.VerificationStatus,
         };
 
-        await TryExecuteSurrealCreateAsync(record, ct);
+        await PersistRecordAsync(record, ct);
+        _state.OwnershipReceipts[receiptId] = new CommercialPrimitivesStoreState.OwnershipReceiptSlot(ownerActorId, document);
         return AZOAResult<OwnershipReceiptDocument>.Success(document);
     }
 
@@ -735,15 +872,7 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<IReadOnlyList<AccountDocumentReport>>.FailureWithCode(
                 "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
 
-        var ownerActorId = actorId.ToString("N");
-        await HydrateAccountDocumentsFromSurrealAsync(ownerActorId, ct);
-
-        var items = _state.AccountDocuments.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot => slot.Document)
-            .OrderByDescending(d => d.GeneratedAt)
-            .ToArray();
-
+        var items = await LoadOwnedAccountDocumentsAsync(actorId.ToString("N"), ct);
         return AZOAResult<IReadOnlyList<AccountDocumentReport>>.Success(items);
     }
 
@@ -781,31 +910,15 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<AccountDocumentReport>.FailureWithCode(
                 "Invalid subject.", AzoaErrorCodes.InvalidRequest);
 
-        await HydrateInvoicesFromSurrealAsync(ownerActorId, ct);
-        await HydratePaymentRequestsFromSurrealAsync(ownerActorId, ct);
-        await HydrateOwnershipReceiptsFromSurrealAsync(ownerActorId, ct);
-
-        var invoices = _state.Invoices.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot =>
-            {
-                lock (slot.SyncRoot)
-                {
-                    return slot.Invoice;
-                }
-            })
+        var invoices = (await LoadOwnedInvoicesAsync(ownerActorId, ct))
             .Where(inv => InPeriod(inv.CreatedAt, request.PeriodStart, request.PeriodEnd))
             .ToArray();
 
-        var paymentRequests = _state.PaymentRequests.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot => slot.Request)
+        var paymentRequests = (await LoadOwnedPaymentRequestsAsync(ownerActorId, ct))
             .Where(pr => InPeriod(pr.CreatedAt, request.PeriodStart, request.PeriodEnd))
             .ToArray();
 
-        var receipts = _state.OwnershipReceipts.Values
-            .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-            .Select(slot => slot.Receipt)
+        var receipts = (await LoadOwnedOwnershipReceiptsAsync(ownerActorId, ct))
             .Where(r => InPeriod(r.IssuedAt, request.PeriodStart, request.PeriodEnd))
             .ToArray();
 
@@ -881,8 +994,6 @@ public sealed class CommercialPrimitivesService
             downloadLinkResult.Result.SignedUrl,
             generatedAt);
 
-        _state.AccountDocuments[documentId] = new CommercialPrimitivesStoreState.AccountDocumentSlot(ownerActorId, report);
-
         var record = new AccountDocumentRecord
         {
             Id = report.DocumentId,
@@ -898,7 +1009,8 @@ public sealed class CommercialPrimitivesService
             GeneratedAt = report.GeneratedAt,
         };
 
-        await TryExecuteSurrealCreateAsync(record, ct);
+        await PersistRecordAsync(record, ct);
+        _state.AccountDocuments[documentId] = new CommercialPrimitivesStoreState.AccountDocumentSlot(ownerActorId, report);
         return AZOAResult<AccountDocumentReport>.Success(report);
     }
 
@@ -963,22 +1075,34 @@ public sealed class CommercialPrimitivesService
         return Convert.ToHexString(digest).ToLowerInvariant();
     }
 
+    private AZOAResult<SignedAccessLink> MintKycAccessLink(
+        string externalSubject,
+        string sessionId,
+        IdentomatSessionRequest? request)
+        => _accessLinks.Mint(new MintAccessLinkRequest(
+            externalSubject,
+            AccessLinkScopes.Kyc,
+            TargetResourceId: sessionId,
+            ReturnUrl: request?.ReturnUrl,
+            TtlMinutes: request?.TtlMinutes));
+
+    private static string MapKycStatus(KycStatus status) => status switch
+    {
+        KycStatus.APPROVED => IdentomatSessionStatuses.Approved,
+        KycStatus.REJECTED => IdentomatSessionStatuses.Rejected,
+        KycStatus.IN_REVIEW => IdentomatSessionStatuses.UnderReview,
+        _ => IdentomatSessionStatuses.Pending,
+    };
+
+    private static DateTimeOffset? ToUtcOffset(DateTime? utc)
+        => utc.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc)) : null;
+
     private async Task<CommercialPrimitivesStoreState.InvoiceSlot?> FindOwnedInvoiceAsync(
         string ownerActorId,
         string invoiceId,
         CancellationToken ct)
     {
-        if (_state.Invoices.TryGetValue(invoiceId, out var existing))
-        {
-            return string.Equals(existing.OwnerActorId, ownerActorId, StringComparison.Ordinal)
-                ? existing
-                : null;
-        }
-
-        if (_surrealExecutor is null)
-            return null;
-
-        try
+        if (_surrealExecutor is not null)
         {
             var row = await _surrealExecutor.QuerySingleAsync<CommercialInvoiceRecord>(
                 SurrealQuery<CommercialInvoiceRecord>.Key(invoiceId),
@@ -989,385 +1113,192 @@ public sealed class CommercialPrimitivesService
 
             var hydrated = ToCommercialInvoice(row);
             var slot = new CommercialPrimitivesStoreState.InvoiceSlot(row.OwnerActorId, hydrated);
-            return _state.Invoices.GetOrAdd(hydrated.Id, slot);
+            _state.Invoices[hydrated.Id] = slot;
+            return slot;
         }
-        catch (SurrealStatementException ex)
+
+        if (_state.Invoices.TryGetValue(invoiceId, out var existing))
         {
-            LogSurrealFallback("LookupInvoice", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("LookupInvoice", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("LookupInvoice", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("LookupInvoice", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("LookupInvoice", ex);
-        }
-        catch (JsonException ex)
-        {
-            LogSurrealFallback("LookupInvoice", ex);
+            return string.Equals(existing.OwnerActorId, ownerActorId, StringComparison.Ordinal)
+                ? existing
+                : null;
         }
 
         return null;
     }
 
-    private async Task HydrateInvoicesFromSurrealAsync(string ownerActorId, CancellationToken ct)
+    private async Task<IReadOnlyList<CommercialInvoice>> LoadOwnedInvoicesAsync(string ownerActorId, CancellationToken ct)
     {
         if (_surrealExecutor is null)
-            return;
+        {
+            return _state.Invoices.Values
+                .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
+                .Select(slot =>
+                {
+                    lock (slot.SyncRoot)
+                    {
+                        return slot.Invoice;
+                    }
+                })
+                .OrderByDescending(inv => inv.CreatedAt)
+                .ToArray();
+        }
 
-        try
-        {
-            var rows = await _surrealExecutor.QueryAsync<CommercialInvoiceRecord>(
-                SurrealQuery<CommercialInvoiceRecord>.From()
-                    .Where(row => row.OwnerActorId == ownerActorId)
-                    .OrderByDescending(row => row.CreatedAt)
-                    .Limit(DefaultQueryLimit),
-                ct);
+        var rows = await _surrealExecutor.QueryAsync<CommercialInvoiceRecord>(
+            SurrealQuery<CommercialInvoiceRecord>.From()
+                .Where(row => row.OwnerActorId == ownerActorId)
+                .OrderByDescending(row => row.CreatedAt)
+                .Limit(DefaultQueryLimit),
+            ct);
 
-            foreach (var row in rows)
-            {
-                var invoice = ToCommercialInvoice(row);
-                _state.Invoices.TryAdd(
-                    invoice.Id,
-                    new CommercialPrimitivesStoreState.InvoiceSlot(row.OwnerActorId, invoice));
-            }
-        }
-        catch (SurrealStatementException ex)
+        var result = new List<CommercialInvoice>(rows.Count);
+        foreach (var row in rows)
         {
-            LogSurrealFallback("ListInvoices", ex);
+            var invoice = ToCommercialInvoice(row);
+            _state.Invoices[invoice.Id] = new CommercialPrimitivesStoreState.InvoiceSlot(row.OwnerActorId, invoice);
+            result.Add(invoice);
         }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("ListInvoices", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("ListInvoices", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("ListInvoices", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("ListInvoices", ex);
-        }
-        catch (JsonException ex)
-        {
-            LogSurrealFallback("ListInvoices", ex);
-        }
+
+        return result.OrderByDescending(inv => inv.CreatedAt).ToArray();
     }
 
-    private async Task HydratePaymentRequestsFromSurrealAsync(string ownerActorId, CancellationToken ct)
+    private async Task<IReadOnlyList<PaymentRequestRecord>> LoadOwnedPaymentRequestsAsync(string ownerActorId, CancellationToken ct)
     {
         if (_surrealExecutor is null)
-            return;
+        {
+            return _state.PaymentRequests.Values
+                .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
+                .Select(slot => slot.Request)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToArray();
+        }
 
-        try
-        {
-            var rows = await _surrealExecutor.QueryAsync<PaymentRequestRecordModel>(
-                SurrealQuery<PaymentRequestRecordModel>.From()
-                    .Where(row => row.OwnerActorId == ownerActorId)
-                    .OrderByDescending(row => row.CreatedAt)
-                    .Limit(DefaultQueryLimit),
-                ct);
+        var rows = await _surrealExecutor.QueryAsync<PaymentRequestRecordModel>(
+            SurrealQuery<PaymentRequestRecordModel>.From()
+                .Where(row => row.OwnerActorId == ownerActorId)
+                .OrderByDescending(row => row.CreatedAt)
+                .Limit(DefaultQueryLimit),
+            ct);
 
-            foreach (var row in rows)
-            {
-                var dto = new PaymentRequestRecord(
-                    row.Id,
-                    row.RequestNumber,
-                    row.Title,
-                    row.RequesterSubject,
-                    row.PayerSubject,
-                    row.CurrencyCode,
-                    row.AmountMinorUnits,
-                    row.TokenEquivalentUnits,
-                    row.Memo,
-                    row.Status,
-                    row.DueAt,
-                    row.PaymentLinkUrl,
-                    row.CreatedAt,
-                    row.PaidAt);
+        var result = new List<PaymentRequestRecord>(rows.Count);
+        foreach (var row in rows)
+        {
+            var dto = new PaymentRequestRecord(
+                SurrealRecordGuid.BareId(row.Id),
+                row.RequestNumber,
+                row.Title,
+                row.RequesterSubject,
+                row.PayerSubject,
+                row.CurrencyCode,
+                row.AmountMinorUnits,
+                row.TokenEquivalentUnits,
+                row.Memo,
+                row.Status,
+                row.DueAt,
+                row.PaymentLinkUrl,
+                row.CreatedAt,
+                row.PaidAt);
 
-                _state.PaymentRequests.TryAdd(
-                    dto.Id,
-                    new CommercialPrimitivesStoreState.PaymentRequestSlot(row.OwnerActorId, dto));
-            }
+            _state.PaymentRequests[dto.Id] = new CommercialPrimitivesStoreState.PaymentRequestSlot(row.OwnerActorId, dto);
+            result.Add(dto);
         }
-        catch (SurrealStatementException ex)
-        {
-            LogSurrealFallback("ListPaymentRequests", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("ListPaymentRequests", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("ListPaymentRequests", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("ListPaymentRequests", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("ListPaymentRequests", ex);
-        }
+
+        return result.OrderByDescending(r => r.CreatedAt).ToArray();
     }
 
-    private async Task HydrateOwnershipReceiptsFromSurrealAsync(string ownerActorId, CancellationToken ct)
+    private async Task<IReadOnlyList<OwnershipReceiptDocument>> LoadOwnedOwnershipReceiptsAsync(string ownerActorId, CancellationToken ct)
     {
         if (_surrealExecutor is null)
-            return;
+        {
+            return _state.OwnershipReceipts.Values
+                .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
+                .Select(slot => slot.Receipt)
+                .OrderByDescending(r => r.IssuedAt)
+                .ToArray();
+        }
 
-        try
-        {
-            var rows = await _surrealExecutor.QueryAsync<OwnershipReceiptRecord>(
-                SurrealQuery<OwnershipReceiptRecord>.From()
-                    .Where(row => row.OwnerActorId == ownerActorId)
-                    .OrderByDescending(row => row.IssuedAt)
-                    .Limit(DefaultQueryLimit),
-                ct);
+        var rows = await _surrealExecutor.QueryAsync<OwnershipReceiptRecord>(
+            SurrealQuery<OwnershipReceiptRecord>.From()
+                .Where(row => row.OwnerActorId == ownerActorId)
+                .OrderByDescending(row => row.IssuedAt)
+                .Limit(DefaultQueryLimit),
+            ct);
 
-            foreach (var row in rows)
-            {
-                var dto = new OwnershipReceiptDocument(
-                    row.Id,
-                    row.ReceiptNumber,
-                    row.AllocationOrSaleId,
-                    row.HolderSubject,
-                    row.HolderClass,
-                    row.AssetSymbol,
-                    row.AssetResourceId,
-                    row.UnitsFormatted,
-                    row.FiatMinorUnits,
-                    row.CurrencyCode,
-                    row.ChainTxHash,
-                    row.ContentHash,
-                    row.IssuedAt,
-                    row.VerificationStatus);
+        var result = new List<OwnershipReceiptDocument>(rows.Count);
+        foreach (var row in rows)
+        {
+            var dto = new OwnershipReceiptDocument(
+                SurrealRecordGuid.BareId(row.Id),
+                row.ReceiptNumber,
+                row.AllocationOrSaleId,
+                row.HolderSubject,
+                row.HolderClass,
+                row.AssetSymbol,
+                row.AssetResourceId,
+                row.UnitsFormatted,
+                row.FiatMinorUnits,
+                row.CurrencyCode,
+                row.ChainTxHash,
+                row.ContentHash,
+                row.IssuedAt,
+                row.VerificationStatus);
 
-                _state.OwnershipReceipts.TryAdd(
-                    dto.ReceiptId,
-                    new CommercialPrimitivesStoreState.OwnershipReceiptSlot(row.OwnerActorId, dto));
-            }
+            _state.OwnershipReceipts[dto.ReceiptId] = new CommercialPrimitivesStoreState.OwnershipReceiptSlot(row.OwnerActorId, dto);
+            result.Add(dto);
         }
-        catch (SurrealStatementException ex)
-        {
-            LogSurrealFallback("ListOwnershipReceipts", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("ListOwnershipReceipts", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("ListOwnershipReceipts", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("ListOwnershipReceipts", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("ListOwnershipReceipts", ex);
-        }
+
+        return result.OrderByDescending(r => r.IssuedAt).ToArray();
     }
 
-    private async Task HydrateAccountDocumentsFromSurrealAsync(string ownerActorId, CancellationToken ct)
+    private async Task<IReadOnlyList<AccountDocumentReport>> LoadOwnedAccountDocumentsAsync(string ownerActorId, CancellationToken ct)
     {
         if (_surrealExecutor is null)
-            return;
+        {
+            return _state.AccountDocuments.Values
+                .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
+                .Select(slot => slot.Document)
+                .OrderByDescending(d => d.GeneratedAt)
+                .ToArray();
+        }
 
-        try
-        {
-            var rows = await _surrealExecutor.QueryAsync<AccountDocumentRecord>(
-                SurrealQuery<AccountDocumentRecord>.From()
-                    .Where(row => row.OwnerActorId == ownerActorId)
-                    .OrderByDescending(row => row.GeneratedAt)
-                    .Limit(DefaultQueryLimit),
-                ct);
+        var rows = await _surrealExecutor.QueryAsync<AccountDocumentRecord>(
+            SurrealQuery<AccountDocumentRecord>.From()
+                .Where(row => row.OwnerActorId == ownerActorId)
+                .OrderByDescending(row => row.GeneratedAt)
+                .Limit(DefaultQueryLimit),
+            ct);
 
-            foreach (var row in rows)
-            {
-                var metrics = DeserializeMetrics(row.SummaryMetricsJson);
-                var dto = new AccountDocumentReport(
-                    row.Id,
-                    row.Subject,
-                    row.DocumentType,
-                    row.Title,
-                    row.PeriodStart,
-                    row.PeriodEnd,
-                    metrics,
-                    row.ContentHash,
-                    row.DownloadUrl,
-                    row.GeneratedAt);
+        var result = new List<AccountDocumentReport>(rows.Count);
+        foreach (var row in rows)
+        {
+            var metrics = DeserializeMetrics(row.SummaryMetricsJson);
+            var dto = new AccountDocumentReport(
+                SurrealRecordGuid.BareId(row.Id),
+                row.Subject,
+                row.DocumentType,
+                row.Title,
+                row.PeriodStart,
+                row.PeriodEnd,
+                metrics,
+                row.ContentHash,
+                row.DownloadUrl,
+                row.GeneratedAt);
 
-                _state.AccountDocuments.TryAdd(
-                    dto.DocumentId,
-                    new CommercialPrimitivesStoreState.AccountDocumentSlot(row.OwnerActorId, dto));
-            }
+            _state.AccountDocuments[dto.DocumentId] = new CommercialPrimitivesStoreState.AccountDocumentSlot(row.OwnerActorId, dto);
+            result.Add(dto);
         }
-        catch (SurrealStatementException ex)
-        {
-            LogSurrealFallback("ListAccountDocuments", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("ListAccountDocuments", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("ListAccountDocuments", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("ListAccountDocuments", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("ListAccountDocuments", ex);
-        }
-        catch (JsonException ex)
-        {
-            LogSurrealFallback("ListAccountDocuments", ex);
-        }
+
+        return result.OrderByDescending(d => d.GeneratedAt).ToArray();
     }
 
-    private async Task TryExecuteSurrealCreateAsync<TRecord>(TRecord record, CancellationToken ct)
+    private async Task PersistRecordAsync<TRecord>(TRecord record, CancellationToken ct)
         where TRecord : class, ISurrealRecord, new()
     {
         if (_surrealExecutor is null)
             return;
 
-        try
-        {
-            var response = await _surrealExecutor.ExecuteAsync(SurrealWriter.Create(record), ct);
-            response.EnsureAllOk();
-        }
-        catch (SurrealStatementException ex)
-        {
-            LogSurrealFallback(typeof(TRecord).Name, ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback(typeof(TRecord).Name, ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback(typeof(TRecord).Name, ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback(typeof(TRecord).Name, ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback(typeof(TRecord).Name, ex);
-        }
-    }
-
-    private async Task TryUpdateInvoicePaidAsync(
-        string ownerActorId,
-        string invoiceId,
-        DateTimeOffset paidAt,
-        CancellationToken ct)
-    {
-        if (_surrealExecutor is null)
-            return;
-
-        try
-        {
-            var query = SurrealWriter.UpdateOnly<CommercialInvoiceRecord>(invoiceId)
-                .Where(row => row.OwnerActorId == ownerActorId)
-                .Set(row => row.Status, CommercialInvoiceStatuses.Paid)
-                .Set(row => row.PaidAt, paidAt)
-                .Build();
-
-            var response = await _surrealExecutor.ExecuteAsync(query, ct);
-            response.EnsureAllOk();
-        }
-        catch (SurrealStatementException ex)
-        {
-            LogSurrealFallback("PayInvoice", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("PayInvoice", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("PayInvoice", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("PayInvoice", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("PayInvoice", ex);
-        }
-    }
-
-    private async Task TryUpdateInvoiceVoidedAsync(
-        string ownerActorId,
-        string invoiceId,
-        DateTimeOffset voidedAt,
-        CancellationToken ct)
-    {
-        if (_surrealExecutor is null)
-            return;
-
-        try
-        {
-            var query = SurrealWriter.UpdateOnly<CommercialInvoiceRecord>(invoiceId)
-                .Where(row => row.OwnerActorId == ownerActorId)
-                .Set(row => row.Status, CommercialInvoiceStatuses.Void)
-                .Set(row => row.VoidedAt, voidedAt)
-                .Build();
-
-            var response = await _surrealExecutor.ExecuteAsync(query, ct);
-            response.EnsureAllOk();
-        }
-        catch (SurrealStatementException ex)
-        {
-            LogSurrealFallback("VoidInvoice", ex);
-        }
-        catch (InvalidOperationException ex)
-        {
-            LogSurrealFallback("VoidInvoice", ex);
-        }
-        catch (HttpRequestException ex)
-        {
-            LogSurrealFallback("VoidInvoice", ex);
-        }
-        catch (SocketException ex)
-        {
-            LogSurrealFallback("VoidInvoice", ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogSurrealFallback("VoidInvoice", ex);
-        }
-    }
-
-    private void LogSurrealFallback(string operation, Exception ex)
-    {
-        _logger.LogWarning(
-            ex,
-            "Commercial primitives SurrealDB write-through/read-through fallback on {Operation}; continuing with in-memory state.",
-            operation);
+        var response = await _surrealExecutor.ExecuteAsync(SurrealWriter.Create(record), ct);
+        response.EnsureAllOk();
     }
 
     private static CommercialInvoice ToCommercialInvoice(CommercialInvoiceRecord row)
@@ -1378,7 +1309,7 @@ public sealed class CommercialPrimitivesService
               ?? Array.Empty<InvoiceLineItem>();
 
         return new CommercialInvoice(
-            row.Id,
+            SurrealRecordGuid.BareId(row.Id),
             row.InvoiceNumber,
             row.Title,
             row.IssuerSubject,
@@ -1416,6 +1347,31 @@ public sealed class CommercialPrimitivesService
 
         normalized = raw.Trim();
         return normalized.Length is >= 1 and <= 128;
+    }
+
+    private static bool TryValidateOptionalText(string? raw, int maxLength, out string? normalized)
+    {
+        if (raw is null)
+        {
+            normalized = null;
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(raw) || raw.Any(char.IsControl))
+        {
+            normalized = null;
+            return false;
+        }
+
+        var trimmed = raw.Trim();
+        if (trimmed.Length > maxLength)
+        {
+            normalized = null;
+            return false;
+        }
+
+        normalized = trimmed;
+        return true;
     }
 
     private static bool TryNormalizeCurrency(string? raw, out string normalized)

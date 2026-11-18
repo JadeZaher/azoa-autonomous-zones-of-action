@@ -55,18 +55,21 @@ public sealed class IdentomatKybProvider(IOptions<KycSettings> kycOptions, IOpti
         if (!GetHostedCapabilities().Available || request.FlowKind != FlowKind || request.TenantId is null
             || request.SubjectUserId != request.TenantId.Value)
             return AZOAResult<HostedSessionCreation>.FailureWithCode("Business verification is unavailable.", HostedSessionFlow.RequestNotSentCode);
+        var configuredId = _settings.ConfigId!.Trim();
         var body = new Dictionary<string, object>
         {
-            ["companyKey"] = _credentials.CompanyKey!.Trim(), ["configId"] = _settings.ConfigId!.Trim(),
+            ["companyKey"] = _credentials.CompanyKey!.Trim(),
             ["clientUserId"] = request.AdmissionKey,
         };
+        if (!string.Equals(configuredId, "default", StringComparison.OrdinalIgnoreCase))
+            body["configId"] = configuredId;
         if (!string.IsNullOrWhiteSpace(_settings.ReturnUrl))
             body["general"] = new Dictionary<string, string> { ["returnUrl"] = _settings.ReturnUrl };
         var response = await transport.PostAsync<Dictionary<string, object>, IdentomatBeginResponse>(
             _credentials.BeginBaseUrl!, "/begin", body, "kyb-begin", ct);
         if (response.IsError || response.Result is null)
             return AZOAResult<HostedSessionCreation>.FailureWithCode("Business verification could not start.", response.Code ?? AzoaErrorCodes.DependencyUnavailable);
-        var value = response.Result;
+        var value = response.Result.Result ?? response.Result;
         var redirect = value.AdditionalSessionUrl ?? value.Url;
         if (string.IsNullOrWhiteSpace(value.Id) || value.Id.Length > 256 || value.AdditionalSessionId?.Length > 256
             || !ValidVendorRedirect(redirect))

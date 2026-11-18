@@ -3,22 +3,29 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Web;
 using AZOA.WebAPI.Controllers;
+using AZOA.WebAPI.Interfaces.Managers;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Models.HostedSessions;
+using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
+using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Services.Auth;
 using AZOA.WebAPI.Services.Commercial;
 using AZOA.WebAPI.Services.Compliance;
 using AZOA.WebAPI.Services.Fiat.OffRamp;
+using AZOA.WebAPI.Services.HostedSessions;
+using AZOA.WebAPI.Services.Kyc;
 using AZOA.WebAPI.Settings;
+using AZOA.WebAPI.Tests.TestSupport;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Moq;
 using Xunit;
 
 namespace AZOA.WebAPI.Tests.Commercial;
@@ -75,7 +82,7 @@ public sealed class CommercialPrimitivesTests
             ["Kyc:Provider"] = "identomat",
             ["Kyc:Identomat:CompanyKey"] = liveIdentomatCredentials ? "live-company-key" : "",
             ["Kyc:Identomat:ConfigId"] = liveIdentomatCredentials ? "live-config-id" : "",
-            ["Kyc:Identomat:CallbackApiKey"] = liveIdentomatCredentials ? "live-callback-key" : "",
+            ["Kyc:Identomat:CallbackApiKey"] = liveIdentomatCredentials ? "live-callback-key-0123456789abcdef0123456789" : "",
         };
 
         return new ConfigurationBuilder()
@@ -91,7 +98,7 @@ public sealed class CommercialPrimitivesTests
             {
                 CompanyKey = liveCredentials ? "live-company-key" : "",
                 ConfigId = liveCredentials ? "live-config-id" : "",
-                CallbackApiKey = liveCredentials ? "live-callback-key" : "",
+                CallbackApiKey = liveCredentials ? "live-callback-key-0123456789abcdef0123456789" : "",
             },
         };
 
@@ -101,7 +108,8 @@ public sealed class CommercialPrimitivesTests
         out ProviderDeferralLedger ledger,
         bool liveIdentomatCredentials = false,
         string hostedBaseUrl = "https://node.azoa.example",
-        string? jwtKey = "unit-test-hmac-signing-key-material-0123456789")
+        string? jwtKey = "unit-test-hmac-signing-key-material-0123456789",
+        IKycManager? kycManager = null)
     {
         clock = new MutableTimeProvider(new DateTimeOffset(2026, 11, 15, 12, 0, 0, TimeSpan.Zero));
         deferralLogger = new CapturingLogger<ProviderDeferralLedger>();
@@ -118,7 +126,8 @@ public sealed class CommercialPrimitivesTests
             kycSettings,
             NullLogger<CommercialPrimitivesService>.Instance,
             clock,
-            surrealExecutor: null);
+            surrealExecutor: null,
+            kycManager: kycManager);
     }
 
     private static CommercialPrimitivesController CreateController(
@@ -603,5 +612,136 @@ public sealed class CommercialPrimitivesTests
         Assert.True(devInvites.GetProperty("StubDeliveryAcknowledged").GetBoolean());
         Assert.Equal("http://localhost:3100", devInvites.GetProperty("HostedBaseUrl").GetString());
         Assert.True(devDoc.RootElement.GetProperty("Fiat").GetProperty("OffRamp").GetProperty("RequestVoidEnabled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task IdentomatLiveDelegation_UsesRealKycManagerSessionAndMapsStatus()
+    {
+        var actorId = Guid.NewGuid();
+        var expiresAt = new DateTime(2026, 11, 16, 12, 0, 0, DateTimeKind.Utc);
+        var kycManager = new Mock<IKycManager>();
+        kycManager
+            .Setup(m => m.BeginAsync(actorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSessionStartModel>.Success(new KycSessionStartModel
+            {
+                Provider = KycProvider.IDENTOMAT,
+                ProviderKey = IdentomatKycProviderService.ProviderKeyValue,
+                HostedVerification = true,
+                ProviderSessionId = "real-azoa-session-01",
+                VerificationUrl = "https://widget.identomat.com/?session_token=live-token-01",
+                ExpiresAt = expiresAt,
+            }));
+        kycManager
+            .Setup(m => m.GetStatusAsync(actorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(AZOAResult<KycSubmissionModel>.Success(new KycSubmissionModel
+            {
+                Id = Guid.NewGuid(),
+                UserId = actorId,
+                Provider = KycProvider.IDENTOMAT,
+                ProviderKey = IdentomatKycProviderService.ProviderKeyValue,
+                Status = KycStatus.IN_REVIEW,
+                ProviderSessionId = "real-azoa-session-01",
+                VerificationUrl = "https://widget.identomat.com/?session_token=live-token-01",
+                ExpiresAt = expiresAt,
+            }));
+
+        var service = CreateService(out _, out _, out _, liveIdentomatCredentials: true, kycManager: kycManager.Object);
+
+        var started = await service.StartIdentomatSessionAsync(
+            actorId,
+            new IdentomatSessionRequest("ext-live-1", "https://app.azoa.example/done", 25),
+            CancellationToken.None);
+
+        Assert.False(started.IsError);
+        Assert.Equal(IdentomatSessionStatuses.Pending, started.Result!.Status);
+        Assert.Equal("real-azoa-session-01", started.Result.SessionId);
+        Assert.Equal("https://widget.identomat.com/?session_token=live-token-01", started.Result.VerificationUrl);
+        Assert.StartsWith("https://node.azoa.example/ride/", started.Result.SignedAccessUrl, StringComparison.Ordinal);
+
+        var status = await service.GetIdentomatStatusAsync(actorId, CancellationToken.None);
+        Assert.False(status.IsError);
+        Assert.Equal(IdentomatSessionStatuses.UnderReview, status.Result!.Status);
+        Assert.Equal("real-azoa-session-01", status.Result.SessionId);
+    }
+
+    [Fact]
+    public async Task IdentomatWireEnvelopeAndDefaultConfigId_UnwrapNestedResultAndOmitDefaultConfig()
+    {
+        var nestedJson = """{"result":{"id":"sess_live_99","url":"https://widget.identomat.com/?session_token=tok_live_99"}}""";
+        var deserialized = JsonSerializer.Deserialize<IdentomatBeginResponse>(nestedJson)!;
+
+        IdentomatBeginRequestWithSessionOverrides? sentBody = null;
+        var transport = new Mock<IIdentomatHttpTransport>();
+        transport
+            .Setup(t => t.PostAsync<IdentomatBeginRequestWithSessionOverrides, IdentomatBeginResponse>(
+                "https://external-api.identomat.com",
+                "/begin",
+                It.IsAny<IdentomatBeginRequestWithSessionOverrides>(),
+                "begin",
+                It.IsAny<CancellationToken>()))
+            .Callback((string _, string __, IdentomatBeginRequestWithSessionOverrides body, string ___, CancellationToken ____) => sentBody = body)
+            .ReturnsAsync(AZOAResult<IdentomatBeginResponse>.Success(deserialized));
+
+        var settings = IdentomatTestFactory.CompleteSettings();
+        settings.ConfigId = "default";
+        var provider = new IdentomatKycProviderService(
+            IdentomatTestFactory.Options(settings),
+            transport.Object,
+            IdentomatTestFactory.AlwaysAllowQuota(),
+            Mock.Of<IHostedSessionFlow>());
+
+        var created = await provider.CreateHostedSessionAsync(new HostedSessionRequest
+        {
+            FlowKind = HostedSessionFlowKinds.Kyc,
+            SubjectUserId = Guid.NewGuid(),
+            AdmissionKey = "kyc:identomat:default-test",
+        });
+
+        Assert.False(created.IsError, created.Message);
+        Assert.Null(sentBody!.ConfigId);
+        Assert.Equal("sess_live_99", created.Result!.ProviderSessionId);
+        Assert.Equal("https://widget.identomat.com/?session_token=tok_live_99", created.Result.RedirectUrl);
+
+        var inProgress = IdentomatKycProviderService.MapOutcome(new IdentomatResultResponse { Result = "in_progress" });
+        Assert.True(inProgress.SessionExists);
+        Assert.False(inProgress.IsTerminal);
+    }
+
+    [Fact]
+    public async Task CommercialValidation_RejectsMalformedReferencesAndFragments()
+    {
+        var service = CreateService(out _, out _, out _);
+        var actorId = Guid.NewGuid();
+
+        var fragmentLink = service.MintAccessLink(
+            actorId,
+            new MintAccessLinkRequest("sub-frag", AccessLinkScopes.Kyc, ReturnUrl: "https://app.azoa.example/cb#secret"));
+        Assert.True(fragmentLink.IsError);
+        Assert.Equal(AzoaErrorCodes.InvalidRequest, fragmentLink.Code);
+
+        var inv = (await service.CreateInvoiceAsync(
+            actorId,
+            new CreateCommercialInvoiceRequest("Inv Valid", "payer-v", "USD", 0, [new InvoiceLineItemRequest("Fee", 1, 100)]))).Result!;
+
+        var badPay = await service.PayInvoiceAsync(actorId, inv.Id, new PayCommercialInvoiceRequest("   "));
+        Assert.True(badPay.IsError);
+        Assert.Equal(AzoaErrorCodes.InvalidRequest, badPay.Code);
+
+        var badVoid = await service.VoidInvoiceAsync(actorId, inv.Id, new VoidCommercialInvoiceRequest("bad\nreason"));
+        Assert.True(badVoid.IsError);
+        Assert.Equal(AzoaErrorCodes.InvalidRequest, badVoid.Code);
+
+        var badReceipt = await service.IssueOwnershipReceiptAsync(
+            actorId,
+            new IssueOwnershipReceiptRequest(
+                "alloc-v",
+                "holder-v",
+                OwnershipHolderClasses.Member,
+                "AZOA-UNIT",
+                "10.00",
+                1000,
+                ChainTxHash: new string('a', 129)));
+        Assert.True(badReceipt.IsError);
+        Assert.Equal(AzoaErrorCodes.InvalidRequest, badReceipt.Code);
     }
 }

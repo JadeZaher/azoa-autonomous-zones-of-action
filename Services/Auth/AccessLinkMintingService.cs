@@ -28,7 +28,7 @@ public sealed class AccessLinkMintingService
     private readonly byte[] _hmacKey;
     private readonly ConcurrentDictionary<string, AccessLinkMetadata> _metadata = new(StringComparer.Ordinal);
 
-    private sealed record AccessLinkMetadata(string? TargetResourceId, string? ReturnUrl);
+    private sealed record AccessLinkMetadata(string? TargetResourceId, string? ReturnUrl, long ExpUnix);
 
     public AccessLinkMintingService(
         IConfiguration configuration,
@@ -71,6 +71,7 @@ public sealed class AccessLinkMintingService
             if (candidate.Any(char.IsControl)
                 || !Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
                 || !string.IsNullOrEmpty(uri.UserInfo)
+                || !string.IsNullOrEmpty(uri.Fragment)
                 || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
             {
                 return AZOAResult<SignedAccessLink>.FailureWithCode(
@@ -121,9 +122,22 @@ public sealed class AccessLinkMintingService
             ? null
             : ProviderDeferralLedger.IdentomatCredentialsPendingReasonCode;
 
-        if (_metadata.Count > 4096)
-            _metadata.Clear();
-        _metadata[linkId] = new AccessLinkMetadata(targetResourceId, validatedReturnUrl);
+        var nowUnix = createdAt.ToUnixTimeSeconds();
+        if (_metadata.Count >= 4096)
+        {
+            foreach (var entry in _metadata)
+            {
+                if (entry.Value.ExpUnix <= nowUnix)
+                    _metadata.TryRemove(entry.Key, out _);
+            }
+
+            if (_metadata.Count >= 4096)
+            {
+                foreach (var oldest in _metadata.OrderBy(e => e.Value.ExpUnix).Take(_metadata.Count - 4095))
+                    _metadata.TryRemove(oldest.Key, out _);
+            }
+        }
+        _metadata[linkId] = new AccessLinkMetadata(targetResourceId, validatedReturnUrl, expUnix);
 
         return AZOAResult<SignedAccessLink>.Success(new SignedAccessLink(
             linkId,

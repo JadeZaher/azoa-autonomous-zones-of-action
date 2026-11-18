@@ -31,6 +31,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
 
     public const string ApprovedOutcome = "APPROVED";
     public const string RejectedOutcome = "REJECTED";
+    public const string InProgressOutcome = "IN_PROGRESS";
 
     /// <summary>camelCase JSON host path.</summary>
     private const string BeginPath = "/begin";
@@ -293,10 +294,11 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
                 Code = HostedSessionFlow.RequestNotSentCode,
                 RetryAfterSeconds = Math.Max(1, _quota.RetryAfterSeconds),
             };
+        var configuredId = _settings.ConfigId!.Trim();
         var body = new IdentomatBeginRequestWithSessionOverrides
         {
             CompanyKey = _settings.CompanyKey!.Trim(),
-            ConfigId = _settings.ConfigId!.Trim(),
+            ConfigId = string.Equals(configuredId, "default", StringComparison.OrdinalIgnoreCase) ? null : configuredId,
             ClientUserId = request.SubjectUserId.ToString("N"),
             General = BuildSessionOverrides(),
         };
@@ -311,7 +313,8 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         if (response.IsError || response.Result is null)
             return AZOAResult<HostedSessionCreation>.FailureWithCode(response.Message, response.Code ?? AzoaErrorCodes.DependencyUnavailable);
 
-        var url = response.Result.Url;
+        var payload = response.Result.Result ?? response.Result;
+        var url = payload.Url;
         if (!ValidWidgetRedirect(url))
         {
             _logger.LogError("Identomat /begin returned a redirect that is not an acceptable HTTPS URL.");
@@ -322,8 +325,8 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
 
         // Persist BOTH ids server-side. `id` is the parent session; the child
         // `additionalSessionId` is the session_token the legacy result host wants.
-        var parentSessionId = response.Result.Id?.Trim();
-        var childSessionId = response.Result.AdditionalSessionId?.Trim();
+        var parentSessionId = payload.Id?.Trim();
+        var childSessionId = payload.AdditionalSessionId?.Trim();
         if (string.IsNullOrWhiteSpace(parentSessionId) && string.IsNullOrWhiteSpace(childSessionId))
         {
             _logger.LogError("Identomat /begin returned no usable session correlation.");
@@ -438,7 +441,7 @@ public sealed class IdentomatKycProviderService : IKycProviderService, IHostedSe
         return new HostedSessionOutcome
         {
             Outcome = raw.Length == 0 ? "UNKNOWN" : raw,
-            SessionExists = terminal || raw == ManualCheckOutcome,
+            SessionExists = terminal || raw is ManualCheckOutcome or InProgressOutcome,
             IsTerminal = terminal,
             IsManualReview = raw == ManualCheckOutcome,
             IsApproved = approved,
@@ -603,6 +606,7 @@ public sealed class IdentomatBeginRequestWithSessionOverrides
     public string CompanyKey { get; set; } = string.Empty;
 
     [JsonPropertyName("configId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ConfigId { get; set; }
 
     /// <summary>The AZOA user id - this is the user-to-person binding correlation.</summary>

@@ -62,12 +62,12 @@ public sealed class CommercialPrimitivesController : ControllerBase
     }
 
     [HttpGet("identomat/status")]
-    public ActionResult<AZOAResult<IdentomatSessionStatus>> GetIdentomatStatus()
+    public async Task<ActionResult<AZOAResult<IdentomatSessionStatus>>> GetIdentomatStatus(CancellationToken ct = default)
     {
         if (!TryGetAuthenticatedActorId(out var actorId))
             return Unauthorized();
 
-        return Translate(_service.GetIdentomatStatus(actorId));
+        return Translate(await _service.GetIdentomatStatusAsync(actorId, ct));
     }
 
     [HttpPost("identomat/session")]
@@ -81,7 +81,7 @@ public sealed class CommercialPrimitivesController : ControllerBase
             return BadRequest(AZOAResult<IdentomatSessionStatus>.FailureWithCode(
                 errorMessage!, AzoaErrorCodes.InvalidRequest));
 
-        return Translate(_service.StartIdentomatSession(actorId, request));
+        return Translate(await _service.StartIdentomatSessionAsync(actorId, request, ct));
     }
 
     [HttpGet("invoices")]

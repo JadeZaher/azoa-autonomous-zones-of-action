@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using AZOA.WebAPI.Models;
+using AZOA.WebAPI.Providers.Kyc;
 using AZOA.WebAPI.Settings;
 using Microsoft.Extensions.Options;
 
@@ -69,13 +70,17 @@ public sealed class ProviderDeferralLedger : IProviderDeferralLedger
     public IReadOnlyList<string> GetMissingIdentomatKeys()
     {
         var identomat = _kycOptions.Value.Identomat ?? new IdentomatKycSettings();
-        var missing = new List<string>(3);
+        var missing = new List<string>(5);
 
+        if (string.IsNullOrWhiteSpace(identomat.BeginBaseUrl))
+            missing.Add(IdentomatKycSettings.BeginBaseUrlName);
+        if (string.IsNullOrWhiteSpace(identomat.ResultBaseUrl))
+            missing.Add(IdentomatKycSettings.ResultBaseUrlName);
         if (string.IsNullOrWhiteSpace(identomat.CompanyKey))
             missing.Add(IdentomatKycSettings.CompanyKeyName);
         if (string.IsNullOrWhiteSpace(identomat.ConfigId))
             missing.Add(IdentomatKycSettings.ConfigIdName);
-        if (string.IsNullOrWhiteSpace(identomat.CallbackApiKey))
+        if (!IdentomatKycProviderService.IsUsableCallbackSecret(identomat.CallbackApiKey))
             missing.Add(IdentomatKycSettings.CallbackApiKeyName);
 
         return missing;
