@@ -29,6 +29,34 @@ export interface WorkflowDesignerDraft {
   edges: Array<{ sourceNodeId: number; targetNodeId: number; edgeType: string; condition?: string | null }>;
 }
 
+export interface WorkflowDecisionCriterion {
+  id: string;
+  stage: string;
+  gateQuestion: string;
+  requiredEvidence: string;
+  onFailure: string;
+}
+
+export interface WorkflowDecisionModel {
+  policyId: string;
+  title: string;
+  riskTier: string;
+  quorumRule: string;
+  fallbackPolicy: string;
+  stopConditions: string[];
+  criteria: WorkflowDecisionCriterion[];
+}
+
+export interface WorkflowAgentSpec {
+  agentId: string;
+  role: string;
+  stage: string;
+  nodeName: string;
+  mandate: string;
+  checks: string[];
+  vetoTriggers: string[];
+}
+
 export interface WorkflowDesignerReply {
   state: WorkflowDesignerState;
   summary: string;
@@ -41,6 +69,9 @@ export interface WorkflowDesignerReply {
   draft: WorkflowDesignerDraft | null;
   draftErrors: string[];
   sources: Array<{ id: string; title: string; url: string; jurisdiction: string }>;
+  decisionModel?: WorkflowDecisionModel | null;
+  criticAgent?: WorkflowAgentSpec | null;
+  auditorAgent?: WorkflowAgentSpec | null;
 }
 
 export interface WorkflowDesignerAvailability {

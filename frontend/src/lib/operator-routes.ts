@@ -92,6 +92,17 @@ function feeEntry(value: unknown): Body | null | undefined {
 
 const FEE_KEYS = ['mint', 'transfer', 'swap', 'actionComplete', 'federationPublish']
 
+/** Query helper for workflow publish approvals: optional status + bounded limit. */
+function publishApprovalsQuery(params: URLSearchParams): string | null {
+  if ([...params.keys()].some(key => key !== 'status' && key !== 'limit')) return null
+  if (params.getAll('status').length > 1 || params.getAll('limit').length > 1) return null
+  const status = params.get('status')
+  if (status !== null && !['PendingApproval', 'Approved', 'Rejected'].includes(status)) return null
+  const limit = limitQuery(100, 50)(new URLSearchParams(params.has('limit') ? { limit: params.get('limit')! } : {}))
+  if (!limit) return null
+  return status ? `status=${status}&${limit}` : limit
+}
+
 export const CONSOLE_ROUTES: ConsoleRoute[] = [
   { method: 'GET', pattern: /^member-handoff-deliveries$/, upstream: () => '/api/operator/member-handoff-deliveries' },
   { method: 'GET', pattern: new RegExp(`^member-handoff-deliveries/(${UUID})$`), upstream: (_path, match) => `/api/operator/member-handoff-deliveries/${match[1]}` },
@@ -251,6 +262,25 @@ export const CONSOLE_ROUTES: ConsoleRoute[] = [
   },
   // Parked-run re-probe (Operator policy on ActionController); observes settlement truth, never re-sends.
   { method: 'POST', pattern: /^action\/runs\/reconcile-sweep$/, upstream: () => '/api/action/runs/reconcile-sweep', body: emptyBody },
+  // Workflow publish approval policy and queue (Operator-gated publish governance).
+  { method: 'GET', pattern: /^action-recovery\/publish-policy$/, upstream: () => '/api/operator/action-recovery/publish-policy' },
+  {
+    method: 'PUT', pattern: /^action-recovery\/publish-policy$/, upstream: () => '/api/operator/action-recovery/publish-policy',
+    body: body => (typeof body.requireOperatorApprovalForPublish === 'boolean' && onlyKeys(body, ['requireOperatorApprovalForPublish'])
+      ? { requireOperatorApprovalForPublish: body.requireOperatorApprovalForPublish } : null),
+  },
+  { method: 'GET', pattern: /^action-recovery\/publish-approvals$/, upstream: () => '/api/operator/action-recovery/publish-approvals', query: publishApprovalsQuery },
+  {
+    method: 'POST', pattern: new RegExp(`^action-recovery/publish-approvals/(${UUID})/decision$`, 'i'),
+    upstream: (_path, match) => `/api/operator/action-recovery/publish-approvals/${match[1].toLowerCase()}/decision`,
+    body: body => {
+      if (typeof body.approve !== 'boolean' || !onlyKeys(body, ['approve', 'reason'])) return null
+      const reason = body.reason === undefined || body.reason === '' ? undefined : text(body, 'reason', 1, 1000)
+      if (body.reason !== undefined && body.reason !== '' && !reason) return null
+      if (!body.approve && !reason) return null
+      return reason ? { approve: body.approve, reason } : { approve: body.approve }
+    },
+  },
 ]
 
 /** Resolves a console request against the round-4 allowlist; null when no entry admits it exactly. */

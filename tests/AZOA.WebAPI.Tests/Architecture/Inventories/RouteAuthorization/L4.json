@@ -456,6 +456,28 @@
     ]
   },
   {
+    "route": "PUT /api/operator/action-recovery/publish-policy",
+    "controller": "ActionRecoveryOperatorController",
+    "action": "UpdatePublishPolicy",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "RecentNodeOperatorSession policy; operator configures whether workflow publishing requires explicit operator approval",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
+    "route": "POST /api/operator/action-recovery/publish-approvals/{id}/decision",
+    "controller": "ActionRecoveryOperatorController",
+    "action": "DecidePublishApproval",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "RecentNodeOperatorSession policy; operator approves or rejects a pending workflow publish request",
+    "policies": [
+      "RecentNodeOperatorSession"
+    ]
+  },
+  {
     "route": "POST /api/action/executions/{executionid}/signing-authorization",
     "controller": "ActionSigningAuthorizationController",
     "action": "Authorize",

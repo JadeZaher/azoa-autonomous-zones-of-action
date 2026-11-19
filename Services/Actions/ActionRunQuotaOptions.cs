@@ -23,6 +23,12 @@ public sealed class ActionRunQuotaOptions
     /// </summary>
     public int OwnerLimitMultiplier { get; set; } = 4;
 
+    /// <summary>
+    /// When true, <see cref="AZOA.WebAPI.Managers.ActionManager.PublishAsync"/> stages validated workflows
+    /// in <c>PendingApproval</c> metadata state (leaving status <c>Draft</c>) until a node operator approves.
+    /// </summary>
+    public bool RequireOperatorApprovalForPublish { get; set; }
+
     /// <summary>Bind the options from configuration; falls back to defaults for any absent key.</summary>
     public static ActionRunQuotaOptions FromConfiguration(IConfiguration config)
     {
@@ -32,6 +38,8 @@ public sealed class ActionRunQuotaOptions
             opts.MaxRunsPerUserPerAction = max;
         if (section.GetValue<int?>(nameof(OwnerLimitMultiplier)) is { } mult)
             opts.OwnerLimitMultiplier = mult;
+        if (section.GetValue<bool?>(nameof(RequireOperatorApprovalForPublish)) is { } requireApproval)
+            opts.RequireOperatorApprovalForPublish = requireApproval;
         return opts;
     }
 

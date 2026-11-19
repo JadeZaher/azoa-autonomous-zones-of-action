@@ -54,6 +54,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
     // Config-bound marketplace guards (see Managers/AGENTS.md §action-run-quota
     // and §economic-consent). Materialized once from IConfiguration at construction.
     private readonly ActionRunQuotaOptions _runQuota;
+    private readonly ActionPublishApprovalPolicy? _publishApprovalPolicy;
 
     // Semantic transition-legality layer (smart-gates-holon-state §8.2), invoked
     // ALONGSIDE the structural Kahn validator — never replacing it. Stateless with
@@ -97,7 +98,8 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         // without the reversal pipeline cannot hold a flag to honour.
         AZOA.WebAPI.Services.Fiat.Reversal.IFiatReversalLedger? accountPauseLedger = null,
         IActionWorkflowAdmissionStore? workflowAdmission = null,
-        IEnumerable<IActionExternalOperationResolver>? operationResolvers = null)
+        IEnumerable<IActionExternalOperationResolver>? operationResolvers = null,
+        ActionPublishApprovalPolicy? publishApprovalPolicy = null)
     {
         _actionStore = actionStore;
         _runStore = runStore;
@@ -112,6 +114,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         _runQuota = configuration is null
             ? new ActionRunQuotaOptions()
             : ActionRunQuotaOptions.FromConfiguration(configuration);
+        _publishApprovalPolicy = publishApprovalPolicy;
         _railGate = new ValueRailCapabilityGate(
             walletManager, chainFactory.DefaultRailId, railDestinationDirectories, accountPauseLedger);
     }
@@ -394,52 +397,39 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         if (action.Status == ActionStatus.Active)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = "Action is already Active." };
 
-        // A not-enabled node type may not become runnable. Publish refuses so a broken
-
-        // primitive cannot enter an Active action; the dispatch seams refuse too, so an
-
-        // already-published action cannot run one either.
-
         var blockedNode = action.Nodes?.FirstOrDefault(
-
             n => Services.Actions.NotEnabledActionNodeTypes.IsBlocked(n.NodeType));
-
         if (blockedNode != null)
-
             return new AZOAResult<ActionDefinition>
-
             {
-
                 IsError = true,
-
-                Message = "Publish failed — " + Services.Actions.NotEnabledActionNodeTypes
-
-                    .RefusalMessage(blockedNode.NodeType)
-
+                Message = "Publish failed — " + Services.Actions.NotEnabledActionNodeTypes.RefusalMessage(blockedNode.NodeType)
             };
 
+        var validationFailure = ValidatePublishGraph(action);
+        if (validationFailure is not null)
+            return validationFailure;
 
-        // Publish uses the engine profile: fan-out is an error here (Managers/AGENTS.md §publish-lifecycle).
-        var dagResult = _dagValidator.Validate(action, fanOutAsError: true);
-        if (!dagResult.IsValid)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — DAG invalid: {string.Join("; ", dagResult.Errors)}" };
-
-        var transitionResult = _transitionValidator.Validate(action);
-        if (!transitionResult.IsValid)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — transition invalid: {string.Join("; ", transitionResult.Errors)}" };
-
-        // Per-node config check (hook filled in by Phase C / ActionNodeConfigRegistry).
-        var configError = ValidateNodeConfigs(action);
-        if (configError != null)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — node config invalid: {configError}" };
-
-        // Executability gate: reject if any $from binding input won't be satisfiable
-        // at runtime (unreachable source, absent output field, provable scalar type
-        // mismatch). Runs LAST so structural DAG / transition / config errors surface
-        // first. See Services/Actions/AGENTS.md §executability-validation.
-        var execResult = _executabilityValidator.Validate(action);
-        if (!execResult.IsValid)
-            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — binding not executable: {string.Join("; ", execResult.Errors)}" };
+        // Compute content hash before checking operator publish approval so any edit invalidates stale approvals.
+        var currentHash = ActionPublishedVersion.ComputeHash(action);
+        if (IsOperatorPublishApprovalRequired() && !HasMatchingOperatorApproval(action, currentHash))
+        {
+            action.Metadata[PublishApprovalMetadataKeys.Status] = ActionPublishApprovalStatuses.PendingApproval;
+            action.Metadata[PublishApprovalMetadataKeys.VersionHash] = currentHash;
+            action.Metadata[PublishApprovalMetadataKeys.RequestedAt] = DateTimeOffset.UtcNow.ToString("O");
+            action.Metadata[PublishApprovalMetadataKeys.RequestedBy] = userId.ToString();
+            action.Metadata.Remove(PublishApprovalMetadataKeys.DecidedAt);
+            action.Metadata.Remove(PublishApprovalMetadataKeys.DecidedBy);
+            action.Metadata.Remove(PublishApprovalMetadataKeys.Reason);
+            var staged = await _actionStore.UpsertActionAsync(action);
+            if (staged.IsError)
+                return new AZOAResult<ActionDefinition> { IsError = true, Message = staged.Message };
+            return new AZOAResult<ActionDefinition>
+            {
+                Result = staged.Result,
+                Message = "Action submitted for node operator publish approval."
+            };
+        }
 
         // F6 TOCTOU guard: flip Draft → Active via compare-and-swap on the version
         // we read above. This is the serialization point — two concurrent publishes
@@ -455,7 +445,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
                 Message = "Publish conflict: the action was modified or published concurrently. Reload and retry."
             };
 
-        // Persist fresh ExecutionOrder (dagResult already populated it via Validate).
+        // Persist fresh ExecutionOrder (ValidatePublishGraph already populated it via Validate).
         // Safe now: we own the Active transition, so no concurrent publisher can
         // interleave a graph write. Assign the authoritative post-CAS row shape
         // (status Active, version bumped once) so the CONTENT upsert round-trips it
@@ -467,7 +457,7 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         // graph being published. Runs bind to this exact revision; a later
         // unpublish→edit→republish recomputes it, so a mismatch is detectable.
         // See Managers/AGENTS.md §published-version-hash.
-        action.PublishedVersionHash = ActionPublishedVersion.ComputeHash(action);
+        action.PublishedVersionHash = currentHash;
         var upsert = await _actionStore.UpsertActionAsync(action);
         if (upsert.IsError)
             return new AZOAResult<ActionDefinition> { IsError = true, Message = upsert.Message };
@@ -518,8 +508,179 @@ public partial class ActionManager : IActionManager, IParkedRunReconciler, IValu
         // reference-sharing-safe for the in-memory store's in-place CAS).
         action.Status  = ActionStatus.Draft;
         action.Version = expectedVersion + 1;
+        var clearedApproval = action.Metadata.Remove(PublishApprovalMetadataKeys.Status)
+            | action.Metadata.Remove(PublishApprovalMetadataKeys.VersionHash);
+        if (clearedApproval)
+        {
+            var upsert = await _actionStore.UpsertActionAsync(action);
+            if (upsert.IsError)
+                return new AZOAResult<ActionDefinition> { IsError = true, Message = upsert.Message };
+            return new AZOAResult<ActionDefinition> { Result = upsert.Result, Message = "Action unpublished." };
+        }
         return new AZOAResult<ActionDefinition> { Result = action, Message = "Action unpublished." };
     }
+
+    private bool IsOperatorPublishApprovalRequired()
+        => _publishApprovalPolicy?.RequireOperatorApprovalForPublish ?? _runQuota.RequireOperatorApprovalForPublish;
+
+    private static bool HasMatchingOperatorApproval(ActionDefinition action, string currentHash)
+        => action.Metadata.TryGetValue(PublishApprovalMetadataKeys.Status, out var status)
+            && string.Equals(status, ActionPublishApprovalStatuses.Approved, StringComparison.Ordinal)
+            && action.Metadata.TryGetValue(PublishApprovalMetadataKeys.VersionHash, out var approvedHash)
+            && string.Equals(approvedHash, currentHash, StringComparison.Ordinal);
+
+    private AZOAResult<ActionDefinition>? ValidatePublishGraph(ActionDefinition action)
+    {
+        // Publish uses the engine profile: fan-out is an error here (Managers/AGENTS.md §publish-lifecycle).
+        var dagResult = _dagValidator.Validate(action, fanOutAsError: true);
+        if (!dagResult.IsValid)
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — DAG invalid: {string.Join("; ", dagResult.Errors)}" };
+
+        var transitionResult = _transitionValidator.Validate(action);
+        if (!transitionResult.IsValid)
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — transition invalid: {string.Join("; ", transitionResult.Errors)}" };
+
+        var configError = ValidateNodeConfigs(action);
+        if (configError != null)
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — node config invalid: {configError}" };
+
+        var execResult = _executabilityValidator.Validate(action);
+        if (!execResult.IsValid)
+            return new AZOAResult<ActionDefinition> { IsError = true, Message = $"Publish failed — binding not executable: {string.Join("; ", execResult.Errors)}" };
+
+        return null;
+    }
+
+    /// <inheritdoc/>
+    public ActionPublishApprovalPolicyView GetPublishApprovalPolicy()
+        => _publishApprovalPolicy?.GetView()
+           ?? new ActionPublishApprovalPolicyView(_runQuota.RequireOperatorApprovalForPublish, DateTimeOffset.UtcNow, "configuration");
+
+    /// <inheritdoc/>
+    public ActionPublishApprovalPolicyView SetPublishApprovalPolicy(bool requireOperatorApprovalForPublish, string? operatorActor = null)
+    {
+        if (_publishApprovalPolicy is not null)
+            return _publishApprovalPolicy.Update(requireOperatorApprovalForPublish, operatorActor);
+
+        _runQuota.RequireOperatorApprovalForPublish = requireOperatorApprovalForPublish;
+        return new ActionPublishApprovalPolicyView(
+            requireOperatorApprovalForPublish,
+            DateTimeOffset.UtcNow,
+            string.IsNullOrWhiteSpace(operatorActor) ? "operator" : operatorActor.Trim());
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<IReadOnlyList<ActionPublishApprovalSummary>>> ListPublishApprovalsAsync(
+        string? status = null, int limit = 50, CancellationToken ct = default)
+    {
+        var loaded = await _actionStore.GetAllActionsAsync(ct);
+        if (loaded.IsError || loaded.Result is null)
+            return AZOAResult<IReadOnlyList<ActionPublishApprovalSummary>>.Failure(loaded.Message ?? "Failed to load actions for publish approval review.");
+
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        var clampedLimit = Math.Clamp(limit, 1, 100);
+        var items = loaded.Result
+            .Where(action => action.Metadata.ContainsKey(PublishApprovalMetadataKeys.Status))
+            .Where(action => normalizedStatus is null
+                || (action.Metadata.TryGetValue(PublishApprovalMetadataKeys.Status, out var current)
+                    && string.Equals(current, normalizedStatus, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(action => action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.RequestedAt) ?? string.Empty, StringComparer.Ordinal)
+            .ThenByDescending(action => action.CreatedDate)
+            .Take(clampedLimit)
+            .Select(ToPublishApprovalSummary)
+            .ToArray();
+
+        return AZOAResult<IReadOnlyList<ActionPublishApprovalSummary>>.Success(items);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AZOAResult<ActionPublishApprovalSummary>> DecidePublishApprovalAsync(
+        Guid actionId, bool approve, string? reason, Guid operatorUserId, string? operatorActor = null, CancellationToken ct = default)
+    {
+        var loaded = await _actionStore.GetActionAsync(actionId, ct);
+        if (loaded.IsError || loaded.Result is null)
+            return AZOAResult<ActionPublishApprovalSummary>.Failure("Action not found.");
+
+        var action = loaded.Result;
+        if (!action.Metadata.TryGetValue(PublishApprovalMetadataKeys.Status, out var currentStatus)
+            || !string.Equals(currentStatus, ActionPublishApprovalStatuses.PendingApproval, StringComparison.Ordinal))
+            return AZOAResult<ActionPublishApprovalSummary>.Failure("Action does not have a PendingApproval publish request.");
+
+        if (action.Status != ActionStatus.Draft)
+            return AZOAResult<ActionPublishApprovalSummary>.Failure($"Action status is {action.Status}; only Draft actions awaiting approval can be decided.");
+
+        var actorLabel = string.IsNullOrWhiteSpace(operatorActor) ? operatorUserId.ToString() : operatorActor.Trim();
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (!approve && trimmedReason is null)
+            return AZOAResult<ActionPublishApprovalSummary>.Failure("A reason is required when rejecting a workflow publish request.");
+
+        var currentHash = ActionPublishedVersion.ComputeHash(action);
+        if (action.Metadata.TryGetValue(PublishApprovalMetadataKeys.VersionHash, out var expectedHash)
+            && !string.Equals(expectedHash, currentHash, StringComparison.Ordinal))
+            return AZOAResult<ActionPublishApprovalSummary>.Failure("Workflow changed after publish approval was requested; ask the author to resubmit.");
+
+        if (approve)
+        {
+            var blockedNode = action.Nodes?.FirstOrDefault(
+                n => Services.Actions.NotEnabledActionNodeTypes.IsBlocked(n.NodeType));
+            if (blockedNode != null)
+                return AZOAResult<ActionPublishApprovalSummary>.Failure(
+                    "Publish approval failed — " + Services.Actions.NotEnabledActionNodeTypes.RefusalMessage(blockedNode.NodeType));
+
+            var validationFailure = ValidatePublishGraph(action);
+            if (validationFailure is not null)
+                return AZOAResult<ActionPublishApprovalSummary>.Failure(validationFailure.Message);
+
+            var expectedVersion = action.Version;
+            var won = await _actionStore.TryTransitionActionStatusAsync(
+                actionId, ActionStatus.Draft, ActionStatus.Active, expectedVersion, ct);
+            if (won == 0)
+                return AZOAResult<ActionPublishApprovalSummary>.Failure("Publish approval conflict: the action was modified concurrently.");
+
+            action.Status = ActionStatus.Active;
+            action.Version = expectedVersion + 1;
+            action.PublishedVersionHash = currentHash;
+            action.Metadata[PublishApprovalMetadataKeys.Status] = ActionPublishApprovalStatuses.Approved;
+        }
+        else
+        {
+            action.Metadata[PublishApprovalMetadataKeys.Status] = ActionPublishApprovalStatuses.Rejected;
+        }
+
+        action.Metadata[PublishApprovalMetadataKeys.VersionHash] = currentHash;
+        action.Metadata[PublishApprovalMetadataKeys.DecidedAt] = DateTimeOffset.UtcNow.ToString("O");
+        action.Metadata[PublishApprovalMetadataKeys.DecidedBy] = actorLabel;
+        if (trimmedReason is not null)
+            action.Metadata[PublishApprovalMetadataKeys.Reason] = trimmedReason;
+        else
+            action.Metadata.Remove(PublishApprovalMetadataKeys.Reason);
+
+        var upsert = await _actionStore.UpsertActionAsync(action, ct);
+        if (upsert.IsError || upsert.Result is null)
+            return AZOAResult<ActionPublishApprovalSummary>.Failure(upsert.Message ?? "Failed to persist publish approval decision.");
+
+        return AZOAResult<ActionPublishApprovalSummary>.Success(
+            ToPublishApprovalSummary(upsert.Result),
+            approve ? "Workflow publish request approved and activated." : "Workflow publish request rejected.");
+    }
+
+    private static ActionPublishApprovalSummary ToPublishApprovalSummary(ActionDefinition action)
+        => new(
+            action.Id,
+            action.Name,
+            action.Description,
+            action.UserId,
+            action.IsPublic,
+            action.Status.ToString(),
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.Status) ?? string.Empty,
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.VersionHash),
+            action.Nodes?.Count ?? 0,
+            action.Edges?.Count ?? 0,
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.RequestedAt),
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.RequestedBy),
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.DecidedAt),
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.DecidedBy),
+            action.Metadata.GetValueOrDefault(PublishApprovalMetadataKeys.Reason));
 
     /// <summary>
     /// Per-node config validation at publish time: runs the binding pre-pass

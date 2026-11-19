@@ -96,6 +96,11 @@
   },
   {
     "store": "IActionStore",
+    "method": "GetAllActionsAsync",
+    "tenantCheck": "operator-scoped: ActionManager.ListPublishApprovalsAsync is only reachable via RecentNodeOperatorSession / NodeAdmin governance policy"
+  },
+  {
+    "store": "IActionStore",
     "method": "GetPublicActionsAsync",
     "tenantCheck": "query-scoped: IsPublic && Active only"
   },

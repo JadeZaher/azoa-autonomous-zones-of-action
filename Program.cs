@@ -1415,7 +1415,8 @@ builder.Services.AddHttpClient(AZOA.WebAPI.Services.Actions.Designer.WorkflowDes
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Actions.IWorkflowDesignerModel, AZOA.WebAPI.Services.Actions.Designer.OpenRouterWorkflowDesignerModel>();
 builder.Services.AddScoped<AZOA.WebAPI.Services.Actions.Designer.WorkflowDesignerService>();
-builder.Services.AddScoped<ActionManager>();
+builder.Services.AddSingleton<AZOA.WebAPI.Services.Actions.ActionPublishApprovalPolicy>();
+builder.Services.AddScoped<AZOA.WebAPI.Managers.ActionManager>();
 builder.Services.AddScoped<IActionManager>(sp => sp.GetRequiredService<ActionManager>());
 // Deferred per-call resolution: a factory over ActionManager here deadlocks host start (see Managers/AGENTS.md §DeferredFrozenActionRuntime).
 builder.Services.AddScoped<AZOA.WebAPI.Interfaces.Managers.IFrozenActionRuntime, AZOA.WebAPI.Managers.DeferredFrozenActionRuntime>();

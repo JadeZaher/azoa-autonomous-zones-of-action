@@ -226,6 +226,8 @@ function ActionList() {
                   {q.nodes?.length ?? 0} nodes · {q.edges?.length ?? 0} edges
                 </span>
                 {q.runAccess === 'InviteOnly' && <RunAccessBadge runAccess={q.runAccess} />}
+                {q.metadata?.publishApprovalStatus === 'PendingApproval' && <Badge variant="outline">Pending Operator Approval</Badge>}
+                {q.metadata?.publishApprovalStatus === 'Rejected' && <Badge variant="destructive">Publish Rejected</Badge>}
                 {statusBadge(q.status)}
               </button>
 
@@ -331,7 +333,11 @@ function ActionList() {
                         </div>
                         {selected.status === 'Draft' && (
                           <p className="text-xs text-muted-foreground">
-                            This action is a <strong>Draft</strong> — publish it to enable execution.
+                            {selected.metadata?.publishApprovalStatus === 'PendingApproval'
+                              ? 'This workflow passed validation and is waiting for node operator publish approval before it becomes Active.'
+                              : selected.metadata?.publishApprovalStatus === 'Rejected'
+                                ? `Publish rejected by node operator${selected.metadata?.publishApprovalReason ? `: ${selected.metadata.publishApprovalReason}` : '.'} Edit or address feedback, then click Publish again.`
+                                : <>This action is a <strong>Draft</strong> — publish it to enable execution.</>}
                           </p>
                         )}
                         {selected.status === 'Active' && (

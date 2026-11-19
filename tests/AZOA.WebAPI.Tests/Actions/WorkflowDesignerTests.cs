@@ -150,6 +150,32 @@ public sealed class WorkflowDesignerTests
         Assert.Contains("No draft is available", reply.Summary); Assert.NotEmpty(reply.DraftErrors);
     }
 
+    [Fact]
+    public async Task ConciseBriefWithBlankOptionalDimensions_SynthesizesAssumptionsDecisionModelCriticAndAuditorAgents()
+    {
+        var request = new WorkflowDesignerRequest
+        {
+            ConsentToProvider = true, PlanningScopeAccepted = true,
+            TenantId = Guid.NewGuid(), JurisdictionsConfirmed = true, EconomicTermsConfirmed = true,
+            Intake = new() { Purpose = "A cooperative project milestone review and handoff workflow." }
+        };
+        var model = new FakeModel();
+        var reply = (await Service(model).InterviewAsync(request, default)).Result!;
+
+        Assert.Equal(WorkflowDesignerState.DraftReady, reply.State);
+        Assert.True(reply.ReadyForDraft);
+        Assert.NotNull(reply.Draft);
+        Assert.NotNull(reply.DecisionModel);
+        Assert.NotNull(reply.CriticAgent);
+        Assert.NotNull(reply.AuditorAgent);
+        Assert.Equal("Critic", reply.CriticAgent.Role);
+        Assert.Equal("Auditor", reply.AuditorAgent.Role);
+        Assert.Contains(reply.Assumptions, item => item.Contains("Critic Agent role-boundary verification"));
+        Assert.Contains(reply.Draft.Nodes, node => node.Name.Contains("Critic Agent") && node.NodeType == ActionNodeType.Emit);
+        Assert.Contains(reply.Draft.Nodes, node => node.Name.Contains("Auditor Agent") && node.NodeType == ActionNodeType.Emit && node.IsTerminal);
+        Assert.True(reply.Draft.Edges.Count == reply.Draft.Nodes.Count - 1);
+    }
+
     [Theory]
     [InlineData("{\"questionIds\":[\"1099 threshold $600\"],\"riskIds\":[],\"gapIds\":[],\"blockerIds\":[],\"planStages\":[]}")]
     [InlineData("{\"questionIds\":[],\"riskIds\":[],\"gapIds\":[],\"blockerIds\":[],\"planStages\":[],\"summary\":\"24% backup and 30% nonresident withholding\"}")]

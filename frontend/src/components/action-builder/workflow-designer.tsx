@@ -2,11 +2,37 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { hasWorkflowPlanningDraft, type WorkflowDesignerRequest } from 'azoa-sdk'
+import { hasWorkflowPlanningDraft, type WorkflowAgentSpec, type WorkflowDesignerRequest } from 'azoa-sdk'
 import { azoa, isOk } from '@/lib/azoa'
 import { INTAKE_FIELDS, type DesignerAvailability, type DesignerDraft, type DesignerMessage, type DesignerReply, type WorkflowIntake } from './workflow-designer-types'
+
+function AgentSpecCard({ spec }: { spec: WorkflowAgentSpec }) {
+  return (
+    <div className="space-y-2 rounded border bg-muted/20 p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">{spec.role} Agent</span>
+        <Badge variant="outline" className="text-[11px]">{spec.stage}</Badge>
+      </div>
+      <p className="text-muted-foreground">{spec.mandate}</p>
+      <p className="text-xs text-muted-foreground">Checkpoint node: <span className="font-medium text-foreground">{spec.nodeName}</span></p>
+      {spec.checks.length > 0 && (
+        <div>
+          <p className="text-xs font-medium">Checks</p>
+          <ul className="ml-4 list-disc text-xs text-muted-foreground">{spec.checks.map((item, i) => <li key={i}>{item}</li>)}</ul>
+        </div>
+      )}
+      {spec.vetoTriggers.length > 0 && (
+        <div>
+          <p className="text-xs font-medium">Veto triggers</p>
+          <ul className="ml-4 list-disc text-xs text-muted-foreground">{spec.vetoTriggers.map((item, i) => <li key={i}>{item}</li>)}</ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function WorkflowDesigner({ onImport }: { onImport: (draft: DesignerDraft) => void }) {
   const fieldId = useId()
@@ -32,11 +58,31 @@ export function WorkflowDesigner({ onImport }: { onImport: (draft: DesignerDraft
     active.current = true
     void azoa.api.request<DesignerAvailability>('GET', '/api/action-designer').then(result => {
       if (!active.current) return
-      if (isOk(result)) setAvailability(result.value)
-      else setError(result.error.status === 403 ? 'This assistant needs the DApp developer role and an active tenant account with a provisioning credential. Ask your DApp manager or node operator to complete tenant setup for your account.' : 'Unable to check assistant availability. You can still use the visual builder.')
+      if (isOk(result)) {
+        setAvailability(result.value)
+        if (result.value.tenantId) setTenantId(current => current || result.value.tenantId || '')
+      } else {
+        setError(result.error.status === 403 ? 'This assistant needs the DApp developer role and an active tenant account with a provisioning credential. Ask your DApp manager or node operator to complete tenant setup for your account.' : 'Unable to check assistant availability. You can still use the visual builder.')
+      }
     }).catch(() => { if (active.current) setError('Unable to check assistant availability. You can still use the visual builder.') })
     return () => { active.current = false }
   }, [])
+
+  const updateIntake = (key: keyof WorkflowIntake, value: string) => {
+    setIntake(current => ({ ...current, [key]: value }))
+    setReply(null)
+    setReviewed(false)
+    setImported(false)
+  }
+
+  const fastTrackPlanningSetup = () => {
+    setPlanningScope(true)
+    setJurisdictionsConfirmed(true)
+    setEconomicTermsConfirmed(true)
+    setReply(null)
+    setReviewed(false)
+    setImported(false)
+  }
 
   const interview = async () => {
     if (!consent || busy || !availability?.available || tenantId !== availability.tenantId) return
@@ -68,13 +114,18 @@ export function WorkflowDesigner({ onImport }: { onImport: (draft: DesignerDraft
     }
   }
 
+  const [primaryField, ...optionalFields] = INTAKE_FIELDS
+
   return (
     <details className="rounded-lg border p-4">
       <summary className="cursor-pointer font-semibold">Design an economic workflow with AI</summary>
       <div className="mt-4 space-y-4">
-        <p className="text-sm text-muted-foreground">Explain what you are building. The assistant will challenge operational gaps and provide a legal/tax review checklist. You may choose an editable planning/data-only graph; it cannot move funds, enforce business controls, approve compliance, save, publish or run your workflow.</p>
+        <p className="text-sm text-muted-foreground">Describe the workflow you want to build. The assistant synthesizes a planning graph with a Decision Model plus Critic and Auditor agent checkpoints; importing never executes or moves funds.</p>
         {availability && <div className="rounded border bg-muted/30 p-3 text-sm">
-          <p className="font-medium">AI data sharing: {availability.provider} · {availability.model}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-medium">AI data sharing: {availability.provider} · {availability.model}</p>
+            {availability.tenantId && <span className="text-xs text-muted-foreground">Tenant · {availability.tenantId}</span>}
+          </div>
           <p className="mt-1">{availability.disclosure}</p>
           <p className="mt-1">The latest eight interview turns are retained in this browser view. Closing the page or changing account discards the interview.</p>
           <div className="mt-3 space-y-1">
@@ -84,7 +135,6 @@ export function WorkflowDesigner({ onImport }: { onImport: (draft: DesignerDraft
               <option value="">Select your verified tenant account</option>
               {availability.tenantId && <option value={availability.tenantId}>Your tenant · {availability.tenantId}</option>}
             </select>
-            <p>The server verifies this context belongs to your account and still has active tenant authority on every request. Keys for this tenant share one AI request budget.</p>
           </div>
           {availability.available ? <label className="mt-3 flex items-start gap-2">
             <input type="checkbox" checked={consent} disabled={busy} onChange={event => { setConsent(event.target.checked); setReviewed(false) }} />
@@ -92,40 +142,86 @@ export function WorkflowDesigner({ onImport }: { onImport: (draft: DesignerDraft
           </label> : <p className="mt-2 font-medium">The node operator has not enabled the AI assistant. The visual builder is available below.</p>}
         </div>}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {INTAKE_FIELDS.map(([key, label, hint]) => <div key={key} className="space-y-1.5">
-            <Label htmlFor={`${fieldId}-${key}`}>{label}</Label>
-            <p id={`${fieldId}-${key}-hint`} className="text-xs text-muted-foreground">{hint}</p>
-            <Textarea id={`${fieldId}-${key}`} aria-describedby={`${fieldId}-${key}-hint`} value={intake[key]} maxLength={2500} disabled={busy}
-              onChange={event => { setIntake(current => ({ ...current, [key]: event.target.value })); setReply(null); setReviewed(false); setImported(false); setJurisdictionsConfirmed(false); setEconomicTermsConfirmed(false) }} />
-          </div>)}
+        <div className="space-y-1.5">
+          <Label htmlFor={`${fieldId}-${primaryField[0]}`}>{primaryField[1]}</Label>
+          <p id={`${fieldId}-${primaryField[0]}-hint`} className="text-xs text-muted-foreground">{primaryField[2]}</p>
+          <Textarea id={`${fieldId}-${primaryField[0]}`} aria-describedby={`${fieldId}-${primaryField[0]}-hint`} value={intake[primaryField[0]]} maxLength={2500} disabled={busy}
+            onChange={event => updateIntake(primaryField[0], event.target.value)} />
         </div>
 
+        <details className="rounded border p-3">
+          <summary className="cursor-pointer text-sm font-medium">Optional details (auto-assumed if omitted)</summary>
+          <div className="mt-3 grid gap-4 lg:grid-cols-2">
+            {optionalFields.map(([key, label, hint]) => <div key={key} className="space-y-1.5">
+              <Label htmlFor={`${fieldId}-${key}`}>{label}</Label>
+              <p id={`${fieldId}-${key}-hint`} className="text-xs text-muted-foreground">{hint}</p>
+              <Textarea id={`${fieldId}-${key}`} aria-describedby={`${fieldId}-${key}-hint`} value={intake[key]} maxLength={2500} disabled={busy}
+                onChange={event => updateIntake(key, event.target.value)} />
+            </div>)}
+          </div>
+        </details>
+
         <div className="space-y-2 rounded border p-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold">Choose the assistant scope</span>
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={fastTrackPlanningSetup}>
+              Fast-track planning setup
+            </Button>
+          </div>
           <fieldset className="space-y-2" disabled={busy}>
-            <legend className="font-semibold">Choose the assistant scope</legend>
+            <legend className="sr-only">Choose the assistant scope</legend>
             <label className="flex items-start gap-2"><input type="radio" name={`${fieldId}-scope`} checked={!planningScope} onChange={() => { setPlanningScope(false); setReply(null); setReviewed(false); setImported(false) }} /><span>Continue the interview only; I can use the manual builder separately.</span></label>
             <label className="flex items-start gap-2"><input type="radio" name={`${fieldId}-scope`} checked={planningScope} onChange={() => { setPlanningScope(true); setReply(null); setReviewed(false); setImported(false) }} /><span>I want a planning/data-only graph that records manual/external handoff notes. It does not implement two-person approval, eligibility, caps, refunds, payouts or settlement, and moves no funds. Importing does not execute it. A later explicit run can enqueue webhook notifications to a configured tenant registration and requires an active registration; checkpoints neither wait for nor prove review or approval.</span></label>
           </fieldset>
-          <p>Leave facts unconfirmed while exploring. Adviser-review questions do not block a planning draft, but qualified legal/tax determinations are needed before real operation.</p>
           <label className="flex items-start gap-2"><input type="checkbox" checked={jurisdictionsConfirmed} disabled={busy} onChange={event => { setJurisdictionsConfirmed(event.target.checked); setReply(null); setReviewed(false) }} /><span>I have identified the relevant countries/states and tax residences in this brief.</span></label>
           <label className="flex items-start gap-2"><input type="checkbox" checked={economicTermsConfirmed} disabled={busy} onChange={event => { setEconomicTermsConfirmed(event.target.checked); setReply(null); setReviewed(false) }} /><span>I have specified the economic terms, exact units, allocations, approvals, refunds and failure paths.</span></label>
-          <p>No wallet, payment or identity resource identifiers are needed for planning checkpoints. Do not enter keys or personal records.</p>
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor={`${fieldId}-answer`}>Answer follow-up questions or challenge an assumption</Label>
           <Textarea id={`${fieldId}-answer`} value={answer} maxLength={4000} disabled={busy}
-            onChange={event => { setAnswer(event.target.value); setReviewed(false) }} placeholder="You can say what is unknown. Update the brief above as your decisions become clearer." />
+            onChange={event => { setAnswer(event.target.value); setReviewed(false) }} placeholder="Optional follow-up answers or constraints." />
         </div>
         <Button type="button" disabled={!consent || !availability?.available || tenantId !== availability.tenantId || busy || (!intake.purpose.trim() && !answer.trim())} onClick={() => void interview()}>
           {busy ? 'Reviewing your brief…' : messages.length ? 'Continue the interview' : 'Ask the assistant'}
         </Button>
-        <div role="status" aria-live="polite">{busy && <p className="text-sm">Checking the economic terms and preparing questions. This can take up to 90 seconds.</p>}</div>
+        <div role="status" aria-live="polite">{busy && <p className="text-sm">Reviewing your brief and synthesizing Decision Model + Critic &amp; Auditor agents…</p>}</div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-        {reply && <section aria-label="Assistant review" className="space-y-3 rounded border p-3">
+        {reply && <section aria-label="Assistant review" className="space-y-4 rounded border p-3">
           <p role="status" className="whitespace-pre-wrap text-sm">{reply.summary}</p>
+
+          {reply.decisionModel && <div className="space-y-2 rounded border p-3 text-sm" aria-label="Decision model">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-semibold">Decision Model · {reply.decisionModel.title}</h4>
+              <Badge variant="outline">{reply.decisionModel.riskTier}</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground"><strong className="text-foreground">Quorum:</strong> {reply.decisionModel.quorumRule}</p>
+            <p className="text-xs text-muted-foreground"><strong className="text-foreground">Fallback:</strong> {reply.decisionModel.fallbackPolicy}</p>
+            {reply.decisionModel.criteria.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {reply.decisionModel.criteria.map(criterion => (
+                  <div key={criterion.id} className="rounded border bg-muted/20 p-2 text-xs">
+                    <p className="font-medium">{criterion.stage}</p>
+                    <p className="mt-0.5">{criterion.gateQuestion}</p>
+                    <p className="mt-1 text-muted-foreground">Evidence: {criterion.requiredEvidence}</p>
+                    <p className="text-muted-foreground">On failure: {criterion.onFailure}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>}
+
+          {(reply.criticAgent || reply.auditorAgent) && (
+            <div className="space-y-2" aria-label="Critic and Auditor agents">
+              <h4 className="text-sm font-semibold">Synthesized Critic &amp; Auditor Agents</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                {reply.criticAgent && <AgentSpecCard spec={reply.criticAgent} />}
+                {reply.auditorAgent && <AgentSpecCard spec={reply.auditorAgent} />}
+              </div>
+            </div>
+          )}
+
           {([
             ['Operational details needed for planning', reply.questions], ['Legal, tax and operational review checklist', reply.concerns],
             ['Questions for qualified advisers — not planning blockers', reply.reviewQuestions], ['Planning scope and unsupported capabilities', reply.limitations],

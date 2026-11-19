@@ -18,6 +18,10 @@ public interface IActionStore
     /// <summary>Loads all actions belonging to a dapp series.</summary>
     Task<AZOAResult<IEnumerable<ActionDefinition>>> GetActionsByDappSeriesAsync(Guid dappSeriesId, CancellationToken ct = default);
 
+    /// <summary>Loads all action definitions for operator governance/approval review.</summary>
+    Task<AZOAResult<IEnumerable<ActionDefinition>>> GetAllActionsAsync(CancellationToken ct = default)
+        => GetPublicActionsAsync(ct);
+
     /// <summary>Inserts or updates an action (including its node/edge graph).</summary>
     Task<AZOAResult<ActionDefinition>> UpsertActionAsync(ActionDefinition action, CancellationToken ct = default);
 

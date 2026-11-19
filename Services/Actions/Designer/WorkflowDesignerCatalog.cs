@@ -81,22 +81,191 @@ public static class WorkflowDesignerCatalog
         _ => throw new ArgumentOutOfRangeException(nameof(state))
     };
 
-    public static ActionCreateModel PlanningDraft(IReadOnlyList<WorkflowDesignerStage> selected)
+    public static string DefaultAssumption(WorkflowDesignerDimension dimension) => dimension switch
     {
-        var stages = new[] { WorkflowDesignerStage.RequestReview }.Concat(selected.Where(stage => stage != WorkflowDesignerStage.RecordsReview))
-            .Distinct().Append(WorkflowDesignerStage.RecordsReview).ToArray();
+        WorkflowDesignerDimension.Participants => "Participant roles were left unspecified in the initial brief and are flagged for Critic Agent role-boundary verification before live execution.",
+        WorkflowDesignerDimension.Jurisdictions => "Operating jurisdictions and tax residences were left unspecified in the initial brief and require local adviser confirmation before activation.",
+        WorkflowDesignerDimension.ValueMovement => "Asset types, exact units, and custody boundaries were omitted from the initial brief; this draft stays planning/data-only with zero value movement.",
+        WorkflowDesignerDimension.AllocationsAndTax => "Allocation splits and tax recordkeeping owners were left open and are assigned to external review checkpoints.",
+        WorkflowDesignerDimension.FailureAndRefunds => "Failure, dispute, and refund handling defaulted to fail-closed freeze and manual reconciliation until explicitly authored.",
+        _ => "Initial brief dimension omitted; confirm prior to live publication."
+    };
+
+    public static ActionCreateModel? PlanningDraft(IReadOnlyList<WorkflowDesignerStage> selected)
+    {
+        var stages = ResolveDraftStages(selected);
+        if (stages is null) return null;
         return new()
         {
             Name = "Planning notes — no funds movement", IsPublic = false,
-            Description = "Each Emit node records planning handoff data, not proof that a review occurred. No two-person approval, eligibility, cap, deadline, refund or payout enforcement is implemented. Settlement is manual/external. This is not legal or tax approval. " + ExecutionDisclosure,
+            Description = "Each Emit node records planning handoff data including Critic and Auditor review checkpoints, not proof that a review occurred. No two-person approval, eligibility, cap, deadline, refund or payout enforcement is implemented. Settlement is manual/external. This is not legal or tax approval. " + ExecutionDisclosure,
             Nodes = stages.Select((stage, index) => new ActionNodeCreateModel
             {
-                Name = StageName(stage), NodeType = ActionNodeType.Emit, IsEntry = index == 0, IsTerminal = index == stages.Length - 1,
+                Name = StageName(stage), NodeType = ActionNodeType.Emit, IsEntry = index == 0, IsTerminal = index == stages.Count - 1,
                 Config = JsonSerializer.Serialize(new { eventType = "planning.checkpoint", payload = new
                 { scope = "planning_data_only", checkpoint = stage.ToString(), fundsMoved = false, requiresExternalReview = true } })
             }).ToList(),
-            Edges = Enumerable.Range(0, stages.Length - 1).Select(index => new ActionEdgeCreateModel
+            Edges = Enumerable.Range(0, stages.Count - 1).Select(index => new ActionEdgeCreateModel
             { SourceNodeId = index, TargetNodeId = index + 1, EdgeType = ActionEdgeType.Control }).ToList()
+        };
+    }
+
+    public static IReadOnlyList<WorkflowDesignerStage>? ResolveDraftStages(IReadOnlyList<WorkflowDesignerStage> selected)
+    {
+        var distinct = selected.Distinct().ToList();
+        var hasSubstantive = distinct.Any(stage => stage is not WorkflowDesignerStage.RequestReview
+            and not WorkflowDesignerStage.RecordsReview
+            and not WorkflowDesignerStage.CriticChallengeReview
+            and not WorkflowDesignerStage.AuditorComplianceReview);
+        if (!hasSubstantive) return null;
+
+        var middle = distinct
+            .Where(stage => stage is not WorkflowDesignerStage.RequestReview
+                and not WorkflowDesignerStage.RecordsReview
+                and not WorkflowDesignerStage.CriticChallengeReview
+                and not WorkflowDesignerStage.AuditorComplianceReview)
+            .ToList();
+
+        var settlementIndex = middle.FindIndex(stage => stage is WorkflowDesignerStage.ExternalSettlementReview
+            or WorkflowDesignerStage.ReconciliationReview
+            or WorkflowDesignerStage.CancellationReview);
+        if (settlementIndex >= 0)
+            middle.Insert(settlementIndex, WorkflowDesignerStage.CriticChallengeReview);
+        else
+            middle.Add(WorkflowDesignerStage.CriticChallengeReview);
+
+        return new[] { WorkflowDesignerStage.RequestReview }
+            .Concat(middle)
+            .Append(WorkflowDesignerStage.RecordsReview)
+            .Append(WorkflowDesignerStage.AuditorComplianceReview)
+            .Distinct()
+            .ToArray();
+    }
+
+    public static WorkflowDecisionModel BuildDecisionModel(WorkflowDesignerModelReply selection, IReadOnlyList<WorkflowDesignerStage> stages)
+    {
+        var hasRiskBlockers = selection.RiskIds.Contains(WorkflowDesignerRisk.CustodyAndLicensing)
+            || selection.RiskIds.Contains(WorkflowDesignerRisk.SecuritiesAndLending)
+            || selection.BlockerIds.Contains(WorkflowDesignerBlocker.FundsMovementUnsupported);
+
+        var criteria = new List<WorkflowDecisionCriterion>
+        {
+            new()
+            {
+                Id = "gate-critic-challenge",
+                Stage = nameof(WorkflowDesignerStage.CriticChallengeReview),
+                GateQuestion = "Did the Critic Agent verify failure paths, custody ownership, and ambiguous participant boundaries?",
+                RequiredEvidence = "Signed critic challenge record addressing all flagged operational gaps before handoff.",
+                OnFailure = "Hold workflow in Draft and return to author for clarification."
+            },
+            new()
+            {
+                Id = "gate-auditor-invariant",
+                Stage = nameof(WorkflowDesignerStage.AuditorComplianceReview),
+                GateQuestion = "Did the Auditor Agent confirm planning-only scope, non-circular DAG topology, and operator publish eligibility?",
+                RequiredEvidence = "Deterministic audit trail binding workflow definition hash, adviser review questions, and publish approval.",
+                OnFailure = "Block publish promotion and require node operator inspection."
+            }
+        };
+
+        if (stages.Contains(WorkflowDesignerStage.ApprovalReview))
+        {
+            criteria.Insert(0, new()
+            {
+                Id = "gate-independent-approval",
+                Stage = nameof(WorkflowDesignerStage.ApprovalReview),
+                GateQuestion = "Have independent reviewers attested to the external facts and scope before release?",
+                RequiredEvidence = "Recorded external approval attestation referencing the request identifier.",
+                OnFailure = "Remain parked; never auto-advance or settle."
+            });
+        }
+
+        if (stages.Contains(WorkflowDesignerStage.ReconciliationReview))
+        {
+            criteria.Add(new()
+            {
+                Id = "gate-reconciliation-truth",
+                Stage = nameof(WorkflowDesignerStage.ReconciliationReview),
+                GateQuestion = "Is the external settlement state confirmed settled or confirmed failed without indeterminate ambiguity?",
+                RequiredEvidence = "External settlement reference and reconciliation ledger match.",
+                OnFailure = "Freeze indeterminate state for treasurer and operator reconciliation."
+            });
+        }
+
+        return new()
+        {
+            PolicyId = "azoa-planning-decision-v1",
+            Title = "Fail-Closed Planning & Publish Decision Model",
+            RiskTier = hasRiskBlockers ? "elevated-operator-review" : "standard-planning-review",
+            QuorumRule = "Requires Critic challenge pass, Auditor invariant check, and (when enabled) Node Operator publish approval.",
+            FallbackPolicy = "Freeze ambiguous state in Draft; never execute unverified external settlement.",
+            StopConditions =
+            [
+                "Unconfirmed jurisdiction or tax-residence scope",
+                "Unsatisfied external approval or ambiguous settlement truth",
+                "Node operator publish approval pending or rejected"
+            ],
+            Criteria = criteria
+        };
+    }
+
+    public static WorkflowAgentSpec BuildCriticAgent(WorkflowDesignerModelReply selection, IReadOnlyList<WorkflowDesignerDimension> defaultedDimensions)
+    {
+        var checks = new List<string>
+        {
+            "Stress-test failure, dispute, cancellation, and partial-completion branches.",
+            "Verify signer authority separation between requestor, approver, and external settler.",
+            "Confirm zero unverified resource identifiers or automatic payout assumptions entered the graph."
+        };
+        if (defaultedDimensions.Count > 0)
+            checks.Add($"Review defaulted brief dimensions ({string.Join(", ", defaultedDimensions)}) prior to promoting past Draft.");
+
+        var vetoes = new List<string>
+        {
+            "Open operational gaps remain unresolved",
+            "Ambiguous or missing failure-recovery ownership"
+        };
+        if (selection.RiskIds.Count > 0)
+            vetoes.Add($"Unmitigated domain risk classifications: {string.Join(", ", selection.RiskIds)}");
+
+        return new()
+        {
+            AgentId = "critic-agent-v1",
+            Role = "Critic",
+            Stage = nameof(WorkflowDesignerStage.CriticChallengeReview),
+            NodeName = StageName(WorkflowDesignerStage.CriticChallengeReview),
+            Mandate = "Adversarially challenge operational blind spots, missing counterparties, and unsafe failure defaults before handoff.",
+            Checks = checks,
+            VetoTriggers = vetoes
+        };
+    }
+
+    public static WorkflowAgentSpec BuildAuditorAgent(WorkflowDesignerModelReply selection, IReadOnlyList<WorkflowDesignerStage> stages)
+    {
+        var checks = new List<string>
+        {
+            "Verify every emitted node remains confined to safe planning/data-only checkpoints.",
+            "Confirm ordered stage continuity through " + string.Join(" -> ", stages.Select(s => s.ToString())) + ".",
+            "Bind generated definition and adviser disclosures for node operator publish review."
+        };
+
+        var vetoes = new List<string>
+        {
+            "DAG validation or executability invariant failure",
+            "Unacknowledged legal/tax review disclosures or blocked node primitives"
+        };
+        if (selection.BlockerIds.Contains(WorkflowDesignerBlocker.PlanningSequenceUnclear))
+            vetoes.Add("Planning sequence remains structurally incomplete");
+
+        return new()
+        {
+            AgentId = "auditor-agent-v1",
+            Role = "Auditor",
+            Stage = nameof(WorkflowDesignerStage.AuditorComplianceReview),
+            NodeName = StageName(WorkflowDesignerStage.AuditorComplianceReview),
+            Mandate = "Verify structural invariants, evidence trail completeness, and node-operator publish governance readiness.",
+            Checks = checks,
+            VetoTriggers = vetoes
         };
     }
 
@@ -106,11 +275,13 @@ public static class WorkflowDesignerCatalog
         WorkflowDesignerStage.EligibilityReview => "Record external eligibility-review note",
         WorkflowDesignerStage.EvidenceReview => "Record external evidence-review note",
         WorkflowDesignerStage.ApprovalReview => "Record external approval handoff note",
+        WorkflowDesignerStage.CriticChallengeReview => "Critic Agent: Operational challenge checkpoint",
         WorkflowDesignerStage.DisputeReview => "Record external dispute handoff note",
         WorkflowDesignerStage.ExternalSettlementReview => "Record external settlement handoff note",
         WorkflowDesignerStage.ReconciliationReview => "Record external reconciliation note",
         WorkflowDesignerStage.CancellationReview => "Record external cancellation/refund note",
         WorkflowDesignerStage.RecordsReview => "Record external review checklist note",
+        WorkflowDesignerStage.AuditorComplianceReview => "Auditor Agent: Evidence and invariant audit checkpoint",
         _ => throw new ArgumentOutOfRangeException(nameof(stage))
     };
 }

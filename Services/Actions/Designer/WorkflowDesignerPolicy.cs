@@ -26,18 +26,43 @@ public static class WorkflowDesignerPolicy
         new("sec-crypto", "SEC: Transactions involving crypto assets", "https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/transactions-involving-crypto-assets", "United States securities; classification depends on facts")
     ];
 
+    private static readonly (Func<WorkflowDesignerIntake, string> Read, WorkflowDesignerDimension Dimension)[] SecondaryDimensions =
+    [
+        (intake => intake.Participants, WorkflowDesignerDimension.Participants),
+        (intake => intake.Jurisdictions, WorkflowDesignerDimension.Jurisdictions),
+        (intake => intake.ValueMovement, WorkflowDesignerDimension.ValueMovement),
+        (intake => intake.AllocationsAndTax, WorkflowDesignerDimension.AllocationsAndTax),
+        (intake => intake.FailureAndRefunds, WorkflowDesignerDimension.FailureAndRefunds),
+    ];
+
     public static List<WorkflowDesignerDimension> MissingDimensions(WorkflowDesignerIntake intake)
     {
         var missing = new List<WorkflowDesignerDimension>();
-        foreach (var (answer, dimension) in new[] {
-            (intake.Purpose, WorkflowDesignerDimension.Purpose), (intake.Participants, WorkflowDesignerDimension.Participants),
-            (intake.Jurisdictions, WorkflowDesignerDimension.Jurisdictions), (intake.ValueMovement, WorkflowDesignerDimension.ValueMovement),
-            (intake.AllocationsAndTax, WorkflowDesignerDimension.AllocationsAndTax), (intake.FailureAndRefunds, WorkflowDesignerDimension.FailureAndRefunds) })
+        if (IsTooShortOrUncertain(intake.Purpose))
+            missing.Add(WorkflowDesignerDimension.Purpose);
+
+        // Streamlined single-brief flow: optional secondary dimensions can be left blank
+        // (recorded as explicit assumptions for Critic/Auditor review) without blocking draft synthesis.
+        // Only reject non-empty values that are too short (<12 chars) or explicitly uncertain.
+        foreach (var (read, dimension) in SecondaryDimensions)
         {
-            var wholeAnswer = string.Join(" ", (answer ?? "").Trim().TrimEnd('.', '!', '?').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
-            if (wholeAnswer.Length < 12 || UncertaintyAnswers.Contains(wholeAnswer)) missing.Add(dimension);
+            var answer = read(intake);
+            if (!string.IsNullOrWhiteSpace(answer) && IsTooShortOrUncertain(answer))
+                missing.Add(dimension);
         }
         return missing;
+    }
+
+    public static IReadOnlyList<WorkflowDesignerDimension> DefaultedDimensions(WorkflowDesignerIntake intake)
+        => SecondaryDimensions
+            .Where(item => string.IsNullOrWhiteSpace(item.Read(intake)))
+            .Select(item => item.Dimension)
+            .ToArray();
+
+    private static bool IsTooShortOrUncertain(string? answer)
+    {
+        var wholeAnswer = string.Join(" ", (answer ?? "").Trim().TrimEnd('.', '!', '?').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToLowerInvariant();
+        return wholeAnswer.Length < 12 || UncertaintyAnswers.Contains(wholeAnswer);
     }
 
     private static readonly IReadOnlySet<string> UncertaintyAnswers = new HashSet<string>(StringComparer.Ordinal)

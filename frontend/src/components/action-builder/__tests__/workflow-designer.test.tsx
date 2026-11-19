@@ -147,4 +147,62 @@ describe('WorkflowDesigner', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('request budget is used')
     expect(screen.queryByRole('button', { name: 'Import into visual builder' })).not.toBeInTheDocument()
   })
+
+  it('auto-selects tenant, supports fast-track planning confirmations, and renders Decision Model + Critic/Auditor agents', async () => {
+    request.mockImplementation(async (method: string) => ({
+      ok: true,
+      value: method === 'GET' ? available : {
+        ...draftReply,
+        decisionModel: {
+          policyId: 'azoa-planning-decision-v1',
+          title: 'Fail-Closed Planning & Publish Decision Model',
+          riskTier: 'standard-planning-review',
+          quorumRule: 'Requires Critic challenge pass, Auditor invariant check, and operator approval.',
+          fallbackPolicy: 'Freeze ambiguous state in Draft.',
+          stopConditions: ['Pending operator approval'],
+          criteria: [{
+            id: 'gate-critic-challenge',
+            stage: 'CriticChallengeReview',
+            gateQuestion: 'Did the Critic Agent verify failure paths?',
+            requiredEvidence: 'Signed critic challenge record.',
+            onFailure: 'Hold workflow in Draft.',
+          }],
+        },
+        criticAgent: {
+          agentId: 'critic-agent-v1',
+          role: 'Critic',
+          stage: 'CriticChallengeReview',
+          nodeName: 'Critic Agent: Operational challenge checkpoint',
+          mandate: 'Challenge operational blind spots.',
+          checks: ['Verify signer separation.'],
+          vetoTriggers: ['Open operational gaps'],
+        },
+        auditorAgent: {
+          agentId: 'auditor-agent-v1',
+          role: 'Auditor',
+          stage: 'AuditorComplianceReview',
+          nodeName: 'Auditor Agent: Evidence and invariant audit checkpoint',
+          mandate: 'Verify structural invariants.',
+          checks: ['Confirm DAG continuity.'],
+          vetoTriggers: ['DAG invariant failure'],
+        },
+      },
+    }))
+    render(<WorkflowDesigner onImport={vi.fn()} />)
+    fireEvent.click(screen.getByText('Design an economic workflow with AI'))
+    await screen.findByText(/AI data sharing: OpenRouter/)
+    expect(screen.getByLabelText('Tenant context')).toHaveValue(available.tenantId)
+    fireEvent.change(screen.getByLabelText('What are you creating?'), { target: { value: 'A single-brief milestone review.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Fast-track planning setup' }))
+    expect(screen.getByLabelText(/I want a planning\/data-only graph/)).toBeChecked()
+    consent()
+    fireEvent.click(screen.getByRole('button', { name: 'Ask the assistant' }))
+    expect(await screen.findByText(/Decision Model · Fail-Closed Planning & Publish Decision Model/)).toBeInTheDocument()
+    expect(screen.getByText('Critic Agent')).toBeInTheDocument()
+    expect(screen.getByText('Auditor Agent')).toBeInTheDocument()
+    // Editing optional intake fields preserves confirmation checkboxes while invalidating stale draft
+    fireEvent.change(screen.getByLabelText(INTAKE_FIELDS[3][1]), { target: { value: 'Updated optional value notes.' } })
+    expect(screen.getByLabelText(/I have identified the relevant countries/)).toBeChecked()
+    expect(screen.getByLabelText(/I have specified the economic terms/)).toBeChecked()
+  })
 })

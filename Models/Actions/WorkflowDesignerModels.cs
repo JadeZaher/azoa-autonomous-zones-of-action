@@ -49,6 +49,40 @@ public sealed class WorkflowDesignerReply
     public ActionCreateModel? Draft { get; set; }
     public List<string> DraftErrors { get; set; } = [];
     public IReadOnlyList<WorkflowDesignerSource> Sources { get; set; } = [];
+    public WorkflowDecisionModel? DecisionModel { get; set; }
+    public WorkflowAgentSpec? CriticAgent { get; set; }
+    public WorkflowAgentSpec? AuditorAgent { get; set; }
+}
+
+public sealed class WorkflowDecisionCriterion
+{
+    public string Id { get; set; } = "";
+    public string Stage { get; set; } = "";
+    public string GateQuestion { get; set; } = "";
+    public string RequiredEvidence { get; set; } = "";
+    public string OnFailure { get; set; } = "";
+}
+
+public sealed class WorkflowDecisionModel
+{
+    public string PolicyId { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string RiskTier { get; set; } = "";
+    public string QuorumRule { get; set; } = "";
+    public string FallbackPolicy { get; set; } = "";
+    public List<string> StopConditions { get; set; } = [];
+    public List<WorkflowDecisionCriterion> Criteria { get; set; } = [];
+}
+
+public sealed class WorkflowAgentSpec
+{
+    public string AgentId { get; set; } = "";
+    public string Role { get; set; } = "";
+    public string Stage { get; set; } = "";
+    public string NodeName { get; set; } = "";
+    public string Mandate { get; set; } = "";
+    public List<string> Checks { get; set; } = [];
+    public List<string> VetoTriggers { get; set; } = [];
 }
 
 public enum WorkflowDesignerState { NeedsDetails, NeedsConfirmation, NeedsPlanningScope, NeedsPlanningStructure, DraftRejected, DraftReady }
@@ -61,7 +95,12 @@ public enum WorkflowDesignerQuestion
 }
 public enum WorkflowDesignerRisk { WorkerClassification, IncomeAndValuation, ReportingAndWithholding, CrossBorderFacts, CustodyAndLicensing, SecuritiesAndLending, EligibilityAndPrivacy, ConsumerAndDisputeTerms }
 public enum WorkflowDesignerBlocker { FundsMovementUnsupported, AutomaticEnforcementUnsupported, ExternalSettlementRequired, PlanningSequenceUnclear }
-public enum WorkflowDesignerStage { RequestReview, EligibilityReview, EvidenceReview, ApprovalReview, DisputeReview, ExternalSettlementReview, ReconciliationReview, CancellationReview, RecordsReview }
+public enum WorkflowDesignerStage
+{
+    RequestReview, EligibilityReview, EvidenceReview, ApprovalReview, CriticChallengeReview,
+    DisputeReview, ExternalSettlementReview, ReconciliationReview, CancellationReview, RecordsReview,
+    AuditorComplianceReview
+}
 
 public sealed class WorkflowDesignerModelReply
 {

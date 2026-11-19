@@ -143,6 +143,20 @@ public sealed class SurrealActionStore : IActionStore
         }
     }
 
+    public async Task<AZOAResult<IEnumerable<ActionDefinition>>> GetAllActionsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var q = SurrealQuery<ActionPoco>.From();
+            var rows = await _executor.QueryAsync<ActionPoco>(q, ct);
+            return await HydrateManyAsync(rows, ct);
+        }
+        catch (Exception ex)
+        {
+            return Err<IEnumerable<ActionDefinition>>($"SurrealActionStore.GetAllActionsAsync failed: {ex.Message}");
+        }
+    }
+
     public async Task<AZOAResult<ActionDefinition>> UpsertActionAsync(ActionDefinition action, CancellationToken ct = default)
     {
         if (action is null)

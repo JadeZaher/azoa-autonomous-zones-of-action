@@ -83,6 +83,13 @@ public sealed class InMemoryActionStore : IActionStore
         });
     }
 
+    public Task<AZOAResult<IEnumerable<ActionDefinition>>> GetAllActionsAsync(CancellationToken ct = default)
+        => Task.FromResult(new AZOAResult<IEnumerable<ActionDefinition>>
+        {
+            Result = _actions.Values.ToList(),
+            Message = "Success",
+        });
+
     public Task<AZOAResult<ActionDefinition>> UpsertActionAsync(ActionDefinition action, CancellationToken ct = default)
     {
         _actions[action.Id] = action;

@@ -20,6 +20,12 @@ public interface IActionManager
     Task<AZOAResult<ActionDefinition>> PublishAsync(Guid actionId, Guid userId, AZOARequest? request = null);
     Task<AZOAResult<ActionDefinition>> UnpublishAsync(Guid actionId, Guid userId, AZOARequest? request = null);
 
+    // Node operator workflow publish approval gate.
+    ActionPublishApprovalPolicyView GetPublishApprovalPolicy();
+    ActionPublishApprovalPolicyView SetPublishApprovalPolicy(bool requireOperatorApprovalForPublish, string? operatorActor = null);
+    Task<AZOAResult<IReadOnlyList<ActionPublishApprovalSummary>>> ListPublishApprovalsAsync(string? status = null, int limit = 50, CancellationToken ct = default);
+    Task<AZOAResult<ActionPublishApprovalSummary>> DecidePublishApprovalAsync(Guid actionId, bool approve, string? reason, Guid operatorUserId, string? operatorActor = null, CancellationToken ct = default);
+
     // DAG validation
     Task<AZOAResult<bool>> ValidateDAGAsync(Guid actionId, AZOARequest? request = null);
     /// <summary>Owner-scoped DAG validation for the HTTP route; a non-owned action answers like a missing one.</summary>

@@ -21,6 +21,10 @@ describe('round-4 operator allowlist admits only the narrow action each page nee
     ['reversal board (M1)', 'admin/fiat-reversals', 'GET', '', null, '/api/admin/fiat-reversals?limit=100'],
     ['reversal clear-flag (M1)', `admin/fiat-reversals/${hex64}/clear-flag`, 'POST', '', { reason: 'Lifted from the operator board.' }, `/api/admin/fiat-reversals/${hex64}/clear-flag`],
     ['parked-run sweep (M1)', 'action/runs/reconcile-sweep', 'POST', '', {}, '/api/action/runs/reconcile-sweep'],
+    ['publish approval policy read', 'action-recovery/publish-policy', 'GET', '', null, '/api/operator/action-recovery/publish-policy'],
+    ['publish approval policy write', 'action-recovery/publish-policy', 'PUT', '', { requireOperatorApprovalForPublish: true }, '/api/operator/action-recovery/publish-policy'],
+    ['publish approvals queue read', 'action-recovery/publish-approvals', 'GET', '?status=PendingApproval', null, '/api/operator/action-recovery/publish-approvals?status=PendingApproval&limit=50'],
+    ['publish approval decision', `action-recovery/publish-approvals/${uuid}/decision`, 'POST', '', { approve: true, reason: 'Reviewed DAG' }, `/api/operator/action-recovery/publish-approvals/${uuid}/decision`],
   ] as const)('%s', (_name, path, method, query, body, upstream) => {
     const resolved = resolveConsoleRoute(path, method, q(query), body ? { ...body } : null)
     expect(resolved).not.toBeNull()
@@ -37,6 +41,7 @@ describe('round-4 operator allowlist admits only the narrow action each page nee
     ['method not allowlisted', 'deployments', 'POST', ''],
     ['payout id that is not the ledger hex32', 'admin/fiat-payouts/not-an-id/advance', 'POST', ''],
     ['reversal board above the page bound', 'admin/fiat-reversals', 'GET', '?limit=501'],
+    ['unknown publish-approvals status', 'action-recovery/publish-approvals', 'GET', '?status=Draft'],
   ] as const)('refuses %s', (_name, path, method, query) => {
     expect(resolveConsoleRoute(path, method, q(query), {})).toBeNull()
   })
@@ -49,6 +54,7 @@ describe('round-4 operator allowlist admits only the narrow action each page nee
     ['payout resolution outside the enum', `admin/fiat-payouts/${'ab'.repeat(16)}/resolve`, { resolution: 'refund', reason: 'x' }],
     ['reversal recover with a body', `admin/fiat-reversals/${'cd'.repeat(32)}/recover`, { reason: 'unexpected' }],
     ['ethereum sender not an address', 'ethereum/recovery/Devnet/activate', { sender: '0x123' }],
+    ['reject publish approval without reason', `action-recovery/publish-approvals/${uuid}/decision`, { approve: false }],
   ] as const)('rejects a body with %s', (_name, path, body) => {
     const method = path.startsWith('node-governance') ? 'PUT' : 'POST'
     expect(resolveConsoleRoute(path, method, q(), { ...body })).toBe('invalid-body')

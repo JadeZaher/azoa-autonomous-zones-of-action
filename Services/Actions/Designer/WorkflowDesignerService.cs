@@ -16,7 +16,7 @@ public sealed class WorkflowDesignerService(IWorkflowDesignerModel model, IActio
         if (response.Reply is not { } selection)
             return new() { IsError = true, Code = response.Code ?? "AI_UNAVAILABLE", Message = "The workflow assistant is unavailable. Your workflow has not been saved or changed. Try again later or use the visual builder." };
         if (!ValidIds(selection.QuestionIds, 12) || !ValidIds(selection.RiskIds, 8) || !ValidIds(selection.GapIds, 6)
-            || !ValidIds(selection.BlockerIds, 4) || !ValidIds(selection.PlanStages, 9))
+            || !ValidIds(selection.BlockerIds, 4) || !ValidIds(selection.PlanStages, 11))
             return new() { IsError = true, Code = "AI_INVALID_REPLY", Message = "The assistant returned an invalid checklist. Your workflow has not changed." };
 
         var questions = selection.QuestionIds.Where(id => WorkflowDesignerCatalog.Dimension(id) is not null).Distinct().ToList();
@@ -26,6 +26,17 @@ public sealed class WorkflowDesignerService(IWorkflowDesignerModel model, IActio
             && id == WorkflowDesignerCatalog.DefaultQuestion(WorkflowDesignerCatalog.Dimension(id)!.Value));
         foreach (var dimension in WorkflowDesignerPolicy.MissingDimensions(request.Intake).Concat(selection.GapIds).Distinct())
             if (!questions.Any(id => WorkflowDesignerCatalog.Dimension(id) == dimension)) questions.Add(WorkflowDesignerCatalog.DefaultQuestion(dimension));
+        var defaultedDimensions = WorkflowDesignerPolicy.DefaultedDimensions(request.Intake);
+        var assumptions = new List<string>
+        {
+            "Your brief contains user-stated facts, not verified legal or tax classifications.",
+            "The planning graph does not embed or enforce your amounts, allocations, timing or approval rules. Preserve those decisions for separate implementation and review."
+        };
+        assumptions.AddRange(defaultedDimensions.Select(WorkflowDesignerCatalog.DefaultAssumption));
+
+        var resolvedStages = WorkflowDesignerCatalog.ResolveDraftStages(selection.PlanStages)
+            ?? [WorkflowDesignerStage.RequestReview, WorkflowDesignerStage.CriticChallengeReview, WorkflowDesignerStage.RecordsReview, WorkflowDesignerStage.AuditorComplianceReview];
+
         var reply = new WorkflowDesignerReply
         {
             Questions = questions.Select(WorkflowDesignerCatalog.Question).ToList(),
@@ -37,14 +48,16 @@ public sealed class WorkflowDesignerService(IWorkflowDesignerModel model, IActio
             Limitations = selection.BlockerIds.Concat(new[] { WorkflowDesignerBlocker.FundsMovementUnsupported,
                     WorkflowDesignerBlocker.AutomaticEnforcementUnsupported, WorkflowDesignerBlocker.ExternalSettlementRequired })
                 .Distinct().Select(WorkflowDesignerCatalog.Limitation).Append(WorkflowDesignerCatalog.ExecutionDisclosure).ToList(),
-            Assumptions = ["Your brief contains user-stated facts, not verified legal or tax classifications.",
-                "The planning graph does not embed or enforce your amounts, allocations, timing or approval rules. Preserve those decisions for separate implementation and review."],
-            Sources = WorkflowDesignerPolicy.Sources
+            Assumptions = assumptions,
+            Sources = WorkflowDesignerPolicy.Sources,
+            DecisionModel = WorkflowDesignerCatalog.BuildDecisionModel(selection, resolvedStages),
+            CriticAgent = WorkflowDesignerCatalog.BuildCriticAgent(selection, defaultedDimensions),
+            AuditorAgent = WorkflowDesignerCatalog.BuildAuditorAgent(selection, resolvedStages)
         };
         if (questions.Count > 0) reply.State = WorkflowDesignerState.NeedsDetails;
         else if (!request.JurisdictionsConfirmed || !request.EconomicTermsConfirmed) reply.State = WorkflowDesignerState.NeedsConfirmation;
         else if (!request.PlanningScopeAccepted) reply.State = WorkflowDesignerState.NeedsPlanningScope;
-        else if (!selection.PlanStages.Any(stage => stage is not WorkflowDesignerStage.RequestReview and not WorkflowDesignerStage.RecordsReview)
+        else if (WorkflowDesignerCatalog.ResolveDraftStages(selection.PlanStages) is null
                  || selection.BlockerIds.Contains(WorkflowDesignerBlocker.PlanningSequenceUnclear))
         {
             reply.State = WorkflowDesignerState.NeedsPlanningStructure;
