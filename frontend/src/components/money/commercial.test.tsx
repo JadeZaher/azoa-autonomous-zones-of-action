@@ -131,7 +131,7 @@ describe('Documents hub & Ride-Along pages', () => {
     window.history.replaceState(
       {},
       '',
-      '/ride?linkId=lnk_1&scope=invoice_pay&sub=user-123&exp=2099-01-01T00:00:00Z&sig=sig_ok',
+      '/ride?linkId=lnk_1&scope=invoice_pay&sub=user-123&exp=4070908800&sig=sig_ok&res=inv_1&returnUrl=https%3A%2F%2Fpartner.example%2Fportfolio%2Fadd-funds',
     )
 
     const user = userEvent.setup()
@@ -141,20 +141,21 @@ describe('Documents hub & Ride-Along pages', () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString()
         if (url.includes('/access-links/lnk_1/verify')) {
+          const parsedBody = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
+          expect(parsedBody.res).toBe('inv_1')
+          expect(parsedBody.returnUrl).toBe('https://partner.example/portfolio/add-funds')
           return new Response(
             JSON.stringify({
-              valid: true,
-              expired: false,
-              link: {
+              isError: false,
+              result: {
+                valid: true,
                 linkId: 'lnk_1',
                 externalSubject: 'user-123',
                 scope: 'invoice_pay',
                 targetResourceId: 'inv_1',
                 returnUrl: 'https://partner.example/portfolio/add-funds',
-                signedUrl: 'https://azoa.example/ride?linkId=lnk_1',
-                signature: 'sig_ok',
                 expiresAt: '2099-01-01T00:00:00Z',
-                provider: 'azoa-hmac-v1',
+                provider: 'Identomat',
                 deferralStatus: 'active',
               },
             }),

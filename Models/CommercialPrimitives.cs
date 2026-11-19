@@ -118,6 +118,15 @@ public sealed record MintAccessLinkRequest(
     string? ReturnUrl = null,
     int? TtlMinutes = null);
 
+public sealed record VerifyAccessLinkRequest(
+    string? Sig = null,
+    string? Signature = null,
+    string? Exp = null,
+    string? Scope = null,
+    string? Sub = null,
+    string? Res = null,
+    string? ReturnUrl = null);
+
 public sealed record SignedAccessLink(
     string LinkId,
     string ExternalSubject,
@@ -187,6 +196,8 @@ public sealed record CreateCommercialInvoiceRequest(
 public sealed record PayCommercialInvoiceRequest(string? PaymentReference = null);
 
 public sealed record VoidCommercialInvoiceRequest(string? Reason = null);
+
+public sealed record PayPaymentRequestInput(string? PaymentReference = null);
 
 public sealed record CommercialInvoice(
     string Id,

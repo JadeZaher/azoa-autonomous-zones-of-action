@@ -744,4 +744,77 @@ public sealed class CommercialPrimitivesTests
         Assert.True(badReceipt.IsError);
         Assert.Equal(AzoaErrorCodes.InvalidRequest, badReceipt.Code);
     }
+
+    [Fact]
+    public async Task PayPaymentRequest_ListAccessLinks_PostVerifyFallbackAndSimulatedReceiptHashWorkEndToEnd()
+    {
+        var service = CreateService(out _, out _, out _);
+        var owner = Guid.NewGuid();
+        var stranger = Guid.NewGuid();
+
+        var createdReq = await service.CreatePaymentRequestAsync(
+            owner,
+            new CreatePaymentRequestInput("Req Pay", "payer-pr", "USD", 2500));
+        Assert.False(createdReq.IsError);
+        var pr = createdReq.Result!;
+        Assert.Equal(CommercialInvoiceStatuses.Open, pr.Status);
+
+        var badPayRef = await service.PayPaymentRequestAsync(owner, pr.Id, new PayPaymentRequestInput("   "));
+        Assert.True(badPayRef.IsError);
+        Assert.Equal(AzoaErrorCodes.InvalidRequest, badPayRef.Code);
+
+        var strangerPay = await service.PayPaymentRequestAsync(stranger, pr.Id, null);
+        Assert.True(strangerPay.IsError);
+        Assert.Equal(AzoaErrorCodes.NotFound, strangerPay.Code);
+
+        var paid = await service.PayPaymentRequestAsync(owner, pr.Id, new PayPaymentRequestInput("stripe_pi_123"));
+        Assert.False(paid.IsError);
+        Assert.Equal(CommercialInvoiceStatuses.Paid, paid.Result!.Status);
+        Assert.NotNull(paid.Result.PaidAt);
+
+        var doublePay = await service.PayPaymentRequestAsync(owner, pr.Id, null);
+        Assert.True(doublePay.IsError);
+        Assert.Equal(AzoaErrorCodes.Conflict, doublePay.Code);
+
+        var simReceipt = await service.IssueOwnershipReceiptAsync(
+            owner,
+            new IssueOwnershipReceiptRequest(
+                "alloc-sim",
+                "holder-sim",
+                OwnershipHolderClasses.Member,
+                "AZOA-UNIT",
+                "12.00",
+                1200,
+                ChainTxHash: "sim:simulated:tx-001"));
+        Assert.False(simReceipt.IsError);
+        Assert.Equal(OwnershipVerificationStatuses.SandboxSimulated, simReceipt.Result!.VerificationStatus);
+
+        var minted = service.MintAccessLink(
+            owner,
+            new MintAccessLinkRequest("sub-list", AccessLinkScopes.InvoicePay, TargetResourceId: pr.Id, ReturnUrl: "https://app.azoa.example/done"));
+        Assert.False(minted.IsError);
+        var link = minted.Result!;
+
+        var listed = service.ListAccessLinks(owner);
+        Assert.False(listed.IsError);
+        Assert.Contains(listed.Result!, x => x.LinkId == link.LinkId);
+
+        // Fresh service instance without prior in-memory _metadata verifies via signed params + res/returnUrl fallback.
+        var restartedService = CreateService(out _, out _, out _);
+        var query = HttpUtility.ParseQueryString(new Uri(link.SignedUrl).Query);
+        var postBody = JsonSerializer.Serialize(new VerifyAccessLinkRequest(
+            Sig: query["sig"],
+            Exp: query["exp"],
+            Scope: query["scope"],
+            Sub: query["sub"],
+            Res: query["res"],
+            ReturnUrl: query["returnUrl"]));
+        var anonPostController = CreateController(restartedService, Guid.Empty, postBody);
+        var postOk = Assert.IsType<OkObjectResult>(
+            (await anonPostController.VerifyAccessLinkPost(link.LinkId, ct: CancellationToken.None)).Result);
+        var verified = Assert.IsType<AZOAResult<AccessLinkVerificationResult>>(postOk.Value).Result!;
+        Assert.True(verified.Valid);
+        Assert.Equal(pr.Id, verified.TargetResourceId);
+        Assert.Equal("https://app.azoa.example/done", verified.ReturnUrl);
+    }
 }

@@ -28,7 +28,12 @@ public sealed class AccessLinkMintingService
     private readonly byte[] _hmacKey;
     private readonly ConcurrentDictionary<string, AccessLinkMetadata> _metadata = new(StringComparer.Ordinal);
 
-    private sealed record AccessLinkMetadata(string? TargetResourceId, string? ReturnUrl, long ExpUnix);
+    private sealed record AccessLinkMetadata(
+        string? TargetResourceId,
+        string? ReturnUrl,
+        long ExpUnix,
+        string? OwnerActorId,
+        SignedAccessLink Link);
 
     public AccessLinkMintingService(
         IConfiguration configuration,
@@ -43,7 +48,7 @@ public sealed class AccessLinkMintingService
         _hmacKey = DeriveSigningKey(configuration);
     }
 
-    public AZOAResult<SignedAccessLink> Mint(MintAccessLinkRequest request)
+    public AZOAResult<SignedAccessLink> Mint(MintAccessLinkRequest request, string? ownerActorId = null)
     {
         if (request is null)
             return AZOAResult<SignedAccessLink>.FailureWithCode(
@@ -64,26 +69,14 @@ public sealed class AccessLinkMintingService
                 $"Unsupported access link scope '{request.Scope}'.", AzoaErrorCodes.InvalidRequest);
         }
 
-        string? validatedReturnUrl = null;
-        if (!string.IsNullOrWhiteSpace(request.ReturnUrl))
+        if (!TryValidateOptionalReturnUrl(request.ReturnUrl, out var validatedReturnUrl))
         {
-            var candidate = request.ReturnUrl.Trim();
-            if (candidate.Any(char.IsControl)
-                || !Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
-                || !string.IsNullOrEmpty(uri.UserInfo)
-                || !string.IsNullOrEmpty(uri.Fragment)
-                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
-            {
-                return AZOAResult<SignedAccessLink>.FailureWithCode(
-                    "returnUrl must be a valid HTTP or HTTPS URL.", AzoaErrorCodes.InvalidRequest);
-            }
-            validatedReturnUrl = uri.ToString();
+            return AZOAResult<SignedAccessLink>.FailureWithCode(
+                "returnUrl must be a valid HTTP or HTTPS URL.", AzoaErrorCodes.InvalidRequest);
         }
 
         var externalSubject = request.ExternalSubject.Trim();
-        var targetResourceId = string.IsNullOrWhiteSpace(request.TargetResourceId)
-            ? null
-            : request.TargetResourceId.Trim();
+        var targetResourceId = NormalizeTargetResourceId(request.TargetResourceId);
 
         var ttlMinutes = Math.Clamp(request.TtlMinutes ?? DefaultTtlMinutes, 1, MaxTtlMinutes);
         var createdAt = _clock.GetUtcNow();
@@ -137,9 +130,7 @@ public sealed class AccessLinkMintingService
                     _metadata.TryRemove(oldest.Key, out _);
             }
         }
-        _metadata[linkId] = new AccessLinkMetadata(targetResourceId, validatedReturnUrl, expUnix);
-
-        return AZOAResult<SignedAccessLink>.Success(new SignedAccessLink(
+        var link = new SignedAccessLink(
             linkId,
             externalSubject,
             scope,
@@ -152,7 +143,26 @@ public sealed class AccessLinkMintingService
             createdAt,
             ProviderDeferralLedger.IdentomatProviderName,
             deferralStatus,
-            deferredReason));
+            deferredReason);
+
+        var normalizedOwnerId = string.IsNullOrWhiteSpace(ownerActorId) ? null : ownerActorId.Trim();
+        _metadata[linkId] = new AccessLinkMetadata(targetResourceId, validatedReturnUrl, expUnix, normalizedOwnerId, link);
+
+        return AZOAResult<SignedAccessLink>.Success(link);
+    }
+
+    public IReadOnlyList<SignedAccessLink> ListRecentLinks(string? ownerActorId = null)
+    {
+        var nowUnix = _clock.GetUtcNow().ToUnixTimeSeconds();
+        var normalizedOwner = string.IsNullOrWhiteSpace(ownerActorId) ? null : ownerActorId.Trim();
+        return _metadata.Values
+            .Where(m => m.ExpUnix > nowUnix
+                && (normalizedOwner is null
+                    || string.Equals(m.OwnerActorId, normalizedOwner, StringComparison.Ordinal)
+                    || string.Equals(m.Link.ExternalSubject, normalizedOwner, StringComparison.Ordinal)))
+            .Select(m => m.Link)
+            .OrderByDescending(l => l.CreatedAt)
+            .ToArray();
     }
 
     public AZOAResult<AccessLinkVerificationResult> VerifyAccessLink(
@@ -160,7 +170,9 @@ public sealed class AccessLinkMintingService
         string scope,
         string externalSubject,
         long exp,
-        string sig)
+        string sig,
+        string? targetResourceId = null,
+        string? returnUrl = null)
     {
         var hasLiveIdentomat = _deferrals.HasLiveIdentomatCredentials;
         var deferralStatus = hasLiveIdentomat
@@ -236,6 +248,11 @@ public sealed class AccessLinkMintingService
         }
 
         _metadata.TryGetValue(trimmedLinkId, out var meta);
+        var resolvedTargetResourceId = meta?.TargetResourceId ?? NormalizeTargetResourceId(targetResourceId);
+        var resolvedReturnUrl = meta?.ReturnUrl;
+        if (resolvedReturnUrl is null && TryValidateOptionalReturnUrl(returnUrl, out var parsedReturnUrl))
+            resolvedReturnUrl = parsedReturnUrl;
+
         return AZOAResult<AccessLinkVerificationResult>.Success(new AccessLinkVerificationResult(
             true,
             trimmedLinkId,
@@ -245,8 +262,40 @@ public sealed class AccessLinkMintingService
             ProviderDeferralLedger.IdentomatProviderName,
             deferralStatus,
             deferredReason,
-            meta?.TargetResourceId,
-            meta?.ReturnUrl));
+            resolvedTargetResourceId,
+            resolvedReturnUrl));
+    }
+
+    private static string? NormalizeTargetResourceId(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw.Any(char.IsControl))
+            return null;
+
+        var trimmed = raw.Trim();
+        return trimmed.Length <= 128 ? trimmed : null;
+    }
+
+    private static bool TryValidateOptionalReturnUrl(string? raw, out string? validatedReturnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            validatedReturnUrl = null;
+            return true;
+        }
+
+        var candidate = raw.Trim();
+        if (candidate.Any(char.IsControl)
+            || !Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Fragment)
+            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        {
+            validatedReturnUrl = null;
+            return false;
+        }
+
+        validatedReturnUrl = uri.ToString();
+        return true;
     }
 
     private byte[] ComputeSignature(string linkId, string scope, string externalSubject, long expUnixSeconds)

@@ -115,6 +115,8 @@ export function RideAlongView({ linkIdFromPath }: { linkIdFromPath?: string }) {
         exp: parsed.exp,
         scope: parsed.scope,
         sub: parsed.sub,
+        res: parsed.res,
+        returnUrl: parsed.returnUrl,
       })
       const confirmedLink = checked.link ?? null
       const expired = checked.expired === true || (confirmedLink ? isAccessLinkExpired(confirmedLink.expiresAt) : false)

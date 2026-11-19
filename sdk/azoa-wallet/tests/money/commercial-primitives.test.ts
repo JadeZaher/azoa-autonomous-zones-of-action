@@ -94,6 +94,8 @@ describe("commercial URL, expiry, and currency helpers", () => {
       sub: "member-42",
       exp: "2099-01-01T00:00:00.000Z",
       sig: "sig_abc123",
+      res: null,
+      returnUrl: null,
     });
 
     const alreadyRide = buildSignedRideAlongUrl("https://node.example/ride", SAMPLE_LINK);
@@ -104,12 +106,18 @@ describe("commercial URL, expiry, and currency helpers", () => {
   });
 
   it("parses URLSearchParams, raw query strings, full URLs, and blanks safely", () => {
-    expect(parseSignedRideAlongParams("?linkId=l1&scope=kyc&sub=%20&exp=2099-01-01T00:00:00Z&sig=abc")).toEqual({
+    expect(
+      parseSignedRideAlongParams(
+        "?linkId=l1&scope=kyc&sub=%20&exp=2099-01-01T00:00:00Z&sig=abc&res=sess_1&returnUrl=https%3A%2F%2Fazoa.ardanova.com%2Fdone",
+      ),
+    ).toEqual({
       linkId: "l1",
       scope: "kyc",
       sub: null,
       exp: "2099-01-01T00:00:00Z",
       sig: "abc",
+      res: "sess_1",
+      returnUrl: "https://azoa.ardanova.com/done",
     });
     expect(parseSignedRideAlongParams(new URLSearchParams({ linkId: "l2" }))).toEqual({
       linkId: "l2",
@@ -117,12 +125,16 @@ describe("commercial URL, expiry, and currency helpers", () => {
       sub: null,
       exp: null,
       sig: null,
+      res: null,
+      returnUrl: null,
     });
   });
 
   it("evaluates access link expiration fail-closed", () => {
     const now = Date.parse("2026-11-15T12:00:00.000Z");
     expect(isAccessLinkExpired("2026-11-15T12:05:00.000Z", now)).toBe(false);
+    expect(isAccessLinkExpired(String(Math.floor(Date.parse("2026-11-15T12:05:00.000Z") / 1000)), now)).toBe(false);
+    expect(isAccessLinkExpired(String(Math.floor(now / 1000)), now)).toBe(true);
     expect(isAccessLinkExpired("2026-11-15T12:00:00.000Z", now)).toBe(true);
     expect(isAccessLinkExpired("2026-11-15T11:59:59.000Z", now)).toBe(true);
     expect(isAccessLinkExpired("", now)).toBe(true);
@@ -272,6 +284,34 @@ describe("createHttpCommercialTransport", () => {
     expect(callCount).toBe(2);
     expect(result.valid).toBe(true);
     expect(result.link?.linkId).toBe("lnk_001");
+
+    const transportFlatBackend = createHttpCommercialTransport({
+      baseUrl: "https://api.azoa.example",
+      getToken: () => null,
+      fetchFn: (async () =>
+        makeJsonResponse({
+          isError: false,
+          result: {
+            valid: true,
+            linkId: "lnk_flat",
+            scope: "invoice_pay",
+            externalSubject: "user-9",
+            expiresAt: "2099-01-01T00:00:00Z",
+            provider: "Identomat",
+            deferralStatus: "active",
+            targetResourceId: "inv_flat",
+            returnUrl: "https://azoa.ardanova.com/done",
+          },
+        })) as typeof fetch,
+    });
+    const flatVerified = await transportFlatBackend.verifyAccessLink("lnk_flat", {
+      sig: "sig_f",
+      res: "inv_flat",
+      returnUrl: "https://azoa.ardanova.com/done",
+    });
+    expect(flatVerified.valid).toBe(true);
+    expect(flatVerified.link?.targetResourceId).toBe("inv_flat");
+    expect(flatVerified.link?.returnUrl).toBe("https://azoa.ardanova.com/done");
 
     const transport401 = createHttpCommercialTransport({
       baseUrl: "https://api.azoa.example",

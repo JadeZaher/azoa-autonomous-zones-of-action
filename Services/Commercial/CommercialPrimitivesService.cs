@@ -10,6 +10,7 @@ using AZOA.WebAPI.Models;
 using AZOA.WebAPI.Models.Kyc;
 using AZOA.WebAPI.Models.Responses;
 using AZOA.WebAPI.Persistence.SurrealDb.Models;
+using AZOA.WebAPI.Providers.Blockchain.Simulated;
 using AZOA.WebAPI.Services.Auth;
 using AZOA.WebAPI.Services.Compliance;
 using AZOA.WebAPI.Settings;
@@ -38,7 +39,18 @@ public sealed class CommercialPrimitivesStoreState
         public object SyncRoot { get; } = new();
     }
 
-    internal sealed record PaymentRequestSlot(string OwnerActorId, PaymentRequestRecord Request);
+    internal sealed class PaymentRequestSlot
+    {
+        public PaymentRequestSlot(string ownerActorId, PaymentRequestRecord request)
+        {
+            OwnerActorId = ownerActorId;
+            Request = request;
+        }
+
+        public string OwnerActorId { get; }
+        public PaymentRequestRecord Request { get; set; }
+        public object SyncRoot { get; } = new();
+    }
     internal sealed record OwnershipReceiptSlot(string OwnerActorId, OwnershipReceiptDocument Receipt);
     internal sealed record AccountDocumentSlot(string OwnerActorId, AccountDocumentReport Document);
 
@@ -94,7 +106,17 @@ public sealed class CommercialPrimitivesService
             return AZOAResult<SignedAccessLink>.FailureWithCode(
                 "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
 
-        return _accessLinks.Mint(request);
+        return _accessLinks.Mint(request, actorId.ToString("N"));
+    }
+
+    public AZOAResult<IReadOnlyList<SignedAccessLink>> ListAccessLinks(Guid actorId)
+    {
+        if (actorId == Guid.Empty)
+            return AZOAResult<IReadOnlyList<SignedAccessLink>>.FailureWithCode(
+                "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
+
+        return AZOAResult<IReadOnlyList<SignedAccessLink>>.Success(
+            _accessLinks.ListRecentLinks(actorId.ToString("N")));
     }
 
     public AZOAResult<AccessLinkVerificationResult> VerifyAccessLink(
@@ -102,8 +124,10 @@ public sealed class CommercialPrimitivesService
         string scope,
         string externalSubject,
         long exp,
-        string sig)
-        => _accessLinks.VerifyAccessLink(linkId, scope, externalSubject, exp, sig);
+        string sig,
+        string? targetResourceId = null,
+        string? returnUrl = null)
+        => _accessLinks.VerifyAccessLink(linkId, scope, externalSubject, exp, sig, targetResourceId, returnUrl);
 
     public AZOAResult<IdentomatSessionStatus> GetIdentomatStatus(Guid actorId)
         => GetIdentomatStatusAsync(actorId, CancellationToken.None).GetAwaiter().GetResult();
@@ -741,6 +765,89 @@ public sealed class CommercialPrimitivesService
         return AZOAResult<PaymentRequestRecord>.Success(item);
     }
 
+    public AZOAResult<PaymentRequestRecord> PayPaymentRequest(
+        Guid actorId,
+        string requestId,
+        PayPaymentRequestInput? request)
+        => PayPaymentRequestAsync(actorId, requestId, request, CancellationToken.None).GetAwaiter().GetResult();
+
+    public async Task<AZOAResult<PaymentRequestRecord>> PayPaymentRequestAsync(
+        Guid actorId,
+        string requestId,
+        PayPaymentRequestInput? request,
+        CancellationToken ct = default)
+    {
+        if (actorId == Guid.Empty)
+            return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                "Authenticated subject is required.", AzoaErrorCodes.Forbidden);
+
+        if (string.IsNullOrWhiteSpace(requestId))
+            return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                "requestId is required.", AzoaErrorCodes.InvalidRequest);
+
+        if (!TryValidateOptionalText(request?.PaymentReference, 128, out _))
+            return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                "Invalid paymentReference.", AzoaErrorCodes.InvalidRequest);
+
+        var normalizedId = SurrealRecordGuid.BareId(requestId.Trim());
+        var ownerActorId = actorId.ToString("N");
+        var slot = await FindOwnedPaymentRequestAsync(ownerActorId, normalizedId, ct);
+        if (slot is null)
+            return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                "Payment request not found.", AzoaErrorCodes.NotFound);
+
+        var paidAt = _clock.GetUtcNow();
+        if (_surrealExecutor is not null)
+        {
+            if (!string.Equals(slot.Request.Status, CommercialInvoiceStatuses.Open, StringComparison.Ordinal))
+            {
+                return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                    $"Payment request cannot be marked paid from status '{slot.Request.Status}'.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            var response = await _surrealExecutor.ExecuteAsync(
+                SurrealWriter.UpdateOnly<PaymentRequestRecordModel>(normalizedId)
+                    .Where(row => row.OwnerActorId == ownerActorId && row.Status == CommercialInvoiceStatuses.Open)
+                    .Set(row => row.Status, CommercialInvoiceStatuses.Paid)
+                    .Set(row => row.PaidAt, paidAt)
+                    .Build(),
+                ct);
+            response.EnsureAllOk();
+            var persisted = response.GetValues<PaymentRequestRecordModel>(0).FirstOrDefault();
+            if (persisted is null)
+            {
+                return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                    "Payment request state changed concurrently and could not be marked paid.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            var updatedFromDb = ToPaymentRequestRecord(persisted);
+            _state.PaymentRequests[updatedFromDb.Id] = new CommercialPrimitivesStoreState.PaymentRequestSlot(ownerActorId, updatedFromDb);
+            return AZOAResult<PaymentRequestRecord>.Success(updatedFromDb);
+        }
+
+        PaymentRequestRecord updated;
+        lock (slot.SyncRoot)
+        {
+            if (!string.Equals(slot.Request.Status, CommercialInvoiceStatuses.Open, StringComparison.Ordinal))
+            {
+                return AZOAResult<PaymentRequestRecord>.FailureWithCode(
+                    $"Payment request cannot be marked paid from status '{slot.Request.Status}'.",
+                    AzoaErrorCodes.Conflict);
+            }
+
+            updated = slot.Request with
+            {
+                Status = CommercialInvoiceStatuses.Paid,
+                PaidAt = paidAt,
+            };
+            slot.Request = updated;
+        }
+
+        return AZOAResult<PaymentRequestRecord>.Success(updated);
+    }
+
     public async Task<AZOAResult<IReadOnlyList<OwnershipReceiptDocument>>> ListOwnershipReceiptsAsync(
         Guid actorId,
         CancellationToken ct = default)
@@ -803,7 +910,9 @@ public sealed class CommercialPrimitivesService
 
         var verificationStatus = string.IsNullOrWhiteSpace(request.VerificationStatus)
             ? (chainTxHash is not null
-                ? OwnershipVerificationStatuses.Verified
+                ? (SimulatedBlockchainProvider.IsSimulated(chainTxHash)
+                    ? OwnershipVerificationStatuses.SandboxSimulated
+                    : OwnershipVerificationStatuses.Verified)
                 : OwnershipVerificationStatuses.RecordedPendingChain)
             : request.VerificationStatus.Trim();
 
@@ -1162,13 +1271,49 @@ public sealed class CommercialPrimitivesService
         return result.OrderByDescending(inv => inv.CreatedAt).ToArray();
     }
 
+    private async Task<CommercialPrimitivesStoreState.PaymentRequestSlot?> FindOwnedPaymentRequestAsync(
+        string ownerActorId,
+        string requestId,
+        CancellationToken ct)
+    {
+        if (_surrealExecutor is not null)
+        {
+            var row = await _surrealExecutor.QuerySingleAsync<PaymentRequestRecordModel>(
+                SurrealQuery<PaymentRequestRecordModel>.Key(requestId),
+                ct);
+
+            if (row is null || !string.Equals(row.OwnerActorId, ownerActorId, StringComparison.Ordinal))
+                return null;
+
+            var hydrated = ToPaymentRequestRecord(row);
+            var slot = new CommercialPrimitivesStoreState.PaymentRequestSlot(row.OwnerActorId, hydrated);
+            _state.PaymentRequests[hydrated.Id] = slot;
+            return slot;
+        }
+
+        if (_state.PaymentRequests.TryGetValue(requestId, out var existing))
+        {
+            return string.Equals(existing.OwnerActorId, ownerActorId, StringComparison.Ordinal)
+                ? existing
+                : null;
+        }
+
+        return null;
+    }
+
     private async Task<IReadOnlyList<PaymentRequestRecord>> LoadOwnedPaymentRequestsAsync(string ownerActorId, CancellationToken ct)
     {
         if (_surrealExecutor is null)
         {
             return _state.PaymentRequests.Values
                 .Where(slot => string.Equals(slot.OwnerActorId, ownerActorId, StringComparison.Ordinal))
-                .Select(slot => slot.Request)
+                .Select(slot =>
+                {
+                    lock (slot.SyncRoot)
+                    {
+                        return slot.Request;
+                    }
+                })
                 .OrderByDescending(r => r.CreatedAt)
                 .ToArray();
         }
@@ -1183,22 +1328,7 @@ public sealed class CommercialPrimitivesService
         var result = new List<PaymentRequestRecord>(rows.Count);
         foreach (var row in rows)
         {
-            var dto = new PaymentRequestRecord(
-                SurrealRecordGuid.BareId(row.Id),
-                row.RequestNumber,
-                row.Title,
-                row.RequesterSubject,
-                row.PayerSubject,
-                row.CurrencyCode,
-                row.AmountMinorUnits,
-                row.TokenEquivalentUnits,
-                row.Memo,
-                row.Status,
-                row.DueAt,
-                row.PaymentLinkUrl,
-                row.CreatedAt,
-                row.PaidAt);
-
+            var dto = ToPaymentRequestRecord(row);
             _state.PaymentRequests[dto.Id] = new CommercialPrimitivesStoreState.PaymentRequestSlot(row.OwnerActorId, dto);
             result.Add(dto);
         }
@@ -1327,6 +1457,23 @@ public sealed class CommercialPrimitivesService
             row.PaidAt,
             row.VoidedAt);
     }
+
+    private static PaymentRequestRecord ToPaymentRequestRecord(PaymentRequestRecordModel row)
+        => new(
+            SurrealRecordGuid.BareId(row.Id),
+            row.RequestNumber,
+            row.Title,
+            row.RequesterSubject,
+            row.PayerSubject,
+            row.CurrencyCode,
+            row.AmountMinorUnits,
+            row.TokenEquivalentUnits,
+            row.Memo,
+            row.Status,
+            row.DueAt,
+            row.PaymentLinkUrl,
+            row.CreatedAt,
+            row.PaidAt);
 
     private static IReadOnlyDictionary<string, object?> DeserializeMetrics(string? json)
     {

@@ -11,12 +11,46 @@
     ]
   },
   {
+    "route": "POST api/commercial/access-links",
+    "controller": "CommercialPrimitivesController",
+    "action": "MintAccessLink",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] authenticated subject claim via AzoaClaims.TryGetSubjectId; SDK alias for HMAC-SHA256 signed ride-along URL minting",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/access-links/{linkId}/verify",
+    "controller": "CommercialPrimitivesController",
+    "action": "VerifyAccessLinkPost",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[AllowAnonymous] (overrides class [Authorize]) stateless HMAC-SHA256 signature and expiration verification over ride-along access link parameters",
+    "policies": [
+      "anonymous",
+      "authenticated"
+    ]
+  },
+  {
     "route": "POST api/commercial/identomat/session",
     "controller": "CommercialPrimitivesController",
     "action": "StartIdentomatSession",
     "class": "non-value",
     "scope": null,
     "enforcement": "[Authorize] authenticated subject claim via AzoaClaims.TryGetSubjectId; records Identomat credential deferral when vendor keys absent and issues signed kyc ride-along URL",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/identomat/sessions",
+    "controller": "CommercialPrimitivesController",
+    "action": "StartIdentomatSession",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] authenticated subject claim via AzoaClaims.TryGetSubjectId; SDK plural route alias for Identomat session start",
     "policies": [
       "authenticated"
     ]
@@ -66,6 +100,17 @@
     ]
   },
   {
+    "route": "POST api/commercial/payment-requests/{requestId}/pay",
+    "controller": "CommercialPrimitivesController",
+    "action": "PayPaymentRequest",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped lookup by actorId returning 404 across owners (IDOR protection) and state transition check (open -> paid)",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
     "route": "POST api/commercial/ownership-receipts/issue",
     "controller": "CommercialPrimitivesController",
     "action": "IssueOwnershipReceipt",
@@ -77,12 +122,34 @@
     ]
   },
   {
+    "route": "POST api/commercial/receipts",
+    "controller": "CommercialPrimitivesController",
+    "action": "IssueOwnershipReceipt",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped ownership receipt issuance SDK alias with deterministic SHA-256 contentHash integrity anchor",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
     "route": "POST api/commercial/account-documents/generate",
     "controller": "CommercialPrimitivesController",
     "action": "GenerateAccountDocument",
     "class": "non-value",
     "scope": null,
     "enforcement": "[Authorize] owner-scoped account document report generation aggregating only authenticated actorId commercial records",
+    "policies": [
+      "authenticated"
+    ]
+  },
+  {
+    "route": "POST api/commercial/documents",
+    "controller": "CommercialPrimitivesController",
+    "action": "GenerateAccountDocument",
+    "class": "non-value",
+    "scope": null,
+    "enforcement": "[Authorize] owner-scoped account document report generation SDK alias aggregating only authenticated actorId commercial records",
     "policies": [
       "authenticated"
     ]

@@ -179,6 +179,8 @@ export interface VerifyAccessLinkInput {
   exp?: string | null;
   scope?: string | null;
   sub?: string | null;
+  res?: string | null;
+  returnUrl?: string | null;
 }
 
 export interface AccessLinkVerificationView {
@@ -266,6 +268,8 @@ export interface SignedRideAlongParams {
   sub: string | null;
   exp: string | null;
   sig: string | null;
+  res: string | null;
+  returnUrl: string | null;
 }
 
 /** Builds a signed `/ride` URL carrying link verification parameters. */
@@ -330,13 +334,16 @@ export function parseSignedRideAlongParams(searchParams: URLSearchParams | strin
     sub: nonEmptyQueryParam(resolved, "sub"),
     exp: nonEmptyQueryParam(resolved, "exp"),
     sig: nonEmptyQueryParam(resolved, "sig"),
+    res: nonEmptyQueryParam(resolved, "res"),
+    returnUrl: nonEmptyQueryParam(resolved, "returnUrl"),
   };
 }
 
 /** Returns true when `expiresAt` is missing, malformed, or at/before `nowMs` (fail closed). */
 export function isAccessLinkExpired(expiresAt: string, nowMs: number = Date.now()): boolean {
   if (typeof expiresAt !== "string" || expiresAt.trim().length === 0) return true;
-  const parsedMs = Date.parse(expiresAt);
+  const trimmed = expiresAt.trim();
+  const parsedMs = /^\d+$/.test(trimmed) ? Number(trimmed) * 1000 : Date.parse(trimmed);
   if (!Number.isFinite(parsedMs)) return true;
   return parsedMs <= nowMs;
 }
@@ -366,7 +373,38 @@ function normalizeVerificationResponse(payload: unknown): AccessLinkVerification
     return { valid: false, reason: "Verification returned an unreadable response." };
   }
   if (typeof payload.valid === "boolean") {
-    return payload as unknown as AccessLinkVerificationView;
+    if (isRecord(payload.link)) {
+      return payload as unknown as AccessLinkVerificationView;
+    }
+    const reason =
+      typeof payload.reason === "string"
+        ? payload.reason
+        : typeof payload.failureReason === "string"
+          ? payload.failureReason
+          : null;
+    const expired =
+      typeof payload.expired === "boolean"
+        ? payload.expired
+        : payload.failureReason === "LINK_EXPIRED";
+    if (typeof payload.linkId === "string" && typeof payload.expiresAt === "string") {
+      const link: SignedAccessLinkView = {
+        linkId: payload.linkId,
+        externalSubject: typeof payload.externalSubject === "string" ? payload.externalSubject : "",
+        scope: (typeof payload.scope === "string" ? payload.scope : "kyc") as AccessLinkScope,
+        targetResourceId: typeof payload.targetResourceId === "string" ? payload.targetResourceId : null,
+        returnUrl: typeof payload.returnUrl === "string" ? payload.returnUrl : null,
+        signedUrl: typeof payload.signedUrl === "string" ? payload.signedUrl : "",
+        signature: typeof payload.signature === "string" ? payload.signature : "",
+        expiresAt: payload.expiresAt,
+        provider: typeof payload.provider === "string" ? payload.provider : "azoa-hmac-v1",
+        deferralStatus: (typeof payload.deferralStatus === "string"
+          ? payload.deferralStatus
+          : "active") as AccessLinkDeferralStatus,
+        deferredReason: typeof payload.deferredReason === "string" ? payload.deferredReason : null,
+      };
+      return { valid: payload.valid, expired, reason, link };
+    }
+    return { valid: payload.valid, expired, reason, link: null };
   }
   if (typeof payload.linkId === "string" && typeof payload.expiresAt === "string") {
     const link = payload as unknown as SignedAccessLinkView;
@@ -491,6 +529,8 @@ export function createHttpCommercialTransport(options: HttpCommercialTransportOp
         exp: params?.exp ?? null,
         scope: params?.scope ?? null,
         sub: params?.sub ?? null,
+        res: params?.res ?? null,
+        returnUrl: params?.returnUrl ?? null,
       };
       try {
         const { data } = await requestJson<unknown>("POST", path, payload);
@@ -502,6 +542,8 @@ export function createHttpCommercialTransport(options: HttpCommercialTransportOp
           if (params?.exp) qs.set("exp", params.exp);
           if (params?.scope) qs.set("scope", params.scope);
           if (params?.sub) qs.set("sub", params.sub);
+          if (params?.res) qs.set("res", params.res);
+          if (params?.returnUrl) qs.set("returnUrl", params.returnUrl);
           const query = qs.toString();
           const { data } = await requestJson<unknown>("GET", query ? `${path}?${query}` : path);
           return normalizeVerificationResponse(data);
