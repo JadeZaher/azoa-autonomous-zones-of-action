@@ -1,9 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { Check, ChevronRight, Copy } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -14,9 +15,10 @@ import { ResultDisplay } from '@/components/shared/result-display'
 import { ErrorBanner } from '@/components/shared/error-banner'
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton'
 import { azoa, isOk } from '@/lib/azoa'
-import { useAzoa } from '@/lib/azoa-context'
+import { useAzoa, useAzoaAuth } from '@/lib/azoa-auth'
 import { DagFlow } from '@/components/action-builder/dag-flow'
 import { ActionCanvas, type BuiltGraph, type NodeTemplateMeta } from '@/components/action-builder/action-canvas'
+import { ACTION_PRESETS, type ActionPreset } from '@/components/action-builder/presets'
 import { NodeTemplateCreator } from '@/components/action-builder/node-template-creator'
 import { RunPanel } from '@/components/action-builder/run-panel'
 import { WorkflowDesigner } from '@/components/action-builder/workflow-designer'
@@ -26,6 +28,11 @@ import { MarketplaceAccessAction } from '@/components/action-access/marketplace-
 import { MyRequestsPanel } from '@/components/action-access/my-requests-panel'
 import { RunAccessBadge } from '@/components/action-access/access-badge'
 import type { ActionRunAccess, WorkflowRunResult } from 'azoa-sdk'
+
+const STARTER_PRESET_IDS = ['scrum-create-project', 'gated-branch', 'loan-tracker', 'linear-holon'] as const
+const STARTER_PRESETS = STARTER_PRESET_IDS
+  .map((id) => ACTION_PRESETS.find((preset) => preset.id === id))
+  .filter((preset): preset is ActionPreset => preset !== undefined)
 
 // ─── Types ───
 
@@ -142,6 +149,14 @@ function ActionList() {
   const [actionResult, setActionResult] = useState<unknown>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [detailTab, setDetailTab] = useState<'dag' | 'runs' | 'actions' | 'raw'>('dag')
+  const [copiedActionId, setCopiedActionId] = useState<string | null>(null)
+
+  const copyActionId = async (id: string) => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    await navigator.clipboard.writeText(id)
+    setCopiedActionId(id)
+    setTimeout(() => setCopiedActionId((curr) => (curr === id ? null : curr)), 1800)
+  }
 
   const loadActions = useCallback(async () => {
     if (!userId) return
@@ -233,6 +248,21 @@ function ActionList() {
 
               {open && selected && (
                 <div className="border-t bg-background px-4 py-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">ID: {selected.id}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => void copyActionId(selected.id)}
+                    >
+                      {copiedActionId === selected.id
+                        ? <Check className="mr-1 h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                        : <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />}
+                      {copiedActionId === selected.id ? 'Copied' : 'Copy Action ID'}
+                    </Button>
+                  </div>
                   {selected.description && (
                     <p className="mb-3 text-sm text-muted-foreground">{selected.description}</p>
                   )}
@@ -384,24 +414,50 @@ function authoringRefusal(error: { message: string; status?: number }): string {
 
 function ActionBuilder({ onCreated }: { onCreated: () => void }) {
   const { userId } = useAzoa()
+  const { user } = useAzoaAuth()
   const { templates, reload } = useNodeTemplates()
   const [aiDraft, setAiDraft] = useState<DesignerDraft | null>(null)
+  const [starterPreset, setStarterPreset] = useState<ActionPreset | undefined>(undefined)
   const [draftRevision, setDraftRevision] = useState(0)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [isPublic, setIsPublic] = useState(false)
+  const [copiedUserId, setCopiedUserId] = useState(false)
   const [result, setResult] = useState<unknown>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const importedPreset = useMemo(() => aiDraft ? designerDraftPreset(aiDraft) : undefined, [aiDraft])
+  const dappRole = user && typeof user === 'object' && 'dappRole' in user
+    ? String((user as { dappRole?: unknown }).dappRole ?? 'dapp:user')
+    : 'dapp:user'
+  const importedPreset = useMemo(
+    () => (aiDraft ? designerDraftPreset(aiDraft) : starterPreset),
+    [aiDraft, starterPreset],
+  )
   const importDraft = (draft: DesignerDraft) => {
     setName(draft.name)
     setDescription(draft.description ?? '')
     setIsPublic(false)
+    setStarterPreset(undefined)
     setAiDraft(draft)
     setDraftRevision(value => value + 1)
     setResult(null)
     setError(null)
+  }
+  const applyStarterPreset = (preset: ActionPreset) => {
+    setName(preset.name)
+    setDescription(preset.description)
+    setIsPublic(false)
+    setAiDraft(null)
+    setStarterPreset(preset)
+    setDraftRevision(value => value + 1)
+    setResult(null)
+    setError(null)
+  }
+  const copyUserId = async () => {
+    if (!userId || typeof navigator === 'undefined' || !navigator.clipboard) return
+    await navigator.clipboard.writeText(userId)
+    setCopiedUserId(true)
+    setTimeout(() => setCopiedUserId(false), 1800)
   }
   const handleSubmit = useCallback(
     async (graph: BuiltGraph) => {
@@ -443,6 +499,45 @@ function ActionBuilder({ onCreated }: { onCreated: () => void }) {
           Refresh palette
         </Button>
       </div>
+
+      {dappRole === 'dapp:user' && userId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-border bg-muted/30 p-3 text-xs">
+          <div className="space-y-0.5">
+            <p className="font-medium text-foreground">
+              Builder role needed to save actions (current role: <span className="font-mono">{dappRole}</span>)
+            </p>
+            <p className="text-muted-foreground">
+              Share your user ID with a DApp manager or node operator to grant <span className="font-mono">dapp:developer</span>.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => void copyUserId()}>
+              {copiedUserId ? <Check className="mr-1 h-3.5 w-3.5 text-primary" aria-hidden="true" /> : <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />}
+              {copiedUserId ? 'Copied ID' : 'Copy User ID'}
+            </Button>
+            <Link href="/admin/roles" className={buttonVariants({ size: 'sm', variant: 'secondary' })}>
+              Open Role Assignment
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <section aria-label="Starter workflow blueprints" className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">1-click starter blueprints (auto-fills name &amp; valid graph)</p>
+        <div className="flex flex-wrap gap-2">
+          {STARTER_PRESETS.map((preset) => (
+            <Button
+              key={preset.id}
+              type="button"
+              size="sm"
+              variant={starterPreset?.id === preset.id ? 'default' : 'outline'}
+              onClick={() => applyStarterPreset(preset)}
+            >
+              {preset.name}
+            </Button>
+          ))}
+        </div>
+      </section>
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <div className="flex flex-1 flex-col gap-1.5">

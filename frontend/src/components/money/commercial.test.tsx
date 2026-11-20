@@ -114,6 +114,8 @@ describe('Documents hub & Ride-Along pages', () => {
     render(<DocumentsPage />)
 
     expect(await screen.findByText('Signed Access Link')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Quick-share ride-along links' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Issue & Copy KYC Link' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Issue Access Link' })).toBeTruthy()
     expect(await screen.findByText(/Operator provisioning Identomat keys/)).toBeTruthy()
     expect(screen.getByText('Invoices & Payment Requests')).toBeTruthy()

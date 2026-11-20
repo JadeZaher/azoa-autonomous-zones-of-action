@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { Check, Copy, RefreshCw, Share2 } from 'lucide-react'
 import {
   buildSignedRideAlongUrl,
   createHttpCommercialTransport,
@@ -10,6 +10,7 @@ import {
   isAccessLinkExpired,
 } from 'azoa-sdk/money'
 import type {
+  AccessLinkScope,
   AccountDocumentReportView,
   CommercialInvoiceView,
   IdentomatSessionStatusView,
@@ -59,6 +60,7 @@ export default function DocumentsPage() {
 
   const [accessLinks, setAccessLinks] = useState<SignedAccessLinkView[]>([])
   const [latestLink, setLatestLink] = useState<SignedAccessLinkView | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [identomat, setIdentomat] = useState<IdentomatSessionStatusView | null>(null)
   const [invoices, setInvoices] = useState<CommercialInvoiceView[]>([])
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequestView[]>([])
@@ -163,6 +165,19 @@ export default function DocumentsPage() {
     }
   }
 
+  const resolveShareUrl = (entry: SignedAccessLinkView): string => {
+    const built = buildSignedRideAlongUrl(origin || '', entry)
+    if (origin && built.startsWith('/')) return `${origin}${built}`
+    return built
+  }
+
+  const copyShareUrl = async (key: string, url: string) => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    await navigator.clipboard.writeText(url)
+    setCopiedKey(key)
+    setTimeout(() => setCopiedKey(curr => (curr === key ? null : curr)), 1800)
+  }
+
   const handleMintAccessLink = async (input: AccessLinkMintInput) => {
     await runAction(
       () =>
@@ -180,6 +195,27 @@ export default function DocumentsPage() {
         setAccessLinks(prev => [enriched, ...prev.filter(item => item.linkId !== enriched.linkId)])
       },
       'Access link could not be issued.',
+    )
+  }
+
+  const handleQuickMintAndCopy = async (key: string, scope: AccessLinkScope, targetResourceId?: string) => {
+    await runAction(
+      () =>
+        transport.mintAccessLink({
+          scope,
+          externalSubject: userId ?? undefined,
+          targetResourceId,
+          returnUrl: origin ? `${origin}/documents` : '/documents',
+        }),
+      issued => {
+        const enriched = issued.signedUrl
+          ? issued
+          : { ...issued, signedUrl: buildSignedRideAlongUrl(origin || '', issued) }
+        setLatestLink(enriched)
+        setAccessLinks(prev => [enriched, ...prev.filter(item => item.linkId !== enriched.linkId)])
+        void copyShareUrl(key, resolveShareUrl(enriched))
+      },
+      'Shareable ride-along link could not be issued.',
     )
   }
 
@@ -370,6 +406,69 @@ export default function DocumentsPage() {
         </div>
       </div>
 
+      <section aria-label="Quick-share ride-along links" className="space-y-3 rounded-lg border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <Share2 className="h-4 w-4 text-primary" aria-hidden="true" />
+              Quick-share ride-along links
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Issue a signed link for a counterparty to verify identity or settle an invoice/request without manual setup.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={mutating}
+              onClick={() => void handleQuickMintAndCopy('quick-kyc', 'kyc')}
+            >
+              {copiedKey === 'quick-kyc' ? 'Copied KYC Link' : 'Issue & Copy KYC Link'}
+            </Button>
+            {invoices.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={mutating}
+                onClick={() => void handleQuickMintAndCopy('quick-invoice', 'invoice_pay', invoices[0]!.id)}
+              >
+                {copiedKey === 'quick-invoice' ? 'Copied Invoice Link' : 'Issue & Copy Latest Invoice Link'}
+              </Button>
+            )}
+            {paymentRequests.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={mutating}
+                onClick={() => void handleQuickMintAndCopy('quick-request', 'invoice_pay', paymentRequests[0]!.id)}
+              >
+                {copiedKey === 'quick-request' ? 'Copied Request Link' : 'Issue & Copy Latest Request Link'}
+              </Button>
+            )}
+          </div>
+        </div>
+        {latestLink && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-muted/30 px-3 py-2 text-xs">
+            <span className="truncate font-mono">{resolveShareUrl(latestLink)}</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-7 px-2 text-xs"
+              onClick={() => void copyShareUrl('latest', resolveShareUrl(latestLink))}
+            >
+              {copiedKey === 'latest'
+                ? <Check className="mr-1 h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                : <Copy className="mr-1 h-3.5 w-3.5" aria-hidden="true" />}
+              {copiedKey === 'latest' ? 'Copied' : 'Copy shareable link'}
+            </Button>
+          </div>
+        )}
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-4">
           <AccessLinkRideAlongCard
@@ -387,15 +486,27 @@ export default function DocumentsPage() {
                 {accessLinks.slice(0, 5).map(entry => {
                   const expired = isAccessLinkExpired(entry.expiresAt)
                   const rideHref = buildSignedRideAlongUrl(origin || '', entry)
+                  const shareUrl = resolveShareUrl(entry)
                   return (
                     <li key={entry.linkId} className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2">
                       <div>
                         <span className="font-medium">{entry.scope}</span>
                         <span className="ml-2 text-muted-foreground">{expired ? 'Expired' : 'Active'}</span>
                       </div>
-                      <Link className="underline underline-offset-4" href={rideHref.startsWith('http') ? `/ride${new URL(rideHref).search}` : rideHref}>
-                        Open ride page
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => void copyShareUrl(entry.linkId, shareUrl)}
+                        >
+                          {copiedKey === entry.linkId ? 'Copied' : 'Copy link'}
+                        </Button>
+                        <Link className="underline underline-offset-4" href={rideHref.startsWith('http') ? `/ride${new URL(rideHref).search}` : rideHref}>
+                          Open ride page
+                        </Link>
+                      </div>
                     </li>
                   )
                 })}

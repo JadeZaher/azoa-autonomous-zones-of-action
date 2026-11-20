@@ -125,7 +125,6 @@
     },
     "src/components/layout/sidebar.tsx": {
       "blockchain": 1,
-      "defi": 1,
       "mint": 1,
       "node": 1
     },

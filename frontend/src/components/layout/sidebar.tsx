@@ -40,6 +40,7 @@ import {
   HandCoins,
   Landmark,
   ReceiptText,
+  ChevronDown,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -79,59 +80,24 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: 'Identity',
+    label: 'Money & Identity',
     audience: 'all',
     items: [
-      { href: '/users', label: 'Users', icon: Users },
-      { href: '/holons', label: 'Holons', icon: Box },
-      { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
+      { href: '/verify-identity', label: 'Verify identity', icon: ShieldCheck },
+      { href: '/documents', label: 'Documents & invoices', icon: ReceiptText },
+      { href: '/funds', label: 'Add funds', icon: PiggyBank },
+      { href: '/cash-out', label: 'Cash out', icon: HandCoins },
       { href: '/business-verification', label: 'Business verification', icon: BadgeCheck },
     ],
   },
   {
-    label: 'Money',
+    label: 'Workflows & Assets',
     audience: 'all',
     items: [
-      { href: '/verify-identity', label: 'Verify identity', icon: ShieldCheck },
-      { href: '/funds', label: 'Add funds', icon: PiggyBank },
-      { href: '/cash-out', label: 'Cash out', icon: HandCoins },
-      { href: '/payout-balance', label: 'Payout balance', icon: Landmark },
-      { href: '/documents', label: 'Documents & invoices', icon: ReceiptText },
-    ],
-  },
-  {
-    label: 'Assets',
-    audience: 'all',
-    items: [
+      { href: '/actions', label: 'Actions', icon: Workflow },
       { href: '/wallets', label: 'Wallets', icon: Wallet },
       { href: '/nfts', label: 'NFTs', icon: Image },
-      { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
-      { href: '/holds', label: 'Hold recovery', icon: Clock },
-      { href: '/user-nfts', label: 'User NFTs', icon: UserCircle },
-    ],
-  },
-  // OI-84: a "DeFi" group is the platform announcing itself as a blockchain company on
-  // every page load. Operator-only until a real audience picker replaces this raw label.
-  {
-    label: 'DeFi',
-    audience: 'operator',
-    items: [
-      { href: '/blockchain', label: 'Blockchain', icon: Link2 },
-      { href: '/swap', label: 'Swap', icon: ArrowLeftRight },
-      { href: '/bridge', label: 'Bridge', icon: Globe },
-    ],
-  },
-  {
-    label: 'Tools',
-    audience: 'all',
-    items: [
       { href: '/search', label: 'Search', icon: Search },
-      // OI-84: raw holon queries are an internals surface, not a builder-facing tool.
-      { href: '/holon-query', label: 'Holon Query', icon: Database, audience: 'operator' },
-      { href: '/actions', label: 'Actions', icon: Workflow },
-      { href: '/action-graph-bundle', label: 'Action Graph Bundles', icon: Package },
-      { href: '/api-keys', label: 'API Keys', icon: KeyRound },
-      { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
   {
@@ -151,11 +117,51 @@ const navGroups: NavGroup[] = [
     label: null,
     audience: 'all',
     items: [
+      { href: '/users', label: 'Users', icon: Users },
       { href: '/settings', label: 'Settings', icon: Settings },
       { href: '/tests', label: 'Tests', icon: FlaskConical, audience: 'operator' },
     ],
   },
 ]
+
+const advancedNavItems: NavItem[] = [
+  { href: '/api-keys', label: 'API Keys', icon: KeyRound },
+  { href: '/action-graph-bundle', label: 'Action Graph Bundles', icon: Package },
+  { href: '/holons', label: 'Holons', icon: Box },
+  { href: '/fungible-mint', label: 'Fungible Mint', icon: Coins },
+  { href: '/user-nfts', label: 'User NFTs', icon: UserCircle },
+  { href: '/holds', label: 'Hold recovery', icon: Clock },
+  { href: '/payout-balance', label: 'Payout balance', icon: Landmark },
+  { href: '/kyc', label: 'KYC Provider', icon: BadgeCheck },
+  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  // OI-84: raw holon queries are an internals surface, not a builder-facing tool.
+  { href: '/holon-query', label: 'Holon Query', icon: Database, audience: 'operator' },
+  // OI-84: a "DeFi" group is the platform announcing itself as a blockchain company on
+  // every page load. Operator-only until a real audience picker replaces this raw label.
+  { href: '/blockchain', label: 'Blockchain', icon: Link2, audience: 'operator' },
+  { href: '/swap', label: 'Swap', icon: ArrowLeftRight, audience: 'operator' },
+  { href: '/bridge', label: 'Bridge', icon: Globe, audience: 'operator' },
+]
+
+function NavItemLink({ item, pathname, onNavigate }: { item: NavItem; pathname: string; onNavigate?: () => void }) {
+  const Icon = item.icon
+  const isActive = pathname === item.href
+  return (
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      className={cn(
+        'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors',
+        isActive
+          ? 'bg-primary/10 font-medium text-primary'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {item.label}
+    </Link>
+  )
+}
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
@@ -169,6 +175,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
     }))
     .filter((group) => group.items.length > 0)
 
+  const visibleAdvanced = advancedNavItems.filter((item) => isNavAudienceVisible(item.audience ?? 'all'))
+  const advancedOpen = visibleAdvanced.some((item) => item.href === pathname)
+
   return (
     <ScrollArea className="h-full">
       <div className="space-y-1 px-3 py-2">
@@ -179,29 +188,25 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                 {group.label}
               </p>
             )}
-            {group.items.map((item) => {
-              const Icon = item.icon
-              const isActive = pathname === item.href
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors',
-                    isActive
-                      ? 'bg-primary/10 font-medium text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {item.label}
-                </Link>
-              )
-            })}
+            {group.items.map((item) => (
+              <NavItemLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+            ))}
             {gi < visibleGroups.length - 1 && <Separator className="mt-3" />}
           </div>
         ))}
+        {visibleAdvanced.length > 0 && (
+          <details open={advancedOpen} className="pt-2">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+              <span>Builder &amp; Advanced</span>
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+            </summary>
+            <div className="mt-1 space-y-1">
+              {visibleAdvanced.map((item) => (
+                <NavItemLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </ScrollArea>
   )
